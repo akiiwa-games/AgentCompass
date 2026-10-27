@@ -1,0 +1,8 @@
+{
+  "id": "antigravity-resilient-provider",
+  "name": "Antigravity Resilient Provider",
+  "description": "Resilient Antigravity (agy) provider with durable transcript replay across restarts and bounded recovery for OAuth 401 refresh races, sticky stream-interruption errors, and catalog timeouts.",
+  "requirements": {
+    "paseo": ">=0.11.2"
+  }
+}

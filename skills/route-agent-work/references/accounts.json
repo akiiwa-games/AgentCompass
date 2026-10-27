@@ -1,0 +1,1696 @@
+{
+  "reviewed_at": "2026-10-27",
+  "status": "October 2026 frontier catalog defaults; calibrated 2026-10-19 core plus explicitly provisional 2026-10-27 additions and CC Switch compatibility IDs.",
+  "scoring": {
+    "weights": {"fit": 0.3, "ability": 0.1, "continuity": 0.25},
+    "coupling_continuity_multiplier": {"low": 0.4, "medium": 1.0, "high": 2.5},
+    "shortage_loss_per_worker_hour": 0.06,
+    "shortage_loss_per_usd": 0.012,
+    "demand_cv": 0.35,
+    "demand_sd_floor_pct": 5,
+    "demand_min_elapsed_hours": 6,
+    "demand_pace_floor_ratio": 0.5,
+    "scarcity_usable_ref_pct": 45.0,
+    "scarcity_penalty_max": 0.06,
+    "high_precision_effort_weight": 0.14,
+    "fast_burn_multiplier": 2.0,
+    "fast_plentiful_usable_pct": 45.0,
+    "fast_max_shortage_prob": 0.2,
+    "fast_max_extra_opportunity_cost": 0.015,
+    "fast_sprint_sunk_threshold": 0.25,
+    "fast_bonus_max": 0.04,
+    "unlimited_bonus": 0.18,
+    "small_short_capacity_usd": 50,
+    "small_short_window_floor_pct": 25,
+    "small_short_safety_margin_pct": 12,
+    "deferred_start_penalty": 0.15,
+    "fallback_fit": {"start": 0.6, "step": 0.015, "floor": 0.4},
+    "extra_effort_penalty": 0.02,
+    "safety_margin_pct": 5,
+    "short_window_floor_pct": 10,
+    "short_window_hours": 24,
+    "defer_if_reset_within_hours": 6,
+    "reset_horizon_hours": 36,
+    "reset_bonus_max": 0.2,
+    "reset_surplus_ref_pct": 15,
+    "reset_urgency_power": 1.0,
+    "rotate_after_carried_tokens": 2000000,
+    "context_burn_extra_at_250k": 0.5,
+    "unknown_capacity_penalty": 0.03,
+    "needs_judgment_margin": 0.02,
+    "harness_order": ["codex", "pi"],
+    "harness_step": 0.03,
+    "ability_floor": {"routine": 3.0, "hard": 3.3, "coupled": 3.6, "frontier": 4.2},
+    "ability_span": 0.6,
+    "effort_unlock_difficulties": ["coupled", "frontier"],
+    "profile": {
+      "difficulty_by_depth": {"1": "routine", "2": "hard", "3": "coupled", "4": "frontier"},
+      "saturation_span": 0.3,
+      "vector_weight": 0.5,
+      "subjective": {
+        "weight": 0.49,
+        "vector_weight": 0.34,
+        "route_weight": 0.17,
+        "basis": "User subjective model ratings (2026-10-21): Gemini 4 Argon leads in divergent/expansive thinking and architectural innovation (formulating schemes, proposing creative research); Claude Opus 5.5 leads in architectural landing rigor and comprehensive global thinking; GPT 6.1 Sol lacks global vision (penalized on context_scale=3 / cross-module architecture) but has high concrete module implementation precision (context_scale=1, code_complexity=1..2)."
+      },
+      "overqualification_weight": 0.08,
+      "overqualification_span": 0.6,
+      "overqualification_ref_usd_per_hour": 10.0,
+      "overqualification_price_cap": 3.0,
+      "requirements": {
+        "reasoning": {"1": 0.45, "2": 0.6, "3": 0.75, "4": 0.9},
+        "coding": {"0": 0.0, "1": 0.5, "2": 0.65, "3": 0.8},
+        "exploration": {"1": 0.4, "2": 0.6, "3": 0.75},
+        "anti_hallucination": {"1": 0.4, "2": 0.6, "3": 0.8},
+        "visual": 0.6,
+        "gui": {"1": 0.5, "2": 0.7, "3": 0.8, "4": 0.85}
+      },
+      "requirement_weights": {
+        "reasoning": 1.0,
+        "coding": 1.0,
+        "exploration": 0.5,
+        "exploration_style": 1.0,
+        "anti_hallucination": 0.5,
+        "anti_hallucination_high": 1.0,
+        "visual": 1.0,
+        "gui": 1.5
+      },
+      "harness_by_style": {"engineering": ["codex", "pi"], "exploration": ["pi", "codex"]},
+      "kind_by_style": {
+        "engineering": "general_implementation",
+        "exploration": "exploration_analysis",
+        "text_only": "text_in_text_out",
+        "advisory": "direction_reasoning"
+      }
+    },
+    "critical_headroom": 0.3,
+    "effort_ability": {"low": -0.7, "medium": -0.3, "high": 0.0, "xhigh": 0.2, "max": 0.4},
+    "effort_burn": {"low": 0.2, "medium": 0.4, "high": 0.7, "xhigh": 1.0, "max": 1.3},
+    "default_hours": {"routine": 0.4, "hard": 1.0, "coupled": 2.0, "frontier": 3.5},
+    "basis": "Ability normally saturates at floor + ability_span (0.6); non-precision frontend uses saturation_span (0.3), and minimum-sufficient tasks get full ability at the floor. Standard routine/hard effort is capped at High; critical, coupled/frontier and high-risk multi-hypothesis work unlock higher effort. High precision earns high_precision_effort_weight times positive effort ability gain above High. Minimum-sufficient work prices excess ability above floor + saturation_span, exempting GUI/frontend at depth >= 2. Opportunity cost includes displaced demand in USD plus smooth weekly scarcity below scarcity_usable_ref_pct. Observed demand behind schedule is floored at demand_pace_floor_ratio times linear pace. Near weekly reset, surplus earns reset_bonus_max and discounts overqualification. Fast-capable models (Sol/Astra) enable fast mode (2x burn) during pre-reset sprints (sunk_weight >= fast_sprint_sunk_threshold) or when speed is requested and usable quota after 2x burn remains >= fast_plentiful_usable_pct."
+  },
+  "aliases": {
+    "claude-haiku-4-5@20251001": "claude-haiku-4-5",
+    "claude-opus-5": "claude-opus-5-5",
+    "claude-sonnet-5": "claude-sonnet-5-5",
+    "claude-fable-5": "claude-fable-5-1",
+    "gemini-3.8-flash": "gemini-3.8-flash-high",
+    "gemini-4-argon": "gemini-4-argon-high",
+    "gemini-4-pro": "gemini-4-argon-high",
+    "gemini-4-ultra": "gemini-4-argon-high",
+    "argon": "gemini-4-argon-high",
+    "ChatGPT Pro via chatgpt-pro-consult": "gpt-6-pro",
+    "grok-4.7-latest": "grok-4.7",
+    "grok-4": "grok-4.7",
+    "opencode/deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
+    "deepseek-v4.1-flash": "deepseek-v4.1-flash-free",
+    "deepseek": "deepseek-v4.1-flash-free",
+    "glm-5.3-flash": "glm-5.3-flash-free",
+    "opencode/glm-5.3-flash-free": "glm-5.3-flash-free",
+    "MiniMax-M3": "minimax-m3",
+    "MiniMax-M3.1-Flash": "minimax-m3.1-flash",
+    "mimo-v2.6-flash": "mimo-v2.6-flash-free",
+    "mimo-v2.6-pro-ultraspeed": "mimo-v2.6-pro",
+    "kimi-k3.1-pro-highspeed": "kimi-k3.1-pro",
+    "nemotron-3-ultra-550b-a55b": "nemotron-3-ultra-free",
+    "nemotron-3.5-super-vl-120b-a12b": "nemotron-3.5-super-vl-free",
+    "nemotron-3.5-lightning-30b-a3b": "nemotron-3.5-lightning-free",
+    "opencode/mimo-v2.6-flash-free": "mimo-v2.6-flash-free",
+    "opencode/nemotron-3-ultra-free": "nemotron-3-ultra-free",
+    "opencode/nemotron-3.5-super-vl-free": "nemotron-3.5-super-vl-free",
+    "opencode/nemotron-3.5-lightning-free": "nemotron-3.5-lightning-free",
+    "opencode/beam-free": "beam-free",
+    "opencode/flint-40b-free": "flint-40b-free"
+  },
+  "models": {
+    "deepseek-v4.1-flash-free": {
+      "tier": 2.8,
+      "cost": 0,
+      "visual": false,
+      "usd_per_hour": 0.0,
+      "capabilities": {
+        "reasoning": 0.48,
+        "coding": 0.5,
+        "exploration": 0.5,
+        "anti_hallucination": 0.45,
+        "visual": 0.0,
+        "gui": 0.0
+      },
+      "subjective": {
+        "divergence": 0.45,
+        "global_rigor": 0.35,
+        "module_precision": 0.55
+      },
+      "basis": "OpenCode free DeepSeek V4.1 Flash model (`opencode/deepseek-v4.1-flash-free`); explicit user-override worker below the automatic routine floor."
+    },
+    "claude-fable-5-1": {
+      "tier": 4.6,
+      "cost": 5,
+      "visual": false,
+      "usd_per_hour": 18.7,
+      "capabilities": {
+        "reasoning": 0.98,
+        "coding": 0.95,
+        "exploration": 0.9,
+        "anti_hallucination": 0.9,
+        "visual": 0.0,
+        "gui": 0.0
+      },
+      "subjective": {
+        "divergence": 0.92,
+        "global_rigor": 0.95,
+        "module_precision": 0.9
+      }
+    },
+    "claude-opus-5-5": {
+      "tier": 4.6,
+      "cost": 4,
+      "visual": 1.0,
+      "usd_per_hour": 7.5,
+      "capabilities": {
+        "reasoning": 0.89,
+        "coding": 0.91,
+        "exploration": 0.88,
+        "anti_hallucination": 0.92,
+        "visual": 1.0,
+        "gui": 0.55
+      },
+      "subjective": {
+        "divergence": 0.62,
+        "global_rigor": 0.98,
+        "module_precision": 0.92
+      },
+      "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); 14d local $9.30/h (207.3h). Subjective: #1 in architectural landing rigor and comprehensive global thinking."
+    },
+    "gpt-6.1-sol": {
+      "tier": 3.6,
+      "cost": 3,
+      "visual": 0.7,
+      "usd_per_hour": 2.6,
+      "duration_multiplier": 1.35,
+      "fast_capable": true,
+      "capabilities": {
+        "reasoning": 0.71,
+        "coding": 0.85,
+        "exploration": 0.62,
+        "anti_hallucination": 0.74,
+        "visual": 0.7,
+        "gui": 0.82
+      },
+      "subjective": {
+        "divergence": 0.4,
+        "global_rigor": 0.25,
+        "module_precision": 0.95
+      },
+      "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; 14d local $2.19/h at high (159.1h). Subjective: lacks global vision (global_rigor 0.25), but high precision on concrete single-module implementation (module_precision 0.95)."
+    },
+    "gpt-6-astra": {
+      "tier": 4.2,
+      "cost": 4,
+      "visual": 0.8,
+      "usd_per_hour": 22.6,
+      "fast_capable": true,
+      "capabilities": {
+        "reasoning": 0.8,
+        "coding": 0.79,
+        "exploration": 0.8,
+        "anti_hallucination": 0.78,
+        "visual": 0.8,
+        "gui": 0.95
+      },
+      "subjective": {
+        "divergence": 0.68,
+        "global_rigor": 0.82,
+        "module_precision": 0.84
+      },
+      "basis": "AA v4.3.2 High 50.9 / Max 52.7, Terminal-Bench 58.2%, Omniscience 43.7, MMMU-Pro 86.4%, Bug Hunt 35.0-45.0/105, #1 Codex GUI/cua_repl grounding; 14d local $22.75/h (41.5h)."
+    },
+    "gemini-4-argon-high": {
+      "usd_per_hour": 4.0,
+      "duration_multiplier": 1.35,
+      "tier": 4.0,
+      "cost": 3,
+      "visual": 0.75,
+      "burn_pct_per_worker_hour": {
+        "gemini-weekly": 0.62,
+        "gemini-5h": 2.13
+      },
+      "capabilities": {
+        "reasoning": 0.78,
+        "coding": 0.83,
+        "exploration": 0.86,
+        "anti_hallucination": 0.81,
+        "visual": 0.75,
+        "gui": 0.62
+      },
+      "subjective": {
+        "divergence": 0.96,
+        "global_rigor": 0.8,
+        "module_precision": 0.8
+      },
+      "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); 14d local 94.5h. Subjective: #1 in divergent/expansive thinking and architectural innovation (preferred for formulating schemes and creative research)."
+    },
+    "claude-sonnet-5-5": {
+      "tier": 3.9,
+      "cost": 2,
+      "visual": 0.6,
+      "usd_per_hour": 4.4,
+      "capabilities": {
+        "reasoning": 0.74,
+        "coding": 0.82,
+        "exploration": 0.89,
+        "anti_hallucination": 0.73,
+        "visual": 0.6,
+        "gui": 0.55
+      },
+      "subjective": {
+        "divergence": 0.6,
+        "global_rigor": 0.76,
+        "module_precision": 0.78
+      },
+      "basis": "AA v4.3.2 High 46.8 / Max 56.0, Bug Hunt Max 51.3/105 (#1) / High 34.3/105 (76.2% prec), Mercor BrowseComp 73.0% (#1), AA-Briefcase 57.5% (#1), Terminal-Bench 61.8%; 14d local $3.73/h (63.7h)."
+    },
+    "grok-4.7": {
+      "usd_per_hour": 1.5,
+      "tier": 3.4,
+      "cost": 2,
+      "visual": false,
+      "capabilities": {
+        "reasoning": 0.59,
+        "coding": 0.58,
+        "exploration": 0.6,
+        "anti_hallucination": 0.62,
+        "visual": 0.0,
+        "gui": 0.0
+      },
+      "subjective": {
+        "divergence": 0.45,
+        "global_rigor": 0.4,
+        "module_precision": 0.58
+      },
+      "basis": "AA v4.3.2 High 46.3 / xHigh 46.4, GDPval 60.3%, AA-Briefcase 55.0%, Terminal-Bench 37.6%, Bug Hunt 19.3-29.0/105; text-only CLI."
+    },
+    "gemini-3.8-flash-high": {
+      "usd_per_hour": 0.5,
+      "tier": 3.0,
+      "cost": 1,
+      "visual": 0.3,
+      "capabilities": {
+        "reasoning": 0.52,
+        "coding": 0.47,
+        "exploration": 0.5,
+        "anti_hallucination": 0.72,
+        "visual": 0.3,
+        "gui": 0.42
+      },
+      "subjective": {
+        "divergence": 0.35,
+        "global_rigor": 0.35,
+        "module_precision": 0.65
+      },
+      "basis": "AA v4.3.2 Low 33.5 / Med 39.8 / High 40.9, LCR 81.3%, MMMU-Pro 85.6%, Bug Hunt 18.0/105 (81.8% prec); high-quota Antigravity volume sink for routine tasks."
+    },
+    "dot": {
+      "tier": 4.2,
+      "cost": 0,
+      "visual": false,
+      "excluded_when": "local_only",
+      "capabilities": {
+        "reasoning": 0.8,
+        "coding": 0.79,
+        "exploration": 0.8,
+        "anti_hallucination": 0.78,
+        "visual": 0.0,
+        "gui": 0.0
+      },
+      "subjective": {
+        "divergence": 0.68,
+        "global_rigor": 0.82,
+        "module_precision": 0.84
+      },
+      "basis": "OpenAI Dot remote worker via dot2api; GPT-6 Astra class text/code/exploration intelligence without local vision or GUI."
+    },
+    "gpt-6-pro": {
+      "tier": 5.0,
+      "cost": 0,
+      "visual": false,
+      "advisor_only": true,
+      "advisor_for": [
+        "direction_reasoning",
+        "complex_build_plan"
+      ],
+      "capabilities": {
+        "reasoning": 1.0,
+        "coding": 0.9,
+        "exploration": 0.78,
+        "anti_hallucination": 0.95,
+        "visual": 0.0,
+        "gui": 0.0
+      },
+      "subjective": {
+        "divergence": 0.95,
+        "global_rigor": 0.96,
+        "module_precision": 0.9
+      },
+      "basis": "ChatGPT Pro web bridge advisor; ceiling anchor across reasoning (1.00) and anti_hallucination (0.95)."
+    },
+    "claude-haiku-5-5": {
+      "tier": 3.2,
+      "cost": 1,
+      "visual": 0.48,
+      "usd_per_hour": 0.8,
+      "capabilities": {
+        "reasoning": 0.58,
+        "coding": 0.65,
+        "exploration": 0.62,
+        "anti_hallucination": 0.62,
+        "visual": 0.48,
+        "gui": 0.35
+      },
+      "subjective": {
+        "divergence": 0.42,
+        "global_rigor": 0.53,
+        "module_precision": 0.67
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "gpt-6.1-terra": {
+      "tier": 3.7,
+      "cost": 3,
+      "visual": 0.72,
+      "usd_per_hour": 3.0,
+      "capabilities": {
+        "reasoning": 0.73,
+        "coding": 0.83,
+        "exploration": 0.71,
+        "anti_hallucination": 0.75,
+        "visual": 0.72,
+        "gui": 0.8
+      },
+      "subjective": {
+        "divergence": 0.5,
+        "global_rigor": 0.65,
+        "module_precision": 0.88
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models and opencode cache openai/gpt-6.1-terra. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "context_window": 500000
+    },
+    "gpt-6-sol": {
+      "tier": 3.5,
+      "cost": 3,
+      "visual": 0.68,
+      "usd_per_hour": 2.6,
+      "capabilities": {
+        "reasoning": 0.69,
+        "coding": 0.82,
+        "exploration": 0.6,
+        "anti_hallucination": 0.72,
+        "visual": 0.68,
+        "gui": 0.8
+      },
+      "subjective": {
+        "divergence": 0.4,
+        "global_rigor": 0.25,
+        "module_precision": 0.92
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "context_window": 272000
+    },
+    "gpt-6-luna": {
+      "tier": 3.2,
+      "cost": 1,
+      "visual": 0.55,
+      "usd_per_hour": 0.8,
+      "capabilities": {
+        "reasoning": 0.58,
+        "coding": 0.65,
+        "exploration": 0.57,
+        "anti_hallucination": 0.62,
+        "visual": 0.55,
+        "gui": 0.5
+      },
+      "subjective": {
+        "divergence": 0.4,
+        "global_rigor": 0.45,
+        "module_precision": 0.68
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "context_window": 272000
+    },
+    "gpt-5.6-sol": {
+      "tier": 3.4,
+      "cost": 2,
+      "visual": 0.65,
+      "usd_per_hour": 2.4,
+      "capabilities": {
+        "reasoning": 0.67,
+        "coding": 0.79,
+        "exploration": 0.58,
+        "anti_hallucination": 0.7,
+        "visual": 0.65,
+        "gui": 0.75
+      },
+      "subjective": {
+        "divergence": 0.4,
+        "global_rigor": 0.25,
+        "module_precision": 0.88
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "context_window": 272000
+    },
+    "gpt-5.6-terra": {
+      "tier": 3.5,
+      "cost": 2,
+      "visual": 0.67,
+      "usd_per_hour": 2.7,
+      "capabilities": {
+        "reasoning": 0.69,
+        "coding": 0.78,
+        "exploration": 0.66,
+        "anti_hallucination": 0.71,
+        "visual": 0.67,
+        "gui": 0.74
+      },
+      "subjective": {
+        "divergence": 0.48,
+        "global_rigor": 0.6,
+        "module_precision": 0.83
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "context_window": 272000
+    },
+    "gpt-5.6-luna": {
+      "tier": 3.1,
+      "cost": 1,
+      "visual": 0.5,
+      "usd_per_hour": 0.7,
+      "capabilities": {
+        "reasoning": 0.55,
+        "coding": 0.62,
+        "exploration": 0.54,
+        "anti_hallucination": 0.59,
+        "visual": 0.5,
+        "gui": 0.45
+      },
+      "subjective": {
+        "divergence": 0.38,
+        "global_rigor": 0.42,
+        "module_precision": 0.65
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "context_window": 272000
+    },
+    "grok-4.7-build-fast": {
+      "tier": 3.1,
+      "cost": 1,
+      "visual": false,
+      "usd_per_hour": 0.5,
+      "capabilities": {
+        "reasoning": 0.54,
+        "coding": 0.58,
+        "exploration": 0.54,
+        "anti_hallucination": 0.55,
+        "visual": 0,
+        "gui": 0
+      },
+      "subjective": {
+        "divergence": 0.55,
+        "global_rigor": 0.45,
+        "module_precision": 0.6
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in ~/.grok/models_cache.json. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "deepseek-v4-pro": {
+      "tier": 3.9,
+      "cost": 2,
+      "visual": false,
+      "usd_per_hour": 1.2,
+      "capabilities": {
+        "reasoning": 0.78,
+        "coding": 0.82,
+        "exploration": 0.72,
+        "anti_hallucination": 0.75,
+        "visual": 0,
+        "gui": 0
+      },
+      "subjective": {
+        "divergence": 0.62,
+        "global_rigor": 0.74,
+        "module_precision": 0.84
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache deepseek/deepseek-v4-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "glm-5.3": {
+      "tier": 3.7,
+      "cost": 2,
+      "visual": 0.6,
+      "usd_per_hour": 1.0,
+      "capabilities": {
+        "reasoning": 0.72,
+        "coding": 0.78,
+        "exploration": 0.74,
+        "anti_hallucination": 0.72,
+        "visual": 0.6,
+        "gui": 0.55
+      },
+      "subjective": {
+        "divergence": 0.6,
+        "global_rigor": 0.72,
+        "module_precision": 0.8
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache zhipuai/glm-5.3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "glm-5.3-flash-free": {
+      "tier": 2.9,
+      "cost": 0,
+      "visual": 0.4,
+      "usd_per_hour": 0,
+      "capabilities": {
+        "reasoning": 0.5,
+        "coding": 0.54,
+        "exploration": 0.52,
+        "anti_hallucination": 0.52,
+        "visual": 0.4,
+        "gui": 0.3
+      },
+      "subjective": {
+        "divergence": 0.45,
+        "global_rigor": 0.42,
+        "module_precision": 0.58
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "qwen3-coder-next": {
+      "tier": 3.7,
+      "cost": 2,
+      "visual": false,
+      "usd_per_hour": 1.0,
+      "capabilities": {
+        "reasoning": 0.7,
+        "coding": 0.82,
+        "exploration": 0.65,
+        "anti_hallucination": 0.66,
+        "visual": 0,
+        "gui": 0
+      },
+      "subjective": {
+        "divergence": 0.48,
+        "global_rigor": 0.67,
+        "module_precision": 0.84
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache openrouter/qwen/qwen3-coder-next. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "qwen3.8-max": {
+      "tier": 3.9,
+      "cost": 2,
+      "visual": 0.65,
+      "usd_per_hour": 1.5,
+      "capabilities": {
+        "reasoning": 0.78,
+        "coding": 0.8,
+        "exploration": 0.75,
+        "anti_hallucination": 0.74,
+        "visual": 0.65,
+        "gui": 0.48
+      },
+      "subjective": {
+        "divergence": 0.67,
+        "global_rigor": 0.75,
+        "module_precision": 0.8
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache alibaba/qwen3.8-max. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "kimi-k3.1-pro": {
+      "tier": 4.0,
+      "cost": 2,
+      "visual": 0.68,
+      "usd_per_hour": 1.8,
+      "capabilities": {
+        "reasoning": 0.79,
+        "coding": 0.82,
+        "exploration": 0.83,
+        "anti_hallucination": 0.74,
+        "visual": 0.68,
+        "gui": 0.5
+      },
+      "subjective": {
+        "divergence": 0.72,
+        "global_rigor": 0.76,
+        "module_precision": 0.81
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache moonshotai/kimi-k3.1-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "kimi-k3": {
+      "tier": 3.8,
+      "cost": 2,
+      "visual": 0.62,
+      "usd_per_hour": 1.2,
+      "capabilities": {
+        "reasoning": 0.74,
+        "coding": 0.79,
+        "exploration": 0.8,
+        "anti_hallucination": 0.7,
+        "visual": 0.62,
+        "gui": 0.45
+      },
+      "subjective": {
+        "divergence": 0.7,
+        "global_rigor": 0.71,
+        "module_precision": 0.78
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache moonshotai/kimi-k3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "minimax-m3": {
+      "tier": 3.8,
+      "cost": 2,
+      "visual": 0.6,
+      "usd_per_hour": 1.0,
+      "capabilities": {
+        "reasoning": 0.73,
+        "coding": 0.81,
+        "exploration": 0.75,
+        "anti_hallucination": 0.7,
+        "visual": 0.6,
+        "gui": 0.45
+      },
+      "subjective": {
+        "divergence": 0.63,
+        "global_rigor": 0.7,
+        "module_precision": 0.82
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache minimax/MiniMax-M3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "minimax-m3.1-flash": {
+      "tier": 3.5,
+      "cost": 1,
+      "visual": 0.55,
+      "usd_per_hour": 0.6,
+      "capabilities": {
+        "reasoning": 0.66,
+        "coding": 0.74,
+        "exploration": 0.68,
+        "anti_hallucination": 0.65,
+        "visual": 0.55,
+        "gui": 0.4
+      },
+      "subjective": {
+        "divergence": 0.58,
+        "global_rigor": 0.62,
+        "module_precision": 0.76
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache minimax/MiniMax-M3.1-Flash. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "doubao-seed-2-1-pro-260628": {
+      "tier": 3.7,
+      "cost": 2,
+      "visual": 0.65,
+      "usd_per_hour": 0.8,
+      "capabilities": {
+        "reasoning": 0.72,
+        "coding": 0.74,
+        "exploration": 0.74,
+        "anti_hallucination": 0.7,
+        "visual": 0.65,
+        "gui": 0.5
+      },
+      "subjective": {
+        "divergence": 0.66,
+        "global_rigor": 0.68,
+        "module_precision": 0.74
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache volcengine/doubao-seed-2-1-pro-260628. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "mimo-v2.6-pro": {
+      "tier": 3.7,
+      "cost": 2,
+      "visual": 0.6,
+      "usd_per_hour": 0.8,
+      "capabilities": {
+        "reasoning": 0.72,
+        "coding": 0.79,
+        "exploration": 0.7,
+        "anti_hallucination": 0.69,
+        "visual": 0.6,
+        "gui": 0.45
+      },
+      "subjective": {
+        "divergence": 0.57,
+        "global_rigor": 0.67,
+        "module_precision": 0.8
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache xiaomi/mimo-v2.6-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "mimo-v2.6-flash-free": {
+      "tier": 2.9,
+      "cost": 0,
+      "visual": 0.4,
+      "usd_per_hour": 0,
+      "capabilities": {
+        "reasoning": 0.51,
+        "coding": 0.55,
+        "exploration": 0.51,
+        "anti_hallucination": 0.5,
+        "visual": 0.4,
+        "gui": 0.3
+      },
+      "subjective": {
+        "divergence": 0.45,
+        "global_rigor": 0.42,
+        "module_precision": 0.58
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "nemotron-3-ultra-free": {
+      "tier": 3.4,
+      "cost": 0,
+      "visual": false,
+      "usd_per_hour": 0,
+      "capabilities": {
+        "reasoning": 0.65,
+        "coding": 0.7,
+        "exploration": 0.65,
+        "anti_hallucination": 0.63,
+        "visual": 0,
+        "gui": 0
+      },
+      "subjective": {
+        "divergence": 0.53,
+        "global_rigor": 0.62,
+        "module_precision": 0.71
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "nemotron-3.5-super-vl-free": {
+      "tier": 3.3,
+      "cost": 0,
+      "visual": 0.65,
+      "usd_per_hour": 0,
+      "capabilities": {
+        "reasoning": 0.62,
+        "coding": 0.65,
+        "exploration": 0.63,
+        "anti_hallucination": 0.62,
+        "visual": 0.65,
+        "gui": 0.45
+      },
+      "subjective": {
+        "divergence": 0.52,
+        "global_rigor": 0.59,
+        "module_precision": 0.66
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "nemotron-3.5-lightning-free": {
+      "tier": 2.9,
+      "cost": 0,
+      "visual": false,
+      "usd_per_hour": 0,
+      "capabilities": {
+        "reasoning": 0.5,
+        "coding": 0.54,
+        "exploration": 0.5,
+        "anti_hallucination": 0.48,
+        "visual": 0,
+        "gui": 0
+      },
+      "subjective": {
+        "divergence": 0.42,
+        "global_rigor": 0.42,
+        "module_precision": 0.56
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "mistral-large-4": {
+      "tier": 3.8,
+      "cost": 2,
+      "visual": 0.65,
+      "usd_per_hour": 1.2,
+      "capabilities": {
+        "reasoning": 0.74,
+        "coding": 0.78,
+        "exploration": 0.73,
+        "anti_hallucination": 0.71,
+        "visual": 0.65,
+        "gui": 0.45
+      },
+      "subjective": {
+        "divergence": 0.65,
+        "global_rigor": 0.71,
+        "module_precision": 0.78
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache mistral/mistral-large-4. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "muse-wonder-1.0": {
+      "tier": 3.9,
+      "cost": 2,
+      "visual": 0.72,
+      "usd_per_hour": 1.5,
+      "capabilities": {
+        "reasoning": 0.77,
+        "coding": 0.77,
+        "exploration": 0.79,
+        "anti_hallucination": 0.73,
+        "visual": 0.72,
+        "gui": 0.48
+      },
+      "subjective": {
+        "divergence": 0.71,
+        "global_rigor": 0.73,
+        "module_precision": 0.77
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache meta/muse-wonder-1.0. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "beam-free": {
+      "tier": 3.0,
+      "cost": 0,
+      "visual": false,
+      "usd_per_hour": 0,
+      "capabilities": {
+        "reasoning": 0.53,
+        "coding": 0.56,
+        "exploration": 0.53,
+        "anti_hallucination": 0.5,
+        "visual": 0,
+        "gui": 0
+      },
+      "subjective": {
+        "divergence": 0.45,
+        "global_rigor": 0.45,
+        "module_precision": 0.58
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "flint-40b-free": {
+      "tier": 2.8,
+      "cost": 0,
+      "visual": false,
+      "usd_per_hour": 0,
+      "capabilities": {
+        "reasoning": 0.48,
+        "coding": 0.52,
+        "exploration": 0.48,
+        "anti_hallucination": 0.46,
+        "visual": 0,
+        "gui": 0
+      },
+      "subjective": {
+        "divergence": 0.4,
+        "global_rigor": 0.4,
+        "module_precision": 0.54
+      },
+      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+    },
+    "claude-haiku-4-5": {
+      "tier": 3.2,
+      "cost": 1,
+      "visual": 0.45,
+      "usd_per_hour": 0.8,
+      "capabilities": {
+        "reasoning": 0.55,
+        "coding": 0.61,
+        "exploration": 0.59,
+        "anti_hallucination": 0.57,
+        "visual": 0.45,
+        "gui": 0.32
+      },
+      "subjective": {
+        "divergence": 0.42,
+        "global_rigor": 0.5,
+        "module_precision": 0.64
+      },
+      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+    },
+    "claude-opus-4-6": {
+      "tier": 4.4,
+      "cost": 4,
+      "visual": 0.95,
+      "usd_per_hour": 7.5,
+      "capabilities": {
+        "reasoning": 0.85,
+        "coding": 0.87,
+        "exploration": 0.84,
+        "anti_hallucination": 0.88,
+        "visual": 0.95,
+        "gui": 0.52
+      },
+      "subjective": {
+        "divergence": 0.6,
+        "global_rigor": 0.93,
+        "module_precision": 0.88
+      },
+      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+    },
+    "claude-sonnet-4-6": {
+      "tier": 3.8,
+      "cost": 3,
+      "visual": 0.6,
+      "usd_per_hour": 3.5,
+      "capabilities": {
+        "reasoning": 0.71,
+        "coding": 0.79,
+        "exploration": 0.83,
+        "anti_hallucination": 0.7,
+        "visual": 0.6,
+        "gui": 0.5
+      },
+      "subjective": {
+        "divergence": 0.58,
+        "global_rigor": 0.73,
+        "module_precision": 0.76
+      },
+      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+    },
+    "usd_basis": "`usd_per_hour`: API list price (platform.claude.com/docs/en/about-claude/pricing, developers.openai.com/api/docs/pricing; cache reads and writes priced separately) of the tokens one active session-hour spent, from 14 days of local session logs to 2026-10-12, pooled over efforts (the hourly spend barely moves with effort; a higher effort runs longer instead): Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Fable has no history: Opus times the 2.5x list-price ratio. Recompute from usage-stats.json when prices or models change.",
+    "capabilities_basis": "6D vectors: benchmark-calibrated core rows retain their existing basis; newly discovered frontier rows use explicitly provisional routing priors, not measured benchmark scores. Visual/GUI zero for text-only catalog entries. Full catalog evidence and compatibility policy: model-capabilities.md (2026-10-27).",
+    "basis": "Absolute tiers (at High effort) are provisional: derived from the ordering already in model-capabilities.md (Grok behind the leaders, Flash by user preference) and the user's ratings. Stated by the user 2026-10-09 and updated 2026-10-14 with Gemini 4 Argon: absolute ability order Opus > Astra > Argon > Sonnet > Sol > Grok > Flash; Dot is Astra (the user told me to treat it so, and OpenAI documents Dot as Astra-powered), so it has Astra's tier, meets every difficulty floor and has unlimited usage. User 2026-10-09: Dot is not limited to text; it has its own computer and can receive code, public data and handed-over tables and return files, so it is a candidate for every route unless the parent marks the work `needs.local_only` (`excluded_when: local_only`) or it needs vision; visual ability Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash (the numeric `visual` values 1.0/0.8/0.75/0.7/0.6/0.3 encode that order; false means no vision). Argon shares the Antigravity Gemini pool with Flash but burns roughly 8x as much quota per hour (`burn_pct_per_worker_hour`). Fable is on hold. Correct the rest here; nothing else encodes a global ranking.",
+    "order_basis": "Zero-to-frontier-ceiling normalization over AA v4.3.2 (2026-10-19), Bug Hunt Bench (n=2..5 runs), Terminal-Bench 2.0/4.0, Mercor BrowseComp, MMMU-Pro, OSWorld/GUI harness grounding, and 14d local usage-stats.json."
+  },
+  "dispatch_efforts": {
+    "grok": {
+      "grok-4.7": [
+        "low",
+        "high",
+        "xhigh"
+      ],
+      "grok-4.7-build-fast": [
+        "high"
+      ]
+    },
+    "claude": {
+      "claude-opus-4-6": [
+        "high"
+      ],
+      "claude-sonnet-4-6": [
+        "high"
+      ],
+      "claude-haiku-4-5": [
+        "high"
+      ],
+      "claude-opus-5-5": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-sonnet-5-5": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-fable-5-1": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-haiku-5-5": [
+        "high"
+      ]
+    },
+    "claude-2": {
+      "claude-opus-5-5": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-sonnet-5-5": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-fable-5-1": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    },
+    "codex": {
+      "gpt-6-pro": [
+        "high"
+      ],
+      "gpt-6-astra": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "gpt-6.1-sol": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "gpt-6.1-terra": [
+        "high"
+      ],
+      "gpt-6-sol": [
+        "high"
+      ],
+      "gpt-6-luna": [
+        "high"
+      ],
+      "gpt-5.6-sol": [
+        "high"
+      ],
+      "gpt-5.6-terra": [
+        "high"
+      ],
+      "gpt-5.6-luna": [
+        "high"
+      ]
+    },
+    "codex-2": {
+      "gpt-6-astra": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "gpt-6.1-sol": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    "opencode": {
+      "deepseek-v4.1-flash-free": [
+        "default",
+        "low",
+        "high",
+        "max"
+      ]
+    }
+  },
+  "effort_curves": {
+    "claude-opus-4-6": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "claude-sonnet-4-6": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "claude-haiku-4-5": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "basis": "Per-model effort curves, 2026-10-09. `ability` is the change in tier from High: the Artificial Analysis Intelligence Index change from High at each effort (independent; leaderboard of that date) times 0.1 tier per index point (for Opus that reproduces the policy-wide curve at medium, xhigh and max). `burn` is the burn multiplier: 0.7 (the policy-wide value for High) times Artificial Analysis cost per task relative to High, so it carries the longer runs higher efforts need. Efforts a model has no entry for fall back to the policy-wide `effort_ability` and `effort_burn`. Grok has no medium or max entry, Flash no low, xhigh or max. Fable and Dot use the policy-wide curve.",
+    "deepseek-v4.1-flash-free": {
+      "ability": {
+        "default": 0.0,
+        "low": -0.2,
+        "high": 0.0,
+        "max": 0.1
+      },
+      "burn": {
+        "default": 0.7,
+        "low": 0.35,
+        "high": 0.7,
+        "max": 1.4
+      }
+    },
+    "claude-opus-5-5": {
+      "ability": {
+        "low": -1.2,
+        "medium": -0.3,
+        "high": 0.0,
+        "xhigh": 0.2,
+        "max": 0.4
+      },
+      "burn": {
+        "low": 0.21,
+        "medium": 0.52,
+        "high": 0.7,
+        "xhigh": 1.33,
+        "max": 2.3
+      }
+    },
+    "claude-sonnet-5-5": {
+      "ability": {
+        "low": -1.1,
+        "medium": -0.6,
+        "high": 0.0,
+        "xhigh": 0.5,
+        "max": 0.9
+      },
+      "burn": {
+        "low": 0.28,
+        "medium": 0.38,
+        "high": 0.7,
+        "xhigh": 1.6,
+        "max": 4.34
+      }
+    },
+    "gpt-6-astra": {
+      "ability": {
+        "low": -0.5,
+        "medium": -0.1,
+        "high": 0.0,
+        "xhigh": 0.1,
+        "max": 0.2
+      },
+      "burn": {
+        "low": 0.33,
+        "medium": 0.62,
+        "high": 0.7,
+        "xhigh": 0.93,
+        "max": 1.32
+      }
+    },
+    "gpt-6.1-sol": {
+      "ability": {
+        "low": -0.8,
+        "medium": -0.2,
+        "high": 0.0,
+        "xhigh": 0.1,
+        "max": 0.2
+      },
+      "burn": {
+        "low": 0.28,
+        "medium": 0.46,
+        "high": 0.7,
+        "xhigh": 0.85,
+        "max": 1.58
+      }
+    },
+    "grok-4.7": {
+      "ability": {
+        "low": -0.4,
+        "high": 0.0,
+        "xhigh": 0.0
+      },
+      "burn": {
+        "low": 0.32,
+        "high": 0.7,
+        "xhigh": 0.96
+      }
+    },
+    "gemini-3.8-flash-high": {
+      "ability": {
+        "medium": -0.1,
+        "high": 0.0
+      },
+      "burn": {
+        "medium": 0.53,
+        "high": 0.7
+      }
+    },
+    "gemini-4-argon-high": {
+      "ability": {
+        "low": -0.3,
+        "medium": -0.1,
+        "high": 0.0
+      },
+      "burn": {
+        "low": 0.63,
+        "medium": 0.7,
+        "high": 0.7
+      },
+      "basis": "Bug Hunt Bench Antigravity CLI n=3 sweep (2026-10-14): low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16)."
+    },
+    "claude-haiku-5-5": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "gpt-6.1-terra": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "gpt-6-sol": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "gpt-6-luna": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "gpt-5.6-sol": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "gpt-5.6-terra": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "gpt-5.6-luna": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "grok-4.7-build-fast": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "deepseek-v4-pro": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "glm-5.3": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "glm-5.3-flash-free": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "qwen3-coder-next": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "qwen3.8-max": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "kimi-k3.1-pro": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "kimi-k3": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "minimax-m3": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "minimax-m3.1-flash": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "doubao-seed-2-1-pro-260628": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "mimo-v2.6-pro": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "mimo-v2.6-flash-free": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "nemotron-3-ultra-free": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "nemotron-3.5-super-vl-free": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "nemotron-3.5-lightning-free": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "mistral-large-4": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "muse-wonder-1.0": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "beam-free": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    },
+    "flint-40b-free": {
+      "ability": {
+        "default": 0.0,
+        "high": 0.0
+      },
+      "burn": {
+        "default": 0.7,
+        "high": 0.7
+      }
+    }
+  },
+  "accounts": {
+    "grok": {
+      "plan": "subscription",
+      "billing": "subscription",
+      "verified": false,
+      "expires_at": null,
+      "unmetered": true,
+      "windows": {},
+      "burn_pct_per_worker_hour": {},
+      "burn_basis": "No local usage window: unmetered without an unlimited bonus. Discovery restores reported windows; absent capacity uses a provisional 1%/worker-hour prior.",
+      "bundles": {
+        "grok47_high": {
+          "provider": "grok",
+          "harness": "grok",
+          "model": "grok-4.7",
+          "effort": "high"
+        }
+      }
+    },
+    "claude": {
+      "plan": "Max 20x",
+      "billing": "subscription",
+      "verified": true,
+      "expires_at": null,
+      "windows": {"five_hour": {"hours": 5}, "seven_day": {"hours": 168}, "weekly_fable": {"hours": 168, "models": ["fable"]}},
+      "capacity_usd": {"seven_day": 2380, "five_hour": 376, "weekly_fable": 1190},
+      "burn_pct_per_worker_hour": {"seven_day": 0.27, "weekly_fable": 0.27},
+      "burn_basis": "Max 20x ($200/mo): empirical 100% capacity seven_day=$2,380 (0.27%/h), five_hour=$376 (1.71%/h), weekly_fable=$1,190.",
+      "bundles": {
+        "fable51_high": {
+          "model": "claude-fable-5-1",
+          "effort": "high",
+          "disabled": "User 2026-10-09: Fable is not used until Fable 5.5 is released; planning goes to Pro"
+        },
+        "opus55_xhigh": {"model": "claude-opus-5-5", "effort": "xhigh"},
+        "opus55_high": {"model": "claude-opus-5-5", "effort": "high"},
+        "sonnet55_high": {"model": "claude-sonnet-5-5", "effort": "high"}
+      }
+    },
+    "claude-2": {
+      "plan": "Claude Pro (second account)",
+      "billing": "subscription",
+      "verified": true,
+      "expires_at": null,
+      "windows": {
+        "five_hour": {"hours": 5, "launch_min_remaining_pct": 25},
+        "seven_day": {"hours": 168},
+        "weekly_fable": {"hours": 168, "models": ["fable"]}
+      },
+      "capacity_usd": {"seven_day": 156, "five_hour": 18, "weekly_fable": 78},
+      "burn_pct_per_worker_hour": {"seven_day": 2.7, "five_hour": 24.0, "weekly_fable": 2.7},
+      "burn_basis": "Claude Pro ($20/mo): five_hour=$18 (25% launch floor, 12% post-step margin), empirical seven_day=$156 (2.7%/h). Sonnet-only worker; participates in normal weekly allocation while guarded against the 5h wall.",
+      "bundles": {
+        "fable51_high_2": {
+          "model": "claude-fable-5-1",
+          "effort": "high",
+          "disabled": "User 2026-10-09: Fable is not used until Fable 5.5 is released; planning goes to Pro"
+        },
+        "opus55_xhigh_2": {
+          "model": "claude-opus-5-5",
+          "effort": "xhigh",
+          "disabled": "User 2026-10-15: claude-2 is a Claude Pro account ($156/week) with very little quota; Opus is reserved for the primary Max 20x account"
+        },
+        "opus55_high_2": {
+          "model": "claude-opus-5-5",
+          "effort": "high",
+          "disabled": "User 2026-10-15: claude-2 is a Claude Pro account ($156/week) with very little quota; Opus is reserved for the primary Max 20x account"
+        },
+        "sonnet55_high_2": {"model": "claude-sonnet-5-5", "effort": "high"}
+      }
+    },
+    "codex": {
+      "plan": "ChatGPT Pro",
+      "billing": "subscription",
+      "verified": true,
+      "expires_at": null,
+      "windows": {"usage": {"hours": 168}},
+      "capacity_usd": {"usage": 650},
+      "capacity_change": {"usage": {"at": "2026-10-30T00:00:00Z", "usd": 650}},
+      "burn_pct_per_worker_hour": {"usage": 1.74},
+      "burn_basis": "ChatGPT Pro ($200/mo): empirical ~$650/wk API-equivalent (1.74%/h across recent weekly reset cycles). Sol $2.6/h, Astra $22.6/h.",
+      "bundles": {
+        "sol_max": {"model": "gpt-6.1-sol", "effort": "max"},
+        "sol_xhigh": {"model": "gpt-6.1-sol", "effort": "xhigh"},
+        "sol_high": {"model": "gpt-6.1-sol", "effort": "high"},
+        "sol_medium": {"model": "gpt-6.1-sol", "effort": "medium", "when": {"max_reasoning_depth": 1}},
+        "astra_high": {"model": "gpt-6-astra", "effort": "high"},
+        "astra_xhigh": {"model": "gpt-6-astra", "effort": "xhigh"},
+        "pi_sol_max": {"model": "gpt-6.1-sol", "effort": "max", "provider": "pi", "launch_model": "openai-codex/gpt-6.1-sol"},
+        "pi_sol_xhigh": {"model": "gpt-6.1-sol", "effort": "xhigh", "provider": "pi", "launch_model": "openai-codex/gpt-6.1-sol"},
+        "pi_sol_high": {"model": "gpt-6.1-sol", "effort": "high", "provider": "pi", "launch_model": "openai-codex/gpt-6.1-sol"},
+        "pi_sol_medium": {
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.1-sol",
+          "when": {"max_reasoning_depth": 1}
+        },
+        "pi_astra_high": {"model": "gpt-6-astra", "effort": "high", "provider": "pi", "launch_model": "openai-codex/gpt-6-astra"},
+        "pi_astra_xhigh": {"model": "gpt-6-astra", "effort": "xhigh", "provider": "pi", "launch_model": "openai-codex/gpt-6-astra"}
+      }
+    },
+    "codex-2": {
+      "plan": "ChatGPT Pro (second account)",
+      "billing": "subscription",
+      "verified": false,
+      "expires_at": null,
+      "windows": {"usage": {"hours": 168}},
+      "capacity_usd": {"usage": 650},
+      "burn_pct_per_worker_hour": {"usage": 1.74},
+      "burn_basis": "Assumed equal to codex. The collector's last observation is 2026-09-24, so launchability and capacity are unverified; excluded until `verified` is true.",
+      "bundles": {"sol_xhigh_2": {"model": "gpt-6.1-sol", "effort": "xhigh"}}
+    },
+    "antigravity": {
+      "plan": "Antigravity (Gemini + 3p pool)",
+      "billing": "subscription",
+      "verified": true,
+      "expires_at": null,
+      "windows": {
+        "gemini-5h": {"hours": 5, "models": ["gemini"]},
+        "gemini-weekly": {"hours": 168, "models": ["gemini"]},
+        "3p-5h": {"hours": 5, "models": ["3p"]},
+        "3p-weekly": {"hours": 168, "models": ["3p"]}
+      },
+      "burn_pct_per_worker_hour": {"gemini-weekly": 0.08, "gemini-5h": 0.27},
+      "capacity_usd": {"gemini-weekly": 625, "gemini-5h": 182, "3p-weekly": 88, "3p-5h": 17.6},
+      "capacity_basis": "API-equivalent pool at list price, calibrated to empirical Argon burn (Argon $4.0/h = 0.62%/h of gemini-weekly -> $625, 2.13%/h of gemini-5h -> $182; Flash $0.5/h = 0.08%/h weekly, 0.27%/h 5h).",
+      "burn_basis": "Empirical calibration (2026-10-27): Google AI Ultra gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly).",
+      "bundles": {
+        "flash_high": {"provider": "antigravity-resilient", "model": "gemini-3.8-flash-high", "effort": "high", "modeId": "full-access"},
+        "argon_high": {"provider": "antigravity-resilient", "model": "gemini-4-argon-high", "effort": "high", "modeId": "full-access"}
+      }
+    },
+    "dot": {
+      "plan": "Dot (own OpenAI agent through dot2api)",
+      "billing": "subscription",
+      "verified": true,
+      "expires_at": null,
+      "unmetered": true,
+      "unlimited": true,
+      "windows": {},
+      "burn_pct_per_worker_hour": {},
+      "burn_basis": "OpenAI Dot remote worker via dot2api (127.0.0.1:8319); zero local quota burn.",
+      "bundles": {"dot_text": {"model": "dot", "provider": "dot"}}
+    },
+    "chatgpt-web": {
+      "plan": "ChatGPT Pro web",
+      "billing": "subscription",
+      "verified": true,
+      "expires_at": null,
+      "unmetered": true,
+      "windows": {},
+      "burn_pct_per_worker_hour": {},
+      "burn_basis": "Placeholder prior (confidence: none): ChatGPT Pro web bridge advisor.",
+      "bundles": {"pro_max": {"model": "gpt-6-pro", "effort": "max", "provider": "chatgpt-web", "when": {"min_difficulty": "frontier"}}}
+    },
+    "opencode": {
+      "plan": "OpenCode Free",
+      "billing": "subscription",
+      "verified": true,
+      "expires_at": null,
+      "unmetered": true,
+      "unlimited": true,
+      "windows": {},
+      "burn_pct_per_worker_hour": {},
+      "burn_basis": "OpenCode free models via Paseo (`opencode/deepseek-v4.1-flash-free`); zero local subscription quota burn.",
+      "bundles": {
+        "deepseek_flash_high": {
+          "provider": "opencode",
+          "model": "deepseek-v4.1-flash-free",
+          "launch_model": "opencode/deepseek-v4.1-flash-free",
+          "effort": "high",
+          "modeId": "build"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "task": {
+    "objective": "Add a missing timeout option to a Python command-line tool, update its help text, and run the existing pytest suite.",
+    "context": "A bounded coding task in an existing checkout, estimated at 1.5 active worker-hours. The local test fixtures are needed to verify the change.",
+    "expected_hours": 1.5,
+    "needs": {
+      "local_only": true,
+      "local_only_reason": "Runs pytest against local repository fixtures on this machine."
+    }
+  }
+}

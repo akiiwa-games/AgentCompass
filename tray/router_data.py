@@ -1,0 +1,979 @@
+"""Data for the main panel: router decisions, quota, workers, policy and settings. No tkinter here.
+
+Everything reads the router's own modules and files (the allocator, route_judge, provider inventory, the
+ledger, the override store and accounts.json); nothing contacts a provider.
+"""
+from __future__ import annotations
+
+from i18n import translate as _tr, LocalizedSequence
+
+import codecs
+import json
+import os
+import shutil
+import sqlite3
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import plugins
+import radar_chart
+import router_priority
+import i18n
+
+STATE_DIR = Path.home() / ".route-manager"
+
+
+def get_ui_language() -> str:
+    return i18n.get_language()
+
+
+def save_ui_language(lang: str) -> str:
+    return i18n.set_language(lang)
+
+
+def strategy_preset_key(name: str) -> str:
+    """Accept either display language without changing the persisted Chinese preset keys."""
+    return next((key for key in STRATEGY_PRESETS if name in (key, i18n.english(key))), name)
+
+
+CARD_ACCOUNTS = ("claude", "claude-2", "codex", "codex-2", "antigravity", "opencode", "dot", "chatgpt-web")
+ACCOUNT_LABELS = {"claude": "Claude", "claude-2": "Claude 2", "codex": "Codex", "codex-2": "Codex 2",
+                  "antigravity": "Antigravity", "opencode": "OpenCode", "dot": "Dot", "chatgpt-web": "ChatGPT Web",
+                  "api-proxy": "API Proxy", "llmproxy": "LLM Proxy", "grok": "Grok"}
+
+
+def account_label(name: str | None) -> str:
+    if not name:
+        return "—"
+    return ACCOUNT_LABELS.get(name) or str(name).replace("-", " ").title()
+MODEL_LABELS = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-fable-5-1": "Fable 5.1",
+                "gpt-6-astra": "Astra 6", "gpt-6.1-sol": "Sol 6.1", "gpt-6-pro": "GPT 6 Pro",
+                "gemini-4-argon-high": "Argon 4", "gemini-3.8-flash-high": "Flash 3.8", "grok-4.7": "Grok 4.7",
+                "dot": "Dot", "deepseek-v4.1-flash-free": "DeepSeek Flash"}
+PRESETS = (
+    ("跨模块架构重构", "重构 route_manager 的插件架构与托盘菜单，跨多个模块保持一致，需要全局严密的设计", 4.0, False, False),
+    ("单模块缺陷修复", "修复 tray/services.py 里 ChatGPT Web 停止时的竞态 bug 并补单测", 1.0, True, False),
+    ("前端界面实现", "按设计稿实现 React 前端组件与样式，像素级还原", 2.0, False, True),
+    ("开放式方案调研", "调研并提出三种创新的多代理调度方案，比较优劣并给出建议", 2.0, False, False),
+    ("回测研究包", "运行因子回测，计算样本外夏普并整理研究报告", 3.0, False, False),
+)
+PRESETS = LocalizedSequence(PRESETS)
+TUNING_DEFAULTS = {"safety_margin_pct": 5, "short_window_floor_pct": 10, "reset_horizon_hours": 36,
+                   "reset_bonus_max": 0.2, "rotate_after_carried_tokens": 2000000,
+                   "subjective.weight": 0.49, "subjective.vector_weight": 0.34, "subjective.route_weight": 0.17}
+STRATEGY_PRESETS = {
+    "均衡默认": dict(TUNING_DEFAULTS),
+    "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "reset_horizon_hours": 24,
+               "reset_bonus_max": 0.1, "rotate_after_carried_tokens": 1500000,
+               "subjective.weight": 0.55, "subjective.vector_weight": 0.25, "subjective.route_weight": 0.2},
+    "消纳临期": {"safety_margin_pct": 3, "short_window_floor_pct": 8, "reset_horizon_hours": 72,
+                 "reset_bonus_max": 0.35, "rotate_after_carried_tokens": 2000000,
+                 "subjective.weight": 0.6, "subjective.vector_weight": 0.2, "subjective.route_weight": 0.2},
+    "能力优先": {"safety_margin_pct": 5, "short_window_floor_pct": 10, "reset_horizon_hours": 24,
+                 "reset_bonus_max": 0.15, "rotate_after_carried_tokens": 2000000,
+                 "subjective.weight": 0.75, "subjective.vector_weight": 0.2, "subjective.route_weight": 0.05},
+}
+TUNING_LIMITS = {"safety_margin_pct": (0, 50), "short_window_floor_pct": (0, 50), "reset_horizon_hours": (1, 168),
+                 "reset_bonus_max": (0, 1), "rotate_after_carried_tokens": (100000, 10000000),
+                 "subjective.weight": (0, 1), "subjective.vector_weight": (0, 1), "subjective.route_weight": (0, 1)}
+BOOST_RANGE = (0.10, 0.50)
+BOOST_HOURS = (3, 6, 24)
+PANEL_INTENT = "panel:boost"
+
+
+def modules():
+    """(allocator, route_judge) from the installed route-agent-work skill."""
+    return router_priority.modules()
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def model_label(model: str) -> str:
+    return MODEL_LABELS.get(model, model)
+
+
+# ---------- decisions ----------
+
+def recent_ledger(limit: int = 30, path: Path | None = None) -> list[dict]:
+    """The latest plan decisions, newest first."""
+    _, router = modules()
+    rows = router.read_ledger(path) if path else router.read_ledger()
+    plans = [r for r in rows if isinstance(r, dict) and r.get("stage") == "plan" and r.get("choice")]
+    return list(reversed(plans[-limit:]))
+
+
+def ledger_summary(row: dict) -> dict:
+    at = row.get("at") or ""
+    try:
+        local = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone().strftime("%m-%d %H:%M")
+    except ValueError:
+        local = at[:16]
+    objective = " ".join(str(row.get("objective") or row.get("task_id") or "").split())
+    if objective.startswith("#"):
+        objective = objective.lstrip("# ")
+    return {"at": local, "objective": objective[:48], "kind": row.get("kind") or "—", "choice": row.get("choice") or "—",
+            "margin": row.get("margin")}
+
+
+def build_task(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
+               work_kind: str | None = None, difficulty: str | None = None, profile: dict | None = None,
+               local_only_reason: str | None = None) -> dict:
+    allocator, _ = modules()
+    capabilities = allocator.load_capabilities()
+    needs = {"visual": bool(needs_visual), "local_only": bool(local_only)}
+    if local_only:
+        needs["local_only_reason"] = local_only_reason or _tr("主面板干跑：模拟需要本机资源的任务")
+    task = {"objective": objective or "", "expected_hours": float(hours), "needs": needs}
+    if work_kind:
+        task["work_kind"] = work_kind
+    if difficulty:
+        task["difficulty"] = difficulty
+    valid = None
+    if isinstance(profile, dict):
+        try:
+            valid = allocator.validate_profile(profile)
+        except ValueError:
+            valid = None
+    task["profile"] = valid or allocator.infer_task_profile(task, capabilities)
+    return task
+
+
+def plan_task(task: dict) -> dict:
+    """allocator.plan for a task, with the same Dot reachability rule as route_judge; never writes the ledger."""
+    allocator, router = modules()
+    now = now_utc()
+    usage = router.usage_snapshot(None, None, now)
+    records = router.read_ledger()
+    try:
+        import dispatch_flow
+
+        records = records + dispatch_flow.reservation_records(read_only=True)
+    except Exception:
+        pass
+    capabilities = allocator.load_capabilities()
+    policy = allocator.load_accounts()["scoring"]
+    kind = allocator.task_kind(task, capabilities, policy)
+    unavailable = []
+    if allocator.dot_may_take(kind, task.get("needs") or {}, capabilities) and router.dot_unreachable():
+        unavailable.append("dot_text")
+    return allocator.plan(task, usage, now, unavailable, records)
+
+
+def simulate(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
+             live_scorer: bool = False) -> dict:
+    """Plan a typed task. live_scorer profiles it with the configured System-One scorer (as route_judge plan does)
+    instead of the instant offline inference; the scorer metadata comes back under "scorer"."""
+    if not live_scorer:
+        return plan_task(build_task(objective, hours, local_only, needs_visual))
+    allocator, router = modules()
+    capabilities = allocator.load_capabilities()
+    policy = allocator.load_accounts()["scoring"]
+    task = build_task(objective, hours, local_only, needs_visual)
+    task.pop("profile", None)
+    profile, scorer = router.score_task(task, allocator, capabilities)
+    task["profile"] = profile
+    if scorer.get("source") == "system_one":
+        task["work_kind"] = allocator.profile_kind(profile, policy)
+        task["difficulty"] = allocator.profile_difficulty(profile, policy)
+    return {**plan_task(task), "scorer": scorer}
+
+
+def replay(row: dict) -> dict:
+    """Re-run a ledger decision from its recorded task parameters against current quota."""
+    task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
+                      bool((row.get("profile") or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
+                      row.get("profile"), row.get("local_only_reason"))
+    return plan_task(task)
+
+
+def candidate_rows(result: dict) -> list[dict]:
+    """Score breakdown for every candidate: eligible ones ranked first, then the hard-gate exclusions."""
+    rows = []
+    for c in result.get("ranking") or []:
+        comp = c.get("components") or {}
+        bundle = c.get("bundle") or {}
+        rows.append({
+            "id": c.get("id"), "model": bundle.get("model"), "account": bundle.get("account"),
+            "effort": bundle.get("effort"), "score": c.get("score"), "fit": comp.get("fit"),
+            "ability": comp.get("ability"), "opportunity_cost": comp.get("opportunity_cost"),
+            "bonus": round((comp.get("reset_bonus") or 0) + (comp.get("boost") or 0) + (comp.get("free_usage") or 0), 4),
+            "penalty": round((comp.get("overqualification") or 0) + (comp.get("effort_penalty") or 0), 4),
+            "excluded": list(c.get("excluded") or []), "components": comp})
+    return rows
+
+
+def decision_pair(result: dict, first: str | None = None, second: str | None = None) -> list[dict]:
+    """Winner and runner-up (best candidate of another model) unless two ids are picked."""
+    eligible = [r for r in candidate_rows(result) if not r["excluded"] and r["score"] is not None]
+    by_id = {r["id"]: r for r in eligible}
+    winner = by_id.get(first) or by_id.get(result.get("choice")) or (eligible[0] if eligible else None)
+    if winner is None:
+        return []
+    rival = by_id.get(second) if second and second != winner["id"] else None
+    if rival is None:
+        rival = next((r for r in eligible if r is not winner and r["model"] != winner["model"]), None)
+    return [r for r in (winner, rival) if r is not None]
+
+
+def decision_series(pair: list[dict]) -> tuple[list[dict], list[dict]]:
+    series = [{"label": f"{r['id']} · {r['score']:.3f}", "values": radar_chart.score_dimensions(r["components"])}
+              for r in pair]
+    raw = [radar_chart.score_raw(r["components"]) for r in pair]
+    return series, raw
+
+
+def model_table() -> dict:
+    allocator, _ = modules()
+    accounts = allocator.load_accounts(allocator.REFERENCES / "accounts.json")
+    models = allocator.models_table(accounts)
+    override = STATE_DIR / "accounts-override.json"
+    if override.is_file():
+        try:
+            doc = json.loads(override.read_text(encoding="utf-8-sig"))
+            for name, spec in (doc.get("models") or {}).items():
+                if isinstance(spec, dict) and name in models and isinstance(spec.get("subjective"), dict):
+                    models[name]["subjective"] = spec["subjective"]
+        except (OSError, ValueError):
+            pass
+    return models
+
+
+def dna_series(models: dict, first: str, second: str | None) -> tuple[list[dict], list[dict]]:
+    picked = [m for m in (first, second) if m and m in models]
+    series = [{"label": model_label(m), "values": radar_chart.dna_dimensions(models[m])} for m in picked]
+    raw = [radar_chart.dna_raw(models[m]) for m in picked]
+    return series, raw
+
+
+# ---------- quota and workers ----------
+
+def _read_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, policy) -> tuple[str, str]:
+    """(text, colour kind) of an account's status."""
+    allocator, _ = modules()
+    row = inventory_row or {}
+    if row.get("reason") == "plugin_disabled_in_route_manager":
+        return _tr("集成已关闭"), "idle"
+    if not allocator.host_policy.account_allowed(policy, name):
+        return _tr("本机策略禁用"), "idle"
+    status = row.get("status")
+    if status == "ready":
+        return _tr("就绪"), "ok"
+    if status is None:
+        return _tr("未发现"), "idle"
+    return _tr('已暂停：{0}').format(f"{row.get('reason') or status}"), "warn"
+
+
+def countdown(seconds) -> str:
+    if not isinstance(seconds, (int, float)):
+        return "—"
+    seconds = int(seconds)
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    if days:
+        return _tr('{0}天{1}小时').format(f'{days}', f'{hours}')
+    if hours:
+        return _tr('{0}小时{1}分').format(f'{hours}', f'{minutes:02d}')
+    return _tr('{0}分').format(f'{minutes}')
+
+
+def account_cards() -> list[dict]:
+    allocator, router = modules()
+    import provider_inventory
+
+    now = now_utc()
+    accounts = allocator.load_accounts()
+    inventory = accounts.get("_discovery") if isinstance(accounts.get("_discovery"), dict) else provider_inventory.current()
+    usage = router.usage_snapshot(None, None, now)
+    capacity = _read_json(STATE_DIR / "capacity.json")
+    observed = capacity.get("observed") or {}
+    try:
+        policy = allocator.host_policy.load_policy()
+    except Exception:
+        policy = None
+    config = plugins.load()
+    cards = []
+    inv_accounts = inventory.get("accounts") or {}
+    acc_table = accounts.get("accounts") or {}
+    ordered = list(dict.fromkeys([*CARD_ACCOUNTS, *inv_accounts.keys(), *acc_table.keys()]))
+    names = [
+        n for n in ordered
+        if n in acc_table and not (
+            (inv_accounts.get(n) or {}).get("quota_account") not in (None, n)
+            and not (acc_table.get(n) or {}).get("bundles")
+        )
+    ]
+    for name in names:
+        spec = acc_table.get(name) or {}
+        row = inv_accounts.get(name)
+        text, kind = account_badge(name, row, config, policy)
+        usage_row = (usage.get("accounts") or {}).get(name) or {}
+        windows = []
+        for window in usage_row.get("windows") or []:
+            wid = window.get("id")
+            c_wid = allocator.canonical_window_id(spec, wid)
+            hours = ((spec.get("windows") or {}).get(c_wid) or {}).get("hours")
+            reset_passed = window.get("reset_time_passed") is True
+            remaining = window.get("remaining_pct_before_reset")
+            if reset_passed:
+                # The reading predates the reset: the window refilled, pending a new reading.
+                remaining = 100.0
+            elif remaining is None:
+                remaining = window.get("observed_remaining_pct")
+            cap = allocator.window_capacity_usd(spec, c_wid, now) if spec else None
+            acct_obs = observed.get(name) or {}
+            rates = acct_obs.get(wid) or acct_obs.get(c_wid) or {}
+            windows.append({
+                "id": wid, "hours": hours, "remaining_pct": remaining,
+                "remaining_usd": round(cap * remaining / 100, 1) if cap and remaining is not None else None,
+                "rate_3h": rates.get("pct_per_hour_3h"), "rate_24h": rates.get("pct_per_hour_24h"),
+                "reset_in": _tr("已重置") if reset_passed else countdown(window.get("seconds_until_reset")),
+                "stale": reset_passed or usage_row.get("status") != "fresh"})
+        bundle_pills = []
+        for bid, bspec in (spec.get("bundles") or {}).items():
+            b_prov = bspec.get("provider")
+            if b_prov == "pi" and name != "pi":
+                continue
+            if b_prov and b_prov not in (name, "antigravity-resilient") and bspec.get("discovery_unavailable"):
+                continue
+            m_label = model_label(bspec.get("model") or bid)
+            eff = bspec.get("effort")
+            b_label = f"{m_label}·{eff}" if eff and eff not in ("high", "default") else m_label
+            bundle_pills.append({"id": bid, "label": b_label, "enabled": not bool(bspec.get("disabled"))})
+        cards.append({"account": name, "label": account_label(name), "badge": text, "kind": kind,
+                      "plan": (row or {}).get("plan") or spec.get("plan"), "usage_status": usage_row.get("status"),
+                      "windows": windows, "bundles": bundle_pills,
+                      "host_enabled": bool(allocator.host_policy.account_allowed(policy, name) and spec.get("verified", True)),
+                      "priority_targets": [t for t in router_priority.TOP_MODELS if t[0] == name]})
+    return cards
+
+
+USAGE_ACCOUNTS = ("claude", "claude-2", "codex", "codex-2", "antigravity")
+
+
+def _is_usage_account(name: str) -> bool:
+    return (
+        name in USAGE_ACCOUNTS
+        or name in ("grok", "llmproxy", "api-proxy")
+        or name.startswith("claude-")
+        or name.startswith("codex-")
+    )
+
+
+def collect_usage_now(providers: list[str]) -> None:
+    import sys
+    uf_root = str(plugins.plugin_root("usage-float"))
+    if uf_root not in sys.path:
+        sys.path.insert(0, uf_root)
+    import usage_float
+    usage_float.fetch_all(providers, force=True)
+
+
+def refresh_usage(accounts: list[str] | None = None, timeout: float = 130) -> str:
+    """Ask Usage Float to re-read these accounts directly and update ~/.usage-float/usage-cache.json."""
+    if accounts is None:
+        accounts = [c["account"] for c in account_cards() if _is_usage_account(c["account"])] or list(USAGE_ACCOUNTS)
+    providers = [a for a in accounts if _is_usage_account(a)]
+    if not providers:
+        return _tr("该账号没有可刷新的额度来源")
+    try:
+        collect_usage_now(providers)
+    except Exception as exc:
+        return _tr('刷新额度失败：{0}').format(f'{exc}')
+    names = "、".join(account_label(a) for a in providers)
+    return _tr('已刷新额度：{0}').format(f'{names}')
+
+
+LIVE_DISPATCH = ("prepared", "launching", "launched", "started")
+RECENT_WORKER_SECONDS = 6 * 3600
+AGENT_SCAN_SECONDS = 3 * 86400
+_WORKER_SESSION_CACHE: dict[str, tuple[tuple, float, dict]] = {}
+
+
+def _dispatch_rows(path: Path) -> list[dict]:
+    if not path.is_file():
+        return []
+    connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        return [json.loads(data) for (data,) in connection.execute("SELECT data FROM dispatches")]
+    except (sqlite3.Error, ValueError):
+        return []
+    finally:
+        connection.close()
+
+
+def _paseo_agents(agents_dir: Path) -> list[dict]:
+    """Unarchived Paseo agent records touched in the last three days (older files are skipped by mtime)."""
+    cutoff = time.time() - AGENT_SCAN_SECONDS
+    docs = []
+    try:
+        files = list(agents_dir.glob("*/*.json"))
+    except OSError:
+        return []
+    for path in files:
+        try:
+            if path.stat().st_mtime < cutoff:
+                continue
+        except OSError:
+            continue
+        doc = _read_json(path)
+        if doc.get("id") and not doc.get("archivedAt"):
+            docs.append(doc)
+    return docs
+
+
+def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict]:
+    """Live workers with their historical (uncompressed) context against the 2M rotation limit.
+
+    A dispatch row stays 'completed' after its first turn even when the worker is resumed, so the live Paseo agent
+    records are read too: running / initializing agents, and dispatched workers active in the last six hours."""
+    allocator, _ = modules()
+    rows = _dispatch_rows(db or STATE_DIR / "dispatch.sqlite3")
+    accounts = allocator.load_accounts()
+    limit = accounts["scoring"].get("rotate_after_carried_tokens", 2000000)
+    now = now_utc()
+    by_agent = {row["agent_id"]: row for row in rows if row.get("agent_id")}
+    live = {}
+    for row in rows:
+        if row.get("state") not in LIVE_DISPATCH:
+            continue
+        hard = allocator.parse_time(row.get("hard_until"))
+        if hard is not None and hard <= now:
+            continue
+        live[row.get("agent_id") or row.get("dispatch_id") or id(row)] = (row, {})
+    if db is None or paseo_home is not None:
+        home = paseo_home or Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo")
+        for doc in _paseo_agents(home / "agents"):
+            agent, status = doc["id"], doc.get("lastStatus")
+            dispatched = (doc.get("labels") or {}).get("router.dispatch_id") or agent in by_agent
+            seen = allocator.parse_time(doc.get("lastActivityAt") or doc.get("updatedAt"))
+            recent = seen is not None and (now - seen).total_seconds() <= RECENT_WORKER_SECONDS
+            if status in ("running", "initializing") or (dispatched and recent and status != "closed"):
+                live[agent] = (live.get(agent, (by_agent.get(agent) or {}, None))[0], doc)
+    result = []
+    for key, (row, doc) in live.items():
+        agent = row.get("agent_id") or doc.get("id")
+        status, dispatch_state = doc.get("lastStatus"), row.get("state")
+        if status == "running" or dispatch_state == "started":
+            state_text = _tr("运行中")
+        elif status == "initializing" or dispatch_state in ("prepared", "launching", "launched"):
+            state_text = _tr("启动中")
+        else:
+            state_text = _tr("近期待命")
+        labels = doc.get("labels") or {}
+        bundle = row.get("bundle") or {}
+        model = bundle.get("model") or (doc.get("config") or {}).get("model") or (doc.get("runtimeInfo") or {}).get("model")
+        owner = labels.get("router.account") or bundle.get("account") or doc.get("provider") or ""
+        bundle_text = (labels.get("router.bundle_id") or bundle.get("bundle_id") or bundle.get("id")
+                       or f"{ACCOUNT_LABELS.get(owner, owner)} · {model_label(model or '—')}")
+        title = (doc.get("title") or (row.get("request") or {}).get("title") or row.get("task_id") or "")[:60]
+        if not agent:
+            session = {}
+        elif db is None and paseo_home is None:
+            stamp = (doc.get("updatedAt"), doc.get("lastActivityAt"), status, dispatch_state)
+            cached = _WORKER_SESSION_CACHE.get(agent)
+            mono_now = time.monotonic()
+            ttl = 2.0 if status in ("running", "initializing") or dispatch_state in LIVE_DISPATCH else 120.0
+            if cached and cached[0] == stamp and mono_now - cached[1] < ttl:
+                session = dict(cached[2])
+            else:
+                session = allocator.session_state(agent)
+                _WORKER_SESSION_CACHE[agent] = (stamp, mono_now, dict(session))
+        else:
+            session = allocator.session_state(agent)
+        result.append({"agent_id": agent, "title": title, "bundle": bundle_text, "model": model, "state": state_text,
+                       "started": doc.get("lastActivityAt") or doc.get("updatedAt") or row.get("started_at"),
+                       "compacted_tokens": session.get("compacted_tokens"),
+                       "context_tokens": session.get("context_tokens"),
+                       "historical_tokens": allocator.worker_historical_tokens(session), "limit": limit,
+                       "telemetry": session.get("telemetry_status") or ("ok" if session else "unknown")})
+    result.sort(key=lambda r: r["started"] or "", reverse=True)
+    result.sort(key=lambda r: r["state"] == _tr("近期待命"))
+    return result
+
+
+# ---------- policy ----------
+
+def overrides(now: datetime | None = None) -> list[dict]:
+    allocator, _ = modules()
+    now = now or now_utc()
+    document = router_priority.read_document(allocator.overrides_path())
+    rows = []
+    for row in document["overrides"]:
+        if not router_priority.active(row, now, allocator):
+            continue
+        rows.append({"id": row["id"], "revision": router_priority.revision(row), "account": row.get("account"),
+                     "model": row.get("model"), "boost": row.get("boost"), "until": router_priority.stamp(row.get("until"), allocator),
+                     "stop_on_reset": bool(row.get("stop_on_reset")), "intent": row.get("intent") or "",
+                     "label": f"{ACCOUNT_LABELS.get(row.get('account'), row.get('account'))}"
+                              + (f" / {model_label(row['model'])}" if row.get("model") else "")})
+    return rows
+
+
+def boost_targets() -> list[tuple[str, str]]:
+    """(account, model) pairs with an enabled bundle."""
+    allocator, _ = modules()
+    accounts = allocator.load_accounts()
+    seen = []
+    for bundle in allocator.bundles(accounts).values():
+        pair = (bundle["account"], bundle["model"])
+        if not bundle.get("disabled") and pair not in seen:
+            seen.append(pair)
+    return seen
+
+
+def add_boost(account: str, model: str | None, boost: float, hours: int, stop_on_reset: bool,
+              now: datetime | None = None) -> str:
+    """A temporary priority rule in router-overrides.json; never stacks on an existing one for the same model."""
+    if not BOOST_RANGE[0] - 1e-9 <= boost <= BOOST_RANGE[1] + 1e-9:
+        raise ValueError(_tr('加成需在 +{0} ~ +{1} 之间').format(f'{BOOST_RANGE[0]:.2f}', f'{BOOST_RANGE[1]:.2f}'))
+    if hours not in BOOST_HOURS:
+        raise ValueError(_tr("有效时长只能是 3h / 6h / 24h"))
+    allocator, router = modules()
+    now = now or now_utc()
+    accounts = allocator.load_accounts()
+    if account not in accounts["accounts"]:
+        raise ValueError(_tr("未知账号"))
+    model = allocator.canonical(model, accounts) if model else None
+    path = allocator.overrides_path()
+    with allocator.override_store.locked(path):
+        document = router_priority.read_document(path)
+        if any(router_priority.overlaps(r, account, model, now, allocator, accounts) for r in document["overrides"]
+               if model) or any(router_priority.active(r, now, allocator) and r.get("account") == account
+                                and not r.get("model") for r in document["overrides"]):
+            return _tr("该账号/模型已有临时规则；未叠加权重")
+        row = {"id": uuid.uuid4().hex, "intent": PANEL_INTENT, "account": account, "boost": round(float(boost), 2),
+               "created_at": now.isoformat(), "until": (now + timedelta(hours=hours)).isoformat(),
+               "basis": _tr('用户在主面板添加临时优先 {0}/{1} +{2}，{3} 小时').format(f'{account}', f"{model or _tr('全部模型')}", f'{boost:.2f}', f'{hours}')}
+        if model:
+            row["model"] = model
+        if stop_on_reset:
+            windows = [(wid, spec) for wid, spec, _ in allocator.applicable_windows(accounts["accounts"][account], model, {})
+                       if spec.get("hours", 0) >= 24]
+            if not windows:
+                raise ValueError(_tr("该账号没有可确认重置的周额度窗口；请取消“重置后自动撤销”"))
+            wid = max(windows, key=lambda w: w[1]["hours"])[0]
+            usage = router.usage_snapshot(now=now)
+            base = router_priority.baseline(allocator, accounts, usage, {"account": account, "window": wid}, now)
+            row.update(window=wid, stop_on_reset=True, reset_confirmation="replenishment", baseline_windows={wid: base})
+        document["overrides"].append(row)
+        router_priority.save(allocator, path, {**document, "v": 1})
+    return _tr('已添加 {0}{1} +{2} 临时优先，{3} 小时后失效').format(f'{ACCOUNT_LABELS.get(account, account)}', f"{(' / ' + model_label(model) if model else '')}", f'{boost:.2f}', f'{hours}')
+
+
+def host_policy_state() -> dict:
+    """{'path', 'explicit', 'allowed': set or None (all), 'accounts': [names], 'error'}."""
+    allocator, _ = modules()
+    path, explicit = allocator.host_policy.policy_path()
+    accounts = allocator.load_accounts()
+    names = list(accounts["accounts"])
+    try:
+        policy = allocator.host_policy.load_policy()
+        error = None
+    except Exception as exc:
+        policy, error = None, str(exc)
+    return {"path": path, "explicit": explicit, "allowed": None if policy is None else set(policy["allowed_accounts"]),
+            "policy": policy, "accounts": names, "error": error}
+
+
+def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | None = None,
+                     existing: dict | None = None) -> str:
+    """Write allowed_accounts atomically; every account allowed and nothing else set means no file (the default)."""
+    allocator, _ = modules()
+    target = path or allocator.host_policy.policy_path()[0]
+    extra = {k: v for k, v in (existing or {}).items() if k in ("judges", "usage_providers")}
+    if set(allowed) >= set(all_accounts) and not extra:
+        if target.exists():
+            _backup(target, "host-policy")
+            target.unlink()
+        return _tr("已恢复默认：本机允许全部账号")
+    if not allowed:
+        raise ValueError(_tr("至少保留一个账号"))
+    _backup(target, "host-policy")
+    _atomic_json(target, {"allowed_accounts": [a for a in all_accounts if a in allowed], **extra})
+    return _tr('已保存本机准入：{0} 个账号').format(f'{len(allowed)}')
+
+
+def _accounts_path() -> Path:
+    allocator, _ = modules()
+    return allocator.REFERENCES / "accounts.json"
+
+
+def _user_accounts_path(create: bool = False) -> Path:
+    user_file = STATE_DIR / "accounts-override.json"
+    if user_file.is_file():
+        return user_file
+    if create:
+        user_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_accounts_path(), user_file)
+        return user_file
+    return _accounts_path()
+
+
+def _get(scoring: dict, key: str):
+    if key.startswith("subjective."):
+        return ((scoring.get("profile") or {}).get("subjective") or {}).get(key.split(".", 1)[1])
+    return scoring.get(key)
+
+
+def read_tuning(path: Path | None = None) -> dict:
+    document = json.loads((path or _user_accounts_path(create=False)).read_text(encoding="utf-8-sig"))
+    scoring = document.get("scoring") or {}
+    return {key: _get(scoring, key) for key in TUNING_DEFAULTS}
+
+
+def validate_tuning(values: dict) -> dict:
+    clean = {}
+    for key, value in values.items():
+        if key not in TUNING_DEFAULTS:
+            raise ValueError(_tr('未知参数 {0}').format(f'{key}'))
+        low, high = TUNING_LIMITS[key]
+        number = float(value)
+        if not low <= number <= high:
+            raise ValueError(_tr('{0} 需在 {1} ~ {2} 之间').format(f'{key}', f'{low}', f'{high}'))
+        clean[key] = int(number) if isinstance(TUNING_DEFAULTS[key], int) else round(number, 4)
+    weights = [clean.get(k, TUNING_DEFAULTS[k]) for k in ("subjective.weight", "subjective.vector_weight",
+                                                          "subjective.route_weight")]
+    if abs(sum(weights) - 1.0) > 0.011:
+        raise ValueError(_tr("主观 / 能力 / 路由三项合成权重之和需为 1.0"))
+    return clean
+
+
+def _object_span(text: str, key: str, start: int = 0, end: int | None = None) -> tuple[int, int]:
+    """(open brace, close brace + 1) of the object value of the first "key": { ... } between start and end."""
+    end = len(text) if end is None else end
+    at = text.find(f'"{key}": {{', start, end)
+    if at < 0:
+        raise ValueError(_tr('accounts.json 中未找到 {0}').format(f'{key}'))
+    opening = text.index("{", at)
+    depth, index, quoted = 0, opening, False
+    while index < end:
+        char = text[index]
+        if quoted:
+            if char == "\\":
+                index += 1
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return opening, index + 1
+        index += 1
+    raise ValueError(_tr('accounts.json 中 {0} 不完整').format(f'{key}'))
+
+
+def _replace_number(text: str, key: str, value, start: int, end: int) -> str:
+    """Replace the number of "key": <number> at the object's own level (depth 1) within [start, end)."""
+    import re
+
+    pattern = re.compile(r'"%s":\s*-?[0-9.eE+-]+' % re.escape(key))
+    depth = 0
+    for match in pattern.finditer(text, start, end):
+        depth = text.count("{", start, match.start()) - text.count("}", start, match.start())
+        if depth == 1:
+            literal = json.dumps(value)
+            return text[:match.start()] + f'"{key}": {literal}' + text[match.end():]
+    raise ValueError(_tr('accounts.json 中未找到 {0}').format(f'{key}'))
+
+
+def save_tuning(values: dict | str, path: Path | None = None) -> str:
+    """Change only the named scoring thresholds in accounts-override.json (or path), in place, after a backup."""
+    if isinstance(values, str):
+        values = STRATEGY_PRESETS[strategy_preset_key(values)]
+    target = path or _user_accounts_path(create=True)
+    clean = validate_tuning(values)
+    raw = target.read_bytes()
+    bom = raw.startswith(codecs.BOM_UTF8)
+    text = raw.decode("utf-8-sig")  # bytes, not text mode: keep the file's own line endings
+    expected = json.loads(text)
+    scoring = expected["scoring"]
+    changed = [key for key, value in clean.items() if _get(scoring, key) != value]
+    if not changed:
+        return _tr("参数未变化")
+    for key in changed:
+        start, end = _object_span(text, "scoring")
+        if key.startswith("subjective."):
+            start, end = _object_span(text, "profile", start, end)
+            start, end = _object_span(text, "subjective", start, end)
+            name = key.split(".", 1)[1]
+            scoring["profile"]["subjective"][name] = clean[key]
+        else:
+            name = key
+            scoring[key] = clean[key]
+        text = _replace_number(text, name, clean[key], start, end)
+    if json.loads(text) != expected:
+        raise ValueError(_tr("accounts.json 定位修改后内容不符，未保存"))
+    _backup(target, "accounts-json")
+    temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    temporary.write_bytes((codecs.BOM_UTF8 if bom else b"") + text.encode("utf-8"))
+    temporary.replace(target)
+    return _tr('已保存 {0} 项路由参数（已备份原文件）').format(f'{len(changed)}')
+
+
+def restore_tuning(path: Path | None = None) -> str:
+    if path is None:
+        user_file = STATE_DIR / "accounts-override.json"
+        if user_file.is_file():
+            _backup(user_file, "accounts-json")
+            user_file.unlink()
+            return _tr("已恢复默认路由参数（已移除本地覆盖文件）")
+        return _tr("参数未变化")
+    return save_tuning(dict(TUNING_DEFAULTS), path)
+
+
+def _backup(path: Path, tag: str) -> Path | None:
+    if not path.exists():
+        return None
+    folder = STATE_DIR / "backups"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{tag}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}{path.suffix}"
+    shutil.copy2(path, target)
+    return target
+
+
+def _atomic_json(path: Path, value: dict, indent: int | None = 2) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=indent) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def normalize_weights(changed_key: str, new_val: float, current: dict[str, float]) -> dict[str, float]:
+    """Keep subjective.weight + subjective.vector_weight + subjective.route_weight == 1.00 automatically."""
+    keys = ("subjective.weight", "subjective.vector_weight", "subjective.route_weight")
+    val = max(0.0, min(1.0, round(float(new_val), 2)))
+    others = [k for k in keys if k != changed_key]
+    rem = round(1.0 - val, 2)
+    other_sum = sum(max(0.0, float(current.get(k, TUNING_DEFAULTS[k]))) for k in others)
+    result = {changed_key: val}
+    if other_sum <= 1e-6:
+        first = round(rem / 2, 2)
+        result[others[0]] = first
+        result[others[1]] = round(rem - first, 2)
+    else:
+        first = round(rem * float(current.get(others[0], TUNING_DEFAULTS[others[0]])) / other_sum, 2)
+        result[others[0]] = first
+        result[others[1]] = round(rem - first, 2)
+    return result
+
+
+def save_model_subjective(model: str, divergence: float, global_rigor: float, module_precision: float,
+                          path: Path | None = None) -> str:
+    """Save subjective DNA ratings for a model in accounts-override.json."""
+    target = path or _user_accounts_path(create=True)
+    doc = json.loads(target.read_text(encoding="utf-8-sig"))
+    models = doc.get("models") or {}
+    if model not in models or not isinstance(models[model], dict):
+        raise ValueError(_tr('未知模型 {0}').format(f'{model}'))
+    models[model]["subjective"] = {
+        "divergence": round(max(0.0, min(1.0, float(divergence))), 2),
+        "global_rigor": round(max(0.0, min(1.0, float(global_rigor))), 2),
+        "module_precision": round(max(0.0, min(1.0, float(module_precision))), 2),
+    }
+    _backup(target, "accounts-json")
+    _atomic_json(target, doc)
+    return _tr('已保存 {0} 主观基因评分').format(f'{model_label(model)}')
+
+
+def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str:
+    """Toggle a model bundle's disabled state (and sync any paired pi_ bundle) in accounts-override.json."""
+    target = path or _user_accounts_path(create=True)
+    doc = json.loads(target.read_text(encoding="utf-8-sig"))
+    bundles = ((doc.get("accounts") or {}).get(account) or {}).get("bundles") or {}
+    if bundle_id not in bundles:
+        allocator, _ = modules()
+        live_acc = (allocator.load_accounts().get("accounts") or {}).get(account) or {}
+        live_bundles = live_acc.get("bundles") or {}
+        if bundle_id not in live_bundles:
+            raise ValueError(_tr('未知档位 {0}').format(f'{bundle_id}'))
+        acc_entry = doc.setdefault("accounts", {}).setdefault(account, {})
+        bundles = acc_entry.setdefault("bundles", {})
+        for bid, bspec in live_bundles.items():
+            if bid not in bundles and isinstance(bspec, dict):
+                bundles[bid] = dict(bspec)
+    enable_now = bool(bundles[bundle_id].get("disabled"))
+    for bid in (bundle_id, f"pi_{bundle_id}"):
+        if bid in bundles:
+            if enable_now:
+                bundles[bid].pop("disabled", None)
+            else:
+                bundles[bid]["disabled"] = _tr("用户在控制台停用该档位")
+    _backup(target, "accounts-json")
+    _atomic_json(target, doc)
+    return _tr('{0} · {1} 已{2}').format(f'{account_label(account)}', f'{bundle_id}', f"{(_tr('启用') if enable_now else _tr('停用'))}")
+
+
+def toggle_account_host(account: str) -> str:
+    """Toggle an account's availability on this host (and mark verified=True in accounts-override.json when enabling)."""
+    state = host_policy_state()
+    all_accounts = state["accounts"]
+    allowed = set(all_accounts if state["allowed"] is None else state["allowed"])
+    target_acc = _user_accounts_path(create=False)
+    doc = json.loads(target_acc.read_text(encoding="utf-8-sig"))
+    verified = ((doc.get("accounts") or {}).get(account) or {}).get("verified", True)
+    currently_on = account in allowed and bool(verified)
+    if currently_on:
+        allowed.discard(account)
+        return save_host_policy(sorted(allowed), all_accounts, state["path"], state["policy"])
+    allowed.add(account)
+    if not verified:
+        override = _user_accounts_path(create=True)
+        odoc = json.loads(override.read_text(encoding="utf-8-sig"))
+        if account in (odoc.get("accounts") or {}):
+            odoc["accounts"][account]["verified"] = True
+            _backup(override, "accounts-json")
+            _atomic_json(override, odoc)
+    return save_host_policy(sorted(allowed), all_accounts, state["path"], state["policy"])
+
+
+# ---------- System-One scorer ----------
+
+# (type id, display label, needs an API key, takes base_url/model, hint); ids match route_judge.SCORER_TYPES.
+SCORER_TYPES = (
+    ("agy_flash_low", "Antigravity · Gemini 3.8 Flash Low（默认）", False, False, "本机 agy CLI，无需 Key"),
+    ("jev", "TypeSafe · Jev (System One API)", True, True, "TypeSafe API Key；也可设环境变量 TYPESAFE_API_KEY / JEV_API_KEY"),
+    ("claude_haiku_low", "Claude · Haiku 5.5 Low", False, False, "本机 claude CLI 订阅，无需 Key"),
+    ("codex_terra_low", "Codex · GPT-6.1 Terra Low", False, False, "本机 codex CLI 订阅，无需 Key"),
+    ("openai_compatible", "自定义 OpenAI 兼容接口", True, True, "填写接口地址、模型名与 API Key（/v1/chat/completions）"),
+    ("heuristic", "离线规则直判（无模型调用）", False, False, "不调用任何模型，按规则直接推断"),
+)
+SCORER_TYPES = LocalizedSequence(SCORER_TYPES)
+SCORER_LABELS = {row[0]: row[1] for row in SCORER_TYPES.rows}
+SCORER_SHORT = {"agy_flash_low": "Gemini Flash", "jev": "Jev", "claude_haiku_low": "Haiku",
+                "codex_terra_low": "Terra", "openai_compatible": "自定义接口", "heuristic": "规则直判"}
+SCORER_API_DEFAULTS = {"jev": ("https://api.typesafe.ai", "jev-latest"), "openai_compatible": ("", "")}
+
+
+def _scorer_file_key(router, scorer_type: str, path: Path | None) -> str:
+    """The key stored in the file for this API scorer (never shown; only compared with its masked placeholder)."""
+    fields = router.SCORER_API_FIELDS.get(scorer_type)
+    if not fields:
+        return ""
+    raw = router._read_scorer_file(path or router.scorer_config_path())
+    value = raw.get(fields[0])
+    return value.strip() if isinstance(value, str) else ""
+
+
+def read_scorer_config(path: Path | None = None) -> dict:
+    """The saved scorer choice for the settings card. Keys are masked; key_source says file / env:<NAME> / None."""
+    _, router = modules()
+    config = router.load_scorer_config(path)
+    view = router.scorer_status(config, path)
+    fields = {}
+    for scorer_type in ("jev", "openai_compatible"):
+        entry = view[scorer_type]
+        source = entry["key_source"]
+        stored = _scorer_file_key(router, scorer_type, path)
+        hint = (_tr('已保存 Key（{0}）').format(f"{entry['api_key']}") if source == "file"
+                else _tr('使用环境变量 {0}').format(f'{source[4:]}') if source else _tr("尚未配置 API Key"))
+        fields[scorer_type] = {"api_key_masked": router.mask_secret(stored), "key_source": source, "key_hint": hint,
+                               "env_key": bool(source and source.startswith("env:")),
+                               "base_url": entry["base_url"], "model": entry["model"]}
+    return {"scorer_type": config["scorer_type"], "label": _tr(SCORER_LABELS.get(config["scorer_type"], config["scorer_type"])),
+            "fallback_to_agy": config.get("fallback_to_agy", True), "path": view["config_path"],
+            "type_from_env": view.get("type_from_env"), "config_error": view.get("config_error"), "fields": fields}
+
+
+def _key_update(router, scorer_type: str, api_key: str | None, path: Path | None) -> str | None:
+    """None keeps the stored key (field untouched or still showing its masked placeholder), '' clears, else the new key."""
+    if api_key is None:
+        return None
+    clean = api_key.strip()
+    stored = _scorer_file_key(router, scorer_type, path)
+    if stored and clean == router.mask_secret(stored):
+        return None
+    return clean
+
+
+def save_scorer_config(scorer_type: str, api_key: str | None = None, base_url: str = "", model: str = "",
+                       path: Path | None = None) -> str:
+    """Validate and atomically write ~/.route-manager/scorer-config.json. api_key: None or the masked placeholder keeps
+    the saved key, '' clears it. Empty base_url/model fall back to the scorer's defaults (Jev) or are required (custom)."""
+    _, router = modules()
+    if scorer_type not in SCORER_LABELS:
+        raise ValueError(_tr('未知小模型类型 {0}').format(f'{scorer_type}'))
+    if scorer_type in SCORER_API_DEFAULTS:
+        default_url, default_model = SCORER_API_DEFAULTS[scorer_type]
+        url, name = (base_url or "").strip(), (model or "").strip()
+        if scorer_type == "openai_compatible" and not (url and name):
+            raise ValueError(_tr("自定义接口需要填写接口地址和模型名"))
+        router.save_scorer_config(scorer_type, _key_update(router, scorer_type, api_key, path),
+                                  "" if url == default_url else url, "" if name == default_model else name, path=path)
+    else:
+        router.save_scorer_config(scorer_type, path=path)
+    return _tr('已保存路由分类小模型：{0}').format(_tr(SCORER_LABELS[scorer_type]))
+
+
+def test_scorer_config(scorer_type: str | None = None, api_key: str | None = None, base_url: str | None = None,
+                       model: str | None = None, objective: str | None = None) -> str:
+    """Score one sample task with the saved config, overlaid with any unsaved form values; no agy fallback, so a
+    failure names the chosen scorer's own problem."""
+    _, router = modules()
+    config = router.load_scorer_config()
+    chosen = scorer_type or config["scorer_type"]
+    if chosen not in SCORER_LABELS:
+        raise ValueError(_tr('未知小模型类型 {0}').format(f'{chosen}'))
+    config = {**config, "scorer_type": chosen, "fallback_to_agy": False}
+    fields = router.SCORER_API_FIELDS.get(chosen)
+    if fields:
+        key = _key_update(router, chosen, api_key, None)
+        if key is not None:
+            config[fields[0]] = key
+            if chosen == "jev":
+                config.pop("api_key", None)
+        for field, value in ((fields[1], base_url), (fields[2], model)):
+            if value is not None and value.strip():
+                config[field] = value.strip()
+    result = router.scorer_test(config, objective)
+    label, meta, profile = _tr(SCORER_SHORT.get(chosen, chosen)), result["scorer"], result["task_profile"]
+    if result["ok"]:
+        dims = f"D{profile['reasoning_depth']} C{profile['code_complexity']} S{profile['context_scale']}"
+        return _tr('测试成功（{0} · {1}ms）：{2} · {3}').format(f'{label}', f"{result['latency_ms']}", f"{result['derived_kind']}", f'{dims}')
+    why = meta.get("fallback_detail") or meta.get("fallback_reason") or _tr("未知原因")
+    return _tr('测试失败（{0} · {1}ms）：{2}；路由时将回退').format(f'{label}', f"{result['latency_ms']}", f'{why}')
+
+
+# ---------- plugins ----------
+
+def dot_details() -> dict:
+    connect = _read_json(Path.home() / ".dot2api" / "connect.json")
+    dot_cfg = _read_json(STATE_DIR / "dot-plugin.json")
+    return {"tunnel_url": connect.get("public_base_url") or "", "transfer_repo": dot_cfg.get("transfer_repo") or ""}
+
+
+def save_dot_repo(repo: str) -> str:
+    clean = repo.strip()
+    path = STATE_DIR / "dot-plugin.json"
+    data = _read_json(path)
+    data["transfer_repo"] = clean
+    _atomic_json(path, data)
+    return _tr('已保存 Dot 中转库：{0}').format(f"{clean or _tr('（已清空）')}")
+
+
+def subscription_text() -> str:
+    try:
+        import services
+
+        expires = services._subscription_expires()
+    except Exception:
+        return _tr("订阅状态未知")
+    if expires is None:
+        return _tr("未发现有效订阅")
+    remaining = expires - time.time()
+    return _tr("订阅已失效") if remaining <= 0 else _tr('订阅剩余 {0}').format(f'{countdown(remaining)}')

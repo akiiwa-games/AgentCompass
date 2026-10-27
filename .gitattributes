@@ -1,0 +1,2 @@
+# Preserve shared-source bytes across the two Windows hosts.
+* -text

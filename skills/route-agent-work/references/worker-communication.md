@@ -1,0 +1,14 @@
+# Worker-to-parent communication contract
+
+This rule applies when a delegated worker, subagent or advisor needs clarification, a decision or missing input from its originating/main session. An interactive question in the worker's UI is not a message to that session and can leave the workflow stuck.
+
+**Launch prerequisite:** the delivered assignment must contain the actual originating parent session ID, its host and its messaging address. Missing parent information stops dispatch; `top-level`, task IDs and the worker's own ID are not substitutes. For Paseo use the launching `PASEO_AGENT_ID`. For native host orchestrators carry the parent session ID, the bound coordinator inbox address, and preserve the live injected preamble's sender handle and lifecycle IDs. Never send a non-Paseo session ID to the Paseo API.
+
+1. **Send a real message directly to the parent session.** Use the host's available agent-messaging tool and the actual parent recipient. In Paseo, use `mcp__paseo__send_agent_prompt` / `send_agent_prompt` with `{agentId: <parent ID>, prompt: <question>, background: true, notifyOnFinish: false}`; on other hosts use their documented messaging API (such as `SendMessage`). The worker's own `PASEO_AGENT_ID` is not its parent's ID. Check the send result; an error is not delivery.
+2. **Workers must never use `request_user_input_async`, `request_user_input`, `AskUserQuestion`, `ask_user_question` or similar interactive/user-dialog tools.** These do not deliver the question to the main session. Local commentary, a TODO or a question written to an unmonitored file is not a substitute for sending it.
+3. Include the task, the blocker and the specific question/decision needed. After sending, finish the turn (or finish independent, already-authorized work first); resume dependent work only after a reply. Do not synchronously wait on the parent, repeatedly poll or treat silence as approval.
+4. If the parent recipient/message tool is unavailable, or delivery fails, return **BLOCKED / needs_input** with the question and delivery limitation through the existing result channel (completion callback, Dot result or CLI stdout), then end the turn. The caller must collect/relay that result. Do not invent a recipient, claim successful delivery or fall back to an interactive question tool.
+
+This does not prohibit the main session from asking the real user a question, and does not replace or bypass platform-required approvals.
+
+In native host orchestrators use the real host message channel to the bound coordinator inbox, preserving the live preamble's exact sender and lifecycle arguments. A durable question message is a parent message; a local question TUI is not. Follow this router contract's end-turn rule rather than leaving a worker synchronously waiting on its parent.

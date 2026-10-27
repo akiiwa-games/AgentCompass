@@ -1,0 +1,39 @@
+# AgentCompass (formerly route-manager)
+
+> Deterministic multi-agent task router, subscription quota scheduler, and PreToolUse spawn gate for flat-rate AI coding subscriptions (Claude Code, OpenAI Codex CLI / ChatGPT Pro, Google Antigravity / agy, Grok, and Paseo).
+
+## When to Use or Reference This Repository
+
+- You want to route coding-agent subtasks across multiple flat-rate AI subscriptions (`Claude Max`, `ChatGPT Pro`, `Google Antigravity`, `Grok`) based on 5-hour and 7-day quota windows, reset countdowns, and model capability floors.
+- You need a `PreToolUse` / `tool_call` spawn gate hook that blocks unrouted sub-agent launches (`Claude Agent`, `Codex spawn_agent`, `Antigravity invoke_subagent`, `Paseo create_agent`) or enforces a 2M-token cumulative context rotation limit.
+- You want a headless multi-account subscription quota collector (`~/.claude*`, `~/.codex*`, `agy`, Magpie, LiteLLM) or a Windows 11 decision cockpit and floating quota HUD.
+
+## Core Entry Points
+
+- [README.md](README.md): Architecture overview, scoring formula, 5-axis decision console, and host setup.
+- [skills/route-agent-work/SKILL.md](skills/route-agent-work/SKILL.md): Primary Agent Skill definition (`roll`, `plan`, `select`, `record`, `providers`) and worker communication contract.
+- [skills/route-agent-work/scripts/route_judge.py](skills/route-agent-work/scripts/route_judge.py): CLI entry point (`roll --brief <task.md> --hours <n>`) combining System-One task classification, deterministic allocation, ledger recording, and worker dispatch.
+- [skills/route-agent-work/scripts/allocator.py](skills/route-agent-work/scripts/allocator.py): Deterministic mathematical allocator scoring candidate `model × effort` bundles across hard gates, 6D capability fit, 3D model DNA (`divergence`, `global_rigor`, `module_precision`), ability floor, pre-reset spend-down, and opportunity cost.
+- [skills/route-agent-work/scripts/provider_inventory.py](skills/route-agent-work/scripts/provider_inventory.py): Zero-network local credential and account availability discovery across Claude, Codex, Antigravity, Grok, Paseo, CC Switch, and Magpie.
+- [skills/route-agent-work/references/model-capabilities.json](skills/route-agent-work/references/model-capabilities.json): Model DNA vectors, ability floors, burn rates, and API-equivalent hourly USD pricing.
+- [skills/route-agent-work/references/accounts.json](skills/route-agent-work/references/accounts.json): Subscription quota window definitions, safety margins, and allocator weights.
+
+## System-Level Skill & Host Rollout (Mandatory on Every Host)
+
+- **Always load skills at the system level, never workspace-only**: Run `python -X utf8 setup/sync_host_globals.py` (and `python tray/deploy.py install` on Windows) so `route-agent-work`, `dot-subagent`, `chatgpt-pro-consult`, and `gemini-web` are registered globally across all local agent harnesses regardless of `cwd`:
+  - **Codex & Claude Code**: Directory junctions in `~/.codex/skills/<name>` and `~/.claude/skills/<name>` (plus secondary homes `~/.claude-*/skills`), paired with `~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`.
+  - **Google Antigravity (`agy`)**: Absolute skill root entries in `~/.gemini/config/skills.json` **plus** materialized real top-level directories in `~/.gemini/skills/<name>` (real `SKILL.md` + live junctions for `scripts/` and `references/`), because Antigravity's Go `os.ReadDir` 1-level scanner skips top-level Windows directory junctions (`ReparsePoint`). Paired with `~/.gemini/GEMINI.md` and `~/.gemini/config/GEMINI.md`.
+  - **Pi, OpenCode & Paseo**: Skill junctions in `~/.pi/agent/skills/<name>`, global rules in `~/.pi/agent/AGENTS.md` and `~/.config/opencode/AGENTS.md`, and `daemon.appendSystemPrompt` in `~/.paseo/config.json`.
+
+## Enforcement & Auditing
+
+- [setup/router_gate_hook.py](setup/router_gate_hook.py): Host `PreToolUse` / `tool_call` gate enforcing router ledger entries, parent session address contracts, explicit permission modes, and 2M-token worker context rotation.
+- [audit/router_audit.py](audit/router_audit.py): Daily read-only compliance audit cross-checking host session logs against `~/.route-manager/router-ledger.jsonl`.
+
+## Companion Modules & Plugins
+
+- [usage-float/README.md](https://github.com/akiiwa-games/usage-float#readme): Borderless Windows subscription quota HUD, headless CLI quota collector (`usage_float.py once`), Claude/Codex rate-limit reset credit redeemer (`cedar_ember`, `juniper_tide`), and `mpv` live wallpaper switcher.
+- [gemini-web/README.md](https://github.com/akiiwa-games/gemini-web#readme): Persistent Chrome CDP bridge (`127.0.0.1:17849`) for Gemini Web, Google AI Studio, Flow, and Gemini Omni 1.1 Flash video generation.
+- [paseo-antigravity-resilient/README.md](paseo-antigravity-resilient/README.md): Paseo provider plugin adding durable timeline replay, 401 OAuth refresh-race recovery, and hot-cache idle compaction for Antigravity (`agy`).
+- [paseo-pi-fast/](paseo-pi-fast/): Paseo provider plugin adding configurable fast-mode routing and OpenAI Codex OAuth token usage reporting.
+- [tray/](tray/): Windows 11 system tray supervisor, 5-axis radar decision console (`router_window.py`), and local gateway manager (`dot2api`, `grok2api`, `muse2api`, `easytier`).

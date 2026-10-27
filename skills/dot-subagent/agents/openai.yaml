@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dot Subagent"
+  short_description: "Leaf runner for the local OpenAI Dot"
+  default_prompt: "Use $dot-subagent only after route-agent-work decides the local Dot can finish the whole assignment itself. Send one text task through dot2api and return the Dot's reply."

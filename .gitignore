@@ -1,0 +1,54 @@
+# Common source only. Host state, handover artifacts, upstream checkouts and
+# installed dependencies stay outside this repository.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!LICENSE
+!/examples/
+!examples/**
+!/llms.txt
+!/docs/
+/docs/*
+!/docs/*.png
+!/tray/
+/tray/*
+!/tray/*.py
+!/tray/*.pyw
+!/tray/*.mjs
+!/tray/*.js
+!/tray/*.ps1
+!/audit/
+/audit/*
+!/audit/*.py
+!/setup/
+/setup/*
+!/setup/*.py
+!/setup/pi_device_login.mjs
+!/setup/paseo_dispatch_bridge.mjs
+!/setup/test_paseo_dispatch_bridge.mjs
+!/deployment/
+/deployment/*
+!/deployment/host_policy_parity.py
+!/paseo-antigravity-resilient/
+!/paseo-pi-fast/
+/paseo-pi-fast/node_modules/
+/paseo-pi-fast/dist/
+/paseo-antigravity-resilient/node_modules/
+/paseo-antigravity-resilient/dist/
+/paseo-antigravity-resilient/.store/
+# The router skills; each host links ~/.codex/skills/<name> here.
+!/skills/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+
+# Safety blocklist against accidental staging in whitelisted subdirectories
+**/*.log
+**/*.tmp
+**/*.bak
+**/*endpoint.txt
+**/*discovered*
+**/out/
+**/scratch/
+**/reports/

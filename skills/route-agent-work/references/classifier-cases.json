@@ -1,0 +1,393 @@
+{
+  "version": 3,
+  "updated_at": "2026-10-27",
+  "purpose": "System-One task classifier rubric and calibration cases. Read only by the router scorer (route_judge.py), never by parent agents.",
+  "route_definitions": {
+    "computer_use": "Operate a desktop or browser GUI via screenshots, mouse, and keyboard (e.g. click buttons, inspect live UI windows).",
+    "visual_analysis": "Inspect images, screenshots, charts, or design frames without writing application code.",
+    "frontend_implementation": "Build, style, or modify web/desktop UI components, layouts, CSS, or frontend state.",
+    "tool_execution": "Run existing CLI commands, scripts, checklists, deployments, or read-only operational probes without designing new code.",
+    "bounded_bulk_work": "Mechanical, repetitive edits or batch processing across many files/items with a uniform rule.",
+    "debug_review": "Diagnose a bug, regression, test failure, or perform code/security review with concrete verification.",
+    "general_implementation": "Write or refactor backend, library, or full-stack production code and tests in a repository.",
+    "self_contained_code": "Write standalone code, algorithms, or unit-tested modules that do not depend on local machine state or secrets.",
+    "exploration_analysis": "Explore a repository, trace architecture, or analyze logs and datasets to answer an investigative question.",
+    "research_packet": "Execute a quantitative experiment, backtest, data pipeline, or statistical analysis packet and report metrics.",
+    "web_research": "Search and synthesize public documentation, papers, benchmarks, or web sources.",
+    "text_in_text_out": "Draft, translate, summarize, or rewrite self-contained text or documentation from provided inputs.",
+    "dot_execution": "Self-contained remote sandbox computation or file transformation explicitly suited for an isolated container.",
+    "complex_build_plan": "Design a multi-phase system architecture or implementation specification before coding begins.",
+    "direction_reasoning": "High-stakes strategic, mathematical, or architectural tradeoff reasoning (advisor consultation)."
+  },
+  "dimension_rubric": {
+    "scope_rule": "Score functional work, not brief length or formatting. Multi-section Markdown, authorization quotes, communication rules and file lists do not raise any dimension.",
+    "boilerplate_paths": "Role/rule docs (AGENTS.md, CLAUDE.md, docs/roles/*.md, skill/README/runbook docs), prior reports/reviews read as input, receipt/output/log/scratch paths and a target module's paired unit-test file never inflate context_scale or reasoning_depth.",
+    "read_only_review": "Independent code review, security/invariant audit or diff verification: work_kind debug_review, code_complexity 0, hallucination_risk 3, divergence 1, reasoning_depth 2 (3 only for deep cross-module concurrency or architectural-invariant audits). Context is 1 for a localized diff, 2 for several coupled modules.",
+    "runbook_execution": "Following documented build/deploy/release runbooks, operational health checks or automated test/benchmark suites without designing new code: work_kind tool_execution, reasoning_depth 1, code_complexity 0, context_scale 1; error_cost 3 when touching production.",
+    "diagnosis": "Unknown root cause with multiple candidate hypotheses to test (latency/CPU/memory regression, intermittent failure, rendering glitch): divergence 2; code_complexity 0 for read-only diagnosis, 2 for diagnosing and fixing a module with tests.",
+    "research_packet": "Running a defined quantitative experiment, benchmark suite, simulation, statistical evaluation or backtest pipeline and reporting metrics: work_kind research_packet, reasoning_depth 2, code_complexity 1, context_scale 2, divergence 1, hallucination_risk 3. Mere execution of documented commands without interpreting experimental results is tool_execution.",
+    "orchestration": "Multi-stage coordinator or lead-session handoff dispatching workers and verifying cross-task deliverables: reasoning_depth 3, context_scale 3, divergence 1; code_complexity 0 for coordination/review alone, 2 when also implementing integration code."
+  },
+  "calibration_cases": [
+    {
+      "id": "desktop_click",
+      "task": {
+        "objective": "Click the Save button in the local editor Settings dialog and confirm the saved value."
+      },
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 1,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Single mechanical action in a live local GUI."
+      }
+    },
+    {
+      "id": "visual_design_diff",
+      "task": {
+        "objective": "Compare the supplied dashboard screenshot against the design frame. Report alignment, typography and color differences; write no application code."
+      },
+      "expected_profile": {
+        "work_kind": "visual_analysis",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": false,
+        "local_only": false,
+        "interaction_style": "engineering",
+        "reason": "Visual inspection of supplied images without operating a GUI."
+      }
+    },
+    {
+      "id": "react_ui",
+      "task": {
+        "objective": "Build a responsive React account-settings page from the accepted design, with editable profile fields, validation and loading/error states in the existing frontend. Verify at mobile and desktop widths."
+      },
+      "expected_profile": {
+        "work_kind": "frontend_implementation",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Bounded UI implementation with visual acceptance and state handling."
+      }
+    },
+    {
+      "id": "game_ui",
+      "task": {
+        "objective": "# Game UI task\n\nRead AGENTS.md, CLAUDE.md and docs/roles/ui.md.\n\n## Scope\nIn ui/InventoryPanel.cs change the item-count label color to the specified token. Preserve the existing layout. Update its paired unit test.\n\n## Verification\nRun the existing component test.\n\n## Output\nscratch/inventory/receipt.md with the result."
+      },
+      "expected_profile": {
+        "work_kind": "frontend_implementation",
+        "reasoning_depth": 1,
+        "code_complexity": 1,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 1,
+        "needs_visual": true,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "One mechanical game UI styling change; boilerplate paths add no scope."
+      }
+    },
+    {
+      "id": "backend_service",
+      "task": {
+        "objective": "# Implement API pagination\n\nRead AGENTS.md, docs/roles/backend.md and the previous review.\n\n## Target\nservices/catalog/pagination.py and its paired tests/test_pagination.py.\n\n## Work\nImplement the specified cursor encoding and stable next-page boundaries, including empty and invalid cursors. No API redesign.\n\n## Verification\nRun the module tests. Save artifacts/pagination/receipt.json and message the parent."
+      },
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "One backend module plus its tests; role, report and receipt paths are boilerplate."
+      }
+    },
+    {
+      "id": "concurrency_fix",
+      "task": {
+        "objective": "Fix a known lock-order inversion in the connection pool: acquire the pool lock before the session lock on both paths. Add a regression test in the paired test file."
+      },
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Known cause, convergent single-module concurrency repair."
+      }
+    },
+    {
+      "id": "memory_diagnosis",
+      "task": {
+        "objective": "# Read-only memory investigation\n\nRead AGENTS.md and deploy/README.md. RSS grew from 200 MB to 900 MB after the last release.\n\n## Hypotheses\nTest retained event listeners, an unbounded response cache and delayed task cleanup using existing heap snapshots and read-only profiling.\n\n## Output\nEvidence for each hypothesis and a proposed fix in scratch/memory/report.md. Change no code."
+      },
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 2,
+        "hallucination_risk": 3,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "exploration",
+        "reason": "Unknown root cause with competing hypotheses; read-only diagnosis writes no production code."
+      }
+    },
+    {
+      "id": "security_diff_review",
+      "task": {
+        "objective": "# Independent security review\n\nRead docs/roles/reviewer.md, AGENTS.md, the implementation brief and prior author receipt.\n\n## Scope\nReview the diff in auth/permissions.py and its paired test file for privilege escalation and missing tenant checks. Read-only; do not implement or deploy.\n\n## Output\nBLOCK/SHOULD/NOTE findings and verdict in scratch/security/review.md."
+      },
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Localized independent security diff audit; input documents do not increase scope."
+      }
+    },
+    {
+      "id": "i18n_bulk",
+      "task": {
+        "objective": "Apply the supplied i18n key mapping uniformly across 120 locale files. Preserve placeholders and ordering. Run the existing locale validator; no semantic rewrites."
+      },
+      "expected_profile": {
+        "work_kind": "bounded_bulk_work",
+        "reasoning_depth": 1,
+        "code_complexity": 1,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Uniform mechanical batch transformation despite many files."
+      }
+    },
+    {
+      "id": "release_runbook",
+      "task": {
+        "objective": "# Production release execution\n\nRead CLAUDE.md, docs/roles/release.md and deploy/README.md. Approval is already recorded.\n\n## Steps\nFollow the documented CI build, deploy and rollback-health-check commands exactly for the image service. Run the existing smoke suite. Design no code.\n\n## Output\nlogs/release.txt and scratch/release/receipt.md; message the coordinator."
+      },
+      "expected_profile": {
+        "work_kind": "tool_execution",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 3,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Documented production runbook: costly execution, no new algorithm or architecture."
+      }
+    },
+    {
+      "id": "ml_experiment",
+      "task": {
+        "objective": "Run the defined retrieval benchmark comparing the baseline and reranker on the held-out corpus. Use the existing evaluation pipeline, calculate precision/recall, bootstrap confidence intervals and latency, and report reproducible metrics."
+      },
+      "expected_profile": {
+        "work_kind": "research_packet",
+        "reasoning_depth": 2,
+        "code_complexity": 1,
+        "context_scale": 2,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "exploration",
+        "reason": "Defined quantitative benchmark with statistical interpretation."
+      }
+    },
+    {
+      "id": "repo_exploration",
+      "task": {
+        "objective": "Explore the repository and map how a request passes through routing, authorization and storage. Trace module dependencies with file references; report findings without changing code."
+      },
+      "expected_profile": {
+        "work_kind": "exploration_analysis",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 2,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "exploration",
+        "reason": "Repository architecture exploration, without implementation or unknown defect diagnosis."
+      }
+    },
+    {
+      "id": "public_vendor_survey",
+      "task": {
+        "objective": "Search public documentation for three message-queue vendors. Compare delivery guarantees, retention limits and client support with source links and dates."
+      },
+      "expected_profile": {
+        "work_kind": "web_research",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 2,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "interaction_style": "exploration",
+        "reason": "Public web documentation synthesis and source verification."
+      }
+    },
+    {
+      "id": "standalone_algorithm",
+      "task": {
+        "objective": "Write a self-contained interval-merging algorithm from the supplied interface, with property-based tests. Return the source and tests; no repository, local secrets or services are needed."
+      },
+      "expected_profile": {
+        "work_kind": "self_contained_code",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "interaction_style": "engineering",
+        "reason": "Standalone algorithm and tests fit entirely in the packet."
+      }
+    },
+    {
+      "id": "technical_doc_translation",
+      "task": {
+        "objective": "Translate the supplied technical deployment guide into Chinese, preserving command snippets and terminology. Return the translated text without executing the commands."
+      },
+      "expected_profile": {
+        "work_kind": "text_in_text_out",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "interaction_style": "text_only",
+        "reason": "Self-contained technical text translation, not deployment execution."
+      }
+    },
+    {
+      "id": "system_migration_plan",
+      "task": {
+        "objective": "Write a multi-phase migration specification for splitting a monolithic billing service into API, ledger and event-consumer services. Define interfaces, compatibility stages, invariants, rollback and acceptance checks before coding."
+      },
+      "expected_profile": {
+        "work_kind": "complex_build_plan",
+        "reasoning_depth": 3,
+        "code_complexity": 0,
+        "context_scale": 3,
+        "divergence": 2,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Cross-system migration specification with explicit design choices and staged acceptance."
+      }
+    },
+    {
+      "id": "frontier_critique",
+      "task": {
+        "objective": "Prove or refute the proposed optimal-stopping model for distributed admission control under nonstationary demand. Critique its mathematical assumptions and architectural tradeoffs, and derive alternatives."
+      },
+      "expected_profile": {
+        "work_kind": "direction_reasoning",
+        "reasoning_depth": 4,
+        "code_complexity": 0,
+        "context_scale": 2,
+        "divergence": 3,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "interaction_style": "advisory",
+        "reason": "Frontier mathematical and architectural critique requiring divergent reasoning."
+      }
+    },
+    {
+      "id": "orchestrator_handoff",
+      "task": {
+        "objective": "# Coordinator handoff\n\nRead AGENTS.md, docs/roles/lead.md and prior reports as input.\n\n## Ownership\nTake over the editor migration lead session: dispatch workers for storage, sync and UI stages, verify their cross-task deliverables and integration evidence, and close acceptance decisions. Coordinate and review only; implement no code.\n\n## Output\nscratch/migration/decisions.md and a final parent report."
+      },
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "reasoning_depth": 3,
+        "code_complexity": 0,
+        "context_scale": 3,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "Coordinating staged workers and cross-task verification is the functional scope; boilerplate paths are not."
+      }
+    }
+  ]
+}
