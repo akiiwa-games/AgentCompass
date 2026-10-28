@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createRequire} from 'node:module';
-import {pathToFileURL} from 'node:url';
+import {pathToFileURL, fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {execute, project} from './paseo_dispatch_bridge.mjs';
 
-const require = createRequire(path.resolve(process.env.ROUTER_PASEO_SDK_ROOT ?? 'paseo-pi-fast/node_modules', '_test.cjs'));
+const require = createRequire(path.resolve(process.env.ROUTER_PASEO_SDK_ROOT ?? fileURLToPath(new URL('../../paseo-plugins/paseo-pi-fast/node_modules/', import.meta.url)), '_test.cjs'));
 const {SessionInboundMessageSchema} = await import(pathToFileURL(require.resolve('@getpaseo/protocol/messages')).href);
 
 test('SDK creation uses its documented fields, parentage and idempotency', async () => {

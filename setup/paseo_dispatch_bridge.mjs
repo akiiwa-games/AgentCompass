@@ -60,7 +60,7 @@ export async function execute(client, input) {
 async function main() {
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
   const setup = path.dirname(fileURLToPath(import.meta.url));
-  const sdkRoot = process.env.ROUTER_PASEO_SDK_ROOT ?? path.join(setup, '../paseo-pi-fast/node_modules');
+  const sdkRoot = process.env.ROUTER_PASEO_SDK_ROOT ?? path.resolve(setup, '../../paseo-plugins/paseo-pi-fast/node_modules');
   const require = createRequire(path.join(path.resolve(sdkRoot), '_router_dispatch.cjs'));
   const {DaemonClient} = await import(pathToFileURL(require.resolve('@getpaseo/client/internal/daemon-client')).href);
   const {WebSocket} = require('ws');

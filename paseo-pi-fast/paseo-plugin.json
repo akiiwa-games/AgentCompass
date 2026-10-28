@@ -1,9 +1,0 @@
-{
-  "id": "paseo-pi-fast",
-  "name": "Pi Fast Mode",
-  "description": "Adds a clickable Fast mode toggle (service_tier: priority) for Pi OpenAI/Codex agents in Paseo.",
-  "media": [],
-  "requirements": {
-    "paseo": ">=0.11.2"
-  }
-}
