@@ -150,10 +150,126 @@ def finite_number(value, low=0, high=100):
             and math.isfinite(value) and low <= value <= high)
 
 
+SESSION_LIMIT_RE = re.compile(
+    r'hit your (?:session )?limit\s*[·•-]\s*resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)',
+    re.I,
+)
+
+
+def parse_session_limit_reset(text, hit_at):
+    match = SESSION_LIMIT_RE.search(text or '')
+    if not match or hit_at is None:
+        return None
+    hour = int(match.group(1)) % 12
+    if match.group(3).lower() == 'pm':
+        hour += 12
+    minute = int(match.group(2) or 0)
+    reset = hit_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if reset <= hit_at:
+        reset += timedelta(days=1)
+    if (reset - hit_at).total_seconds() > 6 * 3600:
+        reset -= timedelta(days=1)
+    return reset if reset > hit_at else None
+
+
+def _usage_home(source_path):
+    if not source_path:
+        env_home = os.environ.get('ROUTER_PROVIDER_HOME')
+        return Path(env_home).expanduser() if env_home else None
+    p = Path(source_path).resolve()
+    return p.parent.parent if p.parent.name == '.usage-float' else p.parent
+
+
+def claude_session_limit(account, home_dir, now):
+    """Detect an active 5h session-limit 429 from local Claude session logs or persisted rate-limits.json."""
+    if not home_dir or not (account == 'claude' or str(account).startswith('claude-')):
+        return None
+    try:
+        is_real_home = home_dir.resolve() == Path.home().resolve()
+    except OSError:
+        is_real_home = False
+    state_dir = (Path(os.environ.get('ROUTER_STATE_DIR')).expanduser()
+                 if is_real_home and os.environ.get('ROUTER_STATE_DIR')
+                 else home_dir / '.route-manager')
+    store_path = state_dir / 'rate-limits.json'
+    persisted = {}
+    if store_path.is_file():
+        try:
+            loaded = json.loads(store_path.read_text(encoding='utf-8-sig'))
+            if isinstance(loaded, dict):
+                persisted = loaded
+        except (OSError, ValueError):
+            persisted = {}
+    latest_hit = None
+    rec = persisted.get(account)
+    if isinstance(rec, dict):
+        hit_ts = timestamp(rec.get('hit_at'))
+        reset_ts = timestamp(rec.get('resets_at'))
+        if hit_ts and reset_ts and hit_ts <= now < reset_ts and (now - hit_ts).total_seconds() <= 5 * 3600:
+            latest_hit = (hit_ts, reset_ts)
+    proj_dir = home_dir / f'.{account}' / 'projects'
+    if proj_dir.is_dir():
+        cutoff = min(now.timestamp(), time.time()) - 5 * 3600
+        try:
+            candidates = []
+            for p in proj_dir.glob('*/*.jsonl'):
+                try:
+                    mtime = p.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime >= cutoff:
+                    candidates.append((mtime, p))
+            candidates.sort(key=lambda x: x[0], reverse=True)
+        except OSError:
+            candidates = []
+        for _, p in candidates[:5]:
+            try:
+                size = p.stat().st_size
+                with p.open('rb') as handle:
+                    if size > 32768:
+                        handle.seek(size - 32768)
+                    chunk = handle.read().decode('utf-8', errors='ignore')
+            except OSError:
+                continue
+            for line in chunk.splitlines():
+                if 'limit' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                ts = timestamp(entry.get('timestamp'))
+                if ts is None or ts > now + timedelta(seconds=60):
+                    continue
+                reset = parse_session_limit_reset(json.dumps(entry, ensure_ascii=False), ts)
+                if reset and ts <= now < reset and (now - ts).total_seconds() <= 5 * 3600:
+                    if latest_hit is None or ts > latest_hit[0]:
+                        latest_hit = (ts, reset)
+    if latest_hit:
+        hit_ts, reset_ts = latest_hit
+        active = {k: v for k, v in persisted.items()
+                  if isinstance(v, dict) and (r := timestamp(v.get('resets_at'))) is not None and r > now}
+        new_entry = {'window': 'five_hour', 'used_pct': 100.0,
+                     'hit_at': hit_ts.isoformat(), 'resets_at': reset_ts.isoformat()}
+        if active.get(account) != new_entry:
+            active[account] = new_entry
+            try:
+                state_dir.mkdir(parents=True, exist_ok=True)
+                store_path.write_text(json.dumps(active, indent=2), encoding='utf-8')
+            except OSError:
+                pass
+        return {'window': 'five_hour', 'used_pct': 100.0, 'hit_at': hit_ts, 'resets_at': reset_ts}
+    return None
+
+
 def window_state(window, now, observation_current=True):
     reset = timestamp(window.get('resets_at'))
     used = window.get('used_pct')
-    used = used if finite_number(used) else None
+    # Providers (e.g. Magpie/Claude at 5h session limit) can report >100% utilization
+    # (such as 101.0%); clamp finite values >100 to 100.0 instead of dropping to None.
+    used = (100.0 if used > 100 else used) if finite_number(used, low=0, high=float('inf')) else None
     passed = reset <= now if reset else None
     return {
         'id': window.get('id') if isinstance(window.get('id'), str) else None,
@@ -164,6 +280,7 @@ def window_state(window, now, observation_current=True):
         'observed_remaining_pct': 100 - used if used is not None else None,
         'remaining_pct_before_reset': (100 - used if used is not None
                                       and passed is False and observation_current else None),
+        **({'rate_limited': True} if window.get('rate_limited') is True and passed is False else {}),
     }
 
 
@@ -213,6 +330,7 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
                 'cache_path': None, 'attempts': attempts, 'accounts': {},
                 'reason': 'No readable provider usage cache; locate the collector snapshot.'}
     requested = set(providers) if accounts is None else set(accounts)
+    home_dir = _usage_home(source)
     result = {}
     for account in sorted(requested):
         row = providers.get(account)
@@ -227,6 +345,30 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
         raw_windows = row.get('windows')
         windows = [window_state(w, now, current) for w in
                    (raw_windows if isinstance(raw_windows, list) else []) if isinstance(w, dict)]
+        limit = claude_session_limit(account, home_dir, now)
+        rate_limited_until = None
+        if limit is not None:
+            fresh_recovered = (
+                current and fetched is not None and fetched > limit['hit_at'] + timedelta(seconds=30)
+                and any(w.get('id') in ('five_hour', '5h') and w.get('used_pct') is not None and w['used_pct'] < 100
+                        for w in windows)
+            )
+            if not fresh_recovered:
+                rate_limited_until = limit['resets_at'].isoformat()
+                limit_win = window_state({
+                    'id': 'five_hour',
+                    'used_pct': 100.0,
+                    'resets_at': rate_limited_until,
+                    'rate_limited': True,
+                }, now, observation_current=True)
+                replaced = False
+                for idx, w in enumerate(windows):
+                    if w.get('id') in ('five_hour', '5h'):
+                        windows[idx] = limit_win
+                        replaced = True
+                        break
+                if not replaced:
+                    windows.append(limit_win)
         usable = any(w['remaining_pct_before_reset'] is not None for w in windows)
         if account == 'grok-bot':
             # The native trial has no known cycle. Fresh usagePercent is still
@@ -245,6 +387,7 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
                                   and row.get('stale') is False),
             'windows': windows,
             'subscription_expires_at': None,
+            **({'rate_limited_until': rate_limited_until} if rate_limited_until else {}),
             **({'billing': row['billing']} if isinstance(row.get('billing'), str) else {}),
             **({'backend_kind': row['backend_kind']} if isinstance(row.get('backend_kind'), str) else {}),
         }
@@ -572,8 +715,9 @@ def build_request(stage, document, cache=None, now=None):
             'gemini-3.8-flash-high for a worker packet, and never send it harder work. Do not lower '
             'Flash to Medium/Low because individual calls look simple. Preserve the existing '
             'fallback ordering and explain a Flash fallback. Missing telemetry alone is not exhaustion '
-            'or unavailability. Antigravity Gemini models share the Gemini pool, not the separate '
-            'Claude/GPT pool. Candidate usage_evidence may provide a separately sourced newer '
+            'or unavailability. Antigravity Gemini models share the Gemini pool. Antigravity Claude '
+            'and GPT models draw the separate 3p pool (3p-5h and 3p-weekly), not the Gemini pool. '
+            'Candidate usage_evidence may provide a separately sourced newer '
             'observation; check its account, group and time rather than treating a missing cache row '
             'as contrary quota evidence. Other rankings are soft priors. Among qualified remaining candidates '
             'jointly weigh remaining quota, time to reset/expiry, observation age, expected duration '
@@ -589,25 +733,43 @@ def build_request(stage, document, cache=None, now=None):
         raise ValueError('Unknown routing stage.')
     state['usage'] = usage_snapshot(cache, accounts, now)
     if stage == 'select':
+        allocator = None
+        acc_defs = {}
+        loaded_accounts = {}
         try:
-            acc_defs = (load_allocator().load_accounts().get('accounts') or {})
+            allocator = load_allocator()
+            loaded_accounts = allocator.load_accounts()
+            acc_defs = loaded_accounts.get('accounts') or {}
         except Exception:
+            allocator = None
             acc_defs = {}
+            loaded_accounts = {}
 
-        def _candidate_quota_exhausted(cand):
+        def _candidate_quota_exhausted(key, cand):
             acc = cand.get('account') or ''
             row = (state['usage'].get('accounts') or {}).get(acc)
-            if not isinstance(row, dict) or row.get('status') != 'fresh':
+            if not isinstance(row, dict) or (row.get('status') != 'fresh' and not row.get('rate_limited_until')):
                 return False
             acc_spec = acc_defs.get(acc) or {}
             win_defs = acc_spec.get('windows') or {}
+            probe = {'account': acc, 'provider': cand.get('provider'), 'model': cand.get('model') or '', 'id': key}
+            if isinstance(cand.get('draws'), list):
+                probe['draws'] = list(cand['draws'])
+            pools = []
+            if allocator is not None:
+                try:
+                    pools = allocator.bundle_pools(probe, loaded_accounts or {'accounts': acc_defs})
+                except Exception:
+                    pools = []
             for w in applicable_windows(row, cand.get('model') or ''):
                 if w.get('reset_time_passed') is True:
                     continue
                 rem = w.get('remaining_pct_before_reset')
                 if rem is None:
                     continue
-                wid = allocator.canonical_window_id(acc_spec, w.get('id'))
+                wid = allocator.canonical_window_id(acc_spec, w.get('id')) if allocator is not None else w.get('id')
+                if pools and wid not in pools:
+                    continue
                 w_spec = win_defs.get(wid) if isinstance(win_defs, dict) else None
                 floor = (w_spec or {}).get('launch_min_remaining_pct')
                 if floor is None:
@@ -616,7 +778,7 @@ def build_request(stage, document, cache=None, now=None):
                     return True
             return False
 
-        quota_excluded = [k for k, v in state['candidates'].items() if _candidate_quota_exhausted(v)]
+        quota_excluded = [k for k, v in state['candidates'].items() if _candidate_quota_exhausted(k, v)]
         if quota_excluded:
             state['quota_excluded'] = quota_excluded
             state['candidates'] = {k: v for k, v in state['candidates'].items() if k not in set(quota_excluded)}
@@ -1246,6 +1408,9 @@ def resolve_judge(kind, usage, availability=None):
             return (2, True, float('inf'))
         win_defs = (acc_defs.get(acc) or {}).get('windows') or {}
         if str(acc).startswith('claude-'):
+            if any(w.get('id') in ('five_hour', '5h') and w.get('reset_time_passed') is False
+                   and w.get('remaining_pct_before_reset') is None for w in windows):
+                return (2, True, float('inf'))
             for w in known:
                 wid = 'five_hour' if w.get('id') in ('five_hour', '5h') else str(w.get('id') or '')
                 w_spec = win_defs.get(wid) if isinstance(win_defs, dict) else None
@@ -1466,9 +1631,13 @@ def record_constraint(args, task=None):
     acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
     # External runners dispatch directly after record; apply the same registered
     # window protection used by prepared dispatches, including non-periodic trials.
-    dispatch_registry.check_launch_quota({'account': args.account, 'provider': args.provider, 'model': args.model},
-                                        accounts, usage, now)
-    if acc_usage.get('status') == 'fresh':
+    quota_bundle = {**discovered, 'account': args.account, 'provider': args.provider, 'model': args.model}
+    if chosen:
+        quota_bundle['id'] = chosen
+        quota_bundle.setdefault('bundle_id', chosen)
+    dispatch_registry.check_launch_quota(quota_bundle, accounts, usage, now)
+    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until'):
+        pools = allocator.bundle_pools(quota_bundle, accounts)
         for w in applicable_windows(acc_usage, args.model):
             if w.get('reset_time_passed') is True:
                 continue
@@ -1476,6 +1645,8 @@ def record_constraint(args, task=None):
             if rem is None:
                 continue
             wid = allocator.canonical_window_id(acc_spec, w.get('id'))
+            if pools and wid not in pools:
+                continue
             win_spec = (acc_spec.get('windows') or {}).get(wid) or {}
             floor = win_spec.get('launch_min_remaining_pct')
             if floor is None:

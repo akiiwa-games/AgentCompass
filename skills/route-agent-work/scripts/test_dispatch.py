@@ -202,6 +202,24 @@ class DispatchTests(unittest.TestCase):
             observation['providers']['claude-2'].update(changes)
             (self.root / 'usage.json').write_text(json.dumps(observation))
             registry.check_launch_quota(row['bundle'], self.accounts, route_judge.usage_snapshot(now=self.now), self.now)
+        # A local 429 session limit in .claude-2 blocks launch until resets_at even when usage.json is stale.
+        stale_obs = copy.deepcopy(raw)
+        stale_obs['providers']['claude-2'].update({'stale': True, 'fetched_at': (self.now - timedelta(minutes=20)).isoformat()})
+        (self.root / 'usage.json').write_text(json.dumps(stale_obs))
+        log_file = self.root / '.claude-2' / 'projects' / 'proj' / 'rate-limited.jsonl'
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        reset_utc = (self.now + timedelta(hours=2)).strftime('%I:%M%p').lstrip('0').lower()
+        log_file.write_text(json.dumps({
+            'type': 'assistant',
+            'timestamp': (self.now - timedelta(minutes=2)).isoformat(),
+            'isApiErrorMessage': True,
+            'error': 'rate_limit',
+            'message': {'content': [{'type': 'text', 'text': f"API Error: Request rejected (429) · Claude Code: You've hit your session limit · resets {reset_utc} (UTC)"}]},
+        }) + '\n', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'launch protection'):
+            registry.check_launch_quota(row['bundle'], self.accounts, route_judge.usage_snapshot(now=self.now), self.now)
+        log_file.unlink()
+        (self.root / '.route-manager' / 'rate-limits.json').unlink(missing_ok=True)
 
     def test_cli_actual_parent_blocks_foreign_prepare_launch_release_but_operator_works(self):
         decision = self.issue()

@@ -85,7 +85,7 @@ def build_task(args, text, parent):
 def summary(decision):
     bundle = decision.get('selected_bundle') or {}
     return {'choice': decision.get('choice'),
-            'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'fast') if bundle.get(k)},
+            'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast') if bundle.get(k)},
             'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
                        (decision.get('decision') or {}).get('reason') or '')[:300] or None,
             'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn']}

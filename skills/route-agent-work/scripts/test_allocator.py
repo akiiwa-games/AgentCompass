@@ -111,6 +111,14 @@ class AllocatorTests(unittest.TestCase):
                   **({'compactions': compactions} if compactions is not None else {})}
         return {'id': 'refactor-1', 'coupling': coupling, 'total_hours': total, 'worker': worker, **extra}
 
+    def test_when_rule_bundle_stays_pinnable(self):
+        # A `when`-limited bundle is dropped from normal ranking but a user pin (dispatch) still finds it.
+        task = {'work_kind': 'debug_review', 'difficulty': 'hard', 'profile': self.profile(reasoning_depth=3)}
+        self.assertNotIn('agy_opus55_low', self.rows(self.plan(task)))
+        row = self.rows(self.plan(dict(task, pinned_bundle='agy_opus55_low'))).get('agy_opus55_low')
+        self.assertIsNotNone(row)
+        self.assertEqual((row['bundle']['account'], row['bundle']['effort']), ('antigravity', 'low'))
+
     def profile(self, **fields):
         base = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'hallucination_risk': 2, 'error_cost': 2,
                 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering',
@@ -383,6 +391,162 @@ class AllocatorTests(unittest.TestCase):
         self.assertNotIn('harness', resumed_rows['sol_xhigh']['components'])
         self.assertEqual(resumed_rows['astra_high']['components'].get('harness'), -0.03)
 
+    def test_harness_factor_exchange_and_order_equivalence(self):
+        policy = allocator.load_accounts()['scoring']
+        self.assertEqual(allocator.harness_quality_factor(
+            {'harness': 'antigravity-resilient', 'model': 'claude-opus-5-5', 'provider': 'antigravity-resilient'},
+            'general_implementation', policy), 0.9)
+        self.assertEqual(allocator.harness_quality_factor(
+            {'harness': 'antigravity', 'model': 'claude-sonnet-5-5', 'provider': 'antigravity'},
+            'debug_review', policy), 0.9)
+        self.assertEqual(allocator.harness_quality_factor(
+            {'harness': 'antigravity-resilient', 'model': 'gemini-4-argon-high', 'provider': 'antigravity-resilient'},
+            'general_implementation', policy), 1.0)
+        self.assertEqual(allocator.harness_quality_factor(
+            {'harness': 'claude', 'model': 'claude-opus-5-5', 'provider': 'claude'},
+            'debug_review', policy), 1.0)
+        self.assertEqual(allocator.harness_quality_factor(
+            {'harness': 'pi', 'model': 'gpt-6.1-sol', 'provider': 'pi'},
+            'exploration_analysis', policy), 1.0)
+
+        accounts = allocator.load_accounts()
+        accounts['accounts']['claude']['bundles']['agy_opus_high'] = {
+            'provider': 'antigravity-resilient', 'harness': 'antigravity-resilient',
+            'model': 'claude-opus-5-5', 'effort': 'high', 'modeId': 'full-access'}
+        compared = self.plan({'work_kind': 'debug_review', 'difficulty': 'hard'}, accounts=accounts)
+        rows = self.rows(compared)
+        native, agy = rows['opus55_high'], rows['agy_opus_high']
+        self.assertEqual((native['excluded'], agy['excluded']), ([], []))
+        self.assertEqual((native['components']['harness_factor'], agy['components']['harness_factor']), (1.0, 0.9))
+        self.assertEqual(native['components'].get('harness_order_factor'), 1.0)
+        self.assertEqual(agy['components'].get('harness_order_factor'), 1.0)
+        weights = compared['decision']['system']['weights']
+        base = weights['fit'] * native['components']['fit'] + weights['ability'] * native['components']['ability']
+        self.assertAlmostEqual(native['score'] - agy['score'], 0.1 * base, places=3)
+        self.assertGreater(native['score'], agy['score'])
+        exchange = compared['decision']['system']['opportunity_exchange']
+        self.assertEqual((exchange['score_per_displaced_usd'], exchange['shortage_loss_per_usd']), (0.012, 0.012))
+        self.assertEqual(exchange['score_per_displaced_worker_hour'], 0.06)
+        self.assertEqual(exchange['usd_per_score_point'], 83.33)
+        self.assertIn('tightest', exchange['cost_rule'])
+        self.assertIn('0.012 score per displaced USD', compared['decision']['reason'])
+        self.assertEqual(compared['decision']['system']['harness_factors']['default'], 1.0)
+        self.assertEqual(exchange['warnings'], [])
+        self.assertNotIn('warnings', compared['decision'])
+
+        claude_low = self.no_flash(claude=[('five_hour', 90, 3), ('seven_day', 5, 100), ('weekly_fable', 100, 100)])
+        for kind, style in (
+            ('exploration_analysis', None),
+            ('research_packet', None),
+            ('web_research', None),
+            ('text_in_text_out', None),
+            ('debug_review', None),
+            ('computer_use', None),
+            ('general_implementation', 'engineering'),
+            ('general_implementation', 'exploration'),
+        ):
+            task = {'work_kind': kind, 'difficulty': 'hard'}
+            if style:
+                task['profile'] = self.profile(interaction_style=style)
+            if kind == 'computer_use':
+                task = dict(task, needs={'local_only': True, 'visual': True})
+            result = self.plan(task, claude_low)
+            w = result['decision']['system']['weights']
+            groups = {}
+            for candidate in result['ranking']:
+                if candidate['score'] is None:
+                    continue
+                groups.setdefault(allocator.harness_group(candidate), []).append(candidate)
+            for siblings in groups.values():
+                if len(siblings) < 2:
+                    continue
+                siblings.sort(key=lambda candidate: candidate['score'], reverse=True)
+                best = siblings[0]
+                self.assertNotIn('harness', best['components'], kind)
+                self.assertEqual(best['components'].get('harness_order_factor'), 1.0, kind)
+                for other in siblings[1:]:
+                    if 'harness' not in other['components']:
+                        self.assertEqual(other['components'].get('harness_order_factor'), 1.0, kind)
+                        self.assertAlmostEqual(best['score'], other['score'], places=3)
+                        continue
+                    places = round((-other['components']['harness']) / 0.03)
+                    self.assertGreaterEqual(places, 1, kind)
+                    self.assertAlmostEqual(best['score'] - other['score'], 0.03 * places, places=3)
+                    scaled = other['components']['harness_factor'] * (
+                        w['fit'] * other['components']['fit'] + w['ability'] * other['components']['ability'])
+                    self.assertAlmostEqual((1 - other['components']['harness_order_factor']) * scaled, 0.03 * places, places=3)
+
+    def test_opportunity_exchange_prefers_named_rate(self):
+        legacy = {'shortage_loss_per_usd': 0.02, 'shortage_loss_per_worker_hour': 0.07}
+        legacy_view = allocator.opportunity_exchange(legacy)
+        self.assertEqual((legacy_view['score_per_displaced_usd'], legacy_view['score_per_displaced_worker_hour']), (0.02, 0.07))
+        self.assertEqual(legacy_view['warnings'], [])
+        self.assertEqual(legacy_view['source']['shortage_loss_per_usd'], 'shortage_loss_per_usd')
+        self.assertEqual((allocator.exchange_rate(legacy, 'shortage_loss_per_usd'),
+                          allocator.exchange_rate(legacy, 'shortage_loss_per_worker_hour')), (0.02, 0.07))
+
+        named = {'opportunity_exchange': {'score_per_displaced_usd': 0.03, 'score_per_displaced_worker_hour': 0.08}}
+        named_view = allocator.opportunity_exchange(named)
+        self.assertEqual((named_view['score_per_displaced_usd'], named_view['score_per_displaced_worker_hour']), (0.03, 0.08))
+        self.assertEqual(named_view['warnings'], [])
+        self.assertEqual(named_view['source']['shortage_loss_per_worker_hour'], 'opportunity_exchange.score_per_displaced_worker_hour')
+        self.assertNotIn('shortage_loss_per_usd', named)
+        self.assertEqual(allocator.exchange_rate(named, 'shortage_loss_per_usd'), 0.03)
+
+        conflict = {'shortage_loss_per_usd': 0.02, 'shortage_loss_per_worker_hour': 0.07,
+                    'opportunity_exchange': {'score_per_displaced_usd': 0.012, 'score_per_displaced_worker_hour': 0.05}}
+        conflict_view = allocator.opportunity_exchange(conflict)
+        self.assertEqual((conflict_view['score_per_displaced_usd'], conflict_view['score_per_displaced_worker_hour']), (0.012, 0.05))
+        self.assertEqual(allocator.exchange_rate(conflict, 'shortage_loss_per_usd'), 0.012)
+        self.assertEqual(conflict['shortage_loss_per_usd'], 0.02)
+        self.assertTrue(any('shortage_loss_per_usd is deprecated' in note for note in conflict_view['warnings']))
+        self.assertTrue(any('shortage_loss_per_worker_hour is deprecated' in note for note in conflict_view['warnings']))
+
+        accounts = allocator.load_accounts()
+        accounts['scoring']['shortage_loss_per_usd'] = 0.02
+        planned = self.plan({'work_kind': 'debug_review', 'difficulty': 'hard'}, accounts=accounts)
+        warnings = planned['decision']['warnings']
+        self.assertTrue(any('shortage_loss_per_usd is deprecated' in note and '0.012' in note for note in warnings))
+        self.assertFalse(any('shortage_loss_per_worker_hour' in note for note in warnings))
+        self.assertEqual(planned['decision']['system']['shortage_loss_per_usd'], 0.012)
+        self.assertEqual(planned['decision']['system']['opportunity_exchange']['score_per_displaced_usd'], 0.012)
+
+    def test_recent_ledger_choices_are_not_shifted_by_harness_factor(self):
+        path = Path.home() / '.route-manager' / 'router-ledger.jsonl'
+        if not path.is_file():
+            self.skipTest('no router ledger')
+        plans = []
+        with path.open(encoding='utf-8') as handle:
+            for line in handle:
+                if '"stage": "plan"' not in line and '"stage":"plan"' not in line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if row.get('stage') == 'plan' and row.get('choice') and row.get('choice') != 'none':
+                    plans.append(row)
+        bundles = allocator.bundles(allocator.load_accounts())
+        policy = allocator.load_accounts()['scoring']
+        shifted = []
+        for row in plans[-40:]:
+            bundle_id = row['choice']
+            bundle = dict(bundles.get(bundle_id) or row.get('bundle') or {})
+            if not bundle:
+                continue
+            bundle.setdefault('id', bundle_id)
+            if not bundle.get('harness'):
+                bundle['harness'] = allocator.bundle_harness(bundle, bundle.get('account'), bundle_id)
+            factor = allocator.harness_quality_factor(bundle, 'general_implementation', policy)
+            model_name = str(bundle.get('model') or '')
+            agy_claude = str(bundle_id).startswith('agy_') and model_name.startswith('claude')
+            expected = 0.9 if agy_claude else 1.0
+            if abs(factor - expected) > 1e-9:
+                shifted.append({'at': row.get('at'), 'choice': bundle_id, 'model': bundle.get('model'),
+                                'harness': bundle.get('harness'), 'harness_factor': factor,
+                                'expected_harness_factor': expected})
+        self.assertEqual(shifted, [])
+
     def test_dot_eligibility_and_free_usage(self):
         capabilities = allocator.load_capabilities()
         self.assertEqual(self.plan({'work_kind': 'dot_execution'})['choice'], 'dot_text')
@@ -415,7 +579,14 @@ class AllocatorTests(unittest.TestCase):
         codex_tight = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)],
                                  codex=[('usage', 50, 100)],
                                  antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 60, 100)])
-        self.assertEqual(self.plan(v_task, codex_tight)['choice'], 'argon_high')
+        codex_tight_plan = self.plan(v_task, codex_tight)
+        # agy reads local images with read_file, so Opus via the Antigravity 3P pool is eligible.
+        # With Claude's own weekly pool empty and Codex tight, the same top-visual-fit model (1.0 vs Argon 0.68)
+        # from a healthy pool is worth more than Argon even after the 0.9 agy-Claude harness factor.
+        self.assertTrue(codex_tight_plan['choice'].startswith('agy_opus55'))
+        codex_tight_rows = self.rows(codex_tight_plan)
+        self.assertFalse(codex_tight_rows['agy_opus55_medium']['excluded'])
+        self.assertFalse(codex_tight_rows['argon_high']['excluded'])
         for blind in ('grok47_high', 'dot_text'):
             self.assertTrue(self.rows(self.plan(v_task))[blind]['excluded'], blind)
 
@@ -487,15 +658,18 @@ class AllocatorTests(unittest.TestCase):
     def test_short_window_deferral_and_wait_limits(self):
         usage = self.usage(claude=[('five_hour', 3, 1.0), ('seven_day', 60, 100), ('weekly_fable', 100, 100)], codex=[('usage', 1, 121)])
         task = {'work_kind': 'visual_analysis', 'difficulty': 'routine', 'expected_hours': 1, 'needs': {'visual': True}}
-        no_argon = ['argon_high']     # Argon, priced in USD since 2026-10-27, would start now and leave nothing to defer
+        # Opus via agy (3P pool, readable images) starts now instead of waiting for Claude's
+        # five-hour reset: same model, healthy pool. Exclude it to keep testing the deferral mechanics.
+        self.assertEqual(self.plan(dict(task, can_wait_hours=2), usage, unavailable=['argon_high'])['choice'][:10], 'agy_opus55')
+        no_argon = ['argon_high'] + [b for b in allocator.bundles(allocator.load_accounts()) if b.startswith(('agy_opus', 'agy_sonnet'))]
         deferred = self.plan(dict(task, can_wait_hours=2), usage, unavailable=no_argon)
         self.assertEqual((deferred['choice'], deferred['decision']['action']), ('opus55_high', 'defer'))
         self.assertEqual(self.plan(task, usage, unavailable=no_argon)['decision']['better_if_waiting']['bundle'], 'opus55_high')
 
         long_wait = self.usage(claude=[('five_hour', 3, 4), ('seven_day', 60, 100), ('weekly_fable', 100, 100)], codex=[('usage', 1, 121)])
-        impatient = self.plan(dict(task, can_wait_hours=1), long_wait, unavailable=['flash_high', 'argon_high'])
+        impatient = self.plan(dict(task, can_wait_hours=1), long_wait, unavailable=['flash_high'] + no_argon)
         self.assertTrue(impatient['decision']['needs_user_decision'])
-        patient = self.plan(dict(task, can_wait_hours=5), long_wait, unavailable=['flash_high', 'argon_high'])
+        patient = self.plan(dict(task, can_wait_hours=5), long_wait, unavailable=['flash_high'] + no_argon)
         self.assertEqual((patient['decision']['needs_user_decision'], patient['decision']['action']), (False, 'defer'))
 
     def test_claude_2_backup_safety_floor_and_inflight_reservation(self):
@@ -542,6 +716,40 @@ class AllocatorTests(unittest.TestCase):
         self.assertTrue(self.rows(allocator.plan(
             {'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 1.5, 'needs': {'local_only': True}},
             unstarted_5h, self.now + timedelta(minutes=2), records=burst))['sonnet55_high_2']['excluded'])
+
+        # Stale claude-2 with active 5h reset and unknown/clamped used_pct or oversized 3h task is excluded
+        stale_c2 = self.usage(
+            claude=[('five_hour', 75, 4.0), ('seven_day', 20, 35.0), ('weekly_fable', 100, 35.0)],
+        )
+        stale_c2['accounts']['claude-2'] = {
+            'status': 'stale',
+            'stale': True,
+            'fetched_at': (self.now - timedelta(minutes=13)).isoformat(),
+            'windows': [
+                {'id': 'five_hour', 'used_pct': None, 'resets_at': (self.now + timedelta(hours=4)).isoformat(),
+                 'seconds_until_reset': 4 * 3600, 'reset_time_passed': False,
+                 'observed_remaining_pct': None, 'remaining_pct_before_reset': None},
+                {'id': 'seven_day', 'used_pct': 74.0, 'resets_at': (self.now + timedelta(hours=5)).isoformat(),
+                 'seconds_until_reset': 5 * 3600, 'reset_time_passed': False,
+                 'observed_remaining_pct': 26.0, 'remaining_pct_before_reset': None},
+            ],
+        }
+        res_1h = self.plan({'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 1.0,
+                            'needs': {'local_only': True}}, stale_c2)
+        self.assertTrue(self.rows(res_1h)['sonnet55_high_2']['excluded'])
+        self.assertEqual(res_1h['selected_bundle']['account'], 'claude')
+
+        # Even if five_hour telemetry is completely missing, an oversized task exceeding full 5h Pro capacity is excluded
+        missing_5h = copy.deepcopy(stale_c2)
+        missing_5h['accounts']['claude-2']['windows'] = [missing_5h['accounts']['claude-2']['windows'][1]]
+        custom_acc = allocator.load_accounts()
+        custom_acc['accounts']['claude-2']['bundles']['opus55_high_2'].pop('disabled', None)
+        res_opus_3h = self.plan({'work_kind': 'frontend_implementation', 'difficulty': 'hard', 'expected_hours': 3.0,
+                                 'needs': {'local_only': True}}, missing_5h, accounts=custom_acc)
+        self.assertTrue(self.rows(res_opus_3h)['opus55_high_2']['excluded'])
+        res_sonnet_4h = self.plan({'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 3.8,
+                                   'needs': {'local_only': True}}, missing_5h)
+        self.assertTrue(self.rows(res_sonnet_4h)['sonnet55_high_2']['excluded'])
 
     def test_constraints_and_validation(self):
         self.assertTrue(self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard',
@@ -843,7 +1051,22 @@ class AllocatorTests(unittest.TestCase):
                 tight = self.plan(dict(task, constraints={'model': model}),
                                   self.healthy_quota(('codex', 'claude', 'claude-2'), tight_rem))
                 self.assertEqual(healthy['choice'], high_effort)
-                self.assertEqual(tight['selected_bundle']['effort'], 'high')
+                tight_rows = self.rows(tight)
+                if model == 'claude-opus-5-5' and str(tight['choice']).startswith('agy_opus55_'):
+                    # Native weekly is scarce, so the healthy 3p pool wins. USD still follows the shared burn
+                    # curve. Where medium and high both saturate they tie and catalog order keeps medium;
+                    # frontier does not saturate, so high outscores medium.
+                    medium_row, high_row = tight_rows['agy_opus55_medium'], tight_rows['agy_opus55_high']
+                    self.assertAlmostEqual(medium_row['expected_usd'] / high_row['expected_usd'], 0.52 / 0.7, places=2)
+                    self.assertGreater(tight_rows['opus55_high']['score'], tight_rows['opus55_xhigh']['score'])
+                    if medium_row['components']['ability'] == high_row['components']['ability']:
+                        self.assertEqual(medium_row['score'], high_row['score'])
+                        self.assertEqual(tight['selected_bundle']['effort'], 'medium')
+                    else:
+                        self.assertGreater(high_row['score'], medium_row['score'])
+                        self.assertEqual(tight['selected_bundle']['effort'], 'high')
+                else:
+                    self.assertEqual(tight['selected_bundle']['effort'], 'high')
                 self.assertGreater(self.rows(healthy)[high_effort]['components']['quality_bonus'], 0)
                 self.assertNotIn('effort_capped', self.rows(healthy)[high_effort]['components'])
 
@@ -912,6 +1135,7 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(ro_plan['decision']['task']['kind'], 'debug_review')
         self.assertEqual(ro_plan['decision']['task']['profile']['code_complexity'], 0)
         self.assertIn(ro_plan['choice'], ('opus55_high', 'argon_high', 'sonnet55_high'))
+        self.assertNotIn('agy_opus55_low', self.rows(ro_plan))
 
         # 2) Exploration / quantitative research packet scripts with code_complexity=2 keep global_rigor=0.65
         exp_weights = allocator.convergent_weights(depth=2, code=2, scale=2, style='exploration')
@@ -945,6 +1169,151 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(gui_rows['argon_high']['components'].get('duration_multiplier'), 1.35)
         self.assertEqual(gui_rows['sol_high']['components'].get('duration_multiplier'), 1.35)
 
+    def test_existing_bundles_keep_tag_pools_and_draws_override(self):
+        # Duplicated historical predicate: windows.models substring or gemini/3p group, plus the fable window.
+        def historical(wid, wspec, model):
+            tags = wspec.get('models') if isinstance(wspec, dict) else None
+            group = 'gemini' if str(model).startswith('gemini') else '3p'
+            if tags and not any(tag in model for tag in tags) and group not in tags:
+                return False
+            if 'fable' in wid and 'fable' not in model:
+                return False
+            return True
+
+        accounts = allocator.load_accounts()
+        flat = allocator.bundles(accounts)
+        seen = 0
+        for bundle in flat.values():
+            spec = accounts['accounts'][bundle['account']]
+            pooled = allocator.bundle_pools(bundle, accounts)
+            via_windows = [wid for wid, _, _ in allocator.applicable_windows(
+                spec, bundle['model'], {}, bundle, accounts)]
+            self.assertEqual(via_windows, pooled, bundle['id'])
+            if 'draws' in bundle:
+                continue
+            model = allocator.canonical(bundle['model'], accounts)
+            expected = [wid for wid, wspec in (spec.get('windows') or {}).items() if historical(wid, wspec, model)]
+            self.assertEqual(pooled, expected, bundle['id'])
+            self.assertEqual([wid for wid, _, _ in allocator.applicable_windows(spec, model, {})], expected, bundle['id'])
+            seen += 1
+        self.assertGreater(seen, 10)
+
+        flash = flat['flash_high']
+        self.assertEqual(allocator.bundle_pools({**flash, 'draws': ['3p-weekly']}, accounts), ['3p-weekly'])
+        opus = flat['agy_opus55_high']
+        self.assertEqual(allocator.bundle_pools({**opus, 'draws': ['3p-weekly']}, accounts), ['3p-weekly'])
+        self.assertEqual(allocator.bundle_pools({**opus, 'draws': []}, accounts), [])
+        for family, canonical_name in (('opus', 'claude-opus-5-5'), ('sonnet', 'claude-sonnet-5-5')):
+            for effort in ('low', 'medium', 'high'):
+                bundle = flat[f'agy_{family}55_{effort}']
+                self.assertEqual(allocator.bundle_pools(bundle, accounts), ['3p-5h', '3p-weekly'])
+                self.assertEqual(allocator.canonical(bundle['model'], accounts), canonical_name)
+                self.assertEqual(bundle['model'], f'{canonical_name}-{effort}')
+                self.assertEqual(bundle['launch_model'], bundle['model'])
+                self.assertEqual((bundle['provider'], bundle['modeId']), ('antigravity-resilient', 'full-access'))
+                self.assertNotIn('disabled', bundle)
+                self.assertEqual(allocator.harness_quality_factor(bundle, 'debug_review', accounts['scoring']), 0.9)
+        low = flat['agy_opus55_low']
+        self.assertEqual(low.get('when'), {'max_reasoning_depth': 1})
+        self.assertTrue(allocator.bundle_applies(low, {'profile': {'reasoning_depth': 1}}))
+        self.assertFalse(allocator.bundle_applies(low, {'profile': {'reasoning_depth': 2}}))
+        self.assertFalse(allocator.bundle_applies(low, {}))
+
+    def test_agy_claude_3p_reservation_launch_and_short_window(self):
+        import dispatch_registry
+        accounts = allocator.load_accounts()
+        spec = accounts['accounts']['antigravity']
+        lease = (self.now + timedelta(hours=2)).isoformat()
+        record = {
+            'stage': 'dispatch', 'dispatch_id': 'agy-opus-1', 'state': 'started', 'lease_until': lease,
+            'bundle': {'account': 'antigravity', 'bundle_id': 'agy_opus55_high', 'model': 'claude-opus-5-5-high'},
+            'expected_usd': 4.0,
+        }
+        for wid, cap in (('3p-5h', 17.6), ('3p-weekly', 88.0)):
+            self.assertEqual(allocator.inflight_reserved_usd(
+                'antigravity', spec, wid, spec['windows'][wid], {}, cap, [record], accounts, {}, self.now), 4.0)
+        for wid in ('gemini-5h', 'gemini-weekly'):
+            self.assertEqual(allocator.inflight_reserved_usd(
+                'antigravity', spec, wid, spec['windows'][wid], {}, 100.0, [record], accounts, {}, self.now), 0.0)
+        # Catalog draws win even when the record's model string would tag-match the Gemini pool.
+        mismatched = {'stage': 'dispatch', 'dispatch_id': 'agy-opus-2', 'state': 'started', 'lease_until': lease,
+                      'expected_usd': 4.0,
+                      'bundle': {'account': 'antigravity', 'bundle_id': 'agy_opus55_high', 'model': 'gemini-3.8-flash-high'}}
+        self.assertEqual(allocator.inflight_reserved_usd(
+            'antigravity', spec, '3p-5h', spec['windows']['3p-5h'], {}, 17.6, [mismatched], accounts, {}, self.now), 4.0)
+        self.assertEqual(allocator.inflight_reserved_usd(
+            'antigravity', spec, 'gemini-5h', spec['windows']['gemini-5h'], {}, 182.0, [mismatched], accounts, {}, self.now), 0.0)
+
+        resolved = dispatch_registry.resolve_bundle(
+            {'provider': 'antigravity-resilient', 'account': 'antigravity', 'model': 'claude-opus-5-5', 'effort': 'high'},
+            accounts)
+        self.assertEqual(resolved['id'], 'agy_opus55_high')
+        self.assertEqual(resolved['launch_model'], 'claude-opus-5-5-high')
+        with self.assertRaises(ValueError):
+            dispatch_registry.resolve_bundle(
+                {'provider': 'antigravity-resilient', 'account': 'antigravity', 'model': 'claude-opus-5-5', 'effort': 'xhigh'},
+                accounts, explicit_override=True)
+        request = dispatch_registry.launch_request(
+            allocator.bundles(accounts)['agy_opus55_high'], {'title': 'agy claude', 'initialPrompt': 'fixture'})
+        self.assertEqual(request['provider'], 'antigravity-resilient/claude-opus-5-5-high')
+        self.assertEqual(request['settings'].get('modeId'), 'full-access')
+        self.assertNotIn('thinkingOptionId', request['settings'])
+
+        sparse = allocator.load_accounts()
+        allocator.accounts_override.apply(sparse, {'accounts': {'antigravity': {'bundles': {
+            'flash_high': {'disabled': 'sparse test'}}}}})
+        kept = sparse['accounts']['antigravity']['bundles']
+        self.assertEqual(kept['flash_high'].get('disabled'), 'sparse test')
+        self.assertNotIn('disabled', kept['agy_opus55_high'])
+        self.assertNotIn('disabled', kept['agy_sonnet55_high'])
+
+        frontier = {
+            'work_kind': 'general_implementation', 'difficulty': 'frontier', 'expected_hours': 1.0,
+            'profile': self.profile(reasoning_depth=4, code_complexity=3, context_scale=3, divergence=1),
+            'needs': {'local_only': True, 'local_only_reason': 'local pytest against this worktree'},
+        }
+        tight_others = dict(
+            claude=[('five_hour', 2, 4), ('seven_day', 2, 100), ('weekly_fable', 100, 100)],
+            codex=[('usage', 1, 100)])
+        chosen = self.plan(frontier, self.usage(
+            **tight_others,
+            antigravity=[('gemini-5h', 0, 3), ('gemini-weekly', 0, 100), ('3p-5h', 95, 4), ('3p-weekly', 90, 100)]))
+        self.assertTrue(str(chosen['choice']).startswith('agy_opus55_'), chosen['choice'])
+        self.assertEqual(chosen['selected_bundle']['account'], 'antigravity')
+        self.assertEqual(chosen['selected_bundle'].get('draws'), ['3p-5h', '3p-weekly'])
+        self.assertEqual(chosen['selected_bundle']['modeId'], 'full-access')
+        rows = self.rows(chosen)
+        for bid in ('flash_high', 'argon_high', 'opus55_high'):
+            self.assertTrue(rows[bid]['excluded'], bid)
+
+        blocked = self.plan(frontier, self.usage(
+            **tight_others,
+            antigravity=[('gemini-5h', 0, 3), ('gemini-weekly', 0, 100), ('3p-5h', 0, 2), ('3p-weekly', 90, 100)]))
+        blocked_rows = self.rows(blocked)
+        self.assertNotIn('agy_opus55_low', blocked_rows)
+        for effort in ('medium', 'high'):
+            reasons = blocked_rows[f'agy_opus55_{effort}']['excluded']
+            self.assertTrue(any('3p-5h' in reason for reason in reasons), reasons)
+        self.assertFalse(str(blocked['choice']).startswith('agy_'))
+        shallow = {
+            'work_kind': 'general_implementation', 'difficulty': 'routine', 'expected_hours': 1.0,
+            'profile': self.profile(reasoning_depth=1, code_complexity=1, divergence=1,
+                                    hallucination_risk=1, error_cost=1),
+            'needs': {'local_only': True, 'local_only_reason': 'local pytest against this worktree'},
+        }
+        shallow_blocked = self.plan(shallow, self.usage(
+            **tight_others,
+            antigravity=[('gemini-5h', 0, 3), ('gemini-weekly', 0, 100), ('3p-5h', 0, 2), ('3p-weekly', 90, 100)]))
+        low_reasons = self.rows(shallow_blocked)['agy_opus55_low']['excluded']
+        self.assertTrue(any('3p-5h' in reason for reason in low_reasons), low_reasons)
+
+        long = self.plan(dict(frontier, expected_hours=4), self.usage(
+            **tight_others,
+            antigravity=[('gemini-5h', 0, 3), ('gemini-weekly', 0, 100), ('3p-5h', 100, 4), ('3p-weekly', 90, 100)]))
+        long_rows = self.rows(long)
+        for effort in ('medium', 'high'):
+            reasons = long_rows[f'agy_opus55_{effort}']['excluded']
+            self.assertTrue(any('3p-5h' in reason for reason in reasons), reasons)
 
 
 class OverrideContractTests(unittest.TestCase):

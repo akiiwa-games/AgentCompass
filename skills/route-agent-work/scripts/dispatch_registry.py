@@ -104,7 +104,7 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
     if bundle.get('fast') and not allocator.models_table(accounts).get(model, {}).get('fast_capable'):
         raise ValueError(f'Model {model!r} does not support fast mode')
     siblings = [b for b in allocator.bundles(accounts).values()
-                if b['model'] == model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+                if allocator.canonical(b.get('model'), accounts) == model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
     exact = next((b for b in siblings if b.get('effort') == bundle.get('effort')), None)
     if exact:
         return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
@@ -135,7 +135,7 @@ def check_launch_quota(bundle, accounts, usage, now):
     usage = provider_inventory.merge_usage(usage, accounts, now)
     spec = accounts['accounts'][bundle['account']]
     row = (usage.get('accounts') or {}).get(bundle['account']) or {}
-    for wid, window, observed in allocator.applicable_windows(spec, bundle['model'], row):
+    for wid, window, observed in allocator.applicable_windows(spec, bundle.get('model'), row, bundle, accounts):
         if allocator.below_launch_floor(window, observed, row, now):
             floor = window['launch_min_remaining_pct']
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
@@ -283,6 +283,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             alloc_task['force_fast'] = True
         elif not bundle.get('fast'):
             alloc_task['disable_fast'] = True
+        if decision.get('constraint') == 'user_override':
+            alloc_task['pinned_bundle'] = bundle['bundle_id']
         plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts)
         candidate = next((c for c in plan['ranking'] if c['id'] == bundle['bundle_id']), None)
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):

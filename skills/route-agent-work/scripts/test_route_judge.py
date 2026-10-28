@@ -126,10 +126,46 @@ class RoutingTests(unittest.TestCase):
         # Window math
         w = router.window_state({'used_pct': 35, 'resets_at': '2026-10-04T11:00:00+08:00'}, self.now)
         self.assertEqual((w['seconds_until_reset'], w['remaining_pct_before_reset']), (7200, 65))
+        for over_used in (100.5, 101.0, 110):
+            over = router.window_state({'used_pct': over_used, 'resets_at': '2026-10-04T03:00:00Z'}, self.now)
+            self.assertEqual((over['used_pct'], over['observed_remaining_pct'], over['remaining_pct_before_reset']),
+                             (100.0, 0.0, 0.0))
         for bad_reset in (None, 'invalid', '2026-10-04T03:00:00'):
             self.assertIsNone(router.window_state({'used_pct': 80, 'resets_at': bad_reset}, self.now)['remaining_pct_before_reset'])
-        for bad_used in (None, '80', -1, 110, float('nan'), True):
+        for bad_used in (None, '80', -1, float('nan'), float('inf'), True):
             self.assertIsNone(router.window_state({'used_pct': bad_used, 'resets_at': '2026-10-05T00:00:00Z'}, self.now)['used_pct'])
+
+        # 429 session-limit log detection and rate-limits.json write-back
+        with tempfile.TemporaryDirectory() as directory:
+            hit_now = datetime(2026, 10, 28, 9, 55, tzinfo=timezone.utc)
+            cache = self.write_cache(directory, {
+                'claude-2': {
+                    'fetched_at': '2026-10-28T09:38:12Z',
+                    'available': True,
+                    'stale': True,
+                    'windows': [
+                        {'id': 'five_hour', 'used_pct': 101.0, 'resets_at': '2026-10-28T13:50:00Z'},
+                        {'id': 'seven_day', 'used_pct': 74.0, 'resets_at': '2026-10-28T15:00:00Z'},
+                    ],
+                }
+            })
+            log_path = Path(directory) / '.claude-2' / 'projects' / 'E--PROJECTS-route-manager' / 'sess1.jsonl'
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(json.dumps({
+                'type': 'assistant',
+                'timestamp': '2026-10-28T09:52:07.000Z',
+                'isApiErrorMessage': True,
+                'error': 'rate_limit',
+                'message': {'content': [{'type': 'text', 'text': "API Error: Request rejected (429) · Claude Code: You've hit your session limit · resets 1:50pm (UTC)"}]},
+            }) + '\n', encoding='utf-8')
+            snap_429 = router.usage_snapshot(cache, now=hit_now)
+            c2 = snap_429['accounts']['claude-2']
+            self.assertEqual(c2.get('rate_limited_until'), '2026-10-28T13:50:00+00:00')
+            w5 = next(w for w in c2['windows'] if w['id'] == 'five_hour')
+            self.assertEqual((w5['used_pct'], w5['observed_remaining_pct'], w5['remaining_pct_before_reset'], w5.get('rate_limited')),
+                             (100.0, 0.0, 0.0, True))
+            persisted = json.loads((Path(directory) / '.route-manager' / 'rate-limits.json').read_text(encoding='utf-8'))
+            self.assertEqual(persisted['claude-2']['resets_at'], '2026-10-28T13:50:00+00:00')
 
     def test_request_building_validation_and_metered_fallback(self):
         candidate = self.candidate(account='distinct-account')

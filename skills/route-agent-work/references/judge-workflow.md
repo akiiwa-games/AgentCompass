@@ -29,3 +29,27 @@ Produced automatically by `score_task` (via `agy --model gemini-3.8-flash-low --
 - `reason`: One-sentence justification of the classification and scores.
 
 When the System-One classifier runs on `plan`, its `work_kind` and `difficulty` (`reasoning_depth`) are authoritative and override any manual `work_kind` or `difficulty` supplied by the caller (`caller_classification_ignored`).
+
+## 3. Value minus cost
+
+Allocation has three layers. They do not mix.
+
+| Layer | What it decides | What it ignores |
+| :--- | :--- | :--- |
+| **Eligible set** | Model settings, account health, host policy, modality, ability floor, and per-window reserves. | Score weights and quota price. |
+| **Value** | How good this model is for this task on this harness and effort: weighted fit and ability, times `harness_factor`, plus continuity, reset bonus, free-usage, boost and quality bonus. | Which pool pays. |
+| **Cost** | Which pool pays, and what other work that spend displaces. | Model quality, except through the exchange rate below. |
+
+```text
+value = harness_factor × (w_fit·fit + w_ability·ability) + w_continuity·continuity
+        + reset_bonus + free_usage + boost + quality_bonus + fast_bonus
+score = value − opportunity_cost − effort_penalty − overqualification − deferred_start_penalty
+```
+
+`harness_factor` defaults to `1.0` (`scoring.harness_factors`). The same model on two harnesses stays the same value unless a rule says the harness itself is worse. Antigravity Claude starts at `0.9` (200k context and a different tool surface). Codex versus Pi is not that rule.
+
+`harness_order` still runs after the score, and only among siblings (same account, model, effort and action). The best sibling keeps its score. Each place behind subtracts `harness_step` (`0.03`). As a coefficient on the fit/ability value that subtraction is `harness_order_factor = 1 − harness_step × places / value`. The order flips by route and by interaction style, and a harness with no sibling is not penalized, so a single global coefficient cannot replace the list.
+
+`scoring.opportunity_exchange` is the only quality-versus-quota rate. `exchange_rate` reads `score_per_displaced_usd` (`0.012` score per USD of expected displaced subscription capacity) and `score_per_displaced_worker_hour` (`0.06` score per displaced worker-hour). One score point is about `$83.33` of displaced USD, or `16.67` worker-hours. The worker-hour rate is used only when a window has no USD capacity. Top-level `shortage_loss_per_usd` and `shortage_loss_per_worker_hour` are a deprecated fallback for a policy that has not set the named field. When both are set and differ, the named field wins and `decision.warnings` says the old key was ignored.
+
+A bundle that draws several pools is gated by the tightest one: every applicable window must clear its reserve. Opportunity cost is the sum of each window's shortage charge at this exchange. `capacity`, the expected percent and the reset bonus follow the binding window, the window with the highest opportunity cost. `decision.system.opportunity_exchange` on a plan repeats the rate and this rule.

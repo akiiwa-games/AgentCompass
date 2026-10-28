@@ -577,6 +577,7 @@ def discover(home=None, environ=None, now=None):
                     **({'budget_usd': budget_usd} if budget_usd is not None else {}),
                     **({'models': pmodels} if pmodels else {}),
                     **({'allowed_cwd': pspec['allowed_cwd']} if pspec.get('allowed_cwd') else {}),
+                    **({'cwd_regex': pspec['cwd_regex']} if pspec.get('cwd_regex') else {}),
                 }
                 result['launchers'][pname] = {'family': pfamily, 'status': pstatus}
     for name, config_path in (('dot', home / '.dot2api/client.json'),
@@ -693,7 +694,61 @@ def unavailable_reason(inventory, account, provider=None):
     return None
 
 
+def _auto_catalog(inventory, live, now_epoch):
+    """Advertised models per provider: configured/discovered lists, plus the tray model-catalog cache when live."""
+    providers = {}
+    for name, row in (inventory.get('accounts') or {}).items():
+        models = [m for m in (row.get('models') or []) if isinstance(m, str)]
+        if models and row.get('status', 'ready') == 'ready':
+            providers[name] = {'ok': True, 'type': 'configured', 'checked_at': now_epoch, 'models': models}
+    if live:
+        home = Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
+        cache, _ = read_json(Path(os.environ.get('ROUTER_STATE_DIR') or home / '.route-manager') / 'model-catalog.json')
+        for name, entry in obj(cache.get('providers')).items():
+            if not isinstance(entry, dict) or entry.get('type') == 'static':
+                continue
+            if name in providers:
+                ids = {(m.get('id') if isinstance(m, dict) else m) for m in entry.get('models') or []}
+                extra = [m for m in providers[name]['models'] if m not in ids]
+                entry = {**entry, 'models': list(entry.get('models') or []) + extra}
+            providers[name] = entry
+    return {'providers': providers}
+
+
+def _apply_auto_bundles(accounts, inventory, live):
+    """Runtime-derived bundles (auto_bundles) replace the retired per-proxy `__high` synthesis.
+
+    Read-only: the `seen` file is read when live; the tray model refresh is the writer.
+    """
+    import time
+    import auto_bundles
+    now_epoch = time.time()
+    families = {name: row.get('family') for name, row in (inventory.get('accounts') or {}).items()}
+    home = Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
+    state = Path(os.environ.get('ROUTER_STATE_DIR') or home / '.route-manager')
+    seen = auto_bundles.read_seen(state / 'auto-bundles-seen.json') if live else {}
+    derived = auto_bundles.derive(accounts, _auto_catalog(inventory, live, now_epoch), now_epoch,
+                                  seen=seen, families=families)
+    for account, rows in derived['bundles'].items():
+        for bundle in rows.values():
+            reason = unavailable_reason(inventory, account, bundle.get('provider', account))
+            if reason:
+                bundle['discovery_unavailable'] = reason
+            if bundle.get('effort'):
+                accounts.setdefault('dispatch_efforts', {}).setdefault(account, {}).setdefault(bundle['model'], [bundle['effort']])
+    for name, spec in derived['models'].items():
+        accounts.setdefault('models', {}).setdefault(name, spec)
+    for account, rows in derived['bundles'].items():
+        target = accounts['accounts'][account].setdefault('bundles', {})
+        for bid, bundle in rows.items():
+            target.setdefault(bid, bundle)
+    accounts['_auto_bundles'] = {'excluded': derived['excluded'],
+                                 'legacy_aliases': auto_bundles.legacy_aliases(accounts, derived),
+                                 'seen': derived['seen'] if live else {}}
+
+
 def apply(accounts, inventory=None):
+    live = inventory is None
     inventory = current() if inventory is None else inventory
     accounts['_discovery'] = inventory
     specs = accounts['accounts']
@@ -706,28 +761,6 @@ def apply(accounts, inventory=None):
                     specs.pop(name, None)
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
-
-    def _synthesize_proxy_bundles(pname, pfamily, model_list):
-        bundles = {}
-        for raw_m in model_list or []:
-            if not isinstance(raw_m, str) or not raw_m.strip():
-                continue
-            canon = resolve_canonical_model(raw_m, known_models, aliases) or raw_m.rsplit('/', 1)[-1]
-            m_harness = pfamily if pfamily not in ('claude', 'codex') else 'claude' if canon.startswith('claude-') else 'codex'
-            mode = 'bypassPermissions' if m_harness == 'claude' else ('build' if m_harness == 'opencode' else 'full-access')
-            bid = f"{pname}__{canon.replace('-', '_').replace('.', '_')}_high"
-            if bid in bundles and bundles[bid]['launch_model'] != raw_m:
-                bid += '_' + digest(raw_m)[:8]
-            bundles[bid] = {
-                'provider': pname,
-                'harness': m_harness,
-                'model': canon,
-                'launch_model': raw_m,
-                'effort': 'high',
-                **({'modeId': mode} if m_harness in ('claude', 'codex', 'pi', 'opencode') else {}),
-            }
-            accounts.setdefault('dispatch_efforts', {}).setdefault(pname, {}).setdefault(canon, ['high'])
-        return bundles
 
     for name, row in inventory['accounts'].items():
         family = row['family']
@@ -743,7 +776,7 @@ def apply(accounts, inventory=None):
                     'expires_at': None,
                     'windows': {'spend': {'hours': 168, 'launch_min_remaining_pct': 5}},
                     'burn_pct_per_worker_hour': {'spend': 1.0},
-                    'bundles': _synthesize_proxy_bundles(name, family, row.get('models') or ['gpt-6.1-sol']),
+                    'bundles': {},  # auto_bundles derives one bundle per advertised model below
                 }
                 if isinstance(row.get('budget_usd'), (int, float)) and row['budget_usd'] > 0:
                     spec['capacity_usd'] = {'spend': float(row['budget_usd'])}
@@ -787,7 +820,7 @@ def apply(accounts, inventory=None):
             elif row.get('models'):
                 specs[name] = {'plan': row.get('plan') or 'discovered',
                     'billing': row.get('billing') or 'unknown', 'windows': {},
-                    'bundles': _synthesize_proxy_bundles(name, family, row['models'])}
+                    'bundles': {}}  # auto_bundles derives these below
             else:
                 continue
         spec = specs[name]
@@ -803,16 +836,15 @@ def apply(accounts, inventory=None):
                     spec.setdefault('burn_pct_per_worker_hour', {}).setdefault(wid, 1.0)
         if row.get('allowed_cwd') and 'allowed_cwd' not in spec:
             spec['allowed_cwd'] = row['allowed_cwd']
+        if row.get('cwd_regex') and 'cwd_regex' not in spec:
+            spec['cwd_regex'] = row['cwd_regex']
         if is_litellm or spec.get('backend_kind') in ('litellm', 'proxy'):
             spec['billing'] = 'metered'
             spec.setdefault('windows', {'spend': {'hours': 168, 'launch_min_remaining_pct': 5}})
             spec.setdefault('burn_pct_per_worker_hour', {'spend': 1.0})
             if isinstance(row.get('budget_usd'), (int, float)) and row['budget_usd'] > 0:
                 spec.setdefault('capacity_usd', {})['spend'] = float(row['budget_usd'])
-            if not spec.get('bundles'):
-                spec['bundles'] = _synthesize_proxy_bundles(
-                    name, family, row.get('models') or spec.get('models') or ['gpt-6.1-sol']
-                )
+            spec.setdefault('bundles', {})
             continue
         plan = row.get('plan')
         if plan:
@@ -855,11 +887,6 @@ def apply(accounts, inventory=None):
             if row.get('billing') == 'metered':
                 spec['windows'] = {}
         advertised = row.get('models')
-        if isinstance(advertised, list):
-            existing_models = {resolve_canonical_model(b['model'], known_models, aliases) or b['model']
-                               for b in spec.get('bundles', {}).values()}
-            additional = [m for m in advertised if (resolve_canonical_model(m, known_models, aliases) or m.rsplit('/', 1)[-1]) not in existing_models]
-            spec.setdefault('bundles', {}).update(_synthesize_proxy_bundles(name, family, additional))
         for bundle in spec.get('bundles', {}).values():
             reason = unavailable_reason(inventory, name, bundle.get('provider', name))
             if reason:
@@ -871,6 +898,7 @@ def apply(accounts, inventory=None):
                     bundle['launch_model'] = match
                 else:
                     bundle['discovery_unavailable'] = 'model not advertised by the configured provider'
+    _apply_auto_bundles(accounts, inventory, live)
     for name, row in inventory['accounts'].items():
         owner = row.get('quota_account')
         if owner and owner != name and name in specs and owner in specs:

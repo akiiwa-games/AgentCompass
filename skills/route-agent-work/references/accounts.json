@@ -40,6 +40,27 @@
     "needs_judgment_margin": 0.02,
     "harness_order": ["codex", "pi"],
     "harness_step": 0.03,
+    "harness_factors": {
+      "default": 1.0,
+      "rules": [
+        {
+          "harness": "antigravity-resilient",
+          "model_prefix": "claude",
+          "factor": 0.9
+        },
+        {
+          "harness": "antigravity",
+          "model_prefix": "claude",
+          "factor": 0.9
+        }
+      ],
+      "basis": "Absolute harness quality on weighted fit and ability. Default 1.0. This does not replace harness_order. That list is a sibling-only preference (same account, model, effort and action): the best sibling keeps its score, and the order flips by work_kind and interaction style. The equivalent coefficient is harness_order_factor = 1 - harness_step * places_behind / (harness_factor * weighted fit and ability), which subtracts exactly harness_step per place."
+    },
+    "opportunity_exchange": {
+      "score_per_displaced_usd": 0.012,
+      "score_per_displaced_worker_hour": 0.06,
+      "basis": "Quality-versus-quota exchange, and the only rate window_cost reads (via exchange_rate). score_per_displaced_usd is 0.012 score per USD of expected displaced subscription capacity; score_per_displaced_worker_hour is 0.06 score per displaced worker-hour, only when a window has no USD capacity. One score point is about $83.33 of displaced USD, or 16.67 worker-hours. Top-level shortage_loss_per_usd and shortage_loss_per_worker_hour are a deprecated fallback used only when the field here is absent. If both are set and differ, this object wins and the plan warns that the old key was ignored."
+    },
     "ability_floor": {"routine": 3.0, "hard": 3.3, "coupled": 3.6, "frontier": 4.2},
     "ability_span": 0.6,
     "effort_unlock_difficulties": ["coupled", "frontier"],
@@ -1108,6 +1129,18 @@
         "high",
         "max"
       ]
+    },
+    "antigravity-resilient": {
+      "claude-opus-5-5": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "claude-sonnet-5-5": [
+        "low",
+        "medium",
+        "high"
+      ]
     }
   },
   "effort_curves": {
@@ -1653,10 +1686,16 @@
       "burn_pct_per_worker_hour": {"gemini-weekly": 0.08, "gemini-5h": 0.27},
       "capacity_usd": {"gemini-weekly": 625, "gemini-5h": 182, "3p-weekly": 88, "3p-5h": 17.6},
       "capacity_basis": "API-equivalent pool at list price, calibrated to empirical Argon burn (Argon $4.0/h = 0.62%/h of gemini-weekly -> $625, 2.13%/h of gemini-5h -> $182; Flash $0.5/h = 0.08%/h weekly, 0.27%/h 5h).",
-      "burn_basis": "Empirical calibration (2026-10-27): Google AI Ultra gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly).",
+      "burn_basis": "Empirical calibration (2026-10-27): Google AI Ultra gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly). Claude on antigravity draws only 3p-5h/3p-weekly via bundle draws, priced at the Claude model's usd_per_hour against those pools ($17.6 / $88).",
       "bundles": {
         "flash_high": {"provider": "antigravity-resilient", "model": "gemini-3.8-flash-high", "effort": "high", "modeId": "full-access"},
-        "argon_high": {"provider": "antigravity-resilient", "model": "gemini-4-argon-high", "effort": "high", "modeId": "full-access"}
+        "argon_high": {"provider": "antigravity-resilient", "model": "gemini-4-argon-high", "effort": "high", "modeId": "full-access"},
+        "agy_opus55_low": {"provider": "antigravity-resilient", "model": "claude-opus-5-5-low", "launch_model": "claude-opus-5-5-low", "effort": "low", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"], "when": {"max_reasoning_depth": 1}},
+        "agy_opus55_medium": {"provider": "antigravity-resilient", "model": "claude-opus-5-5-medium", "launch_model": "claude-opus-5-5-medium", "effort": "medium", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
+        "agy_opus55_high": {"provider": "antigravity-resilient", "model": "claude-opus-5-5-high", "launch_model": "claude-opus-5-5-high", "effort": "high", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
+        "agy_sonnet55_low": {"provider": "antigravity-resilient", "model": "claude-sonnet-5-5-low", "launch_model": "claude-sonnet-5-5-low", "effort": "low", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
+        "agy_sonnet55_medium": {"provider": "antigravity-resilient", "model": "claude-sonnet-5-5-medium", "launch_model": "claude-sonnet-5-5-medium", "effort": "medium", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
+        "agy_sonnet55_high": {"provider": "antigravity-resilient", "model": "claude-sonnet-5-5-high", "launch_model": "claude-sonnet-5-5-high", "effort": "high", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]}
       }
     },
     "dot": {

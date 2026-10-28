@@ -19,6 +19,8 @@ import host_policy
 import override_store
 import antigravity_telemetry
 import provider_inventory
+import accounts_override
+import cwd_policy
 from model_resolution import generic_model_spec, resolve_canonical_model
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -415,30 +417,26 @@ def load_accounts(path=None):
             except (OSError, ValueError):
                 user_doc = None
         if user_doc is not None:
+            user_doc = accounts_override.migrate(user_doc, accounts)
             if isinstance(user_doc.get('scoring'), dict):
-                accounts['scoring'] = user_doc['scoring']
+                accounts['scoring'] = accounts_override.merge(accounts['scoring'], user_doc['scoring'])
             for m_name, m_spec in (user_doc.get('models') or {}).items():
                 if isinstance(m_spec, dict) and isinstance(accounts.get('models', {}).get(m_name), dict):
                     if isinstance(m_spec.get('subjective'), dict):
-                        accounts['models'][m_name]['subjective'] = m_spec['subjective']
+                        accounts['models'][m_name]['subjective'] = accounts_override.merge(
+                            accounts['models'][m_name].get('subjective', {}), m_spec['subjective'])
         provider_inventory.apply(accounts)
         if user_doc is not None:
-            for a_name, a_spec in (user_doc.get('accounts') or {}).items():
-                target_acc = (accounts.get('accounts') or {}).get(a_name)
-                if isinstance(a_spec, dict) and isinstance(target_acc, dict):
-                    if a_spec.get('verified') is False:
-                        target_acc['verified'] = False
-                    elif a_spec.get('verified') is True and target_acc.get('discovery_status') in (None, 'ready'):
-                        target_acc['verified'] = True
-                    if 'allowed_cwd' in a_spec:
-                        target_acc['allowed_cwd'] = a_spec['allowed_cwd']
-                    for b_id, b_spec in (a_spec.get('bundles') or {}).items():
-                        target_b = (target_acc.get('bundles') or {}).get(b_id)
-                        if isinstance(b_spec, dict) and isinstance(target_b, dict):
-                            if 'disabled' in b_spec:
-                                target_b['disabled'] = b_spec['disabled']
-                            else:
-                                target_b.pop('disabled', None)
+            accounts_override.apply(accounts, user_doc)
+            for owner, spec in accounts.get('accounts', {}).items():
+                for bid, bundle in (spec.get('bundles') or {}).items():
+                    account = accounts_override.preference_account(bundle, owner, accounts)
+                    harnesses = (user_doc.get('harness_overrides') or {}).get(account) or {}
+                    harness = accounts_override.harness(bundle, owner, bid, bundle_harness)
+                    if (harnesses.get(harness) or {}).get('disabled'):
+                        bundle['_harness_disabled'] = True
+                        bundle['_model_disabled'] = bundle.get('disabled', False)
+                        bundle['disabled'] = 'Harness disabled by user'
     override = None if path else capacity_override_path()
     if override is not None:
         try:
@@ -610,11 +608,9 @@ def inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records
         bundle = rec.get('bundle') or {}
         if bundle.get('account') != account:
             continue
-        model = canonical(bundle.get('model') or '', accounts)
-        tags = wspec.get('models')
-        if tags and not any(tag in model for tag in tags) and tag_group(model) not in tags:
-            continue
-        if 'fable' in wid and 'fable' not in model:
+        bound = dict(bundle)
+        bound.setdefault('account', account)
+        if wid not in bundle_pools(bound, accounts):
             continue
         amount = rec.get('expected_usd')
         if isinstance(amount, (int, float)) and not isinstance(amount, bool) and amount > 0:
@@ -625,7 +621,8 @@ def inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records
 def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step_usd=None, unit=None):
     """One window's share of the opportunity cost: the other work that spending `step` here would push past the
     window's end (expected shortage with the step minus without it), valued at list price against the window's USD
-    capacity (explicit `capacity_usd`, else the derived pool) times `shortage_loss_per_usd`. Only a window with no USD
+    capacity (explicit `capacity_usd`, else the derived pool) times the opportunity exchange
+    (`exchange_rate`, preferring `scoring.opportunity_exchange`). Only a window with no USD
     capacity at all counts worker-hours, at this bundle's own burn (`unit`, %/worker-hour) or the account prior if
     higher: dividing a high-burn model's shortage by a cheap model's prior inflated it (Argon 1.6%/h over Flash
     0.2%/h was 8x, fixed 2026-10-27)."""
@@ -641,11 +638,12 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
     rem_usd = (remaining * eff_cap_usd / 100.0) if eff_cap_usd else None
     after_usd = (rem_usd - real_step_usd) if (rem_usd is not None and real_step_usd is not None) else None
     if eff_cap_usd:
-        displaced, cost = shortage * eff_cap_usd / 100, policy['shortage_loss_per_usd'] * shortage * eff_cap_usd / 100
+        displaced = shortage * eff_cap_usd / 100
+        cost = exchange_rate(policy, 'shortage_loss_per_usd') * displaced
     else:
         rate = max(float((spec.get('burn_pct_per_worker_hour') or {}).get(wid) or 0.0), float(unit or 0.0))
         displaced = shortage / rate if rate > 0 else 0.0
-        cost = policy['shortage_loss_per_worker_hour'] * displaced
+        cost = exchange_rate(policy, 'shortage_loss_per_worker_hour') * displaced
     scarcity_ref = float(policy.get('scarcity_usable_ref_pct', 45.0))
     scarcity = (shortage_prob * clamp(1.0 - max(0.0, usable - step) / scarcity_ref, 0.0, 1.0) ** 1.5
                 if not state.get('short') and scarcity_ref > 0 else 0.0)
@@ -742,7 +740,9 @@ def bundles(accounts):
             out[bundle_id] = {'id': bundle_id, 'account': account, 'provider': provider,
                               'harness': bundle_harness(bundle, account, bundle_id),
                               'model': bundle['model'], 'effort': bundle.get('effort'),
-                              **{k: bundle[k] for k in ('modeId', 'disabled', 'launch_model', 'when', 'discovery_unavailable') if k in bundle}}
+                              **{k: bundle[k] for k in ('modeId', 'disabled', 'launch_model', 'when', 'discovery_unavailable', 'draws',
+                                                        'auto', 'billing', 'score_source', 'score_basis', 'cost_estimated',
+                                                        'availability', 'compatibility', 'compatibility_reason') if k in bundle}}
     return out
 
 
@@ -1155,9 +1155,35 @@ def subjective_fit(weights, subj):
     return sum(w * subj.get(dim, 0.5) for dim, w in weights.items()) / total
 
 
+HARNESS_CAPABILITIES = {
+    'antigravity-resilient': {
+        # No prompt image attachments; but the CLI's own read_file tool shows local image files to multimodal models.
+        'accepts_image_input': False,
+        'reads_image_files': True,
+    },
+}
+
+
+def harness_accepts_visual(harness, model, needs_attachment=False):
+    """True when visual work can reach this model on this harness (manual and auto bundles alike).
+
+    The router dispatches text briefs only; visual workers read local image files themselves, so a task is
+    treated as file-based unless the caller says it needs prompt attachments. The model's own multimodality
+    is checked separately (models table `visual`)."""
+    key = 'antigravity-resilient' if harness == 'antigravity' else harness
+    cap = HARNESS_CAPABILITIES.get(key)
+    if not cap:
+        return True
+    if needs_attachment:
+        return bool(cap.get('accepts_image_input', True))
+    return bool(cap.get('reads_image_files', True) or cap.get('accepts_image_input', True))
+
+
 def bundle_applies(bundle, task):
     """A bundle with a `when` rule is offered only to the work it names (e.g. medium efforts on routine, Pro advisor on frontier)."""
     rule = bundle.get('when') or {}
+    if rule and task.get('pinned_bundle') == bundle.get('id'):
+        return True  # a user pin names this exact bundle; its `when` scope does not apply
     if 'max_reasoning_depth' in rule:
         return bool(task.get('profile')) and task['profile']['reasoning_depth'] <= rule['max_reasoning_depth']
     if 'min_difficulty' in rule:
@@ -1167,32 +1193,96 @@ def bundle_applies(bundle, task):
     return True
 
 
-def applicable_windows(account_spec, model, usage_row):
-    """(window id, spec, observed window) for windows that bind this model."""
+def legacy_model_binds_window(wid, wspec, model):
+    """Historical windows.models tag match. `model` is used as given, not canonicalized."""
+    model = model or ''
+    tags = wspec.get('models') if isinstance(wspec, dict) else None
+    if tags and not any(tag in model for tag in tags) and tag_group(model) not in tags:
+        return False
+    if 'fable' in wid and 'fable' not in model:
+        return False
+    return True
+
+
+def _explicit_draws(bundle):
+    """The bundle's draws list when the key is present, else None. An empty list is explicit."""
+    if not isinstance(bundle, dict) or 'draws' not in bundle:
+        return None
+    raw = bundle.get('draws')
+    if not isinstance(raw, (list, tuple)):
+        return []
+    found = []
+    for wid in raw:
+        if isinstance(wid, str) and wid and wid not in found:
+            found.append(wid)
+    return found
+
+
+def bundle_pools(bundle, accounts):
+    """Window ids this bundle draws, in declaration order (or account-window order for the tag fallback).
+
+    An explicit `draws` on the passed bundle wins, including an empty list. Otherwise the catalog
+    bundle's `draws` wins. Otherwise the historical windows.models tag match runs on the canonical model.
+    Only ids that exist on the account are returned.
+    """
+    bundle = bundle if isinstance(bundle, dict) else {}
+    accounts = accounts if isinstance(accounts, dict) else {}
+    specs = accounts.get('accounts') if isinstance(accounts.get('accounts'), dict) else {}
+    account = bundle.get('account') if isinstance(bundle.get('account'), str) else None
+    spec = specs.get(account) if account else None
+    bid = bundle.get('id') or bundle.get('bundle_id')
+    if not isinstance(spec, dict):
+        spec = None
+        for name, candidate in specs.items():
+            if isinstance(candidate, dict) and bid and bid in (candidate.get('bundles') or {}):
+                account, spec = name, candidate
+                break
+    windows = spec.get('windows') if isinstance(spec, dict) and isinstance(spec.get('windows'), dict) else {}
+    declared = _explicit_draws(bundle)
+    if declared is None and isinstance(spec, dict) and bid:
+        catalog = (spec.get('bundles') or {}).get(bid)
+        if isinstance(catalog, dict):
+            declared = _explicit_draws(catalog)
+    if declared is not None:
+        return [wid for wid in declared if wid in windows]
+    model = canonical(bundle.get('model') or '', accounts)
+    return [wid for wid, wspec in windows.items() if legacy_model_binds_window(wid, wspec, model)]
+
+
+def applicable_windows(account_spec, model, usage_row, bundle=None, accounts=None):
+    """(window id, spec, observed window) for windows that bind this model or bundle.
+
+    Without a bundle, the historical tag match runs on the model string as given.
+    With a bundle, `bundle_pools` is the only source.
+    """
     observed = {}
     for w in (usage_row or {}).get('windows', []):
         wid = w.get('id')
         if wid:
             observed.setdefault(canonical_window_id(account_spec, wid), w)
-    out = []
-    for wid, spec in account_spec.get('windows', {}).items():
-        tags = spec.get('models')
-        if tags and not any(tag in model for tag in tags) and not (tag_group(model) in tags):
-            continue
-        if 'fable' in wid and 'fable' not in model:
-            continue
-        out.append((wid, spec, observed.get(wid)))
-    return out
+    windows = (account_spec or {}).get('windows') or {}
+    if bundle is None:
+        ids = [wid for wid, wspec in windows.items() if legacy_model_binds_window(wid, wspec, model or '')]
+    else:
+        if accounts is None:
+            acct = bundle.get('account') if isinstance(bundle, dict) and isinstance(bundle.get('account'), str) else '_billing'
+            accounts = {'accounts': {acct: account_spec}}
+            if not isinstance(bundle, dict) or 'account' not in bundle:
+                bundle = {**(bundle or {}), 'account': acct}
+        ids = bundle_pools(bundle, accounts)
+    return [(wid, windows[wid], observed.get(wid)) for wid in ids if wid in windows]
 
 
 def below_launch_floor(window, observed, usage_row, now):
     """Existing launch protection, shared by unknown-burn ranking and dispatch."""
+    floor = window.get('launch_min_remaining_pct')
+    reset = parse_time((observed or {}).get('resets_at'))
+    if floor is not None and (observed or {}).get('rate_limited') is True and reset is not None and reset > now:
+        return True
     fetched = parse_time(usage_row.get('fetched_at'))
     if (usage_row.get('status') != 'fresh' or usage_row.get('stale') is True or fetched is None
             or not -60 <= (now - fetched).total_seconds() <= 900):
         return False
-    floor = window.get('launch_min_remaining_pct')
-    reset = parse_time((observed or {}).get('resets_at'))
     remaining = (observed or {}).get('remaining_pct_before_reset')
     # An allowance with no declared cycle can still be freshly exhausted. Do not
     # invent a reset or use an observation whose reported reset has already passed.
@@ -1254,6 +1344,8 @@ def after_reset(state, hours):
 
 def account_cwd_allowed(spec, cwd=None):
     """True when the account has no allowed_cwd restriction or when cwd falls within one of its allowed_cwd paths."""
+    if not cwd_policy.matches((spec or {}).get('cwd_regex'), cwd):
+        return False
     allowed = (spec or {}).get('allowed_cwd')
     if not allowed:
         return True
@@ -1291,7 +1383,7 @@ def evaluate_bundle(bundle, task, ctx):
     base_chain_hours = task['chain_hours']
     hours = base_hours * dur_mult
     chain_hours = base_chain_hours * dur_mult
-    result = {'id': bundle['id'], 'bundle': {k: bundle.get(k) for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model')
+    result = {'id': bundle['id'], 'bundle': {k: bundle.get(k) for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'draws')
                                               if bundle.get(k) is not None},
               'excluded': [], 'notes': [], 'components': {}, 'score': None}
     now = ctx['now']
@@ -1299,15 +1391,22 @@ def evaluate_bundle(bundle, task, ctx):
     def exclude(reason):
         result['excluded'].append(reason)
 
-    if not account_cwd_allowed(spec, task.get('cwd')):
-        exclude(f"outside account allowed_cwd ({spec.get('allowed_cwd')})")
+    execution_account = accounts_override.preference_account(bundle, bundle['account'], accounts)
+    cwd_spec = accounts['accounts'].get(execution_account) or spec
+    if not account_cwd_allowed(cwd_spec, task.get('cwd')):
+        exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})" if cwd_spec.get('cwd_regex') else
+                f"outside account allowed_cwd ({cwd_spec.get('allowed_cwd')})")
 
     if not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude('excluded by host policy')
     if bundle.get('disabled'):
-        exclude(bundle['disabled'])
+        # Manual bundles carry a reason string; settings toggles and auto defaults store a plain boolean.
+        exclude(bundle['disabled'] if isinstance(bundle['disabled'], str) else
+                'auto bundle disabled (off by default or in model settings)' if bundle.get('auto')
+                else 'disabled in model settings')
     if bundle.get('discovery_unavailable'):
-        exclude(bundle['discovery_unavailable'])
+        exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
+                else 'model not detected by discovery for 7+ days')
     if bundle['id'] in ctx['unavailable']:
         exclude('marked unavailable by the parent')
     if spec.get('billing') == 'metered' and not task['metered_ok']:
@@ -1331,6 +1430,10 @@ def evaluate_bundle(bundle, task, ctx):
             exclude(f'{kind} is a specialist route')
     if task['needs_visual'] and not info.get('visual'):
         exclude('task needs visual input')
+    # Harness input limits apply to every bundle on the harness, manual or auto (HARNESS_CAPABILITIES).
+    harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
+    if task['needs_visual'] and not harness_accepts_visual(harness, model):
+        exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
     if task['constraint_model'] and task['constraint_model'] not in (bundle['id'], model):
         exclude('explicit model constraint')
     ability = info.get('tier', 0) + effort_value(policy, curves, 'ability', bundle.get('effort'), 0)
@@ -1388,16 +1491,27 @@ def evaluate_bundle(bundle, task, ctx):
     if not spec.get('unmetered'):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
-        for wid, wspec, observed in applicable_windows(spec, model, acct_usage):
+        for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
             if wspec.get('hours') is None:
                 if below_launch_floor(wspec, observed, acct_usage, now):
                     exclude(f'{wid} is below its existing launch protection ({wspec["launch_min_remaining_pct"]}% remaining floor)')
                 if observed:
                     result['notes'].append(f'{wid}: native allowance has no known cycle; consumption rate unknown')
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'], account_stale=acct_stale)
-            if not state['known']:
-                continue
             unit = unit_rate(spec, wid, model, bundle.get('effort'), policy, curves, info, now)
+            if not state['known']:
+                if state['short']:
+                    step = None if unit is None else hours * unit * context_scale
+                    cap = capacity_usd(spec, wid, now)
+                    small_short = cap is not None and cap < policy.get('small_short_capacity_usd', 50)
+                    margin_pct = policy.get('small_short_safety_margin_pct', 12) if small_short else policy['safety_margin_pct']
+                    if step is not None and 100.0 - step < margin_pct:
+                        exclude(f'{wid} full capacity (100%) is short of the ~{step:.1f}% the work needs plus {margin_pct}% margin')
+                    elif (observed and (reset_dt := parse_time(observed.get('resets_at'))) is not None
+                          and reset_dt > now and observed.get('reset_time_passed') is not True):
+                        wait = (reset_dt - now).total_seconds() / 3600
+                        exclude(f'{wid} has an active reset in {wait:.1f}h with unknown remaining percentage')
+                continue
             win_cap_usd = window_capacity_usd(spec, wid, now)
             reserved_usd = inflight_reserved_usd(bundle['account'], spec, wid, wspec, state, win_cap_usd,
                                                  ctx.get('records'), accounts, policy, now)
@@ -1480,7 +1594,7 @@ def evaluate_bundle(bundle, task, ctx):
             acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
             acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
             fast_ok, fast_opp, fast_binding = True, 0.0, None
-            for wid, wspec, observed in applicable_windows(spec, model, acct_usage):
+            for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
                 st = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'], account_stale=acct_stale)
                 if not st['known']:
                     continue
@@ -1651,6 +1765,135 @@ def evaluate_bundle(bundle, task, ctx):
     return result
 
 
+def _rate_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def resolve_opportunity_exchange(policy):
+    """The one rate `window_cost` and plan metadata read.
+
+    `scoring.opportunity_exchange.score_per_displaced_usd` / `score_per_displaced_worker_hour` win.
+    The same names inside that object (`shortage_loss_per_usd` / `shortage_loss_per_worker_hour`) are the
+    next fallback. Top-level `shortage_loss_*` keys are compatibility only. When a top-level key is also
+    set and differs, the named rate still wins and the warning says the old key is deprecated.
+    This does not rewrite the policy.
+    """
+    policy = policy if isinstance(policy, dict) else {}
+    block = policy.get('opportunity_exchange') if isinstance(policy.get('opportunity_exchange'), dict) else {}
+    resolved, sources, warnings = {}, {}, []
+    for legacy, named in (('shortage_loss_per_usd', 'score_per_displaced_usd'),
+                          ('shortage_loss_per_worker_hour', 'score_per_displaced_worker_hour')):
+        named_value = _rate_number(block.get(named))
+        label = f'opportunity_exchange.{named}'
+        if named_value is None:
+            named_value = _rate_number(block.get(legacy))
+            label = f'opportunity_exchange.{legacy}'
+        legacy_value = _rate_number(policy.get(legacy))
+        if named_value is not None:
+            resolved[legacy] = named_value
+            sources[legacy] = label
+            if legacy_value is not None and legacy_value != named_value:
+                warnings.append(f'{legacy} is deprecated and was ignored ({legacy_value:g}); '
+                                f'{label} ({named_value:g}) is the rate')
+        elif legacy_value is not None:
+            resolved[legacy] = legacy_value
+            sources[legacy] = legacy
+        else:
+            resolved[legacy] = None
+            sources[legacy] = None
+    return resolved, warnings, sources
+
+
+def exchange_rate(policy, key):
+    """Score points charged per displaced USD, or per displaced worker-hour. Raises KeyError if neither source sets it."""
+    resolved, _warnings, _sources = resolve_opportunity_exchange(policy)
+    value = resolved.get(key)
+    if value is None:
+        raise KeyError(key)
+    return value
+
+
+def opportunity_exchange(policy):
+    """Quality-versus-quota rate for plan metadata. Same numbers `exchange_rate` returns."""
+    resolved, warnings, sources = resolve_opportunity_exchange(policy)
+    per_usd = resolved.get('shortage_loss_per_usd')
+    per_hour = resolved.get('shortage_loss_per_worker_hour')
+    if per_usd is None or per_hour is None:
+        missing = 'shortage_loss_per_usd' if per_usd is None else 'shortage_loss_per_worker_hour'
+        raise KeyError(missing)
+    block = policy.get('opportunity_exchange') if isinstance(policy, dict) and isinstance(policy.get('opportunity_exchange'), dict) else {}
+    basis = block.get('basis') or (
+        'opportunity_exchange.score_per_displaced_usd and score_per_displaced_worker_hour are this rate: '
+        'score points per USD of expected displaced subscription capacity, and per displaced worker-hour '
+        'when a window has no USD capacity. Top-level shortage_loss_* keys are a deprecated fallback.')
+    return {'name': 'opportunity_exchange',
+            'shortage_loss_per_usd': per_usd, 'shortage_loss_per_worker_hour': per_hour,
+            'score_per_displaced_usd': per_usd, 'score_per_displaced_worker_hour': per_hour,
+            'usd_per_score_point': round(1.0 / per_usd, 2) if per_usd else None,
+            'worker_hours_per_score_point': round(1.0 / per_hour, 2) if per_hour else None,
+            'source': sources,
+            'warnings': warnings,
+            'basis': basis,
+            'cost_rule': 'Eligibility uses the tightest applicable window: every window must clear its reserve. '
+                         'Opportunity cost sums each window\'s shortage charge at this exchange. The binding window '
+                         'is the one with the highest opportunity cost; capacity, expected percent and reset bonus follow it.'}
+
+
+def harness_quality_factor(bundle, kind, policy):
+    """Absolute harness quality multiplied into weighted fit and ability. Default 1.0.
+
+    Most specific match wins: by_model[model][harness], by_work_kind[kind][harness], by_harness[harness],
+    then the first matching rule, then default. This is not the Codex/Pi sibling preference; that stays
+    in apply_harness_order because the order flips by work kind and only applies when a sibling is eligible.
+    """
+    table = policy.get('harness_factors') if isinstance(policy.get('harness_factors'), dict) else {}
+    harness = (bundle or {}).get('harness') or bundle_harness(bundle, (bundle or {}).get('account'), (bundle or {}).get('id'))
+    model = str((bundle or {}).get('model') or '')
+
+    def as_factor(value):
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    found = as_factor(((table.get('by_model') or {}).get(model) or {}).get(harness))
+    if found is None:
+        found = as_factor(((table.get('by_work_kind') or {}).get(kind) or {}).get(harness))
+    if found is None:
+        found = as_factor((table.get('by_harness') or {}).get(harness))
+    if found is None:
+        for rule in table.get('rules') or ():
+            if not isinstance(rule, dict):
+                continue
+            if rule.get('harness') and rule.get('harness') != harness:
+                continue
+            if rule.get('work_kind') and rule.get('work_kind') != kind:
+                continue
+            if rule.get('model') and rule.get('model') != model:
+                continue
+            prefix = rule.get('model_prefix')
+            if prefix and not model.startswith(str(prefix)):
+                continue
+            found = as_factor(rule.get('factor'))
+            if found is not None:
+                break
+    if found is None:
+        found = as_factor(table.get('default'))
+    return 1.0 if found is None else found
+
+
+def fit_ability_value(components, weights):
+    return float(weights.get('fit', 0) or 0) * float(components.get('fit') or 0) + float(weights.get('ability', 0) or 0) * float(components.get('ability') or 0)
+
+
+def harness_factor_report(policy):
+    table = policy.get('harness_factors') if isinstance(policy.get('harness_factors'), dict) else {}
+    default = table.get('default', 1.0)
+    return {'default': float(default) if isinstance(default, (int, float)) and not isinstance(default, bool) else 1.0,
+            'applies_to': 'weighted fit and ability',
+            'rules': [rule for rule in (table.get('rules') or []) if isinstance(rule, dict)],
+            'basis': table.get('basis') or ''}
+
+
 def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overrides=(), records=(), host_policy_config=None):
     ctx = {'policy': policy, 'accounts': accounts, 'capabilities': capabilities, 'usage': usage, 'now': now,
            'unavailable': set(unavailable), 'bundles': bundles(accounts),
@@ -1658,25 +1901,35 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
            'overrides': list(overrides), 'records': list(records or ())}
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values() if bundle_applies(b, task)]
     eligible = [c for c in candidates if not c['excluded']]
-    # The value terms are weighted; the opportunity cost is already in score units (worker-hours displaced times the
-    # loss per worker-hour), so it is subtracted as it is. No normalization over the candidate set: a bundle's score
-    # does not move because another candidate joined or left.
+    # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
+    # that value only. Opportunity cost is already in score units at the opportunity_exchange rate, so it is
+    # subtracted as it is. No normalization over the candidate set.
     weights = dict(policy['weights'])
     weights['continuity'] *= policy['coupling_continuity_multiplier'][task['coupling']] if task['worker'] else 0
+    kind = task['kind']
     for c in eligible:
         parts = {k: c['components'][k] for k in weights}
-        c['score'] = round(sum(weights[k] * parts[k] for k in weights) + c['components'].get('free_usage', 0)
-                           + c['components'].get('boost', 0) + c['components'].get('reset_bonus', 0)
-                           + c['components'].get('quality_bonus', 0) + c['components'].get('fast_bonus', 0)
-                           - c['components']['opportunity_cost']
-                           - c['components'].get('effort_penalty', 0) - c['components'].get('overqualification', 0), 4)
+        quality = harness_quality_factor(c['bundle'], kind, policy)
+        c['components']['harness_factor'] = round(quality, 4)
+        value = fit_ability_value(parts, weights)
+        score = (sum(weights[k] * parts[k] for k in weights) + c['components'].get('free_usage', 0)
+                 + c['components'].get('boost', 0) + c['components'].get('reset_bonus', 0)
+                 + c['components'].get('quality_bonus', 0) + c['components'].get('fast_bonus', 0)
+                 - c['components']['opportunity_cost']
+                 - c['components'].get('effort_penalty', 0) - c['components'].get('overqualification', 0))
+        if quality != 1.0:
+            score += (quality - 1.0) * value
+        c['score'] = round(score, 4)
         if c['available_in_hours']:
             c['score'] = round(c['score'] - policy['deferred_start_penalty'], 4)
-    apply_harness_order(eligible, task['kind'], policy, capabilities, (task['profile'] or {}).get('interaction_style'))
+    apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
     eligible.sort(key=lambda c: -c['score'])
+    exchange = opportunity_exchange(policy)
     return candidates, eligible, {'weights': {k: round(v, 3) for k, v in weights.items()},
-                                  'shortage_loss_per_usd': policy['shortage_loss_per_usd'],
-                                  'shortage_loss_per_worker_hour': policy['shortage_loss_per_worker_hour']}
+                                  'shortage_loss_per_usd': exchange['shortage_loss_per_usd'],
+                                  'shortage_loss_per_worker_hour': exchange['shortage_loss_per_worker_hour'],
+                                  'opportunity_exchange': exchange,
+                                  'harness_factors': harness_factor_report(policy)}
 
 
 def sibling_key(candidate):
@@ -1690,13 +1943,21 @@ def harness_group(candidate):
     return sibling_key(candidate) + (candidate['action'],)
 
 
-def apply_harness_order(eligible, kind, policy, capabilities, style=None):
-    """Among eligible siblings, a bundle loses harness_step per place its harness sits behind the best one in the
-    route's harness_order, else the profile's interaction style (`scoring.profile.harness_by_style`), else the policy
-    default. The best sibling keeps its score, so the harness never changes which model wins."""
+def apply_harness_order(eligible, kind, policy, capabilities, style=None, weights=None):
+    """Sibling harness preference, as a coefficient on the fit/ability value.
+
+    Order is the route's harness_order, else the profile style (`scoring.profile.harness_by_style`), else the
+    policy default. It ranks only bundles that share account, model, effort and action. The best sibling keeps
+    factor 1 and its score, so this never changes which model wins. Each place behind subtracts exactly
+    `harness_step` (the historical flat penalty). The same quantity as a coefficient on the already
+    harness_factor-scaled fit/ability value is `harness_order_factor = 1 - harness_step * places / value`.
+    A static harness_factors table cannot replace this: the order flips by work kind and style, and a lone
+    harness is not penalized just because a preferred sibling is absent.
+    """
     by_style = ((policy.get('profile') or {}).get('harness_by_style') or {}).get(style) if style else None
     order = (capabilities['routes'].get(kind) or {}).get('harness_order') or by_style or policy.get('harness_order') or []
     step = policy.get('harness_step', 0.03)
+    weights = weights or {}
 
     def place(candidate):
         b = candidate['bundle']
@@ -1711,13 +1972,21 @@ def apply_harness_order(eligible, kind, policy, capabilities, style=None):
         groups.setdefault(harness_group(c), []).append(c)
     for siblings in groups.values():
         if len(siblings) < 2:
+            for c in siblings:
+                c['components'].setdefault('harness_order_factor', 1.0)
             continue
         best = min(place(c) for c in siblings)
         for c in siblings:
             behind = place(c) - best
-            if behind:
-                c['score'] = round(c['score'] - step * behind, 4)
-                c['components']['harness'] = round(-step * behind, 3)
+            if not behind:
+                c['components']['harness_order_factor'] = 1.0
+                continue
+            penalty = step * behind
+            quality = c['components'].get('harness_factor', 1.0) or 1.0
+            scaled = quality * fit_ability_value(c['components'], weights)
+            c['components']['harness_order_factor'] = round(1.0 - penalty / scaled, 4) if scaled > 0 else None
+            c['score'] = round(c['score'] - penalty, 4)
+            c['components']['harness'] = round(-penalty, 3)
 
 
 def dot_may_take(kind, needs, capabilities):
@@ -1804,6 +2073,7 @@ def normalize_task(raw, policy, capabilities, accounts):
             'wants_fast': bool(needs.get('fast') or task.get('fast') or infer_fast_preference(task.get('objective'))),
             'force_fast': bool(task.get('force_fast') or needs.get('force_fast')),
             'disable_fast': bool(task.get('disable_fast') or needs.get('disable_fast')),
+            'pinned_bundle': task.get('pinned_bundle'),
             'chain_hours': float(chain.get('total_hours') or hours), 'coupling': coupling, 'worker': worker,
             'handoff_ready': bool(chain.get('handoff_ready')), 'needs_visual': needs['visual'],
             'local_only': bool(needs.get('local_only')), 'critical': critical,
@@ -1833,6 +2103,13 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                     w.update(session_state(wid))
                 task['worker'] = w
                 break
+    if task['worker'] and task['worker'].get('bundle'):
+        # A retired proxy id resumes as its auto bundle; an id that no longer exists means no continuity.
+        import auto_bundles
+        legacy = (accounts.get('_auto_bundles') or {}).get('legacy_aliases') or {}
+        resolved = auto_bundles.resolve_bundle_id(task['worker']['bundle'], bundles(accounts), legacy)
+        if resolved and resolved != task['worker']['bundle']:
+            task['worker'] = {**task['worker'], 'bundle': resolved}
     candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied, records,
                                         host_policy_config)
     if not eligible and not task['metered_ok'] and any(c['excluded'] == ['metered access is a last resort'] for c in candidates):
@@ -1842,6 +2119,13 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'critical', 'hours', 'chain_hours', 'coupling')}, 'system': system,
                 'assumptions': assumptions(candidates, accounts)}
+    exchange_warnings = list((system.get('opportunity_exchange') or {}).get('warnings') or [])
+    if exchange_warnings:
+        decision['warnings'] = exchange_warnings
+    cwd_warnings = [f'{name}: cwd_regex and legacy allowed_cwd both apply (intersection)'
+                    for name, spec in accounts['accounts'].items() if spec.get('cwd_regex') and spec.get('allowed_cwd')]
+    if cwd_warnings:
+        decision.setdefault('warnings', []).extend(cwd_warnings)
     decision['task'].update(difficulty_source=task['difficulty_source'],
                             high_precision=task['high_precision'],
                             max_recommended_effort=None if task['effort_unlocked'] else 'high')
@@ -1935,6 +2219,13 @@ def explain(top, system):
                      f"(chain ~{top['chain_pct']}%), other work wants ~{cap['demand_pct']:.0f}% ({cap['demand_source']}) "
                      f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
                      f"opportunity cost {top['components']['opportunity_cost']}")
+    exchange = (system or {}).get('opportunity_exchange') or {}
+    if exchange.get('score_per_displaced_usd'):
+        parts.append(f"value/cost exchange {exchange['score_per_displaced_usd']:g} score per displaced USD "
+                     f"(${exchange['usd_per_score_point']:g} displaced USD per score point)")
+    factor = top['components'].get('harness_factor')
+    if isinstance(factor, (int, float)) and abs(factor - 1.0) > 1e-9:
+        parts.append(f"harness factor {factor:g} on fit and ability")
     if top['components'].get('reset_bonus'):
         parts.append(f"includes an expiring-reset bonus of {top['components']['reset_bonus']:+.2f}")
     if top['bundle'].get('fast'):
