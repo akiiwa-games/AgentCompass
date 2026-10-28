@@ -558,6 +558,38 @@ class RollTests(unittest.TestCase):
         self.assertEqual(request['provider'], 'claude-2/' + (self.bundle.get('launch_model') or self.bundle['model']))
         self.assertEqual(request['settings']['thinkingOptionId'], self.bundle['effort'])
 
+    def test_ready_grok_acp_launcher_launches_through_paseo_not_the_cli_fallback(self):
+        import roll as roll_module
+        (self.root / '.paseo' / 'config.json').write_text(json.dumps({'agents': {'providers': {
+            'grok': {'extends': 'acp', 'enabled': True, 'command': ['grok-fixture', 'stdio']}}}}))
+        bundle = {'provider': 'grok', 'account': 'grok', 'model': 'grok-4.7', 'effort': 'high', 'bundle_id': 'grok47_high'}
+        decision = dict(stage='plan', choice='grok47_high', selected_bundle=bundle, decision={'action': 'start'})
+        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['grok']}))
+        for status, launched in (('ready', True), ('disabled', False)):
+            calls = []
+
+            def host(request):
+                calls.append(request)
+                if request['operation'] == 'create':
+                    return {'ok': True, 'agent': self.snapshot({'request': request['request']}, provider='grok',
+                                                               model='grok-4.7', currentModeId=None)}
+                return {'ok': True, 'agent': None}
+            inventory = {'accounts': {'grok': {'family': 'grok', 'provider': 'grok', 'sources': ['native', 'paseo'],
+                                               'status': status, 'plan': 'subscription', 'billing': 'subscription'}},
+                         'launchers': {'grok': {'family': 'grok', 'status': status}}}
+            with self.subTest(status), patch.object(allocator.provider_inventory, 'current', return_value=inventory), \
+                    patch.object(flow, 'host_call', host), \
+                    patch.object(roll_module.subprocess, 'Popen', side_effect=AssertionError('must not use the CLI')):
+                if launched:
+                    (result, code), _ = self.roll(decision)
+                    request = next(c['request'] for c in calls if c['operation'] == 'create')
+                    self.assertEqual((result['launched'], result['dispatch_mode'], code), (True, 'paseo', 0))
+                    self.assertEqual(request['provider'], 'grok/grok-4.7')
+                    self.assertEqual(request['settings'], {'thinkingOptionId': 'high'})
+                else:
+                    (result, code), _ = self.roll(decision)
+                    self.assertEqual((result['launched'], result['dispatch_mode'], calls), (False, 'native', []))
+
     def test_routes_that_cannot_launch_here_do_not_launch(self):
         paseo = dict(stage='plan', choice='sonnet55_high_2', selected_bundle=self.bundle, decision={'action': 'start'})
         cases = (('user decision', dict(paseo, decision={'action': 'start', 'needs_user_decision': True}), 'parent-a', 2),

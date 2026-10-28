@@ -19,6 +19,9 @@ from worker_context import require_parent_id, resolve_parent
 
 OBJECTIVE_CHARS = 6000
 PASEO_PROVIDERS = ('codex', 'codex-2', 'claude', 'claude-2', 'pi', 'antigravity-resilient', 'opencode')
+# Launcher families a configured Paseo provider may use; the dispatch adapter (dispatch_registry.launch_request)
+# accepts the same set, so a ready Grok/ACP definition is launched by Paseo instead of falling through to the CLI.
+PASEO_LAUNCHER_FAMILIES = ('claude', 'codex', 'pi', 'opencode', 'antigravity-resilient', 'grok', 'acp')
 SKILLS = Path(__file__).resolve().parents[2]
 DOT_RUNNER = SKILLS / 'dot-subagent' / 'scripts' / 'run_dot_task.py'
 CONSULT_BRIDGE = SKILLS / 'chatgpt-pro-consult' / 'scripts' / 'consult_bridge.py'
@@ -213,7 +216,7 @@ def can_launch_via_paseo(provider):
         return True
     providers = (dispatch_flow.paseo_config().get('agents') or {}).get('providers')
     if isinstance(providers, dict) and provider in providers:
-        return provider_inventory.launcher_family(provider) in ('claude', 'codex', 'pi', 'opencode', 'antigravity-resilient')
+        return provider_inventory.launcher_family(provider) in PASEO_LAUNCHER_FAMILIES
     if _router_override_proxy_spec(provider) is not None:
         return False
     return provider_inventory.launcher_family(provider) in ('claude', 'codex')
