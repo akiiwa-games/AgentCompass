@@ -4,6 +4,7 @@ from __future__ import annotations
 BG = "#F4F6F9"
 CARD = "#FFFFFF"
 BORDER = "#E2E8F0"
+TRACK = "#E2E8F0"
 INK = "#0F172A"
 TEXT = "#334155"
 MUTED = "#64748B"

@@ -163,11 +163,14 @@ class RadarChartCanvas:
         self.draw()
 
     def geometry(self):
-        width = max(self.canvas.winfo_width(), 200)
-        height = max(self.canvas.winfo_height(), 200)
         px = self.theme.px
-        radius = min(width / 2 - px(88), height / 2 - px(56))
-        return width / 2, height / 2 + px(8), max(radius, px(40))
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        width = w if w > 1 else max(int(self.canvas["width"]), px(180))
+        height = h if h > 1 else max(int(self.canvas["height"]), px(180))
+        radius = min(width / 2 - px(88), (height - px(102)) / 1.809)
+        radius = max(radius, px(36))
+        cy = min(height / 2 + 0.095 * radius, height - px(49) - 0.809 * radius)
+        return width / 2, cy, radius
 
     def draw(self) -> None:
         theme = self.theme
@@ -220,16 +223,32 @@ class RadarChartCanvas:
         c = self.canvas
         count = len(self.axes)
         px = theme.px
+        canvas_w = c.winfo_width() if c.winfo_width() > 1 else max(int(c["width"]), px(180))
         for index, (key, label, _) in enumerate(self.axes):
-            x, y = point(cx, cy, radius + px(30), index, count)
+            x, y = point(cx, cy, radius + px(26), index, count)
             anchor = "center"
             if x < cx - 10:
                 anchor = "e"
             elif x > cx + 10:
                 anchor = "w"
-            c.create_text(x, y - px(16 if is_en() else 9), text=label,
-                          anchor="center" if is_en() else anchor, width=px(108) if is_en() else 0,
-                          fill=theme.INK, font=(theme.FONT, 9, "bold"))
+            if is_en():
+                if y > cy + radius * 0.4:
+                    x += -px(22) if x < cx else px(22)
+                elif abs(x - cx) > 10:
+                    x += -px(12) if x < cx else px(12)
+                x = max(px(58), min(canvas_w - px(58), x))
+            text_anchor = "s" if is_en() or anchor == "center" else ("se" if anchor == "e" else "sw")
+            text_item = c.create_text(
+                x, y, text=label,
+                anchor=text_anchor, justify="center" if is_en() else ("right" if anchor == "e" else "left"),
+                width=px(108) if is_en() else 0,
+                fill=theme.INK, font=(theme.FONT, 9, "bold"))
+            box = c.bbox(text_item)
+            if box:
+                if box[0] < px(4):
+                    c.move(text_item, px(4) - box[0], 0)
+                elif box[2] > canvas_w - px(4):
+                    c.move(text_item, canvas_w - px(4) - box[2], 0)
             parts = []
             for order, series in enumerate(self.series):
                 parts.append((f"{series['values'].get(key, 0) * 100:.0f}", SERIES_STYLES[order]["color"]))
@@ -238,25 +257,36 @@ class RadarChartCanvas:
             total = sum(widths) + px(4) * (len(parts) - 1)
             pill_anchor = "center" if is_en() else anchor
             start = x - total / 2 if pill_anchor == "center" else x - total if pill_anchor == "e" else x
-            canvas_w = max(c.winfo_width(), 200)
             start = max(px(4), min(canvas_w - total - px(4), start))
             for (text, color), width in zip(parts, widths):
                 left = start + offset
-                c.create_rectangle(left, y + px(3), left + width, y + px(21), fill=color, outline=color)
-                c.create_text(left + width / 2, y + px(12), text=text, fill="#FFFFFF", font=(theme.FONT, 8, "bold"))
+                c.create_rectangle(left, y + px(2), left + width, y + px(20), fill=color, outline=color)
+                c.create_text(left + width / 2, y + px(11), text=text, fill="#FFFFFF", font=(theme.FONT, 8, "bold"))
                 offset += width + px(4)
 
     def draw_legend(self) -> None:
         theme = self.theme
         c = self.canvas
         px = theme.px
-        x, y = px(14), px(16)
+        cx, cy, radius = self.geometry()
+        top_label_y = cy - radius - px(26) - px(17)
+        max_x = cx - px(36) if top_label_y < px(32) else max(c.winfo_width(), px(200)) - px(10)
+        x, y = px(4), px(12)
         for order, series in enumerate(self.series):
             style = SERIES_STYLES[order]
-            c.create_line(x, y, x + px(22), y, fill=style["color"], width=px(3), dash=style["dash"])
-            text = c.create_text(x + px(28), y, text=series["label"], anchor="w", fill=theme.TEXT, font=(theme.FONT, 9))
+            if order > 0 and x + px(80) > max_x:
+                x, y = px(4), y + px(18)
+            c.create_line(x, y, x + px(16), y, fill=style["color"], width=px(3), dash=style["dash"])
+            wrap = max(px(80), int(max_x - x - px(20))) if top_label_y < px(32) else 0
+            text = c.create_text(x + px(20), y, text=series["label"], anchor="w", width=wrap,
+                                 fill=theme.TEXT, font=(theme.FONT, 8))
             box = c.bbox(text)
-            x = (box[2] if box else x + px(120)) + px(18)
+            if box and box[3] - box[1] > px(20):
+                c.move(text, 0, (box[3] - box[1]) / 2 - px(8))
+                box = c.bbox(text)
+            x = (box[2] if box else x + px(100)) + px(14)
+            if top_label_y < px(32) and box:
+                y = max(y, box[3] - px(8))
 
     def nearest_axis(self, x: float, y: float):
         if not self.axes:
@@ -270,7 +300,7 @@ class RadarChartCanvas:
                 if d < distance:
                     best, distance = (order, index), d
         for index in range(len(self.axes)):
-            ax, ay = point(cx, cy, radius + self.theme.px(30), index, len(self.axes))
+            ax, ay = point(cx, cy, radius + self.theme.px(26), index, len(self.axes))
             d = math.hypot(ax - x, ay - y)
             if d < distance:
                 best, distance = (0, index), d

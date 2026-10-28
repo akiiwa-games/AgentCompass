@@ -103,14 +103,17 @@ flowchart LR
 ```
 
 ```text
-score = 0.30·fit + 0.10·ability + w·continuity
+score = harness_factor × (0.30·fit + 0.10·ability) + w·continuity
       + reset_bonus + free_usage + boost + quality_bonus
       − opportunity_cost − effort_penalty − overqualification
 
 fit              = 0.17·route_fit + 0.34·capability_fit(6D) + 0.49·model_dna_fit(3D)
+harness_factor   = 1.0 (Antigravity Claude 0.9)
 expected_usd     = usd_per_hour × hours × burn / 0.70
-opportunity_cost = P(shortage before reset) × loss_per_usd × expected_usd
+opportunity_cost = sum over windows of displaced_usd × score_per_displaced_usd (0.012)
 ```
+
+Same model, different harness: value stays the same unless `harness_factor` says the harness is worse. Codex versus Pi is still a sibling-only `0.03` step (`harness_order`); the best sibling keeps its score. A bundle that draws several pools must clear every window, and the cost above is the sum. The window with the highest cost is the binding window. One score point is about `$83` of displaced subscription USD (`scoring.opportunity_exchange`).
 
 Hard gates run first: local sign-in and credential health, host policy, modality (text-only models never receive visual
 work), `local_only`, ability floor by difficulty, and per-window safety reserves net of in-flight work. Weights and
@@ -211,8 +214,10 @@ The tray icon displays a status dot: **green** when core usage collection and al
   - **Dual-Mode 5-Axis Radar Chart**: Switch between **Decision Score (5D)** (comparing the winning candidate against the runner-up across subjective fit, capability fit, route fit, net ability, and quota economy) and **Model DNA (5D)** (comparing any two models across divergence, global rigor, module precision, reasoning/anti-hallucination, and visual/GUI capability). Hovering any vertex displays the exact formula and raw values.
 - **Account Quotas & In-Flight Tasks**:
   - Live status badges (`Ready`, `Paused`, `Plugin Disabled`, `Blocked by Host Policy`), remaining percentage and API-equivalent USD per window, 3h/24h burn rates, reset countdowns, one-click quota refresh, and active worker sessions with their cumulative uncompressed context against the 2M-token rotation limit.
-- **Routing Policy & Settings**:
-  - Configure pre-reset priorities and custom temporary score boosts (`+0.10` to `+0.50` for `3h / 6h / 24h`, with optional auto-cancel on reset), per-host `allowed_accounts`, and in-place tuning of scoring weights in `accounts.json` with automatic backups under `~/.route-manager/backups/`.
+- **Model Settings** — three tabs: **Models & Boost**, **Scoring & DNA**, and **System Options**.
+  - The home page shows discovered harness/account combinations, selected model chips and a model picker with select-all, invert and clear. Model discovery runs in the background through registered `paseo_provider`, `openai_compatible` or `static` probes. Discovered chat models become selectable bundles scored from their default profile (subscription pools on by default, metered proxies off); models the router cannot run are not listed. The account directory icon edits one shared, case-insensitive `cwd_regex`; legacy `allowed_cwd` prefixes remain readable. Preferences are sparse overrides with backups under `~/.route-manager/backups/`.
+  - Temporary priorities remain on the home page. Scoring weights and model DNA share one save action on the second tab.
+  - **CLI updates** live in the home toolbar: **Update** checks and updates supported installs in the background, and **Auto-update daily** enables daily maintenance. Active CLI sessions defer their install's update and are never stopped. Provider environments select the same installation and npm prefix the router launches. Unknown/manual installs receive no guessed installer; Grok Bot's pinned build stays on Integrations. The CLI log opens from System Options.
 - **Plugins & Services**:
   - Individual cards for every service and plugin with `Enabled` and `Autostart` toggles, health status, and service-specific controls.
 

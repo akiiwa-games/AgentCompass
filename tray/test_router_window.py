@@ -83,6 +83,27 @@ class GeometryTests(unittest.TestCase):
         for got, want in zip(distances, (100, 50, 0, 100, 0)):
             self.assertAlmostEqual(got, want)
 
+    def test_canvas_labels_and_value_pills_fit_inside_bounds_in_zh_and_en(self):
+        import i18n
+        import tk_test_support
+        import ui_theme
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        chart = radar_chart.RadarChartCanvas(root, size=ui_theme.px(195))
+        self.addCleanup(chart.canvas.destroy)
+        series = [{"label": "DeepSeek Flash · Adjusted", "values": {k: 0.55 for k, _, _ in radar_chart.DNA_AXES}},
+                  {"label": "Saved", "values": {k: 0.45 for k, _, _ in radar_chart.DNA_AXES}}]
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(router_data, "STATE_DIR", Path(directory)):
+            for lang in ("zh", "en"):
+                i18n.set_language(lang)
+                chart.show(radar_chart.DNA_AXES, series)
+                x0, y0, x1, y1 = chart.canvas.bbox("all")
+                self.assertGreaterEqual(x0, 0, lang)
+                self.assertGreaterEqual(y0, 0, lang)
+                self.assertLessEqual(x1, int(chart.canvas["width"]), lang)
+                self.assertLessEqual(y1, int(chart.canvas["height"]), lang)
+
 
 def candidate(cid, model, score, excluded=(), **components):
     return {"id": cid, "bundle": {"model": model, "account": "a", "effort": "high"}, "score": score,
@@ -199,6 +220,15 @@ class SettingsTests(unittest.TestCase):
         patcher = mock.patch.object(router_data, "STATE_DIR", self.dir)
         patcher.start()
         self.addCleanup(patcher.stop)
+        policy = self.dir / "host-policy-fixture.json"
+        names = list(json.loads(ACCOUNTS_JSON.read_text(encoding="utf-8-sig"))["accounts"])
+        policy.write_text(json.dumps({"allowed_accounts": names}), encoding="utf-8")
+        environment = mock.patch.dict("os.environ", {
+            "ROUTER_ACCOUNTS_OVERRIDE": str(self.dir / "accounts-override.json"),
+            "ROUTER_HOST_POLICY": str(policy),
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def test_tuning_is_changed_in_place_backed_up_and_restored_byte_for_byte(self):
         target = self.dir / "accounts.json"
@@ -473,7 +503,7 @@ class LanguageTests(unittest.TestCase):
 
         i18n.set_language("en")
         self.assertEqual([p[1] for p in router_window.PAGES],
-                         ["Decision Compass", "Quota Monitor", "Routing Settings", "Integrations"])
+                         ["Decision Compass", "Quota Monitor", "Model Settings", "Integrations"])
         self.assertEqual(radar_chart.DNA_AXES[0][1], "Divergence")
         self.assertEqual(radar_chart.axis_title(), "5-Axis Decision Score")
         self.assertIn("subjective_fit:", radar_chart.SCORE_AXES[0][2])
@@ -497,12 +527,11 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(plugins.PLUGINS[0].description, "桌面额度悬浮窗")
 
     def test_panel_switch_rebuilds_navigation_and_current_settings(self):
-        import tkinter as tk
         import router_window
+        import tk_test_support
 
-        root = tk.Tk()
+        root = tk_test_support.shared_tk_root(self)
         root.withdraw()
-        self.addCleanup(root.destroy)
         # No service probes, network calls or workers are needed to test real Tk labels.
         with mock.patch.object(router_window.Panel, "run"), \
                 mock.patch.object(router_window.theme, "set_window_icon"), \
@@ -516,13 +545,13 @@ class LanguageTests(unittest.TestCase):
             root.update_idletasks()
             self.assertEqual(json.loads((self.directory / "ui-settings.json").read_text()), {"language": "en"})
             self.assertEqual([panel.nav[key][2].cget("text") for key, _, _ in router_window.PAGES],
-                             ["Decision Compass", "Quota Monitor", "Routing Settings", "Integrations"])
+                             ["Decision Compass", "Quota Monitor", "Model Settings", "Integrations"])
             self.assertEqual((panel.current, panel.current_setting), ("policy", "system"))
             self.assertEqual(panel.status.get(), "Language switched to English")
             self.assertIn("Custom OpenAI-compatible endpoint", panel.scorer_type_box.cget("values"))
             panel.change_language("zh")
             root.update_idletasks()
-            self.assertEqual(panel.nav["policy"][2].cget("text"), "调度设置")
+            self.assertEqual(panel.nav["policy"][2].cget("text"), "模型设置")
             self.assertEqual(panel.language_box.get(), "简体中文")
             self.assertEqual(panel.status.get(), "已切换界面语言为简体中文")
             # A result from the previous widget generation must not touch destroyed controls.
@@ -536,13 +565,12 @@ class LanguageTests(unittest.TestCase):
             errors.assert_not_called()
 
     def test_english_pages_build_and_radar_redraws_after_switch(self):
-        import tkinter as tk
         import i18n
         import router_window
+        import tk_test_support
 
-        root = tk.Tk()
+        root = tk_test_support.shared_tk_root(self)
         root.withdraw()
-        self.addCleanup(root.destroy)
         i18n.set_language("en")
         with mock.patch.object(router_window.Panel, "run"), \
                 mock.patch.object(router_window.Panel, "prefill"), \
@@ -573,7 +601,7 @@ class WindowHelperTests(unittest.TestCase):
         import router_window
 
         self.assertEqual([p[0] for p in router_window.PAGES], ["scoring", "quota", "policy", "plugins"])
-        self.assertEqual([s[0] for s in router_window.SETTINGS], ["accounts", "boost", "tuning", "dna", "system"])
+        self.assertEqual([s[0] for s in router_window.SETTINGS], ["models", "strategy", "system"])
 
     def test_duplicate_bundle_labels_fall_back_to_ids(self):
         import router_window
@@ -596,6 +624,192 @@ class WindowHelperTests(unittest.TestCase):
         self.assertEqual(router_window.short_badge("已暂停：disabled"), "已暂停")
         self.assertEqual(router_window.clip("abcdef", 4), "abc…")
         self.assertEqual(router_window.clip(None), "—")
+
+    def test_filled_scroll_frame_keeps_the_table_rows_visible(self):
+        """Tall content above the worker table scrolls instead of squeezing the table to its headings."""
+        import tkinter as tk
+        from tkinter import ttk
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        root.geometry("+-3000+-3000")  # mapped (heights are real) but off screen
+        root.deiconify()
+        holder = tk.Frame(root, width=400, height=300)
+        holder.pack_propagate(False)
+        holder.pack()
+        scroll = router_window.ScrollFrame(holder, fill=True)
+        cards = tk.Frame(scroll.body, height=250)
+        cards.pack(fill="x")
+        cards.bind("<Configure>", scroll.fit, add="+")
+        table = ttk.Treeview(scroll.body, columns=("a",), show="headings", height=4)
+        table.pack(fill="both", expand=True)
+        for row in range(6):
+            table.insert("", "end", values=(row,))
+        root.update()
+        self.assertEqual(table.winfo_height(), table.winfo_reqheight())
+        self.assertGreater(scroll.body.winfo_height(), scroll.canvas.winfo_height())
+
+        before = scroll.canvas.yview()
+        scroll.wheel(mock.Mock(widget=table, delta=-120))
+        self.assertEqual(scroll.canvas.yview(), before)
+        scroll.wheel(mock.Mock(widget=scroll.canvas, delta=-120))
+        self.assertNotEqual(scroll.canvas.yview(), before)
+
+        cards.configure(height=20)  # short content: the table stretches to the visible height
+        root.update()
+        self.assertEqual(scroll.body.winfo_height(), scroll.canvas.winfo_height())
+        self.assertGreater(table.winfo_height(), table.winfo_reqheight())
+
+    def test_plain_scroll_frame_keeps_its_natural_height(self):
+        import tkinter as tk
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        scroll = router_window.ScrollFrame(root)
+        tk.Frame(scroll.body, height=40).pack()
+        root.update()
+        self.assertEqual(scroll.canvas.itemcget(scroll.window, "height"), "0")
+
+    def test_quota_columns_and_masonry_placements(self):
+        import router_window
+
+        self.assertEqual(router_window.quota_columns(650, count=10, step=200, hysteresis=8), 3)
+        self.assertEqual(router_window.quota_columns(820, count=10, step=200, hysteresis=8), 4)
+        self.assertEqual(router_window.quota_columns(1060, count=10, step=200, hysteresis=8), 5)
+        # Hysteresis prevents column oscillation around the boundary (e.g. 800px between 3 and 4 cols).
+        self.assertEqual(router_window.quota_columns(795, count=10, current=4, step=200, hysteresis=8), 4)
+        self.assertEqual(router_window.quota_columns(805, count=10, current=3, step=200, hysteresis=8), 3)
+
+        cards = [
+            {"account": "claude", "windows": [{"id": "w1"}, {"id": "w2"}, {"id": "w3"}]},
+            {"account": "claude-2", "windows": [{"id": "w1"}, {"id": "w2"}]},
+            {"account": "codex", "windows": [{"id": "w1"}]},
+            {"account": "antigravity", "windows": [{"id": "w1"}, {"id": "w2"}, {"id": "w3"}, {"id": "w4"}]},
+            {"account": "opencode", "windows": []},
+            {"account": "grok", "windows": [{"id": "w1"}]},
+        ]
+        placements = router_window.quota_card_placements(cards, 4)
+        # First 4 metered cards occupy top of cols 0..3; 5th metered card (grok) goes under shortest col (codex, col 2).
+        self.assertEqual([placements[i][:2] for i in range(4)], [(0, 0), (0, 1), (0, 2), (0, 3)])
+        self.assertEqual(placements[5], (5, 2, 5))
+        # Unmetered opencode follows metered cards into the shortest remaining column (claude-2, col 1).
+        self.assertEqual(placements[4], (7, 1, 3))
+
+    def test_quota_page_regrids_without_rebuilding_and_keeps_worker_table_visible(self):
+        import sqlite3
+        import router_window
+        import tk_test_support
+
+        self.assertEqual(router_window.short_countdown("2天1小时"), "2d 1h")
+        self.assertEqual(router_window.short_countdown("3小时05分"), "3h 5m")
+        self.assertEqual(router_window.short_window_name({"id": "seven_day", "hours": 168}), "7d")
+        self.assertEqual(router_window.short_window_name({"id": "five_hour", "hours": 5}), "5h")
+        self.assertEqual(router_window.short_window_name({"id": "gemini-weekly", "hours": 168}), "gemini 7d")
+
+        # Verify pool_reservations aggregates active dispatch leases per (account, window_id).
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "dispatch.sqlite3"
+            future = (router_data.now_utc() + router_data.timedelta(hours=2)).isoformat()
+            conn = sqlite3.connect(db)
+            conn.execute("CREATE TABLE dispatches (data TEXT)")
+            conn.execute("INSERT INTO dispatches VALUES (?)", (json.dumps({
+                "dispatch_id": "d-12345678",
+                "agent_id": "a1b2c3d4-9999",
+                "state": "started",
+                "lease_until": future,
+                "expected_usd": 20.0,
+                "bundle": {"account": "claude", "bundle_id": "opus55_high", "model": "claude-opus-5-5"},
+                "request": {"title": "in-flight task"},
+            }),))
+            conn.commit()
+            conn.close()
+            res = router_data.pool_reservations(db=db)
+            self.assertIn(("claude", "seven_day"), res)
+            self.assertGreater(res[("claude", "seven_day")]["pct"], 0.0)
+            self.assertEqual(res[("claude", "seven_day")]["usd"], 20.0)
+            self.assertEqual(res[("claude", "seven_day")]["workers"][0]["agent_id"], "a1b2c3d4")
+
+        sample_cards = [
+            {"account": "claude", "label": "Claude", "badge": "就绪", "kind": "ok", "plan": "max20",
+             "usage_status": "fresh", "windows": [
+                 {"id": "seven_day", "hours": 168, "remaining_pct": 80.0, "remaining_usd": 500.0,
+                  "reserved_pct": 12.5, "reserved_usd": 78.0,
+                  "reserved_workers": [{"dispatch_id": "d1", "agent_id": "a1b2c3d4", "bundle": "opus55_high",
+                                        "usd": 78.0, "pct": 12.5, "title": "task 1"}],
+                  "rate_3h": 1.2, "rate_24h": None, "reset_in": "2天1小时", "stale": False},
+                 {"id": "five_hour", "hours": 5, "remaining_pct": 30.0, "remaining_usd": 50.0,
+                  "reserved_pct": 0.0, "reserved_usd": 0.0, "reserved_workers": [],
+                  "rate_3h": None, "rate_24h": None, "reset_in": "3小时10分", "stale": False},
+             ]},
+            {"account": "codex", "label": "Codex", "badge": "就绪", "kind": "ok", "plan": "pro",
+             "usage_status": "fresh", "windows": [
+                 {"id": "usage", "hours": 168, "remaining_pct": 90.0, "remaining_usd": 300.0,
+                  "reserved_pct": 0.0, "reserved_usd": 0.0, "reserved_workers": [],
+                  "rate_3h": None, "rate_24h": None, "reset_in": "5天2小时", "stale": False},
+             ]},
+            {"account": "opencode", "label": "OpenCode", "badge": "就绪", "kind": "ok", "plan": "free",
+             "usage_status": None, "windows": []},
+            {"account": "grok", "label": "Grok", "badge": "就绪", "kind": "ok", "plan": "subscription",
+             "usage_status": "stale", "windows": [
+                 {"id": "credits", "hours": 168, "remaining_pct": 10.0, "remaining_usd": 20.0,
+                  "reserved_pct": 0.0, "reserved_usd": 0.0, "reserved_workers": [],
+                  "rate_3h": 0.5, "rate_24h": None, "reset_in": "1天2小时", "stale": True},
+             ]},
+            {"account": "claude-2", "label": "Claude 2", "badge": "就绪", "kind": "ok", "plan": "max5",
+             "usage_status": "fresh", "windows": [
+                 {"id": "seven_day", "hours": 168, "remaining_pct": 55.0, "remaining_usd": 120.0,
+                  "reserved_pct": 0.0, "reserved_usd": 0.0, "reserved_workers": [],
+                  "rate_3h": None, "rate_24h": None, "reset_in": "4小时10分", "stale": False},
+             ]},
+        ]
+        root = tk_test_support.shared_tk_root(self)
+        root.geometry("+-3000+-3000")
+        root.deiconify()
+        with mock.patch.object(router_window.Panel, "run"), \
+                mock.patch.object(router_window.Panel, "cached_account_cards", return_value=sample_cards), \
+                mock.patch.object(router_window.theme, "set_window_icon"), \
+                mock.patch.object(router_window, "log_error") as errors:
+            panel = router_window.Panel(root, "quota")
+            self.addCleanup(lambda: root.after_cancel(panel._poll_id))
+            root.update()
+            # 4 metered accounts become 4 account cards; unmetered opencode is in the compact bottom strip.
+            self.assertEqual(len(panel.quota_cards), 4)
+            self.assertEqual(len(panel.quota_unmetered_cards), 1)
+            outers_before = [w["outer"] for w in panel.quota_cards]
+            # Short 1-window cards (Codex) are top-aligned (sticky='new'), not stretched to taller multi-window cards (Claude).
+            self.assertLess(panel.quota_cards[1]["outer"].winfo_height(),
+                            panel.quota_cards[0]["outer"].winfo_height())
+            self.assertEqual(panel.quota_cards[0]["name"].cget("text"), "Claude")
+            w0_name, w0_share, w0_bar, w0_detail = panel.quota_cards[0]["windows"][0]
+            w1_name, w1_share, w1_bar, w1_detail = panel.quota_cards[0]["windows"][1]
+            self.assertEqual((w0_name.cget("text"), w0_detail.cget("text"), w0_share.cget("text")), ("7d", "2d 1h", "80%"))
+            self.assertEqual((w1_name.cget("text"), w1_detail.cget("text"), w1_share.cget("text")), ("5h", "3h 10m", "30%"))
+            self.assertEqual(panel.quota_cards[2]["windows"][0][0].cget("text"), "credits")
+            # Segmented bar splits 100% into used (20%), reserved (12.5%), and free remaining (67.5%).
+            self.assertEqual(w0_bar.segments, {"used_pct": 20.0, "reserved_pct": 12.5, "remaining_pct": 67.5})
+            # Secondary details ($, burn rate, plan, in-flight workers) live in the hover tooltip.
+            self.assertIn("max20", panel.quota_cards[0]["tooltip_text"])
+            self.assertIn("≈$500", panel.quota_cards[0]["tooltip_text"])
+            self.assertIn("1.20%/h", panel.quota_cards[0]["tooltip_text"])
+            self.assertIn("a1b2c3d4", panel.quota_cards[0]["tooltip_text"])
+            self.assertIn("opus55_high", panel.quota_cards[0]["tooltip_text"])
+            self.assertEqual(panel.quota_unmetered_cards[0]["name"].cget("text"), "OpenCode")
+            # Worker table is visible without scrolling and shows at least 4 rows of height.
+            self.assertGreaterEqual(panel.worker_table.winfo_height(), panel.worker_table.winfo_reqheight())
+            # Refreshing with identical shape updates text in-place without destroying widgets.
+            updated = [{**c, "plan": "updated"} if i == 0 else c for i, c in enumerate(sample_cards)]
+            panel.quota_cards_loaded(updated)
+            self.assertEqual([w["outer"] for w in panel.quota_cards], outers_before)
+            self.assertIn("updated", panel.quota_cards[0]["tooltip_text"])
+            # Resizing the window changes column count via <Configure> and re-grids without recreating widgets.
+            root.geometry(f"{router_window.theme.px(880)}x{router_window.theme.px(560)}+-3000+-3000")
+            root.update()
+            self.assertEqual(panel.quota_cols, 3)
+            self.assertEqual([w["outer"] for w in panel.quota_cards], outers_before)
+            errors.assert_not_called()
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "scripts"

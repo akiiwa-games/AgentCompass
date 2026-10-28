@@ -63,7 +63,7 @@ def _install():
     if not shutil.which('node'):
         return _tr('请安装 Node.js 22.19 或更新版本，再安装/修复。')
     updates.run([python(), str(PACKAGE / 'install_cli.py')], PACKAGE)
-    return _tr('Grok Bot CLI 已安装；正在自动检查连接。账号启停在调度设置中管理。')
+    return _tr('Grok Bot CLI 已安装；正在自动检查连接。账号启停在模型设置中管理。')
 
 
 def check():
@@ -103,7 +103,7 @@ def guide():
 
 
 def info():
-    text = _tr('进入此页时检查一次，可按需唤醒云电脑；不会定时唤醒。账号启停在调度设置中管理。')
+    text = _tr('进入此页时检查一次，可按需唤醒云电脑；不会定时唤醒。账号启停在模型设置中管理。')
     if _connection and len(_connection) > 3:
         text += ' ' + _tr('上次检查：{0}').format(_connection[3])
     if _connection and not _connection[1]:

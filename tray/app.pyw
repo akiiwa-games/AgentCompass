@@ -17,6 +17,7 @@ from pystray import Menu
 from pystray import MenuItem
 
 import dot_reconnect
+import cli_updates
 import easytier
 import network_status
 import plugins
@@ -78,7 +79,7 @@ def draw_icon() -> Image.Image:
 def title() -> str:
     parts = ["AgentCompass", {"ok": _tr("正常"), "attention": PRIORITY["label"], "error": _tr("有服务停止")}[health()]]
     for plugin in plugins.PLUGINS:
-        if PLUGINS[plugin.id]["enabled"]:
+        if PLUGINS[plugin.id]["enabled"] and plugin.id in PLUGIN_STATE:
             parts.append(f"{plugin.short} {_tr(STATE[PLUGIN_STATE[plugin.id]])}")
     text = " · ".join(parts)
     return text if len(text) <= TITLE_LIMIT else text[:TITLE_LIMIT - 1] + "…"
@@ -202,6 +203,7 @@ def watch(icon: pystray.Icon) -> None:
             now = time.monotonic()
             if now - checked >= 60:
                 checked = now
+                cli_updates.maybe_trigger_auto_update(notify_fn=lambda message: notify(icon, message))
                 # A disabled Dot2API is neither renewed nor reconnected, and reports nothing.
                 if PLUGINS["dot2api"]["enabled"]:
                     message = services.maintain_subscription()

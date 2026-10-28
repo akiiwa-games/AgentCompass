@@ -29,9 +29,10 @@ import i18n
 TITLE = "AgentCompass"
 LEGACY_TITLE = "Route Manager · 控制台"  # a panel started before the rename
 _process = None
-PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "调度设置", "⚙"), ("plugins", "外部集成", "▦"))
+PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "模型设置", "⚙"), ("plugins", "外部集成", "▦"))
 PAGES = LocalizedSequence(PAGES)
-SETTINGS = (("accounts", "账号模型"), ("boost", "优先加权"), ("tuning", "策略权重"), ("dna", "模型画像"), ("system", "系统选项"))
+SETTINGS = (("models", "模型与加权"), ("strategy", "评分与画像"), ("system", "系统选项"))
+SETTING_ALIASES = {"accounts": "models", "boost": "models", "cli": "models", "tuning": "strategy", "dna": "strategy"}
 SETTINGS = LocalizedSequence(SETTINGS)
 DNA_KEYS = (("divergence", "发散创新"), ("global_rigor", "全局严密"), ("module_precision", "模块精准"))
 DNA_KEYS = LocalizedSequence(DNA_KEYS)
@@ -100,6 +101,232 @@ def clip(text, limit: int = 22) -> str:
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
+def quota_columns(width: int, count: int = 4, current: int | None = None,
+                  step: int | None = None, hysteresis: int | None = None) -> int:
+    """Responsive column count for the quota grid, with hysteresis around column boundaries."""
+    step = step or max(1, theme.px(200))
+    hysteresis = theme.px(8) if hysteresis is None else hysteresis
+    upper = max(1, min(5, count or 4))
+    if width <= 1:
+        return min(4, upper)
+    if current is not None and 1 <= current <= upper:
+        low = current * step - hysteresis
+        high = (current + 1) * step + hysteresis
+        if low <= width < high:
+            return current
+    return max(1, min(upper, width // step))
+
+
+def short_countdown(text: str | None) -> str:
+    """Compact countdown like usage-float ('1d 10h', '1h 47m', '45m')."""
+    import re
+
+    raw = str(text or "").strip()
+    if not raw or raw == "—":
+        return "—"
+    m = re.fullmatch(r"(\d+)\s*天\s*(\d+)\s*小时", raw)
+    if m:
+        return f"{int(m.group(1))}d {int(m.group(2))}h"
+    m = re.fullmatch(r"(\d+)\s*小时\s*(\d+)\s*分", raw)
+    if m:
+        return f"{int(m.group(1))}h {int(m.group(2))}m"
+    m = re.fullmatch(r"(\d+)\s*分", raw)
+    if m:
+        return f"{int(m.group(1))}m"
+    return raw
+
+
+def short_window_name(window: dict, multi: bool = True) -> str:
+    """Short window tag ('5h', '7d', 'fable 7d', 'gemini 7d', 'credits') without verbose labels."""
+    wid = str(window.get("id") or "").strip()
+    hours = window.get("hours")
+    if hours == 168:
+        span = "7d"
+    elif isinstance(hours, (int, float)) and hours >= 24 and hours % 24 == 0:
+        span = f"{int(hours // 24)}d"
+    elif isinstance(hours, (int, float)):
+        span = f"{hours:g}h"
+    else:
+        span = ""
+    if wid in ("five_hour", "5h"):
+        return "5h"
+    if wid in ("seven_day", "7d", "weekly"):
+        return span or "7d"
+    if wid.startswith("weekly_"):
+        return f"{wid[7:].replace('_', ' ')} {span or '7d'}"
+    if wid.endswith("-weekly"):
+        return f"{wid[:-7]} {span or '7d'}"
+    if wid.endswith("-5h"):
+        return f"{wid[:-3]} 5h"
+    if wid == "credits":
+        return "credits"
+    if wid in ("usage", "spend", "default", ""):
+        return span or wid or "7d"
+    return f"{wid} {span}".strip() if span and not wid.endswith(span) else wid
+
+
+def quota_window_title(card: dict, window: dict) -> str:
+    """Compact cell title combining account short name and window short tag."""
+    acct = "AGY" if card.get("account") == "antigravity" else (card.get("label") or card.get("account") or "")
+    multi = len(card.get("windows") or ()) > 1
+    w_short = short_window_name(window, multi=multi)
+    return f"{acct} {w_short}".strip()
+
+
+def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool = False) -> str:
+    """Full secondary details (plan, status, $ estimate, reservations, burn rate, reset time) for hover tooltip."""
+    label = card.get("label") or card.get("account") or "—"
+    badge = card.get("badge") or "—"
+    head = f"{label} · {window['id']}  [{badge}]" if window else f"{label}  [{badge}]"
+    plan = card.get("plan") or "—"
+    status = card.get("usage_status")
+    status_str = (tr("额度新鲜", "Fresh") if status == "fresh"
+                  else _tr(" · 额度{0}").format(_tr("过期") if status == "stale" else _tr("未知")).lstrip(" ·")
+                  if status else _tr("无计量窗口"))
+    lines = [head, f"{tr('套餐', 'Plan')}: {plan} · {status_str}"]
+    win_list = [window] if window is not None else list(card.get("windows") or ())
+    for w_item in win_list:
+        w_tag = short_window_name(w_item)
+        rem = w_item.get("remaining_pct")
+        rem_str = "—" if rem is None else f"{rem:.0f}%"
+        usd_str = f" (≈${w_item['remaining_usd']:.0f})" if w_item.get("remaining_usd") is not None else ""
+        reset_str = _tr("{0}后重置").format(f"{w_item.get('reset_in') or '—'}")
+        lines.append(f"[{w_tag}] {tr('剩余额度', 'Remaining')}: {rem_str}{usd_str} · {reset_str}")
+        res_pct = float(w_item.get("reserved_pct") or 0.0)
+        res_usd = float(w_item.get("reserved_usd") or 0.0)
+        res_workers = list(w_item.get("reserved_workers") or ())
+        if res_pct > 0 or res_usd > 0 or res_workers:
+            lines.append(f"  {tr('在途占用', 'In-flight reserved')}: {res_pct:.1f}% (≈${res_usd:.2f})")
+            for w in res_workers:
+                aid = w.get("agent_id") or (w.get("dispatch_id") or "")[:8] or "—"
+                bname = w.get("bundle") or "—"
+                w_usd = float(w.get("usd") or 0.0)
+                w_pct = float(w.get("pct") or 0.0)
+                lines.append(f"    · {aid}  {bname}  ≈${w_usd:.2f} ({w_pct:.1f}%)")
+        rates = []
+        if w_item.get("rate_3h") is not None:
+            rates.append(f"3h {w_item['rate_3h']:.2f}%/h")
+        if w_item.get("rate_24h") is not None:
+            rates.append(f"24h {w_item['rate_24h']:.2f}%/h")
+        if rates:
+            lines.append(f"  {tr('消耗速率', 'Burn rate')}: {' · '.join(rates)}")
+    if refreshable:
+        lines.append(tr("点击右上 ↻ 或右键刷新该账号额度", "Click ↻ or right-click to refresh this account"))
+    return "\n".join(lines)
+
+
+class QuotaBar:
+    """Segmented progress bar: 已用 (used_pct) | 在途占用 (reserved_pct, hatched) | 剩余 (free_remaining_pct)."""
+
+    def __init__(self, tk_mod, parent, height: int = 6):
+        self.tk = tk_mod
+        self.canvas = tk_mod.Canvas(parent, bg=TRACK, height=height, highlightthickness=0, bd=0)
+        self.remaining_pct: float | None = 0.0
+        self.reserved_pct: float = 0.0
+        self.colour: str = "Green"
+        self.stale: bool = False
+        self.value: float = 0.0
+        self.segments: dict = {"used_pct": 100.0, "reserved_pct": 0.0, "remaining_pct": 0.0}
+        self.canvas.bind("<Configure>", self._redraw, add="+")
+
+    def pack(self, **kwargs):
+        self.canvas.pack(**kwargs)
+
+    def bind(self, sequence=None, func=None, add=None):
+        return self.canvas.bind(sequence, func, add=add)
+
+    def winfo_children(self):
+        return ()
+
+    def cget(self, key: str):
+        if key == "value":
+            return self.value
+        if key == "segments":
+            return self.segments
+        return self.canvas.cget(key)
+
+    def __getitem__(self, key: str):
+        return self.cget(key)
+
+    def set_segments(self, remaining_pct: float | None, reserved_pct: float = 0.0,
+                     colour: str = "Green", stale: bool = False):
+        self.remaining_pct = remaining_pct
+        self.reserved_pct = max(0.0, float(reserved_pct or 0.0))
+        self.colour = colour
+        self.stale = stale
+        rem = 0.0 if remaining_pct is None else max(0.0, min(100.0, float(remaining_pct)))
+        used = max(0.0, 100.0 - rem)
+        eff_res = min(rem, self.reserved_pct)
+        free_rem = max(0.0, rem - eff_res)
+        self.value = rem
+        self.segments = {
+            "used_pct": round(used, 2),
+            "reserved_pct": round(eff_res, 2),
+            "remaining_pct": round(free_rem, 2),
+        }
+        self._redraw()
+
+    def _redraw(self, _event=None):
+        c = self.canvas
+        c.delete("all")
+        w = max(c.winfo_width(), 120)
+        h = max(c.winfo_height(), theme.px(6))
+        palettes = {
+            "Green": (theme.GREEN, "#D1FAE5", theme.GREEN),
+            "Amber": (theme.AMBER, "#FDE68A", theme.AMBER),
+            "Red": (theme.RED, "#FECACA", theme.RED),
+        }
+        rem_fill, res_bg, res_stripe = ("#94A3B8", "#E2E8F0", "#64748B") if self.stale else palettes.get(
+            self.colour, palettes["Green"])
+        used_pct = self.segments["used_pct"]
+        res_pct = self.segments["reserved_pct"]
+        free_pct = self.segments["remaining_pct"]
+        x_used = int(round(w * used_pct / 100.0))
+        w_res = int(round(w * res_pct / 100.0))
+        if res_pct > 0 and w_res < 4:
+            w_res = min(4, max(0, w - x_used))
+        x_res_end = min(w, x_used + w_res)
+        # 1. Used segment (muted slate track)
+        if x_used > 0:
+            c.create_rectangle(0, 0, x_used, h, fill="#CBD5E1", width=0, tags=("seg_used",))
+        # 2. In-flight reserved segment (light tint + diagonal hatch stripes)
+        if x_res_end > x_used:
+            c.create_rectangle(x_used, 0, x_res_end, h, fill=res_bg, width=0, tags=("seg_reserved",))
+            step = max(4, theme.px(5))
+            x = x_used - h
+            while x < x_res_end + h:
+                x0 = max(x_used, x)
+                y0 = h - (x0 - x)
+                x1 = min(x_res_end, x + h)
+                y1 = h - (x1 - x)
+                if x1 > x0:
+                    c.create_line(x0, y0, x1, y1, fill=res_stripe, width=1, tags=("seg_reserved_hatch",))
+                x += step
+        # 3. Remaining free segment
+        if free_pct > 0 and w > x_res_end:
+            c.create_rectangle(x_res_end, 0, w, h, fill=rem_fill, width=0, tags=("seg_remaining",))
+
+
+def quota_card_placements(cards: list[dict], cols: int) -> list[tuple[int, int, int]]:
+    """Return (row, column, rowspan) for each card: metered cards fill shortest columns first, unmetered follow."""
+    if not cards:
+        return []
+    cols = max(1, min(cols, len(cards)))
+    cursors = [0] * cols
+    counts = [0] * cols
+    spans = [3 + 2 * len(c.get("windows") or ()) for c in cards]
+    order = sorted(range(len(cards)), key=lambda i: (0 if cards[i].get("windows") else 1, i))
+    placements = [(0, 0, 3)] * len(cards)
+    for index in order:
+        span = spans[index]
+        col = min(range(cols), key=lambda c: (cursors[c], counts[c], c))
+        row = cursors[col]
+        cursors[col] += span
+        counts[col] += 1
+        placements[index] = (row, col, span)
+    return placements
+
+
 def matching_preset(tuning: dict, presets: dict) -> str | None:
     """The strategy preset the saved tuning equals, if any."""
     for name, preset in presets.items():
@@ -109,6 +336,26 @@ def matching_preset(tuning: dict, presets: dict) -> str | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def selected_chip_layout(widths, available, edit_width, overflow_width=42, gap=6):
+    """Largest prefix fitting two compact rows, with overflow and edit controls at its tail."""
+    available = max(1, available)
+    for count in range(len(widths), -1, -1):
+        items = [*widths[:count], *([overflow_width] if count < len(widths) else []), edit_width]
+        positions, x, row = [], 0, 0
+        for width in items:
+            if width > available:
+                break
+            if x and x + width > available:
+                x, row = 0, row + 1
+            if row >= 2:
+                break
+            positions.append((x, row))
+            x += width + gap
+        else:
+            return count, positions, row + 1
+    return 0, [(0, 0), (0, 1)], 2
 
 
 @contextlib.contextmanager
@@ -151,9 +398,12 @@ def follow_width(container, label, margin: int, floor: int) -> None:
 
 
 class ScrollFrame:
-    """A vertically scrolling area; put children in .body."""
+    """A vertically scrolling area; put children in .body.
 
-    def __init__(self, parent, bg: str | None = None):
+    fill=True stretches .body to the visible height, so expand=True children still fill a tall window and only
+    scroll once the content outgrows it; call fit() when a child's requested height may have changed."""
+
+    def __init__(self, parent, bg: str | None = None, fill: bool = False):
         import tkinter as tk
         from tkinter import ttk
 
@@ -163,7 +413,8 @@ class ScrollFrame:
         self.body = ttk.Frame(self.canvas, style="Card.TFrame" if bg == theme.CARD else "TFrame")
         self.window = self.canvas.create_window(0, 0, anchor="nw", window=self.body)
         self.canvas.configure(yscrollcommand=self.bar.set)
-        self._last_w = self._last_bbox = None
+        self.fill = fill
+        self._last_w = self._last_bbox = self._last_h = None
         self.body.bind("<Configure>", self.body_changed)
         self.canvas.bind("<Configure>", self.canvas_changed)
         self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self.wheel))
@@ -172,7 +423,16 @@ class ScrollFrame:
         self.bar.pack(side="right", fill="y")
 
     # Each reconfigure repaints the canvas, so only pass real changes on (re-mapping sends <Configure> too).
+    def fit(self, _event=None):
+        if not self.fill:
+            return
+        height = max(self.body.winfo_reqheight(), self.canvas.winfo_height())
+        if height > 1 and height != self._last_h:
+            self._last_h = height
+            self.canvas.itemconfigure(self.window, height=height)
+
     def body_changed(self, _event):
+        self.fit()
         cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
         bh = self.body.winfo_reqheight()
         bbox = self.canvas.bbox("all") if cw <= 1 and ch <= 1 else (0, 0, max(1, cw), max(bh, ch))
@@ -189,6 +449,8 @@ class ScrollFrame:
         self.body_changed(event)
 
     def wheel(self, event):
+        if hasattr(event.widget, "winfo_class") and event.widget.winfo_class() == "Treeview":
+            return  # a table scrolls its own rows
         if self.body.winfo_height() > self.canvas.winfo_height():
             self.canvas.yview_scroll(int(-event.delta / 120), "units")
 
@@ -220,6 +482,7 @@ class Panel:
         self._generation = 0
         self._cards_cache = None
         root.bind("<<PanelResult>>", lambda e: self.drain_results())
+        root.bind("<Button-1>", lambda e: self.close_model_menu(), add="+")
         with freeze_redraw(self.root):
             self.build_shell(page)
         root.protocol("WM_DELETE_WINDOW", self.close)
@@ -250,12 +513,19 @@ class Panel:
     def change_language(self, lang):
         """Rebuild display widgets; preserve worker ownership and discard stale UI callbacks."""
         lang = self.data_module().save_ui_language(lang)
+        self.close_model_menu()
+        cwd_dialog = getattr(self, "cwd_dialog", None)
+        if cwd_dialog is not None and cwd_dialog.winfo_exists():
+            cwd_dialog.destroy()
         page, setting = self.current, getattr(self, "current_setting", "system")
+        dialog = getattr(self, "boost_dialog", None)
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
         self._generation += 1
         with freeze_redraw(self.root):
             self.shell.destroy()
             # These caches refer to destroyed widgets, not the underlying account/model data.
-            for name in ("quota_shape", "account_shape", "dna_picker", "dna_labels", "_cards_cache"):
+            for name in ("quota_shape", "account_shape", "dna_picker", "dna_labels", "_cards_cache", "model_shape", "model_widgets", "model_inventory"):
                 self.__dict__.pop(name, None)
             self._dna_redraw_pending = False
             self._initial_setting = setting
@@ -352,7 +622,18 @@ class Panel:
         now = time.monotonic()
         if not force and cached is not None and now - cached[0] < 1.5:
             return cached[1]
-        cards = self.data_module().account_cards()
+        data = self.data_module()
+        cards = data.account_cards()
+        if cards and any("reserved_pct" not in w for c in cards for w in c.get("windows") or ()):
+            res_fn = getattr(data, "pool_reservations", None)
+            reservations = res_fn() if callable(res_fn) else {}
+            for c in cards:
+                acct = c.get("account")
+                for w in c.get("windows") or ():
+                    res = reservations.get((acct, w.get("id"))) or {}
+                    w.setdefault("reserved_pct", res.get("pct", 0.0))
+                    w.setdefault("reserved_usd", res.get("usd", 0.0))
+                    w.setdefault("reserved_workers", list(res.get("workers") or ()))
         self._cards_cache = (now, cards)
         return cards
 
@@ -787,23 +1068,178 @@ class Panel:
     # ---------- page 2: quota & workers ----------
 
     def build_quota(self, page):
-        ttk = self.ttk
-        self.header(page, _tr("额度监控"), ((_tr("刷新额度"), self.refresh_usage, None),
-                                         (_tr("刷新"), lambda: self.load_quota(True), "SmallAccent.TButton")))
+        tk, ttk = self.tk, self.ttk
+        self.quota_page = page
+        self.quota_header = self.header(page, _tr("额度监控"), (
+            (_tr("刷新"), lambda: self.load_quota(True), "SmallAccent.TButton"),))
+        self.quota_updated = tk.Label(
+            self.quota_header, text=tr("剩余额度% · 点击 ↻ 刷新", "Remaining % · Click ↻ to refresh"),
+            bg=theme.BG, fg=theme.MUTED, font=(theme.FONT, 9), cursor="hand2")
+        self.quota_updated.pack(side="right", padx=(0, 10))
+        self.quota_updated.bind("<Button-1>", lambda _e: self.refresh_usage())
 
-        self.quota_grid = ttk.Frame(page)
+        self.quota_cols = None
+        self._configured_quota_cols = 0
+        self._quota_last_w = self._quota_last_h = self._quota_last_bbox = None
+        self._quota_tip = None
+
+        # Window-level tiles (usage-float style) + compact 1-line unmetered strip at the bottom.
+        self.quota_holder = ttk.Frame(page)
+        self.quota_holder.pack(fill="x")
+        self.quota_canvas = tk.Canvas(self.quota_holder, bg=theme.BG, highlightthickness=0, bd=0,
+                                      height=theme.px(210))
+        self.quota_bar = ttk.Scrollbar(self.quota_holder, orient="vertical", command=self.quota_canvas.yview)
+        self.quota_body = ttk.Frame(self.quota_canvas)
+        self.quota_grid = ttk.Frame(self.quota_body)
         self.quota_grid.pack(fill="x")
-        for column in range(4):
-            self.quota_grid.columnconfigure(column, weight=1, uniform="cards")
-        workers = theme.card(page, padding=12, fill="both", expand=True, pady=(2, 0))
+        self.quota_unmetered = tk.Frame(self.quota_body, bg=theme.BG)
+        self.quota_unmetered.pack(fill="x", pady=(theme.px(2), 0))
+        self._quota_win = self.quota_canvas.create_window(0, 0, anchor="nw", window=self.quota_body)
+        self.quota_canvas.configure(yscrollcommand=self.quota_bar.set)
+        self.quota_canvas.pack(side="left", fill="x", expand=True)
+        self.quota_canvas.bind("<Enter>", lambda e: self.quota_canvas.bind_all("<MouseWheel>", self.quota_wheel))
+        self.quota_canvas.bind("<Leave>", lambda e: self.quota_canvas.unbind_all("<MouseWheel>"))
+
+        workers = theme.card(page, padding=12, fill="both", expand=True, pady=(6, 0))
+        self.workers_card = workers
         ttk.Label(workers, text=_tr("在途与活跃会话"), style="CardH3.TLabel").pack(anchor="w", pady=(0, 6))
         frame, self.worker_table = self.tree(workers, (
             ("agent", "Agent", 70, "w"), ("title", _tr("任务"), 200, "w"), ("bundle", "Bundle", 110, "w"),
             ("state", _tr("状态"), 66, "w"), ("compacted", _tr("已压缩"), 62, "e"), ("context", _tr("窗口"), 58, "e"),
             ("total", _tr("累计"), 62, "e"), ("bar", _tr("占 2M 上限"), 130, "w")), 4)
         frame.pack(fill="both", expand=True)
+
+        for widget in (page, self.quota_holder, self.quota_body, self.quota_grid):
+            widget.bind("<Configure>", self.sync_quota_geometry, add="+")
+
         self.prefill(self.cached_account_cards, self.quota_cards_loaded)
         self.load_quota()
+
+    def show_quota_tip(self, event, widgets):
+        text = widgets.get("tooltip_text") or ""
+        if not text:
+            return
+        self.hide_quota_tip()
+        tk = self.tk
+        tip = tk.Toplevel(self.root)
+        tip.wm_overrideredirect(True)
+        try:
+            tip.wm_attributes("-topmost", True)
+        except Exception:
+            pass
+        lbl = tk.Label(
+            tip, text=text, justify="left", anchor="w", bg=theme.INK, fg="#F8FAFC",
+            font=(theme.FONT, 9), padx=theme.px(10), pady=theme.px(6), bd=1, relief="solid")
+        lbl.pack()
+        x = getattr(event, "x_root", self.root.winfo_rootx() + 80) + 12
+        y = getattr(event, "y_root", self.root.winfo_rooty() + 80) + 12
+        tip.wm_geometry(f"+{x}+{y}")
+        self._quota_tip = tip
+
+    def hide_quota_tip(self, _event=None):
+        tip = getattr(self, "_quota_tip", None)
+        if tip is not None:
+            self._quota_tip = None
+            try:
+                tip.destroy()
+            except Exception:
+                pass
+
+    def _bind_quota_interactions(self, root_widget, widgets, account: str, refreshable: bool):
+        again = widgets.get("again")
+
+        def on_enter(event):
+            if again is not None:
+                again.configure(fg=theme.TEXT)
+            self.show_quota_tip(event, widgets)
+
+        def on_leave(_event):
+            if again is not None:
+                again.configure(fg="#CBD5E1")
+            self.hide_quota_tip()
+
+        stack = [root_widget]
+        while stack:
+            w = stack.pop()
+            w.bind("<Enter>", on_enter, add="+")
+            w.bind("<Leave>", on_leave, add="+")
+            if refreshable:
+                w.bind("<Button-3>", lambda _e, a=account: self.refresh_usage([a]), add="+")
+            stack.extend(w.winfo_children())
+
+    def quota_wheel(self, event):
+        if hasattr(event.widget, "winfo_class") and event.widget.winfo_class() == "Treeview":
+            return
+        if self.quota_body.winfo_reqheight() > self.quota_canvas.winfo_height():
+            self.quota_canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    def quota_column_count(self, width: int | None = None) -> int:
+        if width is None or width <= 1:
+            width = self.quota_holder.winfo_width() if hasattr(self, "quota_holder") else 0
+        if width <= 1:
+            root_w = self.root.winfo_width()
+            if root_w > 200:
+                width = root_w - theme.px(198 if i18n.is_en() else 168) - theme.px(36)
+        count = len(getattr(self, "quota_cards", None) or ()) or 4
+        return quota_columns(width, count, getattr(self, "quota_cols", None))
+
+    def layout_quota_cards(self, cols: int | None = None):
+        cards = getattr(self, "quota_cards", None)
+        if not cards:
+            return
+        if cols is None:
+            cols = self.quota_column_count()
+        cols = max(1, min(cols, len(cards)))
+        self.quota_cols = cols
+        old_cols = getattr(self, "_configured_quota_cols", 0)
+        for col in range(max(cols, old_cols)):
+            self.quota_grid.columnconfigure(col, weight=1 if col < cols else 0,
+                                            uniform="cards" if col < cols else "")
+        self._configured_quota_cols = cols
+        for widgets, (row, col, span) in zip(cards, quota_card_placements(cards, cols)):
+            widgets["outer"].grid_configure(
+                row=row, column=col, rowspan=span, sticky="new",
+                padx=(0 if col == 0 else theme.px(8), 0), pady=(0, theme.px(6)))
+
+    def sync_quota_geometry(self, _event=None):
+        if not hasattr(self, "quota_holder") or not hasattr(self, "quota_body"):
+            return
+        holder_w = self.quota_holder.winfo_width()
+        cols = self.quota_column_count(holder_w)
+        if cols != getattr(self, "quota_cols", None) and getattr(self, "quota_cards", None):
+            with freeze_redraw(self.quota_grid):
+                self.layout_quota_cards(cols)
+        req_h = self.quota_body.winfo_reqheight()
+        page_h = self.quota_page.winfo_height() if hasattr(self, "quota_page") else 0
+        if page_h > 1:
+            header_h = self.quota_header.winfo_height() + theme.px(10)
+            workers_min_h = max(self.workers_card.outer.winfo_reqheight(), theme.px(175))
+            avail_h = page_h - header_h - theme.px(6)
+            cap_h = max(theme.px(140), min(theme.px(300), avail_h - workers_min_h))
+        else:
+            cap_h = theme.px(260)
+        need_scroll = req_h > cap_h + 2
+        if need_scroll and not self.quota_bar.winfo_manager():
+            self.quota_bar.pack(side="right", fill="y", padx=(4, 0))
+        elif not need_scroll and self.quota_bar.winfo_manager():
+            self.quota_bar.pack_forget()
+            self.quota_canvas.yview_moveto(0.0)
+        if holder_w > 1:
+            bar_w = max(self.quota_bar.winfo_reqwidth(), theme.px(16)) + 4 if need_scroll else 0
+            canvas_w = max(1, holder_w - bar_w)
+            if canvas_w != self._quota_last_w:
+                self._quota_last_w = canvas_w
+                self.quota_canvas.itemconfigure(self._quota_win, width=canvas_w)
+        else:
+            canvas_w = self._quota_last_w or 1
+        target_h = min(req_h, cap_h) if req_h > 1 else theme.px(180)
+        if target_h != self._quota_last_h:
+            self._quota_last_h = target_h
+            self.quota_canvas.configure(height=target_h)
+        bbox = (0, 0, max(1, canvas_w), max(req_h, target_h))
+        if bbox != self._quota_last_bbox:
+            self._quota_last_bbox = bbox
+            self.quota_canvas.configure(scrollregion=bbox)
 
     def load_quota(self, force: bool = False):
         data = self.data_module()
@@ -818,16 +1254,36 @@ class Panel:
     def quota_cards_loaded(self, cards):
         refreshable = self.data_module().USAGE_ACCOUNTS
         shape = tuple((card["account"], tuple(w["id"] for w in card["windows"])) for card in cards)
+        metered_cards = [card for card in cards if card["windows"]]
+        unmetered_cards = [card for card in cards if not card["windows"]]
         if shape != getattr(self, "quota_shape", None):
-            # First load, or an account / window appeared or went away: build the cards once.
-            with freeze_redraw(self.quota_grid):
+            # First load, or an account / window appeared or went away: build the account cards once.
+            self.hide_quota_tip()
+            with freeze_redraw(self.quota_body):
                 for child in self.quota_grid.winfo_children():
                     child.destroy()
-                self.quota_cards = [self.build_quota_card(index, card, card["account"] in refreshable)
-                                    for index, card in enumerate(cards)]
+                for child in self.quota_unmetered.winfo_children():
+                    child.destroy()
+                self.quota_cards = [
+                    self.build_quota_card(index, card, card["account"] in refreshable)
+                    for index, card in enumerate(metered_cards)
+                ]
+                self.quota_unmetered_cards = [
+                    self.build_unmetered_chip(index, card, card["account"] in refreshable)
+                    for index, card in enumerate(unmetered_cards)
+                ]
                 self.quota_shape = shape
-        for widgets, card in zip(self.quota_cards, cards):
+                self.quota_cols = None
+                self.layout_quota_cards()
+        for widgets, card in zip(self.quota_cards, metered_cards):
             self.fill_quota_card(widgets, card)
+        for widgets, card in zip(getattr(self, "quota_unmetered_cards", ()), unmetered_cards):
+            self.fill_quota_card(widgets, card)
+        if hasattr(self, "quota_updated"):
+            stamp = time.strftime("%H:%M:%S")
+            self.quota_updated.configure(
+                text=f"{tr('剩余额度%', 'Remaining %')} · {tr('更新于', 'Updated')} {stamp} ↻")
+        self.sync_quota_geometry()
 
     def quota_loaded(self, value):
         cards, workers = value
@@ -850,171 +1306,518 @@ class Panel:
         self.status.set(_tr('已读取 {0} 个账号、{1} 个在途 worker、{2} 个近期待命 · {3}').format(f'{len(cards)}', f'{running}', f'{len(workers) - running}', f"{time.strftime('%H:%M:%S')}"))
 
     def build_quota_card(self, index, card, refreshable):
-        """One account card's fixed widgets; fill_quota_card writes the numbers, so a refresh destroys nothing."""
-        tk, ttk = self.tk, self.ttk
-        box = theme.card(self.quota_grid, padding=10)
-        box.outer.grid(row=index // 4, column=index % 4, sticky="nsew", padx=(0 if index % 4 == 0 else 10, 0),
-                       pady=(0, 10))
-        top = ttk.Frame(box, style="Card.TFrame")
-        top.pack(fill="x")
-        ttk.Label(top, text=card["label"], style="CardH3.TLabel").pack(side="left")
+        """One account card with usage-float inner layout: header (dot + name + weakened ↻) + ultra-clean window rows."""
+        tk = self.tk
+        box = theme.card(self.quota_grid, padding=(10, 6))
+        top = tk.Frame(box, bg=theme.CARD)
+        top.pack(fill="x", pady=(0, 2))
+        dot = tk.Label(top, text="●", bg=theme.CARD, fg=theme.GREEN, font=(theme.FONT, 7), padx=0, pady=0)
+        dot.pack(side="left", padx=(0, 4))
+        name = tk.Label(top, text=card["label"], bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 9, "bold"),
+                        anchor="w", padx=0, pady=0)
+        name.pack(side="left")
+        again = None
         if refreshable:
-            again = tk.Label(top, text="↻", bg=theme.CARD, fg=theme.MUTED, font=(theme.FONT, 10), cursor="hand2")
-            again.bind("<Button-1>", lambda e, a=card["account"]: self.refresh_usage([a]))
-            again.pack(side="right", padx=(4, 0))
-        widgets = {"pill": theme.pill(top, "", "idle"), "plan": ttk.Label(box, style="CardTiny.TLabel"), "windows": []}
-        widgets["pill"].pack(side="right")
-        widgets["plan"].pack(anchor="w", pady=(0, 2))
-        if not card["windows"]:
-            ttk.Label(box, text=_tr("无计量窗口"), style="CardTiny.TLabel").pack(anchor="w", pady=(4, 0))
+            # Weakened ↻ in card header: faint at rest, darkens on hover, or right-click anywhere on the card.
+            again = tk.Label(top, text="↻", bg=theme.CARD, fg="#CBD5E1", font=(theme.FONT, 9),
+                             cursor="hand2", bd=0, padx=2, pady=0)
+            again.bind("<Button-1>", lambda _e, a=card["account"]: self.refresh_usage([a]))
+            again.pack(side="right")
+
+        win_widgets = []
         for _ in card["windows"]:
-            head = ttk.Frame(box, style="Card.TFrame")
-            head.pack(fill="x", pady=(4, 0))
-            name = ttk.Label(head, style="Card.TLabel", font=(theme.FONT, 9))
-            name.pack(side="left")
-            share = ttk.Label(head, style="Mono.TLabel")
-            share.pack(side="right")
-            bar = ttk.Progressbar(box, maximum=100)
-            bar.pack(fill="x", pady=(2, 1))
-            detail = ttk.Label(box, style="CardTiny.TLabel")
-            detail.pack(anchor="w")
-            widgets["windows"].append((name, share, bar, detail))
+            w_box = tk.Frame(box, bg=theme.CARD)
+            w_box.pack(fill="x", pady=(3, 0))
+            head = tk.Frame(w_box, bg=theme.CARD)
+            head.pack(fill="x")
+            w_name = tk.Label(head, text="", bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 8, "bold"),
+                              anchor="w", padx=0, pady=0)
+            w_name.pack(side="left")
+            w_detail = tk.Label(head, text="", bg=theme.CARD, fg=theme.MUTED, font=(self.mono, 8),
+                                anchor="w", padx=6, pady=0)
+            w_detail.pack(side="left")
+            w_share = tk.Label(head, text="", bg=theme.CARD, fg=theme.GREEN, font=(self.mono, 11, "bold"),
+                               anchor="e", padx=0, pady=0)
+            w_share.pack(side="right")
+            bar = QuotaBar(tk, w_box, height=theme.px(5))
+            bar.pack(fill="x", pady=(1, 0))
+            win_widgets.append((w_name, w_share, bar, w_detail))
+
+        widgets = {
+            "outer": box.outer,
+            "account": card["account"],
+            "refreshable": refreshable,
+            "again": again,
+            "dot": dot,
+            "name": name,
+            "windows": win_widgets,
+            "tooltip_text": "",
+        }
+        self._bind_quota_interactions(box.outer, widgets, card["account"], refreshable)
+        return widgets
+
+    def build_unmetered_chip(self, index, card, refreshable):
+        """Compact 1-line status strip item for unmetered accounts (OpenCode, Dot, ChatGPT Web)."""
+        tk = self.tk
+        outer = tk.Frame(self.quota_unmetered, bg=theme.BORDER, padx=1, pady=1)
+        outer.pack(side="left", padx=(0, theme.px(6)), pady=(0, theme.px(2)))
+        inner = tk.Frame(outer, bg=theme.CARD, padx=theme.px(8), pady=theme.px(2))
+        inner.pack(fill="both")
+        dot = tk.Label(inner, text="●", bg=theme.CARD, fg=theme.GREEN, font=(theme.FONT, 7), padx=0, pady=0)
+        dot.pack(side="left", padx=(0, 4))
+        name = tk.Label(inner, text=card["label"], bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 8, "bold"),
+                        padx=0, pady=0)
+        name.pack(side="left")
+        detail = tk.Label(inner, text="", bg=theme.CARD, fg=theme.MUTED, font=(theme.FONT, 8), padx=4, pady=0)
+        detail.pack(side="left")
+        widgets = {
+            "outer": outer,
+            "account": card["account"],
+            "refreshable": refreshable,
+            "again": None,
+            "dot": dot,
+            "name": name,
+            "detail": detail,
+            "windows": [],
+            "tooltip_text": "",
+        }
+        self._bind_quota_interactions(outer, widgets, card["account"], refreshable)
         return widgets
 
     @staticmethod
     def fill_quota_card(widgets, card):
-        theme.set_pill(widgets["pill"], short_badge(card["badge"]), card["kind"])
-        stale = "" if card["usage_status"] == "fresh" else _tr(' · 额度{0}').format(f"{(_tr('过期') if card['usage_status'] == 'stale' else _tr('未知'))}")
-        widgets["plan"].configure(text=f"{clip(card.get('plan'))}{stale}")
-        for (name, share, bar, detail), window in zip(widgets["windows"], card["windows"]):
-            remaining = window["remaining_pct"]
-            hours = window.get("hours")
-            span = _tr("周") if hours == 168 else f"{hours:g}h" if isinstance(hours, (int, float)) else ""
-            name.configure(text=f"{window['id']} {span}")
-            share.configure(text="—" if remaining is None else f"{remaining:.0f}%")
+        refreshable = bool(widgets.get("refreshable"))
+        widgets["tooltip_text"] = quota_tooltip_text(card, None, refreshable)
+        dot_fg = (theme.GREEN if card.get("kind") == "ok"
+                  else theme.AMBER if card.get("kind") == "warn"
+                  else theme.RED if card.get("kind") == "bad"
+                  else theme.FAINT)
+        if "dot" in widgets:
+            widgets["dot"].configure(fg=dot_fg)
+        if "name" in widgets:
+            widgets["name"].configure(text=card["label"])
+        if not card.get("windows"):
+            plan = clip(card.get("plan"), 14)
+            badge = short_badge(card.get("badge"))
+            if "detail" in widgets:
+                widgets["detail"].configure(text=f"{badge} · {plan}" if plan and plan != "—" else badge)
+            return
+        for (w_name, w_share, bar, w_detail), window in zip(widgets["windows"], card["windows"]):
+            remaining = window.get("remaining_pct")
+            reserved = float(window.get("reserved_pct") or 0.0)
+            is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh")
+            w_name.configure(text=short_window_name(window))
+            w_detail.configure(text=short_countdown(window.get("reset_in")))
             colour = "Green" if remaining is None or remaining >= 40 else "Amber" if remaining >= 15 else "Red"
-            bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=remaining or 0)
-            parts = [_tr('{0}后重置').format(f"{window['reset_in']}")]
-            if window["remaining_usd"] is not None:
-                parts.append(f"≈${window['remaining_usd']:.0f}")
-            rate = window["rate_3h"] if window["rate_3h"] is not None else window["rate_24h"]
-            if rate is not None:
-                parts.append(f"{rate:.2f}%/h")
-            detail.configure(text=" · ".join(parts))
+            fg = ("#64748B" if is_stale
+                  else theme.GREEN if colour == "Green"
+                  else theme.AMBER if colour == "Amber"
+                  else theme.RED)
+            w_share.configure(text="—" if remaining is None else f"{remaining:.0f}%", fg=fg)
+            if hasattr(bar, "set_segments"):
+                bar.set_segments(remaining, reserved, colour=colour, stale=is_stale)
+            else:
+                bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=remaining or 0)
 
-    # ---------- page 3: routing settings ----------
+    # ---------- page 3: model settings ----------
 
     def build_policy(self, page):
         ttk = self.ttk
-        bar = self.header(page, _tr("调度设置"))
-        self.setting_switch = theme.Segmented(page if i18n.is_en() else bar, SETTINGS, self.show_setting, track=TRACK)
-        self.setting_switch.frame.pack(anchor="w", pady=(0, 10)) if i18n.is_en() else self.setting_switch.frame.pack(side="right")
-        stack = ttk.Frame(page)
-        self.policy_stack = stack
-        stack.pack(fill="both", expand=True)
-        stack.pack_propagate(False)
-        self.setting_frames = {key: ttk.Frame(stack) for key, _ in SETTINGS}
+        bar = self.header(page, _tr("模型设置"))
+        self.setting_switch = theme.Segmented(bar, SETTINGS, self.show_setting, track=TRACK)
+        self.setting_switch.frame.pack(side="right")
+        self.policy_stack = ttk.Frame(page)
+        self.policy_stack.pack(fill="both", expand=True)
+        self.policy_stack.pack_propagate(False)
+        self.setting_frames = {key: ttk.Frame(self.policy_stack) for key, _ in SETTINGS}
         self.settings_built = set()
         self.current_setting = None
-        self.show_setting(getattr(self, "_initial_setting", None) or "accounts")
+        self.show_setting(getattr(self, "_initial_setting", None) or "models")
 
     def show_setting(self, key):
+        key = SETTING_ALIASES.get(key, key)
+        if key != getattr(self, "current_setting", None):
+            self.close_model_menu()
         if "policy" not in self.built:
             self.show("policy")
-        if key == self.current_setting:
+        if key not in self.setting_frames or key == self.current_setting:
             return
         self.setting_switch.set(key)
-        if key not in self.settings_built:
+        revisit = key in self.settings_built
+        if not revisit:
             self.settings_built.add(key)
             getattr(self, f"build_setting_{key}")(self.setting_frames[key])
-        with freeze_redraw(getattr(self, "policy_stack", None)):
+        with freeze_redraw(self.policy_stack):
             if self.current_setting is not None:
                 self.setting_frames[self.current_setting].pack_forget()
             self.current_setting = key
             self.setting_frames[key].pack(fill="both", expand=True)
+        if revisit and key == "models":
+            self.load_models()
+
+    open_setting = show_setting
 
     def load_policy(self):
-        """Reload every settings section that has been opened."""
         for key in getattr(self, "settings_built", ()):
             getattr(self, f"load_{key}")()
 
-    # accounts & bundles
-
-    def build_setting_accounts(self, frame):
-        box = theme.card(frame, padding=(14, 6), fill="both", expand=True)
-        scroll = ScrollFrame(box, bg=theme.CARD)
-        self.account_rows = scroll.body
-        self.account_rows.columnconfigure(3, weight=1)
-        self.prefill(self.cached_account_cards, self.accounts_loaded)
-        self.load_accounts()
-
-    def load_accounts(self, force: bool = False):
-        self.run(lambda: self.cached_account_cards(force), self.accounts_loaded, _tr("正在读取账号与档位…"))
-
-    def accounts_loaded(self, cards):
-        shape = tuple((card["account"], tuple(b["id"] for b in card["bundles"])) for card in cards)
-        if shape != getattr(self, "account_shape", None):
-            with freeze_redraw(self.account_rows):
-                for child in self.account_rows.winfo_children():
-                    child.destroy()
-                self.account_widgets = [self.build_account_row(index, card) for index, card in enumerate(cards)]
-                self.account_shape = shape
-        for widgets, card in zip(self.account_widgets, cards):
-            widgets["plan"].configure(text=clip(card.get("plan"), 26))
-            theme.set_pill(widgets["pill"], clip(card["badge"], 16), card["kind"])
-            widgets["on"].set(card["host_enabled"])
-            for (var, check), bundle, label in zip(widgets["bundles"], card["bundles"], bundle_labels(card["bundles"])):
-                var.set(bundle["enabled"])
-                check.configure(text=label)
-                check.state(["!disabled"] if card["host_enabled"] else ["disabled"])
-        self.status.set(_tr('已读取 {0} 个账号 · {1}').format(f'{len(cards)}', f"{time.strftime('%H:%M:%S')}"))
-
-    def build_account_row(self, index, card):
-        """One account's fixed widgets; accounts_loaded sets their values, so a toggle rebuilds nothing."""
+    def build_setting_models(self, frame):
         tk, ttk = self.tk, self.ttk
-        box = self.account_rows
-        row = index * 2
-        if index:
-            self.divider(box, row=row - 1, column=0, columnspan=4, pady=2)
-        names = ttk.Frame(box, style="Card.TFrame")
-        names.grid(row=row, column=0, sticky="nw", pady=6)
-        ttk.Label(names, text=card["label"], style="CardH3.TLabel").pack(anchor="w")
-        plan = ttk.Label(names, style="CardTiny.TLabel")
-        plan.pack(anchor="w")
-        box.grid_columnconfigure(0, minsize=theme.px(130))
-        pill = theme.pill(box, "", "idle")
-        pill.grid(row=row, column=1, sticky="nw", padx=(0, 12), pady=8)
-        box.grid_columnconfigure(1, minsize=theme.px(96))
-        on = tk.BooleanVar(value=card["host_enabled"])
-        ttk.Checkbutton(box, text=_tr("启用"), variable=on,
-                        command=lambda a=card["account"]: self.toggle_account(a)).grid(
-            row=row, column=2, sticky="nw", padx=(0, 16), pady=7)
-        chips = ttk.Frame(box, style="Card.TFrame")
-        chips.grid(row=row, column=3, sticky="nw", pady=7)
-        bundles = []
-        for slot, bundle in enumerate(card["bundles"]):
-            var = tk.BooleanVar(value=bundle["enabled"])
-            check = ttk.Checkbutton(chips, variable=var,
-                                    command=lambda a=card["account"], b=bundle["id"]: self.toggle_bundle(a, b))
-            check.grid(row=slot // 3, column=slot % 3, sticky="w", padx=(0, 14), pady=(0, 2))
-            bundles.append((var, check))
-        for column in range(3):
-            chips.columnconfigure(column, minsize=theme.px(140))
-        return {"plan": plan, "pill": pill, "on": on, "bundles": bundles}
+        self.build_cli_toolbar(frame)
+        # The priority strip owns its one line; the table scrolls inside the remaining space.
+        strip = theme.card(frame, padding=(10, 6), fill="x", side="bottom", pady=(8, 0))
+        ttk.Label(strip, text=_tr("临时优先加权"), style="Card.TLabel").pack(side="left", padx=(0, 8))
+        import router_priority
+        for account, model, label in router_priority.TOP_MODELS:
+            ttk.Button(strip, text=f"+ {label}", style="Tiny.TButton",
+                       command=lambda a=account, m=model: self.enable_priority(a, m)).pack(side="left", padx=(0, 4))
+        ttk.Button(strip, text=_tr("自定义…"), style="Tiny.TButton", command=self.open_boost_editor).pack(side="right")
+        self.boost_chips = ttk.Frame(strip, style="Card.TFrame")
+        self.boost_chips.pack(side="left", fill="x", expand=True, padx=(6, 4))
+        box = theme.card(frame, padding=(10, 5), fill="both", expand=True, pady=(8, 0))
+        titles = ttk.Frame(box, style="Card.TFrame")
+        titles.pack(fill="x", pady=(0, 4))
+        ttk.Label(titles, text="Harness", style="CardTiny.TLabel", width=19).pack(side="left")
+        ttk.Label(titles, text=_tr("账号 / 状态"), style="CardTiny.TLabel", width=20).pack(side="left")
+        ttk.Label(titles, text=_tr("已选模型 · 推理档位自动选择"), style="CardTiny.TLabel", width=1).pack(side="left", fill="x", expand=True)
+        self.model_refresh_button = ttk.Button(titles, text=_tr("刷新模型"), style="Tiny.TButton",
+                                               command=lambda: self.refresh_model_availability(force=True))
+        self.model_refresh_button.pack(side="right")
+        self.model_scroll = ScrollFrame(box, bg=theme.CARD)
+        self.model_rows = self.model_scroll.body
+        self.model_rows.columnconfigure(2, weight=1)
+        self.model_shape = None
+        self.model_widgets = []
+        self._catalog_refreshing = False
+        self.prefill(lambda: self.data_module().harness_model_rows(), self.models_rows_loaded)
+        self.load_models()
 
-    def after_account_change(self):
+    def load_models(self):
+        self.run(lambda: self.data_module().harness_model_rows(), self.models_rows_loaded)
+        self.load_cli()
+        self.load_boost()
+        self.refresh_model_availability()
+
+    def refresh_model_availability(self, force=False):
+        if getattr(self, "_catalog_refreshing", False) or self.closing:
+            return
+        self._catalog_refreshing = True
+        self.model_refresh_button.state(["disabled"])
+        generation = self._generation
+        def work():
+            try:
+                return self.data_module().refresh_model_catalog(force=force)
+            except Exception as error:
+                log_error(error)
+                return self.data_module().harness_model_rows()
+        def done(rows):
+            self._catalog_refreshing = False
+            self.model_refresh_button.state(["!disabled"])
+            self.models_rows_loaded(rows)
+            self.root.after(600000, lambda: self.refresh_model_availability() if generation == self._generation else None)
+        self.run(work, done, long=True)
+
+    def models_rows_loaded(self, rows):
+        shape = tuple((row["account"], row["harness"]) for row in rows)
+        if shape != getattr(self, "model_shape", None):
+            with freeze_redraw(self.model_rows):
+                for child in self.model_rows.winfo_children():
+                    child.destroy()
+                self.model_widgets = [self.build_model_row(index, row) for index, row in enumerate(rows)]
+                self.model_shape = shape
+        self.model_inventory = rows
+        for widgets, row in zip(self.model_widgets, rows):
+            widgets["on"].set(bool(row["enabled"]))
+            theme.set_pill(widgets["pill"], short_badge(row["badge"]), row["kind"])
+            widgets["row"] = row
+            pattern = row.get("cwd_pattern") or row.get("cwd_regex") or ""
+            widgets["cwd"].configure(text="⌁•" if pattern else "⌁")
+            widgets["cwd"]._tooltip_text = pattern or _tr("不限目录")
+            self.fill_selected_models(widgets, row)
+            self.fill_harness_version(widgets, row)
+        menu = getattr(self, "model_menu", None)
+        if menu is not None and menu.winfo_exists():
+            row = next((row for row in rows if (row["account"], row["harness"]) == self.model_menu_key), None)
+            if row:
+                self.fill_model_menu(row)
+
+    def build_model_row(self, index, row):
+        tk, ttk = self.tk, self.ttk
+        grid = index * 2
+        box = self.model_rows
+        if index:
+            self.divider(box, row=grid - 1, column=0, columnspan=3, pady=1)
+        harness = ttk.Frame(box, style="Card.TFrame")
+        harness.grid(row=grid, column=0, sticky="nw", pady=5, padx=(0, 10))
+        on = tk.BooleanVar(value=row["enabled"])
+        check = ttk.Checkbutton(harness, text=row["harness_label"], variable=on,
+                                command=lambda a=row["account"], h=row["harness"], v=on: self.toggle_harness_row(a, h, v.get()))
+        check.pack(anchor="w")
+        version = ttk.Label(harness, style="CardTiny.TLabel")
+        version.pack(anchor="w", padx=(20, 0))
+        account = ttk.Frame(box, style="Card.TFrame")
+        account.grid(row=grid, column=1, sticky="nw", pady=5, padx=(0, 14))
+        name = ttk.Frame(account, style="Card.TFrame")
+        name.pack(fill="x")
+        ttk.Label(name, text=row["account_label"], style="Card.TLabel").pack(side="left")
+        cwd = ttk.Button(name, text="⌁", width=2, style="Tiny.TButton",
+                         command=lambda: self.open_account_cwd(row["account"]))
+        cwd.pack(side="left")
+        self.attach_tooltip(cwd)
+        status = ttk.Frame(account, style="Card.TFrame")
+        status.pack(anchor="w")
+        pill = theme.pill(status, "", "idle")
+        pill.pack(side="left")
+        if row["harness"] == "grok-bot":
+            ttk.Button(status, text="↗", width=2, style="Tiny.TButton", command=lambda: self.show("plugins")).pack(side="left", padx=3)
+        selection = ttk.Frame(box, style="Card.TFrame")
+        selection.grid(row=grid, column=2, sticky="new", pady=7)
+        dropdown = ttk.Button(selection, text="✎ ▾", style="Tiny.TButton")
+        dropdown.configure(command=lambda: self.open_model_menu(row["account"], row["harness"], dropdown))
+        overflow = ttk.Button(selection, style="Tiny.TButton", command=lambda: dropdown.invoke())
+        widgets = {"on": on, "check": check, "version": version, "pill": pill, "chips": selection,
+                   "dropdown": dropdown, "overflow": overflow, "cwd": cwd, "row": row, "selected_models": [], "chip_labels": []}
+        def resize(event):
+            pending = getattr(selection, "_chip_after", None)
+            if pending:
+                selection.after_cancel(pending)
+            selection._chip_after = selection.after(60, lambda: self.layout_selected_chips(widgets) if selection.winfo_exists() else None)
+        selection.bind("<Configure>", resize)
+        selection.bind("<Button-1>", lambda event: (dropdown.invoke(), "break")[1] if event.widget is selection else None)
+        return widgets
+
+    def fill_selected_models(self, widgets, row):
+        holder = widgets["chips"]
+        selected = [model for model in row["models"] if model.get("routed", True) and (model["enabled"] or model["partial"])]
+        widgets["selected_models"] = selected
+        signature = tuple((model["model"], model["model_label"], model["partial"]) for model in selected)
+        if signature != widgets.get("chip_signature"):
+            for child in widgets["chip_labels"]:
+                child.destroy()
+            widgets["chip_labels"] = []
+            for model in selected:
+                label = self.tk.Label(holder, text=("◐ " if model["partial"] else "") + model["model_label"],
+                          bg=theme.ACCENT_SOFT if row["enabled"] else theme.BG,
+                          fg=theme.ACCENT if row["enabled"] else theme.FAINT,
+                          padx=5, pady=2, font=(theme.FONT, 9))
+                label.bind("<Button-1>", lambda event: (widgets["dropdown"].invoke(), "break")[1])
+                widgets["chip_labels"].append(label)
+            if not selected:
+                widgets["chip_labels"].append(self.ttk.Label(holder, text=_tr("未选模型"), style="CardTiny.TLabel"))
+            widgets["chip_signature"] = signature
+        for label in widgets["chip_labels"]:
+            if label.winfo_class() == "Label":
+                label.configure(fg=theme.ACCENT if row["enabled"] else theme.FAINT,
+                                bg=theme.ACCENT_SOFT if row["enabled"] else theme.BG)
+        self.layout_selected_chips(widgets)
+
+    def layout_selected_chips(self, widgets):
+        holder = widgets["chips"]
+        holder._chip_after = None
+        labels, edit, overflow = widgets["chip_labels"], widgets["dropdown"], widgets["overflow"]
+        width = holder.winfo_width() if holder.winfo_width() > 1 else theme.px(420)
+        sizes = [label.winfo_reqwidth() for label in labels]
+        overflow.configure(text=f"+{len(labels)}")
+        count, positions, rows = selected_chip_layout(sizes, width, edit.winfo_reqwidth(), overflow.winfo_reqwidth(), theme.px(5))
+        for label in labels:
+            label.place_forget()
+        overflow.place_forget()
+        height = max([edit.winfo_reqheight(), *(label.winfo_reqheight() for label in labels)], default=theme.px(24))
+        controls = labels[:count]
+        if count < len(labels):
+            overflow.configure(text=f"+{len(labels) - count}")
+            controls = [*controls, overflow]
+        for widget, (x, row) in zip([*controls, edit], positions):
+            widget.place(x=x, y=row * (height + theme.px(3)))
+        holder.configure(height=rows * (height + theme.px(3)))
+        widgets["visible_chips"] = count
+
+    def close_model_menu(self):
+        menu = getattr(self, "model_menu", None)
+        if menu is not None and menu.winfo_exists():
+            menu.destroy()
+        self.model_menu = None
+
+    def attach_tooltip(self, widget):
+        def hide(_event=None):
+            tip = getattr(widget, "_tooltip_window", None)
+            if tip is not None and tip.winfo_exists():
+                tip.destroy()
+        def show(event):
+            hide()
+            tip = widget._tooltip_window = self.tk.Toplevel(self.root)
+            tip.overrideredirect(True)
+            tip.attributes("-topmost", True)
+            tip.geometry(f"+{event.x_root + 12}+{event.y_root + 18}")
+            self.ttk.Label(tip, text=getattr(widget, "_tooltip_text", ""), padding=6,
+                           wraplength=theme.px(480), style="CardTiny.TLabel").pack()
+        widget.bind("<Enter>", show)
+        widget.bind("<Leave>", hide)
+        widget.bind("<Button-1>", hide, add="+")
+
+    def open_account_cwd(self, account):
+        self.close_model_menu()
+        old = getattr(self, "cwd_dialog", None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        window = self.cwd_dialog = self.tk.Toplevel(self.root)
+        theme.apply(window, _tr("账号目录限制"), "570x310", (520, 290))
+        window.transient(self.root)
+        width, height = theme.px(570), theme.px(310)
+        x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
+        y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        box = theme.card(window, padding=14, fill="both", expand=True)
+        self.ttk.Label(box, text=self.data_module().account_label(account), style="CardH3.TLabel").pack(anchor="w")
+        self.ttk.Label(box, text=_tr("同一账号的所有 Harness 共用此限制。留空允许全部目录。"),
+                       style="CardTiny.TLabel").pack(anchor="w", pady=(4, 10))
+        self.cwd_pattern = self.tk.StringVar(value=self.data_module().read_account_cwd(account))
+        self.ttk.Entry(box, textvariable=self.cwd_pattern, font=(self.mono, 10)).pack(fill="x")
+        self.ttk.Label(box, text=_tr("路径统一为 /，匹配忽略大小写。"), style="CardTiny.TLabel").pack(anchor="w", pady=(4, 8))
+        self.cwd_preview = self.tk.StringVar()
+        self.cwd_preview_label = self.ttk.Label(box, textvariable=self.cwd_preview, style="Card.TLabel", justify="left")
+        self.cwd_preview_label.pack(anchor="w", fill="x", pady=6)
+        buttons = self.ttk.Frame(box, style="Card.TFrame")
+        buttons.pack(side="bottom", fill="x")
+        self.cwd_save_button = self.ttk.Button(buttons, text=_tr("保存"), style="SmallAccent.TButton",
+                                              command=lambda: self.save_account_cwd(account))
+        self.cwd_save_button.pack(side="right")
+        self.ttk.Button(buttons, text=_tr("取消"), style="Small.TButton", command=window.destroy).pack(side="right", padx=8)
+        self.cwd_pattern.trace_add("write", lambda *args: self.update_cwd_preview())
+        self.update_cwd_preview()
+
+    def update_cwd_preview(self):
+        paths = [str(Path.cwd()), "E:/P4/example", "C:/Temp"]
+        try:
+            preview = self.data_module().preview_account_cwd(self.cwd_pattern.get(), paths)
+            self.cwd_preview.set("\n".join(("✓ " if matches else "— ") + directory for directory, matches in preview))
+            self.cwd_preview_label.configure(foreground=theme.TEXT)
+            self.cwd_save_button.state(["!disabled"])
+        except ValueError as error:
+            self.cwd_preview.set(_tr("无效正则：{0}").format(str(error)))
+            self.cwd_preview_label.configure(foreground=theme.RED)
+            self.cwd_save_button.state(["disabled"])
+
+    def save_account_cwd(self, account):
+        pattern = self.cwd_pattern.get()
+        def done(message):
+            self.status.set(message)
+            self.cwd_dialog.destroy()
+            self.after_model_change()
+        self.run(lambda: self.data_module().save_account_cwd(account, pattern), done)
+
+    def open_model_menu(self, account, harness, anchor):
+        self.close_model_menu()
+        row = next((row for row in self.model_inventory if (row["account"], row["harness"]) == (account, harness)), None)
+        if row is None:
+            return
+        menu = self.model_menu = self.tk.Toplevel(self.root)
+        menu.transient(self.root)
+        menu.overrideredirect(True)
+        menu.attributes("-topmost", True)
+        menu.configure(bg=theme.BORDER, padx=1, pady=1)
+        self.model_menu_key = (account, harness)
+        width, height = theme.px(380), theme.px(min(360, 95 + 31 * max(1, len(row["models"]))))
+        x = min(anchor.winfo_rootx(), self.root.winfo_rootx() + self.root.winfo_width() - width - 8)
+        y = anchor.winfo_rooty() + anchor.winfo_height()
+        if y + height > self.root.winfo_screenheight():
+            y = max(0, anchor.winfo_rooty() - height)
+        menu.geometry(f"{width}x{height}+{max(0, x)}+{y}")
+        menu.bind("<Escape>", lambda event: self.close_model_menu())
+        self.fill_model_menu(row)
+        menu.lift()
+        menu.focus_set()
+
+    def fill_model_menu(self, row):
+        tk, ttk = self.tk, self.ttk
+        menu = self.model_menu
+        for child in menu.winfo_children():
+            child.destroy()
+        head = ttk.Frame(menu, style="Card.TFrame", padding=(8, 6))
+        head.pack(fill="x")
+        self.model_menu_actions = {}
+        for action, label in (("all", "全选"), ("invert", "反选"), ("clear", "清空")):
+            button = ttk.Button(head, text=_tr(label), style="Tiny.TButton",
+                                command=lambda mode=action: self.bulk_model_selection(row["account"], row["harness"], mode))
+            button.pack(side="left", padx=(0, 5))
+            button.state(["!disabled"] if row["enabled"] and any(m.get("routed", True) for m in row["models"]) else ["disabled"])
+            self.model_menu_actions[action] = button
+        ttk.Button(head, text="×", width=2, style="Tiny.TButton", command=self.close_model_menu).pack(side="right")
+        hint = _tr("监测失败，使用已配置模型") if row.get("models_probe_failed") else (
+            _tr("上次检测：{0}").format(time.strftime("%H:%M", time.localtime(row["models_checked_at"])))
+            if row.get("models_checked_at") else _tr("后台监测中，先显示已配置模型"))
+        ttk.Label(menu, text=hint, style="CardTiny.TLabel", padding=6).pack(side="bottom", fill="x")
+        scroll = ScrollFrame(menu, bg=theme.CARD)
+        self.model_menu_items = []
+        if not row["models"]:
+            ttk.Label(scroll.body, text=_tr("尚未发现可用模型"), style="CardTiny.TLabel").pack(anchor="w", padx=10, pady=8)
+        for model in sorted(row["models"], key=lambda item: not (item["enabled"] or item["partial"])):
+            routed = model.get("routed", True)
+            marks = [_tr(tag) for tag in model.get("tags", [])]
+            if model.get("availability") == "missing":
+                marks.append(_tr("未检测到"))
+            text = model["model_label"] + (" · " + " · ".join(marks) if marks else "")
+            var = tk.BooleanVar(value=model["enabled"])
+            if model["partial"]:
+                # Some efforts enabled: ◐ stands in for the checkbox (ttk's alternate state is invisible under the
+                # card theme). Clicking enables every effort; hovering lists which efforts are on and off.
+                check = ttk.Label(scroll.body, text="◐ " + text, style="Card.TLabel", cursor="hand2")
+                check.pack(anchor="w", fill="x", padx=(12, 10), pady=4)
+                if routed and row["enabled"]:
+                    check.bind("<Button-1>", lambda _e, m=model["model"]: self.toggle_model(row["account"], row["harness"], m, True), add="+")
+                check._tooltip_text = _tr("已启用：{0}；未启用：{1}").format(
+                    ", ".join(model.get("efforts_on", [])) or "-", ", ".join(model.get("efforts_off", [])) or "-")
+                self.attach_tooltip(check)
+                self.model_menu_items.append((model, var, check))
+                continue
+            check = ttk.Checkbutton(scroll.body, text=text, variable=var,
+                                    command=lambda m=model["model"], v=var: self.toggle_model(row["account"], row["harness"], m, v.get()))
+            check.pack(anchor="w", fill="x", padx=10, pady=4)
+            check.state(["!disabled"] if routed and row["enabled"] else ["disabled"])
+            self.model_menu_items.append((model, var, check))
+
+    def bulk_model_selection(self, account, harness, action):
+        self.run(lambda: self.data_module().set_harness_models(account, harness, action), self.say(self.after_model_change))
+
+    def fill_harness_version(self, widgets, row):
+        provider = {"antigravity-resilient": "agy"}.get(row["harness"], row["harness"])
+        item = next((item for item in getattr(self, "cli_inventory", [])
+                     if row["account"] in item.get("providers", []) and item["id"].split("#")[0] == provider), None)
+        if item is None:
+            item = next((item for item in getattr(self, "cli_inventory", []) if item["id"] == provider), {})
+        widgets["version"].configure(text=f"v{item['version']}" if item.get("version") else "")
+
+    def after_model_change(self):
         self._cards_cache = None
-        self.load_accounts(True)
+        self.run(lambda: self.data_module().harness_model_rows(), self.models_rows_loaded)
         if "quota" in self.built:
             self.load_quota(True)
 
-    def toggle_account(self, account):
-        self.run(lambda: self.data_module().toggle_account_host(account), self.say(self.after_account_change))
+    def toggle_harness_row(self, account, harness, enabled):
+        self.run(lambda: self.data_module().toggle_harness(harness, account, enabled), self.say(self.after_model_change))
 
-    def toggle_bundle(self, account, bundle_id):
-        self.run(lambda: self.data_module().toggle_bundle(account, bundle_id), self.say(self.after_account_change))
+    def toggle_model(self, account, harness, model, enabled=None):
+        def work():
+            selected = self.data_module().toggle_harness_model(account, harness, model, enabled)
+            return _tr("已启用") if selected else _tr("已停用")
+        self.run(work, self.say(self.after_model_change))
 
     # temporary priority
+
+    def open_boost_editor(self):
+        window = getattr(self, "boost_dialog", None)
+        if window is not None and window.winfo_exists():
+            window.lift()
+            return
+        self.boost_dialog = window = self.tk.Toplevel(self.root)
+        theme.apply(window, _tr("临时优先加权"), "760x360", (640, 320))
+        window.transient(self.root)
+        self.build_setting_boost(window)
+        self.load_boost()
+
+    def cancel_boost(self, rule):
+        import router_priority
+        self.run(lambda: router_priority.cancel(rule["id"], rule["revision"]), self.say(self.load_boost))
 
     def build_setting_boost(self, frame):
         tk, ttk = self.tk, self.ttk
@@ -1059,6 +1862,18 @@ class Panel:
         rules, targets = value
         data = self.data_module()
         self.rule_rows = rules
+        if hasattr(self, "boost_chips") and self.boost_chips.winfo_exists():
+            for child in self.boost_chips.winfo_children():
+                child.destroy()
+            for rule in rules[:2]:
+                label = data.model_label(rule.get("model")) if rule.get("model") else data.account_label(rule.get("account"))
+                self.ttk.Button(self.boost_chips, text=f"{clip(label, 10)} ×", style="Tiny.TButton",
+                                command=lambda item=rule: self.cancel_boost(item)).pack(side="left", padx=(0, 3))
+            if len(rules) > 2:
+                self.ttk.Button(self.boost_chips, text=f"+{len(rules) - 2}", style="Tiny.TButton",
+                                command=self.open_boost_editor).pack(side="left")
+        if not hasattr(self, "rule_table") or not self.rule_table.winfo_exists():
+            return
         self.rule_table.delete(*self.rule_table.get_children())
         for index, rule in enumerate(rules):
             self.rule_table.insert("", "end", iid=str(index), values=(
@@ -1112,11 +1927,54 @@ class Panel:
 
     # strategy & parameters
 
+    def build_setting_strategy(self, frame):
+        footer = self.ttk.Frame(frame)
+        footer.pack(side="bottom", fill="x", pady=(8, 0))
+        self.strategy_save = self.ttk.Button(footer, text=_tr("保存策略与画像"), style="SmallAccent.TButton", command=self.save_strategy)
+        self.strategy_save.pack(side="right")
+        self.ttk.Button(footer, text=_tr("恢复默认参数"), style="Small.TButton", command=self.restore_tuning).pack(side="left")
+        scroll = ScrollFrame(frame)
+        self.strategy_scroll = scroll
+        self.build_setting_tuning(scroll.body)
+        self.build_setting_value(scroll.body)
+        self.build_setting_dna(scroll.body)
+        self.load_strategy()
+
+    def load_strategy(self):
+        self.load_tuning()
+        self.load_value()
+        self.load_dna()
+
+    def save_strategy(self):
+        values = {key: var.get().strip() for key, var in self.tuning_vars.items() if var.get().strip()}
+        model, draft = self.dna_model, dict(self.dna_draft)
+        ready = getattr(self, "_value_ready", False)
+        if ready and not self.harness_factors_valid():
+            low, high = self.data_module().HARNESS_FACTOR_RANGE
+            self.status.set(_tr("{0} 需在 {1} ~ {2} 之间").format(_tr("系数"), f"{low:g}", f"{high:g}"))
+            return
+        factors = self.collect_harness_factors() if ready else None
+        exchange = self.collect_opportunity_exchange() if ready else None
+        def work():
+            kwargs = {}
+            if factors is not None:
+                kwargs["harness_factors"] = factors
+            if exchange is not None:
+                kwargs["opportunity_exchange"] = exchange
+            return self.data_module().save_strategy(values, model, draft, **kwargs)
+        def done(message):
+            self.status.set(message)
+            if model and model in self.models:
+                self.models[model]["subjective"] = draft
+            self.render_dna_preview()
+            self._remember_value_snapshots()
+        self.run(work, done)
+
     def build_setting_tuning(self, frame):
         tk, ttk = self.tk, self.ttk
         from router_data import STRATEGY_PRESETS, TUNING_DEFAULTS
 
-        box = theme.card(frame, padding=14, fill="x")
+        box = theme.card(frame, padding=10, fill="x")
         presets = ttk.Frame(box, style="Card.TFrame")
         presets.pack(fill="x")
         ttk.Label(presets, text=_tr("策略预设"), style="CardH3.TLabel").pack(side="left", padx=(0, 10))
@@ -1126,7 +1984,7 @@ class Panel:
                                 command=lambda n=name: self.apply_strategy_preset(n))
             button.pack(side="left", padx=(0, 6))
             self.preset_buttons[name] = button
-        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=12)
+        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=7)
         cols = ttk.Frame(box, style="Card.TFrame")
         cols.pack(fill="x")
         cols.columnconfigure(0, weight=1, uniform="tune")
@@ -1163,10 +2021,6 @@ class Panel:
             self.tuning_vars[key] = var
         numbers.columnconfigure(0, weight=1)
 
-        buttons = ttk.Frame(box, style="Card.TFrame")
-        buttons.pack(fill="x", pady=(14, 0))
-        ttk.Button(buttons, text=_tr("保存参数"), style="SmallAccent.TButton", command=self.save_tuning).pack(side="left")
-        ttk.Button(buttons, text=_tr("恢复默认"), style="Small.TButton", command=self.restore_tuning).pack(side="left", padx=8)
         self.prefill(lambda: self.data_module().read_tuning(), self.tuning_loaded)
 
     def load_tuning(self):
@@ -1210,7 +2064,8 @@ class Panel:
         preset = STRATEGY_PRESETS.get(name)
         if not preset:
             return
-        self.run(lambda: _tr('已应用「{0}」：{1}').format(_tr(name), self.data_module().save_tuning(preset)), self.say(self.load_tuning))
+        self.tuning_loaded(preset)
+        self.status.set(_tr("已载入预设「{0}」，保存后生效").format(_tr(name)))
 
     def save_tuning(self):
         values = {key: var.get().strip() for key, var in self.tuning_vars.items() if var.get().strip()}
@@ -1220,20 +2075,254 @@ class Panel:
         from tkinter import messagebox
 
         if messagebox.askyesno(TITLE, _tr("恢复默认路由参数？"), parent=self.root):
-            self.run(lambda: self.data_module().restore_tuning(), self.say(self.load_tuning))
+            self.run(lambda: self.data_module().restore_tuning(), self.say(self.reload_strategy_figures))
+
+    def reload_strategy_figures(self):
+        self.load_tuning()
+        self.load_value()
+
+    def build_setting_value(self, frame):
+        tk, ttk = self.tk, self.ttk
+        box = theme.card(frame, padding=10, fill="x", pady=(8, 0))
+        self.value_card = box
+        head = ttk.Frame(box, style="Card.TFrame")
+        head.pack(fill="x")
+        self.harness_title = ttk.Label(head, text=_tr("Harness 系数"), style="CardH3.TLabel")
+        self.harness_title.pack(side="left")
+        default_box = ttk.Frame(head, style="Card.TFrame")
+        default_box.pack(side="right")
+        ttk.Label(default_box, text=_tr("默认系数"), style="Card.TLabel").pack(side="left", padx=(0, 6))
+        self.harness_default = tk.StringVar(value="1")
+        self.harness_default_entry = ttk.Entry(default_box, textvariable=self.harness_default, width=6, font=(self.mono, 9))
+        self.harness_default_entry.pack(side="left")
+        self.harness_default.trace_add("write", self._paint_default_factor)
+        ttk.Style(self.root).configure("Invalid.TEntry", fieldbackground=theme.RED_SOFT, foreground=theme.RED,
+                                       bordercolor=theme.RED, lightcolor=theme.RED, darkcolor=theme.RED)
+        ttk.Label(box, text=_tr("乘在加权适配与能力上。选「（任意）」的列不参与匹配，列表也可以手改。"),
+                  style="CardTiny.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 6))
+        self._harness_columns = (("harness", "通道"), ("work_kind", "工作类型"), ("model", "模型"),
+                                 ("model_prefix", "模型前缀"), ("factor", "系数"))
+        self._factor_choices = {}
+        self.harness_table = ttk.Frame(box, style="Card.TFrame")
+        self.harness_table.pack(fill="x")
+        widths = (186, 110, 120, 92, 58)
+        self.harness_headers = {}
+        for column, ((key, label), width) in enumerate(zip(self._harness_columns, widths)):
+            self.harness_table.columnconfigure(column, weight=width, minsize=theme.px(width))
+            header = ttk.Label(self.harness_table, text=_tr(label), style="CardTiny.TLabel", anchor="w")
+            header.grid(row=0, column=column, sticky="ew", padx=(0, 6), pady=(0, 2))
+            self.harness_headers[key] = header
+        self.harness_table.columnconfigure(len(self._harness_columns), weight=0)
+        self.harness_rule_rows = []
+        ttk.Button(box, text=_tr("添加一行"), style="Small.TButton", command=self.add_harness_rule).pack(anchor="w", pady=(6, 8))
+        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=(0, 8))
+        self.exchange_title = ttk.Label(box, text=_tr("机会成本汇率"), style="CardH3.TLabel")
+        self.exchange_title.pack(anchor="w")
+        ttk.Label(box, text=_tr("1 分大约兑换这些被挤占额度；没有美元容量的窗口用每工时。"),
+                  style="CardTiny.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 6))
+        rates = ttk.Frame(box, style="Card.TFrame")
+        rates.pack(fill="x")
+        self.exchange_vars = {}
+        for key, label in (("score_per_displaced_usd", "每美元分数"), ("score_per_displaced_worker_hour", "每工时分数")):
+            ttk.Label(rates, text=_tr(label), style="Card.TLabel").pack(side="left", padx=(0, 6))
+            var = tk.StringVar()
+            ttk.Entry(rates, textvariable=var, width=8, font=(self.mono, 9)).pack(side="left", padx=(0, 16))
+            self.exchange_vars[key] = var
+        self._value_ready = False
+        self.prefill(self._read_value_form, self.value_loaded)
+
+    def _read_value_form(self):
+        data = self.data_module()
+        return data.read_harness_factors(), data.read_opportunity_exchange(), data.strategy_factor_choices()
+
+    def load_value(self):
+        self.run(self._read_value_form, self.value_loaded)
+
+    def value_loaded(self, payload):
+        factors, exchange = payload[0], payload[1]
+        if len(payload) > 2 and isinstance(payload[2], dict):
+            self._factor_choices = payload[2]
+        default = factors.get("default", 1.0)
+        self.harness_default.set(f"{float(default):g}")
+        for holder in list(self.harness_rule_rows):
+            self.remove_harness_rule(holder)
+        for rule in factors.get("rules") or []:
+            self.add_harness_rule(rule)
+        for key, var in self.exchange_vars.items():
+            value = exchange.get(key)
+            var.set("" if value is None else f"{float(value):g}")
+        self._apply_choice_lists()
+        self._paint_default_factor()
+        self._value_ready = True
+        self._refresh_strategy_scroll()
+
+    def _harness_text(self, key, raw):
+        if raw in ("", None):
+            return ""
+        if key == "factor" and isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            return f"{float(raw):g}"
+        return str(raw)
+
+    def _show_choice(self, key, raw):
+        text = self._harness_text(key, raw)
+        if key != "factor" and not self.data_module().blank_choice(text):
+            return _tr("（任意）")
+        return text
+
+    def _choice_values(self, key, current=""):
+        label = _tr("（任意）")
+        values = [label]
+        for item in self._factor_choices.get(key) or []:
+            text = str(item or "").strip()
+            if text and text not in values:
+                values.append(text)
+        current = str(current or "").strip()
+        if current and current not in values:
+            values.insert(1, current)
+        return values
+
+    def _apply_choice_lists(self):
+        for holder in self.harness_rule_rows:
+            for key in ("harness", "work_kind", "model"):
+                widget = holder["widgets"].get(key)
+                if widget is not None and widget.winfo_exists():
+                    widget.configure(values=self._choice_values(key, holder[key].get()))
+
+    def _factor_in_range(self, text) -> bool:
+        text = str(text or "").strip()
+        if not text:
+            return False
+        try:
+            number = float(text)
+        except ValueError:
+            return False
+        if number != number or number in (float("inf"), float("-inf")):
+            return False
+        low, high = self.data_module().HARNESS_FACTOR_RANGE
+        return low <= number <= high
+
+    def _paint_factor_widget(self, widget, text, required):
+        if widget is None or not widget.winfo_exists():
+            return
+        widget.configure(style="Invalid.TEntry" if required and not self._factor_in_range(text) else "TEntry")
+
+    def _paint_default_factor(self, *_args):
+        self._paint_factor_widget(getattr(self, "harness_default_entry", None),
+                                  getattr(self, "harness_default", self.tk.StringVar()).get(), True)
+
+    def _paint_row_factor(self, holder):
+        current = self._row_current(holder)
+        required = any(current.values())
+        self._paint_factor_widget(holder["widgets"].get("factor"), current["factor"], required)
+
+    def harness_factors_valid(self) -> bool:
+        self._paint_default_factor()
+        if not self._factor_in_range(self.harness_default.get()):
+            return False
+        for holder in self.harness_rule_rows:
+            self._paint_row_factor(holder)
+            current = self._row_current(holder)
+            if any(current.values()) and not self._factor_in_range(current["factor"]):
+                return False
+        return True
+
+    def _row_current(self, holder) -> dict:
+        blank = self.data_module().blank_choice
+        current = {}
+        for key, _label in self._harness_columns:
+            text = holder[key].get().strip()
+            current[key] = text if key == "factor" else blank(text)
+        return current
+
+    def add_harness_rule(self, rule=None):
+        rule = rule or {}
+        tk, ttk = self.tk, self.ttk
+        holder = {"basis": rule.get("basis") or "", "widgets": {}}
+        for key, _label in self._harness_columns:
+            shown = self._show_choice(key, rule.get(key, ""))
+            var = tk.StringVar(value=shown)
+            if key in ("harness", "work_kind", "model"):
+                widget = ttk.Combobox(self.harness_table, textvariable=var, font=(self.mono, 9),
+                                       width={"harness": 20, "work_kind": 8, "model": 10}[key],
+                                       values=self._choice_values(key, shown))
+            else:
+                widget = ttk.Entry(self.harness_table, textvariable=var, font=(self.mono, 9),
+                                    width=5 if key == "factor" else 8)
+            holder[key] = var
+            holder["widgets"][key] = widget
+        holder["delete"] = ttk.Button(self.harness_table, text=_tr("删除"), style="Tiny.TButton",
+                                      command=lambda holder=holder: self.remove_harness_rule(holder))
+        holder["factor"].trace_add("write", lambda *_args, holder=holder: self._paint_row_factor(holder))
+        for key in ("harness", "work_kind", "model", "model_prefix"):
+            holder[key].trace_add("write", lambda *_args, holder=holder: self._paint_row_factor(holder))
+        holder["snapshot"] = self._row_current(holder)
+        self.harness_rule_rows.append(holder)
+        self._place_harness_rows()
+        self._paint_row_factor(holder)
+        self._refresh_strategy_scroll()
+        return holder
+
+    def _place_harness_rows(self):
+        keys = [key for key, _label in self._harness_columns]
+        for index, holder in enumerate(self.harness_rule_rows, start=1):
+            for column, key in enumerate(keys):
+                holder["widgets"][key].grid(row=index, column=column, sticky="ew", padx=(0, 6), pady=1)
+            holder["delete"].grid(row=index, column=len(keys), sticky="w", pady=1)
+
+    def remove_harness_rule(self, holder):
+        if holder in self.harness_rule_rows:
+            self.harness_rule_rows.remove(holder)
+        widgets = list(holder.get("widgets", {}).values())
+        delete = holder.get("delete")
+        if delete is not None:
+            widgets.append(delete)
+        for widget in widgets:
+            if widget is not None and widget.winfo_exists():
+                widget.destroy()
+        self._place_harness_rows()
+        self._refresh_strategy_scroll()
+
+    def _refresh_strategy_scroll(self):
+        scroll = getattr(self, "strategy_scroll", None)
+        if scroll is None:
+            return
+        try:
+            scroll.body_changed(None)
+        except Exception:
+            pass
+
+    def collect_harness_factors(self):
+        rules = []
+        for holder in self.harness_rule_rows:
+            current = self._row_current(holder)
+            if not any(current.values()):
+                continue
+            item = {key: value for key, value in current.items() if value}
+            if holder.get("basis") and current == holder.get("snapshot"):
+                item["basis"] = holder["basis"]
+            rules.append(item)
+        return {"default": self.harness_default.get().strip(), "rules": rules}
+
+    def collect_opportunity_exchange(self):
+        return {key: var.get().strip() for key, var in self.exchange_vars.items()}
+
+    def _remember_value_snapshots(self):
+        """After a successful save, unchanged rows keep their basis on the next edit."""
+        for holder in getattr(self, "harness_rule_rows", ()):
+            holder["snapshot"] = self._row_current(holder)
 
     # model DNA
 
     def build_setting_dna(self, frame):
         tk, ttk = self.tk, self.ttk
-        box = theme.card(frame, padding=14, fill="both", expand=True)
+        box = theme.card(frame, padding=10, fill="x", pady=(8, 0))
         box.columnconfigure(1, weight=1)
         box.rowconfigure(0, weight=1)
         left = ttk.Frame(box, style="Card.TFrame")
         left.grid(row=0, column=0, sticky="nsw", padx=(0, 16))
         ttk.Label(left, text=_tr("模型"), style="CardH3.TLabel").grid(row=0, column=0, sticky="w")
         self.dna_picker = ttk.Combobox(left, state="readonly", width=26)
-        self.dna_picker.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 14))
+        self.dna_picker.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 6))
         self.dna_picker.bind("<<ComboboxSelected>>", lambda e: self.dna_model_changed())
         self.dna_model = None
         self.dna_draft = {}
@@ -1247,10 +2336,9 @@ class Panel:
             ttk.Label(left, textvariable=text, style="Mono.TLabel", width=5).grid(row=row, column=2, sticky="e")
             self.dna_vars[key], self.dna_texts[key] = var, text
         buttons = ttk.Frame(left, style="Card.TFrame")
-        buttons.grid(row=5, column=0, columnspan=3, sticky="w", pady=(14, 0))
-        ttk.Button(buttons, text=_tr("保存画像"), style="SmallAccent.TButton", command=self.save_dna).pack(side="left")
-        ttk.Button(buttons, text=_tr("还原"), style="Small.TButton", command=self.revert_dna).pack(side="left", padx=8)
-        self.dna_radar = radar_chart.RadarChartCanvas(box, size=theme.px(280), bg=theme.CARD)
+        buttons.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Button(buttons, text=_tr("还原画像"), style="Small.TButton", command=self.revert_dna).pack(side="left")
+        self.dna_radar = radar_chart.RadarChartCanvas(box, size=theme.px(195), bg=theme.CARD)
         self.dna_radar.grid(row=0, column=1, sticky="nsew")
         if self.models:
             self.fill_dna_models()
@@ -1352,6 +2440,8 @@ class Panel:
 
     def build_setting_system(self, frame):
         tk, ttk = self.tk, self.ttk
+        scroll = ScrollFrame(frame)
+        frame = scroll.body
         box = theme.card(frame, padding=14, fill="x")
         box.columnconfigure(1, weight=1)
         rows = ((_tr("开机自启"), _tr("AgentCompass 随 Windows 启动")), (_tr("宿主 Skill"), _tr("Claude / Codex 的 route-agent-work 链接")),
@@ -1379,6 +2469,9 @@ class Panel:
         self.language_box.grid(row=6, column=2, sticky="e")
         self.language_box.bind("<<ComboboxSelected>>",
                                lambda event: self.change_language("en" if self.language_box.get() == "English" else "zh"))
+        import cli_updates
+        ttk.Button(box, text=_tr("查看 CLI 日志"), style="Small.TButton",
+                   command=lambda: self.run(cli_updates.open_log, self.say())).grid(row=6, column=1, sticky="e", padx=8)
         self.build_scorer_card(frame)
         self.prefill(self._read_system_fast, self._system_fast_loaded)
         self.load_system()
@@ -1536,6 +2629,83 @@ class Panel:
     def save_dot_repo(self):
         repo = self.dot_repo_var.get()
         self.run(lambda: self.data_module().save_dot_repo(repo), self.say())
+
+    # CLI updates on the model settings home
+
+    def build_cli_toolbar(self, frame):
+        import cli_updates
+        tk, ttk = self.tk, self.ttk
+        bar = theme.card(frame, padding=(10, 6), fill="x")
+        self.cli_status = tk.StringVar(value=_tr("正在读取 CLI 版本…"))
+        self.cli_status_label = ttk.Label(bar, textvariable=self.cli_status, style="CardTiny.TLabel", width=1)
+        self.cli_status_label.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.cli_auto = tk.BooleanVar(value=cli_updates.get_auto_update())
+        self.cli_auto_check = ttk.Checkbutton(bar, text=_tr("自动更新（每天）"), variable=self.cli_auto,
+                                              command=self.set_cli_auto_update)
+        self.cli_auto_check.pack(side="right", padx=(10, 0))
+        self.cli_update_button = ttk.Button(bar, text=_tr("更新"), style="SmallAccent.TButton", command=self.update_all_cli)
+        self.cli_update_button.pack(side="right")
+        self.cli_updating = False
+        self.prefill(lambda: cli_updates.snapshot(probe=False), self.cli_loaded)
+
+    def load_cli(self, summary=None):
+        import cli_updates
+        self._cli_generation = getattr(self, "_cli_generation", 0) + 1
+        generation = self._cli_generation
+        def done(rows):
+            if generation == self._cli_generation:
+                self.cli_loaded(rows)
+                if summary is not None:
+                    self.cli_status.set(summary)
+        self.run(cli_updates.snapshot, done)
+
+    def cli_loaded(self, rows):
+        self.cli_inventory = rows
+        installed = sum(bool(row.get("path")) and row.get("source") not in ("missing", "custom") for row in rows)
+        available = sum(row.get("status") == "outdated" for row in rows)
+        if not getattr(self, "cli_updating", False):
+            unchecked = any(row.get("status") == "unchecked" for row in rows)
+            self.cli_status.set(_tr("CLI：{0} 已安装 · 尚未检查更新").format(installed) if unchecked and not available else
+                                _tr("CLI：{0} 已安装 · {1} 可更新").format(installed, available))
+        for widgets, row in zip(getattr(self, "model_widgets", []), getattr(self, "model_inventory", [])):
+            self.fill_harness_version(widgets, row)
+
+    def set_cli_auto_update(self):
+        import cli_updates
+        enabled = bool(self.cli_auto.get())
+        self.run(lambda: cli_updates.set_auto_update(enabled), lambda value: self.status.set(
+            _tr("已开启每日 CLI 自动更新") if value else _tr("已关闭 CLI 自动更新")))
+
+    def update_all_cli(self):
+        import cli_updates
+        if self.cli_updating:
+            return
+        self.cli_updating = True
+        self.cli_update_button.state(["disabled"])
+        self.cli_update_button.configure(text=_tr("更新中…"))
+        self.cli_status.set(_tr("正在检查并更新 CLI…"))
+        generation = self._generation
+        def progress(message):
+            # Use the panel's event queue; Tk must only be touched on its UI thread.
+            self.busy_jobs += 1
+            self.results.put((generation, self.cli_progress, message, None))
+        def work():
+            try:
+                return cli_updates.update_all(progress=progress)
+            except Exception as error:
+                return {"summary": _tr("CLI 更新失败：{0}").format(str(error)), "updated": [], "failed": ["batch"]}
+        def done(result):
+            self.cli_updating = False
+            self.cli_update_button.state(["!disabled"])
+            self.cli_update_button.configure(text=_tr("更新"))
+            self.cli_status.set(result["summary"])
+            self.status.set(result["summary"])
+            self.load_cli(summary=result["summary"])
+        self.run(work, done, long=True)
+
+    def cli_progress(self, message):
+        self.cli_status.set(message)
+
 
     # ---------- page 4: integrations ----------
 

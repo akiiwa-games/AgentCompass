@@ -206,6 +206,10 @@ class IconTests(TrayTestCase):
         app.STATE.update({key: "x" * 40 for key in ALL_RUNNING if key != "monitor"})
         self.assertLessEqual(len(app.title()), app.TITLE_LIMIT)
 
+    def test_on_demand_grok_bot_has_no_runtime_status_in_title(self):
+        app.PLUGINS["grok-bot"]["enabled"] = True
+        self.assertNotIn("Bot", app.title())
+
 
 class RefreshTests(TrayTestCase):
     def setUp(self):
