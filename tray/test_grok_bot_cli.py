@@ -10,10 +10,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import grok_bot_cli as cli
 import plugins
 import router_window
+import tk_test_support
 import updates
 
 
 class GrokBotIntegrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.gui_root = tk_test_support.shared_tk_root()
+
+    @classmethod
+    def tearDownClass(cls):
+        tk_test_support.reset_tk_root(cls.gui_root)
+
+    def new_root(self):
+        # Reuse the interpreter, but destroy every widget and free Tk variables on the main thread between UI cases.
+        return tk_test_support.shared_tk_root(self)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -101,9 +114,8 @@ class GrokBotIntegrationTests(unittest.TestCase):
     def test_real_integration_page_card_actions_and_failed_connection_render(self):
         import tkinter as tk
 
-        root = tk.Tk()
+        root = self.new_root()
         root.withdraw()
-        self.addCleanup(root.destroy)
         with mock.patch.object(router_window.Panel, 'run'), \
                 mock.patch.object(router_window.Panel, 'prefill'), \
                 mock.patch.object(router_window.theme, 'set_window_icon'), \
@@ -149,9 +161,8 @@ class GrokBotIntegrationTests(unittest.TestCase):
 
     def test_initial_page_probe_missing_installation_and_no_periodic_wake(self):
         import tkinter as tk
-        root = tk.Tk()
+        root = self.new_root()
         root.withdraw()
-        self.addCleanup(root.destroy)
         with mock.patch.object(router_window.Panel, 'run'), \
                 mock.patch.object(router_window.Panel, 'prefill'), \
                 mock.patch.object(router_window.theme, 'set_window_icon'), \
@@ -189,9 +200,8 @@ class GrokBotIntegrationTests(unittest.TestCase):
 
     def test_delayed_older_load_cannot_overwrite_new_connection_result(self):
         import tkinter as tk
-        root = tk.Tk()
+        root = self.new_root()
         root.withdraw()
-        self.addCleanup(root.destroy)
         with mock.patch.object(router_window.Panel, 'run'), \
                 mock.patch.object(router_window.Panel, 'prefill'), \
                 mock.patch.object(router_window.theme, 'set_window_icon'), \
