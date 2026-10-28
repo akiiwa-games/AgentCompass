@@ -1,6 +1,7 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
+    'Windows 进程管理不可用；请修复 Route Manager 的 pywin32 运行环境。': 'Windows process ownership is unavailable; repair the Route Manager pywin32 runtime.',
     'Grok Bot 远端任务': 'Grok Bot remote tasks',
     '安装/修复': 'Install/repair',
     '检查连接': 'Check connection',
@@ -11,14 +12,15 @@ EN = {
     '已安装 · 连接可用': 'Installed · Connected',
     '已安装 · 连接不可用': 'Installed · Unavailable',
     '已安装 · 连接未检查': 'Installed · Not checked',
-    '请安装 Node.js 22.19 或更新版本（含 npm），再安装/修复。': 'Install Node.js 22.19 or later (with npm), then install/repair.',
+    '请安装 Node.js 22.19 或更新版本，再安装/修复。': 'Install Node.js 22.19 or later, then install/repair.',
     'Grok Bot CLI 已安装；正在自动检查连接。账号启停在调度设置中管理。': 'Grok Bot CLI installed; checking the connection automatically. Manage account enablement in Routing Settings.',
     '已打开 Grok Bot CLI 使用说明。': 'Opened the Grok Bot CLI usage guide.',
-    '此页打开时自动检查连接；检查期间保留上次结果。账号启停在调度设置中管理。': 'Checks automatically while this page is open; retains the last result while checking. Manage account enablement in Routing Settings.',
+    '进入此页时检查一次，可按需唤醒云电脑；不会定时唤醒。账号启停在调度设置中管理。': 'Checks once on entry and may wake the cloud computer on demand; no periodic wake. Manage account enablement in Routing Settings.',
+    '上次检查：{0}': 'Last check: {0}',
     '正在检查 Grok Bot 连接…': 'Checking Grok Bot connection…',
     '网关检查失败；原因尚未确定。': 'Gateway check failed; the cause is not yet established.',
     '网关检查超时。': 'Gateway check timed out.',
-    '网关 listAgents 返回 HTTP {0}；原因尚未确定。': 'Gateway listAgents returned HTTP {0}; the cause is not yet established.',
+    '网关 {0} 返回 HTTP {1}；原因尚未确定。': 'Gateway {0} returned HTTP {1}; the cause is not yet established.',
     'Route Manager · 控制台': 'Route Manager · Console',
     '决策罗盘': 'Decision Compass',
     '额度监控': 'Quota Monitor',

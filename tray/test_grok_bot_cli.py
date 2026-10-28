@@ -18,7 +18,7 @@ class GrokBotIntegrationTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.package = Path(self.directory.name)
-        self.binary = self.package / 'node_modules/grok-bot-cli/dist/bin/gbot.mjs'
+        self.binary = self.package / 'runtime/bin/gbot.mjs'
         self.binary.parent.mkdir(parents=True)
         self.binary.write_text('synthetic', encoding='utf-8')
         for patch in (mock.patch.object(cli, 'PACKAGE', self.package),
@@ -30,7 +30,7 @@ class GrokBotIntegrationTests(unittest.TestCase):
     def test_local_status_does_not_call_gateway_and_distinguishes_repair(self):
         with mock.patch.object(cli, '_run', return_value=mock.Mock(returncode=0)) as run:
             self.assertEqual(cli.snapshot()['label'], '已安装 · 连接未检查')
-            self.assertEqual(run.call_args.args[0], ['node', str(self.package / 'patch-descriptor-v3.mjs'), '--check'])
+            self.assertEqual(run.call_args.args[0], [cli.python(), str(self.package / 'install_cli.py'), '--check'])
             run.return_value.returncode = 1
             self.assertEqual(cli.snapshot()['label'], 'CLI 需要修复')
             self.binary.unlink()
@@ -38,12 +38,11 @@ class GrokBotIntegrationTests(unittest.TestCase):
             self.assertEqual(cli.snapshot()['label'], 'CLI 未安装')
             run.assert_not_called()
 
-    def test_install_uses_lockfile_then_patch_and_stops_after_failure(self):
+    def test_install_uses_pinned_artifact_installer_and_propagates_failure(self):
         with mock.patch.object(updates, 'run') as run:
             cli.install()
             self.assertEqual(run.call_args_list, [
-                mock.call(['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], self.package),
-                mock.call(['npm', 'run', 'patch:descriptor-v3'], self.package)])
+                mock.call([cli.python(), str(self.package / 'install_cli.py')], self.package)])
             run.reset_mock()
             run.side_effect = RuntimeError('fixture install failure')
             with self.assertRaises(RuntimeError):
@@ -69,11 +68,11 @@ class GrokBotIntegrationTests(unittest.TestCase):
                 with mock.patch.object(cli.time, 'monotonic', return_value=cli._connection[0] + 61):
                     refreshed = cli.snapshot()
                     self.assertEqual(refreshed['label'], reading['label'])
-                    self.assertTrue(refreshed['due'])
+                    self.assertIn('上次检查', cli.info())
 
     def test_probe_deduplicates_and_preserves_result_during_recheck(self):
         cli._connection = (0, False, 'HTTP 417')
-        with mock.patch.object(cli, 'snapshot', return_value={'installed': True, 'due': True}):
+        with mock.patch.object(cli, 'snapshot', return_value={'installed': True}):
             def transport(*args):
                 self.assertEqual(cli._connection, (0, False, 'HTTP 417'))
                 self.assertIn('HTTP 417', cli.check())  # overlapping call joins last result, no new subprocess
@@ -81,10 +80,6 @@ class GrokBotIntegrationTests(unittest.TestCase):
             with mock.patch.object(cli, '_run', side_effect=transport) as run:
                 cli.check()
                 self.assertEqual(run.call_count, 1)
-        with mock.patch.object(cli, 'snapshot', return_value={'installed': True, 'due': False}), \
-                mock.patch.object(cli, '_run') as run:
-            cli.check(force=False)
-            run.assert_not_called()
         with mock.patch.object(cli, 'snapshot', return_value={'label': 'CLI 未安装'}), \
                 mock.patch.object(cli, '_run') as run:
             self.assertEqual(cli.check(), 'CLI 未安装')
@@ -92,6 +87,7 @@ class GrokBotIntegrationTests(unittest.TestCase):
 
     def test_ui_uses_only_allowlisted_diagnostic_fields(self):
         for diagnostic, expected in [
+            ({'category': 'local_runtime', 'component': 'pywin32', 'error': 'synthetic-secret'}, 'pywin32'),
             ({'category': 'http_error', 'operation': 'listAgents', 'status': 417, 'body': 'synthetic-secret'}, 'HTTP 417'),
             ({'category': 'http_error', 'operation': 'synthetic-secret', 'status': 417}, '原因尚未确定'),
             ({'category': 'http_error', 'operation': 'listAgents', 'status': '417 synthetic-secret'}, '原因尚未确定'),
@@ -130,27 +126,28 @@ class GrokBotIntegrationTests(unittest.TestCase):
             config = plugins.defaults()
             config['grok-bot']['enabled'] = False
             with mock.patch.object(plugins, 'PLUGINS', (plugins.BY_ID['grok-bot'],)):
-                with mock.patch.object(root, 'after', return_value='fixture-timer') as timer:
+                with mock.patch.object(root, 'after') as timer:
+                    panel._grok_auto_check_pending = False
                     panel.plugins_loaded((config, {'grok-bot': '已安装 · 连接不可用'},
-                                          {'grok-bot': {'kind': 'warn', 'installed': True, 'retry_in': 60}}))
+                                          {'grok-bot': {'kind': 'warn', 'installed': True}}))
             status = panel.plugin_widgets['grok-bot']['status']
             self.assertIn('已安装 · 连接不可用', status.cget('text'))
             self.assertEqual(status.cget('fg'), router_window.theme.STATUS_COLORS['warn'][0])
-            timer.assert_called_once()
+            timer.assert_not_called()
             with mock.patch.object(root, 'after_cancel'), mock.patch.object(cli, 'check', return_value='fixture') as probe:
                 panel.run.reset_mock()
-                timer.call_args.args[1]()
-                panel.check_grok_bot(force=True)
+                panel.check_grok_bot()
+                panel.check_grok_bot()
                 self.assertEqual(panel.run.call_count, 1)
                 self.assertIn('连接不可用', status.cget('text'))
                 work, done = panel.run.call_args.args[:2]
                 self.assertEqual(work(), 'fixture')
-                probe.assert_called_once_with(force=False)
+                probe.assert_called_once_with()
                 with mock.patch.object(panel, 'load_plugins') as refresh:
                     done('fixture')
-                    refresh.assert_called_once()
+                    refresh.assert_called_once_with(probe=False)
 
-    def test_initial_page_probe_missing_installation_and_close_timer(self):
+    def test_initial_page_probe_missing_installation_and_no_periodic_wake(self):
         import tkinter as tk
         root = tk.Tk()
         root.withdraw()
@@ -164,9 +161,10 @@ class GrokBotIntegrationTests(unittest.TestCase):
             with mock.patch.object(plugins, 'PLUGINS', (plugins.BY_ID['grok-bot'],)), \
                     mock.patch.object(panel, 'check_grok_bot') as check:
                 panel.plugins_loaded((config, {'grok-bot': '已安装'},
-                                      {'grok-bot': {'kind': 'idle', 'installed': True, 'due': True}}))
+                                      {'grok-bot': {'kind': 'idle', 'installed': True}}))
                 check.assert_called_once_with()
                 check.reset_mock()
+                panel._grok_auto_check_pending = True
                 panel.plugins_loaded((config, {'grok-bot': 'CLI 未安装'}, {'grok-bot': {'kind': 'idle'}}))
                 check.assert_not_called()
             with mock.patch.object(panel, 'load_plugins') as refresh:
@@ -175,17 +173,17 @@ class GrokBotIntegrationTests(unittest.TestCase):
                 self.assertIs(work, cli.install)
                 done('installed fixture')
                 refresh.assert_called_once()
-            timer = root.after(60000, lambda: None)
-            panel._grok_status_timer = timer
             panel.show('scoring')
-            self.assertIsNone(panel._grok_status_timer)
             panel.run.reset_mock()
             panel.check_grok_bot()
             panel.run.assert_not_called()
-            panel._grok_status_timer = root.after(60000, lambda: None)
+            with mock.patch.object(panel, 'load_plugins') as refresh:
+                panel.show('plugins')
+                refresh.assert_called_once_with()
+            panel.show('scoring')
+            panel.run.reset_mock()
             with mock.patch.object(router_window.os, '_exit'):
                 panel.close()
-            self.assertIsNone(panel._grok_status_timer)
             panel.check_grok_bot()
             panel.run.assert_not_called()
 
@@ -206,19 +204,17 @@ class GrokBotIntegrationTests(unittest.TestCase):
             new_done = panel.run.call_args.args[1]
             config = plugins.defaults()
             cli._connection = (0, True, '')
+            panel._grok_auto_check_pending = False
             with mock.patch.object(plugins, 'PLUGINS', (plugins.BY_ID['grok-bot'],)), \
                     mock.patch.object(panel, 'check_grok_bot') as check:
                 new_done((config, {'grok-bot': '已安装 · 连接可用'},
-                          {'grok-bot': {'kind': 'ok', 'installed': True, 'retry_in': 60}}))
-                timer = panel._grok_status_timer
+                          {'grok-bot': {'kind': 'ok', 'installed': True}}))
                 old_done((config, {'grok-bot': '已安装 · 连接不可用'},
-                          {'grok-bot': {'kind': 'warn', 'installed': True, 'due': True}}))
+                          {'grok-bot': {'kind': 'warn', 'installed': True}}))
                 status = panel.plugin_widgets['grok-bot']['status']
                 self.assertIn('连接可用', status.cget('text'))
                 self.assertEqual(status.cget('fg'), router_window.theme.STATUS_COLORS['ok'][0])
-                self.assertEqual(panel._grok_status_timer, timer)
                 check.assert_not_called()
-                panel.stop_grok_check_timer()
 
 
 if __name__ == '__main__':

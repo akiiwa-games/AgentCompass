@@ -198,7 +198,7 @@ class GrokBotTests(unittest.TestCase):
         fake_cli.touch()
         with patch.object(runner, 'CLI', fake_cli), patch.object(runner.shutil, 'which', return_value='node'), \
                 patch.dict(runner.os.environ, {'CODEX_THREAD_ID': 'caller-secret'}), \
-                patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '[]', '')) as run:
+                patch.object(runner, '_run_cli', return_value=subprocess.CompletedProcess([], 0, '[]', '')) as run:
             runner.gbot('send', '--no-history', '--', 'bot-1', 'a\n$() "b"')
             argv = run.call_args.args[0]
             self.assertEqual(argv[-2:], ['bot-1', 'a\n$() "b"'])
@@ -227,12 +227,14 @@ class GrokBotTests(unittest.TestCase):
              {'category': 'http_error', 'operation': 'listAgents', 'status': 417}),
             ('listAgents failed: 503 synthetic-secret',
              {'category': 'http_error', 'operation': 'listAgents', 'status': 503}),
+            ('EnsureSandBox failed: 401 synthetic-secret',
+             {'category': 'http_error', 'operation': 'EnsureSandBox', 'status': 401}),
             ('synthetic-secret listAgents failed: 417', None),
         ]:
             with self.subTest(message=message), patch.object(runner, 'CLI', fake_cli), \
                     patch.object(runner.shutil, 'which', return_value='node'), \
                     patch.object(sys, 'argv', ['run_grok_bot.py', 'doctor']), \
-                    patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                    patch.object(runner, '_run_cli', return_value=subprocess.CompletedProcess(
                         [], 1, '', json.dumps({'error': {'code': 'render-failed', 'message': message}}))):
                 out = io.StringIO()
                 with redirect_stdout(out):
@@ -241,6 +243,89 @@ class GrokBotTests(unittest.TestCase):
                 self.assertNotIn('synthetic-secret', text)
                 self.assertNotIn('private.invalid', text)
                 self.assertEqual(json.loads(text).get('diagnostic'), diagnostic)
+
+    @unittest.skipUnless(runner.os.name == 'nt', 'Windows process-tree contract')
+    def test_cli_timeout_cleans_owned_tree_and_remains_uncertain(self):
+        import time
+        import win32api
+        import win32event
+        import win32process
+        pidfile = self.root / 'synthetic-child.pid'
+        child = "import time; time.sleep(60)"
+        parent = ("import subprocess,sys,pathlib; "
+                  "p=subprocess.Popen([sys.executable,'-S','-c'," + repr(child) + "], "
+                  "stdout=sys.stdout,stderr=sys.stderr,creationflags=0x08000000); "
+                  "pathlib.Path(sys.argv[1]).write_text(str(p.pid))")
+        handles = []
+        def observe():
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if pidfile.exists():
+                    try:
+                        handles.append(win32api.OpenProcess(0x00100000 | 0x1000 | 1, False, int(pidfile.read_text())))
+                        return
+                    except (ValueError, OSError):
+                        pass
+                time.sleep(0.01)
+        watcher = threading.Thread(target=observe)
+        watcher.start()
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner._run_cli([sys.executable, '-S', '-c', parent, str(pidfile)],
+                                timeout=1, env=runner.os.environ.copy())
+            watcher.join(6)
+            self.assertFalse(watcher.is_alive())
+            self.assertEqual(len(handles), 1)
+            self.assertEqual(win32event.WaitForSingleObject(handles[0], 0), win32event.WAIT_OBJECT_0)
+            self.assertNotEqual(win32process.GetExitCodeProcess(handles[0]), 259)
+        finally:
+            watcher.join(6)
+            for handle in handles:
+                if win32event.WaitForSingleObject(handle, 0) == win32event.WAIT_TIMEOUT:
+                    win32api.TerminateProcess(handle, 1)
+                    win32event.WaitForSingleObject(handle, 5000)
+                handle.Close()
+        fake_cli = self.root / 'gbot.mjs'
+        fake_cli.touch()
+        with patch.object(runner, 'CLI', fake_cli), patch.object(runner.shutil, 'which', return_value='node'), \
+                patch.object(runner, '_run_cli', side_effect=subprocess.TimeoutExpired('fixture', runner.CLI_TIMEOUT)):
+            with self.assertRaises(runner.TransportError) as error:
+                runner.gbot('send', '--', 'fixture-bot', 'fixture prompt')
+            self.assertEqual(error.exception.delivery, 'unknown')
+
+    @unittest.skipUnless(runner.os.name == 'nt', 'Windows Job assignment')
+    def test_job_assignment_failure_does_not_execute_cli(self):
+        import win32job
+        marker = self.root / 'should-not-exist'
+        command = [sys.executable, '-S', '-c', 'import pathlib,sys; pathlib.Path(sys.argv[1]).touch()', str(marker)]
+        with patch.object(win32job, 'AssignProcessToJobObject', side_effect=RuntimeError('fixture assignment failure')):
+            with self.assertRaises(runner.TransportError) as error:
+                runner._run_cli(command, timeout=2, env=runner.os.environ.copy())
+            self.assertEqual(error.exception.delivery, 'rejected')
+            self.assertEqual(error.exception.diagnostic['component'], 'process_ownership')
+        self.assertFalse(marker.exists())
+
+    @unittest.skipUnless(runner.os.name == 'nt', 'Windows runtime diagnostic')
+    def test_missing_job_runtime_is_reported_before_any_cli_launch(self):
+        import builtins
+        original_import = builtins.__import__
+        def missing(name, *args, **kwargs):
+            if name == 'win32job':
+                raise ImportError('synthetic-private-import-detail')
+            return original_import(name, *args, **kwargs)
+        fake_cli = self.root / 'gbot.mjs'
+        fake_cli.touch()
+        with patch.object(runner, 'CLI', fake_cli), patch.object(runner.shutil, 'which', return_value='node'), \
+                patch.object(builtins, '__import__', side_effect=missing), \
+                patch.object(runner.subprocess, 'Popen') as launch:
+            with self.assertRaises(runner.TransportError) as error:
+                runner.gbot('bots', 'list')
+            launch.assert_not_called()
+            self.assertEqual(error.exception.delivery, 'rejected')
+            self.assertEqual(error.exception.diagnostic, {'category': 'local_runtime', 'component': 'pywin32'})
+            self.assertIn('pywin32', str(error.exception))
+            self.assertNotIn('Node', str(error.exception))
+            self.assertNotIn('synthetic-private-import-detail', str(error.exception))
 
     def test_configure_uses_exact_live_bot_and_writes_only_identifier(self):
         with patch.object(runner, 'gbot', return_value=[{'id': 'bot-2', 'name': 'Fixture', 'private': 'secret'}]):
@@ -343,7 +428,7 @@ class GrokBotTests(unittest.TestCase):
             self.assertIn(receipt['task_id'], result['continuation_argv'])
             self.assertNotIn('read_error', receipt)
 
-    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'npm ci and Node required')
+    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'Pinned artifact installation and Node required')
     def test_production_roll_records_known_contract_before_mocked_external_send(self):
         brief = self.root / 'brief.md'
         brief.write_text('Reply with the fixture marker. Do not use tools.')
@@ -463,7 +548,7 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
         self.assertIn(str(host_policy), blocked['next'])
         self.assertNotIn('mocked_send', proc.stdout)
 
-    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'npm ci and Node required')
+    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'Pinned artifact installation and Node required')
     def test_actual_roll_explicit_override_dry_run_with_isolated_configuration(self):
         brief = self.root / 'brief.md'
         brief.write_text('Reply with the fixture marker. Do not use tools.')
@@ -487,7 +572,7 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
         self.assertEqual(result['route']['bundle']['provider'], 'grok-bot')
         self.assertFalse((runner.STATE / 'tasks').exists())
 
-    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'npm ci and Node required')
+    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'Pinned artifact installation and Node required')
     def test_pinned_upstream_cli_against_loopback_gateway(self):
         """Exercise the shipped CLI parser/JSON/schema, with upstream test mode denying live hosts."""
         calls = []

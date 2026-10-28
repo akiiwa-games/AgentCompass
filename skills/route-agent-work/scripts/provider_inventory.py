@@ -20,7 +20,7 @@ import tomllib
 from model_resolution import resolve_canonical_model
 
 MAX_BYTES = 5 * 1024 * 1024
-GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/node_modules/grok-bot-cli/dist/bin/gbot.mjs'
+GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/runtime/bin/gbot.mjs'
 
 
 def digest(*values):

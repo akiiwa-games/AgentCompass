@@ -8,13 +8,18 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import time
 
 import override_store
 
 PACKAGE = Path(__file__).resolve().parents[1] / 'grok-bot'
-CLI = PACKAGE / 'node_modules/grok-bot-cli/dist/bin/gbot.mjs'
+CLI = PACKAGE / 'runtime/bin/gbot.mjs'
+# Cold send: list + EnsureSandBox + retried list + one send, each bounded upstream at 30s.
+# Include a possible initial Ensure for an absent descriptor and local startup/decryption overhead.
+CLI_TIMEOUT = 210
 STATE = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.route-manager') / 'grok-bot'
 
 
@@ -25,9 +30,108 @@ class TransportError(RuntimeError):
         self.diagnostic = diagnostic
 
 
+def _run_cli(command, *, timeout, env):
+    """Own the CLI/flight lifetime, even if an intermediate parent exits first."""
+    job = None
+    if os.name == 'nt':
+        # Use the same pywin32 runtime as the Windows tray. Gate the helper on stdin
+        # so it cannot spawn the CLI until assignment to the kill-on-close Job succeeds.
+        try:
+            import win32job
+            import win32api
+            import win32event
+            job = win32job.CreateJobObject(None, '')
+            limits = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
+            limits['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, limits)
+        except Exception as exc:
+            if job is not None:
+                job.Close()
+            raise TransportError('Windows CLI process ownership requires the Route Manager pywin32 runtime.',
+                                 'rejected', {'category': 'local_runtime', 'component': 'pywin32'}) from exc
+        helper = ("import subprocess,sys\n"
+                  "if sys.stdin.buffer.read(1) != b'1': raise SystemExit(125)\n"
+                  "raise SystemExit(subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL))")
+        launch = [sys.executable, '-S', '-c', helper, *command]
+        options = {'creationflags': subprocess.CREATE_NO_WINDOW, 'stdin': subprocess.PIPE}
+    else:
+        launch, options = command, {'start_new_session': True}
+
+    def finish_job():
+        handles = []
+        try:
+            # Freeze further growth before enumerating: a nonempty Job at limit 1
+            # cannot create another member. Keep handles through asynchronous exit.
+            limits = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
+            limits['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            limits['BasicLimitInformation']['ActiveProcessLimit'] = 1
+            win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, limits)
+            for pid in win32job.QueryInformationJobObject(job, win32job.JobObjectBasicProcessIdList):
+                try:
+                    handles.append(win32api.OpenProcess(0x00100000, False, pid))
+                except Exception as exc:
+                    if getattr(exc, 'winerror', None) != 87:  # Already exited before handle acquisition.
+                        raise
+            win32job.TerminateJobObject(job, 1)
+            deadline = time.monotonic() + 10
+            while win32job.QueryInformationJobObject(job, win32job.JobObjectBasicAccountingInformation)['ActiveProcesses']:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('owned Job still active')
+                time.sleep(0.01)
+            for handle in handles:
+                if win32event.WaitForSingleObject(handle, max(0, int((deadline - time.monotonic()) * 1000))) != win32event.WAIT_OBJECT_0:
+                    raise TimeoutError('owned process has not exited')
+        except Exception as exc:
+            raise TransportError('CLI cleanup did not confirm termination; delivery remains unknown.') from exc
+        finally:
+            job.Close()
+            for handle in handles:
+                handle.Close()
+    try:
+        proc = subprocess.Popen(launch, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                encoding='utf-8', errors='replace', env=env, **options)
+    except Exception:
+        if job is not None:
+            job.Close()
+        raise
+    if job is not None:
+        released = False
+        try:
+            win32job.AssignProcessToJobObject(job, int(proc._handle))
+            released = True
+            proc.stdin.write('1')
+            proc.stdin.flush()
+            proc.stdin.close()
+            proc.stdin = None
+        except Exception as exc:
+            finish_job()
+            if proc.poll() is None:
+                proc.kill()  # Assignment may have failed; only the blocked helper can exist.
+            proc.communicate(timeout=10)
+            if released:
+                raise TransportError('CLI launch handoff failed; delivery remains unknown.') from exc
+            raise TransportError('Could not establish Windows CLI process ownership before launch.',
+                                 'rejected', {'category': 'local_runtime', 'component': 'process_ownership'}) from exc
+    timed_out = None
+    try:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            timed_out = exc
+            if job is None:
+                os.killpg(proc.pid, signal.SIGKILL)
+    finally:
+        if job is not None:
+            finish_job()
+    if timed_out:
+        proc.communicate(timeout=10)
+        raise timed_out
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+
 def gbot(*args):
     if not CLI.is_file() or not shutil.which('node'):
-        raise TransportError('Install Node >=22.19.0 and run npm ci in skills/route-agent-work/grok-bot.', 'rejected')
+        raise TransportError('Install Node >=22.19.0 and run skills/route-agent-work/grok-bot/install_cli.py.', 'rejected')
     argv = list(args)
     boundary = argv.index('--') if '--' in argv else len(argv)
     argv[boundary:boundary] = ['--gateway', '--json']
@@ -37,9 +141,7 @@ def gbot(*args):
     # Upstream auto-prefixes Codex sender metadata otherwise, implying a local relay we do not run.
     env = {k: v for k, v in os.environ.items() if k != 'CODEX_THREAD_ID'}
     try:
-        proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8',
-                              errors='replace', timeout=75, env=env,
-                              **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
+        proc = _run_cli(command, timeout=CLI_TIMEOUT, env=env)
     except subprocess.TimeoutExpired:
         raise TransportError('gbot timed out; delivery may be unknown. Read status before any new submission.') from None
     except OSError:
@@ -56,11 +158,11 @@ def gbot(*args):
         diagnostic = None
         error = value.get('error') if isinstance(value, dict) else None
         # Only retain the known operation and HTTP code, never the upstream response body.
-        match = re.match(r'^listAgents failed: ([45][0-9]{2})(?:\s|$)',
+        match = re.match(r'^(listAgents|EnsureSandBox) failed: ([45][0-9]{2})(?:\s|$)',
                          str(error.get('message', '')) if isinstance(error, dict) else '')
         if args == ('bots', 'list') and match:
-            diagnostic = {'category': 'http_error', 'operation': 'listAgents', 'status': int(match[1])}
-            detail = f"Grok Bot gateway listAgents returned HTTP {match[1]}; the response does not establish the cause."
+            diagnostic = {'category': 'http_error', 'operation': match[1], 'status': int(match[2])}
+            detail = f"Grok Bot {match[1]} returned HTTP {match[2]}; the response does not establish the cause."
         if 'Set CURSOR_ACCESS_TOKEN' in message:
             detail = ('gbot cannot find a gateway session. If already signed in and connected to the cloud computer, '
                       'keep it awake and try a normal app exit and reopen. Windows 0.77 binds Ctrl+Q; '

@@ -1,0 +1,41 @@
+{
+  "commit": "e76b5a065b6202ee34c337ea62d3a7521d4ecf71",
+  "base_version": "0.12.4",
+  "source": "https://codeload.github.com/ScriptedAlchemy/grok-bot-cli/zip/e76b5a065b6202ee34c337ea62d3a7521d4ecf71",
+  "archive_sha256": "e6f718a2798ffba1e9112a0cecd84d54adf6ca8c7c44527ca39d65f3abbe1ad7",
+  "artifact_sha256": {
+    ".agents/plugins/marketplace.json": "54d575719e003eb71ba2d7fb7379e12098243e701646e0ca83dba38ef2a78b1d",
+    ".claude-plugin/marketplace.json": "7335705d34b85380cfaf94d2b43052d5753b54ab0291bed540cbe8d1a6ef7cac",
+    ".claude-plugin/plugin.json": "bc4a32f7e5ff0d8839826a9d46816f3fc98c6706de3e3a9b06526814a564d873",
+    ".codex-plugin/mcp.json": "4b442017d0d30ec207cef7a4e5d2cd9dca246080008633459a27e3a5f2f7935b",
+    ".codex-plugin/plugin.json": "5a048e6ec9e77b62c3fb26b082c12ba206cc4b066686c71425f3481c8c2e5a33",
+    ".cursor-plugin/marketplace.json": "297ba8aebcdb8bcac814b520bf21d9d6acc9c8c94a1ecf3ca442a49d834aab59",
+    ".cursor-plugin/mcp.json": "95c87d0f2ed3a4f6df7d0e519454b1234672eca030db3b8cd8776ef0f35dee74",
+    ".cursor-plugin/plugin.json": "3ad2c4641736bf6ff91af4d8f5e9a1b4297aa8134e387d007154656eaa87ac5e",
+    ".mcp.json": "5c56ac183c3d4fcbfa9386a73ab805495c6ab613b96bf71dbd5be80093e1a10b",
+    "agent-bundle.compile-evidence.json": "daf590883b7bef1296e71c53b22fa15fdebcf76c5cede7e4ef0456227cc18ab7",
+    "agent-bundle.manifest.json": "b9e390d243c9657a215b1813076ac06af5fa943ff7d27dc29125ac341e7af0f1",
+    "bin/gbot-flight.mjs": "23ee58517e54c0616c2a069deafa9a9ce6b5b08f50042cf16126add2d03c7c84",
+    "bin/gbot.mjs": "60d1f8915f576065421d48c2fe837fb372e316af11679a4e705882178e186bb0",
+    "commands/codex-send.md": "622af5d2945c3dc9fe3035b4e35a63cd6041e0b7a9570a5f5648ba857eae9074",
+    "commands/codex-threads.md": "a763a6e1d378d012cdf6f52bd5962cf8b3a0806ef5be88472ea199d250cf6a4b",
+    "commands/codex-wait.md": "f203f7e33ad2dd59723b1117fb65a5de062a16f8b7edda1b034f02e635c96f9a",
+    "INSTALL.md": "f7b47cb4c9752966736551b712056dedc58c8405975451c151bd549e4625bd11",
+    "install.mjs": "1f073590820c6ddc2ec33cb1c6d2aaed3dbdd00b319621bd7bfcac40a1bc1a2e",
+    "mcp/mcp-claude-channel-8029413c.mjs": "46c0e5abb42f0dcd1152ec9d6bf5fed42c3bcb109f89312bfaa9870ecc059fe3",
+    "mcp/mcp-grok-bot-b8c2461e-flight.mjs": "8819475c10cdc2a86740358265e308371fff6cd294ff059ee905db5d43b16d6f",
+    "mcp/mcp-grok-bot-b8c2461e.mjs": "5644c0a85af00a1ada9d86609557366e0f35610933de967b4bfec60b54bfd582",
+    "mcp.json": "c06a01fa851792f42e0cc807a444e454c3ea2fd164dc1c2adef455acc93879e2",
+    "plugin.json": "a502feae7220144ce4ce55c18dea8926a062e5d902da897bc6fd62a6b247a90a",
+    "rules/codex-claude-on-user-machines.mdc": "a50ec93d021a807e0a18bf9311cdf103bc0ae3947e4c6a0bd78cbb941e8e5b24",
+    "scripts/gbot-relay.mjs": "ac1a7576c8db82d1ca06023489ff7584eb14f18c19d7123ee1df270dc96cfab7",
+    "skills/chatgpt-desktop/SKILL.md": "0fe2560037f761203a317bf8755b0476ce864b7b1b13708559448d300aa4635c",
+    "skills/codex-dot/SKILL.md": "7e910c3e9e74800c09c9643983cf51cd090ff6ba448800d2702968cd89c6a005",
+    "skills/talk-to-grok-bot/references/bridge-administration.md": "b43f91464cdb885831bbf945766e4d9644fea017049ebcde3241a2da5ff0fc81",
+    "skills/talk-to-grok-bot/SKILL.md": "33d526cf5cd5d458d5f5b80992f201918077fd0ca8c74b8e15fbe2dd78d435bb"
+  },
+  "patched_sha256": {
+    "bin/gbot.mjs": "b901263c5138ae3711f451c6a2024834c6ee85ab04e29b34bd054a0675ac7d17",
+    "bin/gbot-flight.mjs": "22250650191eeb48143bbf0da495e8613d4e4a8b139b1fef9c5ea0e481757b5f"
+  }
+}

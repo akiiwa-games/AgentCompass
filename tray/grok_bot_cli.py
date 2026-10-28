@@ -26,25 +26,28 @@ def _run(argv, timeout):
                           creationflags=0x08000000 if os.name == 'nt' else 0)
 
 
+def python():
+    return str(Path(sys.executable).with_name('python.exe')) if os.name == 'nt' else sys.executable
+
+
 def snapshot():
     """Local installation and last result; the active page owns check scheduling."""
     node = shutil.which('node')
     if not node:
         return {'label': _tr('缺少 Node.js'), 'kind': 'warn'}
-    if not (PACKAGE / 'node_modules/grok-bot-cli/dist/bin/gbot.mjs').is_file():
+    if not (PACKAGE / 'runtime/bin/gbot.mjs').is_file():
         return {'label': _tr('CLI 未安装'), 'kind': 'idle'}
     try:
-        valid = _run([node, str(PACKAGE / 'patch-descriptor-v3.mjs'), '--check'], 15).returncode == 0
+        valid = _run([python(), str(PACKAGE / 'install_cli.py'), '--check'], 15).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         valid = False
     if not valid:
         return {'label': _tr('CLI 需要修复'), 'kind': 'warn'}
     if _connection:
-        age = time.monotonic() - _connection[0]
         return {'label': _tr('已安装 · 连接可用') if _connection[1] else _tr('已安装 · 连接不可用'),
                 'kind': 'ok' if _connection[1] else 'warn',
-                'due': age >= 60, 'retry_in': max(1, 60 - age), 'installed': True}
-    return {'label': _tr('已安装 · 连接未检查'), 'kind': 'idle', 'due': True, 'installed': True}
+                'installed': True}
+    return {'label': _tr('已安装 · 连接未检查'), 'kind': 'idle', 'installed': True}
 
 
 def install():
@@ -57,16 +60,13 @@ def _install():
     import updates
 
     _connection = None
-    npm = shutil.which('npm')
-    if not npm or not shutil.which('node'):
-        return _tr('请安装 Node.js 22.19 或更新版本（含 npm），再安装/修复。')
-    # The lockfile owns the version; lifecycle scripts cannot run before our reviewed patch.
-    updates.run([npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], PACKAGE)
-    updates.run([npm, 'run', 'patch:descriptor-v3'], PACKAGE)
+    if not shutil.which('node'):
+        return _tr('请安装 Node.js 22.19 或更新版本，再安装/修复。')
+    updates.run([python(), str(PACKAGE / 'install_cli.py')], PACKAGE)
     return _tr('Grok Bot CLI 已安装；正在自动检查连接。账号启停在调度设置中管理。')
 
 
-def check(force=True):
+def check():
     global _connection
     if not _probe_lock.acquire(blocking=False):
         return info()
@@ -74,24 +74,24 @@ def check(force=True):
         installed = snapshot()
         if not installed.get('installed'):
             return installed['label']
-        if not force and not installed.get('due'):
-            return info()
         reason = _tr('网关检查失败；原因尚未确定。')
         try:
-            python = str(Path(sys.executable).with_name('python.exe')) if os.name == 'nt' else sys.executable
-            result = _run([python, '-X', 'utf8', str(RUNNER), 'doctor'], 90)
+            result = _run([python(), '-X', 'utf8', str(RUNNER), 'doctor'], 240)
             value = json.loads(result.stdout)
             ready = result.returncode == 0 and isinstance(value, dict) and value.get('status') == 'ready'
             diagnostic = value.get('diagnostic', {}) if isinstance(value, dict) else {}
             if (isinstance(diagnostic, dict) and diagnostic.get('category') == 'http_error'
-                    and diagnostic.get('operation') == 'listAgents'
+                    and diagnostic.get('operation') in ('listAgents', 'EnsureSandBox')
                     and type(diagnostic.get('status')) is int and 400 <= diagnostic['status'] <= 599):
-                reason = _tr('网关 listAgents 返回 HTTP {0}；原因尚未确定。').format(diagnostic['status'])
+                reason = _tr('网关 {0} 返回 HTTP {1}；原因尚未确定。').format(diagnostic['operation'], diagnostic['status'])
+            elif (isinstance(diagnostic, dict) and diagnostic.get('category') == 'local_runtime'
+                  and diagnostic.get('component') in ('pywin32', 'process_ownership')):
+                reason = _tr('Windows 进程管理不可用；请修复 Route Manager 的 pywin32 运行环境。')
         except subprocess.TimeoutExpired:
             ready, reason = False, _tr('网关检查超时。')
         except (OSError, ValueError):
             ready = False
-        _connection = (time.monotonic(), ready, '' if ready else reason)
+        _connection = (time.monotonic(), ready, '' if ready else reason, time.strftime('%H:%M:%S'))
         return info()
     finally:
         _probe_lock.release()
@@ -103,7 +103,9 @@ def guide():
 
 
 def info():
-    text = _tr('此页打开时自动检查连接；检查期间保留上次结果。账号启停在调度设置中管理。')
+    text = _tr('进入此页时检查一次，可按需唤醒云电脑；不会定时唤醒。账号启停在调度设置中管理。')
+    if _connection and len(_connection) > 3:
+        text += ' ' + _tr('上次检查：{0}').format(_connection[3])
     if _connection and not _connection[1]:
         text += ' ' + _connection[2]
     return text
