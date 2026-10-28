@@ -323,6 +323,7 @@ class Panel:
 
     def close(self):
         self.closing = True
+        self.stop_grok_check_timer()
         if getattr(self, "_poll_id", None) is not None:
             try:
                 self.root.after_cancel(self._poll_id)
@@ -436,6 +437,8 @@ class Panel:
         """Map one page and unmap the last; inactive pages stay unmapped so their native widgets never repaint."""
         if key == self.current:
             return
+        self.stop_grok_check_timer()
+        already_built = key in self.built
         if key not in self.built:
             self.built.add(key)
             getattr(self, f"build_{key}")(self.pages[key])  # built while unmapped: it appears complete
@@ -447,6 +450,8 @@ class Panel:
             if previous is not None:
                 self.pages[previous].pack_forget()
             self.pages[key].pack(fill="both", expand=True)
+        if key == 'plugins' and already_built:
+            self.load_plugins()
 
     def header(self, parent, title, actions=()):
         ttk = self.ttk
@@ -1674,7 +1679,42 @@ class Panel:
         return ()
 
     def plugin_act(self, plugin_id, work):
+        if plugin_id == 'grok-bot':
+            import grok_bot_cli
+            if work is grok_bot_cli.check:
+                self.check_grok_bot(force=True)
+                return
         self.run(work, self.say(self.load_plugins), _tr("正在执行…"), long=plugin_id == "grok-bot")
+
+    def stop_grok_check_timer(self):
+        timer = getattr(self, '_grok_status_timer', None)
+        if timer:
+            self.root.after_cancel(timer)
+            self._grok_status_timer = None
+
+    def check_grok_bot(self, force=False):
+        if self.closing or self.current != 'plugins':
+            return
+        if getattr(self, '_grok_probe_busy', False):
+            self.stop_grok_check_timer()
+            self._grok_status_timer = self.root.after(60000, self.check_grok_bot)
+            return
+        import grok_bot_cli
+        self.stop_grok_check_timer()
+        self._grok_probe_busy = True
+
+        def work():
+            try:
+                return grok_bot_cli.check(force=force)
+            finally:
+                self._grok_probe_busy = False
+
+        def done(message):
+            if not self.closing and self.current == 'plugins':
+                self.status.set(message)
+                self.load_plugins()
+        # Let an in-flight bounded read finish on close, as with existing long actions.
+        self.run(work, done, _tr('正在检查 Grok Bot 连接…'), long=True)
 
     def toggle_enabled(self, plugin_id, value):
         import services
@@ -1713,6 +1753,9 @@ class Panel:
     def load_plugins(self):
         import services
 
+        self._plugins_load_generation = getattr(self, '_plugins_load_generation', 0) + 1
+        generation = self._plugins_load_generation
+
         def work():
             import easytier
 
@@ -1743,7 +1786,10 @@ class Panel:
                       "grok-bot": found["grok-bot"][1]}
             extras["dot2api"]["subscription"] = data.subscription_text()
             return config, labels, extras
-        self.run(work, self.plugins_loaded, _tr("正在读取集成状态…"))
+        def done(value):
+            if generation == self._plugins_load_generation:
+                self.plugins_loaded(value)
+        self.run(work, done, _tr("正在读取集成状态…"))
 
     def plugins_loaded(self, value):
         config, labels, extras = value
@@ -1755,15 +1801,13 @@ class Panel:
                 reading = extras.get(plugin.id) or {}
                 theme.set_pill(widgets["status"], labels[plugin.id], reading.get('kind', 'idle'))
                 widgets["info"].set(grok_bot_cli.info())
-                if getattr(self, '_grok_status_timer', None):
-                    self.root.after_cancel(self._grok_status_timer)
-                    self._grok_status_timer = None
-                if 'expires_in' in reading:
-                    status = widgets['status']
-                    def expire(status=status):
-                        if status.winfo_exists():
-                            theme.set_pill(status, _tr('已安装 · 连接未检查'), 'idle')
-                    self._grok_status_timer = self.root.after(max(1, int(reading['expires_in'] * 1000)), expire)
+                self.stop_grok_check_timer()
+                if not self.closing and self.current == 'plugins' and reading.get('installed'):
+                    if reading.get('due'):
+                        self.check_grok_bot()
+                    elif not getattr(self, '_grok_probe_busy', False):
+                        self._grok_status_timer = self.root.after(
+                            max(1, int(reading.get('retry_in', 60) * 1000)), self.check_grok_bot)
                 continue
             label = labels[plugin.id] if row["enabled"] else _tr('未启用 · {0}').format(f'{labels[plugin.id]}')
             theme.set_pill(widgets["status"], label[:18], theme.status_kind(labels[plugin.id]) if row["enabled"] else "idle")

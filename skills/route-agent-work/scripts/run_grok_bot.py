@@ -19,9 +19,10 @@ STATE = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.route-manager
 
 
 class TransportError(RuntimeError):
-    def __init__(self, message, delivery='unknown'):
+    def __init__(self, message, delivery='unknown', diagnostic=None):
         super().__init__(message)
         self.delivery = delivery
+        self.diagnostic = diagnostic
 
 
 def gbot(*args):
@@ -52,6 +53,14 @@ def gbot(*args):
         # Do not echo arbitrary upstream/server errors (they can include credential-bearing details).
         message = json.dumps(value)
         detail = 'Upstream gbot failed; inspect the official app/session and retry a read-only doctor.'
+        diagnostic = None
+        error = value.get('error') if isinstance(value, dict) else None
+        # Only retain the known operation and HTTP code, never the upstream response body.
+        match = re.match(r'^listAgents failed: ([45][0-9]{2})(?:\s|$)',
+                         str(error.get('message', '')) if isinstance(error, dict) else '')
+        if args == ('bots', 'list') and match:
+            diagnostic = {'category': 'http_error', 'operation': 'listAgents', 'status': int(match[1])}
+            detail = f"Grok Bot gateway listAgents returned HTTP {match[1]}; the response does not establish the cause."
         if 'Set CURSOR_ACCESS_TOKEN' in message:
             detail = ('gbot cannot find a gateway session. If already signed in and connected to the cloud computer, '
                       'keep it awake and try a normal app exit and reopen. Windows 0.77 binds Ctrl+Q; '
@@ -60,7 +69,7 @@ def gbot(*args):
         elif 'multiple saved gateway entries' in message:
             detail = 'Upstream cannot select among multiple gateway entries. Resolve the session in the official app/upstream CLI.'
         delivery = 'rejected' if isinstance(value, dict) and value.get('delivery') == 'rejected' else 'unknown'
-        raise TransportError(detail, delivery)
+        raise TransportError(detail, delivery, diagnostic)
     return value
 
 
@@ -251,6 +260,8 @@ def main():
         code = 0 if out.get('state') in (None, 'completed') else 1 if out['state'] == 'failed' else 3
     except (TransportError, OSError, ValueError) as exc:
         out, code = {'provider': 'grok-bot', 'state': 'failed', 'error': str(exc)}, 1
+        if isinstance(exc, TransportError) and exc.diagnostic:
+            out['diagnostic'] = exc.diagnostic
     print(json.dumps(out, ensure_ascii=False))
     return code
 

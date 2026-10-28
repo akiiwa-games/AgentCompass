@@ -217,6 +217,31 @@ class GrokBotTests(unittest.TestCase):
             self.assertIn('Ctrl+Q', str(error.exception))
             self.assertIn('/issues/147', str(error.exception))
 
+    def test_doctor_preserves_only_controlled_http_diagnostic(self):
+        import io
+        from contextlib import redirect_stdout
+        fake_cli = self.root / 'gbot.mjs'
+        fake_cli.touch()
+        for message, diagnostic in [
+            ('listAgents failed: 417 Expectation Failed synthetic-secret https://private.invalid',
+             {'category': 'http_error', 'operation': 'listAgents', 'status': 417}),
+            ('listAgents failed: 503 synthetic-secret',
+             {'category': 'http_error', 'operation': 'listAgents', 'status': 503}),
+            ('synthetic-secret listAgents failed: 417', None),
+        ]:
+            with self.subTest(message=message), patch.object(runner, 'CLI', fake_cli), \
+                    patch.object(runner.shutil, 'which', return_value='node'), \
+                    patch.object(sys, 'argv', ['run_grok_bot.py', 'doctor']), \
+                    patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                        [], 1, '', json.dumps({'error': {'code': 'render-failed', 'message': message}}))):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    self.assertEqual(runner.main(), 1)
+                text = out.getvalue()
+                self.assertNotIn('synthetic-secret', text)
+                self.assertNotIn('private.invalid', text)
+                self.assertEqual(json.loads(text).get('diagnostic'), diagnostic)
+
     def test_configure_uses_exact_live_bot_and_writes_only_identifier(self):
         with patch.object(runner, 'gbot', return_value=[{'id': 'bot-2', 'name': 'Fixture', 'private': 'secret'}]):
             with self.assertRaises(ValueError):

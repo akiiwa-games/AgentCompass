@@ -4,10 +4,15 @@ The AgentCompass **Integrations** page includes **Grok Bot CLI** with
 **Install/repair**, **Check connection**, and **Usage guide** actions. Install/repair
 uses the locked dependency and explicit descriptor patch below. It never installs
 a global CLI or starts a service. Account enablement remains in **Routing Settings**.
-Installed status is separate from gateway connectivity; connection checks are
-read-only, expire after one minute, and never send a Bot task. A gateway error
+Installed status is separate from gateway connectivity. Opening the page starts
+a background read-only connection check, repeated about once a minute while the
+page is active. Checks do not overlap; the last result remains visible during a
+refresh. Leaving or closing the page stops its timer. Installation/repair feeds
+the same check path, and manual checks remain available. Checks never send a Bot task. A gateway error
 (including HTTP 417) does not mean the CLI is missing or that login is required.
-Check the cloud computer connection in the official app before checking again.
+The card preserves a controlled HTTP status and operation, without server payloads
+or credentials. Check the cloud computer connection in the official app before
+checking again; automatic checking observes availability and does not repair routes.
 
 Canonical provider/account/model selector: `grok-bot`. The model selector names
 the Bot service, not an asserted underlying model. This is a Route Manager external

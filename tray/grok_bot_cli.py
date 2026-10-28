@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 from i18n import translate as _tr
@@ -16,6 +17,7 @@ PACKAGE = ROOT / 'grok-bot'
 RUNNER = ROOT / 'scripts' / 'run_grok_bot.py'
 GUIDE = ROOT / 'references' / 'grok-bot.md'
 _connection = None
+_probe_lock = threading.Lock()
 
 
 def _run(argv, timeout):
@@ -25,7 +27,7 @@ def _run(argv, timeout):
 
 
 def snapshot():
-    """Local installation plus a short-lived explicit check; never poll the gateway."""
+    """Local installation and last result; the active page owns check scheduling."""
     node = shutil.which('node')
     if not node:
         return {'label': _tr('缺少 Node.js'), 'kind': 'warn'}
@@ -37,14 +39,20 @@ def snapshot():
         valid = False
     if not valid:
         return {'label': _tr('CLI 需要修复'), 'kind': 'warn'}
-    if _connection and time.monotonic() - _connection[0] < 60:
+    if _connection:
+        age = time.monotonic() - _connection[0]
         return {'label': _tr('已安装 · 连接可用') if _connection[1] else _tr('已安装 · 连接不可用'),
                 'kind': 'ok' if _connection[1] else 'warn',
-                'expires_in': 60 - (time.monotonic() - _connection[0])}
-    return {'label': _tr('已安装 · 连接未检查'), 'kind': 'idle'}
+                'due': age >= 60, 'retry_in': max(1, 60 - age), 'installed': True}
+    return {'label': _tr('已安装 · 连接未检查'), 'kind': 'idle', 'due': True, 'installed': True}
 
 
 def install():
+    with _probe_lock:
+        return _install()
+
+
+def _install():
     global _connection
     import updates
 
@@ -55,26 +63,38 @@ def install():
     # The lockfile owns the version; lifecycle scripts cannot run before our reviewed patch.
     updates.run([npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], PACKAGE)
     updates.run([npm, 'run', 'patch:descriptor-v3'], PACKAGE)
-    return _tr('Grok Bot CLI 已安装；请检查连接。账号启停在调度设置中管理。')
+    return _tr('Grok Bot CLI 已安装；正在自动检查连接。账号启停在调度设置中管理。')
 
 
-def check():
+def check(force=True):
     global _connection
-    _connection = None
-    installed = snapshot()
-    if installed['kind'] != 'idle' or not (PACKAGE / 'node_modules/grok-bot-cli/dist/bin/gbot.mjs').is_file():
-        return installed['label']
+    if not _probe_lock.acquire(blocking=False):
+        return info()
     try:
-        python = str(Path(sys.executable).with_name('python.exe')) if os.name == 'nt' else sys.executable
-        result = _run([python, '-X', 'utf8', str(RUNNER), 'doctor'], 90)
-        value = json.loads(result.stdout)
-        ready = result.returncode == 0 and isinstance(value, dict) and value.get('status') == 'ready'
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        ready = False
-    _connection = (time.monotonic(), ready)
-    # Never surface arbitrary subprocess output or roster/account identifiers in this card.
-    return (_tr('CLI 已安装，网关连接可用；任务 Bot 配置请见使用说明。') if ready else
-            _tr('CLI 已安装，网关连接不可用。请在官方应用确认云电脑连接，再检查连接；这不表示需要重新登录。'))
+        installed = snapshot()
+        if not installed.get('installed'):
+            return installed['label']
+        if not force and not installed.get('due'):
+            return info()
+        reason = _tr('网关检查失败；原因尚未确定。')
+        try:
+            python = str(Path(sys.executable).with_name('python.exe')) if os.name == 'nt' else sys.executable
+            result = _run([python, '-X', 'utf8', str(RUNNER), 'doctor'], 90)
+            value = json.loads(result.stdout)
+            ready = result.returncode == 0 and isinstance(value, dict) and value.get('status') == 'ready'
+            diagnostic = value.get('diagnostic', {}) if isinstance(value, dict) else {}
+            if (isinstance(diagnostic, dict) and diagnostic.get('category') == 'http_error'
+                    and diagnostic.get('operation') == 'listAgents'
+                    and type(diagnostic.get('status')) is int and 400 <= diagnostic['status'] <= 599):
+                reason = _tr('网关 listAgents 返回 HTTP {0}；原因尚未确定。').format(diagnostic['status'])
+        except subprocess.TimeoutExpired:
+            ready, reason = False, _tr('网关检查超时。')
+        except (OSError, ValueError):
+            ready = False
+        _connection = (time.monotonic(), ready, '' if ready else reason)
+        return info()
+    finally:
+        _probe_lock.release()
 
 
 def guide():
@@ -83,4 +103,7 @@ def guide():
 
 
 def info():
-    return _tr('按需运行，无常驻服务；账号启停在调度设置中管理。连接结果仅保留一分钟。')
+    text = _tr('此页打开时自动检查连接；检查期间保留上次结果。账号启停在调度设置中管理。')
+    if _connection and not _connection[1]:
+        text += ' ' + _connection[2]
+    return text
