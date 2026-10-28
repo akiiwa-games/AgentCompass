@@ -144,8 +144,6 @@ The companion repositories and runtime directories listed below are separate loc
 | `gemini-web/` | Persistent Google Chrome CDP bridge (`127.0.0.1:17849`) for Gemini, Google AI Studio, and Flow, plus the `omni.py` Gemini Omni 1.1 Flash video runner. See [`gemini-web/README.md`](https://github.com/akiiwa-games/gemini-web#readme). |
 | `dot2api/` | Local checkout of `Pluviobyte/dot2api` with its own `.venv`, exposing remote Dot workers behind a Cloudflared quick tunnel. |
 | `codex-chatgpt-web/` | Local checkout of `miuuyy/codex-chatgpt-web` and its Electron launcher, driving ChatGPT Pro consultations from local Codex agents. |
-| `paseo-antigravity-resilient/` | First-class Paseo provider plugin (`antigravity-resilient-provider`) adding durable timeline replay across daemon restarts, 401 OAuth refresh-race recovery, stream-interruption recovery, and 5-minute hot-cache idle compaction. See [`paseo-antigravity-resilient/README.md`](paseo-antigravity-resilient/README.md). |
-| `paseo-pi-fast/` | First-class Paseo provider plugin (`paseo-pi-fast`) adding configurable fast-mode routing and OpenAI Codex OAuth token usage reporting for Paseo's `pi` provider. |
 | `setup/` | Host bootstrap and synchronization scripts: `sync_host_globals.py` (syncs skills and global rules), `router_gate_hook.py` (spawn gate), `bootstrap_dot2api.py`, `lock_dot2api_acl.py`, `pi_device_login.mjs`, and `claude2_config.py`. |
 | `easytier/` | Per-host EasyTier mesh node directory (untracked runtime files): `bin/`, `private/node.toml`, `logs/`, `state/`, managed by `tray/easytier.py` and `tray/easytier_setup.py`. |
 | `tools/bun/` | Pinned Bun runtime used to run the ChatGPT Web bridge and build its launcher. |
