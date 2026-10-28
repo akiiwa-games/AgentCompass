@@ -618,7 +618,24 @@ def configure_hooks() -> None:
     print(f"[hooks] Wrote {pi_ext_path}")
 
 
+def ensure_paseo_bridge_dependencies() -> None:
+    """Prepare the optional Paseo dispatcher without requiring Node for other hosts."""
+    if not (HOME / ".paseo" / "config.json").is_file() and not shutil.which("paseo"):
+        return
+    bridge = Path(__file__).resolve().parent / "paseo-bridge"
+    if (bridge / "node_modules").is_dir():
+        return
+    hint = "Install Node.js with npm, then run npm --prefix setup/paseo-bridge ci from the repository root (only needed for Paseo worker dispatch via roll)."
+    npm = shutil.which("npm")
+    if not npm:
+        print(f"[paseo-bridge] {hint} Continuing other host setup.")
+        return
+    print("[paseo-bridge] Installing optional Paseo worker dispatch dependencies...")
+    subprocess.run([npm, "ci"], cwd=bridge, check=True)
+
+
 def main() -> int:
+    ensure_paseo_bridge_dependencies()
     BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
     print(f"Backups directory: {BACKUP_ROOT}")
     unify_global_docs()

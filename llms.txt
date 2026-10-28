@@ -18,6 +18,12 @@
 - [skills/route-agent-work/references/model-capabilities.json](skills/route-agent-work/references/model-capabilities.json): Model DNA vectors, ability floors, burn rates, and API-equivalent hourly USD pricing.
 - [skills/route-agent-work/references/accounts.json](skills/route-agent-work/references/accounts.json): Subscription quota window definitions, safety margins, and allocator weights.
 
+## First-time setup
+
+1. Install Python 3.10+ and run commands from the repository root. Try the README offline demo, then configure your signed-in providers and quotas.
+2. Only for Paseo worker dispatch via `roll`: install Node.js with npm, then run `npm --prefix setup/paseo-bridge ci`. This installs the local daemon bridge dependencies.
+3. Run `python -X utf8 setup/sync_host_globals.py` to register global rules, skills, and hooks. It also installs missing Paseo bridge dependencies when it detects Paseo; if npm is unavailable it prints the installation command and continues. Windows cockpit users can then run `python tray/deploy.py install`.
+
 ## System-Level Skill & Host Rollout (Mandatory on Every Host)
 
 - **Always load skills at the system level, never workspace-only**: Run `python -X utf8 setup/sync_host_globals.py` (and `python tray/deploy.py install` on Windows) so `route-agent-work`, `dot-subagent`, `chatgpt-pro-consult`, and `gemini-web` are registered globally across all local agent harnesses regardless of `cwd`:

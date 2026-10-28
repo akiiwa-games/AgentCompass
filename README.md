@@ -62,6 +62,12 @@ It uses the same 1.5-hour local coding/test scenario as the historical decision 
 quota inputs. Add `--format json` for the full demo breakdown. The normal dry run uses your machine's configuration
 and may report no eligible providers until you sign in and collect quotas with [usage-float](https://github.com/akiiwa-games/usage-float).
 
+For Paseo worker dispatch via `roll`, install Node.js with npm, then run
+`npm --prefix setup/paseo-bridge ci` from this repository root before dispatching.
+These bridge dependencies are only needed when using Paseo. The host rollout script
+also installs them when it detects Paseo and the dependency directory is missing;
+if npm is unavailable it prints this command and continues the other host setup.
+
 > **Status: alpha.** Built by a heavy multi-subscription user for a live multi-agent fleet. The shipped
 > `accounts.json` and `model-capabilities.json` describe that reference fleet; treat them as an example template to
 > customize for your own subscriptions.
