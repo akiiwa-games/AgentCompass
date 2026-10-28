@@ -40,6 +40,4 @@
 
 - [usage-float/README.md](https://github.com/akiiwa-games/usage-float#readme): Borderless Windows subscription quota HUD, headless CLI quota collector (`usage_float.py once`), Claude/Codex rate-limit reset credit redeemer (`cedar_ember`, `juniper_tide`), and `mpv` live wallpaper switcher.
 - [gemini-web/README.md](https://github.com/akiiwa-games/gemini-web#readme): Persistent Chrome CDP bridge (`127.0.0.1:17849`) for Gemini Web, Google AI Studio, Flow, and Gemini Omni 1.1 Flash video generation.
-- Paseo Antigravity provider plugin: maintained separately at `E:\PROJECTS\paseo-plugins\paseo-antigravity-resilient`.
-- Paseo Pi Fast plugin: maintained separately at `E:\PROJECTS\paseo-plugins\paseo-pi-fast`.
 - [tray/](tray/): Windows 11 system tray supervisor, 5-axis radar decision console (`router_window.py`), and local gateway manager (`dot2api`, `grok2api`, `muse2api`, `easytier`).

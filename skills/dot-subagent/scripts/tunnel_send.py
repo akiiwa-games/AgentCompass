@@ -31,8 +31,6 @@ import tempfile
 import threading
 import time
 
-CLOUDFLARED = r"C:\Program Files (x86)\cloudflared\cloudflared.exe"
-GIT_OPENSSL = r"C:\Program Files\Git\usr\bin\openssl.exe"
 ROOT = "/workspace/shared"
 URL_PATTERN = re.compile(r"https://[a-z0-9\-]+\.trycloudflare\.com")
 
@@ -41,8 +39,28 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def find_executable(name, override, candidates):
+    configured = os.environ.get(override)
+    if configured:
+        executable = Path(configured).expanduser()
+        if not executable.is_file():
+            raise FileNotFoundError(f"{override} does not name an installed executable")
+        return str(executable)
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    raise FileNotFoundError(f"{name} is not installed; put it on PATH or set {override}")
+
+
 def find_openssl():
-    return shutil.which("openssl") or (GIT_OPENSSL if Path(GIT_OPENSSL).exists() else None)
+    return find_executable("openssl", "ROUTE_MANAGER_OPENSSL", (
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/usr/bin/openssl.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Git/usr/bin/openssl.exe",
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "Programs/Git/usr/bin/openssl.exe",
+    ))
 
 
 def encrypt(source, target, passphrase, openssl=None):
@@ -98,14 +116,22 @@ class OneShot(http.server.ThreadingHTTPServer):
         return Handler
 
 
+def find_cloudflared():
+    return find_executable("cloudflared", "ROUTE_MANAGER_CLOUDFLARED", (
+        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "cloudflared/cloudflared.exe",
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "cloudflared/cloudflared.exe",
+    ))
+
+
 def start_tunnel(port, timeout=60):
     """(process, public URL) of a new quick tunnel to 127.0.0.1:port."""
+    cloudflared = find_cloudflared()
     descriptor, name = tempfile.mkstemp(prefix="rm-tunnel-", suffix=".log")
     os.close(descriptor)
     log = Path(name)
     handle = open(log, "wb")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    process = subprocess.Popen([CLOUDFLARED, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"],
+    process = subprocess.Popen([cloudflared, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"],
                                stdout=handle, stderr=handle, creationflags=flags)
     deadline = time.time() + timeout
     while time.time() < deadline:

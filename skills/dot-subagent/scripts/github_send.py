@@ -58,7 +58,6 @@ def _default_repo() -> str:
 
 REPO = _default_repo()
 BRANCH = "main"
-GIT_OPENSSL = r"C:\Program Files\Git\usr\bin\openssl.exe"
 LINE = 76
 
 
@@ -71,8 +70,28 @@ def blob_sha(data):
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
+def find_executable(name, override, candidates):
+    configured = os.environ.get(override)
+    if configured:
+        executable = Path(configured).expanduser()
+        if not executable.is_file():
+            raise FileNotFoundError(f"{override} does not name an installed executable")
+        return str(executable)
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    raise FileNotFoundError(f"{name} is not installed; put it on PATH or set {override}")
+
+
 def find_openssl():
-    return shutil.which("openssl") or (GIT_OPENSSL if Path(GIT_OPENSSL).exists() else None)
+    return find_executable("openssl", "ROUTE_MANAGER_OPENSSL", (
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/usr/bin/openssl.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Git/usr/bin/openssl.exe",
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "Programs/Git/usr/bin/openssl.exe",
+    ))
 
 
 def encrypt(data, passphrase):

@@ -35,8 +35,13 @@ MUSE_PORT = 18610
 MUSE_HOME = Path.home() / ".muse2api"
 MUSE_LOG = MUSE_HOME / "serve.log"
 MUSE_URL = f"http://127.0.0.1:{MUSE_PORT}"
-CHROME = Path(os.environ.get("MUSE2API_CHROMIUM_PATH")
-              or Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe")
+def chrome_path() -> Path:
+    from runtime_paths import executable
+    return executable("chrome", "MUSE2API_CHROMIUM_PATH", (
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Google/Chrome/Application/chrome.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Google/Chrome/Application/chrome.exe",
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "Google/Chrome/Application/chrome.exe",
+    ))
 
 
 def grok_root() -> Path:
@@ -160,8 +165,8 @@ def muse_env() -> dict[str, str]:
         "MUSE2API_HEADLESS": "true",
         "PYTHONIOENCODING": "utf-8",
     })
-    if CHROME.is_file():
-        env["MUSE2API_CHROMIUM_PATH"] = str(CHROME)
+    if env["MUSE2API_DRIVER"] == "browser":
+        env["MUSE2API_CHROMIUM_PATH"] = str(chrome_path())
     return env
 
 

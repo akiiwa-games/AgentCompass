@@ -30,13 +30,6 @@
 !/deployment/
 /deployment/*
 !/deployment/host_policy_parity.py
-!/paseo-antigravity-resilient/
-!/paseo-pi-fast/
-/paseo-pi-fast/node_modules/
-/paseo-pi-fast/dist/
-/paseo-antigravity-resilient/node_modules/
-/paseo-antigravity-resilient/dist/
-/paseo-antigravity-resilient/.store/
 # The router skills; each host links ~/.codex/skills/<name> here.
 !/skills/
 **/__pycache__/
@@ -53,10 +46,6 @@
 **/scratch/
 **/reports/
 
-# Maintained in the sibling standalone repository.
-paseo-antigravity-resilient/
-paseo-pi-fast/
-paseo-agy-retry/
 
 !/setup/paseo-bridge/
 /setup/paseo-bridge/*
