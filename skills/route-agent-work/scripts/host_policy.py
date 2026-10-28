@@ -3,6 +3,9 @@ import argparse
 import json
 import os
 from pathlib import Path
+from datetime import datetime, timezone
+
+import override_store
 
 
 class HostPolicyError(ValueError):
@@ -41,7 +44,7 @@ def load_policy():
         raise HostPolicyError(f'Host policy configuration invalid JSON: {path}') from None
     if not isinstance(data, dict) or 'allowed_accounts' not in data:
         raise HostPolicyError(f'Host policy configuration requires allowed_accounts: {path}')
-    if set(data) - {'allowed_accounts', 'judges', 'usage_providers'}:
+    if set(data) - {'allowed_accounts', 'judges', 'usage_providers', 'known_accounts'}:
         raise HostPolicyError(f'Host policy configuration has unknown fields: {path}')
     for key, value in data.items():
         if not isinstance(value, list) or any(not isinstance(v, str) or not v or v != v.strip() for v in value):
@@ -49,6 +52,53 @@ def load_policy():
     if any(v not in ('codex', 'sonnet') for v in data.get('judges', [])):
         raise HostPolicyError(f'Host policy configuration judges must name codex or sonnet: {path}')
     return data
+
+
+def sync_discovered(accounts, enable=False):
+    """Admit only unseen, ready registered accounts; a known omission is an intentional deny."""
+    policy = load_policy()
+    if policy is None or ('known_accounts' not in policy and not enable):
+        return {'mode': 'default' if policy is None else 'legacy', 'added': []}
+    discovery = accounts.get('_discovery') or {}
+    rows = discovery.get('accounts') or {}
+    specs = accounts.get('accounts') or {}
+    now = datetime.now(timezone.utc)
+    ready = []
+    for name, row in rows.items():
+        spec = specs.get(name) or {}
+        if row.get('status') != 'ready' or spec.get('verified') is not True:
+            continue
+        if not any(not b.get('disabled') and not b.get('discovery_unavailable')
+                   for b in (spec.get('bundles') or {}).values()):
+            continue
+        expires = spec.get('expires_at')
+        if expires:
+            try:
+                moment = datetime.fromisoformat(expires.replace('Z', '+00:00'))
+                if (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)) <= now:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+        ready.append(name)
+    path = policy_path()[0]
+    with override_store.locked(path):
+        policy = load_policy()
+        if policy is None or ('known_accounts' not in policy and not enable):
+            return {'mode': 'default' if policy is None else 'legacy', 'added': []}
+        if 'known_accounts' not in policy:
+            # Old omissions are ambiguous. Preserve them; never reinterpret an old deny as consent.
+            policy['known_accounts'] = list(dict.fromkeys([*policy['allowed_accounts'], *specs, *rows]))
+            override_store.write(path, policy)
+            return {'mode': 'enabled', 'added': [],
+                    'preserved_exclusions': [n for n in policy['known_accounts'] if n not in policy['allowed_accounts']],
+                    'ready_but_excluded': [n for n in ready if n not in policy['allowed_accounts']]}
+        seen = set(policy['known_accounts']) | set(policy['allowed_accounts'])
+        added = [name for name in ready if name not in seen]
+        if added:
+            policy['allowed_accounts'].extend(added)
+            policy['known_accounts'] = list(dict.fromkeys([*policy['known_accounts'], *policy['allowed_accounts']]))
+            override_store.write(path, policy)
+        return {'mode': 'enabled', 'added': added}
 
 
 def account_allowed(policy, account):
@@ -66,9 +116,16 @@ def usage_providers(policy, defaults):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--account', required=True)
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument('--account')
+    action.add_argument('--enable-auto-discovery', action='store_true',
+                        help='Migrate an existing allowlist conservatively; future ready accounts enroll automatically.')
     args = parser.parse_args()
     try:
+        if args.enable_auto_discovery:
+            import allocator
+            print(json.dumps(sync_discovered(allocator.load_accounts(), enable=True), ensure_ascii=False))
+            return 0
         allowed = account_allowed(load_policy(), args.account)
     except HostPolicyError as error:
         parser.exit(2, str(error)+'\n')

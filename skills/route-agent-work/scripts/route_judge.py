@@ -228,6 +228,11 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
         windows = [window_state(w, now, current) for w in
                    (raw_windows if isinstance(raw_windows, list) else []) if isinstance(w, dict)]
         usable = any(w['remaining_pct_before_reset'] is not None for w in windows)
+        if account == 'grok-bot':
+            # The native trial has no known cycle. Fresh usagePercent is still
+            # usable for exhaustion protection when nextResetMs is absent.
+            usable |= any(w['id'] == 'trial' and w['observed_remaining_pct'] is not None
+                          and w['reset_time_passed'] is not True for w in windows)
         result[account] = {
             'status': 'fresh' if current and usable else 'stale' if fetched else 'unknown',
             'fetched_at': fetched.isoformat() if fetched else None,
@@ -464,7 +469,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
             m_info = alloc.model_spec(accts, c_model)
             m_curves = accts.get('effort_curves', {}).get(c_model, {})
             eff_hours = float(hours_val or pol['default_hours'].get(diff_val if diff_val in pol['default_hours'] else 'hard', 1.5))
-            expected_usd = round(alloc.bundle_task_usd(spec, c_model, bundle.get('effort') or 'high', eff_hours, pol, m_curves, m_info, fast=bool(bundle.get('fast'))), 2)
+            if spec.get('billing') != 'unknown':
+                expected_usd = round(alloc.bundle_task_usd(spec, c_model, bundle.get('effort') or 'high', eff_hours, pol, m_curves, m_info, fast=bool(bundle.get('fast'))), 2)
         except Exception:
             expected_usd = None
     if expected_usd is not None and isinstance(bundle, dict) and bundle:
@@ -1419,7 +1425,6 @@ def match_bundle(allocator, accounts, args, include_disabled=False):
 def record_constraint(args, task=None):
     """Log a route the caller is forcing. No judge is called; the allocator is run on the same task so the
     ledger shows whether the router would have chosen it and, if not, what the override cost."""
-    availability = host_policy.load_policy()
     basis = (args.basis or '').strip()
     if not basis or not args.account or not args.provider or not args.model:
         raise ValueError('record requires --basis, --provider, --account and --model.')
@@ -1455,6 +1460,10 @@ def record_constraint(args, task=None):
             f"and cannot be dispatched from the current working directory."
         )
     acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
+    # External runners dispatch directly after record; apply the same registered
+    # window protection used by prepared dispatches, including non-periodic trials.
+    dispatch_registry.check_launch_quota({'account': args.account, 'provider': args.provider, 'model': args.model},
+                                        accounts, usage, now)
     if acc_usage.get('status') == 'fresh':
         for w in applicable_windows(acc_usage, args.model):
             if w.get('reset_time_passed') is True:
@@ -1487,8 +1496,11 @@ def record_constraint(args, task=None):
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
     if fast_requested:
         result['_allocation_task'] = {**(task or {}), 'force_fast': True}
+    # Account loading may enroll a newly discovered account; check the resulting policy.
+    availability = host_policy.load_policy()
     if not host_policy.account_allowed(availability, args.account):
         result['host_policy_violation'] = {'account': args.account, 'dispatch_allowed': False,
+                                           'policy_path': str(host_policy.policy_path()[0]),
                                            'reason': 'excluded by host policy; constraint recorded, not dispatch authorization'}
     if task:
         try:
@@ -1907,7 +1919,8 @@ def main():
             result = dispatch_flow.cli(args)
             code = 1 if result.get('state') == 'failed' else 0
         elif args.stage == 'providers':
-            result = provider_inventory.current()
+            accounts = load_allocator().load_accounts()
+            result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync')}
             code = 0
         elif args.stage == 'usage':
             result = usage_snapshot(args.usage_cache, args.accounts)

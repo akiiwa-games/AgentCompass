@@ -20,6 +20,7 @@ import tomllib
 from model_resolution import resolve_canonical_model
 
 MAX_BYTES = 5 * 1024 * 1024
+GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/node_modules/grok-bot-cli/dist/bin/gbot.mjs'
 
 
 def digest(*values):
@@ -583,6 +584,17 @@ def discover(home=None, environ=None, now=None):
         _, error = read_json(config_path)
         result['accounts'][name] = {'family': name, 'provider': name, 'sources': ['native'],
                                     'status': 'ready' if error is None else 'missing_configuration'}
+    # Remote external runner. No model benchmarks, inferred quota or credential reads.
+    bot_config, bot_error = read_json(state_dir / 'grok-bot/config.json')
+    bot_configured = bot_error is None and isinstance(bot_config.get('bot_id'), str) and bool(bot_config['bot_id'].strip())
+    bot_status = 'missing_configuration' if not bot_configured else \
+        'ready' if GROK_BOT_CLI.is_file() and shutil.which('node', path=environ.get('PATH')) else 'missing_client'
+    result['accounts']['grok-bot'] = {
+        'family': 'grok-bot', 'provider': 'grok-bot', 'sources': ['native'], 'status': bot_status,
+        'billing': 'unknown', 'execution': 'remote', 'dispatch': 'automatic',
+        'capabilities': ['text_prompt', 'thread_read'], 'auth_check': 'upstream_at_dispatch',
+    }
+    result['launchers']['grok-bot'] = {'family': 'grok-bot', 'status': bot_status}
     cc_path = product_root('cc-switch', home, environ) / 'cc-switch.db'
     result['source_paths']['cc-switch'] = str(cc_path)
     rows, cc_error = cc_switch(cc_path)
@@ -754,6 +766,12 @@ def apply(accounts, inventory=None):
                     'unmetered': True, 'windows': {},
                     'bundles': {'grok47_high': {'provider': name, 'harness': 'grok', 'model': 'grok-4.7', 'effort': 'high'}},
                 })
+            elif family == 'grok-bot':
+                specs[name] = {'plan': 'unknown', 'billing': 'unknown',
+                    'windows': {'weekly': {'hours': 168, 'launch_min_remaining_pct': 5},
+                                'trial': {'launch_min_remaining_pct': 5}}, 'bundles': {
+                    'grok_bot': {'provider': name, 'harness': 'grok-bot', 'model': 'grok-bot'},
+                }}
             elif family in ('claude', 'codex') and family in templates:
                 spec = copy.deepcopy(templates[family])
                 if row.get('billing') == 'unknown':

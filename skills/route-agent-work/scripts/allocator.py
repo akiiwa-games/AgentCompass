@@ -446,6 +446,12 @@ def load_accounts(path=None):
         except (OSError, ValueError):
             measured = {}
         apply_measured(accounts, measured if isinstance(measured, dict) else {}, datetime.now(timezone.utc))
+    if path is None:
+        try:
+            accounts['_host_policy_sync'] = host_policy.sync_discovered(accounts)
+        except (OSError, host_policy.HostPolicyError) as exc:
+            # Discovery still reports local facts; existing policy checks retain the denial.
+            accounts['_host_policy_sync'] = {'mode': 'error', 'added': [], 'error': str(exc)}
     return accounts
 
 
@@ -1179,6 +1185,24 @@ def applicable_windows(account_spec, model, usage_row):
     return out
 
 
+def below_launch_floor(window, observed, usage_row, now):
+    """Existing launch protection, shared by unknown-burn ranking and dispatch."""
+    fetched = parse_time(usage_row.get('fetched_at'))
+    if (usage_row.get('status') != 'fresh' or usage_row.get('stale') is True or fetched is None
+            or not -60 <= (now - fetched).total_seconds() <= 900):
+        return False
+    floor = window.get('launch_min_remaining_pct')
+    reset = parse_time((observed or {}).get('resets_at'))
+    remaining = (observed or {}).get('remaining_pct_before_reset')
+    # An allowance with no declared cycle can still be freshly exhausted. Do not
+    # invent a reset or use an observation whose reported reset has already passed.
+    no_cycle = window.get('hours') is None
+    if no_cycle and reset is None:
+        remaining = (observed or {}).get('observed_remaining_pct', remaining)
+    return bool(floor is not None and ((reset and reset > now) or (no_cycle and reset is None))
+                and isinstance(remaining, (int, float)) and remaining <= floor)
+
+
 def tag_group(model):
     if model.startswith('gemini'):
         return 'gemini'
@@ -1187,10 +1211,10 @@ def tag_group(model):
 
 def window_state(wid, spec, observed, account_spec, now, short_hours, account_stale=False):
     """Remaining capacity, time to the end of the allowance and how sure we are."""
-    hours = spec['hours']
+    hours = spec.get('hours')
     expires = parse_time(account_spec.get('expires_at'))
-    row = {'id': wid, 'hours': hours, 'short': hours < short_hours, 'known': False, 'stale': False}
-    if observed is None:
+    row = {'id': wid, 'hours': hours, 'short': hours is not None and hours < short_hours, 'known': False, 'stale': False}
+    if observed is None or hours is None:
         return row
     remaining = observed.get('remaining_pct_before_reset')
     if remaining is None:
@@ -1295,7 +1319,11 @@ def evaluate_bundle(bundle, task, ctx):
     if info.get('advisor_only') and kind not in info.get('advisor_for', ()):
         exclude('advisor only; cannot execute')
     if info.get('excluded_when') == 'local_only' and task['local_only']:
-        exclude("the parent marked this work local-only (it must run on this machine: in-place edits, local tools, secrets or live accounts); Dot works on its own computer")
+        exclude("the parent marked this work local-only (it must run on this machine: in-place edits, local tools, secrets or live accounts); this worker runs remotely")
+    if info.get('excluded_when') == 'local_only' and task.get('outbound_ok') is False:
+        exclude('the parent disallowed outbound work; this worker runs remotely')
+    if info.get('text_only') and task.get('file_transfer'):
+        exclude('this text-only runner cannot transfer or apply local files')
     route = capabilities['routes'].get(kind) or {}
     if route.get('basis', '').startswith(HARD_ROUTE_BASIS) and route.get('preferred'):
         allowed = {canonical(m, accounts) for m in route['preferred']}
@@ -1361,6 +1389,11 @@ def evaluate_bundle(bundle, task, ctx):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage):
+            if wspec.get('hours') is None:
+                if below_launch_floor(wspec, observed, acct_usage, now):
+                    exclude(f'{wid} is below its existing launch protection ({wspec["launch_min_remaining_pct"]}% remaining floor)')
+                if observed:
+                    result['notes'].append(f'{wid}: native allowance has no known cycle; consumption rate unknown')
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'], account_stale=acct_stale)
             if not state['known']:
                 continue
@@ -1393,6 +1426,11 @@ def evaluate_bundle(bundle, task, ctx):
                     continue        # the work starts after the reset, when the short window is full again
                 continue            # running a standard short window dry only delays work until its reset; the weekly window prices the loss
             if unit is None:
+                result['notes'].append(f'{wid}: observed {state["remaining"]:.1f}% remaining'
+                                       + (' (stale)' if acct_stale or state['stale'] else '')
+                                       + '; consumption rate unknown')
+                if below_launch_floor(wspec, observed, acct_usage, now):
+                    exclude(f'{wid} is below its existing launch protection ({wspec["launch_min_remaining_pct"]}% remaining floor)')
                 continue
             step = hours * unit * context_scale
             chain = chain_hours * unit * context_scale
@@ -1523,8 +1561,8 @@ def evaluate_bundle(bundle, task, ctx):
         result['components']['duration_multiplier'] = round(dur_mult, 2)
     result['expected_pct'] = None if step_pct is None else round(step_pct, 2)
     result['chain_pct'] = None if chain_pct is None else round(chain_pct, 2)
-    result['expected_usd'] = round(step_usd, 2)
-    result['chain_usd'] = round(chain_usd, 2)
+    result['expected_usd'] = None if spec.get('billing') == 'unknown' else round(step_usd, 2)
+    result['chain_usd'] = None if spec.get('billing') == 'unknown' else round(chain_usd, 2)
     result['available_in_hours'] = available_at
     action = 'start'
     if worker:
@@ -1594,7 +1632,7 @@ def evaluate_bundle(bundle, task, ctx):
         # The price factor is no longer capped at the reference price (2026-10-27), so a $22.6/h model pays 2.26x what a
         # $10/h one does. GUI work keeps the old cap, and above reasoning_depth 1 is exempt: tier measures reasoning, and
         # the GUI specialist is what that work needs. A small GUI task stays open to Sol and Flash (computer_use route).
-        price = usd / config.get('overqualification_ref_usd_per_hour', 10.0)
+        price = 1.0 if spec.get('billing') == 'unknown' else usd / config.get('overqualification_ref_usd_per_hour', 10.0)
         gui = task['kind'] == 'computer_use' or bool((task['profile'] or {}).get('needs_gui'))
         gui_capable = capability_vector(info).get('gui', 0.0) >= 0.7
         price = min(1.0, price) if (gui and gui_capable) else min(config.get('overqualification_price_cap', 3.0), price)
@@ -1769,6 +1807,7 @@ def normalize_task(raw, policy, capabilities, accounts):
             'chain_hours': float(chain.get('total_hours') or hours), 'coupling': coupling, 'worker': worker,
             'handoff_ready': bool(chain.get('handoff_ready')), 'needs_visual': needs['visual'],
             'local_only': bool(needs.get('local_only')), 'critical': critical,
+            'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
             'constraint_model': canonical(constraints.get('model') or constraints.get('bundle') or '', accounts) or None,
             'metered_ok': bool(task.get('metered_ok')), 'include_unverified': bool(task.get('include_unverified')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),

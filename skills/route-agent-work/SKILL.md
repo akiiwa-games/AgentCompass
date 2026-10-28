@@ -43,6 +43,17 @@ Inspect `launched`, `dispatch_mode`, and `caller_action` in `roll`'s JSON output
 
 The source brief remains unchanged. The router appends the [worker communication contract](references/worker-communication.md) and actual parent address to `worker_prompt_file` on every route. `--hours` is required and positive. Follow the returned continuation command for Paseo/Dot; CLI worker PIDs belong to the caller and must be waited for or stopped. The [parent-address gate contract](references/parent-address-gate.md) describes enforcement and host coverage.
 
+Grok Bot uses the distinct provider/account/model selector `grok-bot` and joins
+automatic routing when ready and enabled; no override flags are needed.
+Follow [Grok Bot setup and usage](references/grok-bot.md) for the pinned upstream
+CLI and `roll` command. It runs remotely and accepts text; no local file access
+or Paseo-native support is implied. Its service-level score is a provisional
+generic text baseline, not a model benchmark; native weekly observations retain
+freshness while capacity, burn and dollar cost stay unknown. Local-only, visual
+and file-transfer tasks exclude it. Private material needs outbound authorization.
+For uncertain delivery, `launched` is `null` and `caller_action` is
+`check_delivery_do_not_resend`: run `continuation_argv`, never submit again.
+
 Optional flags, only when they are facts:
 - `--file <path>` (repeatable): files Dot needs; Dot's returned files are applied to `--apply-to` (default: cwd). Local workers ignore it.
 - `--local-only "<concrete local dependency>"`: keep the work on this machine (local git/daemon/pytest/hardware/intranet/credentials).
@@ -165,6 +176,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 | **`antigravity-resilient`** | Paseo / `agy` CLI | `modeId: "full-access"` | `gemini-3.8-flash-high` (routine sink) and `gemini-4-argon-high` (frontier workhorse). |
 | **`opencode`** | Paseo (`provider: "opencode"`) | `modeId: "build"` | OpenCode free worker (`deepseek-v4.1-flash-free`, `launch_model: "opencode/deepseek-v4.1-flash-free"`). |
 | **`dot`** | [`dot-subagent`](../dot-subagent/SKILL.md) | `run_dot_task.py` | Free remote worker (`dot2api`); requires `needs.outbound_ok: true` if sending private material. |
+| **`grok-bot`** | [Grok Bot adapter](references/grok-bot.md) | `run_grok_bot.py` | Automatic remote text candidate; no local file transfer, private material requires outbound authorization. |
 | **`chatgpt-web`** | [`chatgpt-pro-consult`](../chatgpt-pro-consult/SKILL.md) | Browser bridge | `gpt-6-pro` advisor for `complex_build_plan` and `direction_reasoning`. |
 
 **Gemini web is a local tool, not a worker:** [`gemini-web`](../gemini-web/SKILL.md) drives Route Manager's signed-in Gemini Web Chrome (`gemini-web`, CDP `127.0.0.1:17849`) for Gemini / AI Studio / Flow pages and Gemini Omni 1.1 video. The calling agent runs it directly, with no routing. A worker given such a task needs `needs.local_only: true` with `local_only_reason: "Gemini Web browser on this machine"`.

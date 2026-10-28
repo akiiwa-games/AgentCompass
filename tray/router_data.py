@@ -593,17 +593,35 @@ def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | N
     """Write allowed_accounts atomically; every account allowed and nothing else set means no file (the default)."""
     allocator, _ = modules()
     target = path or allocator.host_policy.policy_path()[0]
-    extra = {k: v for k, v in (existing or {}).items() if k in ("judges", "usage_providers")}
-    if set(allowed) >= set(all_accounts) and not extra:
-        if target.exists():
-            _backup(target, "host-policy")
-            target.unlink()
-        return _tr("已恢复默认：本机允许全部账号")
-    if not allowed:
-        raise ValueError(_tr("至少保留一个账号"))
-    _backup(target, "host-policy")
-    _atomic_json(target, {"allowed_accounts": [a for a in all_accounts if a in allowed], **extra})
-    return _tr('已保存本机准入：{0} 个账号').format(f'{len(allowed)}')
+    with allocator.override_store.locked(target):
+        current = json.loads(target.read_text(encoding='utf-8-sig')) if target.exists() else (existing or {})
+        if 'known_accounts' in current:
+            # A known omission is a manual disable. Keep it even while the account is absent.
+            if not allowed:
+                raise ValueError(_tr('至少保留一个账号'))
+            baseline = set((existing if existing is not None else current).get('allowed_accounts', []))
+            requested = set(allowed)
+            changed = [a for a in all_accounts if (a in baseline) != (a in requested)]
+            # Apply only the user's changes to the latest policy. Merely displaying
+            # an unready account is not a deny; a concurrent admission is not undone.
+            selected = [a for a in current['allowed_accounts'] if a not in changed or a in requested]
+            selected += [a for a in changed if a in requested]
+            updated = {**current, 'allowed_accounts': list(dict.fromkeys(selected)),
+                       'known_accounts': list(dict.fromkeys([*current.get('known_accounts', []), *changed]))}
+            _backup(target, 'host-policy')
+            allocator.override_store.write(target, updated)
+            return _tr('已保存本机准入：{0} 个账号').format(len(updated['allowed_accounts']))
+        extra = {k: v for k, v in (existing or {}).items() if k in ("judges", "usage_providers")}
+        if set(allowed) >= set(all_accounts) and not extra:
+            if target.exists():
+                _backup(target, "host-policy")
+                target.unlink()
+            return _tr("已恢复默认：本机允许全部账号")
+        if not allowed:
+            raise ValueError(_tr("至少保留一个账号"))
+        _backup(target, "host-policy")
+        _atomic_json(target, {"allowed_accounts": [a for a in all_accounts if a in allowed], **extra})
+        return _tr('已保存本机准入：{0} 个账号').format(f'{len(allowed)}')
 
 
 def _accounts_path() -> Path:

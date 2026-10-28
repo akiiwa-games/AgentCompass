@@ -68,6 +68,8 @@ def build_task(args, text, parent):
         task['parent_agent_id'] = parent
     if args.local_only:
         task['needs'] = {'local_only': True, 'local_only_reason': args.local_only}
+    if getattr(args, 'file', None) or getattr(args, 'apply_to', None):
+        task.setdefault('needs', {})['file_transfer'] = True
     if getattr(args, 'fast', False):
         task.setdefault('needs', {})['fast'] = True
     return task
@@ -77,7 +79,8 @@ def summary(decision):
     bundle = decision.get('selected_bundle') or {}
     return {'choice': decision.get('choice'),
             'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'fast') if bundle.get(k)},
-            'reason': ((decision.get('decision') or {}).get('reason') or '')[:300] or None,
+            'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
+                       (decision.get('decision') or {}).get('reason') or '')[:300] or None,
             'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn']}
 
 
@@ -133,6 +136,35 @@ def consult(args, out, prompt_file):
                 worker={'provider': 'chatgpt-web', 'out': str(target), 'exit': proc.returncode,
                 'answer_file': str(answer) if answer.is_file() else None, 'stderr': proc.stderr[-1500:] or None}), \
         0 if proc.returncode == 0 else 1
+
+
+def grok_bot(args, out, prompt_file, task, bundle):
+    """Same external-runner receipt/continuation surface as Dot; no Paseo adapter."""
+    import run_grok_bot as runner
+    if args.file or args.apply_to or args.local_only:
+        raise ValueError('grok-bot runs remotely and accepts text only; local-only/file-transfer options are unsupported.')
+    if bundle.get('model') != 'grok-bot' or bundle.get('account') != 'grok-bot' or bundle.get('effort'):
+        raise ValueError('Use --provider grok-bot --account grok-bot --model grok-bot without an effort; upstream owns model selection.')
+    try:
+        receipt = runner.submit(prompt_file.read_text(encoding='utf-8'), out['parent_id'], task['task_id'])
+    except (runner.TransportError, OSError, ValueError) as exc:
+        return dict(out, launched=False, dispatch_mode='grok-bot', caller_action='check_error', error=str(exc)), 1
+    if args.wait > 0 and receipt['state'] not in ('completed', 'failed'):
+        try:
+            receipt = runner.status(receipt['task_id'], args.wait)
+        except (runner.TransportError, OSError, ValueError) as exc:
+            # A continuation failure cannot invalidate the durable send receipt.
+            receipt = {**receipt, 'read_error': str(exc)}
+    delivery = receipt['delivery']
+    completed = receipt['state'] == 'completed'
+    result = dict(out, launched=True if completed or delivery == 'accepted' else False if delivery == 'rejected' else None,
+                  dispatch_mode='grok-bot', completed=completed, worker=receipt,
+                  caller_action='completed' if completed else 'already_launched_do_not_respawn' if delivery == 'accepted' else
+                  'check_delivery_do_not_resend' if delivery == 'unknown' else 'check_error')
+    if receipt['state'] not in ('completed', 'failed'):
+        result['continuation_argv'] = python(Path(runner.__file__), 'status', '--task-id', receipt['task_id'], '--wait', '30')
+        result['next'] = 'Read continuation_argv; never repeat an uncertain send. Relay needs_input to the parent; resolve cards in the official app.'
+    return result, 1 if receipt['state'] == 'failed' else 0
 
 
 def paseo(args, out, decision, task, text, parent, usage, judge=None):
@@ -318,7 +350,14 @@ def run(args, judge):
     if decision.get('choice') in (None, 'none') or not bundle:
         return dict(out, launched=False, dispatch_mode='none', caller_action='execute_self_or_ask_user',
                     next='No worker fits this brief; do it yourself or ask the user.'), 2
-    if (decision.get('decision') or {}).get('needs_user_decision') or decision.get('host_policy_violation'):
+    if decision.get('host_policy_violation'):
+        violation = decision['host_policy_violation']
+        return dict(out, launched=False, dispatch_mode='none', caller_action='check_host_policy',
+                    host_policy_violation=violation,
+                    next=f"Host policy excludes account {violation.get('account')!r}. Inspect "
+                         f"{violation.get('policy_path') or 'the configured host policy'}; discovery and an explicit "
+                         'task request do not change allowed_accounts.'), 2
+    if (decision.get('decision') or {}).get('needs_user_decision'):
         return dict(out, launched=False, dispatch_mode='none', caller_action='ask_user',
                     next='The router needs a user decision; show route.reason to the user.'), 2
     text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address)
@@ -327,6 +366,8 @@ def run(args, judge):
         return dot(args, out, prompt_file)
     if provider == 'chatgpt-web':
         return consult(args, out, prompt_file)
+    if provider == 'grok-bot':
+        return grok_bot(args, out, prompt_file, task, bundle)
     if parent_host == 'native':
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next='Launch the native host worker with exactly route.bundle '

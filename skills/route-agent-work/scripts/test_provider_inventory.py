@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import allocator
 import dispatch_registry
+import host_policy
 import provider_inventory as inventory
 
 
@@ -70,6 +71,32 @@ class DiscoveryTests(unittest.TestCase):
     def apply(self, snapshot):
         accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
         return inventory.apply(accounts, snapshot)
+
+    def test_new_launcher_later_signin_enrolls_via_real_account_loading(self):
+        policy = self.write('host-policy.json', {'allowed_accounts': ['codex']})
+        env = {'ROUTER_PROVIDER_HOME': str(self.home), 'ROUTER_STATE_DIR': str(self.home / '.route-manager'),
+               'PASEO_HOME': str(self.home / '.paseo'), 'ROUTER_HOST_POLICY': str(policy),
+               'ROUTER_CAPACITY': str(self.home / 'capacity.json'), 'PATH': ''}
+        with patch.dict(inventory.os.environ, env):
+            host_policy.sync_discovered(allocator.load_accounts(), enable=True)
+            self.paseo({'codex': {'enabled': True}, 'codex-work': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
+            waiting = allocator.load_accounts()
+            self.assertNotIn('codex-work', host_policy.load_policy()['known_accounts'])
+            self.assertNotEqual(waiting['_discovery']['accounts']['codex-work']['status'], 'ready')
+            self.native_codex('codex-work', 'account-B')
+            ready = allocator.load_accounts()
+            self.assertEqual(ready['_host_policy_sync']['added'], ['codex-work'])
+            before = policy.read_bytes()
+            self.assertEqual(allocator.load_accounts()['_host_policy_sync']['added'], [])
+            self.assertEqual(before, policy.read_bytes())
+            document = host_policy.load_policy()
+            document['allowed_accounts'].remove('codex-work')
+            policy.write_text(json.dumps(document))
+            self.paseo({'codex': {'enabled': True}})
+            allocator.load_accounts()
+            self.paseo({'codex': {'enabled': True}, 'codex-work': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
+            allocator.load_accounts()
+            self.assertFalse(host_policy.account_allowed(host_policy.load_policy(), 'codex-work'))
 
     def test_grok_local_sources_and_cache_only_availability(self):
         cached = {'providers': {'grok': {'plan_label': 'SuperGrok'}}}

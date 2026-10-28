@@ -40,6 +40,9 @@ def resolve_canonical_model(raw_model_name, known_models, aliases=None):
         if match := exact(name):
             return match
     name = raw.rsplit('/', 1)[-1].lower()
+    # Grok Bot is a remote service selector, not a Grok Build/model-family alias.
+    if name == 'grok-bot':
+        return None
     while True:
         stripped = re.sub(r'(?:@\d{8}|-\d{8}|:\w+|-(?:latest|preview))$', '', name)
         if stripped == name:

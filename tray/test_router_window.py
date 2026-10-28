@@ -226,7 +226,7 @@ class SettingsTests(unittest.TestCase):
                          {"rotate_after_carried_tokens": 1500000})
 
     def test_host_policy_writes_a_subset_and_removes_the_file_when_everything_is_allowed(self):
-        allocator = mock.Mock()
+        allocator, _ = router_data.modules()
         with mock.patch.object(router_data, "modules", return_value=(allocator, mock.Mock())):
             path = self.dir / "host-policy.json"
             router_data.save_host_policy(["codex", "claude"], ["claude", "codex", "dot"], path)
@@ -238,6 +238,65 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["judges"], ["codex"])
             with self.assertRaises(ValueError):
                 router_data.save_host_policy([], ["claude"], path)
+
+    def test_auto_discovery_policy_preserves_manual_disable_and_concurrent_new_accounts(self):
+        path = self.dir / 'host-policy.json'
+        original = {'allowed_accounts': ['codex', 'grok-bot'],
+                    'known_accounts': ['codex', 'grok-bot', 'removed-slot'], 'judges': ['codex']}
+        # The panel opened before a separate discovery refresh admitted codex-work.
+        current = {**original, 'allowed_accounts': [*original['allowed_accounts'], 'codex-work'],
+                   'known_accounts': [*original['known_accounts'], 'codex-work']}
+        path.write_text(json.dumps(current))
+        # Even a dialog opened before migration must retain the on-disk marker.
+        router_data.save_host_policy(['codex'], ['codex', 'grok-bot', 'codex-work'], path,
+                                     {'allowed_accounts': original['allowed_accounts']})
+        saved = json.loads(path.read_text())
+        self.assertEqual(saved['allowed_accounts'], ['codex', 'codex-work'])
+        self.assertIn('grok-bot', saved['known_accounts'])
+        self.assertIn('removed-slot', saved['known_accounts'])
+        self.assertEqual(saved['judges'], ['codex'])
+        # Selecting every currently shown account must not delete this bounded policy.
+        router_data.save_host_policy(['codex', 'grok-bot', 'codex-work'],
+                                     ['codex', 'grok-bot', 'codex-work'], path, saved)
+        self.assertTrue(path.exists())
+        self.assertIn('removed-slot', json.loads(path.read_text())['known_accounts'])
+
+    def test_unrelated_setting_change_does_not_deny_unready_newcomer(self):
+        allocator, _ = router_data.modules()
+        path = self.dir / 'host-policy.json'
+        account_file = self.dir / 'accounts.json'
+        account_file.write_text('{"accounts": {}}')
+        roster = ['codex', 'grok', 'codex-new', 'claude-2']
+
+        def change(allowed, account, mode):
+            existing = json.loads(path.read_text())
+            if mode == 'dialog':
+                router_data.save_host_policy(allowed, roster, path, existing)
+            else:
+                state = {'accounts': roster, 'allowed': set(existing['allowed_accounts']),
+                         'path': path, 'policy': existing}
+                with mock.patch.object(router_data, 'host_policy_state', return_value=state), \
+                     mock.patch.object(router_data, '_user_accounts_path', return_value=account_file):
+                    router_data.toggle_account_host(account)
+
+        for mode in ('dialog', 'toggle'):
+            with self.subTest(mode=mode), \
+                 mock.patch.object(allocator.host_policy, 'policy_path', return_value=(path, False)):
+                path.write_text(json.dumps({'allowed_accounts': ['codex', 'grok'],
+                                            'known_accounts': ['codex', 'grok', 'claude-2']}))
+                change(['codex'], 'grok', mode)
+                saved = json.loads(path.read_text())
+                self.assertNotIn('codex-new', saved['known_accounts'])
+                ready = {'_discovery': {'accounts': {'codex-new': {'status': 'ready'}}},
+                         'accounts': {'codex-new': {'verified': True,
+                                                   'bundles': {'worker': {'provider': 'codex-new'}}}}}
+                self.assertEqual(allocator.host_policy.sync_discovered(ready)['added'], ['codex-new'])
+                change(['codex'], 'codex-new', mode)
+                self.assertEqual(allocator.host_policy.sync_discovered(ready)['added'], [])
+                saved = json.loads(path.read_text())
+                self.assertEqual(saved['allowed_accounts'], ['codex'])
+                self.assertIn('codex-new', saved['known_accounts'])
+                self.assertIn('claude-2', saved['known_accounts'])
 
     def test_boost_rules_validate_range_and_duration_before_touching_the_store(self):
         with mock.patch.object(router_data, "modules", side_effect=AssertionError("store touched")):

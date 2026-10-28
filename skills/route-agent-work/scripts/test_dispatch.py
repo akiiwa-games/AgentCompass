@@ -797,6 +797,20 @@ class RollTests(unittest.TestCase):
         self.assertEqual(result['worker']['task_id'], 'dot-task-1')
         self.assertEqual(result['continuation_argv'][4:7], ['status', '--task-id', 'dot-task-1'])
 
+    def test_grok_bot_external_route_preserves_parent_and_receipt(self):
+        import run_grok_bot as runner
+        decision = dict(stage='record', choice='constraint', selected_bundle={
+            'provider': 'grok-bot', 'account': 'grok-bot', 'model': 'grok-bot'}, decision={'action': 'start'})
+        receipt = {'provider': 'grok-bot', 'task_id': 'a' * 32, 'state': 'accepted', 'delivery': 'accepted'}
+        with patch.object(runner, 'submit', return_value=receipt) as submit, \
+                patch.object(flow, 'host_call', side_effect=AssertionError('external runner must not call Paseo')):
+            (result, code), _ = self.roll(decision)
+        self.assertEqual((code, result['launched'], result['dispatch_mode']), (0, True, 'grok-bot'))
+        prompt = self.assert_worker_prompt(result, parent='parent-a')
+        self.assertEqual(submit.call_args.args[:2], (prompt, 'parent-a'))
+        self.assertEqual(result['worker'], receipt)
+        self.assertIn(receipt['task_id'], result['continuation_argv'])
+
     def test_consult_route_and_deferred_command_include_the_communication_contract(self):
         import roll
         decision = dict(stage='plan', choice='gpt_pro', selected_bundle={

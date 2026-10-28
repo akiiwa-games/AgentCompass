@@ -172,6 +172,55 @@ class HostPolicyTests(unittest.TestCase):
         self.assertEqual(host_policy.usage_providers(None, defaults), defaults)
         self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex'], 'usage_providers': ['grok']}, defaults), [])
 
+    def registered(self, **states):
+        return {'_discovery': {'accounts': {name: {'status': state} for name, state in states.items()}},
+                'accounts': {name: {'verified': state == 'ready', 'bundles': {
+                    name: {'provider': name, 'model': 'service'}}} for name, state in states.items()}}
+
+    def test_legacy_migration_preserves_exclusions_and_new_ready_accounts_enroll_once(self):
+        self.write({'allowed_accounts': ['codex'], 'judges': ['codex'], 'usage_providers': ['codex']})
+        baseline = self.registered(codex='ready', claude='ready')
+        before = self.path.read_bytes()
+        self.assertEqual(host_policy.sync_discovered(baseline)['mode'], 'legacy')
+        self.assertEqual(self.path.read_bytes(), before)
+        result = host_policy.sync_discovered(baseline, enable=True)
+        self.assertEqual(result['ready_but_excluded'], ['claude'])
+        self.assertEqual(host_policy.load_policy()['allowed_accounts'], ['codex'])
+        next_accounts = self.registered(codex='ready', claude='ready', **{'grok-bot': 'missing_configuration', 'codex-work': 'ready'})
+        # First observation need not be ready: it must not become a permanent manual deny.
+        self.assertEqual(host_policy.sync_discovered(next_accounts)['added'], ['codex-work'])
+        self.assertNotIn('grok-bot', host_policy.load_policy()['known_accounts'])
+        next_accounts = self.registered(codex='ready', claude='ready', **{'grok-bot': 'ready', 'codex-work': 'ready'})
+        self.assertEqual(host_policy.sync_discovered(next_accounts)['added'], ['grok-bot'])
+        document = host_policy.load_policy()
+        self.assertEqual(document['judges'], ['codex'])
+        self.assertEqual(document['usage_providers'], ['codex'])
+        after = self.path.read_bytes()
+        self.assertEqual(host_policy.sync_discovered(next_accounts)['added'], [])
+        self.assertEqual(self.path.read_bytes(), after)
+        # Manually disable an enrolled account; neither refresh nor temporary disappearance resurrects it.
+        document['allowed_accounts'].remove('grok-bot')
+        self.write(document)
+        host_policy.sync_discovered(baseline)
+        host_policy.sync_discovered(next_accounts)
+        self.assertNotIn('grok-bot', host_policy.load_policy()['allowed_accounts'])
+        self.assertNotIn('claude', host_policy.load_policy()['allowed_accounts'])
+
+    def test_missing_contract_or_expired_disabled_removed_rejected_account_is_not_enrolled(self):
+        self.write({'allowed_accounts': ['codex'], 'known_accounts': ['codex']})
+        accounts = self.registered(codex='ready', removed='removed', disabled='disabled', rejected='paused',
+                                   expired='ready', unregistered='ready', no_bundles='ready', banned_bundle='ready')
+        del accounts['accounts']['unregistered']
+        accounts['accounts']['no_bundles']['bundles'] = {}
+        accounts['accounts']['banned_bundle']['bundles']['banned_bundle']['disabled'] = 'user disabled'
+        accounts['accounts']['expired']['expires_at'] = '2000-01-01T00:00:00Z'
+        self.assertEqual(host_policy.sync_discovered(accounts)['added'], [])
+        self.assertEqual(host_policy.load_policy()['known_accounts'], ['codex'])
+        # Obtaining the missing registered contract later is sufficient; no second consent flag needed.
+        accounts['accounts']['unregistered'] = {'verified': True, 'bundles': {'real': {'provider': 'unregistered', 'model': 'real'}}}
+        self.assertEqual(host_policy.sync_discovered(accounts)['added'], ['unregistered'])
+        self.assertFalse(host_policy.account_allowed(host_policy.load_policy(), 'arbitrary-request-name'))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -135,14 +135,9 @@ def check_launch_quota(bundle, accounts, usage, now):
     usage = provider_inventory.merge_usage(usage, accounts, now)
     spec = accounts['accounts'][bundle['account']]
     row = (usage.get('accounts') or {}).get(bundle['account']) or {}
-    fetched = allocator.parse_time(row.get('fetched_at'))
-    if row.get('status') != 'fresh' or fetched is None or not -60 <= (now - fetched).total_seconds() <= 900:
-        return
     for wid, window, observed in allocator.applicable_windows(spec, bundle['model'], row):
-        floor = window.get('launch_min_remaining_pct')
-        reset = allocator.parse_time((observed or {}).get('resets_at'))
-        remaining = (observed or {}).get('remaining_pct_before_reset')
-        if floor is not None and reset and reset > now and isinstance(remaining, (int, float)) and remaining <= floor:
+        if allocator.below_launch_floor(window, observed, row, now):
+            floor = window['launch_min_remaining_pct']
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
 
 

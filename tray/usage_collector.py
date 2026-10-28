@@ -21,9 +21,10 @@ sys.path.insert(0, str(plugins.plugin_root('usage-float')))
 SKILL_SCRIPTS = Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'skills/route-agent-work/scripts'
 sys.path.insert(0, str(SKILL_SCRIPTS))
 import host_policy
+import allocator
 
 STATE = Path.home() / '.route-manager'
-SUBSCRIPTIONS = ['claude', 'claude-2', 'codex', 'codex-2', 'grok', 'antigravity']
+SUBSCRIPTIONS = ['claude', 'claude-2', 'codex', 'codex-2', 'grok', 'grok-bot', 'antigravity']
 
 
 def discovered_subscriptions(usage) -> list[str]:
@@ -36,7 +37,7 @@ def discovered_subscriptions(usage) -> list[str]:
         items: list[str] = []
         extra_litellm = tuple(discover_litellm().keys()) if callable(discover_litellm) else ()
         extra_pi = ('pi',) if (callable(read_pi) and read_pi()[0] is not None and (not callable(pi_linked) or pi_linked() is None)) else ()
-        for pid in (*discover_claude().keys(), *discover_codex().keys(), *extra_pi, *extra_litellm, 'grok', 'antigravity'):
+        for pid in (*discover_claude().keys(), *discover_codex().keys(), *extra_pi, *extra_litellm, 'grok', 'grok-bot', 'antigravity'):
             if pid not in items:
                 items.append(pid)
         return items
@@ -45,6 +46,7 @@ def discovered_subscriptions(usage) -> list[str]:
 
 def collect():
     import usage_float as usage
+    allocator.load_accounts()  # Refresh opted-in admission before filtering newly discovered subscriptions.
     subscriptions = host_policy.usage_providers(host_policy.load_policy(), discovered_subscriptions(usage))
     selected = usage.active_providers(subscriptions)
     observations = usage.fetch_all(selected, force=False)

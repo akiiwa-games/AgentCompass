@@ -310,6 +310,16 @@
       },
       "basis": "AA v4.3.2 Low 33.5 / Med 39.8 / High 40.9, LCR 81.3%, MMMU-Pro 85.6%, Bug Hunt 18.0/105 (81.8% prec); high-quota Antigravity volume sink for routine tasks."
     },
+    "grok-bot": {
+      "tier": 3.3,
+      "cost": 2,
+      "visual": false,
+      "excluded_when": "local_only",
+      "text_only": true,
+      "capabilities": {"reasoning": 0.55, "coding": 0.55, "exploration": 0.55, "anti_hallucination": 0.5, "visual": 0.0, "gui": 0.0},
+      "subjective": {"divergence": 0.5, "global_rigor": 0.5, "module_precision": 0.5},
+      "basis": "Provisional service-level routing assumption: reuse the generic text baseline, not a measured benchmark or underlying Grok model identity. Remote text input/output only; USD price, quota capacity and burn rate unknown."
+    },
     "dot": {
       "tier": 4.2,
       "cost": 0,

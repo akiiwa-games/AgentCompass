@@ -53,7 +53,49 @@ rows first, then normalized names, family priors, and a conservative generic
 baseline. These defaults are provisional estimates, not benchmark measurements.
 Duplicate launchers share one subscription quota owner.
 
+## Automatic admission of newly discovered accounts
+
+The local host allowlist predates account discovery. An omitted name in an old
+file cannot tell us whether the user disabled it or had never seen it. Existing
+files retain their exact behavior until explicitly migrated:
+
+```powershell
+python -X utf8 skills/route-agent-work/scripts/host_policy.py --enable-auto-discovery
+```
+
+Migration adds `known_accounts`, the names already allowed or present in the
+current catalog/discovery. It does not allow any previously excluded account;
+the command reports the preserved exclusions. New accounts discovered afterward
+are admitted only once their native discovery is ready, their account has a
+non-disabled dispatch contract and no known expired subscription. An unready or
+unregistered newcomer is not marked seen; signing in/registering it later can
+admit it. Unknown names supplied in a request are never admission evidence.
+
+The same `known_accounts` field records user intent: a name that is known but no
+longer allowed remains disabled. The existing account-admission panel preserves
+the marker when saving checkboxes, including exclusions for currently absent
+accounts. Native disabled/removed/rejected/expired states still block dispatch;
+automatic admission does not clear them. Refreshes are idempotent and use the
+existing file lock/atomic writer. Missing evidence or a failed policy write does
+not grant permission; other discovery results remain visible for diagnosis.
+Saving settings records only changes from the displayed admission state, not
+every displayed account: an untouched unready newcomer remains eligible for
+later admission, and concurrent admissions survive unrelated checkbox changes.
+
+`route_judge.py providers` and normal account loading refresh this registration.
+Account admission preserves each provider's capability and scoring policy;
+it does not invent model benchmarks or quota capacity.
+
 ## Grok and advertised model defaults (2026-10-27)
+
+`grok-bot` is a separate remote text runner and automatic routing candidate. It appears in
+`route_judge.py providers`; a configured exact Bot ID plus the pinned local CLI
+and Node makes its launcher available. This is setup availability, not proof of
+current login: upstream performs a live read-only check before send. Billing and
+underlying model identity remain unknown. Its service profile reuses the generic
+text baseline as an explicit routing assumption, with native weekly quota
+observations and unknown consumption, never a free/unlimited bonus. See
+[setup, receipts and roll commands](grok-bot.md).
 
 Grok has its own subscription account and `grok47_high` bundle. Local evidence is
 an enabled Paseo Grok definition, a Grok CLI/config directory, or an active CC
