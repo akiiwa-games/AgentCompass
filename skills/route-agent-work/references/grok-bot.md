@@ -1,5 +1,14 @@
 # Grok Bot external runner
 
+The AgentCompass **Integrations** page includes **Grok Bot CLI** with
+**Install/repair**, **Check connection**, and **Usage guide** actions. Install/repair
+uses the locked dependency and explicit descriptor patch below. It never installs
+a global CLI or starts a service. Account enablement remains in **Routing Settings**.
+Installed status is separate from gateway connectivity; connection checks are
+read-only, expire after one minute, and never send a Bot task. A gateway error
+(including HTTP 417) does not mean the CLI is missing or that login is required.
+Check the cloud computer connection in the official app before checking again.
+
 Canonical provider/account/model selector: `grok-bot`. The model selector names
 the Bot service, not an asserted underlying model. This is a Route Manager external
 runner (like Dot), not a Paseo-native provider or an OpenAI-compatible endpoint.

@@ -1,6 +1,22 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
+    'Grok Bot 远端任务': 'Grok Bot remote tasks',
+    '安装/修复': 'Install/repair',
+    '检查连接': 'Check connection',
+    '使用说明': 'Usage guide',
+    '缺少 Node.js': 'Node.js missing',
+    'CLI 未安装': 'CLI not installed',
+    'CLI 需要修复': 'CLI needs repair',
+    '已安装 · 连接可用': 'Installed · Connected',
+    '已安装 · 连接不可用': 'Installed · Unavailable',
+    '已安装 · 连接未检查': 'Installed · Not checked',
+    '请安装 Node.js 22.19 或更新版本（含 npm），再安装/修复。': 'Install Node.js 22.19 or later (with npm), then install/repair.',
+    'Grok Bot CLI 已安装；请检查连接。账号启停在调度设置中管理。': 'Grok Bot CLI installed; check the connection. Manage account enablement in Routing Settings.',
+    'CLI 已安装，网关连接可用；任务 Bot 配置请见使用说明。': 'CLI installed and gateway available; see the usage guide to configure a task Bot.',
+    'CLI 已安装，网关连接不可用。请在官方应用确认云电脑连接，再检查连接；这不表示需要重新登录。': 'CLI installed; gateway unavailable. Check the cloud computer connection in the official app, then check again. This does not mean login is required.',
+    '已打开 Grok Bot CLI 使用说明。': 'Opened the Grok Bot CLI usage guide.',
+    '按需运行，无常驻服务；账号启停在调度设置中管理。连接结果仅保留一分钟。': 'Runs on demand without a service. Manage account enablement in Routing Settings. Connection results expire after one minute.',
     'Route Manager · 控制台': 'Route Manager · Console',
     '决策罗盘': 'Decision Compass',
     '额度监控': 'Quota Monitor',

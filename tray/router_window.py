@@ -1565,11 +1565,12 @@ class Panel:
             switches.pack(fill="x", pady=(6, 0))
             enabled = tk.BooleanVar(value=config[plugin.id]["enabled"])
             autostart = tk.BooleanVar(value=config[plugin.id]["autostart"])
-            ttk.Checkbutton(switches, text=_tr("启用"), variable=enabled,
-                            command=lambda p=plugin.id, v=enabled: self.toggle_enabled(p, v.get())).pack(side="left")
-            ttk.Checkbutton(switches, text=_tr("随托盘自启"), variable=autostart,
-                            command=lambda p=plugin.id, v=autostart: self.toggle_autostart(p, v.get())).pack(
-                side="left", padx=12)
+            if plugin.id != "grok-bot":  # CLI account enablement belongs to routing settings, not a daemon toggle.
+                ttk.Checkbutton(switches, text=_tr("启用"), variable=enabled,
+                                command=lambda p=plugin.id, v=enabled: self.toggle_enabled(p, v.get())).pack(side="left")
+                ttk.Checkbutton(switches, text=_tr("随托盘自启"), variable=autostart,
+                                command=lambda p=plugin.id, v=autostart: self.toggle_autostart(p, v.get())).pack(
+                    side="left", padx=12)
             info = tk.StringVar(value="")
             info_label = ttk.Label(inner, textvariable=info, style="CardTiny.TLabel")
             info_label.pack(fill="x", pady=(4, 0))
@@ -1600,7 +1601,10 @@ class Panel:
             if not widgets:
                 continue
             deployed = (plugins.plugin_root(plugin.id) / ".git").exists()
-            if plugin.id == "dot2api":
+            if plugin.id == "grok-bot":
+                import grok_bot_cli
+                widgets["info"].set(grok_bot_cli.info())
+            elif plugin.id == "dot2api":
                 dot = self.data_module().dot_details()
                 self.tunnel_url = dot.get("tunnel_url") or ""
                 widgets["info"].set(self.tunnel_url or _tr("隧道未发布"))
@@ -1620,6 +1624,11 @@ class Panel:
 
     def plugin_actions(self, plugin_id):
         import services
+
+        if plugin_id == "grok-bot":
+            import grok_bot_cli
+            return ((_tr("安装/修复"), grok_bot_cli.install), (_tr("检查连接"), grok_bot_cli.check),
+                    (_tr("使用说明"), grok_bot_cli.guide))
 
         state = Path.home() / ".route-manager"
 
@@ -1665,7 +1674,7 @@ class Panel:
         return ()
 
     def plugin_act(self, plugin_id, work):
-        self.run(work, self.say(self.load_plugins), _tr("正在执行…"))
+        self.run(work, self.say(self.load_plugins), _tr("正在执行…"), long=plugin_id == "grok-bot")
 
     def toggle_enabled(self, plugin_id, value):
         import services
@@ -1709,6 +1718,10 @@ class Panel:
 
             def label(plugin_id):
                 try:
+                    if plugin_id == "grok-bot":
+                        import grok_bot_cli
+                        reading = grok_bot_cli.snapshot()
+                        return reading['label'], reading
                     if plugin_id == "easytier":
                         reading = easytier.snapshot()
                         return easytier.label(reading), len(easytier.remote_peers(reading.get("peers")))
@@ -1726,7 +1739,8 @@ class Panel:
                 t.join()
             labels = {plugin_id: value[0] for plugin_id, value in found.items()}
             data = self.data_module()
-            extras = {"dot2api": data.dot_details(), "easytier": found["easytier"][1]}
+            extras = {"dot2api": data.dot_details(), "easytier": found["easytier"][1],
+                      "grok-bot": found["grok-bot"][1]}
             extras["dot2api"]["subscription"] = data.subscription_text()
             return config, labels, extras
         self.run(work, self.plugins_loaded, _tr("正在读取集成状态…"))
@@ -1736,6 +1750,21 @@ class Panel:
         for plugin in plugins.PLUGINS:
             widgets = self.plugin_widgets[plugin.id]
             row = config[plugin.id]
+            if plugin.id == "grok-bot":
+                import grok_bot_cli
+                reading = extras.get(plugin.id) or {}
+                theme.set_pill(widgets["status"], labels[plugin.id], reading.get('kind', 'idle'))
+                widgets["info"].set(grok_bot_cli.info())
+                if getattr(self, '_grok_status_timer', None):
+                    self.root.after_cancel(self._grok_status_timer)
+                    self._grok_status_timer = None
+                if 'expires_in' in reading:
+                    status = widgets['status']
+                    def expire(status=status):
+                        if status.winfo_exists():
+                            theme.set_pill(status, _tr('已安装 · 连接未检查'), 'idle')
+                    self._grok_status_timer = self.root.after(max(1, int(reading['expires_in'] * 1000)), expire)
+                continue
             label = labels[plugin.id] if row["enabled"] else _tr('未启用 · {0}').format(f'{labels[plugin.id]}')
             theme.set_pill(widgets["status"], label[:18], theme.status_kind(labels[plugin.id]) if row["enabled"] else "idle")
             widgets["enabled"].set(row["enabled"])

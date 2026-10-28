@@ -702,6 +702,9 @@ def plugin_stop(plugin_id: str) -> str:
 
 
 def plugin_label(plugin_id: str) -> str:
+    if plugin_id == 'grok-bot':
+        import grok_bot_cli
+        return grok_bot_cli.snapshot()['label']
     return {"dot2api": dot_label, "chatgpt-web": chatgpt_label, "gemini-web": gemini_label,
             "grok2api": grok_label, "muse2api": muse_label,
             "easytier": lambda: easytier.label(easytier.snapshot()), "usage-float": usage_float_label}[plugin_id]()

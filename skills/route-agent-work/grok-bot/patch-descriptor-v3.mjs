@@ -42,6 +42,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const path = new URL(`dist/bin/${name}`, root);
     return [path, patchedBundle(name, readFileSync(path, 'utf8'))];
   });
-  for (const [path, text] of updates) writeFileSync(path, text, 'utf8');
+  for (const [path, text] of updates) {
+    if (process.argv.includes('--check')) {
+      if (readFileSync(path, 'utf8') !== text) throw Error('Descriptor v3 patch is not installed.');
+    } else writeFileSync(path, text, 'utf8');
+  }
   console.log('grok-bot-cli 0.12.4: descriptor v3 compatibility verified in both CLI bundles.');
 }
