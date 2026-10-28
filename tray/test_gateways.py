@@ -97,7 +97,9 @@ class GrokConfigTests(unittest.TestCase):
 
 class MuseTests(unittest.TestCase):
     def test_env_is_loopback_browser_driver_with_data_outside_the_clone(self):
-        with mock.patch.dict(gateways.os.environ, {}, clear=False):
+        # Chrome is host-dependent; the test only checks the env wiring.
+        with mock.patch.dict(gateways.os.environ, {}, clear=False), \
+                mock.patch.object(gateways, "chrome_path", return_value=Path("chrome.exe")):
             gateways.os.environ.pop("MUSE2API_DRIVER", None)
             env = gateways.muse_env()
         self.assertEqual(env["MUSE2API_HOST"], "127.0.0.1")

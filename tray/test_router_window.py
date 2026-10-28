@@ -770,7 +770,8 @@ class WindowHelperTests(unittest.TestCase):
             }),))
             conn.commit()
             conn.close()
-            res = router_data.pool_reservations(db=db)
+            # The repo definition, not this host's accounts: other hosts may lack a claude account.
+            res = router_data.pool_reservations(db=db, accounts=router_data.modules()[0].load_accounts(ACCOUNTS_JSON))
             self.assertIn(("claude", "seven_day"), res)
             self.assertGreater(res[("claude", "seven_day")]["pct"], 0.0)
             self.assertEqual(res[("claude", "seven_day")]["usd"], 20.0)
