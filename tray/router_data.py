@@ -55,8 +55,8 @@ MODEL_LABELS = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5"
                 "gemini-4-argon-high": "Argon 4", "gemini-3.8-flash-high": "Flash 3.8", "grok-4.7": "Grok 4.7",
                 "dot": "Dot", "deepseek-v4.1-flash-free": "DeepSeek Flash"}
 PRESETS = (
-    ("跨模块架构重构", "重构 route_manager 的插件架构与托盘菜单，跨多个模块保持一致，需要全局严密的设计", 4.0, False, False),
-    ("单模块缺陷修复", "修复 tray/services.py 里 ChatGPT Web 停止时的竞态 bug 并补单测", 1.0, True, False),
+    ("跨模块架构重构", "重构支付服务的插件架构与后台菜单，跨多个模块保持一致，需要全局严密的设计", 4.0, False, False),
+    ("单模块缺陷修复", "修复 app/upload_queue.py 里上传队列停止时的竞态 bug 并补单测", 1.0, True, False),
     ("前端界面实现", "按设计稿实现 React 前端组件与样式，像素级还原", 2.0, False, True),
     ("开放式方案调研", "调研并提出三种创新的多代理调度方案，比较优劣并给出建议", 2.0, False, False),
     ("回测研究包", "运行因子回测，计算样本外夏普并整理研究报告", 3.0, False, False),

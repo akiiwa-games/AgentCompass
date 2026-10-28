@@ -83,6 +83,42 @@ def tokens_text(value) -> str:
     return f"{value / 1_000_000:.2f}M" if value >= 100_000 else f"{value / 1000:.0f}k"
 
 
+def verdict_summary(result: dict, pair: list[dict]) -> tuple[list[tuple[str, str]], str]:
+    """(label, value) rows for the compact verdict grid under the radar, and the full router reason for its tooltip.
+
+    Values come from the plan's structured fields; the long reason only fills the quota row when no capacity is recorded.
+    """
+    decision = (result or {}).get("decision") or {}
+    reason = " ".join(str(decision.get("reason") or "").split())
+    if not pair:
+        return [("", reason or _tr("没有可用候选"))], ""
+    first = pair[0]
+    rows = [(_tr("胜出"), f"{first['id']}  {fmt(first['score'])}")]
+    if len(pair) > 1:
+        second = pair[1]
+        lead = (first.get("score") or 0.0) - (second.get("score") or 0.0)
+        gap = _tr("并列") if abs(lead) < 0.00005 else _tr("领先 {0}").format(fmt(lead, 4))
+        rows.append((_tr("次选"), f"{second['id']}  {fmt(second['score'])} · {gap}"))
+    task = decision.get("task") or {}
+    hours = task.get("hours")
+    hours_text = f"{hours:g}h" if isinstance(hours, (int, float)) else "—"
+    rows.append((_tr("任务"), " · ".join((str(task.get("kind") or "—"), str(task.get("difficulty") or "—"), hours_text))))
+    candidate = next((c for c in (result or {}).get("ranking") or [] if c.get("id") == first["id"]), {})
+    capacity = candidate.get("capacity") if isinstance(candidate.get("capacity"), dict) else {}
+    pct = candidate.get("expected_pct", capacity.get("step_pct"))
+    cost = (first.get("components") or {}).get("opportunity_cost", capacity.get("opportunity_cost"))
+    if capacity.get("window"):
+        parts = [_tr("{0} 剩 {1}%").format(capacity["window"], fmt(capacity.get("remaining"), 0))]
+        if isinstance(pct, (int, float)):
+            parts.append(_tr("本单 ~{0}%").format(fmt(pct, 1)))
+        if isinstance(cost, (int, float)):
+            parts.append(_tr("机会成本 {0}").format(fmt(cost, 3)))
+        rows.append((_tr("额度"), " · ".join(parts)))
+    elif reason:
+        rows.append((_tr("额度"), clip(reason.split(";", 1)[0], 72)))
+    return rows, reason
+
+
 def bundle_labels(bundles: list[dict]) -> list[str]:
     """Display names for an account's bundles; a name shared by two bundles falls back to the bundle id."""
     counts = {}
@@ -795,10 +831,13 @@ class Panel:
         self.pick_a.bind("<<ComboboxSelected>>", lambda e: self.render_radar())
         self.pick_b.bind("<<ComboboxSelected>>", lambda e: self.render_radar())
         self.tune_link = ttk.Button(picks, text=_tr("微调"), style="Tiny.TButton", command=self.open_dna_settings)
-        self.verdict = tk.StringVar(value="")
-        verdict = ttk.Label(radar_card, textvariable=self.verdict, style="CardSub.TLabel", justify="left")
-        verdict.pack(side="bottom", fill="x", pady=(4, 0))
-        follow_width(radar_card, verdict, 8, 200)
+        self.verdict = tk.StringVar(value="")  # plain-text mirror of the verdict grid
+        # Label/value rows instead of one dense paragraph; the full router reason is the grid's hover tooltip.
+        self.verdict_box = ttk.Frame(radar_card, style="Card.TFrame")
+        self.verdict_box.pack(side="bottom", fill="x", pady=(4, 0))
+        self.verdict_box.columnconfigure(1, weight=1)
+        self.verdict_box.bind("<Configure>", lambda e: self.wrap_verdict(e.width))
+        self._verdict_width = None
         self.radar = radar_chart.RadarChartCanvas(radar_card, size=theme.px(300), bg=theme.CARD)
         self.radar.pack(fill="both", expand=True, pady=(6, 0))
 
@@ -815,17 +854,25 @@ class Panel:
         self.objective.pack(fill="x", pady=8)
         options = ttk.Frame(sim, style="Card.TFrame")
         options.pack(fill="x")
+        # The button is packed first so it keeps its space at any width; the options flow onto
+        # extra rows when the window is too narrow for one line (the minimum size, English).
+        self.simulate_button = ttk.Button(options, text=_tr("模拟评分"), style="SmallAccent.TButton", command=self.simulate)
+        self.simulate_button.pack(side="right", anchor="n", padx=(8, 0))
+        flow = ttk.Frame(options, style="Card.TFrame")
+        flow.pack(side="left", fill="x", expand=True)
         self.hours = tk.StringVar(value="2")
-        ttk.Spinbox(options, from_=0.5, to=24, increment=0.5, textvariable=self.hours, width=4).pack(side="left")
-        ttk.Label(options, text="h", style="Card.TLabel").pack(side="left", padx=(3, 10))
+        hours_box = ttk.Frame(flow, style="Card.TFrame")
+        ttk.Spinbox(hours_box, from_=0.5, to=24, increment=0.5, textvariable=self.hours, width=4).pack(side="left")
+        ttk.Label(hours_box, text="h", style="Card.TLabel").pack(side="left", padx=(3, 2))
         self.local_only = tk.BooleanVar()
         self.needs_visual = tk.BooleanVar()
-        ttk.Checkbutton(options, text=_tr("仅本机"), variable=self.local_only).pack(side="left")
-        ttk.Checkbutton(options, text=_tr("需视觉"), variable=self.needs_visual).pack(side="left", padx=(8, 0))
         self.live_scorer = tk.BooleanVar()
-        ttk.Checkbutton(options, text=_tr("小模型打分"), variable=self.live_scorer).pack(side="left", padx=(8, 0))
-        self.simulate_button = ttk.Button(options, text=_tr("模拟评分"), style="SmallAccent.TButton", command=self.simulate)
-        self.simulate_button.pack(side="right")
+        self._option_items = [hours_box] + [ttk.Checkbutton(flow, text=_tr(text), variable=variable) for text, variable in
+                                            (("仅本机", self.local_only), ("需视觉", self.needs_visual),
+                                             ("小模型打分", self.live_scorer))]
+        self._option_rows, self._option_layout = [], None
+        flow.bind("<Configure>", lambda event: self.reflow_options(flow, event.width))
+        self.reflow_options(flow, 10 ** 6)
 
         lists = theme.card(right, padding=12, fill="both", expand=True, pady=(12, 0))
         top = ttk.Frame(lists, style="Card.TFrame")
@@ -935,29 +982,84 @@ class Panel:
                 return
             series, raw = data.dna_series(self.models, self.picked(self.pick_a), self.picked(self.pick_b))
             self.radar.show(radar_chart.DNA_AXES, series, raw)
-            self.verdict.set(" vs ".join(s["label"] for s in series))
+            self.show_verdict([("", " vs ".join(s["label"] for s in series))])
             return
         if not self.plan_result:
             self.radar.show((), [])
-            self.verdict.set("")
+            self.show_verdict([])
             return
         pair = data.decision_pair(self.plan_result, self.picked(self.pick_a), self.picked(self.pick_b))
         series, raw = data.decision_series(pair)
         self.radar.show(radar_chart.SCORE_AXES, series, raw)
-        self.verdict.set(self.verdict_text())
+        self.show_verdict(*verdict_summary(self.plan_result, pair))
 
     def verdict_text(self):
-        decision = (self.plan_result or {}).get("decision") or {}
-        task = decision.get("task") or {}
-        pair = self.data_module().decision_pair(self.plan_result or {})
-        if not pair:
-            return decision.get("reason") or _tr("没有可用候选")
-        text = _tr('胜出 {0} {1}').format(f"{pair[0]['id']}", f"{fmt(pair[0]['score'])}")
-        if len(pair) > 1:
-            text += _tr(' · 次选 {0} {1} · 领先 {2}').format(f"{pair[1]['id']}", f"{fmt(pair[1]['score'])}", f"{fmt(decision.get('margin'), 4)}")
-        text += f"\n{task.get('kind', '—')} · {task.get('difficulty', '—')} · {task.get('hours', '—')}h"
-        reason = decision.get("reason")
-        return text + (f" · {reason}" if reason else "")
+        """The verdict as plain text (label: value per line), as the grid shows it for the router's own pair."""
+        rows, _ = verdict_summary(self.plan_result or {}, self.data_module().decision_pair(self.plan_result or {}))
+        return "\n".join(f"{label}  {value}" if label else value for label, value in rows)
+
+    def show_verdict(self, rows, reason: str = ""):
+        box = self.verdict_box
+        for child in box.winfo_children():
+            child.destroy()
+        self._verdict_values, self._verdict_keys = [], []
+        for index, (label, value) in enumerate(rows):
+            widgets = []
+            if label:
+                hint = label + (" ⓘ" if reason and index == len(rows) - 1 else "")
+                key = self.ttk.Label(box, text=hint, style="CardSub.TLabel")
+                key.grid(row=index, column=0, sticky="nw", padx=(0, theme.px(10)), pady=1)
+                widgets.append(key)
+                self._verdict_keys.append(key)
+            text = self.ttk.Label(box, text=value, style="Card.TLabel", font=(theme.FONT, 9), foreground=theme.INK,
+                                  justify="left", anchor="w")
+            text.grid(row=index, column=1 if label else 0, columnspan=1 if label else 2, sticky="w", pady=1)
+            widgets.append(text)
+            self._verdict_values.append((text, bool(label)))
+            if reason:
+                for widget in widgets:
+                    widget._tooltip_text = reason
+                    self.attach_tooltip(widget)
+        self.verdict.set("\n".join(f"{label}  {value}" if label else value for label, value in rows))
+        self._verdict_width = None
+        self.wrap_verdict(box.winfo_width())
+
+    def wrap_verdict(self, width):
+        """Wrap each value to the grid's real width so nothing is clipped at any window size or language."""
+        if width <= 1 or width == self._verdict_width:
+            return
+        self._verdict_width = width
+        key_width = max((w.winfo_reqwidth() for w in getattr(self, "_verdict_keys", [])), default=0) + theme.px(10)
+        for label, keyed in getattr(self, "_verdict_values", []):
+            label.configure(wraplength=max(theme.px(120), width - (key_width if keyed else 0) - theme.px(4)))
+
+    def reflow_options(self, flow, width):
+        """Lay the simulation options out left to right, starting a new row when the next one would not fit."""
+        if width <= 1:
+            return
+        gap, layout, row, used = 8, [], 0, 0
+        for widget in self._option_items:
+            need = widget.winfo_reqwidth()
+            if used and used + gap + need > width:
+                row, used = row + 1, 0
+            layout.append(row)
+            used += (gap if used else 0) + need
+        if layout == self._option_layout:
+            return
+        self._option_layout = layout
+        while len(self._option_rows) <= row:
+            frame = self.ttk.Frame(flow, style="Card.TFrame")
+            frame.pack(fill="x", pady=(4 if self._option_rows else 0, 0))
+            self._option_rows.append(frame)
+        for frame in self._option_rows[row + 1:]:
+            frame.pack_forget()
+        for index, frame in enumerate(self._option_rows[:row + 1]):
+            frame.pack(fill="x", pady=(4 if index else 0, 0))
+        for index, widget in enumerate(self._option_items):
+            first = index == 0 or layout[index] != layout[index - 1]
+            widget.pack_forget()
+            widget.pack(in_=self._option_rows[layout[index]], side="left", padx=(0 if first else gap, 0))
+            widget.lift()  # the row frames are created later, so they would otherwise stack above the widgets
 
     def open_dna_settings(self):
         model = self.picked(self.pick_a)
@@ -1687,7 +1789,7 @@ class Panel:
         self.update_cwd_preview()
 
     def update_cwd_preview(self):
-        paths = [str(Path.cwd()), "E:/P4/example", "C:/Temp"]
+        paths = [str(Path.cwd()), "D:/projects/example", "C:/Temp"]
         try:
             preview = self.data_module().preview_account_cwd(self.cwd_pattern.get(), paths)
             self.cwd_preview.set("\n".join(("✓ " if matches else "— ") + directory for directory, matches in preview))

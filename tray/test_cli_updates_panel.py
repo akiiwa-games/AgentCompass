@@ -359,9 +359,9 @@ class PanelTests(unittest.TestCase):
     def test_account_directory_editor_validates_and_saves_one_account_rule(self):
         panel = self.open()
         panel.models_rows_loaded([row(), row('pi')])
-        with mock.patch.object(router_data, 'read_account_cwd', return_value='^E:/P4(/|$)'):
+        with mock.patch.object(router_data, 'read_account_cwd', return_value='^D:/projects(/|$)'):
             panel.model_widgets[0]['cwd'].invoke()
-        self.assertIn('✓ E:/P4/example', panel.cwd_preview.get())
+        self.assertIn('✓ D:/projects/example', panel.cwd_preview.get())
         panel.cwd_pattern.set('[')
         self.assertTrue(panel.cwd_save_button.instate(['disabled']))
         panel.cwd_pattern.set('^E:/PROJECTS(/|$)')

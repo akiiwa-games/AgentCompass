@@ -182,6 +182,50 @@ class DecisionBindingTests(unittest.TestCase):
         self.assertEqual(summary["objective"], "Title body")
         self.assertEqual(summary["choice"], "dot_text")
 
+    def test_verdict_summary_is_structured_rows_with_the_reason_kept_for_the_tooltip(self):
+        import i18n
+        import router_window
+
+        reason = "opus (start) scored 0.5; claude-weekly: 40% left; value/cost exchange 0.012 score per displaced USD"
+        plan = {**PLAN, "decision": {"margin": 0.05, "reason": reason,
+                                     "task": {"kind": "debug_review", "difficulty": "hard", "hours": 4.0}}}
+        plan["ranking"] = [dict(plan["ranking"][0], expected_pct=3.456,
+                                capacity={"window": "claude-weekly", "remaining": 40, "step_pct": 3.456}),
+                           *plan["ranking"][1:]]
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        patcher = mock.patch.object(router_data, "STATE_DIR", Path(directory.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        i18n.set_language("zh")
+        rows, tooltip = router_window.verdict_summary(plan, router_data.decision_pair(plan))
+        self.assertEqual(rows, [("胜出", "opus  0.500"), ("次选", "sol  0.450 · 领先 0.0500"),
+                                ("任务", "debug_review · hard · 4h"),
+                                ("额度", "claude-weekly 剩 40% · 本单 ~3.5% · 机会成本 0.010")])
+        self.assertEqual(tooltip, reason)
+        i18n.set_language("en")
+        rows, _ = router_window.verdict_summary(plan, router_data.decision_pair(plan))
+        self.assertEqual(rows[1], ("Runner-up", "sol  0.450 · lead 0.0500"))
+        self.assertEqual(rows[3][1], "claude-weekly 40% left · this task ~3.5% · opportunity cost 0.010")
+
+    def test_verdict_summary_marks_ties_and_falls_back_to_a_short_reason(self):
+        import i18n
+        import router_window
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        patcher = mock.patch.object(router_data, "STATE_DIR", Path(directory.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        i18n.set_language("en")
+        plan = {"choice": "a", "decision": {"reason": "a (start) scored 0.3; free usage window", "task": {}},
+                "ranking": [candidate("a", "m1", 0.3), candidate("b", "m2", 0.3)]}
+        rows, _ = router_window.verdict_summary(plan, router_data.decision_pair(plan))
+        self.assertEqual(rows[1], ("Runner-up", "b  0.300 · tied"))
+        self.assertEqual(rows[2], ("Task", "— · — · —"))
+        self.assertEqual(rows[3], ("Quota", "a (start) scored 0.3"))
+        self.assertEqual(router_window.verdict_summary({"decision": {}}, []), ([("", "No eligible candidates")], ""))
+
 
 class AccountCardTests(unittest.TestCase):
     def cards(self, window):
