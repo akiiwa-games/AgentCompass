@@ -103,6 +103,7 @@ The core calibrated vectors and effort curves remain authoritative. Fable's tier
 | `grok-4.7` | 3.4 | 0.59 / 0.58 / 0.60 / 0.62 / 0.00 / 0.00 | 0.45 / 0.40 / 0.58 | 1.5 | core |
 | `gemini-3.8-flash-high` | 3.0 | 0.52 / 0.47 / 0.50 / 0.72 / 0.30 / 0.42 | 0.35 / 0.35 / 0.65 | 0.5 | core |
 | `dot` | 4.2 | 0.80 / 0.79 / 0.80 / 0.78 / 0.00 / 0.00 | 0.68 / 0.82 / 0.84 | bridge / free | core |
+| `grok-bot` | 3.3 | 0.55 / 0.55 / 0.55 / 0.50 / 0.00 / 0.00 | 0.50 / 0.50 / 0.50 | unknown | provisional service-level text baseline; not a benchmark |
 | `gpt-6-pro` | 5.0 | 1.00 / 0.90 / 0.78 / 0.95 / 0.00 / 0.00 | 0.95 / 0.96 / 0.90 | bridge / free | core |
 | `claude-haiku-5-5` | 3.2 | 0.58 / 0.65 / 0.62 / 0.62 / 0.48 / 0.35 | 0.42 / 0.53 / 0.67 | 0.8 | prior |
 | `gpt-6.1-terra` | 3.7 | 0.73 / 0.83 / 0.71 / 0.75 / 0.72 / 0.80 | 0.50 / 0.65 / 0.88 | 3.0 | prior |

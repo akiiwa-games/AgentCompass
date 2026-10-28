@@ -646,6 +646,10 @@ def validate_response(payload, answer, judge):
 
 def cli_prefix(provider):
     command = shutil.which(provider)
+    if not command and provider == 'grok':
+        # The official installer puts Grok Build in ~/.grok/bin without touching PATH; discovery counts that install.
+        installed = Path.home() / '.grok' / 'bin' / ('grok.exe' if os.name == 'nt' else 'grok')
+        command = str(installed) if installed.is_file() else None
     if not command:
         raise RuntimeError('Subscription CLI is not installed.')
     path = Path(command)

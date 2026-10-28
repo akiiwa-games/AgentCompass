@@ -7,6 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -30,7 +31,7 @@ WORKER_PROMPTS_DIR = Path.home() / '.route-manager' / 'worker-prompts'
 WORKER_COMMUNICATION = SKILLS / 'route-agent-work' / 'references' / 'worker-communication.md'
 # Without Paseo, each CLI family runs one routed bundle unattended with full tool access, as Paseo would launch it:
 # executable and flags for (model, effort, cwd). agy takes its prompt only as the argument after --print; the
-# others read it from stdin.
+# others read it from stdin; grok reads neither (headless ignores stdin) and takes --prompt-file.
 CLI_RUNS = {
     'claude': ('claude', lambda model, effort, cwd, fast=False: ['-p', '--model', model, *(['--effort', effort] if effort else []),
                                                                  '--permission-mode', 'bypassPermissions']),
@@ -42,11 +43,14 @@ CLI_RUNS = {
     'pi': ('pi', lambda model, effort, cwd, fast=False: ['-p', '--model', model if '/' in model else f'openai-codex/{model}', *(['--thinking', effort] if effort else [])]),
     'antigravity-resilient': ('agy', lambda model, effort, cwd, fast=False: ['--dangerously-skip-permissions', '--model', model,
                                                                              '--add-dir', cwd, '--print']),
+    'grok': ('grok', lambda model, effort, cwd, fast=False: ['--always-approve', '-m', model,
+                                                           *(['--reasoning-effort', effort] if effort else []), '--cwd', cwd]),
     'opencode': ('opencode', lambda model, effort, cwd, fast=False: [
         'run', '-m', model if '/' in model else f'opencode/{model}',
         *(['--variant', effort] if effort else []), '--dir', cwd]),
 }
 PROMPT_ARGUMENT = ('antigravity-resilient', 'opencode')
+PROMPT_FILE = ('grok',)
 # The caller's own session and subscription; a CLI worker gets its provider's, never these.
 HOST_SESSION_ENV = ('CLAUDE', 'CODEX_', 'PASEO_AGENT')
 
@@ -269,11 +273,41 @@ def provider_definition(provider, bundle=None):
                 provider = 'pi'
             elif orig_provider.startswith('opencode-'):
                 provider = 'opencode'
+        if provider not in CLI_RUNS and provider_inventory.launcher_family(orig_provider) == 'grok':
+            provider = 'grok'  # a ready Grok ACP definition extends acp, but its CLI is Grok Build
     if provider == 'claude' and orig_provider != 'claude' and 'CLAUDE_CONFIG_DIR' not in env and 'ANTHROPIC_BASE_URL' not in env:
         env['CLAUDE_CONFIG_DIR'] = os.environ.get('CLAUDE_HOME_2') if orig_provider == 'claude-2' and os.environ.get('CLAUDE_HOME_2') else str(Path.home() / f'.{orig_provider}')
     elif provider == 'codex' and orig_provider != 'codex' and 'CODEX_HOME' not in env and 'OPENAI_BASE_URL' not in env:
         env['CODEX_HOME'] = os.environ.get('CODEX_HOME_2') if orig_provider == 'codex-2' and os.environ.get('CODEX_HOME_2') else str(Path.home() / f'.{orig_provider}')
     return provider, env
+
+
+def cli_command(family, provider, judge):
+    if family == 'grok':
+        # The executable the provider's Paseo definition names (its sibling grok when it names agent) is the one to run;
+        # a configured command is never swapped for another install. Discovery applies only when none is configured.
+        providers = (dispatch_flow.paseo_config().get('agents') or {}).get('providers')
+        providers = providers if isinstance(providers, dict) else {}
+        for _ in range(len(providers) + 1):
+            spec = providers.get(provider) if isinstance(providers.get(provider), dict) else {}
+            command = spec.get('command')
+            if isinstance(command, list) and command and isinstance(command[0], str):
+                name = command[0]
+                configured = Path(name)
+                if configured.stem.lower() not in ('grok', 'agent'):
+                    raise RuntimeError(f'The command configured for {provider!r} is not a Grok executable: {name}')
+                if configured.name == name:  # bare name: Paseo resolves it through PATH, never the worker's cwd
+                    resolved = shutil.which(name)
+                    configured = Path(resolved) if resolved else None
+                found = configured and next((c for c in (configured.with_name('grok' + configured.suffix), configured)
+                                             if c.is_file()), None)
+                if found is None:
+                    raise RuntimeError(f'The Grok executable configured for {provider!r} is missing: {name}')
+                return [str(found)]
+            if not spec.get('extends'):
+                break
+            provider = spec['extends']
+    return judge.cli_prefix(CLI_RUNS[family][0])
 
 
 def cli(args, out, bundle, text, judge):
@@ -296,11 +330,14 @@ def cli(args, out, bundle, text, judge):
         if os.name == 'nt' else {'start_new_session': True}
     prompt_argument = family in PROMPT_ARGUMENT
     try:
-        argv = [*judge.cli_prefix(executable), *flags(bundle.get('launch_model') or bundle['model'], bundle.get('effort'), cwd, bool(bundle.get('fast')))]
+        argv = [*cli_command(family, bundle['provider'], judge),
+                *flags(bundle.get('launch_model') or bundle['model'], bundle.get('effort'), cwd, bool(bundle.get('fast')))]
+        if family in PROMPT_FILE:
+            argv += ['--prompt-file', str(run / 'brief.md')]
         with open(run / 'brief.md', 'rb') as brief, open(run / 'output.txt', 'wb') as stdout, \
                 open(run / 'stderr.txt', 'wb') as stderr:
             process = subprocess.Popen(argv + [text] if prompt_argument else argv, cwd=cwd, env=env,
-                                       stdin=subprocess.DEVNULL if prompt_argument else brief,
+                                       stdin=subprocess.DEVNULL if prompt_argument or family in PROMPT_FILE else brief,
                                        stdout=stdout, stderr=stderr, **options)
     except (RuntimeError, OSError) as exc:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',

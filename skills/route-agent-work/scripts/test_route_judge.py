@@ -309,6 +309,22 @@ GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, '
                'reason': 'Click one button and take a screenshot.'}
 
 
+class CliPrefixTests(unittest.TestCase):
+    def test_grok_installed_outside_path_resolves_to_its_home_binary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            installed = Path(tmp) / '.grok' / 'bin' / ('grok.exe' if router.os.name == 'nt' else 'grok')
+            with patch.object(router.shutil, 'which', return_value=None), patch.object(router.Path, 'home', return_value=Path(tmp)):
+                with self.assertRaisesRegex(RuntimeError, 'not installed'):
+                    router.cli_prefix('grok')
+                installed.parent.mkdir(parents=True)
+                installed.write_bytes(b'')
+                self.assertEqual(router.cli_prefix('grok'), [str(installed)])
+                with self.assertRaisesRegex(RuntimeError, 'not installed'):
+                    router.cli_prefix('codex')
+            with patch.object(router.shutil, 'which', return_value='C:/tools/grok.exe'):
+                self.assertEqual(router.cli_prefix('grok'), [str(Path('C:/tools/grok.exe'))])
+
+
 class SystemOneScorerTests(unittest.TestCase):
     """Contract tests for System-One scoring via Gemini 3.8 Flash low and heuristic fallback."""
 

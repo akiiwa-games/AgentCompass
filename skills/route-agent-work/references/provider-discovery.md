@@ -116,6 +116,18 @@ request preparation; existing account, quota and launch authorization checks sti
 apply. Grok/ACP receives no invented permission mode. Tests pair ready and disabled
 launchers, exercise reported/missing quota, and verify no unlimited bonus.
 
+Without a usable Paseo launcher, `roll` runs a ready Grok provider through its own
+Grok Build CLI (`dispatch_mode: cli`): `grok --always-approve -m <model>
+[--reasoning-effort <effort>] --cwd <cwd> --prompt-file <run>/brief.md`, with stdin closed
+(headless Grok ignores stdin) and the reply on stdout; exit `0` ok, `1` error. The routed
+model and effort are passed unchanged; the CLI has no fast mode (the registry already
+rejects `fast` for non-fast-capable models). The executable is the provider's configured
+Paseo command (its sibling `grok` when that names `agent`), else `grok` on PATH, else
+`~/.grok/bin/grok` (the installer does not edit PATH), the same binary discovery counts.
+The provider's Paseo `env` is applied; a configured command that is missing or is not a
+Grok executable (bare names resolve through PATH) fails the launch (native handoff)
+instead of picking another install. `grok-bot` is separate.
+
 Normalization strips provider prefixes, dated/version tags and known suffixes,
 then tries longest known prefixes and family defaults. Scores never replace the
 advertised launch ID. Unknown model IDs get the generic 3.3-tier text-only baseline.

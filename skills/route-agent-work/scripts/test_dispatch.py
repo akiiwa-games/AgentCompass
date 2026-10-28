@@ -590,6 +590,114 @@ class RollTests(unittest.TestCase):
                     (result, code), _ = self.roll(decision)
                     self.assertEqual((result['launched'], result['dispatch_mode'], calls), (False, 'native', []))
 
+    FAKE_GROK = (
+        "import json, os, sys\n"
+        "out = {'argv': sys.argv[1:], 'cwd': os.getcwd(), 'stdin': sys.stdin.read(), 'env': dict(os.environ),\n"
+        "       'prompt': open(sys.argv[sys.argv.index('--prompt-file') + 1], encoding='utf-8').read()}\n"
+        "open(os.environ['FAKE_GROK_RECORD'], 'w', encoding='utf-8').write(json.dumps(out))\n"
+        "print('grok reply')\n"
+        "sys.exit(int(os.environ.get('FAKE_GROK_EXIT', '0')))\n")
+
+    def grok_roll(self, command, **flags):
+        import roll as roll_module
+        (self.root / '.paseo' / 'config.json').write_text(json.dumps({'agents': {'providers': {
+            'grok': {'extends': 'acp', 'enabled': True, 'env': {'GROK_FIXTURE_ACCOUNT': 'bound'}}}}}))
+        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['grok']}))
+        bundle = {'provider': 'grok', 'account': 'grok', 'model': 'grok-4.7', 'effort': 'high', 'bundle_id': 'grok47_high'}
+        decision = dict(stage='plan', choice='grok47_high', selected_bundle=bundle, decision={'action': 'start'})
+        inventory = {'accounts': {}, 'launchers': {'grok': {'family': 'grok', 'status': 'ready'}}}
+        host = {'PASEO_HOME': str(self.root / '.paseo'), 'CLAUDECODE': '1', 'CODEX_HOME': 'C:/host/.codex-2',
+                'FAKE_GROK_RECORD': str(self.root / 'grok-record.json')}
+        with patch.object(allocator.provider_inventory, 'current', return_value=inventory), \
+                patch.object(roll_module, 'CLI_RUNS_DIR', self.root / 'runs'), \
+                patch.object(flow, 'host_call', side_effect=AssertionError('no Paseo')), \
+                patch.object(roll_module, 'cli_command', command):
+            return self.roll(decision, parent='', parent_id='parent-a', parent_host='paseo', env=host, **flags)[0]
+
+    def test_no_daemon_grok_runs_headless_with_prompt_file_on_its_bound_account(self):
+        fake = self.root / 'fake_grok.py'
+        fake.write_text(self.FAKE_GROK, encoding='utf-8')
+        seen = []
+
+        def command(family, provider, judge):
+            seen.append((family, provider))
+            return [sys.executable, '-I', str(fake)]
+        for label, exit_code, expected in (('success', '0', 0), ('failed run keeps its reply and exit', '3', 1)):
+            with self.subTest(label), patch.dict(os.environ, {'FAKE_GROK_EXIT': exit_code}):
+                result, code = self.grok_roll(command, wait=30)
+            record = json.loads((self.root / 'grok-record.json').read_text(encoding='utf-8'))
+            prompt = self.assert_worker_prompt(result, parent='parent-a')
+            run_dir = Path(result['worker']['output']).parent
+            self.assertEqual((result['launched'], result['dispatch_mode'], code), (True, 'cli', expected))
+            self.assertEqual(result['caller_action'], 'already_launched_do_not_respawn')
+            self.assertEqual(seen[-1], ('grok', 'grok'))
+            self.assertEqual(record['argv'], ['--always-approve', '-m', 'grok-4.7', '--reasoning-effort', 'high',
+                                              '--cwd', str(Path.cwd()), '--prompt-file', str(run_dir / 'brief.md')])
+            self.assertEqual((record['cwd'], record['stdin'], record['prompt']), (str(Path.cwd()), '', prompt))
+            self.assertEqual(record['env']['GROK_FIXTURE_ACCOUNT'], 'bound')
+            self.assertEqual((record['env']['ROUTER_WORKER'], record['env']['ROUTER_PARENT_AGENT_ID']), ('1', 'parent-a'))
+            self.assertFalse({'CLAUDECODE', 'CODEX_HOME'} & set(record['env']))
+            self.assertEqual((result['worker']['exit'], result['worker']['reply'].strip()), (int(exit_code), 'grok reply'))
+
+    def test_grok_launch_failure_reports_native_handoff_without_a_second_start(self):
+        import roll as roll_module
+        starts = []
+
+        def missing(command, **_):
+            starts.append(command)
+            raise FileNotFoundError(command[0])
+
+        def not_installed(*_):
+            raise RuntimeError('Subscription CLI is not installed.')
+        for label, command in (('no installed CLI', not_installed), ('executable vanished', lambda *_: ['grok-missing'])):
+            with self.subTest(label), patch.object(roll_module.subprocess, 'Popen', missing):
+                result, code = self.grok_roll(command, wait=30)
+            self.assertEqual((result['launched'], result['dispatch_mode'], code), (False, 'native', 1))
+            self.assertIn('worker_prompt_file', result['next'])
+        self.assertEqual(starts, [['grok-missing', '--always-approve', '-m', 'grok-4.7', '--reasoning-effort', 'high',
+                                   '--cwd', str(Path.cwd()), '--prompt-file', starts[0][-1]]])
+
+    def test_grok_cli_command_uses_the_providers_configured_executable_then_discovery(self):
+        import roll as roll_module
+        bin_dir = self.root / 'grok-bin'
+        bin_dir.mkdir()
+        agent, grok = bin_dir / 'agent.exe', bin_dir / 'grok.exe'
+        agent.write_bytes(b'')
+        judge = type('Judge', (), {'cli_prefix': staticmethod(lambda name: ['discovered-' + name])})
+
+        def configure(providers):
+            (self.root / '.paseo' / 'config.json').write_text(json.dumps({'agents': {'providers': providers}}))
+        with patch.dict(os.environ, {'PASEO_HOME': str(self.root / '.paseo')}):
+            configure({'grok': {'extends': 'acp', 'command': [str(agent), 'agent', '--always-approve', 'stdio']},
+                       'grok-2': {'extends': 'grok'}})
+            self.assertEqual(roll_module.cli_command('grok', 'grok', judge), [str(agent)])
+            grok.write_bytes(b'')  # the sibling grok binary is the CLI when the definition names agent
+            self.assertEqual(roll_module.cli_command('grok', 'grok-2', judge), [str(grok)])
+            agent.unlink()
+            grok.unlink()
+            with self.assertRaisesRegex(RuntimeError, 'configured for .grok.*missing'):
+                roll_module.cli_command('grok', 'grok', judge)
+            for command in (['wrapper.cmd', 'stdio'], ['npx', '-y', 'some-grok-acp']):
+                configure({'grok': {'extends': 'acp', 'command': command}})
+                with self.assertRaisesRegex(RuntimeError, 'not a Grok executable'):
+                    roll_module.cli_command('grok', 'grok', judge)
+            bare = self.root / 'on-path' / 'agent.exe'
+            bare.parent.mkdir()
+            bare.write_bytes(b'')
+            configure({'grok': {'extends': 'acp', 'command': ['agent', 'stdio']}})
+            with patch.object(roll_module.shutil, 'which', lambda name: str(bare) if name == 'agent' else None):
+                self.assertEqual(roll_module.cli_command('grok', 'grok', judge), [str(bare)])
+            (self.root / 'agent').write_bytes(b'')  # a file in the worker's cwd is never the configured command
+            here = os.getcwd()
+            os.chdir(self.root)
+            self.addCleanup(os.chdir, here)
+            with patch.object(roll_module.shutil, 'which', return_value=None),                     self.assertRaisesRegex(RuntimeError, 'missing: agent'):
+                roll_module.cli_command('grok', 'grok', judge)
+            os.chdir(here)
+            configure({'grok': {'extends': 'acp'}})
+            self.assertEqual(roll_module.cli_command('grok', 'grok', judge), ['discovered-grok'])
+            self.assertEqual(roll_module.cli_command('codex', 'codex', judge), ['discovered-codex'])
+
     def test_routes_that_cannot_launch_here_do_not_launch(self):
         paseo = dict(stage='plan', choice='sonnet55_high_2', selected_bundle=self.bundle, decision={'action': 'start'})
         cases = (('user decision', dict(paseo, decision={'action': 'start', 'needs_user_decision': True}), 'parent-a', 2),
