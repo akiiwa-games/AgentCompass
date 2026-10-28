@@ -70,6 +70,48 @@ class RouterGateHookTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': '', 'ROUTER_WORKER': '1'}):
             self.assertEqual(gate.evaluate_payload({'tool_name': 'request_user_input_async'})['decision'], 'block')
 
+    def test_parent_continuation_keeps_completion_notifications(self):
+        worker_id = self.existing_agent(provider='')
+        agent_file = self.state / 'agents' / 'project' / (worker_id + '.json')
+        cases = (
+            ('router owner', 'parent', {'router.parent_id': 'parent'}, False, True),
+            ('paseo owner', 'parent', {'paseo.parent-agent-id': 'parent'}, False, True),
+            ('both owners', 'parent', {'router.parent_id': 'parent', 'paseo.parent-agent-id': 'parent'}, False, True),
+            ('enabled', 'parent', {'router.parent_id': 'parent'}, True, False),
+            ('default', 'parent', {'router.parent_id': 'parent'}, None, False),
+            ('other caller', 'peer', {'router.parent_id': 'parent'}, False, False),
+            ('unknown caller', '', {'router.parent_id': 'parent'}, False, False),
+            ('unknown owner', 'parent', {}, False, False),
+            ('conflicting owners', 'parent', {'router.parent_id': 'parent', 'paseo.parent-agent-id': 'other'}, False, False),
+            ('self-conflicting owner', 'parent', {'router.parent_id': 'parent', 'paseo.parent-agent-id': worker_id}, False, False),
+            ('self', worker_id, {'router.parent_id': worker_id}, False, False),
+            ('missing record', 'parent', None, False, False),
+            ('unreadable record', 'parent', 'broken json', False, False),
+        )
+        for label, caller, labels, notify, blocked in cases:
+            if labels is None:
+                agent_file.unlink(missing_ok=True)
+            else:
+                agent_file.write_text(json.dumps({'labels': labels}) if isinstance(labels, dict) else labels,
+                                      encoding='utf-8', newline='\n')
+            args = {'agentId': worker_id, 'prompt': 'continue', 'background': True}
+            if notify is not None:
+                args['notifyOnFinish'] = notify
+            for payload in (
+                {'tool_name': 'send_agent_prompt', 'tool_input': args},
+                {'tool_name': 'mcp__paseo__send_agent_prompt', 'tool_input': args},
+                {'toolName': 'send_agent_prompt', 'input': args},
+                {'toolCall': {'name': 'send_agent_prompt', 'args': args}},
+                {'tool_name': 'exec', 'tool_input': 'await tools.mcp__paseo__send_agent_prompt(' + json.dumps(args) + ')'},
+            ):
+                with self.subTest(case=label, payload=payload), \
+                        mock.patch.dict(os.environ, {'PASEO_AGENT_ID': caller}), \
+                        mock.patch.object(gate, 'load_dispatch_settings', return_value=({}, None)):
+                    result = gate.evaluate_payload(payload)
+                    self.assertEqual('reason' in result, blocked)
+                    if blocked:
+                        self.assertIn('notifyOnFinish: true or omit it', result['reason'])
+
     def exhausted_cache(self, **changes):
         row = {"available": True, "stale": False, "fetched_at": T0.isoformat(),
                "windows": [{"id": "five_hour", "used_pct": 100,
@@ -547,7 +589,7 @@ class RouterGateHookTests(unittest.TestCase):
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet, shell_launch),
                  (turn("codex"), turn("sonnet", parent_agent_id=ids["child"]))),
                 ({"accounts": {"claude-2": {"bundles": {"sonnet55_high_2": {"disabled": "用户在控制台停用该档位"},
-                                                        "opus55_high_2": {}}}}}, "用户在控制台停用该档位",
+                                                        "opus55_high_2": {"disabled": None}}}}}, "用户在控制台停用该档位",
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
                 ({"accounts": {"claude-2": {"verified": False}}}, "verified: false",
                  (turn("bare"), launch("sonnet")), (turn("codex"),))):
@@ -608,7 +650,8 @@ class RouterGateHookTests(unittest.TestCase):
         ledger = self.write_ledger(str(self.state), [expired, self.route("dot")])
         self.assertEqual(gate.evaluate_payload(payload, ledger_path=ledger, now=T0)["decision"], "block")
 
-    def test_structured_model_effort_and_correlation_mismatches(self):
+    @mock.patch.object(gate, 'load_dispatch_settings', return_value=({}, None))
+    def test_structured_model_effort_and_correlation_mismatches(self, _settings):
         ledger = self.write_ledger(str(self.state), [self.route(parent_agent_id="a", task_id="task-a", agent_id="target-a")])
         for extra, diagnostic in (({"provider": "pi/gpt-6-astra"}, "provider"),
                                   ({"provider": "codex/gpt-6-sol"}, "model"),

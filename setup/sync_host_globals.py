@@ -92,7 +92,7 @@ rg -n -C 3 --max-count 5 -e 'PATTERN' -- <显式路径> | head -100
 5. 续用已有 agent（SendMessage / 追加 prompt）仅在 worker **历史累计未压缩上下文** `< 2M` tokens（`compacted_tokens + context_tokens`，按历次压缩前历史上下文总和 + 当前窗口计算，绝不能用压缩后的当前上下文窗口算）时免重选；一旦历史累计上下文 `>= 2M` tokens，必须把进展与剩余工作写成交接任务书、用 `route_judge.py roll --brief <handoff.md> --hours <预估小时>` 换新 worker，禁止把重度压缩的旧 worker 一直续用到失忆。换 owner、换 model、换 effort 同样要重选。
 6. 门禁与巡检：各宿主已挂载 `PreToolUse` / `tool_call` 门禁（`{ROUTER_HOOK_SCRIPT}`），15 分钟内无 `~/.route-manager/router-ledger.jsonl` 路由记录的子 agent 启动会被直接拦截；`router_audit.py` 也会每日核对所有子 agent 启动记录。（注：仅对启动**子 agent / worker / 顾问会话**走 router；业务脚本或评测脚本内部调用的无工具单次分类/结构化 JSON 接口，不属于子 agent 派工，**不要**往 `router-ledger.jsonl` 写 `route_judge.py record`。）
 7. 启动子 agent 必须显式设置权限模式，不许省略旗标、不许用 provider 默认值。漏设的 claude worker 会静默卡在权限询问态（状态仍是 running，无心跳无产出）；codex 漏设会落到受限沙箱。取值：先用 router 返回的 `selected_bundle.modeId`，没有就按 provider：Paseo / CLI 的 codex 用 `--mode full-access`，claude 用 `--mode bypassPermissions`（`bypass` 不是合法值），antigravity 用 `full-access`，opencode 用 `build`；grok 无模式不传。只读角色（reviewer、advisor）按任务授权收窄，不要放大。启动后读一次 agent 状态，确认 mode 已生效、不是在等权限。
-8. **派工必须携带真实主会话寻址 ID，worker 向主会话询问必须直接发消息。** 任务书和派工上下文必须带上主会话 ID、所属宿主及消息地址；缺失时禁止启动，禁止用 top-level、任务 ID 或子会话自己的 ID 替代。Paseo 取发起者 `PASEO_AGENT_ID`；其他宿主由 `roll` 自动识别当前会话 ID（或携带协调者收件箱地址和真实 preamble）。需要澄清、决策或补充信息时，必须用真实 agent 消息通道向主会话发送问题；Paseo 用 `send_agent_prompt` 发给实际 parent agent ID，并设 `background: true, notifyOnFinish: false`，发出后结束本轮，不同步等主会话。禁止用 `AskUserQuestion`、`ask_user_question`、`request_user_input`、`request_user_input_async` 等不能通知主会话的交互提问工具，也不能只写本地日志假装已询问。无消息通道、无可用主会话地址或发送失败时，必须通过已有结果通道返回 `BLOCKED / needs_input`、具体问题与通信障碍并结束本轮，由调用方收取/转达；禁止静默挂起或把未回复当授权。`roll` 自动附加通信规则与主会话地址，原生派工也必须带上。此规则不限制主会话向真实用户提问，不替代平台审批。
+8. **派工必须携带真实主会话寻址 ID，worker 向主会话询问必须直接发消息。** 任务书和派工上下文必须带上主会话 ID、所属宿主及消息地址；缺失时禁止启动，禁止用 top-level、任务 ID 或子会话自己的 ID 替代。Paseo 取发起者 `PASEO_AGENT_ID`；其他宿主由 `roll` 自动识别当前会话 ID（或携带协调者收件箱地址和真实 preamble）。需要澄清、决策或补充信息时，必须用真实 agent 消息通道向主会话发送问题；Paseo 用 `send_agent_prompt` 发给实际 parent agent ID，并设 `background: true, notifyOnFinish: false`，发出后结束本轮，不同步等主会话。主会话向自己派出的 worker 追加任务、放行或续用时，`send_agent_prompt` 必须设 `notifyOnFinish: true`（或省略以保持默认）；完成通知与最终回复是无消息工具 worker（如 agy）的结果通道。禁止用 `AskUserQuestion`、`ask_user_question`、`request_user_input`、`request_user_input_async` 等不能通知主会话的交互提问工具，也不能只写本地日志假装已询问。无消息通道、无可用主会话地址或发送失败时，必须通过已有结果通道返回 `BLOCKED / needs_input`、具体问题与通信障碍并结束本轮，由调用方收取/转达；禁止静默挂起或把未回复当授权。`roll` 自动附加通信规则与主会话地址，原生派工也必须带上。此规则不限制主会话向真实用户提问，不替代平台审批。
 """
 
 SHARED_GLOBAL_MD = f"""# 全局执行纪律（本机所有项目通用）
@@ -136,7 +136,7 @@ SHARED_GLOBAL_MD = f"""# 全局执行纪律（本机所有项目通用）
 5. 续用已有 agent（SendMessage / 追加 prompt）仅在 worker **历史累计未压缩上下文** `< 2M` tokens（`compacted_tokens + context_tokens`，按历次压缩前历史上下文总和 + 当前窗口计算，绝不能用压缩后的当前上下文窗口算）时免重选；一旦历史累计上下文 `>= 2M` tokens，必须把进展与剩余工作写成交接任务书、用 `route_judge.py roll --brief <handoff.md> --hours <预估小时>` 换新 worker，禁止把重度压缩的旧 worker 一直续用到失忆。换 owner、换 model、换 effort 同样要重选。
 6. 门禁与巡检：各宿主已挂载 `PreToolUse` / `tool_call` 门禁（`{ROUTER_HOOK_SCRIPT}`），15 分钟内无 `~/.route-manager/router-ledger.jsonl` 路由记录的子 agent 启动会被直接拦截；`router_audit.py` 也会每日核对所有子 agent 启动记录。（注：仅对启动**子 agent / worker / 顾问会话**走 router；业务脚本或评测脚本内部调用的无工具单次分类/结构化 JSON 接口，不属于子 agent 派工，**不要**往 `router-ledger.jsonl` 写 `route_judge.py record`。）
 7. 启动子 agent 必须显式设置权限模式，不许省略旗标、不许用 provider 默认值。漏设的 claude worker 会静默卡在权限询问态（状态仍是 running，无心跳无产出）；codex 漏设会落到受限沙箱。取值：先用 router 返回的 `selected_bundle.modeId`，没有就按 provider：Paseo / CLI 的 codex 用 `--mode full-access`，claude 用 `--mode bypassPermissions`（`bypass` 不是合法值），antigravity 用 `full-access`，opencode 用 `build`；grok 无模式不传。只读角色（reviewer、advisor）按任务授权收窄，不要放大。启动后读一次 agent 状态，确认 mode 已生效、不是在等权限。
-8. **派工必须携带真实主会话寻址 ID，worker 向主会话询问必须直接发消息。** 任务书和派工上下文必须带上主会话 ID、所属宿主及消息地址；缺失时禁止启动，禁止用 top-level、任务 ID 或子会话自己的 ID 替代。Paseo 取发起者 `PASEO_AGENT_ID`；其他宿主由 `roll` 自动识别当前会话 ID（或携带协调者收件箱地址和真实 preamble）。需要澄清、决策或补充信息时，必须用真实 agent 消息通道向主会话发送问题；Paseo 用 `send_agent_prompt` 发给实际 parent agent ID，并设 `background: true, notifyOnFinish: false`，发出后结束本轮，不同步等主会话。禁止用 `AskUserQuestion`、`ask_user_question`、`request_user_input`、`request_user_input_async` 等不能通知主会话的交互提问工具，也不能只写本地日志假装已询问。无消息通道、无可用主会话地址或发送失败时，必须通过已有结果通道返回 `BLOCKED / needs_input`、具体问题与通信障碍并结束本轮，由调用方收取/转达；禁止静默挂起或把未回复当授权。`roll` 自动附加通信规则与主会话地址，原生派工也必须带上。此规则不限制主会话向真实用户提问，不替代平台审批。
+8. **派工必须携带真实主会话寻址 ID，worker 向主会话询问必须直接发消息。** 任务书和派工上下文必须带上主会话 ID、所属宿主及消息地址；缺失时禁止启动，禁止用 top-level、任务 ID 或子会话自己的 ID 替代。Paseo 取发起者 `PASEO_AGENT_ID`；其他宿主由 `roll` 自动识别当前会话 ID（或携带协调者收件箱地址和真实 preamble）。需要澄清、决策或补充信息时，必须用真实 agent 消息通道向主会话发送问题；Paseo 用 `send_agent_prompt` 发给实际 parent agent ID，并设 `background: true, notifyOnFinish: false`，发出后结束本轮，不同步等主会话。主会话向自己派出的 worker 追加任务、放行或续用时，`send_agent_prompt` 必须设 `notifyOnFinish: true`（或省略以保持默认）；完成通知与最终回复是无消息工具 worker（如 agy）的结果通道。禁止用 `AskUserQuestion`、`ask_user_question`、`request_user_input`、`request_user_input_async` 等不能通知主会话的交互提问工具，也不能只写本地日志假装已询问。无消息通道、无可用主会话地址或发送失败时，必须通过已有结果通道返回 `BLOCKED / needs_input`、具体问题与通信障碍并结束本轮，由调用方收取/转达；禁止静默挂起或把未回复当授权。`roll` 自动附加通信规则与主会话地址，原生派工也必须带上。此规则不限制主会话向真实用户提问，不替代平台审批。
 """
 
 PASEO_APPEND_SYSTEM_PROMPT = (
@@ -147,6 +147,7 @@ PASEO_APPEND_SYSTEM_PROMPT = (
     "roll 会自动识别宿主环境并自动选择 Paseo / CLI / Dot 派发。若返回 launched=true（caller_action=already_launched_do_not_respawn），代表 roll 已把 worker 启动完毕，严禁再调任何子 agent 工具重复启动！"
     "仅当 launched=false 且 dispatch_mode=native 时按 next 与 route.bundle 原生启动；dispatch_mode=self 时当前会话自己做。"
     "worker 历史累计未压缩上下文 >= 2M tokens 时禁止继续追加 prompt，必须写交接任务书重新 roll；"
+    "主会话向自己派出的 worker 追加任务/放行/续用时，send_agent_prompt 必须设 notifyOnFinish=true（或省略保持默认），完成通知与最终回复是无消息工具 worker（如 agy）的结果通道；"
     "worker 向主会话询问必须用真实消息通道（Paseo 用 send_agent_prompt 发给实际 parent ID，设 background=true、notifyOnFinish=false，发出后结束本轮），禁止 request_user_input_async / AskUserQuestion / ask_user_question / request_user_input 等交互工具；无法发送时返回 BLOCKED / needs_input 并结束本轮。"
 )
 
@@ -333,7 +334,7 @@ def unify_global_docs() -> None:
             continue
         backup_path(path, f"docs/{backup_name}")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        path.write_text(content, encoding="utf-8", newline="\n")
         print(f"[docs] Updated {path}")
 
 
@@ -364,7 +365,7 @@ def update_paseo_config() -> None:
             cleaned.append(item)
         agy_env["PATH"] = ";".join(cleaned)
 
-    cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"[paseo] Updated {cfg_path} (appendSystemPrompt + deduplicated antigravity PATH)")
 
 

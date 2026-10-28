@@ -756,6 +756,19 @@ def evaluate_payload(
             calls.extend(("exec_command", {"cmd": command}) for command in extract_shell_commands(tool_input))
     executing = []
     for name, args in calls:
+        if (name in ("send_agent_prompt", "mcp__paseo__send_agent_prompt")
+                and caller_id and args.get("notifyOnFinish") is False):
+            for agent_id in detect_target_agent_ids(name, args):
+                # Only persisted ownership proves direction; absent/conflicting
+                # labels or caller identity leave this notification check open.
+                labels = agent_labels(load_paseo_agent(agent_id, paseo_agents_dir))
+                parents = [labels.get(key) for key in ("router.parent_id", "paseo.parent-agent-id") if labels.get(key)]
+                if agent_id != caller_id and parents and all(parent == caller_id for parent in parents):
+                    return format_response(False, harness_kind,
+                        '[Router Gate] Parent-to-worker send_agent_prompt must keep completion '
+                        'notifications enabled. Set notifyOnFinish: true or omit it; completion '
+                        'notifications and the final reply are the result channel for workers '
+                        'without messaging tools (e.g. agy). Worker-to-parent questions may use false.')
         trigger = detect_subagent_launch(name, args)
         if trigger or name in PASEO_TURN_TOOLS or (
             name in CODEMODE_TOOLS | SHELL_TOOLS and CODEMODE_TURN_AGENT_RE.search(json.dumps(args, ensure_ascii=False))

@@ -11,4 +11,14 @@ This rule applies when a delegated worker, subagent or advisor needs clarificati
 
 This does not prohibit the main session from asking the real user a question, and does not replace or bypass platform-required approvals.
 
+**Parent-to-worker continuation:** when the main session uses `send_agent_prompt` to add work, give clearance or resume its own worker, it must set `notifyOnFinish: true` (or omit it to retain the default); completion notifications and the final reply are the result channel for workers without messaging tools, such as agy. The `notifyOnFinish: false` rule above applies only to worker-to-parent questions.
+
+## Completion-notification gate contract
+
+- **Failure:** disabling completion notifications can lose the result of a worker without messaging tools.
+- **Action:** block only `send_agent_prompt` with explicit `notifyOnFinish: false` from a parent to its own worker, including statically parsed wrapper calls.
+- **Decision:** the hook's caller ID must equal the target's locally persisted `router.parent_id` / `paseo.parent-agent-id`; conflicting labels do not prove ownership. No network lookup is needed.
+- **Recovery:** set `notifyOnFinish: true` or omit the parameter. Worker-to-parent questions remain allowed.
+- **Degrade:** missing caller identity, missing/unreadable target records, ambiguous ownership or dynamic wrapper arguments leave this check open; other router checks still apply.
+
 In native host orchestrators use the real host message channel to the bound coordinator inbox, preserving the live preamble's exact sender and lifecycle arguments. A durable question message is a parent message; a local question TUI is not. Follow this router contract's end-turn rule rather than leaving a worker synchronously waiting on its parent.
