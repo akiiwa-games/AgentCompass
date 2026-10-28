@@ -1,0 +1,10 @@
+{
+  "name": "agentcompass-paseo-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@getpaseo/client": "0.11.2",
+    "ws": "8.22.0"
+  }
+}

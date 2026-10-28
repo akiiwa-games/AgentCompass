@@ -57,3 +57,9 @@
 paseo-antigravity-resilient/
 paseo-pi-fast/
 paseo-agy-retry/
+
+!/setup/paseo-bridge/
+/setup/paseo-bridge/*
+!/setup/paseo-bridge/package.json
+!/setup/paseo-bridge/package-lock.json
+!/setup/paseo-bridge/README.md

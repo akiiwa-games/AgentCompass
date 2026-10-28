@@ -60,10 +60,16 @@ export async function execute(client, input) {
 async function main() {
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
   const setup = path.dirname(fileURLToPath(import.meta.url));
-  const sdkRoot = process.env.ROUTER_PASEO_SDK_ROOT ?? path.resolve(setup, '../../paseo-plugins/paseo-pi-fast/node_modules');
+  const sdkRoot = process.env.ROUTER_PASEO_SDK_ROOT ?? path.join(setup, 'paseo-bridge/node_modules');
   const require = createRequire(path.join(path.resolve(sdkRoot), '_router_dispatch.cjs'));
-  const {DaemonClient} = await import(pathToFileURL(require.resolve('@getpaseo/client/internal/daemon-client')).href);
-  const {WebSocket} = require('ws');
+  let daemonClientModule, WebSocket;
+  try {
+    daemonClientModule = require.resolve('@getpaseo/client/internal/daemon-client');
+    ({WebSocket} = require('ws'));
+  } catch (cause) {
+    throw new Error('Paseo bridge dependencies are missing in ' + sdkRoot + '. Run: npm --prefix setup/paseo-bridge ci (from the repository root), or set ROUTER_PASEO_SDK_ROOT.', {cause});
+  }
+  const {DaemonClient} = await import(pathToFileURL(daemonClientModule).href);
   // Local credential stays inside the adapter. No remote URL/credential forwarding.
   let listen = '127.0.0.1:6767';
   try {
@@ -89,5 +95,9 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => { console.log(JSON.stringify({ok: false, sent: false, error: 'sdk_setup_failed'})); process.exitCode = 1; });
+  main().catch(error => {
+    const setupHint = error.message?.startsWith('Paseo bridge dependencies are missing') ? error.message : undefined;
+    console.log(JSON.stringify({ok: false, sent: false, error: 'sdk_setup_failed', setupHint}));
+    process.exitCode = 1;
+  });
 }
