@@ -20,7 +20,7 @@ planned ──► started ──► heartbeat ──► completed
 
 ## 2. In-Flight Quota Deduction
 
-When `allocator.plan()` evaluates an account window (`claude`, `claude-2`, `codex`, `antigravity`):
+When `allocator.plan()` evaluates an account window from the effective account fleet:
 1. Active dispatches (`planned` or `started`/`heartbeat` with `lease_until > now`) whose `at` timestamp is newer than `usage[account].fetched_at` (or where `used_pct` has not yet moved past the dispatch baseline) reserve their `expected_usd` (or `expected_pct`) against remaining window capacity.
 2. Once the worker finishes (`completed`/`failed`/`cancelled`) or `usage-cache.json` reflects the spent quota, the reservation is released so quota is never double-counted.
 

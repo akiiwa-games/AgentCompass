@@ -30,6 +30,12 @@ Produced automatically by `score_task` (via `agy --model gemini-3.8-flash-low --
 
 When the System-One classifier runs on `plan`, its `work_kind` and `difficulty` (`reasoning_depth`) are authoritative and override any manual `work_kind` or `difficulty` supplied by the caller (`caller_classification_ignored`).
 
+If `needs.local_only` is unset, the profile's `local_only: true` is also authoritative. The router copies the profile `reason` into `needs.local_only_reason` and emits `profile_local_only_applied`; it does not apply the caller-reason validator to this judgment. The deterministic fallback supplies its own profile `reason` and follows the same rule. Explicit caller values win, including `needs.local_only: false` in `plan` input, which keeps Dot eligible subject to route and modality constraints. Caller-supplied `true` still uses the existing local-dependency validation. No separate negative flag exists on `roll`.
+
+Route `implies` fill `local_only` and `visual` only when both the caller and the profile left that flag unset. A classifier `local_only: false` on `research_packet` or `exploration_analysis` does not exclude Dot. When the System-One scorer is unavailable, the heuristic profile sets `local_only` (and names it in `reason`) when the objective or context matches a local runtime (`ssh`, `pytest`, `daemon`, `localhost`, `credentials`, and the same set the caller validator uses) or a local path (`C:\`, `~/`, a working tree, local repo, or local daemon). Caller true or false still wins over that inference and over route implies.
+
+`needs_gui` adds the visual requirement. It rewrites `work_kind` to `computer_use` only when the profile did not name a real route and the caller kind is missing or generic (`general_implementation`, `tool_execution`, `debug_review`, `other_or_mixed`). A classifier route such as `general_implementation` stays that route.
+
 ## 3. Value minus cost
 
 Allocation has three layers. They do not mix.

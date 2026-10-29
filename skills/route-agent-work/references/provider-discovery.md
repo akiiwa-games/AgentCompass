@@ -53,6 +53,18 @@ rows first, then normalized names, family priors, and a conservative generic
 baseline. These defaults are provisional estimates, not benchmark measurements.
 Duplicate launchers share one subscription quota owner.
 
+Account IDs do not determine provider family, credential home or quota reserves.
+Discovery supplies family and home; an explicit account `family` can describe an
+offline configuration. Any named Claude account can participate in judge selection.
+Judge credentials and session-limit logs use the discovered home, including custom
+paths. Per-window `launch_min_remaining_pct` expresses an account's reserve; no
+additional reserve is inferred from a secondary-account name or plan label.
+
+Quota sharing between independent integrations is explicit: top-level
+`quota_sources` maps an account to its quota owner, or an account sets `quota_source`.
+For example, a Grok Bot account shares Grok Build observations and reservations only
+when that binding is configured. Otherwise they retain independent quota state.
+
 ## Automatic admission of newly discovered accounts
 
 The local host allowlist predates account discovery. An omitted name in an old
@@ -92,12 +104,16 @@ it does not invent model benchmarks or quota capacity.
 `route_judge.py providers`; a configured exact Bot ID plus the pinned local CLI
 and Node makes its launcher available. This is setup availability, not proof of
 current login: upstream performs a live read-only check before send. Billing and
-underlying model identity remain unknown. Its service profile reuses the generic
-text baseline as an explicit routing assumption, with native weekly quota
-observations and unknown consumption, never a free/unlimited bonus. See
+underlying model identity remain unknown. Public service scores are conservative
+priors. Personal ratings and model route order belong in the local fleet.
+Any quota-sharing binding must be explicit in account configuration; the bound
+owner supplies observation freshness, reset and capacity policy. Execution
+enablement stays independent, and missing/stale quota never proves unlimited
+capacity. See
 [setup, receipts and roll commands](grok-bot.md).
 
-Grok has its own subscription account and `grok47_high` bundle. Local evidence is
+Grok Build owns its own subscription meter and configured bundles. Another runner
+uses that meter only through an explicit quota-source binding. Local evidence is
 an enabled Paseo Grok definition, a Grok CLI/config directory, or an active CC
 Switch Grok/GrokBuild profile. Cache metadata alone does not prove a client is
 installed. An explicit Paseo disable or bound CC Switch unhealthy state still
@@ -162,11 +178,3 @@ machine's live subscriptions. Obsolete documentation of direct OAuth probes and
 gateway discovery has been removed: collection belongs to the existing backend.
 Explicit model overrides cannot bypass account pause, and a prepared dispatch
 rechecks availability immediately before claiming its launch.
-
-Validated 2026-10-26: 104 tests (103 passed, one existing platform skip), 10 routing
-documents, live local provider inventory and a CLI allocation dry-run. No agents
-were launched. This change adds approximately 1,240 lines including the 18 discovery
-scenarios, integration, fixtures and documentation; the adapter has 83 conditional
-statements for source parsing, identity binding, availability and policy projection.
-The local CC Switch database yielded six profiles. Local Magpie runtime data was
-not found at a discovered path; its state transitions were verified with fixtures.

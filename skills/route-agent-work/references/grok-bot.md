@@ -18,35 +18,33 @@ runner (like Dot), not a Paseo-native provider or an OpenAI-compatible endpoint.
 It uses third-party `grok-bot-cli` from the fixed, unreleased upstream PR158 commit
 below (base version 0.12.4), with a small dependency-level scope correction.
 Authentication and HTTP transport stay in upstream code.
-Model quality and cost are unknown; usage-float may supply native quota observations.
+Underlying model identity and cost are unknown; usage-float may supply native quota observations.
 A canonical dispatch bundle participates in ordinary automatic routing when
 ready and enabled; explicit requests remain supported. The existing
 `grok` / Grok Build integration is independent.
 
-Usage-float's `grok_bot_usage.py` reads the official client's `weekly-usage.cache`
-for the current native account slot. It preserves the source observation time and
-staleness; the official client owns network refresh. Grok Bot has its own display
-entry. The adapter does not infer a shared pool or merge it with a local Grok Build
-account from a plan label. Observed quota does not establish model quality,
-capacity estimates. Routing uses the explicitly provisional profile below.
+Quota sharing with another runner is an explicit account binding in the effective
+configuration. A configured binding reuses the owner's observations, freshness,
+capacity and active reservations. A service name or plan label alone does not prove
+shared quota, model identity, unlimited capacity or a dollar price.
 
 ## Minimal dispatch contract
 
 - Automatic routing: a ready, enabled Bot enters the ordinary candidate pool.
-  The service profile uses the router's generic 3.3-tier text baseline as a
-  provisional routing assumption, not a claim about its underlying model or
-  benchmarks. Normal capability, account and specialist-route policies apply.
+  Public scores are conservative low-confidence priors. Personal service ratings,
+  route position and shared-pool burn calibration belong in the local fleet.
+  Normal capability, account and configured route policies apply.
   Local-only work, file transfer/application and visual inputs are incompatible;
   an explicit refusal of outbound work excludes this remote worker. Private
   material still requires the caller's existing outbound authorization.
-- Native weekly observations use their original freshness and reset. With no
-  measured burn rate or USD capacity, consumption remains unknown and keeps the
-  ordinary uncertainty penalty. Only fresh active-window observations below the
-  existing launch floor block quota admission; stale/missing data is not empty
-  or free. Recovery is a refreshed native observation or a compatible provider.
-  Native trial observations keep the separate `trial` ID and have no assumed
-  cycle. A fresh exhausted trial blocks new work even without a reset timestamp;
-  missing timestamps never imply renewal. Stale or unknown usage remains unknown.
+- When `quota_sources` (or an account's `quota_source`) explicitly binds the Bot to
+  another account, the owner's observations retain their original freshness and reset.
+  Missing or stale owner data stays unknown; a Bot snapshot cannot replace it. Fresh
+  exhausted owner quota applies its configured launch floor to both runners.
+  Capacity/demand and the provisional percent-per-worker-hour prior come from
+  the configured quota owner; these are priors rather than measured Bot burn or dollar prices.
+  Active dispatch reservations are matched by the configured shared quota pool.
+  Without a binding, each account keeps its own observations and reservations.
 
 - Failure: upstream send can time out after acceptance. Replaying can execute the
   same remote action twice. Persist the receipt before calling send; an existing
@@ -72,7 +70,7 @@ capacity estimates. Routing uses the explicitly provisional profile below.
   provider/account/model/effort combinations. A configured `grok-bot` registers
   only provider/account/model `grok-bot` with no effort, using the existing account
   bundle catalog. This service ID does not normalize to a Grok model-family alias.
-  The ordinary allocator ranks its provisional service profile;
+  The ordinary allocator ranks its effective configured service profile;
   unknown billing receives no estimated spend or free-usage bonus. Wrong
   model/effort combinations and disallowed host accounts retain their existing
   rejection. Recovery is the documented canonical command/configuration, not a

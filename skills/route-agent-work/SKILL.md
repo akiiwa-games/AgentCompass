@@ -1,6 +1,6 @@
 ---
 name: route-agent-work
-description: Choose owner, model and effort, outbound authorization, advisor use, and continuation for delegated work. Reads local subscription usage, profiles the task automatically with a System-One classifier (Gemini 3.8 Flash low via agy, deterministic fallback), then picks the worker with a deterministic allocator (ability, task fit and capability vectors, minimum-sufficient ability, remaining capacity with reset and expiry, expected consumption, continuity). Prefers the local OpenAI Dot (free, its own computer, code and data handed over) for any work that need not run on this machine, and sends only simple coding-plus-tool-call work to Gemini 3.8 Flash (huge quota, not the preferred coder). Use when a concrete task may benefit from an independent worker or advisor; ordinary local execution needs no routing.
+description: Choose owner, model and effort, outbound authorization, advisor use, and continuation for delegated work. Reads local usage and effective account policy, profiles the task with the configured System-One scorer, then allocates a compatible worker. Use for independent worker or advisor work; ordinary local execution needs no routing.
 ---
 
 # Route Agent Work
@@ -47,10 +47,11 @@ Grok Bot uses the distinct provider/account/model selector `grok-bot` and joins
 automatic routing when ready and enabled; no override flags are needed.
 Follow [Grok Bot setup and usage](references/grok-bot.md) for the pinned upstream
 CLI and `roll` command. It runs remotely and accepts text; no local file access
-or Paseo-native support is implied. Its service-level score is a provisional
-generic text baseline, not a model benchmark; native weekly observations retain
-freshness while capacity, burn and dollar cost stay unknown. Local-only, visual
-and file-transfer tasks exclude it. Private material needs outbound authorization.
+or Paseo-native support is implied. The service has independent conservative public
+capability priors; its underlying model identity and dollar price remain unknown.
+Quota ownership, capacity and local ratings come from effective account configuration.
+The channel still excludes local-only, visual, GUI and file-transfer work: the Bot
+cannot see images, transfer files, or run on this machine. Shared Grok observations retain their freshness; no separate Bot meter is read. Private material needs outbound authorization.
 For uncertain delivery, `launched` is `null` and `caller_action` is
 `check_delivery_do_not_resend`: run `continuation_argv`, never submit again.
 
@@ -90,7 +91,7 @@ Standard `task.json`:
 
 **Classifier Authority Rule (No Manual Classification by Parent Agents)**:
 - **Do NOT manually fill `work_kind`, `difficulty`, or `profile` in `task.json`, and do NOT read classification examples or rubrics.**
-- `route_judge.py plan` automatically invokes the System-One classifier (`gemini-3.8-flash-low` via `agy` by default; the user may select TypeSafe Jev, Claude Fable/Sonnet low, Codex Sol low, a custom OpenAI-compatible API or the offline heuristic with `route_judge.py scorer --action set` or the AgentCompass settings page, stored in `~/.route-manager/scorer-config.json`) to determine the route category (`work_kind`), difficulty floor, and 10D `TaskProfile` (including `divergence` `1..3`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
+- `route_judge.py plan` automatically invokes the System-One classifier (inspect `route_judge.py scorer --action show` for the effective scorer and available choices; configure it with `scorer --action set` or AgentCompass settings) to determine the route category (`work_kind`), difficulty floor, and 10D `TaskProfile` (including `divergence` `1..3`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
 - When the caller leaves `needs.local_only` unset, a classifier profile with `local_only: true` is trusted: the router sets `needs.local_only: true`, copies the profile `reason` into `needs.local_only_reason`, and records `profile_local_only_applied`. This judgment is not rechecked by the caller-reason validator. Explicit caller values take precedence; `needs.local_only: false` in `plan` input keeps work Dot-eligible subject to route and modality constraints. `roll` has no separate negative flag.
 - Factual `task` fields the parent agent may provide:
   - `objective` (required): Concrete description of what the worker must accomplish and how it will be verified.
@@ -132,39 +133,44 @@ New bound Claude/Codex launchers inherit the existing model policy; saved profil
 without a launcher are listed without changing the user's active account. See
 [provider discovery and quota sources](references/provider-usage.md).
 
-Defined in [`scripts/allocator.py`](scripts/allocator.py) using parameters in [`references/accounts.json`](references/accounts.json) and routes in [`references/model-capabilities.json`](references/model-capabilities.json):
+The sole machine-readable public catalogue is [`references/accounts.json`](references/accounts.json).
+Its model rows and `capability_policy` define public capability priors and route scopes.
+[`model-capabilities.json`](references/model-capabilities.json) and
+[`model-capabilities.md`](references/model-capabilities.md) are generated views; regenerate
+with `python -X utf8 skills/route-agent-work/scripts/capability_catalog.py` (`--check` verifies them).
 
-1. **Hard Gates**:
-   - Discovered account/launcher availability (`verified` is derived locally), explicit host policy ([`scripts/host_policy.py`](scripts/host_policy.py)), and known subscription expiry (`expires_at`).
-   - Modality gates: `needs.visual` excludes text-only models (`grok-4.7`, `dot`); `local_only: true` (trusted from the classifier, or supplied by the caller with a valid `local_only_reason`) excludes `dot`.
-   - Conditional bundles (`when.max_reasoning_depth: 1`): `sol_medium` and `pi_sol_medium` are offered only on profiled mechanical tasks (`reasoning_depth == 1`).
-   - Ability floor: `ability_value = tier + effort_ability >= ability_floor[difficulty] + (0.3 if critical else 0.0)`.
-   - Window reserve & in-flight reservations: Excludes windows whose remaining capacity after active in-flight dispatches falls below `hard_floor_pct` / `reserve_pct`.
-2. **Minimum-Sufficient Ability & Effort Cap**:
-   - Ability normally saturates at `floor + 0.6`; non-precision frontend work saturates at `floor + 0.3` so sufficient reasoning leaves visual/design fit to decide UI quality. On minimum-sufficient tasks meeting the floor is full ability (so `Flash 3.8` at the routine floor 3.0 is not handicapped against 3.4+ models).
-   - On standard `routine` and `hard` non-critical tasks (`reasoning_depth <= 2`), effort above `high` earns zero extra ability score (`effort_capped: true`). Coupled/frontier, depth >= 3, critical tasks and depth >= 2/divergence >= 2/hallucination_risk >= 3 unlock higher effort.
-   - High precision means unlocked frontier/critical work, or hallucination_risk >= 3 with divergence >= 2 or depth >= 3/code >= 3. Ability is measured above the critical-adjusted gate (minimum-sufficient work still treats meeting the floor as full ability). Positive effort ability gains above High earn an uncapped `0.14 * gain` quality bonus; effort burn and opportunity cost still discourage higher efforts under scarcity. Ordinary coupled work receives no precision bonus.
-   - On minimum-sufficient tasks (`routine`/`hard`, non-critical, `code_complexity < 3`, `divergence < 3`), models above `floor + 0.3` pay an `overqualification` penalty of `0.08 * excess * usd_per_hour / $10` (price factor capped at `overqualification_price_cap` 3.0, so `Astra` at $22.6/h pays 2.26x; GUI work keeps the $10 cap). GUI and frontend implementation are exempt above `reasoning_depth` 1 because visual quality benefits from higher tiers.
-3. **6D Capability Vector Fit (`vector_fit`) & 3D Subjective Preference Fit (`subjective_fit`)**:
-   - Keeps the canonical 15 `work_kind` routes unchanged while blending `17%` route preference (`route_fit`), `34%` 6D capability satisfaction (`vector_fit`: `reasoning`, `coding`, `exploration`, `anti_hallucination`, `visual`, `gui`), and `49%` 3D subjective model inclination (`subjective_fit`: `divergence`, `global_rigor`, `module_precision`):
-     - **`gemini-4-argon-high`** (`divergence: 0.96`): Prioritized when `profile.divergence == 3` (scheme formulation, creative research, open-ended ideation, architectural innovation).
-     - **`claude-opus-5-5`** (`global_rigor: 0.98`, `module_precision: 0.92`): Prioritized when `code_complexity == 3` or `context_scale == 3` with convergent rigor (`divergence <= 2` — architectural landing, holistic cross-module synthesis, subtle edge cases).
-     - **`gpt-6.1-sol`** (`module_precision: 0.95`, `global_rigor: 0.25`): Prioritized for bounded single-module implementation (`context_scale == 1`, `code_complexity in 1..2`, `reasoning_depth == 2`, `divergence == 1`), and heavily penalized on cross-module / repo-wide (`context_scale == 3`) tasks due to limited global vision.
-     - Weights sum to 1 and step smoothly (`convergent_weights`): production code at depth <= 2 is `module_precision` 1.0 at scale 1 and 0.75/0.25 at scale 2; read-only review/analysis is 0.65/0.35 and 0.5/0.5; `global_rigor >= 0.8` only at depth >= 3 with scope, scale 3 or code 3; `divergence == 2` (and `complex_build_plan`) adds a 0.4 divergence share to that blend.
-     - Routine convergent tasks (depth 1, scale <= 2, code <= 2) use route/vector fit without subjective weights, allowing Flash to absorb routine volume. Frontend implementation at divergence < 3 uses `global_rigor` 0.65 / `divergence` 0.35, preserving Opus > Argon > Astra under healthy quota. Route preference is capped only at divergence 3, scale 3 or code 3; frontend keeps its intentional route ordering.
-4. **Opportunity Cost, Pre-Reset Surplus Bonus & Historical Context / Compaction Rotation**:
-   - Prices each task in expected API-equivalent USD (`usd_per_hour * hours * duration_multiplier * burn / 0.70`, where slower models like `gemini-4-argon-high` and `gpt-6.1-sol` carry `duration_multiplier = 1.35`) against each window's remaining USD and demand forecast (`shortage_probability * shortage_loss_per_usd * expected_usd`). Every subscription window, Antigravity's included (`capacity_usd` gemini-weekly $625), is valued in USD; only a window with no USD capacity at all falls back to worker-hours at the bundle's own burn. Default baseline task durations when omitted are `{"routine": 0.4, "hard": 1.0, "coupled": 2.0, "frontier": 3.5}` hours.
-   - Value and cost stay on one scale. `harness_factor` (default `1.0`; Antigravity Claude `0.9`) multiplies weighted fit and ability only. `scoring.opportunity_exchange` is the only rate between that value and quota: `score_per_displaced_usd` `0.012` (about `$83.33` of displaced USD per score point) and `score_per_displaced_worker_hour` `0.06` when a window has no USD capacity. `exchange_rate` reads those fields; top-level `shortage_loss_per_usd` and `shortage_loss_per_worker_hour` are a deprecated fallback, and a conflicting old key is ignored with a plan warning. A multi-pool bundle is gated by its tightest window; opportunity cost sums every window, and the binding window is the one with the highest cost. Codex versus Pi remains `harness_order` (sibling-only, `0.03` per place, best sibling unchanged). See [judge-workflow.md](references/judge-workflow.md).
-   - Weekly windows behind their linear schedule floor observed demand at half the linear pace, preventing a quiet day from erasing future demand. A smooth scarcity charge (up to 0.06, weighted by shortage probability) grows as usable quota after the task falls below 45%; short windows receive no scarcity charge. Quota at 60% or 95% remains unaffected for small tasks.
-   - Within `reset_horizon_hours` (`36h`) of a weekly window reset, surplus quota above expected demand (`usable - step - mean`, saturating at `reset_surplus_ref_pct = 15%` weighted by `1 - shortage_probability`) earns an expiring-reset bonus up to `reset_bonus_max` (`+0.20`) and proportionally discounts `overqualification`.
-   - **Fast Mode (`fast_mode` at `2.0x` burn)**: For `fast_capable` Codex bundles (`gpt-6.1-sol`, `gpt-6-astra`), the allocator automatically enables `selected_bundle.fast = true` (dispatched as `settings: { features: { "fast_mode": true } }` in Paseo or `-c features.fast_mode=true` on Codex CLI, reserving `2.0x` expected USD) when all windows stay above safety margins under `2.0x` burn and either:
-     1. **Fast-turnaround task + plentiful quota (`fast_requested_plentiful_quota`)**: `--fast`, `needs.fast: true`, or fast-turnaround wording in `objective`, with `>= 45%` usable quota remaining after `2.0x` burn, `shortage_probability <= 0.20`, and extra opportunity cost `<= 0.015`.
-     2. **Pre-reset sprint (`pre_reset_sprint`)**: Within `reset_horizon_hours` (`36h`) of weekly reset with `shortage_probability <= 0.20` and substantial expiring surplus after `2.0x` burn (`sunk_surplus >= 0.25` automatically, or `>= 0.05` when fast turnaround is requested).
-   - High-coupling chains stay with their current owner (`+0.30` continuity bonus) only while **historical uncompressed context** (`historical_context_tokens = compacted_tokens + context_tokens`, summing every pre-compaction context window replaced across the session's history plus the current active window — **never** just the post-compaction compressed window size) `< 2,000,000` tokens (`rotate_after_carried_tokens`). Once a worker reaches `2M` historical context tokens (regardless of compaction count), `router_gate_hook` blocks new turns on the old worker and `allocator.plan` sets `action = "rotate"` to dispatch a fresh worker with a handoff packet. The parent may still message its own currently running worker to steer or wrap up and produce that handoff; idle/unknown state receives no exemption.
+A full `~/.route-manager/accounts.local.json` supplies the machine's fleet and personal
+policy; sparse `accounts-override.json` preferences apply after discovery. Local fleet
+model rows and route policy also feed judge prompts. Keep personal ratings, route order,
+capacity/burn calibration and plan assumptions in this local layer. Keep their explanations
+in `~/.route-manager/host-rules/*.md`.
+
+The allocator first checks discovered availability, explicit disablement, host policy,
+expiry, required tools and modalities, configured route restrictions and ability floors.
+It then scores eligible candidates using the effective scoring weights, model capability
+priors, optional personal preference vectors, continuity and available quota evidence.
+Public routes have no model order and public scoring gives personal preference vectors
+zero weight. A route restricts models only with `restrict_models: true` and a nonempty
+`preferred` list. Account `model_defaults[model].disabled` supplies an explicit default
+for dynamically discovered bundles; individual saved bundle choices still take precedence.
+
+Generic account slots carry no plan capacity or burn estimate. Unknown quota is distinct
+from unlimited access. Configure capacity and any model-hour estimates locally; observed
+telemetry retains its source and freshness. Optional account `cadence` state
+(`window_seconds`, `limit`) measures dispatch frequency and never proves remaining quota.
+A local `capability_policy.remote_reroute_guard.enabled` may retain a remote adapter's
+reroute policy; the public catalogue does not enable a remote-first loop.
+
+Historical uncompressed worker context is `compacted_tokens + context_tokens`, including
+all pre-compaction context replaced over the session. At the configured rotation limit,
+start a fresh worker with a handoff. The parent can still steer its own running worker
+under the communication contract below.
 
 ---
 
 ## 3. Worker Launch, Communication & Permission Contract
+
+**Settings hold state only; never write a reason.** Users choose settings themselves in the UI. Store `disabled` only as `true` or `false`; never attach justification, notes or dated user instructions to a setting. Legacy string values load as `true` and must be saved as booleans. Router decision explanations belong in plan output and ledgers, not settings.
 
 **Questions to the main session must be sent as real messages.** A worker needing clarification/decisions must directly message its parent, never call `request_user_input_async`, `AskUserQuestion`, `ask_user_question`, `request_user_input` or similar UI-only tools that cannot communicate with the parent. In Paseo use `send_agent_prompt` to the actual parent ID with `background: true, notifyOnFinish: false`, then end the turn rather than synchronously waiting on the parent. If messaging is unavailable or fails, return `BLOCKED / needs_input` through the existing result channel and end the turn; the caller must collect/relay it. See the [communication contract](references/worker-communication.md) injected by `roll`. This does not restrict the main session asking the real user or bypass required approvals. For native/manual launches, include this contract and the actual parent ID, host and message address too. Missing parent information prohibits launch; the result-channel fallback applies only to delivery failures after launch.
 
@@ -184,10 +190,10 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 | :--- | :--- | :--- | :--- |
 | **`codex`** | Paseo / Codex CLI | `--mode full-access` | Engineering & GUI (`cua_repl`) harness for `gpt-6-astra` and `gpt-6.1-sol`. |
 | **`pi`** | Paseo (`provider: "pi"`) | `modeId: "full-access"` | Exploration & research-packet harness for GPT models (`launch_model: "openai-codex/<model>"`). |
-| **`claude`** / **`claude-2`** | Paseo / Claude CLI | `--mode bypassPermissions` | Max 20x (`claude`) and Pro (`claude-2`, Sonnet-only, `HOME=~/.claude-2`, guarded against 5h wall). |
-| **`antigravity-resilient`** | Paseo / `agy` CLI | `modeId: "full-access"` | `gemini-3.8-flash-high` (routine sink) and `gemini-4-argon-high` (frontier workhorse). |
+| **`claude`** | Paseo / Claude CLI | `--mode bypassPermissions` | Use the discovered launcher and configured account policy. |
+| **`antigravity-resilient`** | Paseo / `agy` CLI | `modeId: "full-access"` | Use a model and effort advertised by the adapter. |
 | **`opencode`** | Paseo (`provider: "opencode"`) | `modeId: "build"` | OpenCode free worker (`deepseek-v4.1-flash-free`, `launch_model: "opencode/deepseek-v4.1-flash-free"`). |
-| **`dot`** | [`dot-subagent`](../dot-subagent/SKILL.md) | `run_dot_task.py` | Free remote worker (`dot2api`); requires `needs.outbound_ok: true` if sending private material. |
+| **`dot`** | [`dot-subagent`](../dot-subagent/SKILL.md) | `run_dot_task.py` | Remote worker (`dot2api`); requires `needs.outbound_ok: true` if sending private material. |
 | **`grok-bot`** | [Grok Bot adapter](references/grok-bot.md) | `run_grok_bot.py` | Automatic remote text candidate; no local file transfer, private material requires outbound authorization. |
 | **`chatgpt-web`** | [`chatgpt-pro-consult`](../chatgpt-pro-consult/SKILL.md) | Browser bridge | `gpt-6-pro` advisor for `complex_build_plan` and `direction_reasoning`. |
 
@@ -197,10 +203,10 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 
 ## 4. Reference Files (Internal Router Specs — Parent Agents Need Not Read)
 
-- [`references/accounts.json`](references/accounts.json) — Account windows, USD ceilings, 6D capability vectors, tiers, effort curves, and bundle definitions.
+- [`references/accounts.json`](references/accounts.json) — Public model catalogue, conservative priors, route scopes, account slots and bundle definitions.
 - [`references/classifier-cases.json`](references/classifier-cases.json) — System-One classifier route definitions and calibration cases (loaded automatically by `route_judge.py`).
-- [`references/model-capabilities.md`](references/model-capabilities.md) — Zero-to-frontier-ceiling normalization formula, empirical benchmark matrix (`2026-10-19`), and effort curves.
-- [`references/model-capabilities.json`](references/model-capabilities.json) — Route definitions, modality defaults, and concise model summaries for judge prompts.
+- [`references/model-capabilities.md`](references/model-capabilities.md) — Generated catalogue view and prior limitations.
+- [`references/model-capabilities.json`](references/model-capabilities.json) — Generated policy/model view; runtime derives its policy from effective accounts.
 - [`references/dispatch-lifecycle.md`](references/dispatch-lifecycle.md) — Reservation state machine (`planned` -> `started` -> `completed`) and in-flight quota deduction.
 - [`references/judge-workflow.md`](references/judge-workflow.md) — System-One `TaskProfile` schema (`score`) and low-effort judge stages (`delegate`, `select`).
 - [`references/provider-usage.md`](references/provider-usage.md) — Live usage snapshot precedence, `capacity.json` overlay, host policy, and temporary overrides.

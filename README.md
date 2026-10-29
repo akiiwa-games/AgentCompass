@@ -2,14 +2,14 @@
 
 # 🧭 AgentCompass
 
-**Opus for architecture. Flash for chores. Dot for anything that doesn't need your machine.<br>
+**Match each task to your configured models, capabilities and available quota.<br>
 Decided by arithmetic, not habit.**
 
 A deterministic **multi-agent task router and subscription quota scheduler** for the **flat-rate AI subscriptions** you
 already pay for: **Claude Code** (Claude Max / Pro), **OpenAI Codex CLI** / **ChatGPT Pro**, **Google Antigravity** (`agy` / Gemini CLI),
 **Grok**, and **Paseo**. Unlike per-token API prompt routers (RouteLLM, OpenRouter), AgentCompass dispatches **sub-agents per task** —
-matching each brief to the most economical `model × effort` worker that clears the ability floor, pricing the choice in
-API-equivalent dollars against live 5-hour and 7-day rate-limit windows, spending surplus before weekly resets, rotating workers at
+matching each brief to a `model × effort` worker that clears the ability floor, using configured capacity and price estimates
+alongside observed quota windows, spending surplus before resets, rotating workers at
 2M cumulative context tokens, and enforcing a `PreToolUse` spawn gate.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
@@ -77,12 +77,12 @@ These bridge dependencies are only needed when using Paseo. The host rollout scr
 also installs them when it detects Paseo and the dependency directory is missing;
 if npm is unavailable it prints this command and continues the other host setup.
 
-> **Status: alpha.** Built by a heavy multi-subscription user for a live multi-agent fleet. The shipped
-> `accounts.json` and `model-capabilities.json` describe that reference fleet; treat them as an example template to
-> customize for your own subscriptions.
-> Bundle/model identifiers such as `opus55_high`, `sol_high`, `astra_high`, `argon_high`, and `flash_high` are logical
-> fleet capability profiles and aliases calibrated for the author's multi-host setup. Map them to your own provider/model
-> IDs in `accounts.json`; they are examples, not a required list of subscriptions.
+> **Status: alpha.** The shipped `accounts.json` is the public catalogue: neutral account slots, models and
+> conservative capability priors. Discovery resolves your signed-in accounts and launcher homes. Personal account,
+> scoring and capability policy belongs in `~/.route-manager/accounts.local.json`; `accounts-override.json` holds
+> subsequent user overrides. `model-capabilities.json` and `.md` are generated views, not separate configuration.
+> Bundle/model identifiers are logical profiles and aliases, not a required account list. The offline demo uses
+> an explicit synthetic reference fleet; ordinary routing uses your effective local configuration.
 
 ---
 
@@ -148,22 +148,26 @@ flowchart LR
 ```
 
 ```text
-score = harness_factor × (0.30·fit + 0.10·ability) + w·continuity
+score = harness_factor × (w_fit·fit + w_ability·ability) + w_continuity·continuity
       + reset_bonus + free_usage + boost + quality_bonus
       − opportunity_cost − effort_penalty − overqualification
 
-fit              = 0.17·route_fit + 0.34·capability_fit(6D) + 0.49·model_dna_fit(3D)
-harness_factor   = 1.0 (Antigravity Claude 0.9)
+fit              = w_route·route_fit + w_capability·capability_fit + w_subjective·model_dna_fit
+harness_factor   = configured harness factor (default 1.0)
 expected_usd     = usd_per_hour × hours × burn / 0.70
 opportunity_cost = sum over windows of displaced_usd × score_per_displaced_usd (0.012)
 ```
 
 Same model, different harness: value stays the same unless `harness_factor` says the harness is worse. Codex versus Pi is still a sibling-only `0.03` step (`harness_order`); the best sibling keeps its score. A bundle that draws several pools must clear every window, and the cost above is the sum. The window with the highest cost is the binding window. One score point is about `$83` of displaced subscription USD (`scoring.opportunity_exchange`).
 
+Weights come from effective scoring policy; public defaults give subjective model ratings zero weight.
+The USD terms apply when prices and capacity are configured. Unknown capacity remains unknown.
+
 Hard gates run first: local sign-in and credential health, host policy, modality (text-only models never receive visual
 work), `local_only`, ability floor by difficulty, and per-window safety reserves net of in-flight work. Weights and
-thresholds live in [`accounts.json`](skills/route-agent-work/references/accounts.json); models, prices, and DNA live in
-[`model-capabilities.json`](skills/route-agent-work/references/model-capabilities.json).
+thresholds, models and capability priors live in [`accounts.json`](skills/route-agent-work/references/accounts.json),
+composed with local policy. [`model-capabilities.json`](skills/route-agent-work/references/model-capabilities.json)
+is a generated view. Prices and capacity estimates are optional; absent measurements remain unknown.
 
 ## What's in the box
 
@@ -217,17 +221,17 @@ python -X utf8 skills/route-agent-work/scripts/route_judge.py providers
 
 Quota windows are collected directly by [`usage-float/usage_float.py`](https://github.com/akiiwa-games/usage-float/blob/main/usage_float.py) and scheduled headlessly by [`tray/usage_collector.py`](tray/usage_collector.py) every 5 minutes into `~/.usage-float/usage-cache.json` (with a diagnostic receipt at `~/.route-manager/usage-collector.json`):
 
-- **Dynamic Multi-Account Discovery**: Automatically detects primary and additional Claude homes (`~/.claude`, `~/.claude-2`, `~/.claude-*`), Codex homes (`~/.codex`, `~/.codex-2`, `~/.codex-*`), Paseo-configured account directories, and remote Magpie gateways (`magpie_usage.py`).
+- **Dynamic Multi-Account Discovery**: Automatically detects primary and conventional additional Claude/Codex homes (`~/.claude`, `~/.claude-*`, `~/.codex`, `~/.codex-*`), arbitrary named Paseo accounts with configured homes, and remote Magpie gateways (`magpie_usage.py`). Account family and launcher settings determine behavior.
 - **Activity-Aware Polling Cadence**: Active accounts poll roughly every 5 minutes, idle accounts every 30 minutes, and accounts with unknown/stale activity every 15 minutes. Failed probes respect the same cadence and per-credential `429` backoff.
 - **Read-Only Credential Safety**: The collector never rotates or overwrites CLI OAuth tokens. Token refresh is left strictly to the owning CLI (`claude`, `codex`, `agy`). Snapshots are bound to a one-way SHA-256 fingerprint of their credential source and updated via cross-process file locks and atomic file replacement.
 
-### Adding a Second Claude Account (`claude-2`)
+### Adding an isolated Claude account
 
-Paseo's `claude-2` provider extends Claude Code with both `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` set to `~/.claude-2` (never set `CLAUDE_SECURESTORAGE_CONFIG_DIR` to an empty string, or Claude Code will read the primary account's credentials while displaying the second account's profile).
+The account's Paseo provider extends Claude Code with both `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` set to its signed-in home. Keep both paths identical: an empty secure-storage path can select the primary account's credentials.
 
-After signing in with `~/.claude-2`:
+After signing in to the isolated home:
 1. Close the Usage Float window (so its shutdown does not overwrite `config.json`).
-2. Run `python setup/claude2_config.py` to back up existing settings under `~/.route-manager/backups/claude-2-*`, register the `claude-2` Paseo provider, enable `claude-2:7d` and `claude-2:5h` in Usage Float, and add `~/.claude-2/projects` to capacity analytics.
+2. Run `python setup/claude2_config.py --account team-backup --home <signed-in-home> --label 'Team backup'`. The script backs up existing settings, registers the named Paseo provider, enables that account's `7d` and `5h` Usage Float rows, and adds its projects directory to capacity analytics. The historical filename and no-argument `claude-2` default remain compatibility shortcuts.
 3. Run `paseo reload` and reopen Usage Float.
 
 ---

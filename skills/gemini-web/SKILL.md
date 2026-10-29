@@ -1,11 +1,11 @@
 ---
 name: gemini-web
-description: Run Gemini web work through Route Manager's signed-in Gemini Web Chrome (CDP 127.0.0.1:17849), including Gemini Omni 1.1 Flash (gemini-omni-1.1-flash) video generation and video-to-video editing in Google AI Studio with role-tagged source and reference media. Use when a task needs Gemini, AI Studio, Flow or Omni 1.1 through the browser rather than an API key.
+description: Run Gemini web work through AgentCompass's signed-in Gemini Web Chrome (CDP 127.0.0.1:17849), including Gemini Omni 1.1 Flash (gemini-omni-1.1-flash) video generation and video-to-video editing in Google AI Studio with role-tagged source and reference media. Use when a task needs Gemini, AI Studio, Flow or Omni 1.1 through the browser rather than an API key.
 ---
 
 # Gemini Web
 
-Route Manager keeps one Google Chrome signed in to the user's Google account for Gemini work:
+AgentCompass keeps one Google Chrome signed in to the user's Google account for Gemini work:
 `<route_manager>/gemini-web/` (`gemini-web/README.md`).
 The tray's **Gemini** line opens its window. This is a local tool that runs in the calling agent.
 It is not a worker and launches nothing. A delegated task that uses it must run on this machine:

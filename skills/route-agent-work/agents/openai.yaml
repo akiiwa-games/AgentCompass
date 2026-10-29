@@ -1,4 +1,4 @@
 interface:
   display_name: "Route Agent Work"
-  short_description: "Flash-first coding/tools; Sonnet/Sol low routing"
-  default_prompt: "Use $route-agent-work to read actual subscription usage, then use Sonnet 5 low or GPT-6.1-sol low to judge delegation. Prefer eligible Gemini 3.8 Flash High via Antigravity for coding and tool execution; every Flash worker packet uses gemini-3.8-flash-high. Preserve Dot/Astra/Pro/Fable routes, existing fallbacks, quota/reset evidence, authorization and continuation."
+  short_description: "Route work using effective configuration and usage"
+  default_prompt: "Use $route-agent-work: write the full task brief and run route_judge.py roll. Follow the returned selected bundle, permissions, authorization and continuation instructions. Read the effective scorer and routing configuration instead of assuming a model preference."
