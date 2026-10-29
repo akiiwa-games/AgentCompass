@@ -34,10 +34,16 @@ WINDOWS = {"appear": (0., TITLE_IN), "underline": (.1, .55), "classify": (TITLE_
            "fill": (7.05, 7.5), "fold": (7.8, 9.1), "effort": (8.35, 9.25)}
 HEAD_TRAVEL = .55       # seconds a leading speck flies from its glyph into the node
 ROUTE_SPAN = 1.2        # seconds a route head takes from the node to its model
-# Camera: still through the title hold and the kind, then one rightward pan whose
-# smoothstep velocity ramp is still near zero while the ink gathers and gains speed
-# as the routes leave the node; settled before the fold.
+# Camera: a slow creep for the whole film (never a dead stop) plus one rightward pan
+# whose smootherstep velocity ramps start as the ink gathers and gains speed as the
+# routes leave the node. Velocity is zero only at the very first and last frame.
 PAN_START, PAN_END, PAN_RAMP = WINDOWS["gather"][0], 7.8, 1.5
+CREEP = .04             # creep speed as a fraction of the pan's cruise speed
+CREEP_IN, CREEP_OUT = .9, 2.0
+# Master tempo (story seconds per wall second) = 1 + sum of C2 bumps: slower through
+# the readable moments, a little faster between them; integrates to DURATION.
+SLOW_PASSAGES = ((1.05, .85, -.22), (2.6, .45, -.22), (7.55, .5, -.22))
+FAST_CENTRES = ((4.3, 1.0), (6.1, .8))
 CAMERA_SPAN = 1.15      # pan distance in stage widths
 SUPERSAMPLE = 2         # every moving object is rasterized at 2x and box-filtered
 
@@ -60,26 +66,69 @@ def window(seconds, name):
 
 
 def _ramp(u):
-    """Integral of smoothstep on [0, 1]; equals .5 at u = 1."""
+    """Integral of smootherstep on [0, 1]; equals .5 at u = 1."""
     u = radar.clamp(u)
-    return u ** 3 - u ** 4 / 2
+    return u**6 - 3*u**5 + 2.5*u**4
+
+
+def _plateau(t, start, end, ramp_in, ramp_out):
+    """Position under a unit-speed plateau with smootherstep velocity ramps (C2 velocity)."""
+    if t <= start:
+        return 0.
+    total = (end - start) - .5*ramp_in - .5*ramp_out
+    if t >= end:
+        return total
+    if t < start + ramp_in:
+        return ramp_in * _ramp((t - start) / ramp_in)
+    if t > end - ramp_out:
+        return total - ramp_out * _ramp((end - t) / ramp_out)
+    return .5*ramp_in + (t - start - ramp_in)
 
 
 def camera_position(seconds, width):
-    """World x of the viewport's left edge: one C1 (indeed C2) curve, never beatwise."""
-    total = CAMERA_SPAN * width
-    span, ramp = PAN_END - PAN_START, PAN_RAMP
-    speed = total / (span - ramp)
-    t = seconds - PAN_START
-    if t <= 0:
-        return 0.
-    if t >= span:
-        return float(total)
-    if t < ramp:
-        return speed * ramp * _ramp(t / ramp)
-    if t > span - ramp:
-        return total - speed * ramp * _ramp((span - t) / ramp)
-    return speed * ramp * .5 + speed * (t - ramp)
+    """World x of the viewport's left edge: creep + pan, one C2 curve, never beatwise."""
+    main = _plateau(seconds, PAN_START, PAN_END, PAN_RAMP, PAN_RAMP)
+    creep = _plateau(seconds, 0., DURATION, CREEP_IN, CREEP_OUT)
+    totals = (_plateau(DURATION, PAN_START, PAN_END, PAN_RAMP, PAN_RAMP)
+              + CREEP * _plateau(DURATION, 0., DURATION, CREEP_IN, CREEP_OUT))
+    return CAMERA_SPAN * width * (main + CREEP * creep) / totals
+
+
+def _bump(x):
+    return (1 - x*x)**3 if -1 < x < 1 else 0.
+
+
+def _bump_integral(x):
+    """Integral of _bump from -1 to x (32/35 in total)."""
+    x = max(-1., min(1., x))
+    return x - x**3 + .6*x**5 - x**7/7 + 16/35
+
+
+def _tempo_terms():
+    slow = sum(a*w for _, w, a in SLOW_PASSAGES)
+    fast = -slow / sum(w for _, w in FAST_CENTRES)
+    return SLOW_PASSAGES + tuple((c, w, fast) for c, w in FAST_CENTRES)
+
+
+TEMPO = _tempo_terms()
+
+
+def tempo(wall):
+    """Story seconds per wall second: C2, never flat, minimum ~0.78."""
+    return 1 + sum(a * _bump((wall - c) / w) for c, w, a in TEMPO)
+
+
+def story_time(wall):
+    """Master time warp: story time for a wall-clock time; story_time(DURATION) == DURATION."""
+    if wall >= DURATION:
+        return DURATION
+    return max(0., wall + sum(a * w * _bump_integral((wall - c) / w) for c, w, a in TEMPO))
+
+
+def title_pose(t):
+    """The title breathes while it is read: ~1.5 px rise and +1.2 % scale, never still."""
+    drift = ease(t / (WINDOWS["gather"][1] + .3))
+    return -1.5*drift, 1 + .012*drift
 
 
 def frame_time(elapsed):
@@ -559,15 +608,20 @@ class TheatreRenderer:
         per route keeps its momentum through the node and leads that route."""
         s, w = self.s, self.w
         ox, oy = self.origin
-        title = self.glyph_points(self.title, 17, theme.INK, self.title_at)
-        kind = self.glyph_points(self.scene.kind, 12, theme.MUTED, self.kind_at)
+        # Seeds at the breathing title's pose when the gather begins.
+        dy, scale = title_pose(WINDOWS["gather"][0])
+        tx, ty = self.title_at
+        title = [(tx + (x - tx)*scale, ty + dy*s + (y - ty)*scale)
+                 for x, y in self.glyph_points(self.title, 17, theme.INK, self.title_at)]
+        kind = [(x, y + 1.2*s) for x, y in self.glyph_points(self.scene.kind, 12, theme.MUTED, self.kind_at)]
 
         def pick(points, count, salt):
             order = sorted(range(len(points)), key=lambda i: hash01(i*7.13 + salt))
             return [points[i] for i in order[:count]]
         ink = []
         for n, seed in enumerate(pick(title, 22, 1) + pick(kind, 8, 2)):
-            bend = (1 if n % 2 else -1) * (.18 + .12*hash01(n+37))
+            # A gentle bend keeps the ink near the glyphs' extent (no outward scatter).
+            bend = (1 if n % 2 else -1) * (.05 + .06*hash01(n+37))
             mid = lerp2(seed, self.origin, .5)
             control = (mid[0] - (oy-seed[1])*bend, mid[1] + (ox-seed[0])*bend)
             ink.append((seed, control, WINDOWS["gather"][0] + .3*hash01(n+11), .42 + .14*hash01(n+23), n))
@@ -617,19 +671,24 @@ class TheatreRenderer:
         if g < 1:
             # The title recedes a little as the kind gains, then breaks into ink.
             alpha = appear * (1 - .28*kind_in) * (1 - ease(g/.45))
-            self.blit(image, self.title, tx, ty, 17, theme.INK, scale=1., alpha=alpha, max_width=w*.88, cam=cam)
+            dy, scale = title_pose(t)
+            self.blit(image, self.title, tx, ty + dy*s, 17, theme.INK, scale=scale, alpha=alpha,
+                      max_width=w*.88, cam=cam)
             if alpha > 0:
-                self.probe["title"] = (tx - cam, ty, 1.)
+                self.probe["title"] = (tx - cam, ty + dy*s, scale)
             # The underline condenses toward its own centre, the node's position.
-            half = w * (.14*under - .095*kind_in) * (1 - ease(g/.5))
+            settle = ease((t - WINDOWS["classify"][0]) / 1.6)
+            half = w * (.14*under - .085*kind_in - .012*settle) * (1 - ease(g/.5))
             if half > .3:
                 draw.line(self.screen(((ox - half, oy), (ox + half, oy)), cam),
                           fill=(*ImageColor.getrgb(theme.ACCENT), round((135 + 70*kind_in)*appear)),
                           width=max(1, round((.9 + .5*kind_in)*s*self.k)))
             if self.scene.kind:
                 kx, ky = self.kind_at
-                self.blit(image, self.scene.kind, kx, ky - 5*s*(1 - kind_in), 12, theme.MUTED,
+                # Settles away from the underline, then keeps drifting ~1 px while read.
+                self.blit(image, self.scene.kind, kx, ky - 5*s*(1 - kind_in) + 1.2*s*settle, 12, theme.MUTED,
                           scale=.9 + .1*kind_in, alpha=kind_in*(1 - ease((g - .05)/.45)), cam=cam)
+                self.probe["kind"] = (kx - cam, ky - 5*s*(1 - kind_in) + 1.2*s*settle)
         ink, accent = ImageColor.getrgb(theme.INK), ImageColor.getrgb(theme.ACCENT)
         for seed, control, start, duration, n in self.ink:
             u = (t - start) / duration
@@ -936,7 +995,8 @@ class DecisionTheatre:
         if self.renderer is None:
             self.renderer = TheatreRenderer(self.scene,max(1,self.canvas.winfo_width()),
                                              max(1,self.canvas.winfo_height()),theme.FACTOR)
-        frame = self.renderer.frame(self.elapsed)
+        # The driver clock is wall time; every beat is placed on the warped story time.
+        frame = self.renderer.frame(story_time(self.elapsed))
         if self.photo is None or self.photo.width()!=frame.width or self.photo.height()!=frame.height:
             self.photo = ImageTk.PhotoImage(frame,master=self.canvas)
             self.canvas.itemconfigure(self.item,image=self.photo)

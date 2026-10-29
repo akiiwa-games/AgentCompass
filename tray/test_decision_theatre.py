@@ -67,33 +67,63 @@ def test_clock_boundaries_and_easing_are_continuous():
     assert max(b-a for a,b in zip(positions,positions[1:]))<5
 
 
-def test_camera_is_one_c1_curve_still_during_title_and_settled_before_fold():
+def test_camera_is_one_c2_curve_that_creeps_and_never_stops_mid_film():
     step=.001
     times=[i*step for i in range(round(dt.DURATION/step)+1)]
     x=[dt.camera_position(t,630) for t in times]
     v=[(b-a)/step for a,b in zip(x,x[1:])]
-    # Continuous velocity everywhere, including the ramp joints: no per-millisecond jump.
+    acc=[(b-a)/step for a,b in zip(v,v[1:])]
+    # Continuous velocity and acceleration everywhere, including every ramp joint.
     assert max(abs(b-a) for a,b in zip(v,v[1:])) < .5
-    assert all(p==0 for t,p in zip(times,x) if t<=dt.TITLE_HOLD)
-    assert v[round(dt.PAN_START/step)] == pytest.approx(0,abs=1e-3)
-    assert v[round(dt.PAN_END/step)] == pytest.approx(0,abs=1e-3)
+    assert max(abs(b-a) for a,b in zip(acc,acc[1:])) < 5
+    # Never a dead stop: only the first and last instants are at rest.
+    assert min(v[round(.25/step):round((dt.DURATION-.05)/step)]) > 0
+    assert v[0] == pytest.approx(0,abs=1e-3) and v[-1] == pytest.approx(0,abs=1e-2)
+    cruise=max(v)
+    hold=v[round(1.0/step)]
+    assert .02*cruise < hold < .08*cruise
+    assert x[-1]==pytest.approx(630*dt.CAMERA_SPAN)
     assert dt.PAN_END <= dt.WINDOWS['fold'][0]
 
 
-def test_title_holds_still_and_readable_before_anything_moves():
+def test_master_tempo_is_smooth_slow_when_read_and_preserves_total_time():
+    step=.001
+    walls=[i*step for i in range(round(dt.DURATION/step)+1)]
+    r=[dt.tempo(t) for t in walls]
+    assert dt.story_time(0)==0 and dt.story_time(dt.DURATION)==dt.DURATION
+    assert dt.story_time(dt.DURATION-1e-6)==pytest.approx(dt.DURATION,abs=1e-5)
+    story=[dt.story_time(t) for t in walls]
+    assert story==sorted(story)
+    assert min(r)>.7 and max(r)<1.25
+    assert max(abs(b-a) for a,b in zip(r,r[1:])) < .002
+    # Slower through each readable moment than between them.
+    for centre,_,amount in dt.SLOW_PASSAGES:
+        assert dt.tempo(centre) < 1
+    for centre,_ in dt.FAST_CENTRES:
+        assert dt.tempo(centre) > 1
+
+
+def test_title_breathes_but_stays_readable_before_the_kind():
     assert 1.2 <= dt.TITLE_HOLD-dt.TITLE_IN <= 1.5
     assert dt.DURATION <= 10
     assert all(start >= dt.TITLE_HOLD for name,(start,end) in dt.WINDOWS.items()
                if name not in ('appear','underline'))
     renderer=dt.TheatreRenderer(dt.scene_from_result(result()),630,600,1.5)
-    alphas=[]
-    renderer.blit=lambda image,value,*a,**k: alphas.append((value,k.get('alpha'),a[:2],k.get('scale')))
-    frames=[]
-    for t in (dt.TITLE_IN,.8,1.2,dt.TITLE_HOLD):
-        alphas.clear(); renderer.frame(t); frames.append(list(alphas))
-    titles=[[x for x in f if x[0]=='A real task'][0] for f in frames]
+    calls=[]
+    renderer.blit=lambda image,value,*a,**k: calls.append((value,k.get('alpha'),a[:2],k.get('scale')))
+    titles=[]
+    for i in range(round(dt.TITLE_IN*60),round(dt.TITLE_HOLD*60)+1):
+        calls.clear(); renderer.frame(i/60)
+        titles.append([x for x in calls if x[0]=='A real task'][0])
     assert all(alpha==1 for _,alpha,_,_ in titles)
-    assert len({(xy,scale) for _,_,xy,scale in titles})==1
+    ys=[xy[1] for _,_,xy,_ in titles]; scales=[sc for *_,sc in titles]
+    # Imperceptible drift (≤ 2 px, ≤ 1.2 %) that never stops.
+    assert 0 < ys[0]-ys[-1] < 2*1.5 and 1 < scales[-1] < 1.012
+    assert all(b<a for a,b in zip(ys,ys[1:]))
+    # In wall time the readable title lasts at least as long as in story time.
+    walls=[i/1000 for i in range(4000)]
+    readable=[w for w in walls if dt.TITLE_IN <= dt.story_time(w) <= dt.TITLE_HOLD]
+    assert readable[-1]-readable[0] >= 1.4
 
 
 def test_deadline_clock_never_lets_timer_granularity_alter_motion():
