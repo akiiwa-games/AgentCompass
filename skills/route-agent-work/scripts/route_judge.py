@@ -1845,6 +1845,40 @@ def _manage_overrides_locked(args, now=None):
     return {'stage': 'override', 'path': str(path), 'removed': removed, 'active': allocator.load_overrides(now, path, usage=usage, accounts=accounts, prune=False)}
 
 
+ONBOARD_HINT = ('Run `python -X utf8 setup/onboard.py` (or `agentcompass setup`) to detect the CLIs you are signed in to '
+                'and start usage collection.')
+
+
+def readiness_gap(accounts, usage):
+    """Describe why the router cannot honestly recommend anyone yet, or return None.
+
+    `no_ready_account`: discovery ran and not one account is launchable. `no_usage_data`: no collector snapshot exists,
+    so every pick is made without quota readings. A ready account with data on file is unaffected.
+    """
+    inventory = ((accounts.get('_discovery') or {}).get('accounts') or {})
+    if inventory and not any(row.get('status') == 'ready' for row in inventory.values() if isinstance(row, dict)):
+        return {'code': 'no_ready_account', 'fatal': True,
+                'message': 'No provider account is ready on this machine (no signed-in CLI was found). ' + ONBOARD_HINT}
+    if not usage.get('read_ok'):
+        return {'code': 'no_usage_data', 'fatal': False,
+                'message': 'No usage data is available (the collector has not produced a snapshot), so quota-aware '
+                           'ranking is running blind and the pick is a default, not a measured choice. ' + ONBOARD_HINT}
+    return None
+
+
+def apply_readiness_gap(planned, accounts, usage):
+    gap = readiness_gap(accounts, usage)
+    if gap is None:
+        return
+    planned.setdefault('alerts', []).append({'code': gap['code'], 'severity': 'warn', 'account': None, 'message': gap['message']})
+    if gap['fatal']:
+        planned['choice'] = 'none'
+        planned.pop('selected_bundle', None)
+        planned.setdefault('decision', {})['reason'] = gap['message']
+        planned['error'] = gap['code']
+        planned['next'] = ONBOARD_HINT
+
+
 def plan_stage(document, args):
     """Classify, allocate and record one task; shared by the plan and roll stages."""
     task = document.get('task')
@@ -1873,7 +1907,8 @@ def plan_stage(document, args):
         task = {**task, 'needs': needs}
     allocator = load_allocator()
     capabilities = allocator.load_capabilities()
-    policy = allocator.load_accounts()['scoring']
+    loaded_accounts = allocator.load_accounts()
+    policy = loaded_accounts['scoring']
     extra_alerts, scorer = [], None
     should_score = not args.no_score and (
         args.score or task.get('auto_score')
@@ -1934,6 +1969,7 @@ def plan_stage(document, args):
         unavailable.append('dot_text')
     planned = allocator.plan(task, usage, now, unavailable, records)
     planned['_unavailable'] = unavailable
+    apply_readiness_gap(planned, loaded_accounts, usage)
     if extra_alerts:
         planned.setdefault('alerts', []).extend(extra_alerts)
     if dot_down:

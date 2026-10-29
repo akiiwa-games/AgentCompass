@@ -345,6 +345,48 @@ GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, '
                'reason': 'Click one button and take a screenshot.'}
 
 
+class ReadinessGapTests(unittest.TestCase):
+    """A router with nothing to route to, or no quota data at all, must say so instead of returning a confident pick."""
+
+    @staticmethod
+    def accounts(*statuses):
+        return {'_discovery': {'accounts': {f'a{i}': {'status': s, 'family': 'claude'} for i, s in enumerate(statuses)}}}
+
+    def test_no_ready_account_is_fatal_and_points_at_onboarding(self):
+        gap = router.readiness_gap(self.accounts('missing_credentials', 'missing_client'), {'read_ok': True})
+        self.assertEqual((gap['code'], gap['fatal']), ('no_ready_account', True))
+        self.assertIn('setup/onboard.py', gap['message'])
+
+    def test_missing_usage_data_is_a_warning_not_a_failure(self):
+        gap = router.readiness_gap(self.accounts('ready'), {'read_ok': False})
+        self.assertEqual((gap['code'], gap['fatal']), ('no_usage_data', False))
+        self.assertIsNone(router.readiness_gap(self.accounts('ready'), {'read_ok': True}))
+        # No discovery inventory at all (tests, partial installs) leaves the existing behaviour alone.
+        self.assertIsNone(router.readiness_gap({}, {'read_ok': True}))
+
+    def test_apply_turns_the_fatal_gap_into_no_choice(self):
+        planned = {'choice': 'sonnet55_high', 'selected_bundle': {'account': 'a0'}, 'decision': {}}
+        router.apply_readiness_gap(planned, self.accounts('paused'), {'read_ok': True})
+        self.assertEqual((planned['choice'], planned['error']), ('none', 'no_ready_account'))
+        self.assertNotIn('selected_bundle', planned)
+        self.assertEqual(planned['alerts'][0]['severity'], 'warn')
+        self.assertIn('onboard.py', planned['decision']['reason'])
+
+    def test_plan_with_ready_account_but_no_cache_warns(self):
+        inventory = {'accounts': {'antigravity': {'family': 'antigravity', 'status': 'ready'}}, 'launchers': {}}
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'in.json'
+            source.write_text(json.dumps({'task': {'objective': 'x', 'expected_hours': 0.5, 'work_kind': 'general_implementation',
+                                                   'difficulty': 'routine'}}), encoding='utf-8')
+            out = io.StringIO()
+            missing = str(Path(directory) / '.usage-float' / 'usage-cache.json')
+            with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--no-score', '--input', str(source),
+                                            '--usage-cache', missing]),                     patch.object(router.provider_inventory, 'current', return_value=inventory),                     patch.object(router, 'dot_unreachable', return_value='down'),                     patch.object(router, 'read_ledger', return_value=[]),                     contextlib.redirect_stdout(out):
+                router.main()
+        alerts = {a['code']: a['severity'] for a in json.loads(out.getvalue())['alerts']}
+        self.assertEqual(alerts.get('no_usage_data'), 'warn')
+
+
 class CliPrefixTests(unittest.TestCase):
     def test_grok_installed_outside_path_resolves_to_its_home_binary(self):
         with tempfile.TemporaryDirectory() as tmp:

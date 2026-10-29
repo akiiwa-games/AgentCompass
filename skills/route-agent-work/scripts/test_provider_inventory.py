@@ -643,5 +643,51 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(allocator.accounts_override_path({'ROUTER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
 
 
+class IsolationRecipeTests(unittest.TestCase):
+    """Discovery under another home: which inherited environment variables still reach the real machine.
+
+    Pointing HOME/USERPROFILE at an empty directory is not enough. `discover()` honours an explicit PASEO_HOME (the
+    Paseo daemon sets it for every agent it starts), and CLAUDE_CONFIG_DIR / CODEX_HOME for the unnamed claude/codex
+    slots. An isolated run must pass an explicit `environ` (or clear those variables) as `detection_environ` does.
+    """
+
+    def setUp(self):
+        outer = tempfile.TemporaryDirectory(prefix='isolation-test-')
+        self.addCleanup(outer.cleanup)
+        self.real = Path(outer.name) / 'real-home'
+        self.sandbox = Path(outer.name) / 'new-user'
+        self.sandbox.mkdir(parents=True)
+        (self.real / '.paseo').mkdir(parents=True)
+        (self.real / '.paseo/config.json').write_text(json.dumps({'agents': {'providers': {
+            'codex-2': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.real / '.codex-2')}}}}}), encoding='utf-8')
+        (self.real / '.codex-2').mkdir()
+        (self.real / '.codex-2/auth.json').write_text(json.dumps({'tokens': {'account_id': 'X', 'access_token': 'SECRET'}}), encoding='utf-8')
+
+    def test_inherited_paseo_home_reaches_the_real_accounts(self):
+        leaked = inventory.discover(self.sandbox, {'PATH': '', 'PASEO_HOME': str(self.real / '.paseo')})
+        self.assertEqual(leaked['accounts']['codex-2']['status'], 'ready')
+        self.assertEqual(Path(leaked['accounts']['codex-2']['home']), self.real / '.codex-2')
+
+    def test_explicit_environ_isolates_the_new_user(self):
+        clean = inventory.discover(self.sandbox, {'PATH': ''})
+        self.assertNotIn('codex-2', clean['accounts'])
+        self.assertFalse([n for n, row in clean['accounts'].items() if row['status'] == 'ready'])
+
+    def test_unnamed_slots_follow_inherited_config_dirs(self):
+        leaked = inventory.discover(self.sandbox, {'PATH': '', 'CODEX_HOME': str(self.real / '.codex-2')})
+        self.assertEqual(leaked['accounts']['codex']['status'], 'ready')
+
+    def test_shipped_fleet_gives_a_new_user_no_candidates(self):
+        """accounts.json is the author's fleet; only discovery may make an account routable."""
+        env = {'ROUTER_PROVIDER_HOME': str(self.sandbox), 'ROUTER_STATE_DIR': str(self.sandbox / '.route-manager'),
+               'PASEO_HOME': str(self.sandbox / '.paseo'), 'USERPROFILE': str(self.sandbox), 'HOME': str(self.sandbox),
+               'ROUTER_CAPACITY': str(self.sandbox / 'capacity.json'), 'PATH': ''}
+        with patch.dict(inventory.os.environ, env, clear=True):
+            accounts = allocator.load_accounts()
+        self.assertTrue(accounts['accounts'])
+        self.assertEqual([n for n, spec in accounts['accounts'].items() if spec.get('verified')], [])
+        self.assertFalse([n for n in accounts['accounts'] if n in ('claude-2', 'codex-2')])
+
+
 if __name__ == '__main__':
     unittest.main()

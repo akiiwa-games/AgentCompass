@@ -45,16 +45,25 @@ recorded in an auditable, replayable ledger.
 # 1. Offline demo: no credentials, provider CLIs, or quota cache needed
 python -X utf8 skills/route-agent-work/scripts/route_judge.py plan --input examples/task.json --dry-run --demo
 
-# 2. Rank your own machine's signed-in providers using its local quota observations
+# 2. First-run onboarding: detect your signed-in CLIs, choose which accounts the router may use,
+#    fetch the usage collector, link the router skill and write the global agent rules.
+#    It asks before each step, backs up every file it changes, and never installs the spawn gate unless you say so.
+python -X utf8 setup/onboard.py            # add --dry-run to preview, --yes for non-interactive defaults
+
+# 3. Rank your own machine's signed-in providers using its local quota observations
 python -X utf8 skills/route-agent-work/scripts/route_judge.py plan --input examples/task.json --dry-run
 
-# 3. Full host rollout: register system-level skills, global rules, and spawn gates across all harnesses
-python -X utf8 setup/sync_host_globals.py
+# Undo everything onboarding did (managed blocks, hook entries, junctions, Paseo prompt, account choices)
+python -X utf8 setup/onboard.py uninstall
 
 # Or hand it to your coding agent
-"Read this repository. Run setup/sync_host_globals.py so route-agent-work and companion skills are loaded at the system level across all host harnesses (Codex, Claude, Antigravity/agy, Pi), verify system-level skill discovery, and show me how it routes this task: <your task>"
+"Read this repository. Run setup/onboard.py --dry-run, show me what it would change, then run it and show me how the router routes this task: <your task>"
 
 ```
+
+Until onboarding has run (or an account is signed in and the usage collector has produced a snapshot) the router does not
+guess: `plan`/`roll` return `no_ready_account` (no choice) when nothing is signed in, and carry a `no_usage_data` warning
+when there are no quota readings, both pointing back at `setup/onboard.py`.
 
 Run these commands from the repository root with Python 3.10+. The demo prints a ranked table using a fixed,
 synthetic quota snapshot and the reference fleet; it makes no network calls, writes no ledger, and launches no workers.
@@ -147,7 +156,7 @@ The companion repositories and runtime directories listed below are separate loc
 | `gemini-web/` | Persistent Google Chrome CDP bridge (`127.0.0.1:17849`) for Gemini, Google AI Studio, and Flow, plus the `omni.py` Gemini Omni 1.1 Flash video runner. See [`gemini-web/README.md`](https://github.com/akiiwa-games/gemini-web#readme). |
 | `dot2api/` | Local checkout of `Pluviobyte/dot2api` with its own `.venv`, exposing remote Dot workers behind a Cloudflared quick tunnel. |
 | `codex-chatgpt-web/` | Local checkout of `miuuyy/codex-chatgpt-web` and its Electron launcher, driving ChatGPT Pro consultations from local Codex agents. |
-| `setup/` | Host bootstrap and synchronization scripts: `sync_host_globals.py` (syncs skills and global rules), `router_gate_hook.py` (spawn gate), `bootstrap_dot2api.py`, `lock_dot2api_acl.py`, `pi_device_login.mjs`, and `claude2_config.py`. |
+| `setup/` | Host bootstrap and synchronization scripts: `onboard.py` (first-run onboarding and uninstall), `sync_host_globals.py` + `host_rules.py` (skills and global rules, reversible), `router_gate_hook.py` (spawn gate), `bootstrap_dot2api.py`, `lock_dot2api_acl.py`, `pi_device_login.mjs`, and `claude2_config.py`. |
 | `easytier/` | Per-host EasyTier mesh node directory (untracked runtime files): `bin/`, `private/node.toml`, `logs/`, `state/`, managed by `tray/easytier.py` and `tray/easytier_setup.py`. |
 | `tools/bun/` | Pinned Bun runtime used to run the ChatGPT Web bridge and build its launcher. |
 
@@ -263,11 +272,26 @@ python tray\easytier_setup.py uninstall
 When landing AgentCompass on a machine, **system-level skill loading is mandatory** so every coding agent session discovers `route-agent-work` (and `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`) regardless of the active workspace directory:
 
 ```powershell
-# Synchronize system-level skills, global rules (AGENTS.md / CLAUDE.md / GEMINI.md / Paseo), and PreToolUse spawn gates
+# Synchronize system-level skills and global rules (AGENTS.md / CLAUDE.md / GEMINI.md / Paseo prompt)
 python -X utf8 setup\sync_host_globals.py
+
+# Also install (or keep refreshing) the PreToolUse / tool_call spawn gate
+python -X utf8 setup\sync_host_globals.py --hooks
+
+# Preview only, or undo everything this setup recorded
+python -X utf8 setup\sync_host_globals.py --dry-run
+python -X utf8 setup\sync_host_globals.py --uninstall
 
 # The same command normalizes ~/.gemini/config/skills.json to absolute POSIX paths.
 ```
+
+Safety properties of the sync (`setup/onboard.py` runs the same code):
+
+- **Your text is never replaced.** Rules go into a block between `<!-- agentcompass:begin -->` and `<!-- agentcompass:end -->`; anything outside it is kept. A file that is exactly an earlier generated copy is treated as wholly managed.
+- **The shipped rules are a neutral English default** (`setup/host_rules.py`). To use your own wording, put `shared.md` (Claude, Pi, Gemini, OpenCode), `codex.md` and `daemon-append.md` (Paseo `appendSystemPrompt`) into `~/.route-manager/host-rules/`; they are used verbatim, with `@@ROUTE_JUDGE@@`, `@@ROUTER_HOOK_SCRIPT@@` and `@@HOME_POSIX@@` filled in.
+- **Every run that changes a file backs it up first** into `~/.route-manager/backups/host-setup-<timestamp>/`, and records the change in `~/.route-manager/setup-manifest.json`, which `--uninstall` / `onboard.py uninstall` reads to remove the blocks, hook entries, junctions and Paseo prompt again.
+- **The spawn gate is opt-in** (`--hooks`). It blocks every sub-agent launch, including Claude Code's built-in Explore agent, unless `route_judge.py roll` recorded a routing decision in the last 15 minutes. Installations that already have the hook keep it up to date automatically.
+- Harness directories (`~/.pi`, `~/.gemini`, `~/.config/opencode`, ...) are only written when that harness is installed.
 
 **System-level skill loading requirements by host harness:**
 1. **OpenAI Codex (`~/.codex/skills/<name>`)**: Linked as directory junctions to `<repo>/skills/<name>`, with global delegation rules in `~/.codex/AGENTS.md` (and `~/.codex-*/AGENTS.md`).
