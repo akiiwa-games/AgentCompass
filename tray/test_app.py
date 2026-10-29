@@ -59,7 +59,7 @@ class MenuTests(TrayTestCase):
     def test_panel_first_then_priority_then_enabled_window_plugins_then_quit(self):
         self.assertEqual(self.shown(), [
             "打开 AgentCompass", "重置前优先", "Usage Float：运行中",
-            "ChatGPT Web：运行中", "Gemini Web：已停止", "EasyTier：运行中（2 个对端）", "退出"])
+            "ChatGPT Web：运行中", "Gemini Web：已停止", "EasyTier：运行中（2 个对端）", "重启托盘", "退出"])
         items = self.items()
         self.assertTrue(items[0].default)
         separators = [index for index, item in enumerate(items) if item.text == app.Menu.SEPARATOR.text]
@@ -81,7 +81,7 @@ class MenuTests(TrayTestCase):
     def test_with_no_window_plugin_enabled_only_the_core_items_remain(self):
         for row in app.PLUGINS.values():
             row["enabled"] = False
-        self.assertEqual(self.shown(), ["打开 AgentCompass", "重置前优先", "退出"])
+        self.assertEqual(self.shown(), ["打开 AgentCompass", "重置前优先", "重启托盘", "退出"])
         self.assertEqual(sum(item.text == app.Menu.SEPARATOR.text for item in self.items()), 1)
 
     def test_menu_is_two_levels_at_most_and_plugins_have_no_submenu(self):

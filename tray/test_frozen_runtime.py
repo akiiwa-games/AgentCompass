@@ -94,6 +94,13 @@ class FrozenRuntimeTests(unittest.TestCase):
         with mock.patch.object(subprocess, 'Popen') as popen:
             app.restart_tray()
         self.assertEqual(popen.call_args.args[0], [sys.executable, '--run-component', 'deploy', 'restart'])
+        with mock.patch.object(sys, 'frozen', False), mock.patch.object(sys, 'executable', 'C:/Python/python.exe'), \
+                mock.patch.object(subprocess, 'Popen') as popen:
+            app.restart_tray()
+        self.assertEqual(popen.call_args.args[0], [str(Path('C:/Python/pythonw.exe')),
+                         str(Path(launch.__file__).with_name('deploy.py')), 'restart'])
+        with mock.patch.object(app.i18n, 'get_language', return_value='en'):
+            self.assertIn('Restart tray', [item.text for item in app.build_menu().items])
 
 
 if __name__ == '__main__':
