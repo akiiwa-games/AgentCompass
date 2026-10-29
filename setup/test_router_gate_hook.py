@@ -614,6 +614,80 @@ class RouterGateHookTests(unittest.TestCase):
         (self.state / "host-policy.json").write_text("{not json", encoding="utf-8")
         self.assertEqual(gate.evaluate_payload(turn("sonnet"), now=T0), {})
 
+    def test_running_owner_control_exempts_disabled_and_context_rotation_gates(self):
+        wid = self.existing_agent()
+        agent_file = self.state / 'agents' / 'project' / (wid + '.json')
+        owner = {'router.parent_id': 'parent'}
+        cases = (
+            ('router owner', 'parent', owner, {'lastStatus': 'running'}, False),
+            ('paseo owner', 'parent', {'paseo.parent-agent-id': 'parent'}, {'lastStatus': 'running'}, False),
+            ('both parents', 'parent', {**owner, 'paseo.parent-agent-id': 'parent'}, {'lastStatus': 'running'}, False),
+            ('current status', 'parent', owner, {'status': 'running'}, False),
+            ('idle', 'parent', owner, {'lastStatus': 'idle'}, True),
+            ('permission wait', 'parent', owner, {'lastStatus': 'waiting'}, True),
+            ('unknown status', 'parent', owner, {}, True),
+            ('current idle wins', 'parent', owner, {'lastStatus': 'running', 'status': 'idle'}, True),
+            ('current unknown wins', 'parent', owner, {'lastStatus': 'running', 'status': None}, True),
+            ('activeTurn alone', 'parent', owner, {'activeTurn': {'turnId': 't'}}, True),
+            ('idle activeTurn', 'parent', owner, {'status': 'idle', 'activeTurn': {'turnId': 't'}}, True),
+            ('nonowner', 'peer', owner, {'lastStatus': 'running'}, True),
+            ('unknown caller', '', owner, {'lastStatus': 'running'}, True),
+            ('unknown owner', 'parent', {}, {'lastStatus': 'running'}, True),
+            ('conflicting parents', 'parent', {**owner, 'paseo.parent-agent-id': 'peer'}, {'lastStatus': 'running'}, True),
+            ('self', wid, {'router.parent_id': wid}, {'lastStatus': 'running'}, True),
+        )
+        allocator = gate.router_module('allocator')
+        for settings, tokens, cause in (
+                ({'allowed': []}, 0, 'host-policy.json'),
+                ({'accounts': {'claude-2': {'verified': False}}}, 0, 'verified: false'),
+                ({'accounts': {'claude-2': {'bundles': {'sonnet55_high_2': {'disabled': 'turned off'}}}}}, 0, 'turned off'),
+                ({}, 2_000_000, 'historical_context_tokens=2,000,000/2,000,000')):
+            self.write_settings(**settings)
+            with mock.patch.object(allocator, 'session_state', return_value={'context_tokens': tokens}):
+                for label, caller, labels, status, blocked in cases:
+                    doc = {'provider': 'claude-2/claude-sonnet-5-5',
+                           'labels': {**labels, 'router.account': 'claude-2', 'router.bundle_id': 'sonnet55_high_2'},
+                           **status}
+                    agent_file.write_text(json.dumps(doc), encoding='utf-8')
+                    # Wrap-up text is deliberately identical for idle and running targets.
+                    args = {'agentId': wid, 'prompt': 'commit, write handoff, report', 'notifyOnFinish': True}
+                    payloads = [
+                        {'tool_name': tool, 'tool_input': args}
+                        for tool in ('send_agent_prompt', 'mcp__paseo__run_turn', 'send_message')]
+                    payloads.extend((
+                        {'toolName': 'send_agent_prompt', 'input': args},
+                        {'toolCall': {'name': 'send_agent_prompt', 'args': args}},
+                        {'tool_name': 'exec', 'tool_input': 'await tools.mcp__paseo__send_agent_prompt(' + json.dumps(args) + ')'},
+                        {'toolName': 'codemode', 'input': {'code':
+                            f'const id = "{wid}"; await paseo.send_agent_prompt({{agentId: id, prompt: "wrap up"}})'}},
+                    ))
+                    for payload in payloads:
+                        with self.subTest(gate=cause, case=label, payload=payload), \
+                                mock.patch.dict(os.environ, {'PASEO_AGENT_ID': caller}):
+                            result = gate.evaluate_payload(payload, now=T0)
+                            self.assertEqual('reason' in result, blocked)
+                            if blocked:
+                                self.assertIn(cause, result['reason'])
+                                self.assertIn('cancel_agent', result['reason'])
+                                self.assertIn('route_judge.py roll --brief', result['reason'])
+
+    def test_running_control_keeps_launch_quota_and_notification_checks(self):
+        wid = self.existing_agent()
+        labels = {'router.parent_id': 'parent', 'router.account': 'claude-2', 'router.bundle_id': 'sonnet55_high_2'}
+        (self.state / 'agents' / 'project' / (wid + '.json')).write_text(json.dumps({
+            'provider': 'claude-2/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}), encoding='utf-8')
+        self.write_settings(allowed=[])
+        with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent'}):
+            # Spoofing running state in a launch request cannot bypass account disablement.
+            result = gate.evaluate_payload({'tool_name': 'create_agent', 'tool_input': {
+                'provider': 'claude-2/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}}, now=T0)
+            self.assertIn('host-policy.json', result['reason'])
+            for notify, cause in ((False, 'notifyOnFinish: true or omit it'), (True, 'five_hour')):
+                self.exhausted_cache()
+                result = gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input': {
+                    'agentId': wid, 'prompt': 'wrap up', 'notifyOnFinish': notify}}, now=T0)
+                self.assertIn(cause, result['reason'])
+
     def test_interleaved_decisions_match_older_route_in_both_orders(self):
         a = self.route(parent_agent_id="parent-a", task_id="task-a")
         b = self.route("dot", parent_agent_id="parent-b", task_id="task-b")

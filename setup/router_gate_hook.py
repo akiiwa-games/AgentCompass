@@ -290,6 +290,18 @@ def agent_labels(doc: object) -> dict:
     return doc["labels"] if isinstance(doc, dict) and isinstance(doc.get("labels"), dict) else {}
 
 
+def owns_worker(doc: object, agent_id: str, caller_id: str | None) -> bool:
+    """Only unambiguous persisted parent labels prove ownership."""
+    labels = agent_labels(doc)
+    parents = [labels.get(key) for key in ("router.parent_id", "paseo.parent-agent-id") if labels.get(key)]
+    return bool(caller_id and agent_id != caller_id and parents and all(parent == caller_id for parent in parents))
+
+
+def owns_running_worker(doc: object, agent_id: str, caller_id: str | None) -> bool:
+    """A parent can control an existing turn; unknown state cannot authorize one."""
+    return owns_worker(doc, agent_id, caller_id) and doc.get("status", doc.get("lastStatus")) == "running"
+
+
 def caller_parent_ids(caller_id: str | None, paseo_agents_dir: Path | None = None) -> set[str]:
     """IDs a worker reports up to; a turn sent to one of them is never a dispatch."""
     labels = agent_labels(load_paseo_agent(caller_id, paseo_agents_dir)) if caller_id else {}
@@ -349,8 +361,10 @@ def check_worker_compaction_limit(
     home: Path | None = None,
     caller_id: str | None = None,
 ) -> str | None:
-    """Return a block reason if the target Paseo worker has reached the carried-token rotation threshold (2M tokens)."""
+    """Block a new turn at 2M historical tokens, preserving parent control of an active turn."""
     if not agent_id or not is_delegated_worker(agent_id, paseo_agents_dir=paseo_agents_dir, caller_id=caller_id):
+        return None
+    if owns_running_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, caller_id):
         return None
     base = paseo_agents_dir or Path(os.environ.get("ROUTER_PASEO_AGENTS_DIR", DEFAULT_PASEO_AGENTS))
     home_dir = home or (base.parents[1] if base.name == "agents" and base.parent.name == ".paseo" else base.parent)
@@ -372,7 +386,8 @@ def check_worker_compaction_limit(
         f"historical_context_tokens={carried:,}/{max_tokens:,}, compactions={compactions})："
         f"该 worker 历史累计未压缩上下文达 {carried:,} tokens"
         f"（历次压缩前累计 {compacted_tok:,} + 当前窗口 {current_tok:,}，非压缩后当前窗口），继续追加 prompt 会导致上下文漂移与质量退化。"
-        "禁止继续向该旧 worker 调用 run_turn / send_agent_prompt；请把当前进展与剩余工作写成交接任务书 <handoff.md>，"
+        "禁止向该旧 worker 开启新 turn；父会话仍可向自己明确运行中的 worker 发控制消息以收尾交接。"
+        "若已 idle 或状态未知，请收取已有输出，必要时调用 cancel_agent，再把当前进展与剩余工作写成交接任务书 <handoff.md>，"
         "运行 route_judge.py roll --brief <handoff.md> --hours <n> 由新 worker 接手。"
     )
 
@@ -421,8 +436,9 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
 
 
 DISABLED_RECOVERY = (
-    "禁止启动该账号/档位的 worker，也禁止向它的旧 worker 继续调用 send_agent_prompt / run_turn；"
-    "请把进展或任务写进 <task.md>，运行 python -X utf8 ~/.codex/skills/route-agent-work/scripts/route_judge.py "
+    "禁止启动该账号/档位的 worker 或向 idle/状态未知的旧 worker 开启新 turn；"
+    "父会话仍可向自己明确运行中的 worker 发控制消息以收尾。否则请收取已有输出，必要时调用 cancel_agent，"
+    "把进展或任务写进 <task.md>，运行 python -X utf8 ~/.codex/skills/route-agent-work/scripts/route_judge.py "
     "roll --brief <task.md> --hours <n> 改派当前启用的账号（确需使用该账号时，先在 AgentCompass "
     "调度设置 -> 账号模型 中开启）。"
 )
@@ -761,9 +777,7 @@ def evaluate_payload(
             for agent_id in detect_target_agent_ids(name, args):
                 # Only persisted ownership proves direction; absent/conflicting
                 # labels or caller identity leave this notification check open.
-                labels = agent_labels(load_paseo_agent(agent_id, paseo_agents_dir))
-                parents = [labels.get(key) for key in ("router.parent_id", "paseo.parent-agent-id") if labels.get(key)]
-                if agent_id != caller_id and parents and all(parent == caller_id for parent in parents):
+                if owns_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, caller_id):
                     return format_response(False, harness_kind,
                         '[Router Gate] Parent-to-worker send_agent_prompt must keep completion '
                         'notifications enabled. Set notifyOnFinish: true or omit it; completion '
@@ -795,7 +809,8 @@ def evaluate_payload(
                        for agent_id, doc in docs.items() if isinstance(doc, dict)]
         for target in targets:
             account, candidates = resolve_target(target, accounts)
-            reason = (check_target_disabled(target, account, candidates, accounts, policy) or
+            controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
+            reason = ((None if controlling else check_target_disabled(target, account, candidates, accounts, policy)) or
                       check_account_quota_exhausted(account or target.get("provider"),
                                                     usage_cache_path=usage_cache_path, now=now, accounts=accounts))
             if reason:
