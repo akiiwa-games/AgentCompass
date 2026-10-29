@@ -322,20 +322,20 @@ class DetectionTests(HomeCase):
     def test_inherited_environment_cannot_reach_another_users_accounts(self):
         other = self.home / "other"
         (other / ".paseo").mkdir(parents=True)
-        (other / ".paseo/config.json").write_text(json.dumps({"agents": {"providers": {"codex-2": {
-            "extends": "codex", "enabled": True, "env": {"CODEX_HOME": str(other / ".codex-2")}}}}}), encoding="utf-8")
-        (other / ".codex-2").mkdir()
-        (other / ".codex-2/auth.json").write_text(json.dumps({"tokens": {"account_id": "X", "access_token": "S"}}), encoding="utf-8")
+        (other / ".paseo/config.json").write_text(json.dumps({"agents": {"providers": {"codex-work": {
+            "extends": "codex", "enabled": True, "env": {"CODEX_HOME": str(other / ".codex-work")}}}}}), encoding="utf-8")
+        (other / ".codex-work").mkdir()
+        (other / ".codex-work/auth.json").write_text(json.dumps({"tokens": {"account_id": "X", "access_token": "S"}}), encoding="utf-8")
         mine = self.home / "me"
         mine.mkdir()
-        leaking = {"PATH": "", "PASEO_HOME": str(other / ".paseo"), "CODEX_HOME": str(other / ".codex-2"),
+        leaking = {"PATH": "", "PASEO_HOME": str(other / ".paseo"), "CODEX_HOME": str(other / ".codex-work"),
                    "CLAUDE_CONFIG_DIR": str(other / ".claude")}
         env = onboard.detection_environ(mine, leaking)
         for key in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):
             self.assertNotIn(key, env)
         self.assertEqual(Path(env["PASEO_HOME"]), mine / ".paseo")
         names = {r["name"]: r for r in onboard.detect(mine, leaking)["accounts"]}
-        self.assertNotIn("codex-2", names)
+        self.assertNotIn("codex-work", names)
         self.assertFalse(names["codex"]["signed_in"])
 
 

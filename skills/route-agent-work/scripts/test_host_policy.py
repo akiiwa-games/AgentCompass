@@ -43,7 +43,7 @@ class HostPolicyTests(unittest.TestCase):
         return {'provider': account, 'account': account, 'model': 'verified', 'effort': 'high',
                 'quality_fit': 'review', 'available': True}
 
-    def request(self, stage='select', accounts=('claude', 'codex', 'codex-2', 'grok', 'api-proxy', 'dot', 'chatgpt-web', 'antigravity')):
+    def request(self, stage='select', accounts=('claude', 'codex', 'codex-work', 'grok', 'api-proxy', 'dot', 'chatgpt-web', 'antigravity')):
         with patch.object(router, 'usage_snapshot', return_value={'accounts': {}}):
             return router.build_request(stage, {'task': {'objective': 'review'},
                                                'candidates': {a: self.candidate(a) for a in accounts}})
@@ -108,7 +108,7 @@ class HostPolicyTests(unittest.TestCase):
     def test_select_filters_all_disallowed_accounts(self):
         request = self.request()
         self.assertEqual(set(request['state']['candidates']), set(LS['allowed_accounts']))
-        self.assertEqual(set(request['state']['host_policy_excluded']), {'claude', 'codex-2', 'grok', 'api-proxy'})
+        self.assertEqual(set(request['state']['host_policy_excluded']), {'claude', 'codex-work', 'grok', 'api-proxy'})
 
     def test_judges_auto_explicit_and_account_intersection(self):
         self.assertEqual(router.judge_order({}, 'auto'), ['codex'])
@@ -167,7 +167,7 @@ class HostPolicyTests(unittest.TestCase):
         self.assertNotIn(str(self.directory), json.dumps(first))
 
     def test_usage_selection_intersects_both_lists(self):
-        defaults = ['claude', 'codex', 'codex-2', 'grok', 'antigravity']
+        defaults = ['claude', 'codex', 'codex-work', 'grok', 'antigravity']
         self.assertEqual(host_policy.usage_providers(host_policy.load_policy(), defaults), ['codex', 'antigravity'])
         self.assertEqual(host_policy.usage_providers(None, defaults), defaults)
         self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex'], 'usage_providers': ['grok']}, defaults), [])

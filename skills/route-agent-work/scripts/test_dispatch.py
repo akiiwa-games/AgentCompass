@@ -29,15 +29,15 @@ class DispatchTests(unittest.TestCase):
             ('.codex', 'auth.json', {'tokens': {'access_token': 'fixture-codex', 'account_id': 'fixture-account',
                 'id_token': 'header.' + base64.urlsafe_b64encode(json.dumps({
                     'https://api.openai.com/auth': {'chatgpt_plan_type': 'pro'}}).encode()).decode().rstrip('=') + '.signature'}}),
-            ('.claude-2', '.credentials.json', {'claudeAiOauth': {'accessToken': 'fixture-claude', 'subscriptionType': 'pro'}}),
-            ('.paseo', 'config.json', {'agents': {'providers': {'claude-2': {'extends': 'claude', 'enabled': True,
-               'env': {'CLAUDE_CONFIG_DIR': str(self.root / '.claude-2')}}}}}),
+            ('.claude-lab', '.credentials.json', {'claudeAiOauth': {'accessToken': 'fixture-claude', 'subscriptionType': 'pro'}}),
+            ('.paseo', 'config.json', {'agents': {'providers': {'claude-lab': {'extends': 'claude', 'enabled': True,
+               'env': {'CLAUDE_CONFIG_DIR': str(self.root / '.claude-lab')}}}}}),
         ):
             (self.root / folder).mkdir()
             (self.root / folder / filename).write_text(json.dumps(document), encoding='utf-8')
         self.now = registry.utcnow()
         self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
-        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-2', 'codex', 'antigravity']}))
+        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-lab', 'codex', 'antigravity']}))
         (self.root / 'usage.json').write_text(json.dumps({'providers': {'codex': {}}}))
         env = patch.dict(os.environ, {
             'ROUTER_DISPATCH_DB': str(self.root / 'dispatch.sqlite3'),
@@ -54,21 +54,21 @@ class DispatchTests(unittest.TestCase):
         self.addCleanup(env.stop)
         # Launchers are admitted by discovered family, not by name: report the fixture's Claude account.
         discovered = patch.object(registry.provider_inventory, 'current', return_value={
-            'accounts': {}, 'launchers': {'claude-2': {'family': 'claude', 'status': 'ready'}}})
+            'accounts': {}, 'launchers': {'claude-lab': {'family': 'claude', 'status': 'ready'}}})
         discovered.start()
         self.addCleanup(discovered.stop)
         self.task = {'task_id': 'test-task', 'parent_agent_id': 'parent-a', 'objective': 'fixture work',
                      'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 0.7,
                      'needs': {'local_only': True, 'local_only_reason': 'requires local daemon state'}}
-        self.usage = {'accounts': {'claude-2': {'status': 'fresh', 'fetched_at': self.now.isoformat(), 'windows': [
+        self.usage = {'accounts': {'claude-lab': {'status': 'fresh', 'fetched_at': self.now.isoformat(), 'windows': [
             {'id': wid, 'used_pct': 100 - rem, 'remaining_pct_before_reset': rem,
              'resets_at': (self.now + timedelta(hours=hours)).isoformat(), 'seconds_until_reset': hours * 3600}
             for wid, rem, hours in [('five_hour', 40, 2.5), ('seven_day', 61, 130)]]}}}
-        self.bundle = dict(allocator.bundles(self.accounts)['sonnet55_high_2'], bundle_id='sonnet55_high_2')
+        self.bundle = dict(allocator.bundles(self.accounts)['lab_sonnet55_high'], bundle_id='lab_sonnet55_high')
         self.launch = {'title': 'Fixture task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'workspace-fixture'}
 
     def issue(self, task=None, **changes):
-        result = dict(stage='plan', choice='sonnet55_high_2', selected_bundle=self.bundle,
+        result = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle,
                       decision={'action': 'start'})
         result.update(changes)
         return registry.issue(result, task or self.task, self.now)
@@ -78,7 +78,7 @@ class DispatchTests(unittest.TestCase):
                                 self.usage, accounts=self.accounts, now=self.now)
 
     def snapshot(self, row, status='running', **changes):
-        value = {'id': 'agent-fixture', 'provider': 'claude-2', 'model': 'claude-sonnet-5-5',
+        value = {'id': 'agent-fixture', 'provider': 'claude-lab', 'model': 'claude-sonnet-5-5',
                  'currentModeId': 'bypassPermissions', 'thinkingOptionId': 'high',
                  'status': status, 'updatedAt': (self.now + timedelta(seconds=10)).isoformat(),
                  'labels': row['request']['labels']}
@@ -93,22 +93,22 @@ class DispatchTests(unittest.TestCase):
         unbound = self.issue(task={'objective': 'legacy'})
         with self.assertRaisesRegex(ValueError, 'actual addressable parent'):
             registry.prepare(unbound['decision_id'], {'objective': 'legacy'}, self.launch, self.usage, now=self.now)
-        spec = self.accounts['accounts']['claude-2']
+        spec = self.accounts['accounts']['claude-lab']
         for stage in ('plan', 'select', 'record'):
-            self.assertEqual(allocator.inflight_reserved_usd('claude-2', spec, 'five_hour', spec['windows']['five_hour'],
+            self.assertEqual(allocator.inflight_reserved_usd('claude-lab', spec, 'five_hour', spec['windows']['five_hour'],
                 {'remaining': 40}, 18, [{'stage': stage, 'expected_usd': 100, 'bundle': self.bundle}],
                 self.accounts, self.accounts['scoring'], self.now), 0)
 
     def test_local_disable_after_prepare_blocks_launch_and_reenable_recovers(self):
         prepared = self.prepare()
-        snapshot = {'accounts': {'claude-2': {'family': 'claude', 'status': 'paused',
+        snapshot = {'accounts': {'claude-lab': {'family': 'claude', 'status': 'paused',
                     'reason': 'account_disabled_in_magpie', 'plan': 'pro'}}, 'launchers': {}}
         paused = allocator.provider_inventory.apply(copy.deepcopy(self.accounts), snapshot)
         with patch.object(allocator, 'load_accounts', return_value=paused):
             with self.assertRaisesRegex(ValueError, 'account_disabled_in_magpie'):
                 registry.claim(prepared['request'], parent_id='parent-a', now=self.now)
         self.assertEqual(registry.inspect(prepared['dispatch_id'])['state'], 'prepared')
-        snapshot['accounts']['claude-2'].update(status='ready', reason=None)
+        snapshot['accounts']['claude-lab'].update(status='ready', reason=None)
         restored = allocator.provider_inventory.apply(copy.deepcopy(self.accounts), snapshot)
         with patch.object(allocator, 'load_accounts', return_value=restored):
             self.assertEqual(registry.claim(prepared['request'], parent_id='parent-a', now=self.now)['state'], 'launching')
@@ -158,7 +158,7 @@ class DispatchTests(unittest.TestCase):
                 self.prepare(self.override_decision(**changes))
         with self.assertRaisesRegex(ValueError, 'no known'):
             self.override_decision(effort='turbo')
-        for changes in ({'account': 'claude-2'}, {'provider': 'pi'}, {'model': 'unknown-model'}):
+        for changes in ({'account': 'claude-lab'}, {'provider': 'pi'}, {'model': 'unknown-model'}):
             bundle = dict(provider='codex', account='codex', model='gpt-6-astra', effort='low')
             bundle.update(changes)
             with self.assertRaisesRegex(ValueError, 'no known'):
@@ -166,7 +166,7 @@ class DispatchTests(unittest.TestCase):
 
     def test_explicit_low_override_preserves_host_policy_and_capacity_checks(self):
         decision = self.override_decision()
-        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-2']}))
+        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-lab']}))
         with self.assertRaisesRegex(ValueError, 'host policy'):
             self.prepare(decision)
         (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['codex']}))
@@ -180,7 +180,7 @@ class DispatchTests(unittest.TestCase):
         import route_judge
         self.task['expected_hours'] = 0.001
         row = self.prepare()  # Existing quota permits preparation; it can change before launch.
-        raw = {'providers': {'claude-2': {'available': True, 'stale': False, 'fetched_at': self.now.isoformat(),
+        raw = {'providers': {'claude-lab': {'available': True, 'stale': False, 'fetched_at': self.now.isoformat(),
             'windows': [{'id': 'five_hour', 'used_pct': 80,
                          'resets_at': (self.now + timedelta(hours=2)).isoformat()}]}}}
         (self.root / 'usage.json').write_text(json.dumps(raw))
@@ -204,14 +204,14 @@ class DispatchTests(unittest.TestCase):
         for changes in ({'stale': True}, {'fetched_at': (self.now - timedelta(hours=1)).isoformat()},
                         {'windows': [{'id': 'five_hour', 'used_pct': 80, 'resets_at': self.now.isoformat()}]}):
             observation = copy.deepcopy(raw)
-            observation['providers']['claude-2'].update(changes)
+            observation['providers']['claude-lab'].update(changes)
             (self.root / 'usage.json').write_text(json.dumps(observation))
             registry.check_launch_quota(row['bundle'], self.accounts, route_judge.usage_snapshot(now=self.now), self.now)
-        # A local 429 session limit in .claude-2 blocks launch until resets_at even when usage.json is stale.
+        # A local 429 session limit in .claude-lab blocks launch until resets_at even when usage.json is stale.
         stale_obs = copy.deepcopy(raw)
-        stale_obs['providers']['claude-2'].update({'stale': True, 'fetched_at': (self.now - timedelta(minutes=20)).isoformat()})
+        stale_obs['providers']['claude-lab'].update({'stale': True, 'fetched_at': (self.now - timedelta(minutes=20)).isoformat()})
         (self.root / 'usage.json').write_text(json.dumps(stale_obs))
-        log_file = self.root / '.claude-2' / 'projects' / 'proj' / 'rate-limited.jsonl'
+        log_file = self.root / '.claude-lab' / 'projects' / 'proj' / 'rate-limited.jsonl'
         log_file.parent.mkdir(parents=True, exist_ok=True)
         reset_utc = (self.now + timedelta(hours=2)).strftime('%I:%M%p').lstrip('0').lower()
         log_file.write_text(json.dumps({
@@ -488,8 +488,8 @@ except ValueError as e:
     def test_cli_prepare_launch_and_automatic_status_reconcile_fake_host(self):
         # Exercise the executable entrypoints, not only the in-memory state machine.
         import route_judge
-        raw = {'providers': {'claude-2': {'fetched_at': self.now.isoformat(), 'stale': False,
-                    'available': True, 'windows': self.usage['accounts']['claude-2']['windows']}}}
+        raw = {'providers': {'claude-lab': {'fetched_at': self.now.isoformat(), 'stale': False,
+                    'available': True, 'windows': self.usage['accounts']['claude-lab']['windows']}}}
         (self.root / 'usage.json').write_text(json.dumps(raw))
         packet = self.root / 'packet.json'
         script = str(Path(route_judge.__file__))
@@ -497,12 +497,12 @@ except ValueError as e:
             result = subprocess.run([sys.executable, '-B', script, *args], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             return json.loads(result.stdout)
-        self.task['constraints'] = {'bundle': 'sonnet55_high_2'}
+        self.task['constraints'] = {'bundle': 'lab_sonnet55_high'}
         task_file = self.root / 'task.json'
         task_file.write_text(json.dumps({'task': self.task}))
         decision = cli('plan', '--input', str(task_file))
         self.assertTrue(decision['bound'])
-        self.assertEqual(decision['choice'], 'sonnet55_high_2')
+        self.assertEqual(decision['choice'], 'lab_sonnet55_high')
         self.assertEqual(registry.reservations(), [])
         packet.write_text(json.dumps({'decision_id': decision['decision_id'], 'task': self.task, 'launch': self.launch}))
         prepared = cli('dispatch', '--input', str(packet))
@@ -510,7 +510,7 @@ except ValueError as e:
         fake.write_text("""import fs from 'node:fs';
 const p=JSON.parse(fs.readFileSync(0,'utf8')); const f=process.env.FAKE_HOST_STATE;
 if(p.operation==='create') {
- const agent={id:p.dispatch_id,provider:'claude-2',model:'claude-sonnet-5-5',status:'running',
+ const agent={id:p.dispatch_id,provider:'claude-lab',model:'claude-sonnet-5-5',status:'running',
  currentModeId:'bypassPermissions',thinkingOptionId:'high',updatedAt:new Date().toISOString(),labels:p.request.labels};
  fs.writeFileSync(f,JSON.stringify(agent)); console.log(JSON.stringify({ok:true,agent}));
 } else {const agent=JSON.parse(fs.readFileSync(f,'utf8'));agent.status='idle';agent.attentionReason='finished';
@@ -586,7 +586,7 @@ class RollTests(unittest.TestCase):
             if request['operation'] == 'create':
                 return {'ok': True, 'agent': self.snapshot({'request': request['request']})}
             return {'ok': True, 'agent': None}
-        decision = dict(stage='plan', choice='sonnet55_high_2', selected_bundle=self.bundle, decision={'action': 'start'})
+        decision = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle, decision={'action': 'start'})
         with patch.object(flow, 'host_call', host):
             (result, code), seen = self.roll(decision)
         self.assertEqual(code, 0)
@@ -596,7 +596,7 @@ class RollTests(unittest.TestCase):
             c['request'] for c in calls if c['operation'] == 'create')
         self.assertEqual(request['initialPrompt'], self.assert_worker_prompt(result, parent='parent-a'))
         self.assertEqual(request['title'], 'Fixture brief')
-        self.assertEqual(request['provider'], 'claude-2/' + (self.bundle.get('launch_model') or self.bundle['model']))
+        self.assertEqual(request['provider'], 'claude-lab/' + (self.bundle.get('launch_model') or self.bundle['model']))
         self.assertEqual(request['settings']['thinkingOptionId'], self.bundle['effort'])
 
     def test_ready_grok_acp_launcher_launches_through_paseo_not_the_cli_fallback(self):
@@ -647,7 +647,7 @@ class RollTests(unittest.TestCase):
         bundle = {'provider': 'grok', 'account': 'grok', 'model': 'grok-4.7', 'effort': 'high', 'bundle_id': 'grok47_high'}
         decision = dict(stage='plan', choice='grok47_high', selected_bundle=bundle, decision={'action': 'start'})
         inventory = {'accounts': {}, 'launchers': {'grok': {'family': 'grok', 'status': 'ready'}}}
-        host = {'PASEO_HOME': str(self.root / '.paseo'), 'CLAUDECODE': '1', 'CODEX_HOME': 'C:/host/.codex-2',
+        host = {'PASEO_HOME': str(self.root / '.paseo'), 'CLAUDECODE': '1', 'CODEX_HOME': 'C:/host/.codex-work',
                 'FAKE_GROK_RECORD': str(self.root / 'grok-record.json')}
         with patch.object(allocator.provider_inventory, 'current', return_value=inventory), \
                 patch.object(roll_module, 'CLI_RUNS_DIR', self.root / 'runs'), \
@@ -740,7 +740,7 @@ class RollTests(unittest.TestCase):
             self.assertEqual(roll_module.cli_command('codex', 'codex', judge), ['discovered-codex'])
 
     def test_routes_that_cannot_launch_here_do_not_launch(self):
-        paseo = dict(stage='plan', choice='sonnet55_high_2', selected_bundle=self.bundle, decision={'action': 'start'})
+        paseo = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle, decision={'action': 'start'})
         cases = (('user decision', dict(paseo, decision={'action': 'start', 'needs_user_decision': True}), 'parent-a', 2),
                  ('no worker', dict(stage='plan', choice='none', selected_bundle={}, decision={}), 'parent-a', 2))
         for label, decision, parent, expected in cases:
@@ -760,7 +760,7 @@ class RollTests(unittest.TestCase):
         self.assertEqual(registry.reservations(), [])
 
     def test_explicit_parent_and_native_address_survive_native_handoff(self):
-        decision = dict(stage='plan', choice='sonnet55_high_2', selected_bundle=self.bundle, decision={'action': 'start'})
+        decision = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle, decision={'action': 'start'})
         with patch.object(flow, 'host_call', side_effect=AssertionError('must not switch to Paseo')):
             (result, code), seen = self.roll(decision, parent='', parent_host='native',
                 parent_id='coordinator-session', parent_address='run:coordinator-run', reachable=True)
@@ -787,14 +787,14 @@ class RollTests(unittest.TestCase):
         import roll
         (self.root / 'paseo').mkdir()
         (self.root / 'paseo' / 'config.json').write_text(json.dumps({'agents': {'providers': {
-            'claude-2': {'extends': 'claude', 'env': {'CLAUDE_CONFIG_DIR': 'C:/fixture/.claude-2'}}}}}))
-        host = {'PASEO_HOME': str(self.root / 'paseo'), 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': 'C:/host/.claude-2',
-                'CODEX_HOME': 'C:/host/.codex-2'}
+            'claude-lab': {'extends': 'claude', 'env': {'CLAUDE_CONFIG_DIR': 'C:/fixture/.claude-lab'}}}}}))
+        host = {'PASEO_HOME': str(self.root / 'paseo'), 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': 'C:/host/.claude-lab',
+                'CODEX_HOME': 'C:/host/.codex-work'}
         bundles = allocator.bundles(self.accounts)
         brief = ['--print']
-        cases = (('claude-2 via its Paseo definition', 'sonnet55_high_2', 0,
+        cases = (('claude-lab via its Paseo definition', 'lab_sonnet55_high', 0,
                   ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions'],
-                  'C:/fixture/.claude-2', self.brief),
+                  'C:/fixture/.claude-lab', self.brief),
                  ('claude does not inherit the caller account', 'sonnet55_high', 5,
                   ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions'],
                   None, self.brief),
@@ -927,7 +927,7 @@ class RollTests(unittest.TestCase):
         # Auto-detected non-Paseo host session (e.g. Antigravity / Claude Code) with a standard provider
         # must launch via CLI even when Paseo daemon is reachable in the background.
         calls.clear()
-        std_decision = dict(stage='plan', choice='sonnet55_high_2', selected_bundle=self.bundle, decision={'action': 'start'})
+        std_decision = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle, decision={'action': 'start'})
         with patch.object(roll, 'CLI_RUNS_DIR', self.root / 'runs'), \
                 patch.object(roll.subprocess, 'Popen', Process), \
                 patch.object(flow, 'host_call', side_effect=AssertionError('auto-detected non-Paseo host must not call Paseo')):
@@ -1017,7 +1017,7 @@ class RollTests(unittest.TestCase):
                 self.roll({}, hours=bad)
 
     def test_opencode_deepseek_explicit_override_prepares_paseo_request(self):
-        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-2', 'codex', 'antigravity', 'opencode']}))
+        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-lab', 'codex', 'antigravity', 'opencode']}))
         for effort in ('high', 'default'):
             with self.subTest(effort=effort):
                 task = dict(self.task, task_id=f'opencode-{effort}')

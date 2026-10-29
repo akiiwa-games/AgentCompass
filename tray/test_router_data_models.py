@@ -214,25 +214,25 @@ def test_only_discovered_ready_execution_profiles_with_bundles_are_shown(tmp_pat
     target = settings(tmp_path, monkeypatch)
     status = {'second': 'disabled'}
     def discover(data):
-        data['accounts']['codex-2'] = {'verified': False, 'bundles': {}}
-        data['accounts']['codex']['bundles']['second_high'] = {'model': 'gpt-6.1-sol', 'provider': 'codex-2'}
+        data['accounts']['codex-work'] = {'verified': False, 'bundles': {}}
+        data['accounts']['codex']['bundles']['second_high'] = {'model': 'gpt-6.1-sol', 'provider': 'codex-work'}
         data['_discovery'] = {'accounts': {'codex': {'family': 'codex', 'status': 'ready'},
-                                          'codex-2': {'family': 'codex', 'quota_account': 'codex', 'status': status['second']}}}
+                                          'codex-work': {'family': 'codex', 'quota_account': 'codex', 'status': status['second']}}}
     monkeypatch.setattr(allocator.provider_inventory, 'apply', discover)
     monkeypatch.setattr(allocator.host_policy, 'load_policy', lambda: {
-        'allowed_accounts': ['codex', 'codex-2', 'codex-team'], 'known_accounts': ['codex', 'codex-2', 'codex-team']})
+        'allowed_accounts': ['codex', 'codex-work', 'codex-team'], 'known_accounts': ['codex', 'codex-work', 'codex-team']})
     rows = {(row['account'], row['harness']): row for row in router_data.harness_model_rows()}
-    assert ('codex-2', 'codex') not in rows and ('codex-2', 'pi') not in rows
+    assert ('codex-work', 'codex') not in rows and ('codex-work', 'pi') not in rows
     assert ('codex-team', 'codex') not in rows
     status['second'] = 'ready'
     rows = {(row['account'], row['harness']): row for row in router_data.harness_model_rows()}
-    assert rows['codex-2', 'codex']['models'][0]['bundle_refs'] == [('codex', 'second_high')]
+    assert rows['codex-work', 'codex']['models'][0]['bundle_refs'] == [('codex', 'second_high')]
     assert 'second_high' not in rows['codex', 'codex']['models'][0]['bundle_ids']
-    router_data.toggle_harness_model('codex-2', 'codex', 'gpt-6.1-sol', False)
+    router_data.toggle_harness_model('codex-work', 'codex', 'gpt-6.1-sol', False)
     preferences = json.loads(target.read_text())
     assert preferences['accounts']['codex']['bundles']['second_high']['disabled']
     with mock.patch.object(router_data, 'toggle_account_host'):
-        router_data.toggle_harness('codex', 'codex-2', False)
+        router_data.toggle_harness('codex', 'codex-work', False)
     live = allocator.load_accounts()['accounts']['codex']['bundles']
     assert live['second_high']['_harness_disabled']
     assert not live['sol_high'].get('disabled')

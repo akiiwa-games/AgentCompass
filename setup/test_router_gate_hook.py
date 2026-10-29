@@ -154,10 +154,10 @@ class RouterGateHookTests(unittest.TestCase):
                             "resets_at": (T0 + dt.timedelta(hours=2)).isoformat()}]}
         row.update(changes)
         path = self.state / "usage.json"
-        path.write_text(json.dumps({"providers": {"claude-2": row, "claude": row}}), encoding="utf-8")
+        path.write_text(json.dumps({"providers": {"claude-lab": row, "claude": row}}), encoding="utf-8")
         return path
 
-    def existing_agent(self, provider="claude-2/claude-sonnet-5-5"):
+    def existing_agent(self, provider="claude-lab/claude-sonnet-5-5"):
         directory = self.state / "agents" / "project"
         directory.mkdir(parents=True, exist_ok=True)
         agent_id = "11111111-1111-4111-8111-111111111111"
@@ -351,7 +351,7 @@ class RouterGateHookTests(unittest.TestCase):
             proj_dir = paseo_dir / "E-PROJECTS-demo"
             proj_dir.mkdir(parents=True)
             for account_name, choice_name, agent_uuid in (
-                ("claude-2", "sonnet55_high_2", "11111111-1111-4111-8111-111111111111"),
+                ("claude-lab", "lab_sonnet55_high", "11111111-1111-4111-8111-111111111111"),
                 ("claude-magpie", "sonnet55_high_claude_magpie", "22222222-2222-4222-8222-222222222222"),
             ):
                 cache.write_text(
@@ -473,7 +473,7 @@ class RouterGateHookTests(unittest.TestCase):
 
     def test_current_paseo_create_contract_checks_quota_and_normalizes_pair(self):
         self.exhausted_cache()
-        for provider in ("claude-2", "claude-2/claude-sonnet-5-5"):
+        for provider in ("claude-lab", "claude-lab/claude-sonnet-5-5"):
             payload = {"tool_name": "mcp__paseo__create_agent", "tool_input": {
                 "provider": provider, "initialPrompt": "work", "settings": {"thinkingOptionId": "high"}}}
             result = gate.evaluate_payload(payload, now=T0)
@@ -547,8 +547,8 @@ class RouterGateHookTests(unittest.TestCase):
         agent_id = self.existing_agent()
         for name in ("list_models", "inspect_provider", "get_agent_status", "mcp__paseo__list_models", "update_agent"):
             self.assertEqual(gate.evaluate_payload({"tool_name": name, "tool_input": {
-                "provider": "claude-2/claude-sonnet-5-5", "agentId": agent_id}}, now=T0), {})
-        code = f'await paseo.get_agent_status({{agentId:"{agent_id}"}}); await paseo.list_models({{provider:"claude-2"}})'
+                "provider": "claude-lab/claude-sonnet-5-5", "agentId": agent_id}}, now=T0), {})
+        code = f'await paseo.get_agent_status({{agentId:"{agent_id}"}}); await paseo.list_models({{provider:"claude-lab"}})'
         self.assertEqual(gate.evaluate_payload({"toolName": "codemode", "input": {"code": code}}, now=T0), {"block": False})
 
     def test_full_window_blocks_until_reset_unless_reading_is_from_a_previous_cycle(self):
@@ -568,7 +568,7 @@ class RouterGateHookTests(unittest.TestCase):
                 ({"available": False}, False)):
             with self.subTest(changes=changes):
                 cache = self.exhausted_cache(**changes)
-                self.assertEqual(gate.check_account_quota_exhausted("claude-2", cache, T0) is not None, blocked)
+                self.assertEqual(gate.check_account_quota_exhausted("claude-lab", cache, T0) is not None, blocked)
         # Dict-shaped window specs with custom launch_min_remaining_pct apply across non-Claude accounts too.
         custom_accounts = {"accounts": {"team-proxy": {"windows": {"spend": {"hours": 168, "launch_min_remaining_pct": 15}}}}}
         cache = self.state / "usage.json"
@@ -593,41 +593,41 @@ class RouterGateHookTests(unittest.TestCase):
         directory = self.state / "agents" / "project"
         directory.mkdir(parents=True, exist_ok=True)
         for name, doc in zip(names, (
-                {"provider": "claude-2", "config": {"model": "claude-sonnet-5-5", "thinkingOptionId": "high"},
-                 "labels": {"router.account": "claude-2", "router.bundle_id": "sonnet55_high_2",
+                {"provider": "claude-lab", "config": {"model": "claude-sonnet-5-5", "thinkingOptionId": "high"},
+                 "labels": {"router.account": "claude-lab", "router.bundle_id": "lab_sonnet55_high",
                             "router.parent_id": "actual-parent"}},
-                {"provider": "claude-2", "labels": {"router.account": "claude-2", "router.bundle_id": "opus55_high_2"}},
-                {"provider": "claude-2/claude-sonnet-5-5"},
+                {"provider": "claude-lab", "labels": {"router.account": "claude-lab", "router.bundle_id": "lab_opus55_high"}},
+                {"provider": "claude-lab/claude-sonnet-5-5"},
                 {"provider": "codex", "config": {"model": "gpt-6-astra"}},
-                {"provider": "claude-2", "labels": {"paseo.parent-agent-id": ids["sonnet"]}})):
+                {"provider": "claude-lab", "labels": {"paseo.parent-agent-id": ids["sonnet"]}})):
             (directory / (ids[name] + ".json")).write_text(json.dumps(doc), encoding="utf-8")
-        ledger = self.write_ledger(str(self.state), [self.route("claude-2", "claude-sonnet-5-5", "high"),
-                                                     self.route("claude-2", "claude-opus-5-5", "high")])
+        ledger = self.write_ledger(str(self.state), [self.route("claude-lab", "claude-sonnet-5-5", "high"),
+                                                     self.route("claude-lab", "claude-opus-5-5", "high")])
 
         def turn(agent, tool="send_agent_prompt", **extra):
             return {"tool_name": tool, "tool_input": {"agentId": ids[agent], "prompt": "continue"}, **extra}
 
         def launch(model):
             return {"tool_name": "create_agent", "tool_input": {
-                "provider": f"claude-2/claude-{model}-5-5", "settings": {"thinkingOptionId": "high"}}}
+                "provider": f"claude-lab/claude-{model}-5-5", "settings": {"thinkingOptionId": "high"}}}
 
         resume_sonnet = (
             turn("sonnet"), turn("sonnet", "mcp__paseo__run_turn"), turn("sonnet", "send_message"),
             {"toolName": "codemode", "input": {"code":
                 f'await tools.mcp__paseo__send_agent_prompt({{agentId: "{ids["sonnet"]}", prompt: "continue"}})'}})
-        bound_sonnet = {"tool_name": "mcp__paseo__create_agent", "tool_input": {"provider": "claude-2/claude-sonnet-5-5",
-            "labels": {"router.account": "claude-2", "router.bundle_id": "sonnet55_high_2"}}}
-        shell_launch = {"tool_name": "Bash", "tool_input": {"command": "paseo agent create --provider claude-2/claude-sonnet-5-5"}}
-        everyone = ["claude", "claude-2", "codex", "antigravity", "dot"]
+        bound_sonnet = {"tool_name": "mcp__paseo__create_agent", "tool_input": {"provider": "claude-lab/claude-sonnet-5-5",
+            "labels": {"router.account": "claude-lab", "router.bundle_id": "lab_sonnet55_high"}}}
+        shell_launch = {"tool_name": "Bash", "tool_input": {"command": "paseo agent create --provider claude-lab/claude-sonnet-5-5"}}
+        everyone = ["claude", "claude-lab", "codex", "antigravity", "dot"]
         # (settings, cause in the block reason, blocked calls, calls differing only in the judged condition)
         for settings, cause, blocked, passed in (
-                ({"allowed": [a for a in everyone if a != "claude-2"]}, "host-policy.json",
+                ({"allowed": [a for a in everyone if a != "claude-lab"]}, "host-policy.json",
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet, shell_launch),
                  (turn("codex"), turn("sonnet", parent_agent_id=ids["child"]))),
-                ({"accounts": {"claude-2": {"bundles": {"sonnet55_high_2": {"disabled": True},
-                                                        "opus55_high_2": {"disabled": False}}}}}, "档位 sonnet55_high_2",
+                ({"accounts": {"claude-lab": {"bundles": {"lab_sonnet55_high": {"disabled": True},
+                                                        "lab_opus55_high": {"disabled": False}}}}}, "档位 lab_sonnet55_high",
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
-                ({"accounts": {"claude-2": {"verified": False}}}, "verified: false",
+                ({"accounts": {"claude-lab": {"verified": False}}}, "verified: false",
                  (turn("bare"), launch("sonnet")), (turn("codex"),))):
             self.write_settings(**settings)
             for payload in blocked:
@@ -675,14 +675,14 @@ class RouterGateHookTests(unittest.TestCase):
         allocator = gate.router_module('allocator')
         for settings, tokens, cause in (
                 ({'allowed': []}, 0, 'host-policy.json'),
-                ({'accounts': {'claude-2': {'verified': False}}}, 0, 'verified: false'),
-                ({'accounts': {'claude-2': {'bundles': {'sonnet55_high_2': {'disabled': True}}}}}, 0, '档位 sonnet55_high_2'),
+                ({'accounts': {'claude-lab': {'verified': False}}}, 0, 'verified: false'),
+                ({'accounts': {'claude-lab': {'bundles': {'lab_sonnet55_high': {'disabled': True}}}}}, 0, '档位 lab_sonnet55_high'),
                 ({}, 2_000_000, 'historical_context_tokens=2,000,000/2,000,000')):
             self.write_settings(**settings)
             with mock.patch.object(allocator, 'session_state', return_value={'context_tokens': tokens}):
                 for label, caller, labels, status, blocked in cases:
-                    doc = {'provider': 'claude-2/claude-sonnet-5-5',
-                           'labels': {**labels, 'router.account': 'claude-2', 'router.bundle_id': 'sonnet55_high_2'},
+                    doc = {'provider': 'claude-lab/claude-sonnet-5-5',
+                           'labels': {**labels, 'router.account': 'claude-lab', 'router.bundle_id': 'lab_sonnet55_high'},
                            **status}
                     agent_file.write_text(json.dumps(doc), encoding='utf-8')
                     # Wrap-up text is deliberately identical for idle and running targets.
@@ -709,14 +709,14 @@ class RouterGateHookTests(unittest.TestCase):
 
     def test_running_control_keeps_launch_quota_and_notification_checks(self):
         wid = self.existing_agent()
-        labels = {'router.parent_id': 'parent', 'router.account': 'claude-2', 'router.bundle_id': 'sonnet55_high_2'}
+        labels = {'router.parent_id': 'parent', 'router.account': 'claude-lab', 'router.bundle_id': 'lab_sonnet55_high'}
         (self.state / 'agents' / 'project' / (wid + '.json')).write_text(json.dumps({
-            'provider': 'claude-2/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}), encoding='utf-8')
+            'provider': 'claude-lab/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}), encoding='utf-8')
         self.write_settings(allowed=[])
         with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent'}):
             # Spoofing running state in a launch request cannot bypass account disablement.
             result = gate.evaluate_payload({'tool_name': 'create_agent', 'tool_input': {
-                'provider': 'claude-2/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}}, now=T0)
+                'provider': 'claude-lab/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}}, now=T0)
             self.assertIn('host-policy.json', result['reason'])
             for notify, cause in ((False, 'notifyOnFinish: true or omit it'), (True, 'five_hour')):
                 self.exhausted_cache()
@@ -804,9 +804,9 @@ class RouterGateHookTests(unittest.TestCase):
             self.assertEqual(result == {}, allowed, result)
         # Quoted examples and readonly provider arguments are not executing calls.
         self.exhausted_cache()
-        code = 'await paseo.list_models({provider:"claude-2"}); await paseo.create_agent({provider:"codex/gpt-6-astra", initialPrompt:"create_agent({provider: \'claude-2\'})"})'
+        code = 'await paseo.list_models({provider:"claude-lab"}); await paseo.create_agent({provider:"codex/gpt-6-astra", initialPrompt:"create_agent({provider: \'claude-lab\'})"})'
         self.assertEqual(gate.evaluate_payload({"tool_name": "exec", "tool_input": code}, ledger_path=ledger, now=T0), {})
-        quoted = '// create_agent({provider:"claude-2"})\ntext("create_agent({})")'
+        quoted = '// create_agent({provider:"claude-lab"})\ntext("create_agent({})")'
         self.assertEqual(gate.evaluate_payload({"toolName": "codemode", "input": {"code": quoted}}, now=T0), {"block": False})
 
     def test_mixed_wrapper_still_checks_shell_launch(self):

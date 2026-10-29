@@ -64,7 +64,7 @@ class AllocatorTests(unittest.TestCase):
             'antigravity': [('gemini-5h', 90, 3), ('gemini-weekly', 60, 100), ('3p-5h', 90, 3), ('3p-weekly', 60, 100)],
         }
         windows.update(overrides)
-        windows.setdefault('claude-2', list(windows['claude']))
+        windows.setdefault('claude-lab', list(windows['claude']))
         return usage_windows(self.now, windows)
 
     def no_flash(self, **accounts):
@@ -191,8 +191,8 @@ class AllocatorTests(unittest.TestCase):
             agent('a3', 'pi', 's-pi')
             log('.pi/agent/sessions/x/2026-10-12_s-pi.jsonl', [{'type': 'compaction', 'tokensBefore': 260000}] * 3 + [
                 {'type': 'message', 'message': {'role': 'assistant', 'usage': {'input': 1000, 'cacheRead': 40000, 'cacheWrite': 0}}}])
-            agent('a4', 'claude-2', 's-c2')
-            log('.claude-2/projects/E--PROJECTS-x/s-c2.jsonl', [
+            agent('a4', 'claude-lab', 's-c2')
+            log('.claude-lab/projects/E--PROJECTS-x/s-c2.jsonl', [
                 {'type': 'system', 'subtype': 'compact_boundary', 'compactMetadata': {'preTokens': 510000}},
                 {'type': 'assistant', 'message': {'usage': {'input_tokens': 50, 'cache_read_input_tokens': 200000, 'cache_creation_input_tokens': 50}}}])
             self.assertEqual(allocator.session_state('a1', home), {'compactions': 2, 'compacted_tokens': 490000, 'context_tokens': 120000, 'historical_context_tokens': 610000})
@@ -205,8 +205,8 @@ class AllocatorTests(unittest.TestCase):
             self.assertEqual(allocator.session_state('missing', home)['telemetry_status'], 'unknown')
 
             # Historical 2M context cannot be masked by a small post-compaction compressed context_tokens
-            agent('a5', 'claude', 's-claude-2m')
-            log('.claude/projects/E--PROJECTS-x/s-claude-2m.jsonl', [
+            agent('a5', 'claude', 's-claude-long-context')
+            log('.claude/projects/E--PROJECTS-x/s-claude-long-context.jsonl', [
                 {'type': 'system', 'subtype': 'compact_boundary', 'compactMetadata': {'preTokens': 1950000, 'postTokens': 12000, 'cumulativeDroppedTokens': 1938000}},
                 {'type': 'assistant', 'message': {'usage': {'input_tokens': 100, 'cache_read_input_tokens': 80000, 'cache_creation_input_tokens': 0}}}])
             st5 = allocator.session_state('a5', home)
@@ -637,55 +637,55 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual((patient['decision']['needs_user_decision'], patient['decision']['action']), (False, 'defer'))
 
     def test_claude_2_backup_safety_floor_and_inflight_reservation(self):
-        # Ordinary times (100h to reset): claude-2 dispatches normally when its weekly pool is healthier than claude's
+        # Ordinary times (100h to reset): claude-lab dispatches normally when its weekly pool is healthier than claude's
         normal_claude2 = self.usage(
             claude=[('five_hour', 90, 3), ('seven_day', 45, 100), ('weekly_fable', 100, 100)],
-            **{'claude-2': [('five_hour', 90, 3), ('seven_day', 85, 100), ('weekly_fable', 100, 100)]},
+            **{'claude-lab': [('five_hour', 90, 3), ('seven_day', 85, 100), ('weekly_fable', 100, 100)]},
         )
-        self.assertEqual(self.plan({'work_kind': 'exploration_analysis'}, normal_claude2)['choice'], 'sonnet55_high_2')
+        self.assertEqual(self.plan({'work_kind': 'exploration_analysis'}, normal_claude2)['choice'], 'lab_sonnet55_high')
 
         all_big_empty = self.usage(
             claude=[('five_hour', 90, 3), ('seven_day', 0, 100), ('weekly_fable', 100, 100)],
             codex=[('usage', 1, 100)],
             antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 2, 100), ('3p-5h', 90, 3), ('3p-weekly', 2, 100)],
-            **{'claude-2': [('five_hour', 65, 3), ('seven_day', 83, 100), ('weekly_fable', 100, 100)]},
+            **{'claude-lab': [('five_hour', 65, 3), ('seven_day', 83, 100), ('weekly_fable', 100, 100)]},
         )
-        self.assertEqual(self.plan({'work_kind': 'exploration_analysis'}, all_big_empty)['choice'], 'sonnet55_high_2')
+        self.assertEqual(self.plan({'work_kind': 'exploration_analysis'}, all_big_empty)['choice'], 'lab_sonnet55_high')
 
         task = {'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 0.7, 'needs': {'local_only': True}}
-        usage_low = self.usage(**{'claude-2': [('five_hour', 23, 2.5), ('seven_day', 61, 130)], 'claude': [('five_hour', 0, 2.0), ('seven_day', 0, 100)]})
-        self.assertTrue(self.rows(self.plan(task, usage_low))['sonnet55_high_2']['excluded'])
+        usage_low = self.usage(**{'claude-lab': [('five_hour', 23, 2.5), ('seven_day', 61, 130)], 'claude': [('five_hour', 0, 2.0), ('seven_day', 0, 100)]})
+        self.assertTrue(self.rows(self.plan(task, usage_low))['lab_sonnet55_high']['excluded'])
 
-        usage_40 = self.usage(**{'claude-2': [('five_hour', 40, 2.5), ('seven_day', 61, 130)], 'claude': [('five_hour', 0, 2.0), ('seven_day', 0, 100)]})
-        usage_40['accounts']['claude-2']['fetched_at'] = (self.now + timedelta(seconds=12)).isoformat()
+        usage_40 = self.usage(**{'claude-lab': [('five_hour', 40, 2.5), ('seven_day', 61, 130)], 'claude': [('five_hour', 0, 2.0), ('seven_day', 0, 100)]})
+        usage_40['accounts']['claude-lab']['fetched_at'] = (self.now + timedelta(seconds=12)).isoformat()
         inflight = [{
             'at': (self.now + timedelta(seconds=10)).isoformat(), 'stage': 'dispatch', 'dispatch_id': 'fixture-dispatch',
             'state': 'started', 'lease_until': (self.now + timedelta(minutes=10)).isoformat(),
-            'choice': 'sonnet55_high_2', 'hours': 0.7, 'expected_usd': 3.08, 'kind': 'exploration_analysis',
-            'bundle': {'provider': 'claude-2', 'account': 'claude-2', 'model': 'claude-sonnet-5-5', 'bundle_id': 'sonnet55_high_2', 'expected_usd': 3.08},
-            'usage': {'claude-2': {'windows': [{'id': 'five_hour', 'used_pct': 60.0}, {'id': 'seven_day', 'used_pct': 39.0}]}},
+            'choice': 'lab_sonnet55_high', 'hours': 0.7, 'expected_usd': 3.08, 'kind': 'exploration_analysis',
+            'bundle': {'provider': 'claude-lab', 'account': 'claude-lab', 'model': 'claude-sonnet-5-5', 'bundle_id': 'lab_sonnet55_high', 'expected_usd': 3.08},
+            'usage': {'claude-lab': {'windows': [{'id': 'five_hour', 'used_pct': 60.0}, {'id': 'seven_day', 'used_pct': 39.0}]}},
         }]
-        s2 = self.rows(allocator.plan(task, usage_40, self.now + timedelta(minutes=2), records=inflight))['sonnet55_high_2']
+        s2 = self.rows(allocator.plan(task, usage_40, self.now + timedelta(minutes=2), records=inflight))['lab_sonnet55_high']
         self.assertTrue(s2['excluded'])
         self.assertEqual(s2['capacity']['reserved_usd'], 3.08)
 
         # Unstarted 5h window (used_pct=0, resets_at=None) still enforces 5h wall against oversized or burst tasks
         unstarted_5h = copy.deepcopy(normal_claude2)
-        unstarted_5h['accounts']['claude-2']['status'] = 'fresh'
-        unstarted_5h['accounts']['claude-2']['windows'][0] = {
+        unstarted_5h['accounts']['claude-lab']['status'] = 'fresh'
+        unstarted_5h['accounts']['claude-lab']['windows'][0] = {
             'id': 'five_hour', 'used_pct': 0.0, 'resets_at': None, 'seconds_until_reset': None,
             'observed_remaining_pct': 100.0, 'remaining_pct_before_reset': None}
-        self.assertEqual(self.plan(task, unstarted_5h)['choice'], 'sonnet55_high_2')
+        self.assertEqual(self.plan(task, unstarted_5h)['choice'], 'lab_sonnet55_high')
         burst = [dict(inflight[0], dispatch_id=f'd-{i}', expected_usd=6.6) for i in (1, 2)]
         self.assertTrue(self.rows(allocator.plan(
             {'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 1.5, 'needs': {'local_only': True}},
-            unstarted_5h, self.now + timedelta(minutes=2), records=burst))['sonnet55_high_2']['excluded'])
+            unstarted_5h, self.now + timedelta(minutes=2), records=burst))['lab_sonnet55_high']['excluded'])
 
-        # Stale claude-2 with active 5h reset and unknown/clamped used_pct or oversized 3h task is excluded
+        # Stale claude-lab with active 5h reset and unknown/clamped used_pct or oversized 3h task is excluded
         stale_c2 = self.usage(
             claude=[('five_hour', 75, 4.0), ('seven_day', 20, 35.0), ('weekly_fable', 100, 35.0)],
         )
-        stale_c2['accounts']['claude-2'] = {
+        stale_c2['accounts']['claude-lab'] = {
             'status': 'stale',
             'stale': True,
             'fetched_at': (self.now - timedelta(minutes=13)).isoformat(),
@@ -700,26 +700,26 @@ class AllocatorTests(unittest.TestCase):
         }
         res_1h = self.plan({'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 1.0,
                             'needs': {'local_only': True}}, stale_c2)
-        self.assertTrue(self.rows(res_1h)['sonnet55_high_2']['excluded'])
+        self.assertTrue(self.rows(res_1h)['lab_sonnet55_high']['excluded'])
         self.assertEqual(res_1h['selected_bundle']['account'], 'claude')
 
         # Even if five_hour telemetry is completely missing, an oversized task exceeding full 5h Pro capacity is excluded
         missing_5h = copy.deepcopy(stale_c2)
-        missing_5h['accounts']['claude-2']['windows'] = [missing_5h['accounts']['claude-2']['windows'][1]]
+        missing_5h['accounts']['claude-lab']['windows'] = [missing_5h['accounts']['claude-lab']['windows'][1]]
         custom_acc = allocator.load_accounts()
-        custom_acc['accounts']['claude-2']['bundles']['opus55_high_2'].pop('disabled', None)
+        custom_acc['accounts']['claude-lab']['bundles']['lab_opus55_high'].pop('disabled', None)
         res_opus_3h = self.plan({'work_kind': 'frontend_implementation', 'difficulty': 'hard', 'expected_hours': 3.0,
                                  'needs': {'local_only': True}}, missing_5h, accounts=custom_acc)
-        self.assertTrue(self.rows(res_opus_3h)['opus55_high_2']['excluded'])
+        self.assertTrue(self.rows(res_opus_3h)['lab_opus55_high']['excluded'])
         res_sonnet_4h = self.plan({'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 3.8,
                                    'needs': {'local_only': True}}, missing_5h)
-        self.assertTrue(self.rows(res_sonnet_4h)['sonnet55_high_2']['excluded'])
+        self.assertTrue(self.rows(res_sonnet_4h)['lab_sonnet55_high']['excluded'])
 
     def test_constraints_and_validation(self):
         self.assertTrue(self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard',
                                    'constraints': {'model': 'claude-opus-5'}})['choice'].startswith('opus55'))
         self.assertIn('account not verified as launchable',
-                      self.rows(self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled'}))['sol_xhigh_2']['excluded'])
+                      self.rows(self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled'}))['work_sol_xhigh']['excluded'])
         with self.assertRaises(ValueError):
             self.plan({'difficulty': 'impossible'})
         with self.assertRaises(ValueError):
@@ -956,13 +956,13 @@ class AllocatorTests(unittest.TestCase):
         for kind, prof, owner, depleted, remaining in (
             ('general_implementation', self.profile(), 'sol_high', ('codex',), 30),
             ('debug_review', self.profile(code_complexity=0, hallucination_risk=3), 'argon_high', ('antigravity',), 35),
-            ('debug_review', self.profile(code_complexity=0, divergence=2, hallucination_risk=3), 'opus55_xhigh', ('claude', 'claude-2'), 35),
+            ('debug_review', self.profile(code_complexity=0, divergence=2, hallucination_risk=3), 'opus55_xhigh', ('claude', 'claude-lab'), 35),
             ('debug_review', self.profile(code_complexity=2), 'sol_high', ('codex',), 20),
             ('exploration_analysis', self.profile(code_complexity=0, context_scale=2, interaction_style='exploration'),
-             'sonnet55_high', ('claude', 'claude-2'), 35),
+             'sonnet55_high', ('claude', 'claude-lab'), 35),
             ('web_research', self.profile(code_complexity=0, context_scale=2, hallucination_risk=3, interaction_style='exploration'),
              'sonnet55_high', ('claude',), 35),
-            ('frontend_implementation', self.profile(needs_visual=True), 'opus55_high', ('claude', 'claude-2'), 35),
+            ('frontend_implementation', self.profile(needs_visual=True), 'opus55_high', ('claude', 'claude-lab'), 35),
         ):
             with self.subTest(kind=kind):
                 task = {'work_kind': kind, 'profile': prof, 'expected_hours': 1}
@@ -1023,7 +1023,7 @@ class AllocatorTests(unittest.TestCase):
                 healthy = self.plan(task, self.healthy_quota())
                 # Keep the same family for the scarcity comparison; it may otherwise rotate to a healthy model.
                 tight = self.plan(dict(task, constraints={'model': model}),
-                                  self.healthy_quota(('codex', 'claude', 'claude-2'), tight_rem))
+                                  self.healthy_quota(('codex', 'claude', 'claude-lab'), tight_rem))
                 self.assertEqual(healthy['choice'], high_effort)
                 tight_rows = self.rows(tight)
                 if model == 'claude-opus-5-5' and str(tight['choice']).startswith('agy_opus55_'):
@@ -1355,7 +1355,7 @@ class OverrideContractTests(unittest.TestCase):
         self.assertTrue(allocator.override_reset_landed(self.override, self.replenished(), self.accounts, self.now))
         self.assertFalse(allocator.override_reset_landed(self.override, self.same_cycle(), self.accounts, self.now))
         self.assertTrue(allocator.override_reset_landed(one_off, self.same_cycle(), self.accounts, self.now))
-        for invalid in ({'status': 'stale'}, {'stale': True}, {'available': False}, {'account': 'codex-2'},
+        for invalid in ({'status': 'stale'}, {'stale': True}, {'available': False}, {'account': 'codex-work'},
                         {'fetched_at': self.baseline.isoformat()}, {'observation_id': 'old'},
                         {'fetched_at': (self.now - timedelta(minutes=16)).isoformat()},
                         {'fetched_at': (self.now + timedelta(seconds=1)).isoformat()}):

@@ -293,22 +293,22 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(self.discover()['accounts']['claude-work']['status'], 'disabled')
 
     def test_same_subscription_has_one_quota_owner_across_live_launchers(self):
-        self.native_codex('codex-2', 'account-A')
-        self.paseo({'codex-2': {'extends': 'codex', 'enabled': True,
-                    'env': {'CODEX_HOME': str(self.home / '.codex-2')}}})
+        self.native_codex('codex-work', 'account-A')
+        self.paseo({'codex-work': {'extends': 'codex', 'enabled': True,
+                    'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
         snapshot = self.discover()
-        self.assertEqual(snapshot['accounts']['codex-2']['quota_account'], 'codex')
+        self.assertEqual(snapshot['accounts']['codex-work']['quota_account'], 'codex')
         accounts = self.apply(snapshot)
-        second = allocator.bundles(accounts)['sol_xhigh_2']
-        self.assertEqual((second['account'], second['provider']), ('codex', 'codex-2'))
-        self.assertFalse(accounts['accounts']['codex-2']['bundles'])
+        second = allocator.bundles(accounts)['work_sol_xhigh']
+        self.assertEqual((second['account'], second['provider']), ('codex', 'codex-work'))
+        self.assertFalse(accounts['accounts']['codex-work']['bundles'])
         self.write('.usage-float/usage-cache.json', {'providers': {'codex': {
             'credential_key': snapshot['accounts']['codex']['credential_key']}}})
-        self.paseo({'codex': {'enabled': False}, 'codex-2': {'extends': 'codex', 'enabled': True,
-                    'env': {'CODEX_HOME': str(self.home / '.codex-2')}}})
+        self.paseo({'codex': {'enabled': False}, 'codex-work': {'extends': 'codex', 'enabled': True,
+                    'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
         accounts = self.apply(self.discover())
         usage = inventory.merge_usage({'accounts': {'codex': {'status': 'fresh', 'windows': [{'used_pct': 98}]}}}, accounts, self.now)
-        self.assertEqual(usage['accounts']['codex-2']['windows'][0]['used_pct'], 98)
+        self.assertEqual(usage['accounts']['codex-work']['windows'][0]['used_pct'], 98)
 
     def test_changed_credentials_clear_old_quota_and_unknown_plan_capacity(self):
         old = self.discover()['accounts']['codex']['credential_key']
@@ -358,28 +358,28 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(self.discover(publish=True)['accounts']['claude']['status'], 'ready')
 
     def test_explicit_disable_and_model_policy_win_over_stale_verified_flag(self):
-        self.native_claude('claude-2')
-        self.paseo({'claude-2': {'extends': 'claude', 'enabled': False,
-                    'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-2')}}})
+        self.native_claude('claude-lab')
+        self.paseo({'claude-lab': {'extends': 'claude', 'enabled': False,
+                    'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-lab')}}})
         accounts = self.apply(self.discover())
         bundles = allocator.bundles(accounts)
-        self.assertIn('disabled', bundles['sonnet55_high_2']['discovery_unavailable'])
-        self.assertIn('disabled', bundles['opus55_high_2'])
+        self.assertIn('disabled', bundles['lab_sonnet55_high']['discovery_unavailable'])
+        self.assertIn('disabled', bundles['lab_opus55_high'])
         task = {'objective': 'Fixture', 'expected_hours': 0.1, 'needs': {'local_only': True}, 'include_unverified': True}
         with patch.object(allocator.host_policy, 'load_policy', return_value=None):
             plan = allocator.plan(task, {'accounts': {}}, self.now, accounts=accounts, overrides=[])
-        row = next(r for r in plan['ranking'] if r['id'] == 'sonnet55_high_2')
+        row = next(r for r in plan['ranking'] if r['id'] == 'lab_sonnet55_high')
         self.assertTrue(any('provider discovery: disabled' in reason for reason in row['excluded']))
 
     def test_launcher_uses_its_effective_credentials_not_its_display_identity(self):
         self.native_claude('claude', 'max')
-        self.native_claude('claude-2', 'pro')
-        self.paseo({'claude': {'enabled': False}, 'claude-2': {'extends': 'claude', 'enabled': True,
-                    'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-2'),
+        self.native_claude('claude-lab', 'pro')
+        self.paseo({'claude': {'enabled': False}, 'claude-lab': {'extends': 'claude', 'enabled': True,
+                    'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-lab'),
                             'CLAUDE_SECURESTORAGE_CONFIG_DIR': str(self.home / '.claude')}}})
         snapshot = self.discover()
-        self.assertEqual(snapshot['accounts']['claude-2']['status'], 'ready')
-        self.assertEqual(snapshot['accounts']['claude-2']['plan'], 'max20')
+        self.assertEqual(snapshot['accounts']['claude-lab']['status'], 'ready')
+        self.assertEqual(snapshot['accounts']['claude-lab']['plan'], 'max20')
         self.assertEqual(snapshot['accounts']['claude']['status'], 'disabled')
         # A custom API key is usable configuration, but does not inherit OAuth quota.
         self.write('.claude/settings.json', {'env': {'ANTHROPIC_API_KEY': 'SECRET-payg'}})
@@ -418,16 +418,16 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn('id_token', text)
 
     def test_magpie_backup_account_off_is_distinct_from_current_account(self):
-        self.native_codex('codex-2', 'account-B')
-        self.paseo({'codex-2': {'extends': 'codex', 'enabled': True,
-                    'env': {'CODEX_HOME': str(self.home / '.codex-2')}}})
+        self.native_codex('codex-work', 'account-B')
+        self.paseo({'codex-work': {'extends': 'codex', 'enabled': True,
+                    'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
         login = {'id': 'saved-B', 'agent': 'codex', 'auth': self.codex_auth('account-B'), 'on': False}
         self.write('.config/magpie/logins.json', [login])
         first = self.discover(publish=True)
-        self.assertEqual(first['accounts']['codex-2']['status'], 'paused')
+        self.assertEqual(first['accounts']['codex-work']['status'], 'paused')
         self.assertEqual(first['accounts']['codex']['status'], 'ready')
         self.write('.config/magpie/logins.json', [{**login, 'on': True}])
-        self.assertEqual(self.discover()['accounts']['codex-2']['status'], 'ready')
+        self.assertEqual(self.discover()['accounts']['codex-work']['status'], 'ready')
 
     def test_magpie_builtin_subscription_flags_and_default_model_picks(self):
         provider = {'id': 'codex', 'models': []}
@@ -572,6 +572,8 @@ class DiscoveryTests(unittest.TestCase):
         snapshot = self.discover()
         self.assertNotIn('claude-2', snapshot['accounts'])
         self.assertNotIn('codex-2', snapshot['accounts'])
+        self.assertNotIn('claude-lab', snapshot['accounts'])
+        self.assertNotIn('codex-work', snapshot['accounts'])
         self.assertEqual(snapshot['accounts']['claude-magpie']['usage_binding'], 'matches')
         self.assertEqual(snapshot['accounts']['claude-magpie']['billing'], 'subscription')
         self.assertEqual(snapshot['accounts']['claude-magpie']['plan'], 'pro')
@@ -580,6 +582,8 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIn('codex-team', applied['dispatch_efforts'])
         self.assertNotIn('claude-2', accounts)
         self.assertNotIn('codex-2', accounts)
+        self.assertNotIn('claude-lab', accounts)
+        self.assertNotIn('codex-work', accounts)
         magpie_spec = accounts['claude-magpie']
         self.assertTrue(magpie_spec['verified'])
         self.assertEqual(magpie_spec['capacity_usd']['seven_day'], 156)
@@ -670,23 +674,23 @@ class IsolationRecipeTests(unittest.TestCase):
         self.sandbox.mkdir(parents=True)
         (self.real / '.paseo').mkdir(parents=True)
         (self.real / '.paseo/config.json').write_text(json.dumps({'agents': {'providers': {
-            'codex-2': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.real / '.codex-2')}}}}}), encoding='utf-8')
-        (self.real / '.codex-2').mkdir()
-        (self.real / '.codex-2/auth.json').write_text(json.dumps({'tokens': {'account_id': 'X', 'access_token': 'SECRET'}}), encoding='utf-8')
+            'codex-work': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.real / '.codex-work')}}}}}), encoding='utf-8')
+        (self.real / '.codex-work').mkdir()
+        (self.real / '.codex-work/auth.json').write_text(json.dumps({'tokens': {'account_id': 'X', 'access_token': 'SECRET'}}), encoding='utf-8')
 
     def test_discovery_uses_only_the_explicit_environment(self):
         for variables, expected_account in (
-            ({'PASEO_HOME': str(self.real / '.paseo')}, 'codex-2'),
-            ({'CODEX_HOME': str(self.real / '.codex-2')}, 'codex'),
+            ({'PASEO_HOME': str(self.real / '.paseo')}, 'codex-work'),
+            ({'CODEX_HOME': str(self.real / '.codex-work')}, 'codex'),
             ({}, None),
         ):
             with self.subTest(variables=variables):
                 snapshot = inventory.discover(self.sandbox, {'PATH': '', **variables})
                 if expected_account:
                     self.assertEqual(snapshot['accounts'][expected_account]['status'], 'ready')
-                    self.assertEqual(Path(snapshot['accounts'][expected_account]['home']), self.real / '.codex-2')
+                    self.assertEqual(Path(snapshot['accounts'][expected_account]['home']), self.real / '.codex-work')
                 else:
-                    self.assertNotIn('codex-2', snapshot['accounts'])
+                    self.assertNotIn('codex-work', snapshot['accounts'])
                     self.assertFalse([n for n, row in snapshot['accounts'].items() if row['status'] == 'ready'])
 
     def test_shipped_fleet_gives_a_new_user_no_candidates(self):
@@ -698,7 +702,8 @@ class IsolationRecipeTests(unittest.TestCase):
             accounts = allocator.load_accounts()
         self.assertTrue(accounts['accounts'])
         self.assertEqual([n for n, spec in accounts['accounts'].items() if spec.get('verified')], [])
-        self.assertFalse([n for n in accounts['accounts'] if n in ('claude-2', 'codex-2')])
+        self.assertFalse([n for n in accounts['accounts'] if n in
+                          ('claude-2', 'codex-2', 'claude-lab', 'codex-work')])
 
 
 if __name__ == '__main__':

@@ -122,7 +122,7 @@ class RoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             hit_now = datetime(2026, 10, 28, 9, 55, tzinfo=timezone.utc)
             cache = self.write_cache(directory, {
-                'claude-2': {
+                'claude-lab': {
                     'fetched_at': '2026-10-28T09:38:12Z',
                     'available': True,
                     'stale': True,
@@ -132,7 +132,7 @@ class RoutingTests(unittest.TestCase):
                     ],
                 }
             })
-            log_path = Path(directory) / '.claude-2' / 'projects' / 'E--PROJECTS-route-manager' / 'sess1.jsonl'
+            log_path = Path(directory) / '.claude-lab' / 'projects' / 'E--PROJECTS-route-manager' / 'sess1.jsonl'
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.write_text(json.dumps({
                 'type': 'assistant',
@@ -142,13 +142,13 @@ class RoutingTests(unittest.TestCase):
                 'message': {'content': [{'type': 'text', 'text': "API Error: Request rejected (429) · Claude Code: You've hit your session limit · resets 1:50pm (UTC)"}]},
             }) + '\n', encoding='utf-8')
             snap_429 = router.usage_snapshot(cache, now=hit_now)
-            c2 = snap_429['accounts']['claude-2']
+            c2 = snap_429['accounts']['claude-lab']
             self.assertEqual(c2.get('rate_limited_until'), '2026-10-28T13:50:00+00:00')
             w5 = next(w for w in c2['windows'] if w['id'] == 'five_hour')
             self.assertEqual((w5['used_pct'], w5['observed_remaining_pct'], w5['remaining_pct_before_reset'], w5.get('rate_limited')),
                              (100.0, 0.0, 0.0, True))
             persisted = json.loads((Path(directory) / '.route-manager' / 'rate-limits.json').read_text(encoding='utf-8'))
-            self.assertEqual(persisted['claude-2']['resets_at'], '2026-10-28T13:50:00+00:00')
+            self.assertEqual(persisted['claude-lab']['resets_at'], '2026-10-28T13:50:00+00:00')
 
     def test_request_building_validation_and_metered_fallback(self):
         candidate = self.candidate(account='distinct-account')
@@ -185,24 +185,24 @@ class RoutingTests(unittest.TestCase):
 
         with patch.dict(router.os.environ, {'OPENAI_API_KEY': 'secret', 'ROUTER_CUSTOM': 'keep'}), \
                 patch.object(router.provider_inventory, 'current', return_value={'accounts': {
-                    'claude-2': {'family': 'claude', 'home': str(Path.home() / '.claude-2')}}}):
-            env = router.subscription_env('claude-2')
+                    'claude-lab': {'family': 'claude', 'home': str(Path.home() / '.claude-lab')}}}):
+            env = router.subscription_env('claude-lab')
             self.assertNotIn('OPENAI_API_KEY', env)
             self.assertEqual(env['ROUTER_CUSTOM'], 'keep')
-            self.assertTrue(env['CLAUDE_CONFIG_DIR'].endswith('.claude-2'))
+            self.assertTrue(env['CLAUDE_CONFIG_DIR'].endswith('.claude-lab'))
 
-        # Primary exhausted -> switches to claude-2 if five_hour > 25% remaining, else skips sonnet
+        # Primary exhausted -> switches to claude-lab if five_hour > 25% remaining, else skips sonnet
         claude_empty = self.row(used=100)
         claude_empty['windows'][0].update({'id': 'seven_day', 'resets_at': '2026-10-08T00:00:00Z'})
         claude_2_ok = self.row(used=17)
         claude_2_ok['windows'][0].update({'id': 'seven_day', 'resets_at': '2026-10-04T01:30:00Z'})
-        snap_ok = self.snapshot({'claude': claude_empty, 'claude-2': claude_2_ok, 'codex': self.row(used=50)})
-        self.assertEqual(router.resolve_judge('sonnet', snap_ok)['account'], 'claude-2')
+        snap_ok = self.snapshot({'claude': claude_empty, 'claude-lab': claude_2_ok, 'codex': self.row(used=50)})
+        self.assertEqual(router.resolve_judge('sonnet', snap_ok)['account'], 'claude-lab')
         self.assertEqual(router.judge_order(snap_ok, 'auto'), ['sonnet', 'codex'])
 
         claude_2_low = self.row(used=85)
         claude_2_low['windows'][0].update({'id': 'five_hour', 'resets_at': '2026-10-04T03:00:00Z'})
-        snap_low = self.snapshot({'claude': claude_empty, 'claude-2': claude_2_low, 'codex': self.row(used=30)})
+        snap_low = self.snapshot({'claude': claude_empty, 'claude-lab': claude_2_low, 'codex': self.row(used=30)})
         self.assertEqual(router.judge_order(snap_low, 'auto'), ['codex'])
 
     def test_capacity_alerts_ledger_and_constraint_recording(self):
@@ -246,8 +246,8 @@ class RoutingTests(unittest.TestCase):
             with patch.object(router, 'usage_snapshot', return_value={'read_ok': True, 'accounts': {}}):
                 rec = router.record_constraint(args)
             self.assertEqual(rec['source'], 'constraint_record')
-            args.account = 'claude-2'
-            args.provider = 'claude-2'
+            args.account = 'claude-lab'
+            args.provider = 'claude-lab'
             args.model = 'claude-opus-5-5'
             with self.assertRaisesRegex(ValueError, 'disabled'):
                 router.record_constraint(args)

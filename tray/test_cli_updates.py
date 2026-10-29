@@ -131,12 +131,12 @@ class DiscoveryTests(CliUpdateCase):
     def test_accounts_sharing_a_binary_are_one_row_and_a_visit_runs_nothing(self):
         npm_package(self.prefix, "@openai/codex", "codex", "0.1.0")
         npm_package(self.prefix, "@anthropic-ai/claude-code", "claude", "2.0.0")
-        self.paseo({"claude-2": {"extends": "claude", "enabled": True, "env": ["ANTHROPIC_API_KEY"]},
-                    "codex-2": {"extends": "codex", "enabled": False}})
+        self.paseo({"claude-lab": {"extends": "claude", "enabled": True, "env": ["ANTHROPIC_API_KEY"]},
+                    "codex-work": {"extends": "codex", "enabled": False}})
         rows = cli_updates.snapshot(self.home, self.environ)
         by_id = {row["id"]: row for row in rows}
-        self.assertEqual(by_id["claude"]["providers"], ["claude", "claude-2"])
-        self.assertEqual(by_id["codex"]["providers"], ["codex"])    # the disabled codex-2 is not a user
+        self.assertEqual(by_id["claude"]["providers"], ["claude", "claude-lab"])
+        self.assertEqual(by_id["codex"]["providers"], ["codex"])    # the disabled codex-work is not a user
         self.assertEqual([row["id"] for row in rows].count("claude"), 1)
         self.assertEqual((by_id["codex"]["source"], by_id["codex"]["version"], by_id["codex"]["status"]), ("npm", "0.1.0", "unchecked"))
         self.assertEqual(by_id["pi"]["status"], "missing")
@@ -414,14 +414,14 @@ class SourceConsistencyTests(NativeUpdateFixture):
         second_prefix = self.root / "claude two npm"
         second = npm_package(second_prefix, "@anthropic-ai/claude-code", "claude", "2.0.0")
         self.environ["PATH"] = os.pathsep.join([str(self.prefix), str(self.bin), self.environ["PATH"]])
-        self.paseo({"claude-2": {"extends": "claude", "enabled": True, "command": [str(second_prefix / "claude.cmd")]}})
+        self.paseo({"claude-lab": {"extends": "claude", "enabled": True, "command": [str(second_prefix / "claude.cmd")]}})
         rows = {r["id"]: r for r in cli_updates.snapshot(self.home, self.environ) if r["id"].startswith("claude")}
-        self.assertEqual({k: v["providers"] for k, v in rows.items()}, {"claude": ["claude"], "claude#claude-2": ["claude-2"]})
+        self.assertEqual({k: v["providers"] for k, v in rows.items()}, {"claude": ["claude"], "claude#claude-lab": ["claude-lab"]})
         with mock.patch.object(cli_updates.owned_process, "run", side_effect=lambda argv, **kw: owned_process.Result(0, "9.9.9", "")):
             with mock.patch.object(cli_updates, "run_tool", side_effect=lambda argv, timeout, install: (
                     json.loads((install.package_dir / "package.json").read_text()) and
                     owned_process.Result(0, "9.9.9" if argv[1] == "view" else "ok", ""))) as tool:
-                cli_updates.update("claude#claude-2", self.home, self.environ)
+                cli_updates.update("claude#claude-lab", self.home, self.environ)
         installs = [call.args[0] for call in tool.call_args_list if "install" in call.args[0]]
         self.assertEqual(len(installs), 1)
         self.assertEqual(installs[0][installs[0].index("--prefix") + 1], str(second_prefix))
@@ -443,9 +443,9 @@ class ProviderEnvTests(CliUpdateCase):
         provider_path = os.pathsep.join([str(provider), system])
         self.environ["PATH"] = str(decoy)
         self.paseo({"codex": {"env": {"PROVIDER_SENTINEL": "from-parent", "PATH": str(decoy)}},
-                    "codex-2": {"extends": "codex", "enabled": True, "command": ["codex"],
+                    "codex-work": {"extends": "codex", "enabled": True, "command": ["codex"],
                                 "env": {"PATH": provider_path}}})
-        message = cli_updates.update("codex#codex-2", self.home, self.environ)
+        message = cli_updates.update("codex#codex-work", self.home, self.environ)
         self.assertIn("0.1.0 → 0.2.0", message)
         seen = (self.state / "seen-path.txt").read_text()
         self.assertEqual(seen, provider_path)
@@ -467,7 +467,7 @@ class ProviderEnvTests(CliUpdateCase):
         row = self.row("codex", probe=False)
         self.assertEqual((row["source"], Path(row["path"])), ("npm", provider / "codex.cmd"))
         self.paseo({"codex": {"enabled": True, "env": {"PATH": str(provider)}},
-                    "codex-2": {"extends": "codex", "enabled": True, "env": {"PATH": str(other)}}})
+                    "codex-work": {"extends": "codex", "enabled": True, "env": {"PATH": str(other)}}})
         paths = {Path(item["path"]) for item in cli_updates.snapshot(self.home, self.environ, probe=False)
                  if str(item["id"]).startswith("codex")}
         self.assertEqual(paths, {provider / "codex.cmd", other / "codex.cmd"})

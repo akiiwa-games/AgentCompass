@@ -238,10 +238,10 @@ class ScanTests(Fixture):
     def test_extra_sources_can_be_added_from_a_file(self):
         extra = self.root / "second" / "sessions"
         extra.mkdir(parents=True)
-        cs.SOURCES_FILE.write_text(json.dumps({"codex-2": {"kind": "codex", "roots": [str(extra)]}, "bad": {"kind": "x"}}),
+        cs.SOURCES_FILE.write_text(json.dumps({"codex-work": {"kind": "codex", "roots": [str(extra)]}, "bad": {"kind": "x"}}),
                                    encoding="utf-8")
         found = cs.sources()
-        self.assertEqual(found["codex-2"]["roots"], [str(extra)])
+        self.assertEqual(found["codex-work"]["roots"], [str(extra)])
         self.assertNotIn("bad", found)
 
     def test_usage_cache_is_sampled_when_it_changes(self):
@@ -366,9 +366,9 @@ class MeasureTests(Fixture):
         self.assertEqual(document['activity_status'], 'unknown')
         source = cs.STATE_DIR / 'usage-activity.json'
         source.write_text(json.dumps({'schema': 'route-manager.activity.v1',
-            'generated_at': cs.iso(T0 + 200), 'active_workers': {'claude-2': {'count': 2}}}))
+            'generated_at': cs.iso(T0 + 200), 'active_workers': {'claude-lab': {'count': 2}}}))
         document = cs.measure(state, T0 + 200)
-        self.assertEqual(document['active_workers'], {'claude-2': {'count': 2}})
+        self.assertEqual(document['active_workers'], {'claude-lab': {'count': 2}})
         self.assertEqual(document['activity_status'], 'observed')
         self.assertEqual(cs.measure(state, T0 + 400)['activity_status'], 'unknown')
 

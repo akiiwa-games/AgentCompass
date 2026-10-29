@@ -112,7 +112,7 @@ class PanelTests(unittest.TestCase):
 
     def test_harness_and_account_rows_keep_model_partial_state_and_readiness_separate(self):
         panel = self.open()
-        panel.models_rows_loaded([row(partial=True), row('pi', enabled=False), row(account='codex-2')])
+        panel.models_rows_loaded([row(partial=True), row('pi', enabled=False), row(account='codex-work')])
         self.assertEqual(len(panel.model_widgets), 3)
         first = panel.model_widgets[0]
         self.assertTrue(first['chip_labels'][0].cget('text').startswith('◐ '))

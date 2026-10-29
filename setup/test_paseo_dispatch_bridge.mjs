@@ -41,7 +41,7 @@ test('SDK creation uses its documented fields, parentage and idempotency', async
 });
 
 test('missing parent refuses creation even with a cwd', async () => {
-  const request = {provider: 'claude-2/claude-sonnet-5-5', cwd: 'E:/fixture'};
+  const request = {provider: 'claude-lab/claude-sonnet-5-5', cwd: 'E:/fixture'};
   const fake = {createAgent: async () => {throw new Error('must not create');}};
   for (const parent_id of [null, '', ' ', 'top-level']) {
     assert.deepEqual(await execute(fake, {operation: 'create', parent_id, request}),

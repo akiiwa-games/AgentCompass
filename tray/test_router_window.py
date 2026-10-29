@@ -234,12 +234,12 @@ class DecisionBindingTests(unittest.TestCase):
 class AccountCardTests(unittest.TestCase):
     def cards(self, window):
         allocator = mock.Mock()
-        allocator.load_accounts.return_value = {"accounts": {"claude-2": {"windows": {"five_hour": {"hours": 5}}}}}
+        allocator.load_accounts.return_value = {"accounts": {"claude-lab": {"windows": {"five_hour": {"hours": 5}}}}}
         allocator.canonical_window_id.side_effect = lambda spec, wid: wid
         allocator.window_capacity_usd.return_value = None
         allocator.host_policy.load_policy.return_value = None
         router = mock.Mock()
-        router.usage_snapshot.return_value = {"accounts": {"claude-2": {"status": "fresh", "windows": [window]}}}
+        router.usage_snapshot.return_value = {"accounts": {"claude-lab": {"status": "fresh", "windows": [window]}}}
         inventory = mock.Mock()
         inventory.current.return_value = {"accounts": {}}
         inventory.quota_sources.return_value = {}
@@ -357,7 +357,7 @@ class SettingsTests(unittest.TestCase):
         path = self.dir / 'host-policy.json'
         account_file = self.dir / 'accounts.json'
         account_file.write_text('{"accounts": {}}')
-        roster = ['codex', 'grok', 'codex-new', 'claude-2']
+        roster = ['codex', 'grok', 'codex-new', 'claude-lab']
 
         def change(allowed, account, mode):
             existing = json.loads(path.read_text())
@@ -374,7 +374,7 @@ class SettingsTests(unittest.TestCase):
             with self.subTest(mode=mode), \
                  mock.patch.object(allocator.host_policy, 'policy_path', return_value=(path, False)):
                 path.write_text(json.dumps({'allowed_accounts': ['codex', 'grok'],
-                                            'known_accounts': ['codex', 'grok', 'claude-2']}))
+                                            'known_accounts': ['codex', 'grok', 'claude-lab']}))
                 change(['codex'], 'grok', mode)
                 saved = json.loads(path.read_text())
                 self.assertNotIn('codex-new', saved['known_accounts'])
@@ -387,7 +387,7 @@ class SettingsTests(unittest.TestCase):
                 saved = json.loads(path.read_text())
                 self.assertEqual(saved['allowed_accounts'], ['codex'])
                 self.assertIn('codex-new', saved['known_accounts'])
-                self.assertIn('claude-2', saved['known_accounts'])
+                self.assertIn('claude-lab', saved['known_accounts'])
 
     def test_boost_rules_validate_range_and_duration_before_touching_the_store(self):
         with mock.patch.object(router_data, "modules", side_effect=AssertionError("store touched")):
@@ -671,8 +671,8 @@ class WindowHelperTests(unittest.TestCase):
         import router_window
 
         bundles = [{"id": "sol_xhigh", "label": "Sol 6.1·xhigh"}, {"id": "sol", "label": "Sol 6.1"},
-                   {"id": "sol_xhigh_2", "label": "Sol 6.1·xhigh"}]
-        self.assertEqual(router_window.bundle_labels(bundles), ["sol_xhigh", "Sol 6.1", "sol_xhigh_2"])
+                   {"id": "work_sol_xhigh", "label": "Sol 6.1·xhigh"}]
+        self.assertEqual(router_window.bundle_labels(bundles), ["sol_xhigh", "Sol 6.1", "work_sol_xhigh"])
 
     def test_matching_preset_marks_the_saved_strategy(self):
         import router_window
@@ -750,7 +750,7 @@ class WindowHelperTests(unittest.TestCase):
 
         cards = [
             {"account": "claude", "windows": [{"id": "w1"}, {"id": "w2"}, {"id": "w3"}]},
-            {"account": "claude-2", "windows": [{"id": "w1"}, {"id": "w2"}]},
+            {"account": "claude-lab", "windows": [{"id": "w1"}, {"id": "w2"}]},
             {"account": "codex", "windows": [{"id": "w1"}]},
             {"account": "antigravity", "windows": [{"id": "w1"}, {"id": "w2"}, {"id": "w3"}, {"id": "w4"}]},
             {"account": "opencode", "windows": []},
@@ -760,7 +760,7 @@ class WindowHelperTests(unittest.TestCase):
         # First 4 metered cards occupy top of cols 0..3; 5th metered card (grok) goes under shortest col (codex, col 2).
         self.assertEqual([placements[i][:2] for i in range(4)], [(0, 0), (0, 1), (0, 2), (0, 3)])
         self.assertEqual(placements[5], (5, 2, 5))
-        # Unmetered opencode follows metered cards into the shortest remaining column (claude-2, col 1).
+        # Unmetered opencode follows metered cards into the shortest remaining column (claude-lab, col 1).
         self.assertEqual(placements[4], (7, 1, 3))
 
     @desktop_test
@@ -825,7 +825,7 @@ class WindowHelperTests(unittest.TestCase):
                   "reserved_pct": 0.0, "reserved_usd": 0.0, "reserved_workers": [],
                   "rate_3h": 0.5, "rate_24h": None, "reset_in": "1天2小时", "stale": True},
              ]},
-            {"account": "claude-2", "label": "Claude 2", "badge": "就绪", "kind": "ok", "plan": "max5",
+            {"account": "claude-lab", "label": "Claude 2", "badge": "就绪", "kind": "ok", "plan": "max5",
              "usage_status": "fresh", "windows": [
                  {"id": "seven_day", "hours": 168, "remaining_pct": 55.0, "remaining_usd": 120.0,
                   "reserved_pct": 0.0, "reserved_usd": 0.0, "reserved_workers": [],

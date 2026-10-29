@@ -1,6 +1,5 @@
 {
-  "reviewed_at": "2026-10-27",
-  "status": "October 2026 frontier catalog defaults; calibrated 2026-10-19 core plus explicitly provisional 2026-10-27 additions and CC Switch compatibility IDs.",
+  "status": "Synthetic mixed-fleet routing scenarios. Account names and plan tiers are fictional; explicit quota capacities and model calibration values are independent test inputs, not subscription entitlements or a description of any person or machine.",
   "quota_sources": {
     "grok-bot": "grok"
   },
@@ -281,7 +280,7 @@
         "global_rigor": 0.98,
         "module_precision": 0.92
       },
-      "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); 14d local $9.30/h (207.3h)."
+      "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); Calibration sample (14d) $9.30/h (207.3h)."
     },
     "gpt-6.1-sol": {
       "tier": 3.6,
@@ -303,7 +302,7 @@
         "global_rigor": 0.25,
         "module_precision": 0.95
       },
-      "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; 14d local $2.19/h at high (159.1h)."
+      "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; Calibration sample (14d) $2.19/h at high (159.1h)."
     },
     "gpt-6-astra": {
       "tier": 4.2,
@@ -324,7 +323,7 @@
         "global_rigor": 0.82,
         "module_precision": 0.84
       },
-      "basis": "AA v4.3.2 High 50.9 / Max 52.7, Terminal-Bench 58.2%, Omniscience 43.7, MMMU-Pro 86.4%, Bug Hunt 35.0-45.0/105, #1 Codex GUI/cua_repl grounding; 14d local $22.75/h (41.5h)."
+      "basis": "AA v4.3.2 High 50.9 / Max 52.7, Terminal-Bench 58.2%, Omniscience 43.7, MMMU-Pro 86.4%, Bug Hunt 35.0-45.0/105, #1 Codex GUI/cua_repl grounding; Calibration sample (14d) $22.75/h (41.5h)."
     },
     "gemini-4-argon-high": {
       "usd_per_hour": 4.0,
@@ -349,7 +348,7 @@
         "global_rigor": 0.8,
         "module_precision": 0.8
       },
-      "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); 14d local 94.5h."
+      "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); Calibration sample (14d) 94.5h."
     },
     "claude-sonnet-5-5": {
       "tier": 3.9,
@@ -369,7 +368,7 @@
         "global_rigor": 0.76,
         "module_precision": 0.78
       },
-      "basis": "AA v4.3.2 High 46.8 / Max 56.0, Bug Hunt Max 51.3/105 (#1) / High 34.3/105 (76.2% prec), Mercor BrowseComp 73.0% (#1), AA-Briefcase 57.5% (#1), Terminal-Bench 61.8%; 14d local $3.73/h (63.7h)."
+      "basis": "AA v4.3.2 High 46.8 / Max 56.0, Bug Hunt Max 51.3/105 (#1) / High 34.3/105 (76.2% prec), Mercor BrowseComp 73.0% (#1), AA-Briefcase 57.5% (#1), Terminal-Bench 61.8%; Calibration sample (14d) $3.73/h (63.7h)."
     },
     "grok-4.7": {
       "usd_per_hour": 1.5,
@@ -430,7 +429,7 @@
         "global_rigor": 0.98,
         "module_precision": 0.92
       },
-      "basis": "Authorized routing alignment to claude-opus-5-5 (2026-10-29): same tier, capability vector and subjective vector. Not a measured benchmark. Cost integer 2, unknown billing and no usd_per_hour are unchanged. Channel gates remain: visual admission is false, text_only, and excluded_when local_only. The Bot cannot see images, transfer files, or run on this machine."
+      "basis": "Synthetic routing alignment to claude-opus-5-5: same tier, capability vector and subjective vector. Not a measured benchmark. Cost integer 2, unknown billing and no usd_per_hour are unchanged. Channel gates remain: visual admission is false, text_only, and excluded_when local_only. The Bot cannot see images, transfer files, or run on this machine."
     },
     "dot": {
       "tier": 4.2,
@@ -494,7 +493,7 @@
         "global_rigor": 0.53,
         "module_precision": 0.67
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "gpt-6.1-terra": {
       "tier": 3.7,
@@ -514,7 +513,7 @@
         "global_rigor": 0.65,
         "module_precision": 0.88
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models and opencode cache openai/gpt-6.1-terra. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models and opencode cache openai/gpt-6.1-terra. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 500000
     },
     "gpt-6-sol": {
@@ -535,7 +534,7 @@
         "global_rigor": 0.25,
         "module_precision": 0.92
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
     "gpt-6-luna": {
@@ -556,7 +555,7 @@
         "global_rigor": 0.45,
         "module_precision": 0.68
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
     "gpt-5.6-sol": {
@@ -577,7 +576,7 @@
         "global_rigor": 0.25,
         "module_precision": 0.88
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
     "gpt-5.6-terra": {
@@ -598,7 +597,7 @@
         "global_rigor": 0.6,
         "module_precision": 0.83
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
     "gpt-5.6-luna": {
@@ -619,7 +618,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.65
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
     "grok-4.7-build-fast": {
@@ -640,7 +639,7 @@
         "global_rigor": 0.45,
         "module_precision": 0.6
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in ~/.grok/models_cache.json. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in ~/.grok/models_cache.json. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "deepseek-v4-pro": {
       "tier": 3.9,
@@ -660,7 +659,7 @@
         "global_rigor": 0.74,
         "module_precision": 0.84
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache deepseek/deepseek-v4-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache deepseek/deepseek-v4-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "glm-5.3": {
       "tier": 3.7,
@@ -680,7 +679,7 @@
         "global_rigor": 0.72,
         "module_precision": 0.8
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache zhipuai/glm-5.3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache zhipuai/glm-5.3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "glm-5.3-flash-free": {
       "tier": 2.9,
@@ -700,7 +699,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "qwen3-coder-next": {
       "tier": 3.7,
@@ -720,7 +719,7 @@
         "global_rigor": 0.67,
         "module_precision": 0.84
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache openrouter/qwen/qwen3-coder-next. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache openrouter/qwen/qwen3-coder-next. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "qwen3.8-max": {
       "tier": 3.9,
@@ -740,7 +739,7 @@
         "global_rigor": 0.75,
         "module_precision": 0.8
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache alibaba/qwen3.8-max. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache alibaba/qwen3.8-max. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "kimi-k3.1-pro": {
       "tier": 4.0,
@@ -760,7 +759,7 @@
         "global_rigor": 0.76,
         "module_precision": 0.81
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache moonshotai/kimi-k3.1-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3.1-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "kimi-k3": {
       "tier": 3.8,
@@ -780,7 +779,7 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache moonshotai/kimi-k3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "minimax-m3": {
       "tier": 3.8,
@@ -800,7 +799,7 @@
         "global_rigor": 0.7,
         "module_precision": 0.82
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache minimax/MiniMax-M3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "minimax-m3.1-flash": {
       "tier": 3.5,
@@ -820,7 +819,7 @@
         "global_rigor": 0.62,
         "module_precision": 0.76
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache minimax/MiniMax-M3.1-Flash. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3.1-Flash. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "doubao-seed-2-1-pro-260628": {
       "tier": 3.7,
@@ -840,7 +839,7 @@
         "global_rigor": 0.68,
         "module_precision": 0.74
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache volcengine/doubao-seed-2-1-pro-260628. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache volcengine/doubao-seed-2-1-pro-260628. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mimo-v2.6-pro": {
       "tier": 3.7,
@@ -860,7 +859,7 @@
         "global_rigor": 0.67,
         "module_precision": 0.8
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache xiaomi/mimo-v2.6-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache xiaomi/mimo-v2.6-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mimo-v2.6-flash-free": {
       "tier": 2.9,
@@ -880,7 +879,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "nemotron-3-ultra-free": {
       "tier": 3.4,
@@ -900,7 +899,7 @@
         "global_rigor": 0.62,
         "module_precision": 0.71
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "nemotron-3.5-super-vl-free": {
       "tier": 3.3,
@@ -920,7 +919,7 @@
         "global_rigor": 0.59,
         "module_precision": 0.66
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "nemotron-3.5-lightning-free": {
       "tier": 2.9,
@@ -940,7 +939,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.56
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mistral-large-4": {
       "tier": 3.8,
@@ -960,7 +959,7 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache mistral/mistral-large-4. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache mistral/mistral-large-4. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "muse-wonder-1.0": {
       "tier": 3.9,
@@ -980,7 +979,7 @@
         "global_rigor": 0.73,
         "module_precision": 0.77
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache meta/muse-wonder-1.0. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode cache meta/muse-wonder-1.0. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "beam-free": {
       "tier": 3.0,
@@ -1000,7 +999,7 @@
         "global_rigor": 0.45,
         "module_precision": 0.58
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "flint-40b-free": {
       "tier": 2.8,
@@ -1020,7 +1019,7 @@
         "global_rigor": 0.4,
         "module_precision": 0.54
       },
-      "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "claude-haiku-4-5": {
       "tier": 3.2,
@@ -1040,7 +1039,7 @@
         "global_rigor": 0.5,
         "module_precision": 0.64
       },
-      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
     },
     "claude-opus-4-6": {
       "tier": 4.4,
@@ -1060,7 +1059,7 @@
         "global_rigor": 0.93,
         "module_precision": 0.88
       },
-      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
     },
     "claude-sonnet-4-6": {
       "tier": 3.8,
@@ -1080,12 +1079,12 @@
         "global_rigor": 0.73,
         "module_precision": 0.76
       },
-      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
     },
-    "usd_basis": "`usd_per_hour`: API list price (platform.claude.com/docs/en/about-claude/pricing, developers.openai.com/api/docs/pricing; cache reads and writes priced separately) of the tokens one active session-hour spent, from 14 days of local session logs to 2026-10-12, pooled over efforts (the hourly spend barely moves with effort; a higher effort runs longer instead): Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Fable has no history: Opus times the 2.5x list-price ratio. Recompute from usage-stats.json when prices or models change.",
-    "capabilities_basis": "6D vectors: benchmark-calibrated core rows retain their existing basis; newly discovered frontier rows use explicitly provisional routing priors, not measured benchmark scores. Visual/GUI zero for text-only catalog entries. Full catalog evidence and compatibility policy: model-capabilities.md (2026-10-27).",
+    "usd_basis": "Synthetic hourly cost calibration, pooled over efforts from a 14-day sample: Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Cache reads and writes are priced separately. Fable uses Opus times the 2.5x list-price ratio. These retained test inputs are independent of plan labels and are not live price quotes.",
+    "capabilities_basis": "6D vectors: benchmark-calibrated core rows retain their existing basis; newly discovered frontier rows use explicitly provisional routing priors, not measured benchmark scores. Visual/GUI zero for text-only catalog entries. Full catalog evidence and compatibility policy: model-capabilities.md.",
     "basis": "Absolute tiers (at High effort) are provisional: derived from the ordering already in model-capabilities.md (Grok behind the leaders, Flash as volume sink). Calibrated ability order: Opus > Astra > Argon > Sonnet > Sol > Grok > Flash; Dot is Astra-powered (OpenAI documents Dot as Astra-powered), so it has Astra's tier, meets every difficulty floor and has unlimited usage. Dot is not limited to text; it has its own computer and can receive code, public data and handed-over tables and return files, so it is a candidate for every route unless the parent marks the work `needs.local_only` (`excluded_when: local_only`) or it needs vision; visual ability order is Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash (the numeric `visual` values 1.0/0.8/0.75/0.7/0.6/0.3 encode that order; false means no vision). Argon shares the Antigravity Gemini pool with Flash but burns roughly 8x as much quota per hour (`burn_pct_per_worker_hour`). Fable is on hold. Correct the rest here; nothing else encodes a global ranking.",
-    "order_basis": "Zero-to-frontier-ceiling normalization over AA v4.3.2 (2026-10-19), Bug Hunt Bench (n=2..5 runs), Terminal-Bench 2.0/4.0, Mercor BrowseComp, MMMU-Pro, OSWorld/GUI harness grounding, and 14d local usage-stats.json."
+    "order_basis": "Zero-to-frontier-ceiling normalization over AA v4.3.2, Bug Hunt Bench (n=2..5 runs), Terminal-Bench 2.0/4.0, Mercor BrowseComp, MMMU-Pro, OSWorld/GUI harness grounding, and Calibration sample (14d) usage-stats.json."
   },
   "dispatch_efforts": {
     "grok": {
@@ -1133,7 +1132,7 @@
         "high"
       ]
     },
-    "claude-2": {
+    "claude-lab": {
       "claude-opus-5-5": [
         "low",
         "medium",
@@ -1195,7 +1194,7 @@
         "high"
       ]
     },
-    "codex-2": {
+    "codex-work": {
       "gpt-6-astra": [
         "low",
         "medium",
@@ -1265,7 +1264,7 @@
         "high": 0.7
       }
     },
-    "basis": "Per-model effort curves, 2026-10-09. `ability` is the change in tier from High: the Artificial Analysis Intelligence Index change from High at each effort (independent; leaderboard of that date) times 0.1 tier per index point (for Opus that reproduces the policy-wide curve at medium, xhigh and max). `burn` is the burn multiplier: 0.7 (the policy-wide value for High) times Artificial Analysis cost per task relative to High, so it carries the longer runs higher efforts need. Efforts a model has no entry for fall back to the policy-wide `effort_ability` and `effort_burn`. Grok has no medium or max entry, Flash no low, xhigh or max. Fable and Dot use the policy-wide curve.",
+    "basis": "Per-model effort curves,. `ability` is the change in tier from High: the Artificial Analysis Intelligence Index change from High at each effort (independent; leaderboard of that date) times 0.1 tier per index point (for Opus that reproduces the policy-wide curve at medium, xhigh and max). `burn` is the burn multiplier: 0.7 (the policy-wide value for High) times Artificial Analysis cost per task relative to High, so it carries the longer runs higher efforts need. Efforts a model has no entry for fall back to the policy-wide `effort_ability` and `effort_burn`. Grok has no medium or max entry, Flash no low, xhigh or max. Fable and Dot use the policy-wide curve.",
     "deepseek-v4.1-flash-free": {
       "ability": {
         "default": 0.0,
@@ -1377,7 +1376,7 @@
         "medium": 0.7,
         "high": 0.7
       },
-      "basis": "Bug Hunt Bench Antigravity CLI n=3 sweep (2026-10-14): low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16)."
+      "basis": "Bug Hunt Bench Antigravity CLI n=3 sweep low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16)."
     },
     "claude-haiku-5-5": {
       "ability": {
@@ -1672,11 +1671,12 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Text subscription sandbox"
     },
     "claude": {
       "family": "claude",
-      "plan": "Max 20x",
+      "plan": "max5",
       "billing": "subscription",
       "verified": true,
       "expires_at": null,
@@ -1703,7 +1703,7 @@
         "seven_day": 0.27,
         "weekly_fable": 0.27
       },
-      "burn_basis": "Empirical 100% capacity seven_day=$2,380 (0.27%/h), five_hour=$376 (1.71%/h), weekly_fable=$1,190.",
+      "burn_basis": "Synthetic large-pool calibration: seven_day=$2,380 (0.27%/h), five_hour=$376 (1.71%/h), weekly_fable=$1,190; independent of the plan tier.",
       "bundles": {
         "fable51_high": {
           "model": "claude-fable-5-1",
@@ -1727,11 +1727,12 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Studio reasoning pool"
     },
-    "claude-2": {
+    "claude-lab": {
       "family": "claude",
-      "plan": "Claude Pro (second account)",
+      "plan": "pro",
       "billing": "subscription",
       "verified": true,
       "expires_at": null,
@@ -1760,24 +1761,24 @@
         "five_hour": 24.0,
         "weekly_fable": 2.7
       },
-      "burn_basis": "Five_hour=$18 (25% launch floor, 12% post-step margin), empirical seven_day=$156 (2.7%/h). Sonnet-only worker; participates in normal weekly allocation while guarded against the 5h wall.",
+      "burn_basis": "Synthetic constrained-pool calibration: five_hour=$18 (25% launch floor, 12% post-step margin), seven_day=$156 (2.7%/h). Sonnet-only worker with a short-window launch guard.",
       "bundles": {
-        "fable51_high_2": {
+        "lab_fable51_high": {
           "model": "claude-fable-5-1",
           "effort": "high",
           "disabled": true
         },
-        "opus55_xhigh_2": {
+        "lab_opus55_xhigh": {
           "model": "claude-opus-5-5",
           "effort": "xhigh",
           "disabled": true
         },
-        "opus55_high_2": {
+        "lab_opus55_high": {
           "model": "claude-opus-5-5",
           "effort": "high",
           "disabled": true
         },
-        "sonnet55_high_2": {
+        "lab_sonnet55_high": {
           "model": "claude-sonnet-5-5",
           "effort": "high"
         }
@@ -1786,11 +1787,12 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Research sandbox"
     },
     "codex": {
       "family": "codex",
-      "plan": "ChatGPT Pro",
+      "plan": "plus",
       "billing": "subscription",
       "verified": true,
       "expires_at": null,
@@ -1804,14 +1806,14 @@
       },
       "capacity_change": {
         "usage": {
-          "at": "2026-10-30T00:00:00Z",
+          "at": "2000-01-01T00:00:00Z",
           "usd": 650
         }
       },
       "burn_pct_per_worker_hour": {
         "usage": 1.74
       },
-      "burn_basis": "Empirical ~$650/wk API-equivalent (1.74%/h across recent weekly reset cycles). Sol $2.6/h, Astra $22.6/h.",
+      "burn_basis": "Synthetic weekly calibration: $650 API-equivalent, 1.74%/h; Sol $2.6/h, Astra $22.6/h. Independent of the plan tier.",
       "bundles": {
         "sol_max": {
           "model": "gpt-6.1-sol",
@@ -1884,11 +1886,12 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Individual coding sandbox"
     },
-    "codex-2": {
+    "codex-work": {
       "family": "codex",
-      "plan": "ChatGPT Pro (second account)",
+      "plan": "team",
       "billing": "subscription",
       "verified": false,
       "expires_at": null,
@@ -1903,9 +1906,9 @@
       "burn_pct_per_worker_hour": {
         "usage": 1.74
       },
-      "burn_basis": "Assumed equal to codex. The collector's last observation is 2026-09-24, so launchability and capacity are unverified; excluded until `verified` is true.",
+      "burn_basis": "Synthetic unverified workspace with the same numeric quota prior as the coding sandbox; excluded until verified.",
       "bundles": {
-        "sol_xhigh_2": {
+        "work_sol_xhigh": {
           "model": "gpt-6.1-sol",
           "effort": "xhigh"
         }
@@ -1914,10 +1917,11 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Shared coding workspace"
     },
     "antigravity": {
-      "plan": "Antigravity (Gemini + 3p pool)",
+      "plan": "subscription",
       "billing": "subscription",
       "verified": true,
       "expires_at": null,
@@ -1958,7 +1962,7 @@
         "3p-5h": 17.6
       },
       "capacity_basis": "API-equivalent pool at list price, calibrated to empirical Argon burn (Argon $4.0/h = 0.62%/h of gemini-weekly -> $625, 2.13%/h of gemini-5h -> $182; Flash $0.5/h = 0.08%/h weekly, 0.27%/h 5h).",
-      "burn_basis": "Empirical calibration (2026-10-27): gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly). Claude on antigravity draws only 3p-5h/3p-weekly via bundle draws, priced at the Claude model's usd_per_hour against those pools ($17.6 / $88).",
+      "burn_basis": "Synthetic shared-pool calibration: gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly). Claude bundles draw only from 3p-5h/3p-weekly, using model usd_per_hour against the $17.6 / $88 pools.",
       "bundles": {
         "flash_high": {
           "provider": "antigravity-resilient",
@@ -2046,10 +2050,11 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Mixed model pool"
     },
     "dot": {
-      "plan": "Dot (own OpenAI agent through dot2api)",
+      "plan": "remote",
       "billing": "subscription",
       "verified": true,
       "expires_at": null,
@@ -2057,7 +2062,7 @@
       "unlimited": true,
       "windows": {},
       "burn_pct_per_worker_hour": {},
-      "burn_basis": "OpenAI Dot remote worker via dot2api (127.0.0.1:8319); zero local quota burn.",
+      "burn_basis": "Synthetic remote worker via dot2api; zero local quota burn.",
       "bundles": {
         "dot_text": {
           "model": "dot",
@@ -2068,17 +2073,18 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Remote execution sandbox"
     },
     "chatgpt-web": {
-      "plan": "ChatGPT Pro web",
+      "plan": "pro",
       "billing": "subscription",
       "verified": true,
       "expires_at": null,
       "unmetered": true,
       "windows": {},
       "burn_pct_per_worker_hour": {},
-      "burn_basis": "Placeholder prior (confidence: none): ChatGPT Pro web bridge advisor.",
+      "burn_basis": "Synthetic unmetered web advisor with an explicit cadence limit and unknown capacity.",
       "bundles": {
         "pro_max": {
           "model": "gpt-6-pro",
@@ -2097,10 +2103,11 @@
       "cadence": {
         "window_seconds": 43200,
         "limit": 5
-      }
+      },
+      "label": "Web advisory sandbox"
     },
     "opencode": {
-      "plan": "OpenCode Free",
+      "plan": "free",
       "billing": "subscription",
       "verified": true,
       "expires_at": null,
@@ -2122,21 +2129,21 @@
         "claude-haiku-4-5": {
           "disabled": true
         }
-      }
+      },
+      "label": "Free model sandbox"
     }
   },
   "capability_policy": {
-    "reviewed_at": "2026-10-27",
     "evidence_reference": "model-capabilities.md",
     "precedence": "Honor explicit user instructions and specialist requirements. Preserve the Dot closed-loop exception outside the subscription auction. Establish quality, tools, permissions and runtime eligibility. Gemini 3.8 Flash is not the preferred coder: its quota is very large, so simple coding-plus-tool-call work (difficulty `routine`) goes to it first when it has usable capacity, and anything harder is not eligible for it (the `hard` ability floor sits above Flash); then balance quota/reset/demand. Preserve the route's earlier ordering as fallback. Other rankings remain soft priors.",
     "execution_preference": {
       "gemini-3.8-flash-high": "Routine coding & tool-execution volume sink (tier 3.0); barred above routine difficulty.",
       "claude-sonnet-5-5": "Primary exploration, research-packet, and multi-hop synthesis workhorse (BrowseComp #1, Bug Hunt Max #1).",
-      "gpt-6.1-sol": "Concrete single-module implementation & localized debugging specialist (module_precision 0.95, $2.19/h local); lacks global vision (global_rigor 0.25) so penalized on global or cross-module architectural work.",
+      "gpt-6.1-sol": "Concrete single-module implementation & localized debugging specialist (module_precision 0.95, $2.19/h calibration); lacks global vision (global_rigor 0.25) so penalized on global or cross-module architectural work.",
       "gemini-4-argon-high": "Divergent thinking, expansive ideation, and architectural innovation leader (divergence 0.96); prioritized when formulating schemes/plans or proposing creative research.",
       "claude-opus-5-5": "Apex architect for cross-module architectural landing rigor, comprehensive holistic thinking (global_rigor 0.98), critical changes, and visual inspection.",
-      "grok-bot": "Same ability tier and vectors as claude-opus-5-5 by authorized alignment (2026-10-29), not a measured benchmark. Remote text channel still excludes local, visual, GUI and file transfer. Cost and quota stay unknown.",
-      "gpt-6-astra": "OpenAI frontier model & #1 GUI/computer-use specialist ($22.75/h local).",
+      "grok-bot": "Same ability tier and vectors as claude-opus-5-5 by synthetic alignment, not a measured benchmark. Remote text channel still excludes local, visual, GUI and file transfer. Cost and quota stay unknown.",
+      "gpt-6-astra": "OpenAI frontier model & #1 GUI/computer-use specialist ($22.75/h calibration).",
       "dot": "Free Astra-tier remote worker via dot2api for any non-local, non-visual work."
     },
     "resource_balancing": {
@@ -2219,7 +2226,7 @@
         ],
         "effort": "High by default; xhigh when the analysis is coupled or the evidence is large and conflicting.",
         "role": "explorer or analyst (findings to the parent)",
-        "basis": "Route added 2026-10-11 with the Pi harness.",
+        "basis": "Route uses the Pi harness.",
         "restrict_models": false
       },
       "research_packet": {
@@ -2243,7 +2250,7 @@
         ],
         "effort": "High by default; xhigh when the discrimination chain is long or the readings conflict.",
         "role": "research worker (single owner of the packet)",
-        "basis": "Route added 2026-10-12.",
+        "basis": "Synthetic route scenario.",
         "restrict_models": false
       },
       "self_contained_code": {
