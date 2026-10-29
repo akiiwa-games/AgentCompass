@@ -45,7 +45,7 @@ a = Analysis(
     [str(tray / "app.pyw")],
     pathex=[str(tray), str(root)],
     binaries=[],
-    datas=[(str(tray / "easytier_supervisor.ps1"), "tray")],
+    datas=[(str(tray / "easytier_supervisor.ps1"), ".")],
     hiddenimports=[
         "pystray",
         "pystray._win32",
