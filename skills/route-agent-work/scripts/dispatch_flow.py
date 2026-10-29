@@ -76,7 +76,7 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None):
         if response.get('ok') and response.get('agent'):
             try:
                 row = registry.observe(row['dispatch_id'], response['agent'], now=now, path=path)
-                results.append(public(row))
+                results.append(dict(public(row), completion_notification=response.get('completion_notification')))
             except ValueError as exc:
                 results.append({'dispatch_id': row['dispatch_id'], 'error': str(exc)})
         elif response.get('ok') and response.get('missing') and row.get('agent_id'):
@@ -98,28 +98,49 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     require_actual_parent(parent_id)
     host = host or host_call
     row = registry.inspect(dispatch_id, path)
+    notification = None
+    queried_host = False
+    launch_error = None
     if row['parent_id'] != parent_id:
         raise ValueError('Dispatch belongs to another parent')
     if row['state'] == 'prepared':
         row = registry.claim(row['request'], parent_id, now=registry.utcnow(), path=path)
         response = host({'operation': 'create', 'dispatch_id': dispatch_id,
                          'parent_id': parent_id, 'request': row['request']})
+        queried_host = True
+        notification = response.get('completion_notification')
         if response.get('ok') and response.get('agent'):
             row = registry.observe(dispatch_id, response['agent'], path=path)
         elif response.get('sent') is False:
             row = registry.release(dispatch_id, parent_id, 'host_rejected_before_create', failed=True, path=path)
+            launch_error = response.get('error')
         # Ambiguous errors retain the single-use claim; reconcile locates any created agent by labels.
     elif row['state'] == 'expired' and row.get('launched_at'):
-        reconcile(dispatch_id, host=host, path=path)
+        observations = reconcile(dispatch_id, host=host, path=path)
+        queried_host = True
+        notification = next((item['completion_notification'] for item in observations
+                             if item.get('completion_notification')), notification)
         row = registry.inspect(dispatch_id, path)
     deadline = time.monotonic() + watch_seconds
     while row['state'] not in registry.TERMINAL:
-        reconcile(dispatch_id, host=host, path=path)
+        observations = reconcile(dispatch_id, host=host, path=path)
+        queried_host = True
+        notification = next((item['completion_notification'] for item in observations
+                             if item.get('completion_notification')), notification)
         row = registry.inspect(dispatch_id, path)
         if row['state'] in registry.TERMINAL or time.monotonic() >= deadline:
             break
         time.sleep(min(poll_seconds, max(0, deadline - time.monotonic())))
     result = public(row)
+    if launch_error:
+        result['error'] = launch_error
+    if not queried_host and row.get('launched_at') and row.get('agent_id'):
+        # A terminal registry row can outlive a stopped notifier. Observation
+        # recovers its durable receipt without reissuing the create request.
+        observed = host({'operation': 'observe', 'dispatch_id': dispatch_id, 'agent_id': row['agent_id']})
+        notification = observed.get('completion_notification')
+    if notification:
+        result['completion_notification'] = notification
     if row['state'] not in registry.TERMINAL:
         result['continuation'] = 'Run dispatch --dispatch-action reconcile or launch with this dispatch_id; it will observe, not create again.'
         result['continuation_argv'] = [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('route_judge.py')),

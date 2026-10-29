@@ -315,6 +315,24 @@ class DispatchTests(unittest.TestCase):
             registry.claim(row['request'], now=late)
         self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
 
+    def test_launch_and_terminal_recovery_expose_notification_receipt(self):
+        row = self.prepare()
+        notice = {'status': 'watching', 'pid': 123, 'state_file': 'fixture.json'}
+        calls = []
+
+        def host(request):
+            calls.append(request['operation'])
+            return {'ok': True, 'agent': self.snapshot(row, 'idle', attentionReason='finished'),
+                    'completion_notification': notice}
+
+        result = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+        self.assertEqual(result['completion_notification'], notice)
+        self.assertEqual(calls, ['create'])
+        notice['status'] = 'delivered'
+        result = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+        self.assertEqual(result['completion_notification']['status'], 'delivered')
+        self.assertEqual(calls, ['create', 'observe'])
+
     def test_cancel_before_launch_and_reject_freeing_a_running_agent(self):
         row = self.prepare()
         with self.assertRaises(ValueError):

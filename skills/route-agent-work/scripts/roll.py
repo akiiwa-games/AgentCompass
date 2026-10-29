@@ -189,10 +189,21 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     ):
         return cli(args, out, decision['selected_bundle'], text, judge)
     failed = receipt.get('state') == 'failed'
+    notification = receipt.get('completion_notification') or {}
+    notice = ('A completion notification will be sent to the parent on finish/error/permission; '
+              'the bounded watcher PID, deadline and durable receipt are in worker.completion_notification. '
+              'Use worker.continuation_argv to recover observation if that watcher stops.') \
+        if notification.get('status') == 'watching' else \
+        ('The completion notification has been delivered to the parent.' if notification.get('status') == 'delivered' else
+         'No active completion notification is confirmed. The caller must collect the result using '
+         'worker.continuation_argv or get_agent_activity; do not wait for an unsolicited callback.')
     return dict(out, launched=not failed, dispatch_mode='paseo',
                 caller_action='already_launched_do_not_respawn' if not failed else 'check_error',
                 next=('Worker is ALREADY launched in Paseo by roll. Do NOT call create_agent, Agent, '
-                      'spawn_agent, or invoke_subagent again; wait for its message or check status.') if not failed else 'Paseo launch failed.',
+                      'spawn_agent, or invoke_subagent again. ' + notice) if not failed else
+                     ('Paseo launch failed: ' + (receipt.get('error') or 'worker failed') + '. ' +
+                      ('Repair the local notifier dependencies/state directory, then roll the brief again.'
+                       if receipt.get('error') == 'notification_start_failed' else notice)),
                 worker=dict(receipt, provider=decision['selected_bundle']['provider'])), \
         1 if failed else 0
 
@@ -351,7 +362,8 @@ def cli(args, out, bundle, text, judge):
     if worker['exit'] is None:
         return dict(out, launched=True, dispatch_mode='cli', caller_action='already_launched_do_not_respawn',
                     worker=worker,
-                    next=f'The worker runs as PID {process.pid}; its reply lands in worker.output. You own this process: '
+                    next='No automatic completion notification is installed for this CLI worker. '
+                         f'The worker runs as PID {process.pid}; the caller must watch worker.output and worker.stderr. You own this process: '
                          'wait for it, or stop it before you finish.'), 0
     worker['reply'] = (run / 'output.txt').read_bytes().decode('utf-8', 'replace')[-6000:]
     return dict(out, launched=True, dispatch_mode='cli', caller_action='already_launched_do_not_respawn',
