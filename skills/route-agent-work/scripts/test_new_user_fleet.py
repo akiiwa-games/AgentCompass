@@ -47,7 +47,7 @@ class ShippedFleetTests(unittest.TestCase):
         lab = accounts['claude-lab']
         self.assertEqual(lab['windows']['five_hour']['launch_min_remaining_pct'], 25)
         self.assertEqual([key for key, spec in lab['bundles'].items() if not spec.get('disabled')],
-                         ['lab_sonnet55_high'])
+                         ['lab_sonnet55_high', 'lab_sonnet55_medium'])
         pool = accounts['antigravity']
         self.assertEqual(pool['bundles']['agy_opus55_high']['draws'], ['3p-5h', '3p-weekly'])
         self.assertTrue(accounts['opencode']['unlimited'])

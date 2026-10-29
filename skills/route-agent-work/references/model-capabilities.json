@@ -119,644 +119,862 @@
   "mainstream_defaults": {
     "models": {
       "deepseek-v4.1-flash-free": {
+        "tier": 2.8,
+        "cost": 0,
         "visual": false,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0.0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
+          "reasoning": 0.48,
+          "coding": 0.5,
+          "exploration": 0.5,
+          "anti_hallucination": 0.45,
           "visual": 0.0,
           "gui": 0.0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.45,
+          "global_rigor": 0.35,
+          "module_precision": 0.55
+        },
+        "basis": "OpenCode free DeepSeek V4.1 Flash model (`opencode/deepseek-v4.1-flash-free`); explicit override worker below the automatic routine floor."
       },
       "claude-fable-5-1": {
+        "tier": 4.6,
+        "cost": 5,
         "visual": false,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 18.7,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
+          "reasoning": 0.98,
+          "coding": 0.95,
+          "exploration": 0.9,
+          "anti_hallucination": 0.9,
           "visual": 0.0,
           "gui": 0.0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.92,
+          "global_rigor": 0.95,
+          "module_precision": 0.9
+        }
       },
       "claude-opus-5-5": {
+        "tier": 4.6,
+        "cost": 4,
         "visual": 1.0,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 7.5,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
+          "reasoning": 0.89,
+          "coding": 0.91,
+          "exploration": 0.88,
+          "anti_hallucination": 0.92,
+          "visual": 1.0,
           "gui": 0.55
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.62,
+          "global_rigor": 0.98,
+          "module_precision": 0.92
+        },
+        "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); Calibration sample (14d) $9.30/h (207.3h)."
       },
       "gpt-6.1-sol": {
+        "tier": 3.6,
+        "cost": 3,
         "visual": 0.7,
+        "usd_per_hour": 2.6,
+        "duration_multiplier": 1.35,
         "fast_capable": true,
-        "tier": 3.3,
-        "cost": 2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.71,
+          "coding": 0.85,
+          "exploration": 0.62,
+          "anti_hallucination": 0.74,
+          "visual": 0.7,
+          "gui": 0.82
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.4,
+          "global_rigor": 0.25,
+          "module_precision": 0.95
+        },
+        "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; Calibration sample (14d) $2.19/h at high (159.1h)."
       },
       "gpt-6-astra": {
+        "tier": 4.2,
+        "cost": 4,
         "visual": 0.8,
+        "usd_per_hour": 22.6,
         "fast_capable": true,
-        "tier": 3.3,
-        "cost": 2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.8,
+          "coding": 0.79,
+          "exploration": 0.8,
+          "anti_hallucination": 0.78,
+          "visual": 0.8,
+          "gui": 0.95
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.68,
+          "global_rigor": 0.82,
+          "module_precision": 0.84
+        },
+        "basis": "AA v4.3.2 High 50.9 / Max 52.7, Terminal-Bench 58.2%, Omniscience 43.7, MMMU-Pro 86.4%, Bug Hunt 35.0-45.0/105, #1 Codex GUI/cua_repl grounding; Calibration sample (14d) $22.75/h (41.5h)."
       },
       "gemini-4-argon-high": {
+        "usd_per_hour": 4.0,
+        "duration_multiplier": 1.35,
+        "tier": 4.0,
+        "cost": 3,
         "visual": 0.75,
-        "tier": 3.3,
-        "cost": 2,
-        "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+        "burn_pct_per_worker_hour": {
+          "gemini-weekly": 0.62,
+          "gemini-5h": 2.13
         },
-        "prior": true,
-        "confidence": "low"
+        "capabilities": {
+          "reasoning": 0.78,
+          "coding": 0.83,
+          "exploration": 0.86,
+          "anti_hallucination": 0.81,
+          "visual": 0.75,
+          "gui": 0.62
+        },
+        "subjective": {
+          "divergence": 0.96,
+          "global_rigor": 0.8,
+          "module_precision": 0.8
+        },
+        "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); Calibration sample (14d) 94.5h."
       },
       "claude-sonnet-5-5": {
-        "visual": 0.6,
-        "tier": 3.3,
+        "tier": 3.9,
         "cost": 2,
+        "visual": 0.6,
+        "usd_per_hour": 4.4,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
+          "reasoning": 0.74,
+          "coding": 0.82,
+          "exploration": 0.89,
+          "anti_hallucination": 0.73,
+          "visual": 0.6,
           "gui": 0.55
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.6,
+          "global_rigor": 0.76,
+          "module_precision": 0.78
+        },
+        "basis": "AA v4.3.2 High 46.8 / Max 56.0, Bug Hunt Max 51.3/105 (#1) / High 34.3/105 (76.2% prec), Mercor BrowseComp 73.0% (#1), AA-Briefcase 57.5% (#1), Terminal-Bench 61.8%; Calibration sample (14d) $3.73/h (63.7h)."
       },
       "grok-4.7": {
-        "visual": false,
-        "tier": 3.3,
+        "usd_per_hour": 1.5,
+        "tier": 3.4,
         "cost": 2,
+        "visual": false,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
+          "reasoning": 0.59,
+          "coding": 0.58,
+          "exploration": 0.6,
+          "anti_hallucination": 0.62,
           "visual": 0.0,
           "gui": 0.0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.45,
+          "global_rigor": 0.4,
+          "module_precision": 0.58
+        },
+        "basis": "AA v4.3.2 High 46.3 / xHigh 46.4, GDPval 60.3%, AA-Briefcase 55.0%, Terminal-Bench 37.6%, Bug Hunt 19.3-29.0/105; text-only CLI."
       },
       "gemini-3.8-flash-high": {
+        "usd_per_hour": 0.5,
+        "tier": 3.0,
+        "cost": 1,
         "visual": 0.3,
-        "tier": 3.3,
-        "cost": 2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.52,
+          "coding": 0.47,
+          "exploration": 0.5,
+          "anti_hallucination": 0.72,
+          "visual": 0.3,
+          "gui": 0.42
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.35,
+          "global_rigor": 0.35,
+          "module_precision": 0.65
+        },
+        "basis": "AA v4.3.2 Low 33.5 / Med 39.8 / High 40.9, LCR 81.3%, MMMU-Pro 85.6%, Bug Hunt 18.0/105 (81.8% prec); high-quota Antigravity volume sink for routine tasks."
       },
       "grok-bot": {
+        "tier": 4.6,
+        "cost": 2,
         "visual": false,
         "excluded_when": "local_only",
         "text_only": true,
-        "tier": 3.3,
-        "cost": 2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "reasoning": 0.89,
+          "coding": 0.91,
+          "exploration": 0.88,
+          "anti_hallucination": 0.92,
+          "visual": 1.0,
+          "gui": 0.55
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.62,
+          "global_rigor": 0.98,
+          "module_precision": 0.92
+        },
+        "basis": "Synthetic routing alignment to claude-opus-5-5: same tier, capability vector and subjective vector. Not a measured benchmark. Cost integer 2, unknown billing and no usd_per_hour are unchanged. Channel gates remain: visual admission is false, text_only, and excluded_when local_only. The Bot cannot see images, transfer files, or run on this machine."
       },
       "dot": {
+        "tier": 4.2,
+        "cost": 0,
         "visual": false,
         "excluded_when": "local_only",
-        "tier": 3.3,
-        "cost": 2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
+          "reasoning": 0.8,
+          "coding": 0.79,
+          "exploration": 0.8,
+          "anti_hallucination": 0.78,
           "visual": 0.0,
           "gui": 0.0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.68,
+          "global_rigor": 0.82,
+          "module_precision": 0.84
+        },
+        "basis": "OpenAI Dot remote worker via dot2api; GPT-6 Astra class text/code/exploration intelligence without local vision or GUI."
       },
       "gpt-6-pro": {
+        "tier": 5.0,
+        "cost": 0,
         "visual": false,
         "advisor_only": true,
         "advisor_for": [
           "direction_reasoning",
           "complex_build_plan"
         ],
-        "tier": 3.3,
-        "cost": 2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
+          "reasoning": 1.0,
+          "coding": 0.9,
+          "exploration": 0.78,
+          "anti_hallucination": 0.95,
           "visual": 0.0,
           "gui": 0.0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.95,
+          "global_rigor": 0.96,
+          "module_precision": 0.9
+        },
+        "basis": "ChatGPT Pro web bridge advisor; ceiling anchor across reasoning (1.00) and anti_hallucination (0.95)."
       },
       "claude-haiku-5-5": {
+        "tier": 3.2,
+        "cost": 1,
         "visual": 0.48,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0.8,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.58,
+          "coding": 0.65,
+          "exploration": 0.62,
+          "anti_hallucination": 0.62,
+          "visual": 0.48,
+          "gui": 0.35
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.42,
+          "global_rigor": 0.53,
+          "module_precision": 0.67
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "gpt-6.1-terra": {
+        "tier": 3.7,
+        "cost": 3,
         "visual": 0.72,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 3.0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.73,
+          "coding": 0.83,
+          "exploration": 0.71,
+          "anti_hallucination": 0.75,
+          "visual": 0.72,
+          "gui": 0.8
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.5,
+          "global_rigor": 0.65,
+          "module_precision": 0.88
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in pi --list-models and opencode cache openai/gpt-6.1-terra. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+        "context_window": 500000
       },
       "gpt-6-sol": {
+        "tier": 3.5,
+        "cost": 3,
         "visual": 0.68,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 2.6,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.69,
+          "coding": 0.82,
+          "exploration": 0.6,
+          "anti_hallucination": 0.72,
+          "visual": 0.68,
+          "gui": 0.8
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.4,
+          "global_rigor": 0.25,
+          "module_precision": 0.92
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+        "context_window": 272000
       },
       "gpt-6-luna": {
+        "tier": 3.2,
+        "cost": 1,
         "visual": 0.55,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0.8,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
+          "reasoning": 0.58,
+          "coding": 0.65,
+          "exploration": 0.57,
+          "anti_hallucination": 0.62,
           "visual": 0.55,
-          "gui": 0.55
+          "gui": 0.5
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.4,
+          "global_rigor": 0.45,
+          "module_precision": 0.68
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+        "context_window": 272000
       },
       "gpt-5.6-sol": {
-        "visual": 0.65,
-        "tier": 3.3,
+        "tier": 3.4,
         "cost": 2,
+        "visual": 0.65,
+        "usd_per_hour": 2.4,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.67,
+          "coding": 0.79,
+          "exploration": 0.58,
+          "anti_hallucination": 0.7,
+          "visual": 0.65,
+          "gui": 0.75
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.4,
+          "global_rigor": 0.25,
+          "module_precision": 0.88
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+        "context_window": 272000
       },
       "gpt-5.6-terra": {
-        "visual": 0.67,
-        "tier": 3.3,
+        "tier": 3.5,
         "cost": 2,
+        "visual": 0.67,
+        "usd_per_hour": 2.7,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.69,
+          "coding": 0.78,
+          "exploration": 0.66,
+          "anti_hallucination": 0.71,
+          "visual": 0.67,
+          "gui": 0.74
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.48,
+          "global_rigor": 0.6,
+          "module_precision": 0.83
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+        "context_window": 272000
       },
       "gpt-5.6-luna": {
+        "tier": 3.1,
+        "cost": 1,
         "visual": 0.5,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0.7,
         "capabilities": {
           "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "coding": 0.62,
+          "exploration": 0.54,
+          "anti_hallucination": 0.59,
+          "visual": 0.5,
+          "gui": 0.45
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.38,
+          "global_rigor": 0.42,
+          "module_precision": 0.65
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+        "context_window": 272000
       },
       "grok-4.7-build-fast": {
+        "tier": 3.1,
+        "cost": 1,
         "visual": false,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0.5,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "reasoning": 0.54,
+          "coding": 0.58,
+          "exploration": 0.54,
+          "anti_hallucination": 0.55,
+          "visual": 0,
+          "gui": 0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.55,
+          "global_rigor": 0.45,
+          "module_precision": 0.6
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in ~/.grok/models_cache.json. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "deepseek-v4-pro": {
-        "visual": false,
-        "tier": 3.3,
+        "tier": 3.9,
         "cost": 2,
+        "visual": false,
+        "usd_per_hour": 1.2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "reasoning": 0.78,
+          "coding": 0.82,
+          "exploration": 0.72,
+          "anti_hallucination": 0.75,
+          "visual": 0,
+          "gui": 0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.62,
+          "global_rigor": 0.74,
+          "module_precision": 0.84
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache deepseek/deepseek-v4-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "glm-5.3": {
-        "visual": 0.6,
-        "tier": 3.3,
+        "tier": 3.7,
         "cost": 2,
+        "visual": 0.6,
+        "usd_per_hour": 1.0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
+          "reasoning": 0.72,
+          "coding": 0.78,
+          "exploration": 0.74,
+          "anti_hallucination": 0.72,
+          "visual": 0.6,
           "gui": 0.55
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.6,
+          "global_rigor": 0.72,
+          "module_precision": 0.8
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache zhipuai/glm-5.3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "glm-5.3-flash-free": {
+        "tier": 2.9,
+        "cost": 0,
         "visual": 0.4,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.5,
+          "coding": 0.54,
+          "exploration": 0.52,
+          "anti_hallucination": 0.52,
+          "visual": 0.4,
+          "gui": 0.3
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.45,
+          "global_rigor": 0.42,
+          "module_precision": 0.58
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "qwen3-coder-next": {
-        "visual": false,
-        "tier": 3.3,
+        "tier": 3.7,
         "cost": 2,
+        "visual": false,
+        "usd_per_hour": 1.0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "reasoning": 0.7,
+          "coding": 0.82,
+          "exploration": 0.65,
+          "anti_hallucination": 0.66,
+          "visual": 0,
+          "gui": 0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.48,
+          "global_rigor": 0.67,
+          "module_precision": 0.84
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache openrouter/qwen/qwen3-coder-next. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "qwen3.8-max": {
-        "visual": 0.65,
-        "tier": 3.3,
+        "tier": 3.9,
         "cost": 2,
+        "visual": 0.65,
+        "usd_per_hour": 1.5,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.78,
+          "coding": 0.8,
+          "exploration": 0.75,
+          "anti_hallucination": 0.74,
+          "visual": 0.65,
+          "gui": 0.48
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.67,
+          "global_rigor": 0.75,
+          "module_precision": 0.8
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache alibaba/qwen3.8-max. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "kimi-k3.1-pro": {
-        "visual": 0.68,
-        "tier": 3.3,
+        "tier": 4.0,
         "cost": 2,
+        "visual": 0.68,
+        "usd_per_hour": 1.8,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.79,
+          "coding": 0.82,
+          "exploration": 0.83,
+          "anti_hallucination": 0.74,
+          "visual": 0.68,
+          "gui": 0.5
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.72,
+          "global_rigor": 0.76,
+          "module_precision": 0.81
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3.1-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "kimi-k3": {
-        "visual": 0.62,
-        "tier": 3.3,
+        "tier": 3.8,
         "cost": 2,
+        "visual": 0.62,
+        "usd_per_hour": 1.2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.74,
+          "coding": 0.79,
+          "exploration": 0.8,
+          "anti_hallucination": 0.7,
+          "visual": 0.62,
+          "gui": 0.45
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.7,
+          "global_rigor": 0.71,
+          "module_precision": 0.78
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "minimax-m3": {
-        "visual": 0.6,
-        "tier": 3.3,
+        "tier": 3.8,
         "cost": 2,
+        "visual": 0.6,
+        "usd_per_hour": 1.0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.73,
+          "coding": 0.81,
+          "exploration": 0.75,
+          "anti_hallucination": 0.7,
+          "visual": 0.6,
+          "gui": 0.45
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.63,
+          "global_rigor": 0.7,
+          "module_precision": 0.82
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "minimax-m3.1-flash": {
+        "tier": 3.5,
+        "cost": 1,
         "visual": 0.55,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0.6,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
+          "reasoning": 0.66,
+          "coding": 0.74,
+          "exploration": 0.68,
+          "anti_hallucination": 0.65,
           "visual": 0.55,
-          "gui": 0.55
+          "gui": 0.4
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.58,
+          "global_rigor": 0.62,
+          "module_precision": 0.76
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3.1-Flash. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "doubao-seed-2-1-pro-260628": {
-        "visual": 0.65,
-        "tier": 3.3,
+        "tier": 3.7,
         "cost": 2,
+        "visual": 0.65,
+        "usd_per_hour": 0.8,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.72,
+          "coding": 0.74,
+          "exploration": 0.74,
+          "anti_hallucination": 0.7,
+          "visual": 0.65,
+          "gui": 0.5
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.66,
+          "global_rigor": 0.68,
+          "module_precision": 0.74
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache volcengine/doubao-seed-2-1-pro-260628. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "mimo-v2.6-pro": {
-        "visual": 0.6,
-        "tier": 3.3,
+        "tier": 3.7,
         "cost": 2,
+        "visual": 0.6,
+        "usd_per_hour": 0.8,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.72,
+          "coding": 0.79,
+          "exploration": 0.7,
+          "anti_hallucination": 0.69,
+          "visual": 0.6,
+          "gui": 0.45
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.57,
+          "global_rigor": 0.67,
+          "module_precision": 0.8
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache xiaomi/mimo-v2.6-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "mimo-v2.6-flash-free": {
+        "tier": 2.9,
+        "cost": 0,
         "visual": 0.4,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0,
         "capabilities": {
-          "reasoning": 0.55,
+          "reasoning": 0.51,
           "coding": 0.55,
-          "exploration": 0.55,
+          "exploration": 0.51,
           "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "visual": 0.4,
+          "gui": 0.3
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.45,
+          "global_rigor": 0.42,
+          "module_precision": 0.58
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "nemotron-3-ultra-free": {
+        "tier": 3.4,
+        "cost": 0,
         "visual": false,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "reasoning": 0.65,
+          "coding": 0.7,
+          "exploration": 0.65,
+          "anti_hallucination": 0.63,
+          "visual": 0,
+          "gui": 0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.53,
+          "global_rigor": 0.62,
+          "module_precision": 0.71
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "nemotron-3.5-super-vl-free": {
-        "visual": 0.65,
         "tier": 3.3,
-        "cost": 2,
+        "cost": 0,
+        "visual": 0.65,
+        "usd_per_hour": 0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.62,
+          "coding": 0.65,
+          "exploration": 0.63,
+          "anti_hallucination": 0.62,
+          "visual": 0.65,
+          "gui": 0.45
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.52,
+          "global_rigor": 0.59,
+          "module_precision": 0.66
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "nemotron-3.5-lightning-free": {
+        "tier": 2.9,
+        "cost": 0,
         "visual": false,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "reasoning": 0.5,
+          "coding": 0.54,
+          "exploration": 0.5,
+          "anti_hallucination": 0.48,
+          "visual": 0,
+          "gui": 0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.42,
+          "global_rigor": 0.42,
+          "module_precision": 0.56
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "mistral-large-4": {
-        "visual": 0.65,
-        "tier": 3.3,
+        "tier": 3.8,
         "cost": 2,
+        "visual": 0.65,
+        "usd_per_hour": 1.2,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.74,
+          "coding": 0.78,
+          "exploration": 0.73,
+          "anti_hallucination": 0.71,
+          "visual": 0.65,
+          "gui": 0.45
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.65,
+          "global_rigor": 0.71,
+          "module_precision": 0.78
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache mistral/mistral-large-4. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "muse-wonder-1.0": {
-        "visual": 0.72,
-        "tier": 3.3,
+        "tier": 3.9,
         "cost": 2,
+        "visual": 0.72,
+        "usd_per_hour": 1.5,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.77,
+          "coding": 0.77,
+          "exploration": 0.79,
+          "anti_hallucination": 0.73,
+          "visual": 0.72,
+          "gui": 0.48
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.71,
+          "global_rigor": 0.73,
+          "module_precision": 0.77
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode cache meta/muse-wonder-1.0. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "beam-free": {
+        "tier": 3.0,
+        "cost": 0,
         "visual": false,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
+          "reasoning": 0.53,
+          "coding": 0.56,
+          "exploration": 0.53,
           "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "visual": 0,
+          "gui": 0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.45,
+          "global_rigor": 0.45,
+          "module_precision": 0.58
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "flint-40b-free": {
+        "tier": 2.8,
+        "cost": 0,
         "visual": false,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.0,
-          "gui": 0.0
+          "reasoning": 0.48,
+          "coding": 0.52,
+          "exploration": 0.48,
+          "anti_hallucination": 0.46,
+          "visual": 0,
+          "gui": 0
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.4,
+          "global_rigor": 0.4,
+          "module_precision": 0.54
+        },
+        "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
       },
       "claude-haiku-4-5": {
+        "tier": 3.2,
+        "cost": 1,
         "visual": 0.45,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 0.8,
         "capabilities": {
           "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "coding": 0.61,
+          "exploration": 0.59,
+          "anti_hallucination": 0.57,
+          "visual": 0.45,
+          "gui": 0.32
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.42,
+          "global_rigor": 0.5,
+          "module_precision": 0.64
+        },
+        "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
       },
       "claude-opus-4-6": {
+        "tier": 4.4,
+        "cost": 4,
         "visual": 0.95,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 7.5,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.85,
+          "coding": 0.87,
+          "exploration": 0.84,
+          "anti_hallucination": 0.88,
+          "visual": 0.95,
+          "gui": 0.52
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.6,
+          "global_rigor": 0.93,
+          "module_precision": 0.88
+        },
+        "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
       },
       "claude-sonnet-4-6": {
+        "tier": 3.8,
+        "cost": 3,
         "visual": 0.6,
-        "tier": 3.3,
-        "cost": 2,
+        "usd_per_hour": 3.5,
         "capabilities": {
-          "reasoning": 0.55,
-          "coding": 0.55,
-          "exploration": 0.55,
-          "anti_hallucination": 0.5,
-          "visual": 0.55,
-          "gui": 0.55
+          "reasoning": 0.71,
+          "coding": 0.79,
+          "exploration": 0.83,
+          "anti_hallucination": 0.7,
+          "visual": 0.6,
+          "gui": 0.5
         },
-        "prior": true,
-        "confidence": "low"
+        "subjective": {
+          "divergence": 0.58,
+          "global_rigor": 0.73,
+          "module_precision": 0.76
+        },
+        "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
       }
     }
   }

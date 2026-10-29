@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/route-agent
 import allocator
 from tk_test_support import desktop_test, require_tk
 require_tk()
+import decision_theatre
 import radar_chart
 import router_data
 
@@ -194,6 +195,25 @@ PLAN = {"choice": "opus", "decision": {"margin": 0.05},
 
 
 class DecisionBindingTests(unittest.TestCase):
+    def test_theatre_and_static_strip_integrate_without_showing_a_window(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
+                mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+            panel.plan_loaded(PLAN)
+            self.assertEqual(panel.theatre.scene.winner.id,'opus')
+            self.assertTrue(panel.verdict_strip.canvas.grid_info())
+            self.assertIn('Opus 5.5',panel.verdict.get())
+            panel.theatre_enabled.set(False)
+            panel.toggle_theatre()
+            self.assertEqual(panel.theatre.elapsed,decision_theatre.DURATION)
+            panel.render_radar()
+            self.assertTrue(panel.radar.canvas.pack_info())
+            self.assertEqual(panel.theatre.canvas.winfo_manager(), "")
+
     def test_breakdown_rows_carry_bonus_penalty_and_hard_gate_reasons(self):
         rows = {r["id"]: r for r in router_data.candidate_rows(PLAN)}
         self.assertEqual(rows["opus"]["bonus"], 0.2)
@@ -232,7 +252,9 @@ class DecisionBindingTests(unittest.TestCase):
         router.dot_unreachable.return_value = "refused"
         with mock.patch.object(router_data, "modules", return_value=(allocator, router)):
             result = router_data.simulate("修复竞态", 1.5, local_only=True, needs_visual=False)
-        self.assertIs(result, PLAN)
+        self.assertEqual({k:v for k,v in result.items() if k != "task"}, PLAN)
+        self.assertEqual(result["task"]["objective"], "修复竞态")
+        self.assertNotIn("task", PLAN)  # adding replay metadata must not mutate allocator output
         task = allocator.plan.call_args.args[0]
         self.assertEqual(task["expected_hours"], 1.5)
         self.assertTrue(task["needs"]["local_only"])
@@ -275,13 +297,14 @@ class DecisionBindingTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         i18n.set_language("zh")
         rows, tooltip = router_window.verdict_summary(plan, router_data.decision_pair(plan))
-        self.assertEqual(rows, [("胜出", "opus  0.500"), ("次选", "sol  0.450 · 领先 0.0500"),
-                                ("任务", "debug_review · hard · 4h"),
+        self.assertEqual(rows, [("胜出", "Opus 5.5 · 高  0.500"), ("次选", "Sol 6.1 · 高  0.450 · 领先 0.0500"),
+                                ("任务", "调试评审 · 困难 · 4h"),
                                 ("额度", "claude-weekly 剩 40% · 本单 ~3.5% · 机会成本 0.010")])
         self.assertEqual(tooltip, reason)
         i18n.set_language("en")
         rows, _ = router_window.verdict_summary(plan, router_data.decision_pair(plan))
-        self.assertEqual(rows[1], ("Runner-up", "sol  0.450 · lead 0.0500"))
+        self.assertEqual(rows[1], ("Runner-up", "Sol 6.1 · High  0.450 · lead 0.0500"))
+        self.assertEqual(rows[2], ("Task", "Debug & review · Hard · 4h"))
         self.assertEqual(rows[3][1], "claude-weekly 40% left · this task ~3.5% · opportunity cost 0.010")
 
     def test_verdict_summary_marks_ties_and_falls_back_to_a_short_reason(self):
@@ -297,7 +320,7 @@ class DecisionBindingTests(unittest.TestCase):
         plan = {"choice": "a", "decision": {"reason": "a (start) scored 0.3; free usage window", "task": {}},
                 "ranking": [candidate("a", "m1", 0.3), candidate("b", "m2", 0.3)]}
         rows, _ = router_window.verdict_summary(plan, router_data.decision_pair(plan))
-        self.assertEqual(rows[1], ("Runner-up", "b  0.300 · tied"))
+        self.assertEqual(rows[1], ("Runner-up", "m2 · High  0.300 · tied"))
         self.assertEqual(rows[2], ("Task", "— · — · —"))
         self.assertEqual(rows[3], ("Quota", "a (start) scored 0.3"))
         self.assertEqual(router_window.verdict_summary({"decision": {}}, []), ([("", "No eligible candidates")], ""))
@@ -1066,6 +1089,30 @@ class ScorerConfigTests(unittest.TestCase):
             live = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
         self.assertEqual((live["task"]["work_kind"], live["task"]["difficulty"], live["scorer"]["model"]),
                          ("debug_review", "coupled", "m"))
+
+
+class ResetEditorTests(unittest.TestCase):
+    def test_editor_uses_time_choices_and_submits_dynamic_rule(self):
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
+                mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'policy')
+            panel.open_boost_editor()
+            self.assertEqual(tuple(panel.boost_hours.cget('values')), ('1h', '3h', '6h', '12h', '24h'))
+            self.assertFalse(hasattr(panel, 'boost_value'))
+            self.assertFalse(hasattr(panel, 'boost_reset'))
+            panel.boost_pairs = [('codex', 'gpt-6-astra')]
+            panel.boost_target.configure(values=['Astra'])
+            panel.boost_target.current(0)
+            panel.boost_hours.set('1h')
+            panel.add_boost()
+            work = panel.run.call_args.args[0]
+            with mock.patch.object(router_data, 'add_boost') as save:
+                work()
+            save.assert_called_once_with('codex', 'gpt-6-astra', hours=1)
 
 
 if __name__ == "__main__":

@@ -481,38 +481,6 @@ def gemini_label() -> str:
     return _tr("启动中") if module.main_pid() is not None else _tr("已停止")
 
 
-# Grok2API and Muse2API: local OpenAI/Anthropic-compatible gateways (tray/gateways.py), stopped by the port they own.
-def grok_ready() -> bool:
-    return gateways.grok_ready(http_ok)
-
-
-def start_grok2api() -> str:
-    if grok_ready():
-        return _tr("Grok2API 已在运行")
-    if not gateways.grok_built():
-        return _tr("Grok2API 还没有构建，先在面板里检查更新")
-    hidden_popen(gateways.grok_command(), os.environ.copy(), gateways.GROK_HOME, gateways.GROK_LOG)
-    return _tr("已启动 Grok2API")
-
-
-def stop_grok2api() -> str:
-    pid = listener_pid(gateways.GROK_PORT)
-    if not pid:
-        return _tr("Grok2API 未在运行")
-    kill_pid(pid)
-    return _tr("已停止 Grok2API")
-
-
-def grok_label() -> str:
-    if "grok2api" in UPDATING_COMPONENTS:
-        return _tr("更新中")
-    if not gateways.grok_built():
-        return _tr("未安装")
-    if grok_ready():
-        return _tr("运行中") if gateways.grok_serving(http_ok) else _tr("运行中·待添加账号")
-    return _tr("启动中") if listener_pid(gateways.GROK_PORT) is not None else _tr("已停止")
-
-
 def muse_ready() -> bool:
     return gateways.muse_ready(http_ok)
 
@@ -623,8 +591,6 @@ def start_all(config: dict | None = None) -> str:
         messages.append(start_dot2api())
     if plugins.autostarts("chatgpt-web", config):
         messages.append(start_chatgpt_web(False))
-    if plugins.autostarts("grok2api", config):
-        messages.append(start_grok2api())
     if plugins.autostarts("muse2api", config):
         messages.append(start_muse2api())
     if plugins.autostarts("usage-float", config) and USAGE_FLOAT_SCRIPT.is_file():
@@ -642,14 +608,12 @@ def restart_services(config: dict | None = None) -> str:
     """Restart the enabled bridges but keep the tunnel: a new tunnel means a new public address."""
     config = config or plugins.load()
     dot, web = plugins.enabled("dot2api", config), plugins.enabled("chatgpt-web", config)
-    grok, muse = plugins.enabled("grok2api", config), plugins.enabled("muse2api", config)
+    muse = plugins.enabled("muse2api", config)
     messages = []
     if dot:
         messages.append(stop_dot2api(tunnel=False))
     if web:
         messages.append(stop_chatgpt_web())
-    if grok:
-        messages.append(stop_grok2api())
     if muse:
         messages.append(stop_muse2api())
     time.sleep(1)
@@ -657,8 +621,6 @@ def restart_services(config: dict | None = None) -> str:
         messages.append(start_dot2api())
     if web:
         messages.append(start_chatgpt_web(False))
-    if grok:
-        messages.append(start_grok2api())
     if muse:
         messages.append(start_muse2api())
     return "；".join(messages) if messages else _tr("没有需要重启的服务")
@@ -671,8 +633,6 @@ def services_up(config: dict | None = None) -> bool:
         ready = ready and dot_ready()
     if plugins.enabled("chatgpt-web", config):
         ready = ready and chatgpt_ready()
-    if plugins.autostarts("grok2api", config):
-        ready = ready and grok_ready()
     if plugins.autostarts("muse2api", config):
         ready = ready and muse_ready()
     return ready
@@ -709,8 +669,6 @@ def plugin_start(plugin_id: str) -> str:
         return start_dot2api()
     if plugin_id == "chatgpt-web":
         return start_chatgpt_web(False)
-    if plugin_id == "grok2api":
-        return start_grok2api()
     if plugin_id == "muse2api":
         return start_muse2api()
     if plugin_id == "gemini-web":
@@ -727,8 +685,6 @@ def plugin_stop(plugin_id: str) -> str:
         return stop_dot2api()
     if plugin_id == "chatgpt-web":
         return stop_chatgpt_web()
-    if plugin_id == "grok2api":
-        return stop_grok2api()
     if plugin_id == "muse2api":
         return stop_muse2api()
     if plugin_id == "gemini-web":
@@ -745,7 +701,7 @@ def plugin_label(plugin_id: str) -> str:
         import grok_bot_cli
         return grok_bot_cli.snapshot()['label']
     return {"dot2api": dot_label, "chatgpt-web": chatgpt_label, "gemini-web": gemini_label,
-            "grok2api": grok_label, "muse2api": muse_label,
+            "muse2api": muse_label,
             "easytier": lambda: easytier.label(easytier.snapshot()), "usage-float": usage_float_label}[plugin_id]()
 
 

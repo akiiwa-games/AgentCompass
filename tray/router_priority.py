@@ -16,7 +16,7 @@ import shutil
 import sys
 import uuid
 
-DURATIONS = (3, 6, 24)
+DURATIONS = (1, 3, 6, 12, 24)
 BOOST = 0.35
 INTENT = 'tray:anticipated-reset'
 # Quick reset-priority targets: the fleet document's `priority_targets` ([{account, model, label?}]) when set,
@@ -94,8 +94,38 @@ def percentage(window):
 
 
 def active(row, now, allocator):
-    until = allocator.parse_time(row.get('until'))
+    until = allocator.parse_time(row.get('until')) or allocator.expected_reset_time(row)
     return until is not None and until > now
+
+
+def dynamic_priority(row, allocator, accounts, usage, now):
+    """Current countdown and surplus bonus before a task's consumption is deducted."""
+    reset = allocator.expected_reset_time(row)
+    if reset is None:
+        return {'dynamic_boost': None, 'remaining_hours': None, 'countdown': ''}
+    hours = max(0.0, (reset - now).total_seconds() / 3600)
+    account = row.get('account')
+    spec = accounts.get('accounts', {}).get(account) or {}
+    observed = usage.get('accounts', {}).get(account) or {}
+    policy = accounts['scoring']
+    model = allocator.canonical(row['model'], accounts) if row.get('model') else None
+    bonus = 0.0
+    if hours > 0 and not allocator.override_reset_landed(row, usage, accounts, now):
+        for wid, wspec, win in allocator.applicable_windows(spec, model, observed):
+            expected = allocator.window_reset_expectation([row], account, model, wid, spec, accounts, now)
+            if expected is None:
+                continue
+            state = allocator.window_state(wid, wspec, win, spec, now, policy['short_window_hours'],
+                                           account_stale=observed.get('status') == 'stale' or observed.get('stale') is True,
+                                           expected_reset_at=expected)
+            if not state['known']:
+                continue
+            forecast = allocator.demand_forecast(spec, wid, state, policy)
+            if forecast is not None:
+                cost = allocator.window_cost(spec, wid, state, 0, forecast, policy, {'notes': []}, now)
+                bonus = max(bonus, cost.get('reset_bonus', 0.0))
+    return {'dynamic_boost': bonus, 'remaining_hours': hours,
+            'countdown': _tr('预计 {0}h 后重置').format(f'{hours:.1f}')}
 
 
 def overlaps(row, account, model, now, allocator, accounts):
@@ -184,7 +214,7 @@ def save(allocator, path, document):
 
 def enable(account, model, window, hours, now=None):
     if hours not in DURATIONS:
-        raise ValueError(_tr('请选择菜单中的最长等待时间'))
+        raise ValueError(_tr('请选择菜单中的预期重置时间'))
     allocator, router = modules()
     now = now or datetime.now(timezone.utc)
     accounts = allocator.load_accounts()
@@ -195,8 +225,21 @@ def enable(account, model, window, hours, now=None):
     path = allocator.overrides_path()
     with allocator.override_store.locked(path):
         doc = read_document(path)
-        if any(overlaps(r, account, model, now, allocator, accounts) for r in doc['overrides']):
-            return _tr('该账号/模型已有临时规则；未叠加权重，也未延长截止时间')
+        new_until = (now+timedelta(hours=hours)).isoformat()
+        overlapping = [r for r in doc['overrides'] if overlaps(r, account, model, now, allocator, accounts)]
+        if overlapping:
+            ui_rules = [r for r in overlapping if r.get('intent') in (INTENT, 'panel:temporary-boost')
+                        and r.get('stop_on_reset') and not r.get('expires_at')]
+            if not ui_rules or any(r.get('until') == new_until for r in ui_rules):
+                return _tr('该账号/模型已有临时规则；未叠加权重，也未延长截止时间')
+            existing = ui_rules[0]
+            existing['until'] = new_until
+            existing['basis'] = _tr('用户在托盘选择预计临时重置，优先 {0}/{1}；额度回升后 router 自动撤销').format(f'{account}', f'{model}')
+            doc['overrides'] = [r for r in doc['overrides'] if r is existing or r not in ui_rules]
+            doc.pop('last_reset', None)
+            save(allocator, path, {**doc, 'v': 1})
+            return _tr('已更新 {0}/{1} 预期重置时间；重置确认后撤销，最迟 {2} 失效').format(
+                f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(new_until, allocator)}")
         # Use ONE real observation for the baseline. Never synthesize a timestamp
         # for a cached older value and never fetch directly from provider APIs.
         usage = router.usage_snapshot(now=now)
@@ -259,7 +302,11 @@ def snapshot(now=None):
     rows = [r for r in doc['overrides'] if active(r, now, allocator)
             and not allocator.override_reset_landed(r, None, accounts, now)]
     entries = [{'label': model_label(r['model'], accounts) if r.get('model') else account_label(r.get('account')) or _tr('其他'),
-                'id': r['id'], 'revision': revision(r)} for r in rows]
+                'id': r['id'], 'revision': revision(r),
+                **dynamic_priority(r, allocator, accounts, usage, now)} for r in rows]
+    for entry in entries:
+        if entry['dynamic_boost'] is not None:
+            entry['label'] += _tr(' · {0} · 动态加成 +{1}').format(entry['countdown'], f"{entry['dynamic_boost']:.2f}")
     choices = targets(allocator, accounts)
     for t in choices:
         t['selected'] = any(overlaps(r, t['account'], t['model'], now, allocator, accounts) for r in rows)
@@ -275,7 +322,7 @@ def perform(action):
     """Expected local diagnostics are actionable notifications, not generic failures."""
     try:
         if action['kind'] == 'enable':
-            return enable(action['account'], action['model'], action['window'], DEFAULT_HOURS)
+            return enable(action['account'], action['model'], action['window'], action.get('hours', DEFAULT_HOURS))
         if action['kind'] == 'cancel':
             return cancel(action['id'], action['revision'])
         raise ValueError(_tr('未知临时优先操作'))

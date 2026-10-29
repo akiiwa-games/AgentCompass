@@ -27,7 +27,7 @@ test('SDK creation uses its documented fields, parentage and idempotency', async
       assert.equal(options.clientMessageId, id);
       assert.equal(options.agentId, id);
       assert.equal(options.model, 'openai-codex/gpt-6-astra');
-      const {provider, model, cwd, title, modeId, thinkingOptionId, featureValues, ...rest} = options;
+      const {provider, model, cwd, title, modeId, thinkingOptionId, featureValues, onEvent, ...rest} = options;
       // Validate against the installed protocol, without opening a host connection.
       SessionInboundMessageSchema.parse({type: 'agent.create.request', requestId: 'fixture-request', ...rest,
         config: {provider, model, cwd, title, modeId, thinkingOptionId, featureValues}});
@@ -71,6 +71,36 @@ test('missing parent is a definite no-send failure; lost create reply is uncerta
   assert.equal(result.ok, false);
   assert(!JSON.stringify(result).includes('secret-canary'));
   assert.deepEqual(project({id: 'child', initialPrompt: 'secret-canary'}), {id: 'child'});
+});
+
+test('only a matching definitive creation failure terminates the notification and claim', async () => {
+  const old = process.env.ROUTER_STATE_DIR;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-creation-failure-'));
+  process.env.ROUTER_STATE_DIR = root;
+  try {
+    const folder = path.join(root, 'paseo-notifications'); fs.mkdirSync(folder);
+    for (const [id, unknown, key, expected] of [
+      ['definite', false, 'definite', false], ['unknown', true, 'unknown', true],
+      ['missing', undefined, 'missing', true], ['mismatch', false, 'another', true],
+    ]) {
+      const file = path.join(folder, `${id}.json`);
+      fs.writeFileSync(file, JSON.stringify({parent_id: 'parent', status: 'watching'}));
+      const fake = {fetchAgent: async () => ({agent: {cwd: '/fixture'}}),
+        createAgent: async options => {
+          options.onEvent({kind: 'agent', idempotencyKey: key, phase: 'failed', outcomeUnknown: unknown});
+          throw new Error('secret-failure-canary');
+        }};
+      const result = await execute(fake, {operation: 'create', dispatch_id: id, parent_id: 'parent',
+        request: {provider: 'pi/openai-codex/gpt-6-astra'}}, notifier);
+      assert.equal(result.sent, expected);
+      assert.equal(fs.existsSync(`${file}.creation-failed`), !expected);
+      assert.equal(JSON.parse(fs.readFileSync(file)).status, expected ? 'watching' : 'creation_failed');
+      assert(!JSON.stringify(result).includes('canary'));
+    }
+  } finally {
+    if (old === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = old;
+    fs.rmSync(root, {recursive: true, force: true});
+  }
 });
 
 test('notification readiness precedes creation; unavailable notifier prevents launch', async () => {
@@ -221,6 +251,21 @@ test('detached notifier has one owner, recovers a killed owner, and exits after 
     assert.equal(fs.existsSync(recordFile + '.lock'), false);
     assert.equal((await ensureNotification(input)).status, 'delivered');
     assert.equal(fs.readFileSync(path.join(root, 'messages.jsonl'), 'utf8').trim().split('\n').length, 1);
+    // A definitive creation rejection must also stop its real watcher process.
+    fs.writeFileSync(path.join(root, 'agent.json'), 'null');
+    const rejected = await ensureNotification({dispatch_id: 'rejected', parent_id: 'parent'});
+    pids.add(rejected.pid);
+    const rejectedFile = path.join(root, 'paseo-notifications', 'rejected.json');
+    await execute({fetchAgent: async () => ({agent: {cwd: '/fixture'}}),
+      createAgent: async options => {
+        options.onEvent({kind: 'agent', idempotencyKey: 'rejected', phase: 'failed', outcomeUnknown: false});
+        throw new Error('fixture rejection');
+      }}, {operation: 'create', dispatch_id: 'rejected', parent_id: 'parent',
+        request: {provider: 'pi/model'}}, async () => rejected);
+    await until(() => !running(rejected.pid));
+    assert.equal(JSON.parse(fs.readFileSync(rejectedFile)).status, 'creation_failed');
+    assert.equal(fs.existsSync(rejectedFile + '.lock'), false);
+    assert.equal((await ensureNotification({dispatch_id: 'rejected', parent_id: 'parent'})).status, 'creation_failed');
   } finally {
     if (fs.existsSync(recordFile)) pids.add(JSON.parse(fs.readFileSync(recordFile, 'utf8')).pid);
     for (const pid of pids) if (running(pid)) process.kill(pid);

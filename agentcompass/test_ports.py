@@ -12,7 +12,6 @@ class PortTests(unittest.TestCase):
         self.assertEqual(DEFAULTS["gemini_web"], 17849)
         self.assertEqual(DEFAULTS["account_login"], 17851)
         self.assertEqual(DEFAULTS["easytier_rpc"], 15888)
-        self.assertEqual(DEFAULTS["grok2api"], 8790)
         self.assertEqual(DEFAULTS["muse2api"], 18610)
 
     def test_env_beats_file_and_file_beats_default_without_writing(self):
@@ -21,7 +20,7 @@ class PortTests(unittest.TestCase):
             root = Path(directory)
             before = set(root.rglob("*"))
             path = root / "ports.json"
-            path.write_text(json.dumps({"dot2api": 9000, "grok2api": "nope"}), encoding="utf-8")
+            path.write_text(json.dumps({"dot2api": 9000, "muse2api": "nope"}), encoding="utf-8")
             environ = {
                 "AGENTCOMPASS_PORTS_FILE": str(path),
                 "AGENTCOMPASS_PORT_DOT2API": "9001",
@@ -30,8 +29,8 @@ class PortTests(unittest.TestCase):
             state = load(root, environ)
             self.assertEqual(state["ports"]["dot2api"], 9001)
             self.assertEqual(state["ports"]["chatgpt_web"], 17843)
-            self.assertEqual(state["ports"]["grok2api"], 8790)
-            self.assertTrue(any("grok2api" in item for item in state["problems"]))
+            self.assertEqual(state["ports"]["muse2api"], 18610)
+            self.assertTrue(any("muse2api" in item for item in state["problems"]))
             self.assertEqual(get("muse2api", root, {}), 18610)
             self.assertEqual(set(root.rglob("*")), before | {path})
             path.unlink()

@@ -11,7 +11,7 @@ app = importlib.util.module_from_spec(SPEC)
 LOADER.exec_module(app)
 
 ALL_RUNNING = dict(dot="运行中", web="运行中", gemini="已停止", float="运行中",
-                   easytier="运行中（2 个对端）", grok=app.DISABLED, muse=app.DISABLED)
+                   easytier="运行中（2 个对端）", muse=app.DISABLED)
 
 
 def setUpModule():
@@ -119,7 +119,7 @@ class MenuTests(TrayTestCase):
         probe.assert_not_called()
         cli.assert_not_called()
 
-    def test_priority_menu_is_two_levels_direct_models_without_grey_help(self):
+    def test_priority_menu_selects_model_and_expected_reset_duration(self):
         app.PRIORITY = {'label': '优先中：Astra', 'entries': [
             {'label': 'Astra', 'id': 'rule-a', 'revision': 'revision-a'}],
             'targets': [
@@ -130,15 +130,18 @@ class MenuTests(TrayTestCase):
             menu = app.build_menu().items[1].submenu
             items = [i for i in menu.items if i.text != app.Menu.SEPARATOR.text]
             self.assertEqual([i.text for i in items], ['Astra', 'Argon', 'Opus 5.5', '取消优先'])
-            self.assertTrue(all(i.submenu is None and i.enabled for i in items))
+            self.assertTrue(all(i.submenu is not None and i.enabled for i in items[:-1]))
+            self.assertIsNone(items[-1].submenu)
             self.assertTrue(items[0].checked)
             with mock.patch.object(app, 'act') as act, mock.patch.object(app.router_priority, 'perform') as perform:
                 items[-1](mock.Mock()); act.call_args.args[1]()
                 self.assertEqual(perform.call_args.args[0], {'kind': 'cancel', 'id': 'rule-a', 'revision': 'revision-a'})
                 for item, target in zip(items, app.PRIORITY['targets']):
-                    item(mock.Mock()); act.call_args.args[1]()
-                    self.assertEqual(perform.call_args.args[0], {'kind': 'enable',
-                        **{k: target[k] for k in ('account', 'model', 'window')}})
+                    self.assertEqual(len(item.submenu.items), 5)
+                    for duration, hours in zip(item.submenu.items, (1, 3, 6, 12, 24)):
+                        duration(mock.Mock()); act.call_args.args[1]()
+                        self.assertEqual(perform.call_args.args[0], {'kind': 'enable', 'hours': hours,
+                            **{k: target[k] for k in ('account', 'model', 'window')}})
 
     def test_priority_refresh_sees_router_removal_without_changing_service_state(self):
         icon = mock.Mock(); services_before = dict(app.STATE)

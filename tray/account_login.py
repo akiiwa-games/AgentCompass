@@ -1,11 +1,9 @@
-"""Sign in once in a dedicated Chrome, then import the account into Grok2API or Muse2API.
+"""Sign in once in a dedicated Chrome, then import the account into Muse2API.
 
-A thin shell over the two gateways: nothing here touches their clones. It starts the installed Chrome on its own
+A thin shell over the gateway: nothing here touches its clone. It starts the installed Chrome on its own
 profile with a loopback debugging port, opens the site's sign-in page, waits until the session cookie appears,
 reads it over CDP (httpOnly cookies included) and posts it to the gateway's own admin API:
 
-    Grok2API  POST /api/admin/v1/auth/login, then the cookie `sso` as a one-line TXT file to
-              POST /api/admin/v1/accounts/web/import (an SSE stream ending in `complete` or `error`)
     Muse2API  POST /admin/accounts {"label", "cookies", "cookie_expires"} with the admin key (= its API key)
 
 The profile persists, so a later import reuses the session without signing in again. Cookies are never written to
@@ -19,7 +17,6 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-import uuid
 from pathlib import Path
 
 import gateways
@@ -32,14 +29,9 @@ CDP = f"http://127.0.0.1:{PORT}"
 CREATE_NO_WINDOW = 0x08000000
 
 SITES = {
-    "grok2api": {"name": "Grok", "url": "https://grok.com/", "domain": "grok.com", "required": ("sso",)},
     "muse2api": {"name": "muse.ai", "url": "https://muse.ai/", "domain": "muse.ai",
                  "required": ("hatch_sess", "hatch_native_auth_device")},
 }
-
-
-class PasswordNeeded(Exception):
-    """The Grok2API bootstrap password no longer works (the user changed it)."""
 
 
 # ---------- the dedicated browser ----------
@@ -62,10 +54,11 @@ def open_page(url: str) -> str:
         request = urllib.request.Request(f"{CDP}/json/new?{url}", method="PUT")
         urllib.request.urlopen(request, timeout=5).read()
         return _tr("已在登录窗口打开新标签")
-    if not gateways.CHROME.is_file():
-        raise FileNotFoundError(_tr('找不到 Chrome：{0}').format(f'{gateways.CHROME}'))
+    chrome = gateways.chrome_path()
+    if not chrome.is_file():
+        raise FileNotFoundError(_tr('找不到 Chrome：{0}').format(f'{chrome}'))
     PROFILE.mkdir(parents=True, exist_ok=True)
-    subprocess.Popen([str(gateways.CHROME), f"--remote-debugging-port={PORT}", "--remote-debugging-address=127.0.0.1",
+    subprocess.Popen([str(chrome), f"--remote-debugging-port={PORT}", "--remote-debugging-address=127.0.0.1",
                       f"--user-data-dir={PROFILE}", "--no-first-run", "--no-default-browser-check", url],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      creationflags=CREATE_NO_WINDOW, close_fds=True)
@@ -145,52 +138,6 @@ def _error_text(body: str) -> str:
         return body[:200]
 
 
-def grok_login(password: str | None = None) -> str:
-    user, bootstrap = gateways.grok_admin()
-    body = json.dumps({"username": user or "admin", "password": password or bootstrap}).encode()
-    status, text = _call(urllib.request.Request(f"{gateways.GROK_URL}/api/admin/v1/auth/login", data=body,
-                                                method="POST", headers={"Content-Type": "application/json"}), 30)
-    if status == 401:
-        raise PasswordNeeded(_tr("Grok2API 管理员密码已修改，请输入当前密码"))
-    if status != 200:
-        raise RuntimeError(_tr('Grok2API 管理员登录失败（{0}）：{1}').format(status, _error_text(text)))
-    return json.loads(text)["data"]["tokens"]["accessToken"]
-
-
-def sse_events(text: str) -> list[tuple[str, str]]:
-    events = []
-    for block in text.replace("\r\n", "\n").split("\n\n"):
-        name, data = "message", []
-        for line in block.split("\n"):
-            if line.startswith("event:"):
-                name = line[6:].strip()
-            elif line.startswith("data:"):
-                data.append(line[5:].strip())
-        if data:
-            events.append((name, "\n".join(data)))
-    return events
-
-
-def grok_import_sso(sso: str, password: str | None = None) -> str:
-    token = grok_login(password)
-    boundary = uuid.uuid4().hex
-    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"sso.txt\"\r\n"
-            f"Content-Type: text/plain\r\n\r\n{sso}\n\r\n--{boundary}--\r\n").encode()
-    status, text = _call(urllib.request.Request(
-        f"{gateways.GROK_URL}/api/admin/v1/accounts/web/import", data=body, method="POST",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": f"multipart/form-data; boundary={boundary}"}), 300)
-    if status != 200:
-        raise RuntimeError(_tr('Grok2API 导入失败（{0}）：{1}').format(status, _error_text(text)))
-    for name, data in reversed(sse_events(text)):
-        if name == "complete":
-            result = json.loads(data)
-            return _tr('Grok Web 账号已导入：新增 {0}，更新 {1}，跳过 {2}；同步成功 {3}，失败 {4}').format(
-                *(result.get(key, 0) for key in ("created", "updated", "skipped", "synced", "syncFailed")))
-        if name == "error":
-            raise RuntimeError(_tr('Grok2API 导入失败：{0}').format(_error_text(data)))
-    raise RuntimeError(_tr("Grok2API 导入没有返回结果"))
-
-
 def _mask(value: str) -> str:
     """Muse2API's own masking of cookie values in its account list (first four ... last four)."""
     return "***" if len(value) <= 8 else f"{value[:4]}...{value[-4:]}"
@@ -229,13 +176,10 @@ def muse_import(cookies: list[dict], label: str = "") -> str:
     return _tr('muse.ai 账号已导入（{0}，{1} 个 cookie）{2}').format(label, len(values), note)
 
 
-def login_and_import(plugin_id: str, password: str | None = None, timeout: float = 600) -> str:
+def login_and_import(plugin_id: str, timeout: float = 600) -> str:
     """The panel button: sign in (or reuse the session), import, then close the login window."""
     cookies = wait_for_session(plugin_id, timeout)
     try:
-        if plugin_id == "grok2api":
-            sso = next(c["value"] for c in cookies if c["name"] == "sso")
-            return grok_import_sso(sso, password)
         return muse_import(cookies)
     finally:
         close_browser()

@@ -18,7 +18,6 @@ DEFAULTS = {
     "gemini_web": 17849,
     "account_login": 17851,
     "easytier_rpc": 15888,
-    "grok2api": 8790,
     "muse2api": 18610,
 }
 
@@ -28,7 +27,6 @@ FEATURES = {
     "gemini_web": "Gemini Web Chrome CDP",
     "account_login": "account-login Chrome CDP",
     "easytier_rpc": "EasyTier RPC portal",
-    "grok2api": "Grok2API",
     "muse2api": "Muse2API",
 }
 
@@ -38,7 +36,6 @@ ENV_KEYS = {
     "gemini_web": ("AGENTCOMPASS_PORT_GEMINI_WEB", "GEMINI_WEB_CDP_PORT"),
     "account_login": ("AGENTCOMPASS_PORT_ACCOUNT_LOGIN",),
     "easytier_rpc": ("AGENTCOMPASS_PORT_EASYTIER",),
-    "grok2api": ("AGENTCOMPASS_PORT_GROK2API",),
     "muse2api": ("AGENTCOMPASS_PORT_MUSE2API", "MUSE2API_PORT"),
 }
 

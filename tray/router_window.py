@@ -24,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import component_launch
 import plugins
 import radar_chart
+import decision_theatre
+import decision_summary
 import ui_theme as theme
 import i18n
 
@@ -94,16 +96,16 @@ def verdict_summary(result: dict, pair: list[dict]) -> tuple[list[tuple[str, str
     if not pair:
         return [("", reason or _tr("没有可用候选"))], ""
     first = pair[0]
-    rows = [(_tr("胜出"), f"{first['id']}  {fmt(first['score'])}")]
+    rows = [(_tr("胜出"), f"{decision_summary.candidate_label(first)}  {fmt(first['score'])}")]
     if len(pair) > 1:
         second = pair[1]
         lead = (first.get("score") or 0.0) - (second.get("score") or 0.0)
         gap = _tr("并列") if abs(lead) < 0.00005 else _tr("领先 {0}").format(fmt(lead, 4))
-        rows.append((_tr("次选"), f"{second['id']}  {fmt(second['score'])} · {gap}"))
+        rows.append((_tr("次选"), f"{decision_summary.candidate_label(second)}  {fmt(second['score'])} · {gap}"))
     task = decision.get("task") or {}
     hours = task.get("hours")
     hours_text = f"{hours:g}h" if isinstance(hours, (int, float)) else "—"
-    rows.append((_tr("任务"), " · ".join((str(task.get("kind") or "—"), str(task.get("difficulty") or "—"), hours_text))))
+    rows.append((_tr("任务"), decision_summary.task_label(result)))
     candidate = next((c for c in (result or {}).get("ranking") or [] if c.get("id") == first["id"]), {})
     capacity = candidate.get("capacity") if isinstance(candidate.get("capacity"), dict) else {}
     pct = candidate.get("expected_pct", capacity.get("step_pct"))
@@ -622,6 +624,8 @@ class Panel:
             self._poll_id = self.root.after(30, self.poll)
             return
         self.drain_results()
+        if getattr(self, '_boost_refreshed', None) is not None and time.monotonic() - self._boost_refreshed >= 60:
+            self.load_boost()
         self._poll_id = self.root.after(30, self.poll)
 
     def close(self):
@@ -755,6 +759,8 @@ class Panel:
             self.built.add(key)
             getattr(self, f"build_{key}")(self.pages[key])  # built while unmapped: it appears complete
         previous, self.current = self.current, key
+        if previous == "scoring" and hasattr(self, "theatre"):
+            self.theatre.stop()
         for name in self.nav:
             active = name == key
             self.paint_nav(name, theme.ACCENT if active else theme.INK, "#FFFFFF" if active else "#CBD5E1", active)
@@ -817,7 +823,18 @@ class Panel:
         self.radar_title.pack(anchor="w")
         self.radar_source = ttk.Label(radar_card, style="CardTiny.TLabel")
         self.radar_source.pack(anchor="w", pady=(2, 8))
+        theatre_controls = ttk.Frame(radar_card, style="Card.TFrame")
+        theatre_controls.pack(fill="x", pady=(0, 4))
+        self.theatre_enabled = tk.BooleanVar(value=True)
+        ttk.Checkbutton(theatre_controls, text=_tr("动画"), variable=self.theatre_enabled,
+                        command=self.toggle_theatre).pack(side="right")
+        replay = ttk.Button(theatre_controls, text="↻", style="Tiny.TButton", width=3,
+                            command=self.replay_theatre)
+        replay.pack(side="right", padx=(0, 5))
+        replay._tooltip_text = _tr("重播 · 点击画面或按 Esc 跳过")
+        self.attach_tooltip(replay)
         picks = ttk.Frame(radar_card, style="Card.TFrame")
+        self.radar_picks = picks
         picks.pack(fill="x")
         tk.Label(picks, text="●", bg=theme.CARD, fg=theme.ACCENT, font=(theme.FONT, 10)).pack(side="left")
         self.pick_a = ttk.Combobox(picks, state="readonly", width=17)
@@ -837,6 +854,7 @@ class Panel:
         self._verdict_width = None
         self.radar = radar_chart.RadarChartCanvas(radar_card, size=theme.px(300), bg=theme.CARD)
         self.radar.pack(fill="both", expand=True, pady=(6, 0))
+        self.theatre = decision_theatre.DecisionTheatre(radar_card)
 
         right = ttk.Frame(body)
         right.grid(row=0, column=1, sticky="nsew")
@@ -969,6 +987,14 @@ class Panel:
         return getattr(self, "pick_ids", {}).get(value, value)
 
     def render_radar(self):
+        if hasattr(self, "theatre"):
+            self.theatre.stop()
+            self.theatre.canvas.pack_forget()
+            self.radar_title.pack(anchor="w")
+            self.radar_source.pack(anchor="w", pady=(2, 8))
+            self.radar_picks.pack(fill="x")
+            self.verdict_box.pack(side="bottom", fill="x", pady=(4, 0))
+            self.radar.pack(fill="both", expand=True, pady=(6, 0))
         data = self.data_module()
         self.radar_title.configure(text=radar_chart.axis_title(self.mode.get()))
         self.radar_source.configure(text=_tr("模型能力 · 静态价格经济性") if self.mode.get() == "dna"
@@ -1000,6 +1026,23 @@ class Panel:
         for child in box.winfo_children():
             child.destroy()
         self._verdict_values, self._verdict_keys = [], []
+        self.verdict.set("\n".join(f"{label}  {value}" if label else value for label, value in rows))
+        if self.mode.get() == "score" and self.plan_result:
+            pair = self.data_module().decision_pair(self.plan_result, self.picked(self.pick_a), self.picked(self.pick_b))
+            if pair:
+                self.verdict_strip = decision_summary.SummaryCanvas(box, decision_summary.summary_model(self.plan_result,pair))
+                canvas = self.verdict_strip.canvas
+                canvas.grid(row=0,column=0,columnspan=2,sticky="ew")
+                box.columnconfigure(0,weight=1)
+                box.columnconfigure(1,weight=0)
+                canvas._tooltip_text = self.verdict.get() + ("\n"+reason if reason else "")
+                floor=self.verdict_strip.model.get("floor")
+                if floor is not None:
+                    canvas._tooltip_text += "\n" + _tr("分数条共同基线：{0}").format(fmt(floor))
+                self.attach_tooltip(canvas)
+                return
+        box.columnconfigure(0,weight=0)
+        box.columnconfigure(1,weight=1)
         for index, (label, value) in enumerate(rows):
             widgets = []
             if label:
@@ -1104,7 +1147,8 @@ class Panel:
         if not selected:
             return
         row = self.ledger_rows[int(selected[0])]
-        self.run(lambda: self.data_module().replay(row), self.plan_loaded, _tr("正在按当前额度重放该次决策…"))
+        self.run(lambda: self.data_module().replay(row), self.plan_loaded,
+                 tr("正在读取台账中保存的该次决策…", "Loading this decision from the ledger…"))
 
     def plan_loaded(self, result):
         self.simulate_button.configure(state="normal", text=_tr("模拟评分"))
@@ -1127,6 +1171,12 @@ class Panel:
             self.fill_pickers()
             self.render_radar()
         message = _tr('评分完成：{0} 个候选，胜出 {1}').format(f'{len(rows)}', f"{self.plan_result.get('choice')}")
+        origin = self.plan_result.get("theatre_source")
+        if origin == "snapshot":
+            message += tr("（台账保存的当次排序与分项分数，未重算）", " (ranking and component scores as recorded in the ledger, not recomputed)")
+        elif origin == "recomputed":
+            message += tr("（旧记录无排序快照，已按当前额度重算，仅供参考）",
+                          " (older record without a stored ranking, recomputed with current quota for reference only)")
         scorer = self.plan_result.get("scorer") or {}
         if scorer:
             source = scorer.get("source")
@@ -1134,6 +1184,23 @@ class Panel:
                         else _tr("（离线规则直判）") if source == "heuristic_configured"
                         else _tr('（小模型失败已回退规则：{0}）').format(f"{scorer.get('fallback_detail') or scorer.get('fallback_reason')}"))
         self.status.set(message)
+        self.replay_theatre()
+
+    def replay_theatre(self):
+        if not self.plan_result or not hasattr(self, "theatre"):
+            return
+        self.radar.canvas.pack_forget()
+        self.radar_title.pack_forget()
+        self.radar_source.pack_forget()
+        self.radar_picks.pack_forget()
+        self.verdict_box.pack(side="bottom", fill="x", pady=(4, 0))
+        self.theatre.canvas.pack(fill="both", expand=True, pady=(6, 0))
+        self.theatre.canvas.update_idletasks()
+        self.theatre.play(self.plan_result, self.theatre_enabled.get())
+
+    def toggle_theatre(self):
+        if not self.theatre_enabled.get():
+            self.theatre.skip()
 
     def pick_from_breakdown(self):
         selected = self.breakdown.selection()
@@ -1907,7 +1974,7 @@ class Panel:
             window.lift()
             return
         self.boost_dialog = window = self.tk.Toplevel(self.root)
-        theme.apply(window, _tr("临时优先加权"), "760x360", (640, 320))
+        theme.apply(window, _tr("设定预期重置时间"), "900x400", (760, 360))
         window.transient(self.root)
         self.build_setting_boost(window)
         self.load_boost()
@@ -1925,29 +1992,27 @@ class Panel:
         self.fill_priority_buttons(quick, "Small.TButton", (0, 6))
         form = ttk.Frame(box, style="Card.TFrame")
         form.pack(fill="x", pady=(12, 10))
-        ttk.Label(form, text=_tr("自定义加成"), style="CardH3.TLabel").pack(side="left", padx=(0, 10))
+        ttk.Label(form, text=_tr("设定预期重置时间"), style="CardH3.TLabel").pack(side="left", padx=(0, 10))
         self.boost_target = ttk.Combobox(form, state="readonly", width=24)
         self.boost_target.pack(side="left")
-        self.boost_value = tk.StringVar(value="0.20")
-        ttk.Spinbox(form, from_=0.10, to=0.50, increment=0.05, textvariable=self.boost_value, width=5,
-                    format="%.2f").pack(side="left", padx=6)
-        self.boost_hours = ttk.Combobox(form, state="readonly", width=4, values=["3h", "6h", "24h"])
+        self.boost_hours = ttk.Combobox(form, state="readonly", width=4, values=["1h", "3h", "6h", "12h", "24h"])
         self.boost_hours.set("6h")
         self.boost_hours.pack(side="left")
-        self.boost_reset = tk.BooleanVar(value=True)
-        ttk.Checkbutton(form, text=_tr("重置后撤销"), variable=self.boost_reset).pack(side="left", padx=10)
-        ttk.Button(form, text=_tr("添加"), style="SmallAccent.TButton", command=self.add_boost).pack(side="left")
+        ttk.Button(form, text=_tr("添加"), style="SmallAccent.TButton", command=self.add_boost).pack(side="left", padx=10)
+        ttk.Label(box, text=_tr("后重置 · 越近越优先，额度回升后自动撤销"), style="CardTiny.TLabel").pack(fill="x")
         bottom = ttk.Frame(box, style="Card.TFrame")
         bottom.pack(side="bottom", fill="x", pady=(8, 0))
         ttk.Button(bottom, text=_tr("取消所选规则"), style="Small.TButton", command=self.cancel_rule).pack(side="right")
-        table, self.rule_table = self.tree(box, (("label", _tr("账号 / 模型"), 180, "w"), ("boost", _tr("加成"), 60, "e"),
-                                                 ("until", _tr("最迟失效"), 120, "w"), ("reset", _tr("重置撤销"), 70, "w"),
+        table, self.rule_table = self.tree(box, (("label", _tr("账号 / 模型"), 180, "w"), ("boost", _tr("动态加成（越近越高）"), 160, "e"),
+                                                 ("until", _tr("预期重置 / 倒计时"), 240, "w"), ("reset", _tr("重置撤销"), 70, "w"),
                                                  ("intent", _tr("来源"), 160, "w")), 6)
         table.pack(fill="both", expand=True)
+        ttk.Label(box, text=_tr("动态加成按当前富余额度估算；派工时会扣除任务用量再计算。"), style="CardTiny.TLabel").pack(fill="x")
         data = self.data_module()
         self.prefill(lambda: (data.overrides(), data.boost_targets()), self.boost_loaded)
 
     def load_boost(self):
+        self._boost_refreshed = time.monotonic()
         data = self.data_module()
         self.run(lambda: (data.overrides(), data.boost_targets()), self.boost_loaded)
 
@@ -1960,7 +2025,9 @@ class Panel:
                 child.destroy()
             for rule in rules[:2]:
                 label = data.model_label(rule.get("model")) if rule.get("model") else data.account_label(rule.get("account"))
-                self.ttk.Button(self.boost_chips, text=f"{clip(label, 10)} ×", style="Tiny.TButton",
+                detail = (f" {rule.get('remaining_hours', 0):.1f}h +{rule['dynamic_boost']:.2f}"
+                          if rule.get('dynamic_boost') is not None else "")
+                self.ttk.Button(self.boost_chips, text=f"{clip(label, 10)}{detail} ×", style="Tiny.TButton",
                                 command=lambda item=rule: self.cancel_boost(item)).pack(side="left", padx=(0, 3))
             if len(rules) > 2:
                 self.ttk.Button(self.boost_chips, text=f"+{len(rules) - 2}", style="Tiny.TButton",
@@ -1970,7 +2037,8 @@ class Panel:
         self.rule_table.delete(*self.rule_table.get_children())
         for index, rule in enumerate(rules):
             self.rule_table.insert("", "end", iid=str(index), values=(
-                rule["label"], fmt(rule["boost"], 2, True) if rule["boost"] else "—", rule["until"],
+                rule["label"], fmt(rule.get("dynamic_boost") if rule.get("dynamic_boost") is not None else rule["boost"], 2, True),
+                f"{rule['until']} · {rule.get('countdown', '')}",
                 _tr("是") if rule["stop_on_reset"] else _tr("否"), rule["intent"]))
         if not rules:
             self.rule_table.insert("", "end", values=(_tr("当前没有生效规则"), "", "", "", ""), tags=("muted",))
@@ -2014,14 +2082,8 @@ class Panel:
             self.status.set(_tr("先选择账号 / 模型"))
             return
         account, model = self.boost_pairs[index]
-        try:
-            boost = float(self.boost_value.get())
-        except ValueError:
-            self.status.set(_tr("加成需为数字"))
-            return
         hours = int(self.boost_hours.get().rstrip("h"))
-        reset = self.boost_reset.get()
-        self.run(lambda: self.data_module().add_boost(account, model, boost, hours, reset), self.say(self.load_boost))
+        self.run(lambda: self.data_module().add_boost(account, model, hours=hours), self.say(self.load_boost))
 
     def cancel_rule(self):
         selected = self.rule_table.selection()
@@ -2873,13 +2935,10 @@ class Panel:
                            command=lambda w=work, p=plugin.id: self.plugin_act(p, w)).pack(side="left", padx=(0, 4))
             if plugin.id == "dot2api":
                 ttk.Button(actions, text=_tr("复制 URL"), style="Tiny.TButton", command=self.copy_tunnel).pack(side="left")
-            elif plugin.id == "grok2api":
-                ttk.Button(actions, text=_tr("复制管理员密码"), style="Tiny.TButton",
-                           command=self.copy_grok_admin).pack(side="left")
             elif plugin.id == "muse2api":
                 ttk.Button(actions, text=_tr("复制 API Key"), style="Tiny.TButton",
                            command=self.copy_muse_key).pack(side="left")
-            if plugin.id in ("grok2api", "muse2api"):
+            if plugin.id == "muse2api":
                 ttk.Button(actions, text=_tr("登录导入账号"), style="Tiny.TButton",
                            command=lambda p=plugin.id: self.import_account(p)).pack(side="left", padx=(4, 0))
             self.plugin_widgets[plugin.id] = {"status": status, "info": info, "enabled": enabled, "autostart": autostart}
@@ -2901,15 +2960,11 @@ class Panel:
                 widgets["info"].set(self.tunnel_url or _tr("隧道未发布"))
             elif plugin.id == "easytier":
                 widgets["info"].set(_tr("正在读取对端…"))
-            elif plugin.id in ("grok2api", "muse2api") and deployed:
+            elif plugin.id == "muse2api" and deployed:
                 import gateways
 
-                if plugin.id == "grok2api":
-                    user = gateways.grok_admin()[0]
-                    widgets["info"].set(_tr('{0}/v1 · 管理员 {1} · 账号与客户端 Key 在管理台添加').format(f'{gateways.GROK_URL}', f"{user or _tr('已改密')}"))
-                else:
-                    chrome = _tr("Chrome 已找到") if gateways.CHROME.is_file() else _tr("缺 Chrome")
-                    widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
+                chrome = _tr("Chrome 已找到") if gateways.chrome_path().is_file() else _tr("缺 Chrome")
+                widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
             else:
                 widgets["info"].set(f"~/.route-manager/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
 
@@ -2937,13 +2992,12 @@ class Panel:
 
             return ((_tr("启动"), start), (_tr("停止"), stop), (_tr("重连"), lambda: dot_reconnect.reconnect() or _tr("隧道地址未变化，无需重连")),
                     (_tr("日志"), log(Path.home() / ".dot2api" / "serve.log")))
-        if plugin_id in ("grok2api", "muse2api"):
+        if plugin_id == "muse2api":
             import gateways
 
-            grok = plugin_id == "grok2api"
-            console = gateways.GROK_URL if grok else f"{gateways.MUSE_URL}/dashboard"
+            console = f"{gateways.MUSE_URL}/dashboard"
             return ((_tr("管理台"), lambda: gateways.open_console(console)), (_tr("启动"), start), (_tr("停止"), stop),
-                    (_tr("日志"), log(gateways.GROK_LOG if grok else gateways.MUSE_LOG)))
+                    (_tr("日志"), log(gateways.MUSE_LOG)))
         if plugin_id == "easytier":
             import easytier
             import network_status
@@ -3005,8 +3059,8 @@ class Panel:
             if plugins.autostarts(plugin_id) and plugin_id != "gemini-web":
                 return _tr('已启用 {0}；{1}').format(f'{name}', f'{services.plugin_start(plugin_id)}')
             return _tr('已启用 {0}').format(f'{name}')
-        if value and plugin_id in ("grok2api", "muse2api"):
-            # First enable downloads and builds it (minutes for Grok2API): show it in the update window.
+        if value and plugin_id == "muse2api":
+            # First enable downloads and installs its dependencies: show it in the update window.
             import update_status
             import updates
 
@@ -3094,15 +3148,11 @@ class Panel:
             elif plugin.id == "easytier":
                 peers = extras.get("easytier")
                 widgets["info"].set(_tr("对端读取失败") if peers is None else _tr('可见对端 {0} 个').format(f'{peers}'))
-            elif plugin.id in ("grok2api", "muse2api") and (plugins.plugin_root(plugin.id) / ".git").exists():
+            elif plugin.id == "muse2api" and (plugins.plugin_root(plugin.id) / ".git").exists():
                 import gateways
 
-                if plugin.id == "grok2api":
-                    user = gateways.grok_admin()[0]
-                    widgets["info"].set(_tr('{0}/v1 · 管理员 {1} · 账号与客户端 Key 在管理台添加').format(f'{gateways.GROK_URL}', f"{user or _tr('已改密')}"))
-                else:
-                    chrome = _tr("Chrome 已找到") if gateways.CHROME.is_file() else _tr("缺 Chrome")
-                    widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
+                chrome = _tr("Chrome 已找到") if gateways.chrome_path().is_file() else _tr("缺 Chrome")
+                widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
             else:
                 deployed = (plugins.plugin_root(plugin.id) / ".git").exists()
                 widgets["info"].set(f"~/.route-manager/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
@@ -3125,13 +3175,13 @@ class Panel:
         self.root.clipboard_append(value)
         self.status.set(_tr('已复制{0}').format(f'{label}'))
 
-    def import_account(self, plugin_id, password=None):
-        """Sign in to Grok / muse.ai in a dedicated Chrome; the cookie is then imported through the gateway's API."""
+    def import_account(self, plugin_id):
+        """Sign in to muse.ai in a dedicated Chrome; the cookie is then imported through the gateway's API."""
         import account_login
         import services
 
         def work():
-            ready = services.grok_ready if plugin_id == "grok2api" else services.muse_ready
+            ready = services.muse_ready
             if not ready():
                 services.plugin_start(plugin_id)
                 deadline = time.monotonic() + 60
@@ -3139,29 +3189,9 @@ class Panel:
                     if time.monotonic() >= deadline:
                         return _tr('{0} 没有启动，未导入，详见日志').format(plugins.BY_ID[plugin_id].name)
                     time.sleep(1)
-            try:
-                return account_login.login_and_import(plugin_id, password)
-            except account_login.PasswordNeeded:
-                return account_login.PasswordNeeded
+            return account_login.login_and_import(plugin_id)
 
-        def done(result):
-            if result is account_login.PasswordNeeded:
-                from tkinter import simpledialog
-
-                entered = simpledialog.askstring("Grok2API", _tr("管理员密码已修改，请输入当前密码："), show="*",
-                                                 parent=self.root)
-                if entered:
-                    self.import_account(plugin_id, entered)
-                else:
-                    self.status.set(_tr("已取消导入"))
-                return
-            self.say(self.load_plugins)(result)
-        self.run(work, done, _tr("已打开登录窗口：在里面登录，完成后自动导入（10 分钟内有效）…"), long=True)
-
-    def copy_grok_admin(self):
-        import gateways
-
-        self.copy_secret(gateways.grok_admin()[1], _tr(" Grok2API 管理员密码"))
+        self.run(work, self.say(self.load_plugins), _tr("已打开登录窗口：在里面登录，完成后自动导入（10 分钟内有效）…"), long=True)
 
     def copy_muse_key(self):
         import gateways

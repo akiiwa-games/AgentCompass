@@ -66,8 +66,6 @@ PLUGINS = (
            repo="https://github.com/Pluviobyte/dot2api.git", legacy_dir="dot2api"),
     Plugin("grok-bot", "Grok Bot CLI", "Bot", "Grok Bot 远端任务", False,
            autostart=False, color="#111827", legacy_dir="skills/route-agent-work/grok-bot"),
-    Plugin("grok2api", "Grok2API", "Grok", "Grok 账号池 OpenAI/Anthropic 网关", False, color="#111827",
-           repo="https://github.com/chenyme/grok2api.git", enabled_by_default=False),
     Plugin("muse2api", "Muse2API", "Muse", "muse.ai 聊天、出图、视频网关", False, color="#EC4899",
            repo="https://github.com/www222fff/muse2api.git", enabled_by_default=False),
 )

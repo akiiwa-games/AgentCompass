@@ -247,6 +247,16 @@ class RouterGateHookTests(unittest.TestCase):
                 )
                 self.assertEqual(shell_res["decision"], "block", msg=cmd)
 
+    def test_recent_plan_is_found_behind_snapshot_sized_lines(self):
+        """Plan lines carry a decision snapshot (up to ~24 KB); the tail read must still reach the route behind them."""
+        with tempfile.TemporaryDirectory() as tmp:
+            heavy = {"at": (T0 - dt.timedelta(minutes=1)).isoformat(), "stage": "snapshot-only", "pad": "x" * 24000}
+            route = {"at": (T0 - dt.timedelta(minutes=4)).isoformat(), "stage": "plan", "choice": "sol_high"}
+            ledger = self.write_ledger(tmp, [route] + [dict(heavy, n=i) for i in range(30)])
+            self.assertGreater(ledger.stat().st_size, 64 * 1024 * 8)
+            routes = gate.recent_routes(ledger, now=T0)
+            self.assertTrue(any(r.get("choice") == "sol_high" for r in routes))
+
     def test_allows_subagent_when_recent_plan_select_or_record_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = self.write_ledger(
@@ -495,6 +505,7 @@ class RouterGateHookTests(unittest.TestCase):
             {"tool_name": "exec", "tool_input": code},
             {"toolName": "codemode", "input": {"code": code}},
             {"toolCall": {"name": "execute_code", "args": {"code": code}}},
+            {"tool_name": "exec_command", "tool_input": {"cmd": f'paseo agent send {agent_id} continue'}},
         ):
             self.assertIn("five_hour", gate.evaluate_payload(payload, now=T0)["reason"])
         self.exhausted_cache(stale=True)
@@ -625,6 +636,7 @@ class RouterGateHookTests(unittest.TestCase):
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet, shell_launch),
                  (turn("codex"), turn("sonnet", parent_agent_id=ids["child"]))),
                 ({"accounts": {"claude-lab": {"bundles": {"lab_sonnet55_high": {"disabled": True},
+                                                        "lab_sonnet55_medium": {"disabled": True},
                                                         "lab_opus55_high": {"disabled": False}}}}}, "档位 lab_sonnet55_high",
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
                 ({"accounts": {"claude-lab": {"verified": False}}}, "verified: false",
@@ -697,6 +709,21 @@ class RouterGateHookTests(unittest.TestCase):
                         {'toolName': 'codemode', 'input': {'code':
                             f'const id = "{wid}"; await paseo.send_agent_prompt({{agentId: id, prompt: "wrap up"}})'}},
                     ))
+                    script = ("import subprocess; paseo = r'C:\\Program Files\\Paseo\\paseo.cmd'; "
+                              f"target = '{wid}'; args = [paseo, 'agent', 'send', target, '--prompt', 'wrap up']; "
+                              "subprocess.run(args)")
+                    commands = (
+                        f'paseo agent send {wid} --prompt "wrap up"',
+                        f'paseo send {wid} "wrap up"',
+                        f'& "C:\\Program Files\\Paseo\\paseo.cmd" agent send {wid} --prompt "wrap up"',
+                        f'python -X utf8 -c "{script}"',
+                        script,
+                        f"python -c \"import subprocess; subprocess.run(['paseo', 'send', '{wid}', 'wrap up'])\"",
+                    )
+                    payloads.extend({'toolCall': {'name': 'run_command', 'args': {'CommandLine': command}}}
+                                    for command in commands)
+                    payloads.append({'tool_name': 'exec', 'tool_input':
+                        'await tools.exec_command(' + json.dumps({'cmd': commands[0]}) + ')'})
                     for payload in payloads:
                         with self.subTest(gate=cause, case=label, payload=payload), \
                                 mock.patch.dict(os.environ, {'PASEO_AGENT_ID': caller}):
@@ -706,6 +733,19 @@ class RouterGateHookTests(unittest.TestCase):
                                 self.assertIn(cause, result['reason'])
                                 self.assertIn('cancel_agent', result['reason'])
                                 self.assertIn('route_judge.py roll --brief', result['reason'])
+
+    def test_cli_inspection_cancel_and_quoted_examples_are_not_continuations(self):
+        wid = self.existing_agent()
+        self.write_settings(allowed=[])
+        commands = [f'paseo agent {verb} {wid}' for verb in ('status', 'activity', 'list', 'cancel', 'stop')]
+        commands += [f'paseo agent send {wid} --help', f'echo "paseo agent send {wid}"',
+                     f'paseo agent status {wid} --label "paseo send {wid}"',
+                     f"python -c \"print('paseo agent send {wid}')\"",
+                     f"python -c \"import subprocess; subprocess.run(['paseo', 'agent', 'status', '{wid}'])\""]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertNotIn('reason', gate.evaluate_payload({
+                    'tool_name': 'exec_command', 'tool_input': {'cmd': command}}, now=T0))
 
     def test_running_control_keeps_launch_quota_and_notification_checks(self):
         wid = self.existing_agent()

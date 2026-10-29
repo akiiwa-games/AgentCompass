@@ -11,7 +11,7 @@ import { setTimeout as pause } from 'node:timers/promises';
 const WATCH_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 const CREATE_LIMIT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
-const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed']);
+const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed']);
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
@@ -171,6 +171,11 @@ async function watch(dispatchId, parentId) {
     process.send?.({ready: true});
     if (process.connected) process.disconnect();
     while (Date.now() < record.deadline + CREATE_LIMIT_MS) {
+      // The creator can receive an authoritative failure while we are polling.
+      // Stop only this dispatch's watcher, without replacing its receipt.
+      if (fs.existsSync(`${file}.creation-failed`)) {
+        record.status = 'creation_failed'; persist(); return;
+      }
       try {
         if (!client.isConnected) await client.connect();
         if (await notificationStep(client, record, persist)) return;
@@ -211,6 +216,7 @@ export async function execute(client, input, notify = ensureNotification) {
     catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
     const cwd = parent.agent.cwd, workspaceId = r.workspaceId ?? parent.agent.workspaceId;
     const slash = r.provider.indexOf('/');
+    let creation;
     const options = {
       provider: r.provider.slice(0, slash), model: r.provider.slice(slash + 1),
       title: r.title, cwd, workspaceId,
@@ -219,10 +225,24 @@ export async function execute(client, input, notify = ensureNotification) {
       featureValues: r.settings?.features, initialPrompt: r.initialPrompt, labels: r.labels,
       agentId: input.dispatch_id, idempotencyKey: input.dispatch_id,
       clientMessageId: input.dispatch_id,
+      onEvent: snapshot => { creation = snapshot; },
     };
     try {
       return {ok: true, sent: true, agent: project(await client.createAgent(options)), completion_notification};
     } catch {
+      if (creation?.kind === 'agent' && creation.idempotencyKey === input.dispatch_id
+          && creation.phase === 'failed' && creation.outcomeUnknown === false) {
+        // Keep arbitrary SDK error text private; only structured, definitive
+        // failure authorizes reservation release. Timeouts remain ambiguous.
+        const file = notificationFile(input.dispatch_id);
+        const record = readRecord(file);
+        if (record?.parent_id === input.parent_id) {
+          fs.writeFileSync(`${file}.creation-failed`, 'host_creation_failed', {mode: 0o600});
+          saveRecord(file, {...record, status: 'creation_failed'});
+        }
+        return {ok: false, sent: false, error: 'host_creation_failed',
+          completion_notification: {...completion_notification, status: 'creation_failed'}};
+      }
       // A timeout can follow successful creation; never report definite failure here.
       return {ok: false, sent: true, error: 'create_outcome_uncertain_reconcile_by_label', completion_notification};
     }

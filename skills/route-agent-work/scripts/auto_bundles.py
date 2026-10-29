@@ -38,7 +38,7 @@ SMALL_DEFAULT = {
 ESTIMATED_USD_PER_HOUR = 3.0
 HARNESS_DEFAULT_EFFORT = {'codex': 'high', 'pi': 'high', 'claude': 'high', 'opencode': None,
                           'antigravity-resilient': None, 'grok': 'high'}
-HARNESS_MODE = {'codex': 'full-access', 'pi': 'full-access', 'claude': 'bypassPermissions',
+HARNESS_MODE = {'codex': 'full-access', 'claude': 'bypassPermissions',
                 'opencode': 'build', 'antigravity-resilient': 'full-access'}
 OPENAI_NATIVE = re.compile(r'^(gpt|o\d|codex)', re.I)
 ANTHROPIC_NATIVE = re.compile(r'^claude', re.I)

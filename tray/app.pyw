@@ -35,16 +35,16 @@ TITLE_LIMIT = 127
 
 # What the menu and icon show. Built by the watcher threads so that opening the menu never waits on a service.
 STATE = {"dot": "检测中", "web": "检测中", "gemini": "检测中",
-         "float": "检测中", "easytier": "检测中", "grok": "检测中", "muse": "检测中"}
+         "float": "检测中", "easytier": "检测中", "muse": "检测中"}
 EASYTIER = {"state": easytier.MISSING, "pids": [], "peers": None}
 PRIORITY = {"label": "重置前优先", "entries": [], "targets": []}
 PLUGINS = plugins.defaults()
 
 # plugin id -> STATE key of its label
 PLUGIN_STATE = {"usage-float": "float", "chatgpt-web": "web", "gemini-web": "gemini",
-                "easytier": "easytier", "dot2api": "dot", "grok2api": "grok", "muse2api": "muse"}
+                "easytier": "easytier", "dot2api": "dot", "muse2api": "muse"}
 # Plugins that are expected to keep running once started (Gemini Web is a visible browser, started on demand).
-SERVICE_PLUGINS = ("dot2api", "chatgpt-web", "easytier", "usage-float", "grok2api", "muse2api")
+SERVICE_PLUGINS = ("dot2api", "chatgpt-web", "easytier", "usage-float", "muse2api")
 
 
 def single_instance() -> bool:
@@ -119,7 +119,7 @@ def refresh(icon: pystray.Icon) -> None:
     config = PLUGINS
     probes = {"dot": ("dot2api", services.dot_label), "web": ("chatgpt-web", services.chatgpt_label),
               "gemini": ("gemini-web", services.gemini_label),
-              "float": ("usage-float", services.usage_float_label), "grok": ("grok2api", services.grok_label),
+              "float": ("usage-float", services.usage_float_label),
               "muse": ("muse2api", services.muse_label)}
     latest = {}
     for key, (plugin_id, probe) in probes.items():
@@ -273,13 +273,16 @@ def build_menu() -> Menu:
         icon.stop()
 
     def priority_menu():
-        # One submenu only: direct model selection, no account/window/time nesting.
+        # A model's submenu selects the expected reset deadline, not a fixed score.
         items = []
         for target in PRIORITY["targets"]:
-            action = {"kind": "enable", **{k: target[k] for k in ("account", "model", "window")}}
-            items.append(MenuItem(target["label"], run(lambda a=action: router_priority.perform(a)),
-                                  checked=lambda item, selected=target.get("selected", False): selected,
-                                  radio=True))
+            durations = []
+            for hours in router_priority.DURATIONS:
+                action = {"kind": "enable", "hours": hours, **{k: target[k] for k in ("account", "model", "window")}}
+                durations.append(MenuItem(_tr('预计 {0} 小时后重置').format(hours),
+                                          run(lambda a=action: router_priority.perform(a))))
+            items.append(MenuItem(target["label"], Menu(*durations),
+                                  checked=lambda item, selected=target.get("selected", False): selected))
         if PRIORITY["entries"]:
             items.append(Menu.SEPARATOR)
         for entry in PRIORITY["entries"]:

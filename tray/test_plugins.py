@@ -20,7 +20,7 @@ class PluginStoreTests(unittest.TestCase):
         self.path = Path(directory.name) / "plugins.json"
 
     def test_missing_or_broken_file_means_built_ins_enabled_opt_ins_off_and_gemini_on_demand(self):
-        opt_in = {"grok2api", "muse2api"}
+        opt_in = {"muse2api"}
         for content in (None, "{not json", json.dumps([1, 2]), json.dumps({"plugins": "x"})):
             with self.subTest(content=content):
                 if content is not None:
@@ -88,7 +88,6 @@ class LifecycleTests(unittest.TestCase):
         with mock.patch.multiple(services, start_dot2api=record("dot"), start_chatgpt_web=record("web"),
                                  start_usage_float=record("uf"), start_gemini_web=record("gemini")), \
                 mock.patch.object(services, "USAGE_FLOAT_SCRIPT", mock.Mock(is_file=lambda: True)), \
-                mock.patch.object(services, "start_grok2api", side_effect=lambda: calls.append("grok") or "grok"), \
                 mock.patch.object(services, "start_muse2api", side_effect=lambda: calls.append("muse") or "muse"), \
                 mock.patch.object(services.easytier, "start_if_stopped", side_effect=lambda: calls.append("et")):
             message = services.start_all(config)
@@ -97,8 +96,8 @@ class LifecycleTests(unittest.TestCase):
     def test_login_starts_each_enabled_autostart_plugin(self):
         calls, _ = self.start_all(self.config())
         self.assertEqual(calls, ["dot", "web", "uf", "et"])
-        calls, _ = self.start_all(self.config(grok2api={"enabled": True}, muse2api={"enabled": True}))
-        self.assertEqual(calls, ["dot", "web", "grok", "muse", "uf", "et"])
+        calls, _ = self.start_all(self.config(muse2api={"enabled": True}))
+        self.assertEqual(calls, ["dot", "web", "muse", "uf", "et"])
 
     def test_disabled_plugins_never_start(self):
         config = self.config()

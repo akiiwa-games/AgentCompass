@@ -1,4 +1,4 @@
-"""Update Dot2API, ChatGPT Web and the enabled Git plugins (Gemini Web, Grok2API, Muse2API).
+"""Update Dot2API, ChatGPT Web and the enabled Git plugins (Gemini Web, Muse2API).
 
     python updates.py check      fetch and show how far behind each clone is; changes nothing else
     python updates.py build      install dependencies and build the ChatGPT Web launcher (deploy.py install does this)
@@ -106,12 +106,9 @@ def sync_dot2api() -> None:
 
 
 def prepare_gateway(plugin_id: str) -> None:
-    """Build Grok2API (console + server) or install Muse2API's dependencies after a clone or pull."""
+    """Install Muse2API's dependencies after a clone or pull."""
     report("progress", _tr('构建 {0}（首次较慢）').format(f'{plugins.BY_ID[plugin_id].name}'), plugins.BY_ID[plugin_id].name)
-    if plugin_id == "grok2api":
-        gateways.grok_build(run)
-    else:
-        gateways.muse_sync(run, services.uv_path())
+    gateways.muse_sync(run, services.uv_path())
 
 
 def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
@@ -131,7 +128,7 @@ def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
         sync_dot2api()
     elif plugin_id == "chatgpt-web":
         patch_and_build()
-    elif plugin_id in ("grok2api", "muse2api"):
+    elif plugin_id == "muse2api":
         prepare_gateway(plugin_id)
     return _tr('{0} 已下载并部署（{1}）').format(f'{plugin.name}', f'{version(target)}')
 
@@ -189,7 +186,7 @@ def update_dot2api() -> str:
 
 
 def update_gateway(plugin_id: str) -> str:
-    """Pull Grok2API or Muse2API, rebuild, and restart it if it was running; roll back on a failed build."""
+    """Pull Muse2API, rebuild, and restart it if it was running; roll back on a failed build."""
     name = plugins.BY_ID[plugin_id].name
     root = plugins.plugin_root(plugin_id)
     if not (root / ".git").exists():
@@ -202,7 +199,7 @@ def update_gateway(plugin_id: str) -> str:
     if changed(root):
         return _tr('{0} 有本地改动，未更新').format(f'{name}')
     before, old = git(root, "rev-parse", "HEAD"), version(root)
-    was_running = services.grok_ready() if plugin_id == "grok2api" else services.muse_ready()
+    was_running = services.muse_ready()
     services.UPDATING_COMPONENTS.add(plugin_id)
     try:
         if was_running:
@@ -227,7 +224,7 @@ def update_gateway(plugin_id: str) -> str:
 
 
 def deploy_gateway(plugin_id: str, start: bool, progress=None) -> str:
-    """On enabling Grok2API or Muse2API: clone and build it (reported to the update window), then start it if asked."""
+    """On enabling Muse2API: clone and build it (reported to the update window), then start it if asked."""
     name = plugins.BY_ID[plugin_id].name
     if not LOCK.acquire(blocking=False):
         return _tr("正在更新，请稍候再启用")
@@ -306,7 +303,6 @@ def update_all(progress=None) -> str:
                                          ("ChatGPT Web", update_chatgpt_web, "chatgpt-web"),
                                          ("Usage Float", update_usage_float, "usage-float"),
                                          ("Gemini Web", update_gemini_web, "gemini-web"),
-                                         ("Grok2API", lambda: update_gateway("grok2api"), "grok2api"),
                                          ("Muse2API", lambda: update_gateway("muse2api"), "muse2api")):
             _progress.component = label
             if plugin_id and not plugins.enabled(plugin_id, config):

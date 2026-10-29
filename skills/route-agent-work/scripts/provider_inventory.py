@@ -926,7 +926,7 @@ def apply(accounts, inventory=None):
                 base_tpl['plan'] = row.get('plan') or 'ChatGPT Pro (Pi)'
                 base_tpl['billing'] = 'subscription'
                 base_tpl['bundles'] = {
-                    f'{name}__{bid}': {**b, 'provider': 'pi', 'harness': 'pi', 'modeId': 'full-access'}
+                    f'{name}__{bid}': {**{k: v for k, v in b.items() if k != 'modeId'}, 'provider': 'pi', 'harness': 'pi'}
                     for bid, b in base_tpl.get('bundles', {}).items()
                     if b.get('provider') == 'pi'
                 }

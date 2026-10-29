@@ -39,13 +39,13 @@
       "step": 0.015,
       "floor": 0.4
     },
-    "extra_effort_penalty": 0.02,
+    "extra_effort_penalty": 0.025,
     "safety_margin_pct": 5,
     "short_window_floor_pct": 10,
     "short_window_hours": 24,
     "defer_if_reset_within_hours": 6,
     "reset_horizon_hours": 36,
-    "reset_bonus_max": 0.2,
+    "reset_bonus_max": 1.2,
     "reset_surplus_ref_pct": 15,
     "reset_urgency_power": 1.0,
     "rotate_after_carried_tokens": 2000000,
@@ -187,7 +187,23 @@
       "coupled": 2.0,
       "frontier": 3.5
     },
-    "basis": "Ability normally saturates at floor + ability_span (0.6); non-precision frontend uses saturation_span (0.3), and minimum-sufficient tasks get full ability at the floor. Standard routine/hard effort is capped at High; critical, coupled/frontier and high-risk multi-hypothesis work unlock higher effort. High precision earns high_precision_effort_weight times positive effort ability gain above High. Minimum-sufficient work prices excess ability above floor + saturation_span, exempting GUI/frontend at depth >= 2. Opportunity cost includes displaced demand in USD plus smooth weekly scarcity below scarcity_usable_ref_pct. Observed demand behind schedule is floored at demand_pace_floor_ratio times linear pace. Near weekly reset, surplus earns reset_bonus_max and discounts overqualification. Fast-capable models (Sol/Astra) enable fast mode (2x burn) during pre-reset sprints (sunk_weight >= fast_sprint_sunk_threshold) or when speed is requested and usable quota after 2x burn remains >= fast_plentiful_usable_pct."
+    "basis": "Task demand is continuous: required_ability = ability_floor + critical_headroom + property_span * depth/4 * property (scoring.demand), not a depth-to-effort table. Supply is model tier x the model's own effort_curves coefficient, so any effort of any model may serve any task; medium/low are offered whenever tier + curve still clears the floor, and xhigh/max are chosen only when the demand exceeds what High saturates. Ability saturates at the required ability; minimum-sufficient work prices excess ability above required_ability + saturation_span, scaled by the effort's burn and exempting GUI/frontend at depth >= 2. High precision earns high_precision_effort_weight times positive effort ability gain above High. Opportunity cost includes displaced demand in USD plus smooth weekly scarcity below scarcity_usable_ref_pct. Observed demand behind schedule is floored at demand_pace_floor_ratio times linear pace. Near a reset, surplus earns reset_bonus_max (1.2) and waives opportunity cost, extra_effort_penalty and overqualification in proportion to sunk_weight, so expiring quota is converted into higher thinking effort. Fast-capable models (Sol/Astra) enable fast mode (2x burn) during pre-reset sprints (sunk_weight >= fast_sprint_sunk_threshold) or when speed is requested and usable quota after 2x burn remains >= fast_plentiful_usable_pct.",
+    "demand": {
+      "property_span": 0.5,
+      "default_load": 0.5,
+      "depth_coupling": 0.06,
+      "shortfall_weight": 0.35,
+      "precision_headroom": 0.15,
+      "sprint_effort_weight": 0.06,
+      "property_weights": {
+        "code_complexity": 1.0,
+        "context_scale": 0.8,
+        "divergence": 0.8,
+        "hallucination_risk": 1.0,
+        "error_cost": 0.5
+      },
+      "basis": "Task side of the match: required_ability = ability_floor[difficulty] + critical_headroom + property_span * (reasoning_depth / 4) * property_load, where property_load is the weighted mean of the task properties (code_complexity/3, (context_scale-1)/2, (divergence-1)/2, (hallucination_risk-1)/2, min(error_cost,2)-1). Work without a profile uses its difficulty as the depth and default_load as the load. Each property capability requirement also grows depth_coupling per depth above 2. Supply side: model tier x that model's own effort_curves coefficient. A candidate below required_ability pays shortfall_weight per tier point (high-precision work that is not critical adds precision_headroom to its requirement); effort above High earns ability credit only up to required_ability; a window about to reset with surplus quota waives the extra burn and adds up to sprint_effort_weight for the effort step above High."
+    }
   },
   "aliases": {
     "claude-haiku-4-5@20251001": "claude-haiku-4-5",
@@ -1242,7 +1258,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "claude-sonnet-4-6": {
       "ability": {
@@ -1252,7 +1269,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "claude-haiku-4-5": {
       "ability": {
@@ -1262,9 +1280,10 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
-    "basis": "Per-model effort curves,. `ability` is the change in tier from High: the Artificial Analysis Intelligence Index change from High at each effort (independent; leaderboard of that date) times 0.1 tier per index point (for Opus that reproduces the policy-wide curve at medium, xhigh and max). `burn` is the burn multiplier: 0.7 (the policy-wide value for High) times Artificial Analysis cost per task relative to High, so it carries the longer runs higher efforts need. Efforts a model has no entry for fall back to the policy-wide `effort_ability` and `effort_burn`. Grok has no medium or max entry, Flash no low, xhigh or max. Fable and Dot use the policy-wide curve.",
+    "basis": "Per-model effort curves. `ability` is the change in tier from High (or `ability_mult`: tier multiplier per effort); `burn` is the quota multiplier (0.7 = High; or `burn_mult`: multiplier relative to High). Effective ability = model tier x its effort coefficient; the task side is depth x property difficulty (scoring.demand), never a fixed depth-to-effort table. Efforts a model has no entry for fall back to the policy-wide `effort_ability` and `effort_burn`. `ability` is the Artificial Analysis Intelligence Index change from High at each effort (independent; leaderboard of 2026-10-09) times 0.1 tier per index point; `burn` is 0.7 times the Artificial Analysis cost per task relative to High, so it carries the longer runs higher efforts need. Each entry names its `calibration_source`; recalibrate an entry by replacing its numbers and source together. Grok has no medium or max entry, Flash no low, xhigh or max.",
     "deepseek-v4.1-flash-free": {
       "ability": {
         "default": 0.0,
@@ -1277,7 +1296,8 @@
         "low": 0.35,
         "high": 0.7,
         "max": 1.4
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "claude-opus-5-5": {
       "ability": {
@@ -1293,7 +1313,8 @@
         "high": 0.7,
         "xhigh": 1.33,
         "max": 2.3
-      }
+      },
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, leaderboard of 2026-10-09"
     },
     "claude-sonnet-5-5": {
       "ability": {
@@ -1309,7 +1330,8 @@
         "high": 0.7,
         "xhigh": 1.6,
         "max": 4.34
-      }
+      },
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, leaderboard of 2026-10-09"
     },
     "gpt-6-astra": {
       "ability": {
@@ -1325,7 +1347,8 @@
         "high": 0.7,
         "xhigh": 0.93,
         "max": 1.32
-      }
+      },
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, leaderboard of 2026-10-09"
     },
     "gpt-6.1-sol": {
       "ability": {
@@ -1341,7 +1364,8 @@
         "high": 0.7,
         "xhigh": 0.85,
         "max": 1.58
-      }
+      },
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, leaderboard of 2026-10-09"
     },
     "grok-4.7": {
       "ability": {
@@ -1353,7 +1377,8 @@
         "low": 0.32,
         "high": 0.7,
         "xhigh": 0.96
-      }
+      },
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, leaderboard of 2026-10-09"
     },
     "gemini-3.8-flash-high": {
       "ability": {
@@ -1363,7 +1388,8 @@
       "burn": {
         "medium": 0.53,
         "high": 0.7
-      }
+      },
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, leaderboard of 2026-10-09"
     },
     "gemini-4-argon-high": {
       "ability": {
@@ -1376,7 +1402,8 @@
         "medium": 0.7,
         "high": 0.7
       },
-      "basis": "Bug Hunt Bench Antigravity CLI n=3 sweep low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16)."
+      "basis": "Bug Hunt Bench Antigravity CLI n=3 sweep low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16).",
+      "calibration_source": "Bug Hunt Bench Antigravity CLI n=3 sweep: low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16)"
     },
     "claude-haiku-5-5": {
       "ability": {
@@ -1386,7 +1413,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "gpt-6.1-terra": {
       "ability": {
@@ -1396,7 +1424,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "gpt-6-sol": {
       "ability": {
@@ -1406,7 +1435,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "gpt-6-luna": {
       "ability": {
@@ -1416,7 +1446,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "gpt-5.6-sol": {
       "ability": {
@@ -1426,7 +1457,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "gpt-5.6-terra": {
       "ability": {
@@ -1436,7 +1468,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "gpt-5.6-luna": {
       "ability": {
@@ -1446,7 +1479,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "grok-4.7-build-fast": {
       "ability": {
@@ -1456,7 +1490,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "deepseek-v4-pro": {
       "ability": {
@@ -1466,7 +1501,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "glm-5.3": {
       "ability": {
@@ -1476,7 +1512,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "glm-5.3-flash-free": {
       "ability": {
@@ -1486,7 +1523,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "qwen3-coder-next": {
       "ability": {
@@ -1496,7 +1534,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "qwen3.8-max": {
       "ability": {
@@ -1506,7 +1545,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "kimi-k3.1-pro": {
       "ability": {
@@ -1516,7 +1556,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "kimi-k3": {
       "ability": {
@@ -1526,7 +1567,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "minimax-m3": {
       "ability": {
@@ -1536,7 +1578,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "minimax-m3.1-flash": {
       "ability": {
@@ -1546,7 +1589,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "doubao-seed-2-1-pro-260628": {
       "ability": {
@@ -1556,7 +1600,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "mimo-v2.6-pro": {
       "ability": {
@@ -1566,7 +1611,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "mimo-v2.6-flash-free": {
       "ability": {
@@ -1576,7 +1622,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "nemotron-3-ultra-free": {
       "ability": {
@@ -1586,7 +1633,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "nemotron-3.5-super-vl-free": {
       "ability": {
@@ -1596,7 +1644,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "nemotron-3.5-lightning-free": {
       "ability": {
@@ -1606,7 +1655,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "mistral-large-4": {
       "ability": {
@@ -1616,7 +1666,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "muse-wonder-1.0": {
       "ability": {
@@ -1626,7 +1677,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "beam-free": {
       "ability": {
@@ -1636,7 +1688,8 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
     },
     "flint-40b-free": {
       "ability": {
@@ -1646,7 +1699,25 @@
       "burn": {
         "default": 0.7,
         "high": 0.7
-      }
+      },
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+    },
+    "claude-fable-5-1": {
+      "ability": {
+        "low": -0.7,
+        "medium": -0.3,
+        "high": 0.0,
+        "xhigh": 0.2,
+        "max": 0.4
+      },
+      "burn": {
+        "low": 0.2,
+        "medium": 0.4,
+        "high": 0.7,
+        "xhigh": 1.0,
+        "max": 1.3
+      },
+      "calibration_source": "prior: the policy-wide curve; no per-effort data for Fable yet"
     }
   },
   "accounts": {
@@ -1721,6 +1792,18 @@
         "sonnet55_high": {
           "model": "claude-sonnet-5-5",
           "effort": "high"
+        },
+        "opus55_medium": {
+          "model": "claude-opus-5-5",
+          "effort": "medium"
+        },
+        "opus55_max": {
+          "model": "claude-opus-5-5",
+          "effort": "max"
+        },
+        "sonnet55_medium": {
+          "model": "claude-sonnet-5-5",
+          "effort": "medium"
         }
       },
       "model_defaults": {
@@ -1781,6 +1864,20 @@
         "lab_sonnet55_high": {
           "model": "claude-sonnet-5-5",
           "effort": "high"
+        },
+        "lab_opus55_medium": {
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "disabled": true
+        },
+        "lab_opus55_max": {
+          "model": "claude-opus-5-5",
+          "effort": "max",
+          "disabled": true
+        },
+        "lab_sonnet55_medium": {
+          "model": "claude-sonnet-5-5",
+          "effort": "medium"
         }
       },
       "model_defaults": {
@@ -1829,10 +1926,7 @@
         },
         "sol_medium": {
           "model": "gpt-6.1-sol",
-          "effort": "medium",
-          "when": {
-            "max_reasoning_depth": 1
-          }
+          "effort": "medium"
         },
         "astra_high": {
           "model": "gpt-6-astra",
@@ -1864,10 +1958,7 @@
           "model": "gpt-6.1-sol",
           "effort": "medium",
           "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.1-sol",
-          "when": {
-            "max_reasoning_depth": 1
-          }
+          "launch_model": "openai-codex/gpt-6.1-sol"
         },
         "pi_astra_high": {
           "model": "gpt-6-astra",
@@ -1985,10 +2076,7 @@
           "draws": [
             "3p-5h",
             "3p-weekly"
-          ],
-          "when": {
-            "max_reasoning_depth": 1
-          }
+          ]
         },
         "agy_opus55_medium": {
           "provider": "antigravity-resilient",

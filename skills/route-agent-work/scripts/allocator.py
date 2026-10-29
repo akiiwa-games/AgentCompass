@@ -56,7 +56,8 @@ def load_overrides(now, path=None, usage=None, accounts=None, prune=True):
     rows = document.get('overrides') if isinstance(document, dict) else None
     active, landed, depleted = [], {}, {}
     for o in rows or []:
-        if not (isinstance(o, dict) and o.get('account') and (until := parse_time(o.get('until'))) is not None and until > now):
+        if not (isinstance(o, dict) and o.get('account')
+                and (until := parse_time(o.get('until')) or expected_reset_time(o)) is not None and until > now):
             continue
         if (usage is not None or accounts is not None) and override_reset_landed(o, usage, accounts, now):
             if o.get('id'):
@@ -80,7 +81,8 @@ def override_depleted(override, usage, accounts):
     At or below `safety_margin_pct` the allocator already refuses new work there, so the boost can only mislead; the
     rule is retired instead of waiting for its reset or `until`. Only a fresh reading counts, only weekly windows (or the
     override's own window) that bind its model, and a rule that also carries an expiry date is kept for that fact."""
-    if not isinstance(override, dict) or not override.get('boost') or override.get('expires_at'):
+    if (not isinstance(override, dict) or not (override.get('boost') or expected_reset_time(override))
+            or override.get('expires_at')):
         return False
     account = override.get('account')
     spec = ((accounts or {}).get('accounts') or {}).get(account)
@@ -235,13 +237,42 @@ def observe_landed_overrides(landed, path=None, now=None, retire=False):
             override_store.write(target, updated)
 
 
+def expected_reset_time(override):
+    """A reset expectation is a deadline, never evidence of replenished capacity."""
+    explicit = parse_time(override.get('expected_reset_at') or override.get('resets_at'))
+    if explicit is not None:
+        return explicit
+    if override.get('stop_on_reset') or override.get('intent') in ('tray:anticipated-reset', 'panel:boost'):
+        return parse_time(override.get('until'))
+    return None
+
+
+def window_reset_expectation(overrides, account, model, wid, spec, accounts, now):
+    """Earliest active expectation for this model and its bound long window."""
+    matches = []
+    for rule in overrides:
+        reset = expected_reset_time(rule)
+        until = parse_time(rule.get('until'))
+        if (rule.get('account') != account or reset is None or reset <= now
+                or (until is not None and until <= now)
+                or (rule.get('model') and canonical(rule['model'], accounts) != model)):
+            continue
+        if rule.get('window'):
+            if canonical_window_id(spec, rule['window']) != wid:
+                continue
+        elif spec['windows'][wid].get('hours', 168) < accounts['scoring']['short_window_hours']:
+            continue
+        matches.append(reset)
+    return min(matches) if matches else None
+
+
 def apply_overrides(overrides, usage, accounts, now):
     """Apply priority/expiry intent without replacing observed reset or capacity facts."""
     if not overrides:
         return usage, accounts, []
     active, landed, depleted = [], {}, {}
     for o in overrides:
-        until = parse_time(o.get('until'))
+        until = parse_time(o.get('until')) or expected_reset_time(o)
         if until is None or until <= now:
             continue
         if override_reset_landed(o, usage, accounts, now):
@@ -267,7 +298,7 @@ def apply_overrides(overrides, usage, accounts, now):
         if spec is None:
             continue
         expires = parse_time(o.get('expires_at'))
-        resets = parse_time(o.get('expected_reset_at') or o.get('resets_at'))
+        resets = expected_reset_time(o)
         if expires is not None:
             spec['expires_at'], spec['expires_precision'] = expires.isoformat(), 'time'
         if resets is not None:
@@ -543,6 +574,29 @@ def effort_value(policy, curves, name, effort, default):
     return own[effort] if effort in own else policy[f'effort_{name}'].get(effort, default)
 
 
+EFFORT_ORDER = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+
+
+def effort_ability(policy, curves, info, effort):
+    """The model's effective tier at one effort: its base tier times the curve's `ability_mult` for that effort, else
+    the tier plus the curve's additive `ability` change from High. Thinking harder multiplies what the model can do;
+    it does not replace it, so a weak model's Max stays below a strong model's High unless the data say otherwise."""
+    tier = float((info or {}).get('tier', 0) or 0)
+    mult = (curves or {}).get('ability_mult') or {}
+    if effort in mult:
+        return tier * float(mult[effort])
+    return tier + effort_value(policy, curves, 'ability', effort, 0)
+
+
+def burn_scale(policy, curves, effort):
+    """Quota one task spends at `effort` relative to High: the curve's `burn_mult`, else its `burn` over High's `burn`."""
+    mult = (curves or {}).get('burn_mult') or {}
+    if effort in mult:
+        return float(mult[effort])
+    reference = effort_value(policy, curves, 'burn', 'high', 1.0)
+    return effort_value(policy, curves, 'burn', effort, reference) / reference
+
+
 def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None):
     """Percent of the window this bundle spends on work that takes one worker-hour at High, or None when the account
     has no rate. With a `capacity_usd` for the window and a `usd_per_hour` for the model, that is the hour's list-price
@@ -550,7 +604,7 @@ def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None
     curve's cost per task relative to High scales it: a higher effort spends about the same per hour but runs longer
     (Sol max 1.58 / 0.7 = 2.3 times High per task)."""
     reference = effort_value(policy, curves, 'burn', 'high', 1.0)
-    scale = effort_value(policy, curves, 'burn', effort, reference) / reference
+    scale = burn_scale(policy, curves, effort)
     capacity, usd = capacity_usd(spec, wid, now or datetime.now(timezone.utc)), (info or {}).get('usd_per_hour')
     if capacity is None and wid in ('gemini-weekly', 'gemini-5h') and usd is not None:
         capacity = window_capacity_usd(spec, wid, now)
@@ -577,7 +631,8 @@ def demand_forecast(spec, wid, state, policy):
             return None
     else:
         rate = row.get('pct_per_hour_24h')
-        elapsed = state['hours'] - state['reset_hours']
+        # Expected reset shortens future demand, not the elapsed observation period.
+        elapsed = state['hours'] - state.get('natural_reset_hours', state['reset_hours'])
         if (not isinstance(rate, (int, float)) or rate < 0) and elapsed >= policy['demand_min_elapsed_hours'] and 'remaining' in state:
             rate, source = max(0.0, 100 - state['remaining']) / elapsed, 'period average'
         if not isinstance(rate, (int, float)) or rate < 0:
@@ -617,9 +672,8 @@ def bundle_task_usd(spec, model, effort, hours, policy, curves=None, info=None, 
     """Expected API-equivalent task budget in USD for `hours` active worker-hours (`hours * usd_per_hour * effort_scale * context_scale * fast_scale`)."""
     if spec.get('unlimited') or spec.get('unmetered'):
         return 0.0
-    reference = effort_value(policy, curves, 'burn', 'high', 1.0)
-    scale = effort_value(policy, curves, 'burn', effort, reference) / reference
-    fast_scale = float(policy.get('fast_burn_multiplier', 2.0)) if fast else 1.0
+    scale = burn_scale(policy, curves, effort)
+    fast_scale =float(policy.get('fast_burn_multiplier', 2.0)) if fast else 1.0
     return hours * model_usd_per_hour(model, info) * scale * context_scale * fast_scale
 
 
@@ -702,15 +756,22 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
     cost += scarcity_cost
     expires_first = end < state['reset_hours']
     horizon = float(policy.get('reset_horizon_hours') or 0)
+    if state.get('expected_reset_at'):
+        horizon = max(horizon, state['reset_hours'])
     sunk_weight = 0.0
     excess_pct = max(0.0, (usable - step) - mean)
     if (horizon > 0 and not state.get('short') and not state.get('stale') and not state.get('deferred_hours')
-            and 0 < state['reset_hours'] < horizon and usable - step > 0):
-        urgency = clamp(1.0 - state['reset_hours'] / horizon, 0.0, 1.0) ** float(policy.get('reset_urgency_power', 1.0))
+            and 0 < state['reset_hours'] <= horizon and usable - step > 0):
+        base = clamp(1.0 - state['reset_hours'] / horizon, 0.0, 1.0)
+        # Smooth sprint: at 24/12/6/3/1h, default bonus is .26/.58/.84/1.00/1.13
+        # for a fully surplus window. Both natural and anticipated resets use it.
+        urgency = (0.4 * base + 0.6 * exp(-state['reset_hours'] / 12.0)) ** float(policy.get('reset_urgency_power', 1.0))
         surplus_ref = max(1e-6, float(policy.get('reset_surplus_ref_pct', 15)))
         surplus = (1.0 - shortage_prob) * clamp(excess_pct / surplus_ref, 0.0, 1.0)
         sunk_weight = round(urgency * surplus, 4)
-    reset_bonus = round(float(policy.get('reset_bonus_max', 0.0)) * sunk_weight, 4) if sunk_weight > 0 else 0.0
+    reset_bonus = round(float(policy.get('reset_bonus_max', 1.2)) * sunk_weight, 4) if sunk_weight > 0 else 0.0
+    cost *= 1.0 - sunk_weight
+    scarcity_cost *= 1.0 - sunk_weight
     if source == 'observed' and mean > remaining:
         result['notes'].append(f"{wid}: other work at the observed {rate:.2f}%/h wants ~{mean:.0f}% before its "
                                f"{'expiry' if expires_first else 'reset'} in {end:.0f}h; {remaining:.0f}% is left")
@@ -720,6 +781,7 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
                 'expected_usd': round(real_step_usd, 2), 'after_usd': round(after_usd, 2)}
                if eff_cap_usd and rem_usd is not None and real_step_usd is not None else {}),
             'reset_hours': state['reset_hours'], 'end_hours': end, 'expires_first': expires_first,
+            **({k: state[k] for k in ('natural_reset_hours', 'expected_reset_at') if k in state}),
             'demand_pct': round(mean, 1), 'demand_source': source,
             'shortage_probability': round(shortage_prob, 3),
             'scarcity_cost': round(scarcity_cost, 4),
@@ -1193,17 +1255,99 @@ def capability_score(weights, model, accounts):
     return sum(w * caps[d] for d, w in weights.items() if d in caps) / total if total else 0.0
 
 
+DEMAND_DEFAULTS = {
+    # accounts `scoring.demand` overrides any of these. Tier points unless noted.
+    'property_span': 0.5,         # extra ability the heaviest properties ask of the deepest task
+    'default_load': 0.5,          # property load assumed for work without a profile (only its difficulty is known)
+    'depth_coupling': 0.06,       # per-depth growth of every property's capability requirement around depth 2
+    'shortfall_weight': 0.35,     # score lost per tier point of effective ability below the task's required ability
+    'sprint_effort_weight': 0.06, # score a fully surplus, about-to-reset window adds for the biggest effort step above High
+    'precision_headroom': 0.15,   # extra required ability for high-precision work that is not critical (critical has its own)
+    'property_weights': {'code_complexity': 1.0, 'context_scale': 0.8, 'divergence': 0.8, 'hallucination_risk': 1.0,
+                         'error_cost': 0.5},
+}
+EFFORT_SCALED_CAPABILITIES = ('reasoning', 'coding', 'exploration', 'anti_hallucination')
+
+
+def demand_config(policy):
+    cfg = {**DEMAND_DEFAULTS, 'property_weights': dict(DEMAND_DEFAULTS['property_weights'])}
+    own = (policy or {}).get('demand') if isinstance((policy or {}).get('demand'), dict) else {}
+    for key, value in own.items():
+        if key == 'property_weights' and isinstance(value, dict):
+            cfg['property_weights'].update(value)
+        elif key in cfg:
+            cfg[key] = value
+    return cfg
+
+
+def task_demand(profile, difficulty, critical, divergence, policy, high_precision=False):
+    """The task's continuous ability demand: the difficulty's floor (plus critical headroom) and an extra that grows with
+    reasoning depth times the mean difficulty of the task's properties (code, context, divergence, hallucination risk,
+    error cost). A candidate saturates the demand when its effective ability (base tier x its effort's thinking
+    coefficient) reaches `required_ability`; the saturation interval runs one `saturation_span` above it."""
+    cfg = demand_config(policy)
+    floor = float(policy['ability_floor'][difficulty])
+    headroom = float(policy['critical_headroom']) if critical else 0.0
+    precision = float(cfg['precision_headroom']) if high_precision and not critical else 0.0
+    span = float((policy.get('profile') or {}).get('saturation_span', 0.3))
+    if profile:
+        depth = profile['reasoning_depth']
+        levels = {'code_complexity': profile['code_complexity'] / 3.0,
+                  'context_scale': (profile['context_scale'] - 1) / 2.0,
+                  'divergence': (divergence - 1) / 2.0,
+                  'hallucination_risk': (profile['hallucination_risk'] - 1) / 2.0,
+                  # error cost 3 is critical work, which already carries `critical_headroom`
+                  'error_cost': float(min(profile['error_cost'], 2) - 1)}
+        weights = cfg['property_weights']
+        total = sum(weights.get(k, 0.0) for k in levels)
+        load = sum(weights.get(k, 0.0) * v for k, v in levels.items()) / total if total else 0.0
+        source = 'profile'
+    else:
+        depth = DIFFICULTY_ORDER.index(difficulty) + 1 if difficulty in DIFFICULTY_ORDER else 2
+        levels, load, source = {}, float(cfg['default_load']), 'difficulty'
+    extra = float(cfg['property_span']) * (depth / 4.0) * load
+    required = floor + headroom + precision + extra
+    return {'required_ability': round(required, 4), 'floor': floor, 'critical_headroom': headroom, 'precision_headroom': precision,
+            'property_extra': round(extra, 4), 'reasoning_depth': depth, 'property_load': round(load, 4),
+            'properties': {k: round(v, 3) for k, v in levels.items()}, 'saturation_span': span,
+            'saturates_at': round(required + span, 4), 'source': source}
+
+
+def effort_scaled_capabilities(info, policy, curves, effort):
+    """capability_vector with the thinking dimensions multiplied by this effort's coefficient: effective tier over the
+    effort-neutral High tier. Perception (visual, gui) does not improve by thinking longer."""
+    caps = capability_vector(info)
+    base = effort_ability(policy, curves, info, 'high')
+    ratio = effort_ability(policy, curves, info, effort) / base if base > 0 else 1.0
+    return {dim: clamp(v * ratio, 0.0, 1.0) if dim in EFFORT_SCALED_CAPABILITIES else v for dim, v in caps.items()}
+
+
+def saturating_effort(policy, curves, info, required, efforts=EFFORT_ORDER):
+    """Lowest effort on the model's own curve whose effective ability reaches `required` (None when none does)."""
+    for effort in efforts:
+        if effort_ability(policy, curves, info, effort) >= required - 1e-9:
+            return effort
+    return None
+
+
 def profile_requirements(profile, policy):
     """{dimension: (required level, weight)} for the dimensions the profile needs (accounts `scoring.profile`)."""
     config = policy.get('profile') or {}
     table, weights = config['requirements'], config.get('requirement_weights') or {}
+    # Depth multiplies every property's difficulty: the same code or context load asks more of the model in a deeper
+    # task. Depth 2 is the table's own scale; the reasoning level is already indexed by depth.
+    amp = 1.0 + demand_config(policy)['depth_coupling'] * (profile['reasoning_depth'] - 2)
+
+    def need(level):
+        return round(min(0.98, level * amp), 4)
+
     out = {'reasoning': (table['reasoning'][str(profile['reasoning_depth'])], weights.get('reasoning', 1.0))}
     if profile['code_complexity']:
-        out['coding'] = (table['coding'][str(profile['code_complexity'])], weights.get('coding', 1.0))
+        out['coding'] = (need(table['coding'][str(profile['code_complexity'])]), weights.get('coding', 1.0))
     explore = 'exploration_style' if profile['interaction_style'] == 'exploration' else 'exploration'
-    out['exploration'] = (table['exploration'][str(profile['context_scale'])], weights.get(explore, 0.5))
+    out['exploration'] = (need(table['exploration'][str(profile['context_scale'])]), weights.get(explore, 0.5))
     risky = 'anti_hallucination_high' if profile['hallucination_risk'] >= 3 else 'anti_hallucination'
-    out['anti_hallucination'] = (table['anti_hallucination'][str(profile['hallucination_risk'])], weights.get(risky, 0.5))
+    out['anti_hallucination'] = (need(table['anti_hallucination'][str(profile['hallucination_risk'])]), weights.get(risky, 0.5))
     if profile['needs_visual'] or profile['needs_gui']:
         out['visual'] = (table['visual'], weights.get('visual', 1.0))
     if profile['needs_gui']:
@@ -1434,22 +1578,30 @@ def tag_group(model):
     return '3p'
 
 
-def window_state(wid, spec, observed, account_spec, now, short_hours, account_stale=False):
+def window_state(wid, spec, observed, account_spec, now, short_hours, account_stale=False, expected_reset_at=None):
     """Remaining capacity, time to the end of the allowance and how sure we are."""
     hours = spec.get('hours')
     expires = parse_time(account_spec.get('expires_at'))
-    row = {'id': wid, 'hours': hours, 'short': hours is not None and hours < short_hours, 'known': False, 'stale': False}
+    row = {'id': wid, 'hours': hours, 'short': hours is not None and hours < short_hours, 'known': False, 'stale': bool(account_stale)}
     if observed is None or hours is None:
         return row
     remaining = observed.get('remaining_pct_before_reset')
     if remaining is None:
         remaining = observed.get('observed_remaining_pct')
-        row['stale'] = remaining is not None
+        row['stale'] = row['stale'] or remaining is not None
     seconds = observed.get('seconds_until_reset')
+    if seconds is None and (natural_reset := parse_time(observed.get('resets_at'))) is not None:
+        seconds = (natural_reset - now).total_seconds()
     if row['short'] and remaining == 100 and seconds is None and observed.get('resets_at') is None:
         # An unstarted rolling short window (used_pct == 0, resets_at == null) has full 5h capacity ready.
         seconds = hours * 3600
         row['stale'] = bool(account_stale)
+    expected_hours = ((expected_reset_at - now).total_seconds() / 3600
+                      if expected_reset_at is not None and expected_reset_at > now else None)
+    if expected_hours is not None:
+        row.update(natural_reset_hours=seconds / 3600 if seconds is not None else hours,
+                   expected_reset_at=expected_reset_at.isoformat())
+        seconds = min(seconds, expected_hours * 3600) if seconds is not None else expected_hours * 3600
     if remaining is None or seconds is None:
         return row
     end_hours = seconds / 3600
@@ -1465,6 +1617,8 @@ def window_state(wid, spec, observed, account_spec, now, short_hours, account_st
 def after_reset(state, hours):
     """The same allowance once it renews, assuming a full renewal. None when the plan ends first."""
     wait = state['reset_hours']
+    if state.get('expected_reset_at') and wait < state.get('natural_reset_hours', wait):
+        return None  # A prediction must never authorize work against an imagined refill.
     if wait <= 0 or state.get('stale'):
         return None
     expiry = state['expiry_hours']
@@ -1575,14 +1729,14 @@ def evaluate_bundle(bundle, task, ctx):
         exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
     if task['constraint_model'] and task['constraint_model'] not in (bundle['id'], model):
         exclude('explicit model constraint')
-    ability = info.get('tier', 0) + effort_value(policy, curves, 'ability', bundle.get('effort'), 0)
+    # Model ability x this model's own thinking coefficient at this effort (accounts `effort_curves`). The task side is
+    # depth x property difficulty (`task['demand']`); no effort tier is tied to a depth.
+    ability = effort_ability(policy, curves, info, bundle.get('effort'))
     result['components']['ability_value'] = round(ability, 2)
     effective = ability
-    high_gain = effort_value(policy, curves, 'ability', 'high', 0)
-    if not task['effort_unlocked'] and effort_value(policy, curves, 'ability', bundle.get('effort'), 0) > high_gain:
-        # Above High buys nothing on routine/hard work; its burn and extra_effort_penalty still count (spec 3.3.1).
-        effective = info.get('tier', 0) + high_gain
-        result['components']['effort_capped'] = True
+    high_ability = effort_ability(policy, curves, info, 'high')
+    demand = task['demand']
+    target = demand['required_ability']
     floor = policy['ability_floor'][task['difficulty']]
     gate = floor + (policy['critical_headroom'] if task['critical'] else 0)
     if ability < gate:
@@ -1620,9 +1774,11 @@ def evaluate_bundle(bundle, task, ctx):
         result['notes'].append('unlimited usage')
         result['components']['free_usage'] = policy['unlimited_bonus']
     boost = sum(float(o.get('boost') or 0) for o in ctx.get('overrides', ())
-                if o['account'] == bundle['account'] and (not o.get('model') or canonical(o['model'], accounts) == model))
+                if o['account'] == bundle['account'] and (not o.get('model') or canonical(o['model'], accounts) == model)
+                and (expected_reset_time(o) is None or expected_reset_time(o) <= now))
     for intent in ctx.get('overrides', ()):
-        if intent['account'] == bundle['account'] and intent.get('expected_reset_at'):
+        if (intent['account'] == bundle['account'] and intent.get('expected_reset_at')
+                and (not intent.get('model') or canonical(intent['model'], accounts) == model)):
             result['notes'].append(f"expected reset {intent['expected_reset_at']}: {intent['reset_expectation_status']}; capacity requires a fresh observation")
     if boost:
         result['components']['boost'] = round(boost, 3)
@@ -1631,7 +1787,9 @@ def evaluate_bundle(bundle, task, ctx):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
-            state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'], account_stale=acct_stale)
+            expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
+            state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
+                                 account_stale=acct_stale, expected_reset_at=expected)
             unit = unit_rate(spec, wid, model, bundle.get('effort'), policy, curves, info, now)
             if not state['known']:
                 if state['short']:
@@ -1666,7 +1824,8 @@ def evaluate_bundle(bundle, task, ctx):
                 if empty or (step is not None and state['remaining'] - step < margin_pct):
                     wait = state['reset_hours']
                     what = 'is empty' if empty else f'has {state["remaining"]:.0f}%, short of the ~{step:.1f}% the work needs,'
-                    if not small_short and not state['stale'] and 0 < wait <= policy['defer_if_reset_within_hours']:
+                    if (not small_short and not state['stale'] and 0 < wait <= policy['defer_if_reset_within_hours']
+                            and wait >= state.get('natural_reset_hours', wait)):
                         available_at = max(available_at or 0, wait)
                         result['notes'].append(f'{wid} {what} for {wait:.1f}h; start after its reset')
                     else:
@@ -1714,7 +1873,8 @@ def evaluate_bundle(bundle, task, ctx):
             opportunity += policy['unknown_capacity_penalty']
             result['notes'].append('no current capacity observation; unknown is not exhausted')
     fast_mult = float(policy.get('fast_burn_multiplier', 2.0))
-    if info.get('fast_capable') and not task.get('disable_fast') and not result['excluded'] and available_at is None:
+    if (harness == 'codex' and info.get('fast_capable') and not task.get('disable_fast')
+            and not result['excluded'] and available_at is None):
         horizon = float(policy.get('reset_horizon_hours') or 0)
         in_horizon = bool(binding and not binding.get('stale') and not binding.get('expires_first')
                           and 0 < binding.get('reset_hours', 0) < horizon)
@@ -1729,7 +1889,9 @@ def evaluate_bundle(bundle, task, ctx):
             acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
             fast_ok, fast_opp, fast_binding = True, 0.0, None
             for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
-                st = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'], account_stale=acct_stale)
+                expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
+                st = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
+                                  account_stale=acct_stale, expected_reset_at=expected)
                 if not st['known']:
                     continue
                 unit = unit_rate(spec, wid, model, bundle.get('effort'), policy, curves, info, now)
@@ -1830,7 +1992,7 @@ def evaluate_bundle(bundle, task, ctx):
     if task['profile'] is not None and (not route.get('strict_order') or route.get('capability_fit')):
         # A user-ranked strict order (visual_analysis) stays as stated; elsewhere the profile's needs share the fit.
         # Route fit is not capped. Listed place, ability, the capability vector and the subjective vector decide.
-        vfit = vector_fit(task['requirements'], capability_vector(info))
+        vfit = vector_fit(task['requirements'], effort_scaled_capabilities(info, policy, curves, bundle.get('effort')))
         s_weights = task.get('subjective_weights') or {}
         s_cfg = (policy.get('profile') or {}).get('subjective') if isinstance(info.get('subjective'), dict) else None
         result['components']['route_fit'] = round(fit, 3)
@@ -1845,18 +2007,32 @@ def evaluate_bundle(bundle, task, ctx):
         else:
             weight = (policy.get('profile') or {}).get('vector_weight', 0.5)
             fit = (1 - weight) * fit + weight * vfit
-    reference_burn = effort_value(policy, curves, 'burn', 'high', 1.0)
-    effort_scale = effort_value(policy, curves, 'burn', bundle.get('effort'), reference_burn) / reference_burn
-    effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0), 4)
+    cfg = demand_config(policy)
+    sunk_weight = (binding or {}).get('reset_sunk_weight', 0.0)
+    effort_scale = burn_scale(policy, curves, bundle.get('effort'))
+    # Near a reset with surplus quota the extra burn of a higher effort is quota that would lapse, so it is not charged.
+    effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0) * (1.0 - sunk_weight), 4)
     if effort_penalty:
         result['components']['effort_penalty'] = effort_penalty
+    effort_gain = max(0.0, effective - high_ability)
+    saturation = float((policy.get('profile') or {}).get('saturation_span', 0.3))
+    if sunk_weight > 0 and effort_gain > 0:
+        sprint_quality = round(float(cfg['sprint_effort_weight']) * sunk_weight * clamp(effort_gain / saturation, 0, 1), 4)
+        if sprint_quality:
+            result['components']['sprint_quality'] = sprint_quality
+    # Effort buys ability credit only up to what the task asks of it: above High, up to the required ability. A task
+    # that High already satisfies gets nothing from xhigh/max, and the more it demands the more of the curve counts.
+    credited = min(effective, max(high_ability, target))
+    shortfall = max(0.0, target - effective)
+    if shortfall:
+        result['components']['shortfall'] = round(float(cfg['shortfall_weight']) * shortfall, 4)
+    result['components']['required_ability'] = round(target, 3)
     span = policy.get('ability_span', 0.6)
     if kind in ('frontend_implementation', 'complex_build_plan', 'direction_reasoning') and not task['high_precision']:
         # Once sufficient reasoning is available, UI and planning/scheme quality are decided by route and subjective fit.
         span = (policy.get('profile') or {}).get('saturation_span', 0.3)
-    ability_score = clamp((effective - (gate if task['high_precision'] else floor)) / span, 0, 1)
+    ability_score = clamp((credited - (gate if task['high_precision'] else floor)) / span, 0, 1)
     if task['high_precision']:
-        effort_gain = max(0.0, effort_value(policy, curves, 'ability', bundle.get('effort'), 0) - high_gain)
         result['components']['quality_bonus'] = round(float(policy.get('high_precision_effort_weight', 0.14)) * effort_gain, 4)
     if task['minimum_sufficient']:
         # Ordinary profiled work: meeting the floor is sufficient, so every model at or above it gets full ability
@@ -1865,9 +2041,10 @@ def evaluate_bundle(bundle, task, ctx):
         config = policy.get('profile') or {}
         span = config.get('saturation_span', 0.3)
         ability_score = 1.0 if effective >= gate else 0.0
-        excess = clamp((effective - gate - span) / config.get('overqualification_span', 0.6), 0, 1)
-        usd = 0.0 if spec.get('unlimited') or spec.get('unmetered') else model_usd_per_hour(model, info)
-        sunk_weight = (binding or {}).get('reset_sunk_weight', 0.0)
+        # Excess is measured from the task's required ability, not the bare floor: heavier properties raise the
+        # saturation interval, so a strong model's surplus shrinks as the work gets harder.
+        excess = clamp((effective - target - span) / config.get('overqualification_span', 0.6), 0, 1)
+        usd = 0.0 if spec.get('unlimited') or spec.get('unmetered') else model_usd_per_hour(model, info) * max(effort_scale, 0.0)
         # The price factor is no longer capped at the reference price (2026-10-27), so a $22.6/h model pays 2.26x what a
         # $10/h one does. GUI work keeps the old cap, and above reasoning_depth 1 is exempt: tier measures reasoning, and
         # the GUI specialist is what that work needs. A small GUI task stays open to Sol and Flash (computer_use route).
@@ -2040,8 +2217,10 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
         score = (sum(weights[k] * parts[k] for k in weights) + c['components'].get('free_usage', 0)
                  + c['components'].get('boost', 0) + c['components'].get('reset_bonus', 0)
                  + c['components'].get('quality_bonus', 0) + c['components'].get('fast_bonus', 0)
+                 + c['components'].get('sprint_quality', 0)
                  - c['components']['opportunity_cost']
-                 - c['components'].get('effort_penalty', 0) - c['components'].get('overqualification', 0))
+                 - c['components'].get('effort_penalty', 0) - c['components'].get('overqualification', 0)
+                 - c['components'].get('shortfall', 0))
         if quality != 1.0:
             score += (quality - 1.0) * value
         c['score'] = round(score, 4)
@@ -2216,6 +2395,7 @@ def normalize_task(raw, policy, capabilities, accounts):
             'profile': profile, 'profile_difficulty': derived, 'divergence': div,
             'requirements': profile_requirements(profile, policy) if profile else None,
             'subjective_weights': subjective_weights({**profile, 'divergence': div}, kind) if profile else None,
+            'demand': task_demand(profile, difficulty, critical, div, policy, high_precision),
             'effort_unlocked': unlocked,
             'high_precision': high_precision,
             'minimum_sufficient': bool(profile and depth <= 2 and profile['code_complexity'] < 3
@@ -2279,7 +2459,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision.setdefault('warnings', []).extend(cwd_warnings)
     decision['task'].update(difficulty_source=task['difficulty_source'],
                             high_precision=task['high_precision'],
-                            max_recommended_effort=None if task['effort_unlocked'] else 'high')
+                            demand=task['demand'], max_recommended_effort=None)
     if task.get('wants_fast'):
         decision['task']['wants_fast'] = True
     if task['profile']:
@@ -2330,6 +2510,17 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision['fast'] = True
         decision['fast_reason'] = top['components'].get('fast_reason')
     decision.setdefault('reason', explain(top, system))
+    top_model = canonical(top['bundle']['model'], accounts)
+    offered = sorted({c['bundle'].get('effort') for c in candidates if canonical(c['bundle']['model'], accounts) == top_model
+                      and c['bundle'].get('effort') in EFFORT_ORDER}, key=EFFORT_ORDER.index) or EFFORT_ORDER
+    saturating = saturating_effort(policy, accounts.get('effort_curves', {}).get(top_model, {}), model_spec(accounts, top_model),
+                                   task['demand']['required_ability'], offered)
+    # The ceiling past which more thinking buys nothing for this task on the chosen model: High unless the task's
+    # required ability needs more, None when even the model's top effort falls short.
+    deeper = any(EFFORT_ORDER.index(e) > EFFORT_ORDER.index('high') for e in offered if e in EFFORT_ORDER)
+    decision['task']['max_recommended_effort'] = (
+        ('high' if not deeper else None) if saturating is None
+        else 'high' if EFFORT_ORDER.index(saturating) <= EFFORT_ORDER.index('high') else saturating)
     result['choice'] = top['id']
     result['selected_bundle'] = dict(top['bundle'], bundle_id=top['id'], expected_usd=top.get('expected_usd'),
                                      expected_hours=top.get('expected_hours'))
@@ -2339,6 +2530,103 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     if top['available_in_hours']:
         decision.update({'action': 'defer', 'start_after_hours': round(top['available_in_hours'], 1)})
     return result
+
+
+SNAPSHOT_FULL, SNAPSHOT_COMPACT, SNAPSHOT_EXCLUDED = 6, 8, 16
+SNAPSHOT_CAPACITY_KEYS = ('window', 'remaining', 'after', 'step_pct', 'chain_pct', 'capacity_usd', 'remaining_usd',
+                          'expected_usd', 'reset_hours', 'end_hours', 'expires_first', 'demand_pct', 'demand_source',
+                          'shortage_probability', 'scarcity_cost', 'opportunity_cost', 'reset_sunk_weight', 'reset_bonus',
+                          'surplus_pct', 'stale')
+SNAPSHOT_DECISION_KEYS = ('action', 'needs_user_decision', 'margin', 'needs_judgment', 'reason', 'alternatives', 'continuity',
+                          'fast', 'fast_reason', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
+
+
+def _round(value, places=4):
+    if isinstance(value, bool) or not isinstance(value, float):
+        return value
+    return round(value, places)
+
+
+def _snapshot_row(candidate, detail):
+    """One candidate as it was scored. `detail` keeps every component, the binding window and the notes; the rest keep
+    what the comparison table and radar read. Floats are rounded to 4 places to keep a ledger line small."""
+    bundle = {k: v for k, v in (candidate.get('bundle') or {}).items() if v is not None and k != 'launch_model'}
+    comps = candidate.get('components') or {}
+    excluded = [str(r)[:160] for r in (candidate.get('excluded') or [])[:3]]
+    row = {'id': candidate.get('id'), 'bundle': bundle, 'score': candidate.get('score'), 'action': candidate.get('action'),
+           'excluded': excluded}
+    if detail:
+        row['components'] = {k: _round(v) for k, v in comps.items()}
+        row.update({k: _round(candidate.get(k)) for k in ('expected_pct', 'chain_pct', 'expected_usd', 'chain_usd',
+                                                           'expected_hours', 'available_in_hours') if candidate.get(k) is not None})
+        cap = candidate.get('capacity')
+        if isinstance(cap, dict):
+            row['capacity'] = {k: _round(cap[k]) for k in SNAPSHOT_CAPACITY_KEYS if k in cap}
+        notes = [str(n)[:200] for n in (candidate.get('notes') or [])[:4]]
+        if notes:
+            row['notes'] = notes
+    elif excluded:
+        row['components'] = {}
+    else:
+        keep = ('fit', 'ability', 'opportunity_cost', 'capability', 'divergence', 'global_rigor', 'module_precision',
+                'reset_bonus', 'boost', 'free_usage', 'overqualification', 'effort_penalty')
+        row['components'] = {k: _round(comps[k]) for k in keep if k in comps and comps[k]}
+        for k in ('fit', 'ability', 'opportunity_cost'):
+            if k in comps:
+                row['components'][k] = _round(comps[k])
+    return row
+
+
+def decision_snapshot(result, task=None):
+    """The decision as the allocator made it, small enough for one ledger line, or None when `result` has no ranking.
+
+    Holds the task demand, the scoring system in force (weights, opportunity exchange, harness factors) and the ranking
+    with each candidate's component scores: every component for the best `SNAPSHOT_FULL` eligible candidates, the
+    comparison-table fields for the next `SNAPSHOT_COMPACT`, and the first reasons for `SNAPSHOT_EXCLUDED` blocked ones.
+    Readers replay this as written and never re-plan the task against later quota or configuration."""
+    ranking = result.get('ranking') if isinstance(result, dict) else None
+    if not isinstance(ranking, list):
+        return None
+    decision = result.get('decision') or {}
+    eligible = [c for c in ranking if not c.get('excluded') and c.get('score') is not None]
+    blocked = [c for c in ranking if c.get('excluded') or c.get('score') is None]
+    system = decision.get('system') or {}
+    exchange = system.get('opportunity_exchange') or {}
+    rows = ([_snapshot_row(c, True) for c in eligible[:SNAPSHOT_FULL]]
+            + [_snapshot_row(c, False) for c in eligible[SNAPSHOT_FULL:SNAPSHOT_FULL + SNAPSHOT_COMPACT]]
+            + [_snapshot_row(c, False) for c in blocked[:SNAPSHOT_EXCLUDED]])
+    d_task = decision.get('task') or {}
+    task_in = task if isinstance(task, dict) else (result.get('task') if isinstance(result.get('task'), dict) else {})
+    raw_profile = d_task.get('profile') if isinstance(d_task.get('profile'), dict) else (
+        task_in.get('profile') if isinstance(task_in.get('profile'), dict) else None)
+    clean_profile = {k: v for k, v in raw_profile.items() if k != 'reason'} if isinstance(raw_profile, dict) else None
+    task_meta = {k: v for k, v in (
+        ('objective', (task_in.get('objective') or '')[:200] or None),
+        ('work_kind', task_in.get('work_kind') or d_task.get('kind')),
+        ('profile', clean_profile),
+    ) if v is not None}
+    return {
+        'v': 1, 'stage': result.get('stage'), 'source': result.get('source'), 'observed_at': result.get('observed_at'),
+        'task': task_meta,
+        'choice': result.get('choice'),
+        'selected_bundle': result.get('selected_bundle'),
+        'expected_usd': _round(result.get('expected_usd')),
+        'decision': {**{k: decision[k] for k in SNAPSHOT_DECISION_KEYS if decision.get(k) is not None},
+                     'task': {k: v for k, v in d_task.items() if k != 'profile'} | (
+                         {'profile': clean_profile} if clean_profile is not None else {}),
+                     'system': {'weights': system.get('weights'),
+                                'shortage_loss_per_usd': system.get('shortage_loss_per_usd'),
+                                'shortage_loss_per_worker_hour': system.get('shortage_loss_per_worker_hour'),
+                                'opportunity_exchange': {k: exchange[k] for k in (
+                                    'score_per_displaced_usd', 'score_per_displaced_worker_hour', 'usd_per_score_point',
+                                    'worker_hours_per_score_point') if k in exchange},
+                                'harness_factors': {k: (system.get('harness_factors') or {}).get(k)
+                                                    for k in ('default', 'applies_to', 'rules')}}},
+        'ranking': rows,
+        'ranking_total': len(ranking), 'ranking_eligible': len(eligible),
+        'ranking_omitted': {'eligible': max(0, len(eligible) - SNAPSHOT_FULL - SNAPSHOT_COMPACT),
+                            'excluded': max(0, len(blocked) - SNAPSHOT_EXCLUDED)},
+    }
 
 
 def assumptions(candidates, accounts):

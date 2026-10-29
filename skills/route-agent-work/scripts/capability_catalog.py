@@ -30,7 +30,7 @@ def markdown(accounts):
     rows = ['# Model capability catalogue', '',
             'Generated from `accounts.json` by `scripts/capability_catalog.py`; do not edit this view.', '',
             'Public scores are conservative, low-confidence routing priors, not measured benchmarks or a vendor ranking. '
-            'All listed models start from the same text-capability prior; modality flags describe admission only. '
+            'Tier and text-capability values are the checked-in calibrated baseline; modality flags describe admission only. '
             'Known catalogue IDs do not prove sign-in, plan capacity, current price, or live model availability.', '',
             'Personal scores, route order, effort calibration and account capacity belong in the local fleet. '
             'Unknown capacity and hourly cost remain unknown; neither means unlimited. '

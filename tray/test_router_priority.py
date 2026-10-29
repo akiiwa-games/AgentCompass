@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import router_priority as priority
+from router_test_support import isolated_router_state
 
 
 class PriorityTests(unittest.TestCase):
@@ -17,12 +18,14 @@ class PriorityTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'router-overrides.json'
         self.a, self.r = priority.modules()
+        isolated_router_state(self.addCleanup)
         self.now = datetime(2026, 10, 16, 11, tzinfo=timezone.utc)
         self.usage = {'accounts': {'codex': {'status': 'fresh', 'available': True,
             'fetched_at': (self.now-timedelta(minutes=1)).isoformat(),
             'windows': [{'id': 'usage', 'used_pct': 77, 'remaining_pct_before_reset': 23,
                          'resets_at': (self.now+timedelta(days=6)).isoformat()}]}}}
-        for p in [patch.dict(os.environ, {'ROUTER_OVERRIDES': str(self.path)}),
+        for p in [patch.object(priority, 'modules', return_value=(self.a, self.r)),
+                  patch.dict(os.environ, {'ROUTER_OVERRIDES': str(self.path)}),
                   patch.object(self.r, 'usage_snapshot', return_value=self.usage),
                   patch.object(self.a.host_policy, 'load_policy', return_value={'allowed_accounts': ['codex']})]:
             p.start(); self.addCleanup(p.stop)
@@ -41,16 +44,42 @@ class PriorityTests(unittest.TestCase):
         self.assertEqual({t['account'] for t in view['targets']}, {'codex'})
         self.assertEqual(len(view['targets']), len({(t['account'], t['model'], t['window']) for t in view['targets']}))
 
-    def test_open_captures_real_baseline_and_duplicate_click_does_not_extend_or_stack(self):
+    def test_open_captures_real_baseline_and_switching_hours_updates_deadline_without_stacking(self):
         self.assertIn('已开启', self.enable())
         row = self.rows()[0]; before = self.path.read_bytes()
         self.assertEqual(row['reset_confirmation'], 'replenishment')
         self.assertEqual(row['boost'], .35)
         self.assertEqual(row['baseline_windows']['usage']['fetched_at'], self.usage['accounts']['codex']['fetched_at'])
         self.assertEqual(row['baseline_windows']['usage']['used_pct'], 77)
-        self.assertIn('未叠加', self.enable(3))
+        self.assertIn('未叠加', self.enable(24))
         self.assertEqual(before, self.path.read_bytes())
-        self.assertEqual(row['until'], (self.now+timedelta(hours=24)).isoformat())
+        self.assertIn('已更新', self.enable(1))
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(self.rows()[0]['id'], row['id'])
+        self.assertEqual(self.rows()[0]['until'], (self.now+timedelta(hours=1)).isoformat())
+        self.assertEqual(self.rows()[0]['baseline_windows'], row['baseline_windows'])
+
+    def test_countdown_and_bonus_follow_time_and_panel_defaults_are_dynamic(self):
+        import router_data
+        with patch.object(router_data, 'modules', return_value=(self.a, self.r)):
+            router_data.add_boost('codex', 'gpt-6-astra', hours=12, now=self.now)
+            self.assertNotIn('boost', self.rows()[0])
+            first = router_data.overrides(self.now)[0]
+            later = router_data.overrides(self.now + timedelta(hours=11))[0]
+        self.assertEqual((first['remaining_hours'], later['remaining_hours']), (12, 1))
+        self.assertGreater(later['dynamic_boost'], first['dynamic_boost'])
+        self.assertIn('动态加成', priority.snapshot(self.now)['label'])
+        # A dynamic-only rule still retires at the existing quota safety margin.
+        self.usage['accounts']['codex']['windows'][0].update(used_pct=96, remaining_pct_before_reset=4)
+        self.assertEqual(priority.snapshot(self.now)['entries'], [])
+
+    def test_new_short_and_half_day_menu_durations(self):
+        self.assertEqual(priority.DURATIONS, (1, 3, 6, 12, 24))
+        for hours in (1, 12):
+            self.enable(hours)
+            row = self.rows()[0]
+            self.assertEqual(row['until'], (self.now + timedelta(hours=hours)).isoformat())
+            priority.cancel(row['id'], priority.revision(row))
 
     def test_invalid_or_stale_observation_cannot_open_an_unconfirmable_rule(self):
         original = copy.deepcopy(self.usage)
@@ -133,13 +162,13 @@ class PriorityTests(unittest.TestCase):
     def test_only_top_models_and_weekly_windows_are_offered(self):
         with patch.object(self.a.host_policy, 'load_policy', return_value=None):
             choices = priority.targets(self.a, self.a.load_accounts())
-        self.assertEqual([t['label'] for t in choices], ['Astra', 'Argon', 'Opus 5.5'])
-        self.assertEqual([t['account'] for t in choices], ['codex', 'antigravity', 'claude'])
+        self.assertEqual({t['model'] for t in choices}, {'gpt-6-astra', 'gemini-4-argon-high', 'claude-opus-5-5'})
+        self.assertEqual({t['account'] for t in choices}, {'codex', 'antigravity', 'claude'})
 
     def test_switch_model_is_atomic_and_failed_baseline_preserves_current_choice(self):
         self.enable(); before = self.path.read_bytes()
         with patch.object(self.a.host_policy, 'load_policy', return_value=None):
-            target = next(t for t in priority.targets(self.a, self.a.load_accounts()) if t['label']=='Argon')
+            target = next(t for t in priority.targets(self.a, self.a.load_accounts()) if t['model']=='gemini-4-argon-high')
             with self.assertRaises(ValueError):
                 priority.enable(target['account'], target['model'], target['window'], 24, self.now)
             self.assertEqual(self.path.read_bytes(), before)
@@ -148,7 +177,7 @@ class PriorityTests(unittest.TestCase):
             self.usage['accounts']['antigravity'] = obs
             priority.enable(target['account'], target['model'], target['window'], 24, self.now)
         self.assertEqual([r['model'] for r in self.rows()], ['gemini-4-argon-high'])
-        self.assertEqual(priority.snapshot(self.now)['label'], '优先中：Argon')
+        self.assertTrue(priority.snapshot(self.now)['label'].startswith('优先中：Argon'))
 
     def test_receipt_clock_does_not_slide_and_restart_can_read_it(self):
         self.enable()

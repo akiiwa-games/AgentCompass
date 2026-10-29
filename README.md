@@ -118,7 +118,7 @@ are set; SmartScreen will warn. See `packaging/SIGNING.md`. Tagged pushes (`v*`)
 to a GitHub Release.
 
 Ports default to the same loopback values the tray already uses (Dot2API 8788, ChatGPT Web 17843, Gemini Web 17849,
-account login 17851, EasyTier 15888, Grok2API 8790, Muse2API 18610). `AGENTCOMPASS_PORT_*` overrides
+account login 17851, EasyTier 15888, Muse2API 18610). `AGENTCOMPASS_PORT_*` overrides
 `~/.route-manager/ports.json`, which overrides those defaults. Doctor reports conflicts. Nothing writes that file
 unless you create it.
 
@@ -282,10 +282,9 @@ State is stored atomically in `~/.route-manager/plugins.json`:
 | `gemini-web` | Yes | No (on demand) | Dedicated Google Chrome profile with loopback CDP (`127.0.0.1:17849`) for Gemini, AI Studio, Flow, and Omni 1.1 video generation. |
 | `easytier` | Yes | Yes | Per-host mesh VPN supervisor running `easytier-core.exe` (`127.0.0.1:15888` RPC portal) via a SYSTEM scheduled task. |
 | `dot2api` | No (background) | Yes | Local Dot2API server (`127.0.0.1:8788`) exposed via a Cloudflared quick tunnel; `tray/dot_reconnect.py` automatically registers new tunnel URLs in ChatGPT and prunes stale plugin entries. |
-| `grok2api` *(opt-in)* | No (background) | Once enabled | Clones and builds `chenyme/grok2api` (`127.0.0.1:8790`, config in `~/.grok2api/config.yaml`), exposing Grok accounts as OpenAI/Anthropic endpoints. |
 | `muse2api` *(opt-in)* | No (background) | Once enabled | Clones `www222fff/muse2api` (`127.0.0.1:18610`, data in `~/.muse2api/data`) for headless Chrome muse.ai chat, image, and video generation. |
 
-**Sign in & import** on the Grok2API and Muse2API cards (`tray/account_login.py`) adds an account without DevTools or a browser extension. It is a thin shell outside both clones: it opens the installed Chrome on its own profile (`%LOCALAPPDATA%\AgentCompass Account Login\chrome-profile`, loopback CDP `127.0.0.1:17851`), waits up to 10 minutes for the session cookies (`sso` on grok.com; `hatch_sess` + `hatch_native_auth_device` on muse.ai), reads them over CDP, posts them to the gateway's own admin API (Grok2API: admin login, then `accounts/web/import`; Muse2API: `/admin/accounts`, refreshing the existing account when the session is already imported) and closes the window. Cookies are never written to disk by the shell. If the Grok2API admin password was changed, the panel asks for it and does not store it. Grok Build (device OAuth) and Console accounts are still added in the Grok2API console.
+**Sign in & import** on the Muse2API card (`tray/account_login.py`) adds an account without DevTools or a browser extension. It opens installed Chrome on its own profile (`%LOCALAPPDATA%\AgentCompass Account Login\chrome-profile`, loopback CDP `127.0.0.1:17851`), waits up to 10 minutes for `hatch_sess` and `hatch_native_auth_device` on muse.ai, reads them over CDP, posts them to `/admin/accounts` (refreshing the existing account when the session is already imported), and closes the window. Cookies are never written to disk by the shell.
 
 ### Temporary Pre-Reset Priority
 

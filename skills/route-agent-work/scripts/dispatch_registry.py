@@ -190,7 +190,7 @@ def bound_hash(request):
 
 # The one table of launcher families this Paseo adapter launches, with each family's permission mode.
 # Accounts are admitted by their discovered family, never by name.
-PASEO_LAUNCHER_MODES = {'codex': 'full-access', 'claude': 'bypassPermissions', 'pi': 'full-access',
+PASEO_LAUNCHER_MODES = {'codex': 'full-access', 'claude': 'bypassPermissions', 'pi': None,
                         'antigravity-resilient': 'full-access', 'opencode': 'build', 'grok': None, 'acp': None}
 
 
@@ -211,7 +211,9 @@ def launch_request(bundle, launch):
         raise ValueError('This dispatch adapter supports verified Paseo providers only; use the provider-specific runner otherwise')
     model = bundle.get('launch_model') or bundle['model']
     settings = {}
-    mode = bundle.get('modeId') or PASEO_LAUNCHER_MODES[family]
+    # Pi has fixed tool permissions and advertises no selectable modes. Ignore
+    # the obsolete full-access value in saved/discovered Pi bundles as well.
+    mode = None if family == 'pi' else bundle.get('modeId') or PASEO_LAUNCHER_MODES[family]
     if mode:
         settings['modeId'] = mode
     if bundle.get('effort') and family != 'antigravity-resilient':

@@ -104,11 +104,15 @@ class AllocatorTests(unittest.TestCase):
         return {'id': 'refactor-1', 'coupling': coupling, 'total_hours': total, 'worker': worker, **extra}
 
     def test_when_rule_bundle_stays_pinnable(self):
-        # A `when`-limited bundle is dropped from normal ranking but a user pin (dispatch) still finds it.
+        # A `when`-limited bundle (a custom rule; the shipped medium/low bundles carry none) is dropped from normal
+        # ranking but a user pin (dispatch) still finds it.
+        custom = allocator.load_accounts()
+        custom['accounts']['antigravity']['bundles']['agy_opus55_low']['when'] = {'max_reasoning_depth': 1}
         task = {'work_kind': 'debug_review', 'difficulty': 'hard', 'profile': self.profile(reasoning_depth=3)}
-        self.assertNotIn('agy_opus55_low', self.rows(self.plan(task)))
-        row = self.rows(self.plan(dict(task, pinned_bundle='agy_opus55_low'))).get('agy_opus55_low')
+        self.assertNotIn('agy_opus55_low', self.rows(self.plan(task, accounts=custom)))
+        row = self.rows(self.plan(dict(task, pinned_bundle='agy_opus55_low'), accounts=custom)).get('agy_opus55_low')
         self.assertIsNotNone(row)
+        self.assertIn('agy_opus55_low', self.rows(self.plan(task)))    # no rule: judged on tier x effort curve alone
         self.assertEqual((row['bundle']['account'], row['bundle']['effort']), ('antigravity', 'low'))
 
     def profile(self, **fields):
@@ -299,12 +303,16 @@ class AllocatorTests(unittest.TestCase):
         # Frontier floor & steeper effort curve
         frontier = {'work_kind': 'general_implementation', 'difficulty': 'frontier'}
         eligible = {c['id'] for c in self.plan(frontier)['ranking'] if c['score'] is not None}
-        self.assertEqual(eligible, {'opus55_xhigh', 'opus55_high', 'astra_high', 'astra_xhigh', 'pi_astra_high', 'pi_astra_xhigh'})
+        # Tier x effort curve decides, not a bundle label: Opus clears the frontier floor from medium up (4.3), and its
+        # Max reaches 5.0. Astra needs High; every Sol effort stays below 4.2.
+        self.assertEqual(eligible, {'opus55_max', 'opus55_xhigh', 'opus55_high', 'opus55_medium',
+                                    'astra_high', 'astra_xhigh', 'pi_astra_high', 'pi_astra_xhigh'})
         lifted = {c['id'] for c in self.plan(frontier, accounts=custom)['ranking'] if c['score'] is not None}
         self.assertIn('sonnet55_xhigh', lifted)
         self.assertNotIn('sonnet55_high', lifted)
 
-    def test_effort_cap_and_deep_unlocks(self):
+    def test_effort_credit_follows_the_required_ability_not_a_lock(self):
+        # Work whose required ability High already clears earns nothing from xhigh/max: same ability credit, more burn.
         for usage in (self.usage(), self.usage(**self.PLENTY)):
             for kind in ('debug_review', 'tool_execution', 'research_packet', 'exploration_analysis', 'general_implementation'):
                 for difficulty in ('hard', 'routine'):
@@ -314,8 +322,8 @@ class AllocatorTests(unittest.TestCase):
                         self.assertGreater(high['score'], xhigh['score'])
                         self.assertGreater(high['score'], top['score'])
                         self.assertEqual(high['components']['ability'], xhigh['components']['ability'])
-                        self.assertTrue(xhigh['components'].get('effort_capped'))
-                        self.assertNotIn('effort_capped', high['components'])
+                        self.assertLessEqual(high['components']['required_ability'], high['components']['ability_value'])
+                        self.assertNotIn('shortfall', high['components'])
         plenty = self.usage(**self.PLENTY)
         hard_res = self.plan({'work_kind': 'debug_review', 'difficulty': 'hard'}, plenty)
         self.assertEqual((hard_res['choice'], hard_res['decision']['task']['max_recommended_effort']), ('sol_high', 'high'))
@@ -323,18 +331,33 @@ class AllocatorTests(unittest.TestCase):
         self.assertGreater(hard_rows['opus55_high']['score'], hard_rows['opus55_xhigh']['score'])
         self.assertGreater(hard_rows['astra_high']['score'], hard_rows['astra_xhigh']['score'])
 
+        # Coupled work asks more than Sol High gives (3.6 < 3.6 + depth 3 x default load = 3.79): the curve is credited up
+        # to the requirement, so each step up closes the shortfall and Max (3.8) is the first effort that meets it.
         coupled = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled', 'expected_hours': 1,
                              'chain': {'id': 'c', 'coupling': 'low'}}, plenty)
         c_rows = self.rows(coupled)
+        demand = coupled['decision']['task']['demand']
+        self.assertGreater(demand['required_ability'], c_rows['sol_high']['components']['ability_value'])
+        self.assertGreater(c_rows['sol_high']['components']['shortfall'], c_rows['sol_xhigh']['components']['shortfall'])
         self.assertGreater(c_rows['sol_xhigh']['score'], c_rows['sol_high']['score'])
-        self.assertGreater(c_rows['sol_xhigh']['score'], c_rows['sol_max']['score'])
-        self.assertIsNone(coupled['decision']['task']['max_recommended_effort'])
-        for unlocked_task in (
-            {'work_kind': 'debug_review', 'difficulty': 'hard', 'needs': {'critical': True, 'local_only': True}},
-            {'work_kind': 'debug_review', 'difficulty': 'hard', 'profile': self.profile(reasoning_depth=3)},
-            {'work_kind': 'debug_review', 'difficulty': 'coupled', 'profile': self.profile()},
-        ):
-            self.assertNotIn('effort_capped', self.rows(self.plan(unlocked_task, plenty))['sol_xhigh']['components'])
+        self.assertGreater(c_rows['sol_max']['score'], c_rows['sol_xhigh']['score'])
+        self.assertNotIn('shortfall', c_rows['sol_max']['components'])
+        self.assertEqual(allocator.saturating_effort(allocator.load_accounts()['scoring'], allocator.load_accounts()['effort_curves']['gpt-6.1-sol'],
+                                                     allocator.load_accounts()['models']['gpt-6.1-sol'], demand['required_ability']), 'max')
+        # No task attribute switches xhigh/max on or off: the same bundle is judged on every task by tier x curve against
+        # the required ability. Heavier properties and critical headroom raise the requirement, and the shortfall follows.
+        light = self.plan({'work_kind': 'debug_review', 'difficulty': 'hard', 'profile': self.profile(
+            code_complexity=1, hallucination_risk=1, error_cost=1)}, plenty)
+        heavy = self.plan({'work_kind': 'debug_review', 'difficulty': 'hard', 'profile': self.profile(
+            code_complexity=3, context_scale=3, hallucination_risk=3)}, plenty)
+        critical = self.plan({'work_kind': 'debug_review', 'difficulty': 'hard', 'needs': {'critical': True, 'local_only': True}}, plenty)
+        required = [p['decision']['task']['demand']['required_ability'] for p in (light, heavy, critical)]
+        self.assertEqual(required, sorted(required))
+        self.assertEqual(len(set(required)), 3)
+        for plan in (light, heavy, critical):
+            self.assertNotIn('effort_capped', self.rows(plan)['sol_xhigh']['components'])
+            self.assertAlmostEqual(self.rows(plan)['sol_xhigh']['components']['required_ability'],
+                                   plan['decision']['task']['demand']['required_ability'], places=2)
 
     def test_route_fit_orders_and_specialists(self):
         capabilities = reference_capabilities()
@@ -630,7 +653,7 @@ class AllocatorTests(unittest.TestCase):
         expiring_claude = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 55, 18), ('weekly_fable', 100, 100)])
         exp_res = self.plan(impl_local, expiring_claude)
         exp_rows = self.rows(exp_res)
-        self.assertAlmostEqual(exp_rows['sonnet55_high']['components']['reset_bonus'], 0.1, places=2)
+        self.assertAlmostEqual(exp_rows['sonnet55_high']['components']['reset_bonus'], 0.4007, places=3)
         self.assertLess(exp_rows['opus55_high']['components']['overqualification'], baseline_rows['opus55_high']['components']['overqualification'])
         self.assertEqual(exp_res['selected_bundle']['account'], 'claude')
         scarce_near_reset = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 12, 18), ('weekly_fable', 100, 100)])
@@ -644,8 +667,9 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(self.plan(dict(task, can_wait_hours=2), usage, unavailable=['argon_high'])['choice'][:10], 'agy_opus55')
         no_argon = ['argon_high'] + [b for b in allocator.bundles(allocator.load_accounts()) if b.startswith(('agy_opus', 'agy_sonnet'))]
         deferred = self.plan(dict(task, can_wait_hours=2), usage, unavailable=no_argon)
-        self.assertEqual((deferred['choice'], deferred['decision']['action']), ('opus55_high', 'defer'))
-        self.assertEqual(self.plan(task, usage, unavailable=no_argon)['decision']['better_if_waiting']['bundle'], 'opus55_high')
+        # Routine visual work needs less than Opus High: Opus Medium (4.3) clears the routine floor at 0.52 / 0.7 of the burn.
+        self.assertEqual((deferred['choice'], deferred['decision']['action']), ('opus55_medium', 'defer'))
+        self.assertEqual(self.plan(task, usage, unavailable=no_argon)['decision']['better_if_waiting']['bundle'], 'opus55_medium')
 
         long_wait = self.usage(claude=[('five_hour', 3, 4), ('seven_day', 60, 100), ('weekly_fable', 100, 100)], codex=[('usage', 1, 121)])
         impatient = self.plan(dict(task, can_wait_hours=1), long_wait, unavailable=['flash_high'] + no_argon)
@@ -773,19 +797,30 @@ class AllocatorTests(unittest.TestCase):
         self.assertNotIn(result['selected_bundle']['model'], ('gpt-6-astra', 'claude-opus-5-5'))
         rows = self.rows(result)
         self.assertEqual(rows['sol_high']['components']['ability'], 1.0)
-        # the price factor is uncapped: Astra at $22.6/h pays 2.26x the $10/h reference (0.08 * 2.26)
-        self.assertEqual(rows['astra_high']['components']['overqualification'], 0.1808)
-        self.assertEqual(rows['opus55_high']['components']['overqualification'], 0.06)
+        # the price factor is uncapped: Astra at $22.6/h pays 2.26x the $10/h reference (0.08 * 2.26), on the excess of its
+        # ability over the task's required ability plus the saturation span (not over the bare floor)
+        required = result['decision']['task']['demand']['required_ability']
+        self.assertGreater(required, result['decision']['task']['demand']['floor'])
+        for bundle, tier, price in (('astra_high', 4.2, 2.26), ('opus55_high', 4.6, 0.75)):
+            excess = min(1.0, max(0.0, (tier - required - 0.3) / 0.6))
+            self.assertAlmostEqual(rows[bundle]['components']['overqualification'], 0.08 * excess * price, places=3)
         self.assertNotIn('overqualification', rows['sol_high']['components'])
         for profile in (self.profile(reasoning_depth=3, code_complexity=3), self.profile(error_cost=3)):
             deep = self.plan({'work_kind': 'general_implementation', 'profile': profile}, usage)
             self.assertFalse(deep['decision']['task']['minimum_sufficient'])
 
-        plain = {c['id'] for c in self.plan({'work_kind': 'tool_execution', 'difficulty': 'routine'})['ranking']}
+        # Medium is a plain bundle now: it is judged on Sol's tier x medium coefficient (3.6 - 0.2 = 3.4) against the task's
+        # requirement, so it serves routine work and ordinary hard work but not coupled work (floor 3.6).
+        plain = self.rows(self.plan({'work_kind': 'tool_execution', 'difficulty': 'routine'}))
         mechanical = self.rows(self.plan({'work_kind': 'tool_execution', 'profile': self.profile(reasoning_depth=1, code_complexity=1)}))
-        self.assertFalse({'sol_medium', 'pi_sol_medium'} & plain)
-        self.assertEqual(mechanical['sol_medium']['excluded'], [])
-        self.assertLess(mechanical['sol_medium']['expected_usd'], mechanical['sol_high']['expected_usd'])
+        for rows_ in (plain, mechanical):
+            self.assertEqual(rows_['sol_medium']['excluded'], [])
+            self.assertLess(rows_['sol_medium']['expected_usd'], rows_['sol_high']['expected_usd'])
+        hard = self.rows(self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'profile': self.profile()}))
+        self.assertEqual(hard['sol_medium']['excluded'], [])
+        coupled = self.rows(self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled'}))
+        self.assertTrue(any('below the coupled floor' in reason for reason in coupled['sol_medium']['excluded']))
+        self.assertEqual(coupled['sol_high']['excluded'], [])
 
     def test_heuristic_profile_and_schema_contract(self):
         capabilities = reference_capabilities()
@@ -1057,7 +1092,12 @@ class AllocatorTests(unittest.TestCase):
                         self.assertGreater(high_row['score'], medium_row['score'])
                         self.assertEqual(tight['selected_bundle']['effort'], 'high')
                 else:
-                    self.assertEqual(tight['selected_bundle']['effort'], 'high')
+                    # Scarce quota steps the effort down from the healthy choice; High work does not go below High
+                    # while the required ability (critical work needs more than High gives Sol) can be bought no cheaper.
+                    order = allocator.EFFORT_ORDER.index
+                    stepped = tight['selected_bundle']['effort']
+                    self.assertLess(order(stepped), order(healthy['selected_bundle']['effort']))
+                    self.assertGreaterEqual(order(stepped), order('high'))
                 self.assertGreater(self.rows(healthy)[high_effort]['components']['quality_bonus'], 0)
                 self.assertNotIn('effort_capped', self.rows(healthy)[high_effort]['components'])
 
@@ -1076,6 +1116,12 @@ class AllocatorTests(unittest.TestCase):
         self.assertTrue(fast_req['decision'].get('fast'))
         self.assertEqual(fast_req['decision'].get('fast_reason'), 'fast_requested_plentiful_quota')
         self.assertAlmostEqual(self.rows(fast_req)['sol_high']['capacity']['expected_usd'], round(base_usd * 2.0, 2), places=2)
+        # Pi shares this model/account, but its adapter cannot request fast mode.
+        pi_fast = self.rows(fast_req)['pi_sol_high']
+        pi_normal = self.rows(normal)['pi_sol_high']
+        self.assertFalse(pi_fast['bundle'].get('fast', False))
+        self.assertNotIn('fast_bonus', pi_fast['components'])
+        self.assertEqual(pi_fast['capacity']['expected_usd'], pi_normal['capacity']['expected_usd'])
 
         urgent_obj = self.plan({**task_base, 'objective': '请尽快完成单模块接口修复，比较急'}, self.healthy_quota())
         self.assertTrue(urgent_obj['decision']['task'].get('wants_fast'))
@@ -1083,7 +1129,12 @@ class AllocatorTests(unittest.TestCase):
 
         sprint_usage = self.usage(codex=[('usage', 50, 12)])
         sprint = self.plan(task_base, sprint_usage)
-        self.assertEqual(sprint['choice'], 'sol_high')
+        # Quota about to lapse: the extra burn of a higher effort is waived and earns the sprint's quality credit.
+        self.assertEqual(sprint['choice'], 'sol_xhigh')
+        self.assertIn('sprint_quality', self.rows(sprint)['sol_xhigh']['components'])
+        calm = self.rows(self.plan(task_base, self.usage(codex=[('usage', 50, 100)])))['sol_xhigh']['components']
+        self.assertNotIn('sprint_quality', calm)
+        self.assertLess(self.rows(sprint)['sol_xhigh']['components'].get('effort_penalty', 0), calm['effort_penalty'])
         self.assertTrue(sprint['selected_bundle'].get('fast'))
         self.assertEqual(sprint['decision'].get('fast_reason'), 'pre_reset_sprint')
         self.assertAlmostEqual(self.rows(sprint)['sol_high']['capacity']['expected_usd'], round(base_usd * 2.0, 2), places=2)
@@ -1091,13 +1142,13 @@ class AllocatorTests(unittest.TestCase):
         scarce_midweek = self.healthy_quota(('codex',), remaining=35)
         scarce_plan = self.plan({**task_base, 'needs': {'local_only': True, 'fast': True}, 'constraints': {'model': 'gpt-6.1-sol'}},
                                 scarce_midweek)
-        self.assertEqual(scarce_plan['choice'], 'sol_high')
+        self.assertIn(scarce_plan['choice'], ('sol_high', 'sol_medium'))     # scarce quota may also step the effort down
         self.assertFalse(scarce_plan['selected_bundle'].get('fast', False))
 
         scarce_reset = self.usage(codex=[('usage', 10, 12)])
         scarce_reset_plan = self.plan({**task_base, 'needs': {'local_only': True, 'fast': True}, 'constraints': {'model': 'gpt-6.1-sol'}},
                                       scarce_reset)
-        self.assertEqual(scarce_reset_plan['choice'], 'sol_high')
+        self.assertIn(scarce_reset_plan['choice'], ('sol_high', 'sol_medium'))
         self.assertFalse(scarce_reset_plan['selected_bundle'].get('fast', False))
 
     def test_account_allowed_cwd_optional_directory_scope(self):
@@ -1126,7 +1177,7 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(ro_plan['decision']['task']['kind'], 'debug_review')
         self.assertEqual(ro_plan['decision']['task']['profile']['code_complexity'], 0)
         self.assertIn(ro_plan['choice'], ('opus55_high', 'argon_high', 'sonnet55_high'))
-        self.assertNotIn('agy_opus55_low', self.rows(ro_plan))
+        self.assertLess(self.rows(ro_plan)['agy_opus55_low']['score'] or 0, self.rows(ro_plan)[ro_plan['choice']]['score'])
 
         # 2) Exploration / quantitative research packet scripts with code_complexity=2 keep global_rigor=0.65
         exp_weights = allocator.convergent_weights(depth=2, code=2, scale=2, style='exploration')
@@ -1199,11 +1250,16 @@ class AllocatorTests(unittest.TestCase):
                 self.assertEqual((bundle['provider'], bundle['modeId']), ('antigravity-resilient', 'full-access'))
                 self.assertNotIn('disabled', bundle)
                 self.assertEqual(allocator.harness_quality_factor(bundle, 'debug_review', accounts['scoring']), 0.9)
+        # Low/medium are no longer tied to a reasoning depth: whether they apply depends on tier x effort curve.
         low = flat['agy_opus55_low']
-        self.assertEqual(low.get('when'), {'max_reasoning_depth': 1})
-        self.assertTrue(allocator.bundle_applies(low, {'profile': {'reasoning_depth': 1}}))
-        self.assertFalse(allocator.bundle_applies(low, {'profile': {'reasoning_depth': 2}}))
-        self.assertFalse(allocator.bundle_applies(low, {}))
+        self.assertNotIn('when', low)
+        self.assertTrue(allocator.bundle_applies(low, {'profile': {'reasoning_depth': 3}}))
+        self.assertTrue(allocator.bundle_applies(low, {}))
+        # A custom `when` rule is still honoured by bundle_applies.
+        ruled = {**low, 'when': {'max_reasoning_depth': 1}}
+        self.assertTrue(allocator.bundle_applies(ruled, {'profile': {'reasoning_depth': 1}}))
+        self.assertFalse(allocator.bundle_applies(ruled, {'profile': {'reasoning_depth': 2}}))
+        self.assertFalse(allocator.bundle_applies(ruled, {}))
 
     def test_agy_claude_3p_reservation_launch_and_short_window(self):
         import dispatch_registry
@@ -1276,7 +1332,8 @@ class AllocatorTests(unittest.TestCase):
             **tight_others,
             antigravity=[('gemini-5h', 0, 3), ('gemini-weekly', 0, 100), ('3p-5h', 0, 2), ('3p-weekly', 90, 100)]))
         blocked_rows = self.rows(blocked)
-        self.assertNotIn('agy_opus55_low', blocked_rows)
+        # Opus low (4.6 - 1.2 = 3.4) is below the frontier floor 4.2 whatever the quota, so the gate names ability, not the pool.
+        self.assertTrue(any('ability' in reason for reason in blocked_rows['agy_opus55_low']['excluded']))
         for effort in ('medium', 'high'):
             reasons = blocked_rows[f'agy_opus55_{effort}']['excluded']
             self.assertTrue(any('3p-5h' in reason for reason in reasons), reasons)

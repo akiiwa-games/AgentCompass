@@ -22,6 +22,14 @@ def setUpModule():
 
 
 class DispatchTests(unittest.TestCase):
+    def test_pi_request_omits_unsupported_mode_including_saved_legacy_value(self):
+        for legacy_mode in (None, 'full-access'):
+            bundle = {'provider': 'pi', 'model': 'gpt-6-astra',
+                      'launch_model': 'openai-codex/gpt-6-astra', 'effort': 'high', 'modeId': legacy_mode}
+            request = registry.launch_request(bundle, {'title': 'Pi fixture', 'initialPrompt': 'Read fixture'})
+            self.assertEqual(request['provider'], 'pi/openai-codex/gpt-6-astra')
+            self.assertEqual(request['settings'], {'thinkingOptionId': 'high'})
+
     def setUp(self):
         self.root = temporary_root(self.addCleanup)
         # Subprocess integration also uses isolated, signed-in local fixtures.
@@ -144,6 +152,19 @@ class DispatchTests(unittest.TestCase):
             allowed = gate.evaluate_payload({'tool_name': 'create_agent', 'tool_input': row['request'],
                 'parent_agent_id': 'parent-a', 'tool_use_id': 'override-fixture'})
         self.assertEqual(allowed, {})
+
+    def test_cli_pi_fast_is_rejected_before_recording_an_unlaunchable_feature(self):
+        pi_home = self.root / '.pi' / 'agent'
+        pi_home.mkdir(parents=True)
+        (pi_home / 'auth.json').write_text(json.dumps({'openai-codex': {
+            'access': 'fixture-pi', 'accountId': 'fixture-account'}}))
+        command = [sys.executable, '-B', str(Path(registry.__file__).with_name('route_judge.py')),
+            'record', '--constraint', 'user_override', '--basis', 'Synthetic unsupported fast fixture',
+            '--provider', 'pi', '--account', 'codex', '--model', 'gpt-6-astra', '--effort', 'high', '--fast']
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Provider 'pi' does not support fast mode", json.loads(result.stdout)['detail'])
+        self.assertEqual(registry.reservations(), [])
 
     def override_decision(self, effort='low', **changes):
         bundle = {'provider': 'codex', 'account': 'codex', 'model': 'gpt-6-astra', 'effort': effort}

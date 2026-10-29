@@ -104,7 +104,7 @@ class PanelTests(unittest.TestCase):
         panel.change_language('en')
         self.assertEqual(panel.nav['policy'][2].cget('text'), 'Model Settings')
         self.assertEqual(panel.setting_switch.buttons['models'].cget('text'), 'Models & Boost')
-        self.assertEqual(panel.setting_switch.buttons['strategy'].cget('text'), 'Scoring & DNA')
+        self.assertEqual(panel.setting_switch.buttons['strategy'].cget('text'), 'Scoring & Capabilities')
         self.assertEqual(panel.cli_auto_check.cget('text'), 'Auto-update daily')
         panel.cli_loaded(CLI_ROWS)
         self.assertEqual(panel.cli_status.get(), 'CLIs: 1 installed · 1 updates')

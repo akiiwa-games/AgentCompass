@@ -91,25 +91,25 @@ PRESETS = (
 )
 PRESETS = LocalizedSequence(PRESETS)
 TUNING_DEFAULTS = {"safety_margin_pct": 5, "short_window_floor_pct": 10, "reset_horizon_hours": 36,
-                   "reset_bonus_max": 0.2, "rotate_after_carried_tokens": 2000000,
+                   "reset_bonus_max": 1.2, "rotate_after_carried_tokens": 2000000,
                    "subjective.weight": 0.49, "subjective.vector_weight": 0.34, "subjective.route_weight": 0.17}
 STRATEGY_PRESETS = {
     "均衡默认": dict(TUNING_DEFAULTS),
     "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "reset_horizon_hours": 24,
-               "reset_bonus_max": 0.1, "rotate_after_carried_tokens": 1500000,
+               "reset_bonus_max": 0.8, "rotate_after_carried_tokens": 1500000,
                "subjective.weight": 0.55, "subjective.vector_weight": 0.25, "subjective.route_weight": 0.2},
     "消纳临期": {"safety_margin_pct": 3, "short_window_floor_pct": 8, "reset_horizon_hours": 72,
-                 "reset_bonus_max": 0.35, "rotate_after_carried_tokens": 2000000,
+                 "reset_bonus_max": 1.2, "rotate_after_carried_tokens": 2000000,
                  "subjective.weight": 0.6, "subjective.vector_weight": 0.2, "subjective.route_weight": 0.2},
     "能力优先": {"safety_margin_pct": 5, "short_window_floor_pct": 10, "reset_horizon_hours": 24,
-                 "reset_bonus_max": 0.15, "rotate_after_carried_tokens": 2000000,
+                 "reset_bonus_max": 0.8, "rotate_after_carried_tokens": 2000000,
                  "subjective.weight": 0.75, "subjective.vector_weight": 0.2, "subjective.route_weight": 0.05},
 }
 TUNING_LIMITS = {"safety_margin_pct": (0, 50), "short_window_floor_pct": (0, 50), "reset_horizon_hours": (1, 168),
-                 "reset_bonus_max": (0, 1), "rotate_after_carried_tokens": (100000, 10000000),
+                 "reset_bonus_max": (0, 1.2), "rotate_after_carried_tokens": (100000, 10000000),
                  "subjective.weight": (0, 1), "subjective.vector_weight": (0, 1), "subjective.route_weight": (0, 1)}
 BOOST_RANGE = (0.10, 0.50)
-BOOST_HOURS = (3, 6, 24)
+BOOST_HOURS = router_priority.DURATIONS
 PANEL_INTENT = "panel:boost"
 
 
@@ -198,7 +198,9 @@ def plan_task(task: dict) -> dict:
     unavailable = []
     if allocator.dot_may_take(kind, task.get("needs") or {}, capabilities) and router.dot_unreachable():
         unavailable.append("dot_text")
-    return allocator.plan(task, usage, now, unavailable, records)
+    result = allocator.plan(task, usage, now, unavailable, records)
+    # Keep the original task title/profile available to the visual replay.
+    return {**result, "task": task}
 
 
 def simulate(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
@@ -221,11 +223,15 @@ def simulate(objective: str, hours: float, local_only: bool = False, needs_visua
 
 
 def replay(row: dict) -> dict:
-    """Re-run a ledger decision from its recorded task parameters against current quota."""
+    """Use an immutable candidate snapshot when present; legacy records replan explicitly."""
+    from decision_theatre import snapshot_result
+    snapshot = snapshot_result(row)
+    if snapshot is not None:
+        return snapshot
     task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
                       bool((row.get("profile") or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
                       row.get("profile"), row.get("local_only_reason"))
-    return plan_task(task)
+    return {**plan_task(task), "theatre_source": "recomputed"}
 
 
 def candidate_rows(result: dict) -> list[dict]:
@@ -667,16 +673,22 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
 # ---------- policy ----------
 
 def overrides(now: datetime | None = None) -> list[dict]:
-    allocator, _ = modules()
+    allocator, router = modules()
     now = now or now_utc()
     document = router_priority.read_document(allocator.overrides_path())
+    accounts = allocator.load_accounts()
+    usage = router.usage_snapshot(now=now)
     rows = []
     for row in document["overrides"]:
         if not router_priority.active(row, now, allocator):
             continue
+        if allocator.override_reset_landed(row, usage, accounts, now) or allocator.override_depleted(row, usage, accounts):
+            continue
         rows.append({"id": row["id"], "revision": router_priority.revision(row), "account": row.get("account"),
-                     "model": row.get("model"), "boost": row.get("boost"), "until": router_priority.stamp(row.get("until"), allocator),
+                     "model": row.get("model"), "boost": row.get("boost"),
+                     "until": router_priority.stamp(allocator.expected_reset_time(row) or row.get("until"), allocator),
                      "stop_on_reset": bool(row.get("stop_on_reset")), "intent": row.get("intent") or "",
+                     **router_priority.dynamic_priority(row, allocator, accounts, usage, now),
                      "label": f"{account_label(row.get('account'))}"
                               + (f" / {model_label(row['model'])}" if row.get("model") else "")})
     return rows
@@ -694,13 +706,13 @@ def boost_targets() -> list[tuple[str, str]]:
     return seen
 
 
-def add_boost(account: str, model: str | None, boost: float, hours: int, stop_on_reset: bool,
+def add_boost(account: str, model: str | None, boost: float | None = None, hours: int = 6, stop_on_reset: bool = True,
               now: datetime | None = None) -> str:
     """A temporary priority rule in router-overrides.json; never stacks on an existing one for the same model."""
-    if not BOOST_RANGE[0] - 1e-9 <= boost <= BOOST_RANGE[1] + 1e-9:
+    if boost is not None and not BOOST_RANGE[0] - 1e-9 <= boost <= BOOST_RANGE[1] + 1e-9:
         raise ValueError(_tr('加成需在 +{0} ~ +{1} 之间').format(f'{BOOST_RANGE[0]:.2f}', f'{BOOST_RANGE[1]:.2f}'))
     if hours not in BOOST_HOURS:
-        raise ValueError(_tr("有效时长只能是 3h / 6h / 24h"))
+        raise ValueError(_tr("预期重置时间只能是 1h / 3h / 6h / 12h / 24h"))
     allocator, router = modules()
     now = now or now_utc()
     accounts = allocator.load_accounts()
@@ -710,13 +722,36 @@ def add_boost(account: str, model: str | None, boost: float, hours: int, stop_on
     path = allocator.overrides_path()
     with allocator.override_store.locked(path):
         document = router_priority.read_document(path)
-        if any(router_priority.overlaps(r, account, model, now, allocator, accounts) for r in document["overrides"]
-               if model) or any(router_priority.active(r, now, allocator) and r.get("account") == account
-                                and not r.get("model") for r in document["overrides"]):
-            return _tr("该账号/模型已有临时规则；未叠加权重")
-        row = {"id": uuid.uuid4().hex, "intent": PANEL_INTENT, "account": account, "boost": round(float(boost), 2),
-               "created_at": now.isoformat(), "until": (now + timedelta(hours=hours)).isoformat(),
-               "basis": _tr('用户在主面板添加临时优先 {0}/{1} +{2}，{3} 小时').format(f'{account}', f"{model or _tr('全部模型')}", f'{boost:.2f}', f'{hours}')}
+        new_until = (now + timedelta(hours=hours)).isoformat()
+        overlapping = [
+            r for r in document["overrides"]
+            if (router_priority.overlaps(r, account, model, now, allocator, accounts) if model
+                else (router_priority.active(r, now, allocator) and r.get("account") == account))
+        ]
+        if overlapping:
+            ui_rules = [r for r in overlapping if r.get("intent") in (PANEL_INTENT, router_priority.INTENT)
+                        and not r.get("expires_at")]
+            if not ui_rules or any(r.get("until") == new_until and (allocator.canonical(r["model"], accounts) if r.get("model") else None) == model
+                                   for r in ui_rules):
+                return _tr("该账号/模型已有临时规则；未叠加权重")
+            existing = ui_rules[0]
+            existing["until"] = new_until
+            existing["basis"] = _tr('用户设置 {0}/{1} 预计 {2} 小时后重置，越近消耗优先级越高').format(account, model or _tr('全部模型'), hours)
+            if model:
+                existing["model"] = model
+            else:
+                existing.pop("model", None)
+            if boost is not None:
+                existing["boost"] = round(float(boost), 2)
+            document["overrides"] = [r for r in document["overrides"] if r is existing or r not in ui_rules]
+            router_priority.save(allocator, path, {**document, "v": 1})
+            return _tr('已更新 {0}{1} 预期重置，{2} 小时后重置前动态优先').format(
+                account_label(account), (' / ' + model_label(model) if model else ''), hours)
+        row = {"id": uuid.uuid4().hex, "intent": PANEL_INTENT, "account": account,
+               "created_at": now.isoformat(), "until": new_until,
+               "basis": _tr('用户设置 {0}/{1} 预计 {2} 小时后重置，越近消耗优先级越高').format(account, model or _tr('全部模型'), hours)}
+        if boost is not None:
+            row['boost'] = round(float(boost), 2)  # Preserve legacy API data, scoring uses the reset deadline.
         if model:
             row["model"] = model
         if stop_on_reset:
@@ -730,7 +765,7 @@ def add_boost(account: str, model: str | None, boost: float, hours: int, stop_on
             row.update(window=wid, stop_on_reset=True, reset_confirmation="replenishment", baseline_windows={wid: base})
         document["overrides"].append(row)
         router_priority.save(allocator, path, {**document, "v": 1})
-    return _tr('已添加 {0}{1} +{2} 临时优先，{3} 小时后失效').format(f'{account_label(account)}', f"{(' / ' + model_label(model) if model else '')}", f'{boost:.2f}', f'{hours}')
+    return _tr('已添加 {0}{1} 预期重置，{2} 小时后重置前动态优先').format(account_label(account), (' / ' + model_label(model) if model else ''), hours)
 
 
 def host_policy_state() -> dict:
@@ -986,7 +1021,7 @@ def _edit_preferences(change) -> None:
 HARNESS_ORDER = ("claude", "codex", "pi", "antigravity-resilient", "opencode", "grok", "dot", "chatgpt-web", "grok-bot")
 HARNESS_LABELS = {"claude": "Claude Code", "codex": "Codex CLI", "pi": "Pi", "antigravity-resilient": "Antigravity",
                   "opencode": "OpenCode", "grok": "Grok CLI", "dot": "Dot", "chatgpt-web": "ChatGPT Web",
-                  "grok-bot": "Grok Web Bot"}
+                  "grok-bot": "Grok Bot CLI"}
 
 
 def harness_model_rows() -> list[dict]:

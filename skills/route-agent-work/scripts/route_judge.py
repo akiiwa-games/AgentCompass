@@ -429,12 +429,21 @@ def append_ledger(entry):
         return False
 
 
+LEDGER_TAIL_BYTES = 8 * 1024 * 1024    # plan lines carry a decision snapshot; only the newest part of a big file is read
+
+
 def read_ledger(path=None, limit=500):
     path = path or ledger_path()
     try:
-        if path.stat().st_size > 20 * 1024 * 1024:
-            return []
-        lines = path.read_text(encoding='utf-8-sig').splitlines()[-limit:]
+        size = path.stat().st_size
+        if size > LEDGER_TAIL_BYTES:
+            with path.open('rb') as stream:
+                stream.seek(size - LEDGER_TAIL_BYTES)
+                text = stream.read().decode('utf-8', errors='replace')
+            text = text.partition('\n')[2]       # the first line is cut mid-record
+        else:
+            text = path.read_text(encoding='utf-8-sig')
+        lines = text.splitlines()[-limit:]
     except (OSError, UnicodeError):
         return []
     records = []
@@ -572,6 +581,16 @@ def account_cadence_alert(records, now, account, spec):
                        'dispatch frequency does not measure remaining quota.'}
 
 
+def decision_snapshot(result, task=None):
+    """The ranking and component scores this decision was made with, for the ledger. Replays read it as written."""
+    if not isinstance(result.get('ranking'), list):
+        return None
+    try:
+        return load_allocator().decision_snapshot(result, task=task)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+
+
 def finalize(result, payload, requested, started, task=None, records=None):
     """Attach capacity alerts and write the ledger record. Returns the result unchanged otherwise."""
     now = datetime.now(timezone.utc)
@@ -661,7 +680,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
         'reason': (result.get('reason') or result.get('error') or '')[:600] or None,
         'payload_bytes': len(json.dumps(payload, ensure_ascii=False).encode()) if payload else None,
         'duration_ms': int((time.monotonic() - started) * 1000),
-        'usage': usage_digest(usage), 'alerts': [a['code'] for a in alerts]})
+        'usage': usage_digest(usage), 'alerts': [a['code'] for a in alerts],
+        **({'decision_snapshot': snapshot} if (snapshot := decision_snapshot(result, allocation_task)) else {})})
     return result
 
 
@@ -1672,6 +1692,8 @@ def record_constraint(args, task=None):
                 )
     c_model = allocator.canonical(args.model, accounts)
     fast_requested = bool(getattr(args, 'fast', False))
+    if fast_requested and allocator.bundle_harness(discovered or {'provider': args.provider}, args.account) != 'codex':
+        raise ValueError(f'Provider {args.provider!r} does not support fast mode.')
     if fast_requested and not allocator.models_table(accounts).get(c_model, {}).get('fast_capable'):
         raise ValueError(f'Model {c_model!r} does not support fast mode.')
     base_b = allocator.bundles(accounts).get(chosen) or {}

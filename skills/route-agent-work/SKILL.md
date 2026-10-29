@@ -189,7 +189,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 | Provider | Launch Surface | Required Permission Flag / Mode | Notes |
 | :--- | :--- | :--- | :--- |
 | **`codex`** | Paseo / Codex CLI | `--mode full-access` | Engineering & GUI (`cua_repl`) harness for `gpt-6-astra` and `gpt-6.1-sol`. |
-| **`pi`** | Paseo (`provider: "pi"`) | `modeId: "full-access"` | Exploration & research-packet harness for GPT models (`launch_model: "openai-codex/<model>"`). |
+| **`pi`** | Paseo (`provider: "pi"`) | No `modeId` (adapter has fixed tool access and advertises no modes) | Exploration & research-packet harness for GPT models (`launch_model: "openai-codex/<model>"`). Passing `full-access` is rejected by Paseo. |
 | **`claude`** | Paseo / Claude CLI | `--mode bypassPermissions` | Use the discovered launcher and configured account policy. |
 | **`antigravity-resilient`** | Paseo / `agy` CLI | `modeId: "full-access"` | Use a model and effort advertised by the adapter. |
 | **`opencode`** | Paseo (`provider: "opencode"`) | `modeId: "build"` | OpenCode free worker (`deepseek-v4.1-flash-free`, `launch_model: "opencode/deepseek-v4.1-flash-free"`). |
@@ -209,5 +209,6 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 - [`references/model-capabilities.json`](references/model-capabilities.json) — Generated policy/model view; runtime derives its policy from effective accounts.
 - [`references/dispatch-lifecycle.md`](references/dispatch-lifecycle.md) — Reservation state machine (`planned` -> `started` -> `completed`) and in-flight quota deduction.
 - [`references/judge-workflow.md`](references/judge-workflow.md) — System-One `TaskProfile` schema (`score`) and low-effort judge stages (`delegate`, `select`).
+- [`references/effort-matching.md`](references/effort-matching.md) — Task demand (depth x property difficulty) vs model ability x per-model effort curve, and the ledger `decision_snapshot` the tray replays.
 - [`references/provider-usage.md`](references/provider-usage.md) — Live usage snapshot precedence, `capacity.json` overlay, host policy, and temporary overrides.
 - [`scripts/route_judge.py`](scripts/route_judge.py) · [`scripts/allocator.py`](scripts/allocator.py) · [`scripts/host_policy.py`](scripts/host_policy.py) · [`scripts/check_router_contract.py`](scripts/check_router_contract.py)

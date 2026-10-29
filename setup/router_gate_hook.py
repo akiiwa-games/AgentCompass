@@ -20,6 +20,7 @@ from pathlib import Path
 
 HOME = Path.home()
 DEFAULT_LEDGER = HOME / ".route-manager" / "router-ledger.jsonl"
+LEDGER_TAIL_BYTES = 1024 * 1024
 DEFAULT_USAGE_CACHE = HOME / ".usage-float" / "usage-cache.json"
 DEFAULT_PASEO_AGENTS = HOME / ".paseo" / "agents"
 DEFAULT_WINDOW_SECONDS = 900  # 15 minutes
@@ -241,6 +242,85 @@ def normalize_launch(spec: dict) -> dict[str, str]:
     return {key: value for key, value in {
         "provider": provider, "model": model, "effort": effort, "account": account,
     }.items() if value}
+
+
+def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
+    """Normalize static Paseo CLI sends; never execute shell or Python code.
+
+    Only command positions and subprocess arguments count, not quoted prompt
+    text. Unknown/dynamic expressions retain the existing fail-open behavior.
+    """
+    if tool_name not in SHELL_TOOLS | CODEMODE_TOOLS:
+        return []
+    targets = []
+
+    def argv(words: list, depth: int):
+        if not words or not isinstance(words[0], str) or depth > 4:
+            return
+        exe = words[0].replace('\\', '/').rsplit('/', 1)[-1].lower()
+        if exe in ('paseo', 'paseo.cmd', 'paseo.exe'):
+            args = words[1:]
+            if args[:1] == ['agent']:
+                args = args[1:]
+            if (len(args) >= 2 and args[0] == 'send' and isinstance(args[1], str)
+                    and UUID_RE.fullmatch(args[1]) and '--help' not in args and '-h' not in args):
+                targets.append(('run_turn', {'agentId': args[1]}))
+        elif exe in ('python', 'python.exe', 'python3', 'py', 'py.exe') and '-c' in words:
+            index = words.index('-c') + 1
+            if index < len(words) and isinstance(words[index], str):
+                python(words[index], depth + 1)
+
+    def python(code: str, depth: int):
+        try:
+            tree = ast.parse(code)
+        except (SyntaxError, ValueError):
+            return
+        bindings = {}
+
+        def literal(node):
+            if isinstance(node, ast.Name):
+                return bindings.get(node.id)
+            if isinstance(node, (ast.List, ast.Tuple)):
+                return [literal(item) for item in node.elts]
+            return node.value if isinstance(node, ast.Constant) else None
+
+        def in_source_order(node):
+            yield node
+            for child in ast.iter_child_nodes(node):
+                yield from in_source_order(child)
+
+        for node in in_source_order(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        bindings[target.id] = literal(node.value)
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == 'subprocess'
+                    and node.func.attr in ('run', 'Popen', 'call', 'check_call', 'check_output')):
+                argument = node.args[0] if node.args else next(
+                    (kw.value for kw in node.keywords if kw.arg == 'args'), None)
+                value = literal(argument)
+                if isinstance(value, list):
+                    argv(value, depth)
+                elif isinstance(value, str):
+                    shell(value, depth + 1)
+
+    def shell(command: str, depth: int = 0):
+        if depth > 4:
+            return
+        # Also accepts a Python script supplied directly as a wrapper's code.
+        python(command, depth)
+        for segment in SHELL_SEGMENT_RE.findall(command):
+            segment = LEADING_WRAPPERS_RE.sub('', segment.strip())
+            if READ_ONLY_CMD_PREFIX_RE.match(segment):
+                continue
+            words = re.findall(r'''"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+''', segment)
+            argv([word[1:-1] if len(word) >= 2 and word[0] == word[-1]
+                  and word[0] in ('"', "'") else word for word in words], depth)
+
+    for command in extract_shell_commands(tool_input):
+        shell(command)
+    return targets
 
 
 def detect_subagent_launch(tool_name: str, tool_input: dict) -> str | None:
@@ -589,15 +669,15 @@ def recent_routes(
     now: dt.datetime | None = None,
     window_seconds: int = DEFAULT_WINDOW_SECONDS,
 ) -> list[dict]:
-    """Read recent decisions newest first, bounded to the ledger's last 64 KiB."""
+    """Read recent decisions newest first, bounded to the ledger's last 1 MiB (plan lines carry a decision snapshot)."""
     now = now or dt.datetime.now(dt.timezone.utc)
     if not ledger_path.is_file():
         return []
     try:
         size = ledger_path.stat().st_size
         with ledger_path.open("rb") as fh:
-            if size > 65536:
-                fh.seek(size - 65536)
+            if size > LEDGER_TAIL_BYTES:
+                fh.seek(size - LEDGER_TAIL_BYTES)
             tail = fh.read().decode("utf-8", errors="replace")
     except OSError:
         return []
@@ -758,6 +838,7 @@ def evaluate_payload(
                     or os.environ.get("PASEO_AGENT_ID") or "").strip() or None
 
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
+    calls.extend(cli_turn_calls(tool_name, tool_input))
     if any(re.split(r'__|\.', name)[-1] in WORKER_QUESTION_TOOLS for name, _ in calls):
         worker = os.environ.get('ROUTER_WORKER') == '1' or (
             caller_id and is_delegated_worker(caller_id, paseo_agents_dir))
