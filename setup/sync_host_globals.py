@@ -15,6 +15,7 @@ What it touches, and how it stays reversible:
 from __future__ import annotations
 
 import argparse
+import filecmp
 import hashlib
 import json
 import os
@@ -330,6 +331,10 @@ def merge_block(existing: str | None, content: str, recorded_whole_sha: str | No
     if span is None and existing.lstrip().splitlines()[0] == content.splitlines()[0]:
         # An earlier generation of this very document, written before markers existed: replace it as a whole.
         return content, "whole"
+    if span is None and host_rules.is_legacy_generated(existing.replace(CRLF, LF)):
+        # A changed one-line daemon prompt has no stable first line. Migrate the
+        # known generated text to one block instead of preserving a stale copy.
+        return make_block(content), "block"
     block = make_block(content)
     if span is not None:
         return existing[: span[0]] + block + existing[span[1] :], "block"
@@ -575,6 +580,47 @@ def deduplicate_and_link_skills() -> None:
         _sync_gemini_skills(codex_skills, agents_skills, claude_skills)
 
 
+def _materialized_children(path: Path) -> dict[str, Path]:
+    return {p.name: p for p in path.iterdir() if not p.name.startswith(".") and p.name != "__pycache__"}
+
+
+def materialized_skill_matches(dst: Path, src: Path) -> bool:
+    """Gemini needs a real root, byte-identical top-level files and live directory links."""
+    if not dst.is_dir() or is_reparse_point(dst):
+        return False
+    expected, actual = _materialized_children(src), _materialized_children(dst)
+    if expected.keys() != actual.keys():
+        return False
+    for name, child in expected.items():
+        target = actual[name]
+        if child.is_dir():
+            linked = junction_target(target)
+            if linked is None or Path(linked).resolve() != child.resolve():
+                return False
+        elif child.is_file():
+            if not target.is_file() or is_reparse_point(target) or not filecmp.cmp(child, target, shallow=False):
+                return False
+    return True
+
+
+def backup_materialized_skill(src: Path, rel_name: str) -> str | None:
+    """Keep live directory links as links; never copy the repositories behind them."""
+    if not src.is_dir() or is_reparse_point(src):
+        return backup_path(src, rel_name)
+    dst = backup_root() / rel_name
+    if not DRY_RUN and not dst.exists():
+        dst.mkdir(parents=True)
+        for child in src.iterdir():
+            target = junction_target(child)
+            if target is not None and child.is_dir():
+                make_link(dst / child.name, Path(target))
+            elif child.is_dir():
+                shutil.copytree(child, dst / child.name)
+            elif child.is_file():
+                shutil.copy2(child, dst / child.name)
+    return str(dst)
+
+
 def _sync_gemini_skills(codex_skills: Path, agents_skills: Path, claude_skills: Path) -> None:
     gemini_skills_json = HOME / ".gemini" / "config" / "skills.json"
     gemini_skills_cfg = {
@@ -604,13 +650,18 @@ def _sync_gemini_skills(codex_skills: Path, agents_skills: Path, claude_skills: 
             continue
         real_src = src.resolve()
         dst = gemini_skills_dir / name
+        if materialized_skill_matches(dst, real_src):
+            report(f"[skills] Up to date {dst}")
+            continue
         if dst.exists() or is_reparse_point(dst):
+            backup = backup_materialized_skill(dst, f"skills/gemini-{name}")
             if str(dst) not in MANIFEST["materialized"]:
                 # Not ours: keep the original before replacing it.
-                MANIFEST["materialized"][str(dst)] = {"backup": backup_path(dst, f"skills/gemini-{name}")}
+                MANIFEST["materialized"][str(dst)] = {"backup": backup}
             remove_dir_or_junction(dst)
         else:
             MANIFEST["materialized"].setdefault(str(dst), {"backup": None})
+        report(f"[skills] Materialized {dst} -> {real_src} (real dir + live subdir junctions for Antigravity)")
         if DRY_RUN:
             continue
         dst.mkdir(parents=True, exist_ok=True)
@@ -622,7 +673,6 @@ def _sync_gemini_skills(codex_skills: Path, agents_skills: Path, claude_skills: 
                 make_link(dst_child, child)
             elif child.is_file():
                 shutil.copy2(child, dst_child)
-        report(f"[skills] Materialized {dst} -> {real_src} (real dir + live subdir junctions for Antigravity)")
 
 
 REPO_SKILLS = Path(__file__).resolve().parents[1] / "skills"

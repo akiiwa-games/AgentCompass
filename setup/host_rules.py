@@ -84,6 +84,18 @@ def overlay_dir(home: Path) -> Path:
     return home / ".route-manager" / "host-rules"
 
 
+def is_legacy_generated(text: str) -> bool:
+    """Recognise pre-marker generated rules even after an overlay changes the title/body."""
+    stripped = text.lstrip()
+    return stripped.startswith((
+        "【全局强制纪律】",
+        "# 全局执行纪律（",
+        "# 全局执行纪律\n",
+        "# Agent routing rules (AgentCompass)\n",
+        "Router discipline: if you are already a delegated worker (",
+    ))
+
+
 def render(text: str, home: Path) -> str:
     return (
         text.replace("@@ROUTE_JUDGE@@", ROUTE_JUDGE)

@@ -81,6 +81,14 @@ class MarkerBlockTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sg.merge_block(f"x\n{sg.MARKER_BEGIN}\nhalf\n", "rules\n")
 
+    def test_legacy_generated_rules_migrate_to_one_block_when_overlay_changes(self):
+        for legacy in ("【全局强制纪律】旧规则", "# 全局执行纪律（旧宿主）\n旧内容\n",
+                       host_rules.DEFAULT_SHARED, host_rules.DEFAULT_DAEMON_APPEND):
+            with self.subTest(legacy=legacy[:40]):
+                text, mode = sg.merge_block(legacy, "# New overlay\nnew rules\n")
+                self.assertEqual((text, mode), (sg.make_block("# New overlay\nnew rules\n"), "block"))
+                self.assertEqual(sg.merge_block(text, "# New overlay\nnew rules\n"), (text, "block"))
+
     def test_strip_block_restores_the_original_text(self):
         original = "# mine\n"
         merged, _ = sg.merge_block(original, "rules\n")
@@ -178,6 +186,60 @@ class SyncTests(HomeCase):
         prompt = json.loads((self.home / ".paseo" / "config.json").read_text(encoding="utf-8"))["daemon"]["appendSystemPrompt"]
         self.assertTrue(prompt.startswith("Be terse.\n\n" + sg.MARKER_BEGIN))
         self.assertIn("roll --brief", prompt)
+
+    def test_legacy_paseo_prompt_is_replaced_once_and_backed_up(self):
+        legacy = "【全局强制纪律】旧的单行规则"
+        config = self.write(".paseo/config.json", {"daemon": {"appendSystemPrompt": legacy}, "other": 1})
+        self.write(".route-manager/host-rules/daemon-append.md", "【全局强制纪律】新的单行规则\n")
+        before = config.read_bytes()
+        self.sync(skills=False)
+        data = json.loads(config.read_text(encoding="utf-8"))
+        self.assertEqual(data, {"daemon": {"appendSystemPrompt": sg.make_block("【全局强制纪律】新的单行规则\n")}, "other": 1})
+        backup = next((self.home / ".route-manager/backups").glob("host-setup-*/configs/paseo-config.json"))
+        self.assertEqual(backup.read_bytes(), before)
+        after = config.read_bytes()
+        self.sync(skills=False)
+        self.assertEqual(config.read_bytes(), after)
+
+
+class GeminiMaterializationTests(HomeCase):
+    def test_materialization_skips_matching_content_and_repairs_stale_files_and_links(self):
+        source = self.home / "source"
+        self.write("source/SKILL.md", "v1")
+        self.write("source/scripts/tool.py", "tool")
+        hub = self.home / ".codex/skills"
+        sg.make_link(hub / "route-agent-work", source)
+        (self.home / ".gemini").mkdir()
+        dst = self.home / ".gemini/skills/route-agent-work"
+        with patch.object(sg, "SKILLS_TO_CODEX", ["route-agent-work"]):
+            self.sync(docs=False)
+            self.assertTrue(sg.materialized_skill_matches(dst, source))
+            before = (dst / "SKILL.md").stat().st_mtime_ns
+            backups = self.backups()
+            with patch.object(sg, "remove_dir_or_junction", wraps=sg.remove_dir_or_junction) as remove:
+                self.sync(docs=False)
+                remove.assert_not_called()
+            self.assertEqual((dst / "SKILL.md").stat().st_mtime_ns, before)
+            self.assertEqual(self.backups(), backups)
+
+            self.write("source/SKILL.md", "v2")
+            dry = self.sync(docs=False, dry_run=True)
+            self.assertTrue(any("[skills] Materialized" in line for line in dry))
+            self.assertEqual((dst / "SKILL.md").read_text(), "v1")
+            self.sync(docs=False)
+            self.assertEqual((dst / "SKILL.md").read_text(), "v2")
+            self.assertTrue(sg.materialized_skill_matches(dst, source))
+            saved = list((self.home / ".route-manager/backups").glob("host-setup-*/skills/gemini-route-agent-work/SKILL.md"))
+            self.assertEqual([p.read_text() for p in saved], ["v1"])
+            self.assertEqual(Path(sg.junction_target(saved[0].parent / "scripts")), (source / "scripts").resolve())
+
+            wrong = self.home / "wrong"
+            wrong.mkdir()
+            sg.remove_dir_or_junction(dst / "scripts")
+            sg.make_link(dst / "scripts", wrong)
+            self.assertFalse(sg.materialized_skill_matches(dst, source))
+            self.sync(docs=False)
+            self.assertTrue(sg.materialized_skill_matches(dst, source))
 
 
 class UninstallTests(HomeCase):
