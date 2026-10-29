@@ -28,21 +28,23 @@ def catalog(provider, ids, ok=True, checked=NOW):
 
 
 class DefaultProfile(unittest.TestCase):
-    def test_calibrated(self):
-        p = ab.default_profile('claude-opus-5-5-high', REAL)
-        self.assertEqual((p['source'], p['model']), ('calibrated', 'claude-opus-5-5'))
-
-    def test_family_is_shrunk(self):
-        p = ab.default_profile('qwen3.7-max', REAL)
-        self.assertEqual(p['source'], 'family')
-        self.assertLess(p['spec']['tier'], REAL['models']['qwen3.8-max']['tier'])
-
-    def test_small_name_on_big_target(self):
-        p = ab.default_profile('qwen-flash', REAL)
-        self.assertEqual(p['spec']['tier'], ab.SMALL_DEFAULT['tier'])
-
-    def test_generic(self):
-        self.assertEqual(ab.default_profile('zzz-unknown-9', REAL)['source'], 'generic')
+    def test_default_profile_uses_calibration_family_size_or_generic_baseline(self):
+        for model, source, canonical, tier in (
+            ('claude-opus-5-5-high', 'calibrated', 'claude-opus-5-5', None),
+            ('qwen3.7-max', 'family', None, None),
+            ('qwen-flash', None, None, ab.SMALL_DEFAULT['tier']),
+            ('zzz-unknown-9', 'generic', None, None),
+        ):
+            with self.subTest(model=model):
+                profile = ab.default_profile(model, REAL)
+                if source:
+                    self.assertEqual(profile['source'], source)
+                if canonical:
+                    self.assertEqual(profile['model'], canonical)
+                if tier is not None:
+                    self.assertEqual(profile['spec']['tier'], tier)
+                if source == 'family':
+                    self.assertLess(profile['spec']['tier'], REAL['models']['qwen3.8-max']['tier'])
 
     def test_split_effort(self):
         self.assertEqual(ab.split_effort('claude-opus-5-5-xhigh'), ('claude-opus-5-5', 'xhigh'))
@@ -66,7 +68,7 @@ class Derive(unittest.TestCase):
         out = ab.derive(proxy_accounts(), catalog('llmproxy', ['gpt-6.1-sol']), NOW, overrides=prefs)
         self.assertFalse(out['bundles']['llmproxy']['auto:llmproxy:codex:gpt-6.1-sol@high']['disabled'])
 
-    def test_agy_manual_wins_and_subscription_enabled(self):
+    def test_manual_agy_bundles_keep_generated_extra_effort_opt_in(self):
         agy = REAL['accounts']['antigravity']
         acc = {'models': REAL['models'], 'aliases': REAL.get('aliases', {}), 'accounts': {'antigravity': agy}}
         provider = next(iter(agy['bundles'].values())).get('provider', 'antigravity')
@@ -153,15 +155,17 @@ class SharedHooks(unittest.TestCase):
         self.assertFalse(merged['accounts']['llmproxy']['bundles']['auto:llmproxy:codex:gpt-5.6-sol@high']['disabled'])
         self.assertEqual(list(doc['accounts']['llmproxy']['bundles']), ['llmproxy__gpt_5_6_sol_high'])
 
-    def test_boolean_disabled_gives_reason_string(self):
+    def test_legacy_disabled_gives_neutral_exclusion(self):
         from datetime import datetime, timezone
         merged = json.loads(json.dumps(REAL))
         owner, bid = next((o, b) for o, s in merged['accounts'].items() for b in (s.get('bundles') or {}))
-        merged['accounts'][owner]['bundles'][bid].update(disabled=True, discovery_unavailable=True)
+        merged['accounts'][owner]['bundles'][bid].update(disabled='Legacy explanation', discovery_unavailable=True)
         task = {'work_kind': 'implementation', 'difficulty': 'routine', 'needs': {'local_only': True}}
         row = next(c for c in allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
                                              accounts=merged)['ranking'] if c['id'] == bid)
-        self.assertIn('disabled in model settings', row['excluded'])
+        self.assertIn('disabled by user', row['excluded'])
+        self.assertIs(merged['accounts'][owner]['bundles'][bid]['disabled'], True)
+        self.assertNotIn('Legacy explanation', row['excluded'])
         self.assertTrue(all(isinstance(e, str) for e in row['excluded']))
 
     def test_harness_visual_capability(self):

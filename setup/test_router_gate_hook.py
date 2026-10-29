@@ -14,6 +14,41 @@ import router_gate_hook as gate
 UTC = dt.timezone.utc
 T0 = dt.datetime(2026, 10, 14, 6, 0, tzinfo=UTC)
 
+SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills/route-agent-work"
+
+
+def setUpModule():
+    """Run against this checkout with isolated state, even after another copy was imported."""
+    global _state, _environment, _saved_modules, _saved_path, _gate_paths
+    _state = tempfile.TemporaryDirectory()
+    _saved_path = sys.path[:]
+    names = {path.stem for path in (SKILL_ROOT / "scripts").glob("*.py")}
+    _saved_modules = {name: sys.modules.pop(name) for name in names if name in sys.modules}
+    _environment = mock.patch.dict(os.environ, {
+        "ROUTER_SKILL_ROOT": str(SKILL_ROOT), "ROUTER_STATE_DIR": _state.name,
+        "HOME": _state.name, "USERPROFILE": _state.name,
+    })
+    _environment.start()
+    for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR", "CODEX_HOME"):
+        os.environ.pop(name, None)   # restored by _environment.stop(); discovery must not see the host's config homes
+    home = Path(_state.name)
+    _gate_paths = mock.patch.multiple(gate, HOME=home,
+        DEFAULT_LEDGER=home / '.route-manager/router-ledger.jsonl',
+        DEFAULT_USAGE_CACHE=home / '.usage-float/usage-cache.json',
+        DEFAULT_PASEO_AGENTS=home / '.paseo/agents')
+    _gate_paths.start()
+    sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+
+
+def tearDownModule():
+    for path in (SKILL_ROOT / "scripts").glob("*.py"):
+        sys.modules.pop(path.stem, None)
+    sys.modules.update(_saved_modules)
+    sys.path[:] = _saved_path
+    _gate_paths.stop()
+    _environment.stop()
+    _state.cleanup()
+
 
 class RouterGateHookTests(unittest.TestCase):
     def setUp(self):
@@ -589,8 +624,8 @@ class RouterGateHookTests(unittest.TestCase):
                 ({"allowed": [a for a in everyone if a != "claude-2"]}, "host-policy.json",
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet, shell_launch),
                  (turn("codex"), turn("sonnet", parent_agent_id=ids["child"]))),
-                ({"accounts": {"claude-2": {"bundles": {"sonnet55_high_2": {"disabled": "用户在控制台停用该档位"},
-                                                        "opus55_high_2": {"disabled": None}}}}}, "用户在控制台停用该档位",
+                ({"accounts": {"claude-2": {"bundles": {"sonnet55_high_2": {"disabled": True},
+                                                        "opus55_high_2": {"disabled": False}}}}}, "档位 sonnet55_high_2",
                  resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
                 ({"accounts": {"claude-2": {"verified": False}}}, "verified: false",
                  (turn("bare"), launch("sonnet")), (turn("codex"),))):
@@ -641,7 +676,7 @@ class RouterGateHookTests(unittest.TestCase):
         for settings, tokens, cause in (
                 ({'allowed': []}, 0, 'host-policy.json'),
                 ({'accounts': {'claude-2': {'verified': False}}}, 0, 'verified: false'),
-                ({'accounts': {'claude-2': {'bundles': {'sonnet55_high_2': {'disabled': 'turned off'}}}}}, 0, 'turned off'),
+                ({'accounts': {'claude-2': {'bundles': {'sonnet55_high_2': {'disabled': True}}}}}, 0, '档位 sonnet55_high_2'),
                 ({}, 2_000_000, 'historical_context_tokens=2,000,000/2,000,000')):
             self.write_settings(**settings)
             with mock.patch.object(allocator, 'session_state', return_value={'context_tokens': tokens}):
@@ -854,9 +889,8 @@ class RouterGateHookTests(unittest.TestCase):
 
 class BoundDispatchGateTests(unittest.TestCase):
     def setUp(self):
-        sys.path.insert(0, str(Path.home() / '.codex/skills/route-agent-work/scripts'))
-        import dispatch_registry
-        import allocator
+        dispatch_registry = gate.router_module('dispatch_registry')
+        allocator = gate.router_module('allocator')
         self.registry = dispatch_registry
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

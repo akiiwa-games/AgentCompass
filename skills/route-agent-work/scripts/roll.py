@@ -19,15 +19,15 @@ import provider_inventory
 from worker_context import require_parent_id, resolve_parent
 
 OBJECTIVE_CHARS = 6000
-PASEO_PROVIDERS = ('codex', 'codex-2', 'claude', 'claude-2', 'pi', 'antigravity-resilient', 'opencode')
-# Launcher families a configured Paseo provider may use; the dispatch adapter (dispatch_registry.launch_request)
-# accepts the same set, so a ready Grok/ACP definition is launched by Paseo instead of falling through to the CLI.
-PASEO_LAUNCHER_FAMILIES = ('claude', 'codex', 'pi', 'opencode', 'antigravity-resilient', 'grok', 'acp')
+# Launcher families a configured Paseo provider may use: the dispatch adapter's own table, so a ready Grok/ACP
+# definition is launched by Paseo instead of falling through to the CLI.
+PASEO_LAUNCHER_FAMILIES = tuple(registry.PASEO_LAUNCHER_MODES)
 SKILLS = Path(__file__).resolve().parents[2]
 DOT_RUNNER = SKILLS / 'dot-subagent' / 'scripts' / 'run_dot_task.py'
 CONSULT_BRIDGE = SKILLS / 'chatgpt-pro-consult' / 'scripts' / 'consult_bridge.py'
-CLI_RUNS_DIR = Path.home() / '.route-manager' / 'cli-workers'
-WORKER_PROMPTS_DIR = Path.home() / '.route-manager' / 'worker-prompts'
+STATE_DIR = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.route-manager').expanduser()
+CLI_RUNS_DIR = STATE_DIR / 'cli-workers'
+WORKER_PROMPTS_DIR = STATE_DIR / 'worker-prompts'
 WORKER_COMMUNICATION = SKILLS / 'route-agent-work' / 'references' / 'worker-communication.md'
 # Without Paseo, each CLI family runs one routed bundle unattended with full tool access, as Paseo would launch it:
 # executable and flags for (model, effort, cwd). agy takes its prompt only as the argument after --print; the
@@ -227,19 +227,24 @@ def _router_override_proxy_spec(provider):
 
 
 def can_launch_via_paseo(provider):
-    if provider in PASEO_PROVIDERS:
-        return True
+    family = provider_inventory.launcher_family(provider)
     providers = (dispatch_flow.paseo_config().get('agents') or {}).get('providers')
-    if isinstance(providers, dict) and provider in providers:
-        return provider_inventory.launcher_family(provider) in PASEO_LAUNCHER_FAMILIES
+    if provider == family or (isinstance(providers, dict) and provider in providers):
+        return family in PASEO_LAUNCHER_FAMILIES
     if _router_override_proxy_spec(provider) is not None:
         return False
-    return provider_inventory.launcher_family(provider) in ('claude', 'codex')
+    return family in ('claude', 'codex')
+
+
+def account_home(provider):
+    """The home discovery resolved for an extra Claude/Codex account, else the conventional ~/.<provider>."""
+    row = (provider_inventory.current().get('accounts') or {}).get(provider) or {}
+    return str(row.get('home') or Path.home() / f'.{provider}')
 
 
 def provider_definition(provider, bundle=None):
-    """Paseo's definition of a provider: the CLI family it extends and the env it sets, e.g. claude-2 -> claude with
-    CLAUDE_CONFIG_DIR. A secondary claude-*/codex-* slot without a Paseo entry falls back to its ~/.<provider> home."""
+    """Paseo's definition of a provider: the CLI family it extends and the env it sets, e.g. a second Claude account
+    -> claude with CLAUDE_CONFIG_DIR. An account without a Paseo entry uses its discovered family/home."""
     orig_provider = str(provider or '')
     providers = (dispatch_flow.paseo_config().get('agents') or {}).get('providers')
     providers = providers if isinstance(providers, dict) else {}
@@ -276,20 +281,15 @@ def provider_definition(provider, bundle=None):
                     env.setdefault('OPENAI_BASE_URL', base)
                     env.setdefault('OPENAI_API_KEY', key)
         if provider not in CLI_RUNS:
-            if orig_provider.startswith('claude-'):
-                provider = 'claude'
-            elif orig_provider.startswith('codex-'):
-                provider = 'codex'
-            elif orig_provider.startswith('pi-'):
-                provider = 'pi'
-            elif orig_provider.startswith('opencode-'):
-                provider = 'opencode'
+            family = provider_inventory.account_family(orig_provider)
+            if family in CLI_RUNS:
+                provider = family
         if provider not in CLI_RUNS and provider_inventory.launcher_family(orig_provider) == 'grok':
             provider = 'grok'  # a ready Grok ACP definition extends acp, but its CLI is Grok Build
     if provider == 'claude' and orig_provider != 'claude' and 'CLAUDE_CONFIG_DIR' not in env and 'ANTHROPIC_BASE_URL' not in env:
-        env['CLAUDE_CONFIG_DIR'] = os.environ.get('CLAUDE_HOME_2') if orig_provider == 'claude-2' and os.environ.get('CLAUDE_HOME_2') else str(Path.home() / f'.{orig_provider}')
+        env['CLAUDE_CONFIG_DIR'] = account_home(orig_provider)
     elif provider == 'codex' and orig_provider != 'codex' and 'CODEX_HOME' not in env and 'OPENAI_BASE_URL' not in env:
-        env['CODEX_HOME'] = os.environ.get('CODEX_HOME_2') if orig_provider == 'codex-2' and os.environ.get('CODEX_HOME_2') else str(Path.home() / f'.{orig_provider}')
+        env['CODEX_HOME'] = account_home(orig_provider)
     return provider, env
 
 

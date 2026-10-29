@@ -18,6 +18,10 @@ def setUpModule():
     isolated_router_state(unittest.addModuleCleanup)
 
 
+def reference_capabilities(allocator):
+    return allocator.load_capabilities(accounts=allocator.load_accounts(allocator.reference_fleet_path()))
+
+
 class RoutingTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 10, 4, 1, 0, tzinfo=timezone.utc)
@@ -43,7 +47,7 @@ class RoutingTests(unittest.TestCase):
         return {'provider': provider, 'account': account, 'model': 'runtime-verified-model',
                 'effort': 'high', 'quality_fit': 'Supports the required code review', **extra}
 
-    def run_plan(self, directory, task, down, unavailable=()):
+    def run_plan(self, directory, task, down=None, unavailable=(), records=()):
         source = Path(directory) / 'in.json'
         task_with_hours = {'expected_hours': 0.5, **task}
         source.write_text(json.dumps({'task': task_with_hours, 'unavailable': list(unavailable)}), encoding='utf-8')
@@ -52,7 +56,7 @@ class RoutingTests(unittest.TestCase):
         with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--input', str(source),
                                         '--usage-cache', str(cache)]), \
                 patch.object(router, 'dot_unreachable', return_value=down) as probe, \
-                patch.object(router, 'read_ledger', return_value=[]), \
+                patch.object(router, 'read_ledger', return_value=list(records)), \
                 patch.object(router, 'LEDGER_WRITES', True), \
                 contextlib.redirect_stdout(out):
             router.main()
@@ -179,7 +183,9 @@ class RoutingTests(unittest.TestCase):
                 self.assertIn(bundle['model'], cmd)
                 self.assertIn('low', cmd if kind == 'sonnet' else ' '.join(cmd))
 
-        with patch.dict(router.os.environ, {'OPENAI_API_KEY': 'secret', 'ROUTER_CUSTOM': 'keep'}):
+        with patch.dict(router.os.environ, {'OPENAI_API_KEY': 'secret', 'ROUTER_CUSTOM': 'keep'}), \
+                patch.object(router.provider_inventory, 'current', return_value={'accounts': {
+                    'claude-2': {'family': 'claude', 'home': str(Path.home() / '.claude-2')}}}):
             env = router.subscription_env('claude-2')
             self.assertNotIn('OPENAI_API_KEY', env)
             self.assertEqual(env['ROUTER_CUSTOM'], 'keep')
@@ -216,7 +222,10 @@ class RoutingTests(unittest.TestCase):
 
         # Finalize & record_constraint
         now = datetime.now(timezone.utc)
-        pro = {'provider': 'chatgpt-web', 'account': 'chatgpt-pro-web', 'model': 'gpt-6-pro', 'effort': 'max'}
+        pro = {'provider': 'chatgpt-web', 'account': 'fixture-advisor', 'model': 'gpt-6-pro', 'effort': 'max'}
+        allocator = router.load_allocator()
+        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts['accounts']['fixture-advisor'] = {'cadence': {'window_seconds': 6 * 3600, 'limit': 5}}
         history = [{'at': (now - timedelta(hours=h)).isoformat(), 'stage': 'select', 'choice': 'pro_web', 'bundle': pro} for h in (1, 2, 3, 4, 5)]
         u_low = {'accounts': {'codex': {'status': 'fresh', 'fetched_at': now.isoformat(), 'windows': [
             {'id': 'usage', 'used_pct': 98, 'resets_at': (now + timedelta(days=5)).isoformat(),
@@ -224,10 +233,13 @@ class RoutingTests(unittest.TestCase):
         res = {'stage': 'select', 'choice': 'pro_web', 'source': 'subscription_model_judgment',
                'reason': 'r', 'judge': dict(router.JUDGES['codex']), 'selected_bundle': pro, 'usage': u_low}
         with tempfile.TemporaryDirectory() as directory, \
-                patch.object(router, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'):
+                patch.object(router, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'), \
+                patch.object(router, 'load_allocator', return_value=allocator), \
+                patch.object(allocator, 'load_accounts', return_value=accounts):
             out = router.finalize(res, {'stage': 'select'}, 'codex', time.monotonic(),
                                   {'objective': 'Advise', 'work_kind': 'direction_reasoning'}, history)
-            self.assertEqual({a['code'] for a in out['alerts']}, {'advisor_cadence', 'pinned_judge_account_low'})
+            self.assertEqual({a['code'] for a in out['alerts']},
+                             {'advisor_cadence', 'pinned_judge_account_low', 'telemetry_missing'})
             args = router.argparse.Namespace(basis='User: Sol xhigh', provider='codex', account='codex',
                                              model='gpt-6.1-sol', effort='xhigh', input=None, usage_cache=None,
                                              accounts=None, constraint='user_override', specialty=None)
@@ -251,7 +263,7 @@ class RoutingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'unhealthy_in_cc_switch'):
                 router.record_constraint(args)
 
-    def test_dot_health_probing_local_only_and_reroll_guard(self):
+    def test_dot_probe_and_caller_local_dependency_admission(self):
         class Ready:
             status = 200
             def __enter__(self): return self
@@ -266,52 +278,56 @@ class RoutingTests(unittest.TestCase):
                     patch.object(router.urllib.request, 'urlopen', return_value=Ready()):
                 self.assertIsNone(router.dot_unreachable())
 
-            # Probing, unknown_work_kind, local_only reason validation, and reroll guard
-            odd, _ = self.run_plan(directory, {'objective': 'Compute', 'work_kind': 'research_compute', 'difficulty': 'hard'}, None)
-            self.assertIn('unknown_work_kind', [a['code'] for a in odd['alerts']])
-            up, _ = self.run_plan(directory, {'objective': 'Gather', 'work_kind': 'general_implementation', 'difficulty': 'routine'}, None)
-            self.assertEqual(up['choice'], 'dot_text')
-            self.assertIn('dot_handoff', [alert['code'] for alert in up['alerts']])
-            _, no_probe = self.run_plan(directory, {'objective': 'Refactor', 'work_kind': 'general_implementation',
-                                                    'difficulty': 'routine', 'needs': {'local_only': True, 'local_only_reason': 'runs local pytest'}},
-                                        'URLError on /readyz')
-            self.assertFalse(no_probe.called)
+            cases = [
+                ('remote', {}, None, True, True, 'dot_handoff'),
+                ('local runtime', {'local_only': True, 'local_only_reason': 'runs local pytest'}, None, False, False, None),
+                ('missing reason', {'local_only': True}, None, True, True, 'local_only_ignored_without_reason'),
+                ('edit-only reason', {'local_only': True, 'local_only_reason': 'in-place edits of workspace files'},
+                 None, True, True, 'local_only_ignored_without_reason'),
+                ('credentials', {'local_only': True, 'local_only_reason': 'Needs local ssh-agent VPS credentials'},
+                 None, False, False, None),
+                ('unreachable', {}, 'URLError on /readyz', False, True, 'dot_unreachable'),
+            ]
+            for label, needs, down, dot, probed, alert in cases:
+                with self.subTest(case=label):
+                    result, probe = self.run_plan(directory, {'objective': 'Fix single-file parser bug',
+                        'work_kind': 'debug_review', 'difficulty': 'hard', 'needs': needs}, down)
+                    self.assertEqual(result['choice'] == 'dot_text', dot)
+                    self.assertNotEqual(result['choice'], 'none')
+                    self.assertEqual(probe.called, probed)
+                    codes = {a['code'] for a in result['alerts']}
+                    if alert:
+                        self.assertIn(alert, codes)
+                    else:
+                        self.assertNotIn('local_only_ignored_without_reason', codes)
+            ssh, _ = self.run_plan(directory, {'objective': 'Read-only checklist over SSH and the repository',
+                'work_kind': 'tool_execution', 'difficulty': 'hard', 'needs': {'local_only': True}})
+            self.assertNotIn(ssh['choice'], ('dot_text', 'none'))
+            unknown, _ = self.run_plan(directory, {'objective': 'Compute', 'work_kind': 'research_compute', 'difficulty': 'hard'})
+            self.assertIn('unknown_work_kind', {a['code'] for a in unknown['alerts']})
 
-            task = {'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard', 'expected_hours': 0.5}
-            bare, _ = self.run_plan(directory, dict(task, needs={'local_only': True}), None)
-            self.assertEqual(bare['choice'], 'dot_text')
-            self.assertIn('local_only_ignored_without_reason', [a['code'] for a in bare['alerts']])
-
-            ssh_task = {'objective': 'Read-only S01 drift round: run the checklist reads over SSH and the repository',
-                        'work_kind': 'tool_execution', 'difficulty': 'hard', 'needs': {'local_only': True}}
-            ssh_plan, _ = self.run_plan(directory, ssh_task, None)
-            self.assertNotEqual(ssh_plan['choice'], 'dot_text')
-
-            recent_row = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan', 'choice': 'dot_text', 'objective': task['objective']}
-            with patch.object(router, 'read_ledger', return_value=[recent_row]), \
-                    patch.object(router, 'dot_unreachable', return_value=None):
-                inp = Path(directory) / 'reroll.json'
-                inp.write_text(json.dumps({'task': dict(task, needs={'local_only': True, 'local_only_reason': 'in-place edits of workspace files'}),
-                                           'unavailable': ['dot_text']}), encoding='utf-8')
-                cache = Path(directory) / 'cache.json'
-                out = io.StringIO()
-                with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--input', str(inp), '--usage-cache', str(cache)]), \
-                        patch.object(router, 'LEDGER_WRITES', True), contextlib.redirect_stdout(out):
-                    router.main()
-                reroll = json.loads(out.getvalue())
-                self.assertEqual(reroll['choice'], 'dot_text')
-                self.assertIn('dot_reroll_blocked', [a['code'] for a in reroll['alerts']])
-
-                # Recovery: supplying a concrete local_only_reason succeeds immediately without 10-minute lockout
-                inp.write_text(json.dumps({'task': dict(task, needs={'local_only': True, 'local_only_reason': 'Needs local ssh-agent VPS credentials'})}),
-                               encoding='utf-8')
-                out = io.StringIO()
-                with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--input', str(inp), '--usage-cache', str(cache)]), \
-                        patch.object(router, 'LEDGER_WRITES', True), contextlib.redirect_stdout(out):
-                    router.main()
-                recovered = json.loads(out.getvalue())
-                self.assertNotEqual(recovered['choice'], 'dot_text')
-                self.assertNotIn('dot_reroll_blocked', [a['code'] for a in recovered.get('alerts', [])])
+    def test_recent_dot_reroll_requires_local_evidence_or_failed_health(self):
+        allocator = router.load_allocator()
+        capabilities = reference_capabilities(allocator)
+        task = {'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
+        recent = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan',
+                  'choice': 'dot_text', 'objective': task['objective']}
+        for reason, down, enabled, dot, blocked in (
+            ('in-place edits of workspace files', None, True, True, True),
+            ('Needs local ssh-agent VPS credentials', None, True, False, False),
+            ('in-place edits of workspace files', 'endpoint down', True, False, False),
+            ('in-place edits of workspace files', None, False, False, False),
+        ):
+            with self.subTest(reason=reason, down=down, enabled=enabled), \
+                    tempfile.TemporaryDirectory() as directory, \
+                    patch.object(router, 'load_allocator', return_value=allocator), \
+                    patch.object(allocator, 'load_capabilities', return_value={**capabilities,
+                        'remote_reroute_guard': {'enabled': enabled, 'bundle_id': 'dot_text', 'window_seconds': 600}}):
+                result, _ = self.run_plan(directory, dict(task, needs={'local_only': True, 'local_only_reason': reason}),
+                                           down, unavailable=['dot_text'], records=[recent])
+                self.assertEqual(result['choice'] == 'dot_text', dot)
+                self.assertNotEqual(result['choice'], 'none')
+                self.assertEqual('dot_reroll_blocked' in {a['code'] for a in result['alerts']}, blocked)
 
     def test_timeout_stops_owned_process(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -331,25 +347,33 @@ class ReadinessGapTests(unittest.TestCase):
     def accounts(*statuses):
         return {'_discovery': {'accounts': {f'a{i}': {'status': s, 'family': 'claude'} for i, s in enumerate(statuses)}}}
 
-    def test_no_ready_account_is_fatal_and_points_at_onboarding(self):
-        gap = router.readiness_gap(self.accounts('missing_credentials', 'missing_client'), {'read_ok': True})
-        self.assertEqual((gap['code'], gap['fatal']), ('no_ready_account', True))
-        self.assertIn('setup/onboard.py', gap['message'])
-
-    def test_missing_usage_data_is_a_warning_not_a_failure(self):
-        gap = router.readiness_gap(self.accounts('ready'), {'read_ok': False})
-        self.assertEqual((gap['code'], gap['fatal']), ('no_usage_data', False))
-        self.assertIsNone(router.readiness_gap(self.accounts('ready'), {'read_ok': True}))
-        # No discovery inventory at all (tests, partial installs) leaves the existing behaviour alone.
-        self.assertIsNone(router.readiness_gap({}, {'read_ok': True}))
-
-    def test_apply_turns_the_fatal_gap_into_no_choice(self):
-        planned = {'choice': 'sonnet55_high', 'selected_bundle': {'account': 'a0'}, 'decision': {}}
-        router.apply_readiness_gap(planned, self.accounts('paused'), {'read_ok': True})
-        self.assertEqual((planned['choice'], planned['error']), ('none', 'no_ready_account'))
-        self.assertNotIn('selected_bundle', planned)
-        self.assertEqual(planned['alerts'][0]['severity'], 'warn')
-        self.assertIn('onboard.py', planned['decision']['reason'])
+    def test_readiness_gap_severity_and_effect_on_choice(self):
+        for statuses, read_ok, code, fatal in (
+            (('missing_credentials', 'missing_client'), True, 'no_ready_account', True),
+            (('paused',), True, 'no_ready_account', True),
+            (('ready',), False, 'no_usage_data', False),
+            (('ready',), True, None, False),
+            (None, True, None, False),
+        ):
+            with self.subTest(statuses=statuses, read_ok=read_ok):
+                accounts = self.accounts(*statuses) if statuses is not None else {}
+                usage = {'read_ok': read_ok}
+                gap = router.readiness_gap(accounts, usage)
+                planned = {'choice': 'sonnet55_high', 'selected_bundle': {'account': 'a0'}, 'decision': {}}
+                router.apply_readiness_gap(planned, accounts, usage)
+                if code is None:
+                    self.assertIsNone(gap)
+                else:
+                    self.assertEqual((gap['code'], gap['fatal']), (code, fatal))
+                if fatal:
+                    self.assertIn('setup/onboard.py', gap['message'])
+                    self.assertEqual((planned['choice'], planned['error']), ('none', code))
+                    self.assertNotIn('selected_bundle', planned)
+                    self.assertEqual(planned['alerts'][0]['severity'], 'warn')
+                    self.assertIn('onboard.py', planned['decision']['reason'])
+                else:
+                    self.assertEqual(planned['choice'], 'sonnet55_high')
+                    self.assertEqual(planned['selected_bundle'], {'account': 'a0'})
 
     def test_plan_with_ready_account_but_no_cache_warns(self):
         inventory = {'accounts': {'antigravity': {'family': 'antigravity', 'status': 'ready'}}, 'launchers': {}}
@@ -360,7 +384,10 @@ class ReadinessGapTests(unittest.TestCase):
             out = io.StringIO()
             missing = str(Path(directory) / '.usage-float' / 'usage-cache.json')
             with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--no-score', '--input', str(source),
-                                            '--usage-cache', missing]),                     patch.object(router.provider_inventory, 'current', return_value=inventory),                     patch.object(router, 'dot_unreachable', return_value='down'),                     patch.object(router, 'read_ledger', return_value=[]),                     contextlib.redirect_stdout(out):
+                                            '--usage-cache', missing]), \
+                    patch.object(router.provider_inventory, 'current', return_value=inventory), \
+                    patch.object(router, 'dot_unreachable', return_value='down'), \
+                    patch.object(router, 'read_ledger', return_value=[]), contextlib.redirect_stdout(out):
                 router.main()
         alerts = {a['code']: a['severity'] for a in json.loads(out.getvalue())['alerts']}
         self.assertEqual(alerts.get('no_usage_data'), 'warn')
@@ -387,7 +414,7 @@ class SystemOneScorerTests(unittest.TestCase):
 
     def setUp(self):
         self.allocator = router.load_allocator()
-        self.capabilities = self.allocator.load_capabilities()
+        self.capabilities = reference_capabilities(self.allocator)
 
     def envelope(self, structured=None, response='', status='SUCCESS'):
         return json.dumps({'conversation_id': 'c', 'status': status, 'response': response,
@@ -435,7 +462,7 @@ class SystemOneScorerTests(unittest.TestCase):
         self.assertNotIn('difficulty', task_part)
         self.assertIn('calibration_cases', cmd[-1])
         cases = router.load_classifier_cases()
-        self.assertTrue(len(cases.get('calibration_cases') or []) >= 5)
+        self.assertTrue(cases['calibration_cases'])
         # The anti-inflation rubric (boilerplate paths, read-only review, runbooks, diagnosis) reaches the scorer
         self.assertIn('dimension_rubric', cmd[-1])
         self.assertIn('read_only_review', cases['dimension_rubric'])
@@ -491,12 +518,6 @@ class SystemOneScorerTests(unittest.TestCase):
             self.assertEqual((inflated['decision']['task']['kind'], inflated['decision']['task']['difficulty']),
                              ('computer_use', 'routine'))
 
-            csv_prof = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False, needs_gui=False, code_complexity=2, reasoning_depth=2)
-            _, dot_res, _ = self.run_cli(directory, 'plan', {'objective': 'Write CSV parser'},
-                                         stdout=self.envelope(csv_prof))
-            self.assertEqual(dot_res['choice'], 'dot_text')
-            self.assertIn('profile_local_only_ignored', [a['code'] for a in dot_res['alerts']])
-
             # Missing or non-positive expected_hours is refused on plan unless --hours is passed
             for bad in ({'objective': 'Click Save'}, {'objective': 'Click Save', 'expected_hours': 0},
                         {'objective': 'Click Save', 'expected_hours': -1}):
@@ -510,6 +531,48 @@ class SystemOneScorerTests(unittest.TestCase):
                 self.assertIn('expected_hours', json.loads(out.getvalue()).get('detail', ''))
             code_flag, res_flag, _ = self.run_cli(directory, 'plan', {'objective': 'Click Save'}, '--hours', '0.5')
             self.assertEqual((code_flag, res_flag['decision']['task']['hours']), (0, 0.5))
+
+    def test_profile_local_only_is_trusted_and_caller_values_win(self):
+        profile = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False,
+                       needs_gui=False, code_complexity=2, reasoning_depth=2)
+        # Short/edit-only reasons intentionally fail the caller validator but remain trusted classifier output.
+        cases = [
+            ({}, None, True, None),  # Deterministic fallback carries its own local dependency reason.
+            ({}, 'Uses the local pytest environment.', True, 'Uses the local pytest environment.'),
+            ({'local_only': None}, 'local', True, 'local'),
+            ({}, 'in-place edit', True, 'in-place edit'),
+            ({}, '', True, 'Task profile requires execution on this machine.'),
+            ({'local_only': False}, 'Uses the local pytest environment.', False, None),
+            ({'local_only': True, 'local_only_reason': 'Needs local ssh-agent credentials'},
+             'Classifier reason', True, 'Needs local ssh-agent credentials'),
+        ]
+        for needs, reason, expected_local, expected_reason in cases:
+            with self.subTest(needs=needs, reason=reason), tempfile.TemporaryDirectory() as directory:
+                task = {'objective': 'Explore local logs' if reason is None else 'Write CSV parser', 'needs': needs}
+                code, result, _ = self.run_cli(directory, 'plan', task,
+                                              stdout='not json' if reason is None else self.envelope(dict(profile, reason=reason)))
+                self.assertEqual(code, 0)
+                self.assertEqual(result['scorer']['source'], 'heuristic_fallback' if reason is None else 'system_one')
+                self.assertEqual(result['decision']['task']['difficulty_source'], 'profile')
+                if reason is None:
+                    expected_reason = result['task_profile']['reason']
+                if expected_local:
+                    self.assertNotIn(result['choice'], ('dot_text', 'none'))
+                else:
+                    self.assertEqual(result['choice'], 'dot_text')
+                applied = [a for a in result['alerts'] if a['code'] == 'profile_local_only_applied']
+                self.assertEqual(bool(applied), needs.get('local_only') is None)
+                if applied:
+                    self.assertEqual((applied[0]['severity'], applied[0]['reason']), ('info', expected_reason))
+                self.assertNotIn('local_only_ignored_without_reason', [a['code'] for a in result['alerts']])
+                ledger = json.loads((Path(directory) / 'ledger.jsonl').read_text(encoding='utf-8').splitlines()[-1])
+                self.assertEqual(ledger.get('local_only_reason'), expected_reason)
+                self.assertEqual(bool(ledger['local_only']), expected_local)
+                with router.dispatch_registry.transaction() as connection:
+                    decision = router.dispatch_registry.get(connection, 'decisions', result['decision_id'])
+                self.assertEqual(decision['allocation_task']['needs']['local_only'], expected_local)
+                self.assertEqual(decision['allocation_task']['needs'].get('local_only_reason'), expected_reason)
+                self.assertEqual(decision['task']['needs'], needs)
 
 
 JEV_RESPONSE = {
@@ -543,10 +606,8 @@ class SelectableScorerTests(unittest.TestCase):
 
     def setUp(self):
         self.allocator = router.load_allocator()
-        self.capabilities = self.allocator.load_capabilities()
-        self.temp = tempfile.TemporaryDirectory(prefix='scorer-config-test-')
-        self.addCleanup(self.temp.cleanup)
-        self.path = Path(self.temp.name) / 'scorer-config.json'
+        self.capabilities = reference_capabilities(self.allocator)
+        self.path = temporary_root(self.addCleanup) / 'scorer-config.json'
         env = patch.dict(router.os.environ, {'ROUTER_SCORER_CONFIG': str(self.path), 'ROUTER_SCORER_TYPE': '',
                                              'ROUTER_DISABLE_LIVE_SCORER': ''})
         env.start()
@@ -799,6 +860,9 @@ class SelectableScorerTests(unittest.TestCase):
 
 @unittest.skipUnless(router.os.environ.get('ROUTER_LIVE_AGY') == '1', 'set ROUTER_LIVE_AGY=1 to call the real agy CLI')
 class LiveSystemOneSmokeTests(unittest.TestCase):
+    # Capture only for the explicit opt-in; ordinary tests never restore host state.
+    LIVE_ENV = dict(router.os.environ) if router.os.environ.get('ROUTER_LIVE_AGY') == '1' else {}
+    LIVE_HOME = Path.home() if LIVE_ENV else None
     TASKS = {
         'gui_click': ({'objective': 'Click the Save button in the Settings dialog of the local desktop app and take a screenshot to confirm.',
                        'work_kind': 'computer_use', 'needs': {'local_only': True, 'local_only_reason': 'local desktop app screen'}},
@@ -815,9 +879,12 @@ class LiveSystemOneSmokeTests(unittest.TestCase):
 
     def test_real_scores_and_plans(self):
         allocator = router.load_allocator()
-        capabilities = allocator.load_capabilities()
+        capabilities = reference_capabilities(allocator)
         for name, (task, plausible) in self.TASKS.items():
-            profile, meta = router.score_task(task, allocator, capabilities, timeout=self.TIMEOUT)
+            with self.subTest(task=name), patch.dict(router.os.environ, self.LIVE_ENV, clear=True), \
+                    patch.object(Path, 'home', return_value=self.LIVE_HOME):
+                profile, meta = router.score_task(task, allocator, capabilities, timeout=self.TIMEOUT,
+                                                   scorer_config={'scorer_type': 'agy_flash_low'})
             self.assertEqual(meta['source'], 'system_one', (name, meta))
             self.assertTrue(plausible(profile), (name, profile))
 

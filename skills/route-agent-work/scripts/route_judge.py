@@ -31,12 +31,11 @@ import urllib.parse
 import urllib.request
 
 
-CAPABILITY_POLICY = Path(__file__).resolve().parents[1] / 'references' / 'model-capabilities.json'
 USAGE_CACHE_ENV = 'ROUTER_USAGE_CACHE'
 METERED_NAMES_ENV = 'ROUTER_METERED_NAMES'
 MAX_AGE_SECONDS = 900
 # The collector reads an idle account only every 30 minutes; while its per-account cadence decisions keep arriving,
-# a reading counts as current for that cadence plus one collector tick of grace (user 2026-10-16: Claude went stale).
+# a reading counts as current for that cadence plus one collector tick of grace.
 POLL_GRACE_SECONDS = 600
 POLL_MAX_SECONDS = 3600
 JUDGES = {
@@ -48,7 +47,7 @@ JUDGES = {
 # description into a task profile and route classification, never naming a model. One turn, no tools, schema-enforced JSON.
 SCORER = {'provider': 'agy', 'model': 'gemini-3.8-flash-low'}
 SCORER_TIMEOUT_SECONDS = 25
-# The user picks which small model scores tasks (2026-10-27): ~/.route-manager/scorer-config.json, or ROUTER_SCORER_TYPE.
+# The configured small model scores tasks: ~/.route-manager/scorer-config.json, or ROUTER_SCORER_TYPE.
 # API keys live only in that file or the environment, never in the repository.
 SCORER_CONFIG_ENV = 'ROUTER_SCORER_CONFIG'
 SCORER_TYPE_ENV = 'ROUTER_SCORER_TYPE'
@@ -77,7 +76,7 @@ SCORER_PROMPT = (
     'review, independent audit, or diagnosis that writes no production code MUST have `code_complexity` 0 (even when '
     'reviewing complex code) and `hallucination_risk` 3. Follow the '
     '`dimension_rubric` and match the closest calibration case. '
-    '`reason` is one sentence about the task, not about this output.\n')
+    '`reason` is one sentence about the task, not about this output; when `local_only` is true, name the local dependency.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
 LOW_REMAINING_PCT = 10        # an auto-judge account at or below this is tried only after healthier ones
@@ -86,10 +85,6 @@ IDLE_REMAINING_PCT = 80       # informational: another account that is mostly un
 FLAG_CONFLICT_SECONDS = 24 * 3600   # collector says stale=false but the observation is this old
 BURN_LOOKBACK_SECONDS = 24 * 3600
 BURN_MIN_SPAN_SECONDS = 1800
-PRO_CADENCE_WINDOW_SECONDS = 12 * 3600
-PRO_CADENCE_LIMIT = 5         # Pro web usage is unmetered here, so only its cadence is visible
-UNMETERED_PROVIDERS = ('chatgpt-web', 'pro-consult')
-UNLIMITED_PROVIDERS = ('dot',)   # no usage telemetry and nothing to run out of
 DEFAULT_METERED_ACCOUNTS = ()    # metered/proxy accounts are discovered dynamically via billing='metered' or ROUTER_METERED_NAMES
 CONSTRAINTS = ('user_override', 'hard_constraint', 'dot_closed_loop')
 # Why an override departs from the router, so overrides can later be learned from as preferences: the task was
@@ -180,9 +175,13 @@ def _usage_home(source_path):
     return p.parent.parent if p.parent.name == '.usage-float' else p.parent
 
 
-def claude_session_limit(account, home_dir, now):
+def claude_session_limit(account, home_dir, now, inventory=None):
     """Detect an active 5h session-limit 429 from local Claude session logs or persisted rate-limits.json."""
-    if not home_dir or not (account == 'claude' or str(account).startswith('claude-')):
+    if not home_dir:
+        return None
+    inventory = provider_inventory.discover(home=home_dir) if inventory is None else inventory
+    discovered = (inventory.get('accounts') or {}).get(account) or {}
+    if discovered.get('family') != 'claude' or not discovered.get('home'):
         return None
     try:
         is_real_home = home_dir.resolve() == Path.home().resolve()
@@ -207,7 +206,7 @@ def claude_session_limit(account, home_dir, now):
         reset_ts = timestamp(rec.get('resets_at'))
         if hit_ts and reset_ts and hit_ts <= now < reset_ts and (now - hit_ts).total_seconds() <= 5 * 3600:
             latest_hit = (hit_ts, reset_ts)
-    proj_dir = home_dir / f'.{account}' / 'projects'
+    proj_dir = Path(discovered['home']) / 'projects'
     if proj_dir.is_dir():
         cutoff = min(now.timestamp(), time.time()) - 5 * 3600
         try:
@@ -306,7 +305,7 @@ def poll_max_age(poll, now, default):
     return max(default, seconds + POLL_GRACE_SECONDS)
 
 
-def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_SECONDS):
+def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_SECONDS, quota_sources=None):
     """Read the real collector cache; project an allowlist, never credentials or reset grants."""
     now = now or datetime.now(timezone.utc)
     attempts = []
@@ -330,22 +329,29 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
                 'cache_path': None, 'attempts': attempts, 'accounts': {},
                 'reason': 'No readable provider usage cache; locate the collector snapshot.'}
     requested = set(providers) if accounts is None else set(accounts)
+    # Accounts the fleet document pools onto another account read that account's row.
+    if quota_sources is None:
+        quota_sources = (sys.modules.get('allocator') or load_allocator()).configured_quota_sources()
+    sources = quota_sources
+    requested |= {sources[name] for name in requested if name in sources}
     home_dir = _usage_home(source)
+    inventory = provider_inventory.discover(home=home_dir)
     result = {}
     for account in sorted(requested):
-        row = providers.get(account)
+        source_account = sources.get(account, account)
+        row = providers.get(source_account)
         if not isinstance(row, dict):
             result[account] = {'status': 'unknown', 'reason': 'account_missing', 'windows': []}
             continue
         fetched = timestamp(row.get('fetched_at'))
         age = (now - fetched).total_seconds() if fetched else None
-        allowed = poll_max_age(polls.get(account), now, max_age_seconds)
+        allowed = poll_max_age(polls.get(source_account), now, max_age_seconds)
         current = (age is not None and 0 <= age <= allowed
                    and row.get('stale') is not True and row.get('available') is not False)
         raw_windows = row.get('windows')
         windows = [window_state(w, now, current) for w in
                    (raw_windows if isinstance(raw_windows, list) else []) if isinstance(w, dict)]
-        limit = claude_session_limit(account, home_dir, now)
+        limit = claude_session_limit(account, home_dir, now, inventory)
         rate_limited_until = None
         if limit is not None:
             fresh_recovered = (
@@ -370,12 +376,8 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
                 if not replaced:
                     windows.append(limit_win)
         usable = any(w['remaining_pct_before_reset'] is not None for w in windows)
-        if account == 'grok-bot':
-            # The native trial has no known cycle. Fresh usagePercent is still
-            # usable for exhaustion protection when nextResetMs is absent.
-            usable |= any(w['id'] == 'trial' and w['observed_remaining_pct'] is not None
-                          and w['reset_time_passed'] is not True for w in windows)
         result[account] = {
+            **({'quota_source': source_account} if source_account != account else {}),
             'status': 'fresh' if current and usable else 'stale' if fetched else 'unknown',
             'fetched_at': fetched.isoformat() if fetched else None,
             'observation_age_seconds': age,
@@ -554,15 +556,20 @@ def capacity_alerts(usage, carrying, records, now, model=''):
     return alerts
 
 
-def pro_cadence_alert(records, now):
-    recent = [r for r in records if (r.get('bundle') or {}).get('provider') in UNMETERED_PROVIDERS
-              and r.get('stage') in ('select', 'record') and r.get('choice') not in (None, 'none')
-              and (t := timestamp(r.get('at'))) and 0 <= (now - t).total_seconds() <= PRO_CADENCE_WINDOW_SECONDS]
-    if len(recent) < PRO_CADENCE_LIMIT:
+def account_cadence_alert(records, now, account, spec):
+    """Optional account-configured dispatch cadence; no implied quota knowledge."""
+    cadence = spec.get('cadence') or {}
+    seconds, limit = cadence.get('window_seconds'), cadence.get('limit')
+    if not finite_number(seconds, 1, 365 * 86400) or not finite_number(limit, 1, 1000000):
         return None
-    return {'code': 'advisor_cadence', 'severity': 'info', 'account': 'chatgpt-web',
-            'message': f'{len(recent)} Pro web dispatches in the last {PRO_CADENCE_WINDOW_SECONDS // 3600}h; '
-                       'Pro usage is not metered, so cadence is the only signal.'}
+    recent = [r for r in records if (r.get('bundle') or {}).get('account') == account
+              and r.get('stage') in ('select', 'record') and r.get('choice') not in (None, 'none')
+              and (t := timestamp(r.get('at'))) and 0 <= (now - t).total_seconds() <= seconds]
+    if len(recent) < limit:
+        return None
+    return {'code': 'advisor_cadence', 'severity': 'info', 'account': account,
+            'message': f'{len(recent)} dispatches in the configured {seconds / 3600:g}h cadence window; '
+                       'dispatch frequency does not measure remaining quota.'}
 
 
 def finalize(result, payload, requested, started, task=None, records=None):
@@ -572,10 +579,13 @@ def finalize(result, payload, requested, started, task=None, records=None):
     usage = result.get('usage') or {}
     alerts = list(result.get('alerts') or [])
     bundle = result.get('selected_bundle') or {}
-    if bundle and bundle.get('provider') not in UNMETERED_PROVIDERS + UNLIMITED_PROVIDERS and bundle.get('account'):
+    if bundle.get('account'):
         alerts += capacity_alerts(usage, [bundle['account']], records, now, bundle.get('model', ''))
-    if bundle.get('provider') in UNMETERED_PROVIDERS:
-        cadence = pro_cadence_alert(records, now)
+        try:
+            spec = load_allocator().load_accounts().get('accounts', {}).get(bundle['account']) or {}
+        except (OSError, ValueError):
+            spec = {}
+        cadence = account_cadence_alert(records, now, bundle['account'], spec)
         alerts += [cadence] if cadence else []
     judge = result.get('judge')
     if judge and requested != 'auto':
@@ -595,7 +605,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
     result['alerts'] = alerts
     task = task if isinstance(task, dict) else {}
     allocation_task = result.pop('_allocation_task', task)
-    needs_row = task.get('needs') if isinstance(task.get('needs'), dict) else {}
+    needs_row = allocation_task.get('needs') if isinstance(allocation_task.get('needs'), dict) else {}
     unavailable_row = result.pop('_unavailable', None)
     objective = task.get('objective')
     chain = task.get('chain') if isinstance(task.get('chain'), dict) else {}
@@ -646,6 +656,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **({'unavailable': list(unavailable_row)} if unavailable_row else {}),
         'needs_user_decision': decision.get('needs_user_decision') or None,
         'router_choice': result.get('router_choice'), 'agrees': result.get('agrees'),
+        **({'classifier_skipped': result['classifier_skipped']} if 'classifier_skipped' in result else {}),
         'objective': objective[:200] if isinstance(objective, str) else None,
         'reason': (result.get('reason') or result.get('error') or '')[:600] or None,
         'payload_bytes': len(json.dumps(payload, ensure_ascii=False).encode()) if payload else None,
@@ -659,14 +670,18 @@ def build_request(stage, document, cache=None, now=None):
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires reviewed routing context in task.')
-    policy = json.loads(CAPABILITY_POLICY.read_text(encoding='utf-8-sig'))
+    effective_accounts = load_allocator().load_accounts()
+    policy = load_allocator().load_capabilities(accounts=effective_accounts)
     now = now or datetime.now(timezone.utc)
-    state = {'task': task, 'now': now.isoformat(), 'capability_policy': policy}
+    state = {'task': task, 'now': now.isoformat(), 'capability_policy': policy,
+             'scoring': effective_accounts.get('scoring') or {}}
     schema = {'type': 'object', 'properties': {}, 'required': ['choice', 'reason'],
               'additionalProperties': False}
     schema['properties']['reason'] = {'type': 'string', 'minLength': 1, 'maxLength': 1200}
-    inv_accounts = {k for k in (provider_inventory.current().get('accounts') or {}) if str(k).startswith('claude-')}
-    accounts = {judge['account'] for judge in JUDGES.values()} | {'claude-2'} | inv_accounts
+    inventory = effective_accounts.get('_discovery') or provider_inventory.current()
+    inv_accounts = {k for k in (inventory.get('accounts') or {})
+                    if provider_inventory.account_family(k, effective_accounts, inventory) == 'claude'}
+    accounts = {judge['account'] for judge in JUDGES.values()} | inv_accounts
     if stage == 'delegate':
         choices = ['self', 'delegate']
         schema['properties']['specialty'] = {'type': 'string', 'enum': list(policy['routes'])}
@@ -706,23 +721,16 @@ def build_request(stage, document, cache=None, now=None):
         instructions = (
             'Select the exact provider/account/model/effort bundle or none. Honor explicit model '
             'constraints, required quality, tools and authorization before quota. Apply capability_policy '
-            'for the assignment. Visual analysis ranks Opus 5.5 above Astra above Sonnet above other models; '
-            'direction reasoning and complex build planning use the ChatGPT Pro browser advisor; do not '
-            'use Fable until Fable 5.5 is released. Do not replace a required '
-            'specialist with a cheaper model. Apply capability_policy.execution_preference: Gemini 3.8 '
-            'Flash is not the preferred coder, but its quota is very large, so prefer a qualified Flash '
-            'with sufficient capacity only for simple (routine) coding-plus-tool-call work, always using '
-            'gemini-3.8-flash-high for a worker packet, and never send it harder work. Do not lower '
-            'Flash to Medium/Low because individual calls look simple. Preserve the existing '
-            'fallback ordering and explain a Flash fallback. Missing telemetry alone is not exhaustion '
-            'or unavailability. Antigravity Gemini models share the Gemini pool. Antigravity Claude '
-            'and GPT models draw the separate 3p pool (3p-5h and 3p-weekly), not the Gemini pool. '
+            'for the assignment using the effective model rows, route preferences and explicit '
+            'restrictions supplied in the state. These are configured priors; do not invent a model '
+            'ranking, disabled model, advisor-first pipeline, unlimited pool or fallback order. '
+            'Respect candidate window bindings and account eligibility. '
             'Candidate usage_evidence may provide a separately sourced newer '
             'observation; check its account, group and time rather than treating a missing cache row '
             'as contrary quota evidence. Other rankings are soft priors. Among qualified remaining candidates '
             'jointly weigh remaining quota, time to reset/expiry, observation age, expected duration '
-            'and demand, and running work. Use the tightest applicable shared window; Claude weekly_fable '
-            'is Fable-specific, not a Sonnet/Opus constraint. Prefer sufficient capacity likely to be lost '
+            'and demand, and running work. Use the tightest applicable configured shared window. '
+            'Prefer sufficient capacity likely to be lost '
             'at reset, but an imminent reset provides no capacity before it happens. Percentages across '
             'providers are not comparable token amounts. Expiry is separate from reset. Unknown/stale '
             'telemetry neither disqualifies a launchable subscription nor proves unlimited capacity. '
@@ -773,7 +781,7 @@ def build_request(stage, document, cache=None, now=None):
                 w_spec = win_defs.get(wid) if isinstance(win_defs, dict) else None
                 floor = (w_spec or {}).get('launch_min_remaining_pct')
                 if floor is None:
-                    floor = 25 if (acc.startswith('claude-') and wid == 'five_hour') else 5
+                    floor = 5
                 if rem <= floor:
                     return True
             return False
@@ -841,15 +849,9 @@ def subscription_env(account=None):
                  'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX',
                  'CLAUDE_CODE_USE_FOUNDRY'):
         env.pop(name, None)
-    if account and str(account).startswith('claude-'):
-        cfg = str(Path.home() / f'.{account}')
-        try:
-            paseo_cfg = json.loads((Path.home() / '.paseo' / 'config.json').read_text(encoding='utf-8-sig'))
-            prov_env = ((paseo_cfg.get('agents') or {}).get('providers') or {}).get(account, {}).get('env') or {}
-            if isinstance(prov_env.get('CLAUDE_CONFIG_DIR'), str) and prov_env['CLAUDE_CONFIG_DIR'].strip():
-                cfg = prov_env['CLAUDE_CONFIG_DIR'].strip()
-        except (OSError, ValueError):
-            pass
+    discovered = ((provider_inventory.current().get('accounts') or {}).get(account) or {}) if account else {}
+    if discovered.get('family') == 'claude' and discovered.get('home'):
+        cfg = str(discovered['home'])
         env['CLAUDE_CONFIG_DIR'] = cfg
         env['CLAUDE_SECURESTORAGE_CONFIG_DIR'] = cfg
         env.pop('CLAUDE_CODE_OAUTH_TOKEN', None)
@@ -1388,14 +1390,17 @@ def resolve_judge(kind, usage, availability=None):
     accounts = (usage or {}).get('accounts') if isinstance(usage, dict) else None
     if not isinstance(accounts, dict):
         return base
-    alt_claudes = [acc for acc in accounts if str(acc).startswith('claude-') and host_policy.judge_allowed(availability, 'sonnet', acc)]
-    if not alt_claudes:
-        return base
-
     try:
-        acc_defs = (load_allocator().load_accounts().get('accounts') or {})
+        fleet = load_allocator().load_accounts()
     except Exception:
-        acc_defs = {}
+        fleet = {}
+    acc_defs = fleet.get('accounts') or {}
+    inventory = fleet.get('_discovery') or provider_inventory.current()
+    claudes = [acc for acc in accounts
+               if provider_inventory.account_family(acc, fleet, inventory) == 'claude'
+               and host_policy.judge_allowed(availability, 'sonnet', acc)]
+    if not claudes:
+        return base
 
     def _health(acc):
         if not host_policy.judge_allowed(availability, 'sonnet', acc):
@@ -1407,7 +1412,7 @@ def resolve_judge(kind, usage, availability=None):
         if any(w['remaining_pct_before_reset'] == 0 for w in known):
             return (2, True, float('inf'))
         win_defs = (acc_defs.get(acc) or {}).get('windows') or {}
-        if str(acc).startswith('claude-'):
+        if provider_inventory.account_family(acc, fleet, inventory) == 'claude':
             if any(w.get('id') in ('five_hour', '5h') and w.get('reset_time_passed') is False
                    and w.get('remaining_pct_before_reset') is None for w in windows):
                 return (2, True, float('inf'))
@@ -1416,17 +1421,16 @@ def resolve_judge(kind, usage, availability=None):
                 w_spec = win_defs.get(wid) if isinstance(win_defs, dict) else None
                 floor = (w_spec or {}).get('launch_min_remaining_pct')
                 if floor is None:
-                    floor = 25 if wid == 'five_hour' else LOW_REMAINING_PCT
+                    floor = LOW_REMAINING_PCT
                 if w['remaining_pct_before_reset'] <= floor:
                     return (2, True, float('inf'))
         low = any(w['remaining_pct_before_reset'] <= LOW_REMAINING_PCT for w in known)
         reset = min((w['seconds_until_reset'] for w in known), default=float('inf'))
         return (1 if low else 0, not bool(known), reset)
 
-    best_alt = min(alt_claudes, key=_health)
-    if _health(best_alt) < _health('claude'):
-        return {**base, 'provider': best_alt, 'account': best_alt}
-    return base
+    best = min(claudes, key=lambda acc: (_health(acc), acc != base['account']))
+    return {**base, 'provider': best, 'account': best,
+            **({'quota_unavailable': True} if _health(best)[0] == 2 else {})}
 
 
 def judge_order(usage, requested):
@@ -1439,6 +1443,8 @@ def judge_order(usage, requested):
     ranked = []
     for kind in ('codex', 'sonnet'):
         spec = resolve_judge(kind, usage, availability)
+        if spec.get('quota_unavailable'):
+            continue
         if not host_policy.judge_allowed(availability, kind, spec['account']):
             continue
         row = usage.get('accounts', {}).get(spec['account'], {})
@@ -1555,9 +1561,8 @@ def valid_local_only_reason(needs, kind=None, task=None):
     return False
 
 
-def recent_dot_lock(task, records, now, window_seconds=600):
-    """Return the recent dot_text ledger row if the same objective or chain was already routed to dot_text
-    within window_seconds, so callers cannot immediately reroll by claiming unavailable=['dot_text'] while healthy."""
+def recent_route_lock(task, records, now, bundle_id, window_seconds):
+    """Find a matching recent route only for an explicitly configured reroute guard."""
     if not isinstance(task, dict) or not records:
         return None
     obj = (task.get('objective') or '').strip()
@@ -1565,7 +1570,7 @@ def recent_dot_lock(task, records, now, window_seconds=600):
     if not obj and not chain_id:
         return None
     for row in reversed(records):
-        if not isinstance(row, dict) or row.get('stage') != 'plan' or row.get('choice') != 'dot_text':
+        if not isinstance(row, dict) or row.get('stage') != 'plan' or row.get('choice') != bundle_id:
             continue
         try:
             at = datetime.fromisoformat(str(row.get('at')).replace('Z', '+00:00'))
@@ -1603,6 +1608,14 @@ def record_constraint(args, task=None):
     if not task and args.input is not None:
         loaded = json.loads(args.input.read_text(encoding='utf-8-sig'))
         task = loaded.get('task') if isinstance(loaded, dict) and isinstance(loaded.get('task'), dict) else {}
+    if not task.get('parent_agent_id'):
+        # The gate matches same-session rows first; a record without the session ID loses to any
+        # roll this session made inside the window. Only real host IDs, never the ppid fallback.
+        from worker_context import detect_host_session
+        parent = (getattr(args, 'parent_id', None) or '').strip() or detect_host_session()
+        parent = parent.removeprefix('claude:')
+        if parent and not parent.startswith(('claude-session-', 'codex-session-')):
+            task = {**task, 'parent_agent_id': parent}
     allocator = load_allocator()
     accounts = allocator.load_accounts()
     now = datetime.now(timezone.utc)
@@ -1620,7 +1633,7 @@ def record_constraint(args, task=None):
         disabled_info = allocator.bundles(accounts)[disabled_match]
         raise ValueError(
             f"Bundle {disabled_match!r} ({args.account}/{args.model}) is disabled: {disabled_info.get('disabled')}. "
-            f"Do not dispatch {args.model} on {args.account}; use --provider claude --account claude instead."
+            f"Do not dispatch {args.model} on {args.account}; run `route_judge.py plan` to select an enabled bundle."
         )
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
     if not allocator.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
@@ -1630,7 +1643,7 @@ def record_constraint(args, task=None):
         )
     acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
     # External runners dispatch directly after record; apply the same registered
-    # window protection used by prepared dispatches, including non-periodic trials.
+    # window protection used by prepared dispatches.
     quota_bundle = {**discovered, 'account': args.account, 'provider': args.provider, 'model': args.model}
     if chosen:
         quota_bundle['id'] = chosen
@@ -1650,7 +1663,7 @@ def record_constraint(args, task=None):
             win_spec = (acc_spec.get('windows') or {}).get(wid) or {}
             floor = win_spec.get('launch_min_remaining_pct')
             if floor is None:
-                floor = 25 if (str(args.account).startswith('claude-') and wid == 'five_hour') else 2
+                floor = 2
             if rem <= floor:
                 raise ValueError(
                     f"Account {args.account!r} window {w.get('id')!r} is exhausted or below safety floor "
@@ -1685,7 +1698,12 @@ def record_constraint(args, task=None):
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
             row = next((c for c in plan['ranking'] if c['id'] == chosen), None)
-            result.update({'router_choice': plan['choice'], 'agrees': chosen is not None and chosen == plan['choice'],
+            # record / roll --provider never calls the classifier. agrees is a comparison only when
+            # the caller already supplied a profile; otherwise it is a marker, not a score.
+            skipped = not isinstance(plan_task.get('profile'), dict)
+            result.update({'router_choice': plan['choice'],
+                           'agrees': None if skipped else chosen is not None and chosen == plan['choice'],
+                           'classifier_skipped': skipped,
                            'router_reason': plan['decision'].get('reason'),
                            'override_cost': None if row is None else {'excluded': row['excluded'], 'score': row['score'],
                                                                       'notes': row['notes']}})
@@ -1842,6 +1860,12 @@ def _manage_overrides_locked(args, now=None):
         removed = 0
     path.parent.mkdir(parents=True, exist_ok=True)
     override_store.write(path, {**document, 'v': 1, 'overrides': rows})
+    ledger_row = {'v': 1, 'at': now.isoformat(), 'stage': 'override',
+                  'action': 'clear' if args.clear else 'upsert', 'removed': removed}
+    if not args.clear:
+        ledger_row.update({'account': args.account, 'model': model, 'basis': args.basis.strip()[:400],
+                           'boost': boost, 'until': until.isoformat()})
+    append_ledger(ledger_row)
     return {'stage': 'override', 'path': str(path), 'removed': removed, 'active': allocator.load_overrides(now, path, usage=usage, accounts=accounts, prune=False)}
 
 
@@ -1922,6 +1946,7 @@ def plan_stage(document, args):
     loaded_accounts = allocator.load_accounts()
     policy = loaded_accounts['scoring']
     extra_alerts, scorer = [], None
+    profile_local_only_applied = False
     should_score = not args.no_score and (
         args.score or task.get('auto_score')
         or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict))
@@ -1945,19 +1970,22 @@ def plan_stage(document, args):
                                f'assigned work_kind={classified_kind!r}, difficulty={derived!r}.'})
             task = {k: v for k, v in task.items() if k not in ('work_kind', 'difficulty')}
             task['work_kind'] = classified_kind
-            task['difficulty'] = derived
-        if (profile['local_only'] and needs.get('local_only') is None
-                and (task.get('work_kind') or classified_kind) not in LOCAL_UI_OR_HOST_ROUTES):
-            # Same bar as a caller's flag: a scorer's bare "local" does not take the work from Dot.
-            needs['local_only'] = False
+            # Leave difficulty off the task. normalize_task then labels the source `profile`
+            # instead of treating the classifier's copy as a caller value. The strip above
+            # still lets the classifier win over a caller-supplied difficulty.
+        if profile['local_only'] and needs.get('local_only') is None:
+            # Trust the classifier; explicit caller needs still take precedence.
+            profile_local_only_applied = True
+            needs['local_only'] = True
+            needs['local_only_reason'] = profile['reason'] or 'Task profile requires execution on this machine.'
             task = {**task, 'needs': needs}
             extra_alerts.append({
-                'code': 'profile_local_only_ignored', 'severity': 'info', 'account': 'dot',
-                'message': 'The task profile said local_only, but only the caller can mark work local-only, with a concrete '
-                           'needs.local_only_reason (local git/daemon/pytest/hardware/intranet/credentials). Dot stays a candidate.'})
+                'code': 'profile_local_only_applied', 'severity': 'info', 'account': None,
+                'reason': needs['local_only_reason'],
+                'message': 'The task profile requires local execution: ' + needs['local_only_reason']})
         task = {**task, 'profile': profile}
     kind = allocator.task_kind(task, capabilities, policy)
-    if needs.get('local_only') and not valid_local_only_reason(needs, kind, task):
+    if needs.get('local_only') and not profile_local_only_applied and not valid_local_only_reason(needs, kind, task):
         needs['local_only'] = False
         task = {**task, 'needs': needs}
         extra_alerts.append({
@@ -1965,17 +1993,21 @@ def plan_stage(document, args):
             'message': 'needs.local_only was ignored because needs.local_only_reason was missing or only cited ordinary file editing. '
                        'Pass files to Dot with `run_dot_task.py run --prompt-file ... --file <path> --apply-to .`, or provide a concrete '
                        'needs.local_only_reason (e.g. local git/daemon/pytest/hardware/intranet/credentials).'})
-    locked_dot = recent_dot_lock(task, records, now)
-    if locked_dot is not None and 'dot_text' in unavailable and not needs.get('local_only'):
-        probe_err = dot_unreachable()
+    guard = capabilities.get('remote_reroute_guard') or {}
+    guarded_bundle = guard.get('bundle_id')
+    locked_route = (recent_route_lock(task, records, now, guarded_bundle, guard.get('window_seconds', 600))
+                    if guard.get('enabled') is True and isinstance(guarded_bundle, str) else None)
+    if locked_route is not None and guarded_bundle in unavailable and not needs.get('local_only'):
+        guarded = allocator.bundles(loaded_accounts).get(guarded_bundle) or {}
+        probe_err = dot_unreachable() if guarded.get('provider') == 'dot' else 'no readiness probe'
         if probe_err is None:
-            unavailable = [u for u in unavailable if u != 'dot_text']
+            unavailable = [u for u in unavailable if u != guarded_bundle]
             extra_alerts.append({
-                'code': 'dot_reroll_blocked', 'severity': 'warn', 'account': 'dot',
-                'message': 'This task was routed to dot_text within the last 10 minutes; rerolling with '
-                           'unavailable=["dot_text"] while Dot2API is healthy is blocked. Dispatch via run_dot_task.py, '
-                           'or provide a concrete needs.local_only_reason if the work requires local host resources.'})
-    wants_dot = allocator.dot_may_take(kind, needs, capabilities)
+                'code': 'dot_reroll_blocked', 'severity': 'warn', 'account': guarded.get('account'),
+                'message': f'The effective local reroute policy retains the recent {guarded_bundle} route '
+                           'while its adapter is healthy. Provide concrete local-runtime evidence or '
+                           'continue the recorded route.'})
+    wants_dot = allocator.dot_may_take(kind, needs, capabilities, task.get('profile') if isinstance(task.get('profile'), dict) else None)
     dot_down = dot_unreachable() if wants_dot and 'dot_text' not in unavailable else None
     if dot_down:
         unavailable.append('dot_text')
@@ -1997,7 +2029,7 @@ def plan_stage(document, args):
     if planned.get('choice') == 'dot_text' and 'dot' not in (capabilities['routes'].get(kind) or {}).get('preferred', []):
         planned.setdefault('alerts', []).append({
             'code': 'dot_handoff', 'severity': 'info', 'account': 'dot',
-            'message': 'Dot runs in its own sandbox (unlimited quota). One-command file workflow: '
+            'message': 'Dot runs on its remote computer. One-command file workflow: '
                        '`python -X utf8 ~/.codex/skills/dot-subagent/scripts/run_dot_task.py run --prompt-file <task.md> --file <src1> --file <src2> --apply-to .` '
                        '(or `submit ...` + `status --task-id <id> --wait 120 --apply-to .` for non-blocking execution).'})
     if task.get('work_kind') and task['work_kind'] not in capabilities['routes']:

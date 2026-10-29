@@ -155,35 +155,68 @@ class GrokBotTests(unittest.TestCase):
         self.assertEqual((code, unsent['launched'], unsent['caller_action']), (1, False, 'check_error'))
         transport.assert_called_once_with('bots', 'list')
 
-    def test_native_trial_admission_uses_observation_without_inventing_a_cycle(self):
+    def test_shared_grok_quota_controls_plan_and_launch_without_bot_cache_fallback(self):
         now = datetime.now(timezone.utc)
-        snapshot = {'accounts': {'grok-bot': {'family': 'grok-bot', 'status': 'ready'}},
+        # The fixture fleet declares the pool (quota_sources); Grok's meter supplies the window.
+        snapshot = {'accounts': {'grok-bot': {'family': 'grok-bot', 'status': 'ready'},
+                                 'grok': {'family': 'grok', 'status': 'ready', 'usage_windows': ['credits']}},
                     'launchers': {'grok-bot': {'family': 'grok-bot', 'status': 'ready'}}}
         accounts = provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
-        self.assertNotIn('hours', accounts['accounts']['grok-bot']['windows']['trial'])
-        cache = self.root / 'trial-usage.json'
-        for reset in (None, (now + timedelta(days=2)).isoformat()):
-            for used, stale, blocked in ((100, False, True), (20, False, False),
-                                         (100, True, False), (None, False, False)):
-                with self.subTest(reset=reset, used=used, stale=stale):
-                    cache.write_text(json.dumps({'providers': {'grok-bot': {
-                        'available': True, 'stale': stale, 'fetched_at': now.isoformat(),
-                        'windows': [{'id': 'trial', 'used_pct': used, 'resets_at': reset}]}}}))
-                    usage = route_judge.usage_snapshot(cache, now=now)
-                    plan = allocator.plan({'work_kind': 'text_in_text_out', 'difficulty': 'routine', 'expected_hours': .2},
-                                          usage, now, accounts=accounts, records=[], overrides=[],
-                                          host_policy_config={'allowed_accounts': ['grok-bot']})
-                    candidate = next(c for c in plan['ranking'] if c['id'] == 'grok_bot')
-                    self.assertEqual(bool(candidate['excluded']), blocked)
-                    self.assertEqual(plan['choice'] == 'grok_bot', not blocked)
-                    self.assertIsNone(candidate['expected_usd'])
-                    self.assertIsNone(candidate['expected_pct'])
-                    self.assertEqual(usage['accounts']['grok-bot']['windows'][0]['resets_at'], reset)
-                    if blocked:
-                        with self.assertRaisesRegex(ValueError, 'trial.*launch protection'):
-                            dispatch_registry.check_launch_quota(candidate['bundle'], accounts, usage, now)
-                    else:
+        self.assertEqual(set(accounts['accounts']['grok-bot']['windows']), {'credits'})
+        cache = self.root / 'shared-usage.json'
+        reset = (now + timedelta(days=2)).isoformat()
+        for used, stale, missing, blocked in ((100, False, False, True), (56, False, False, False),
+                (100, True, False, True), (None, False, False, False), (100, False, True, False)):
+            with self.subTest(used=used, stale=stale, missing=missing):
+                grok = {'available': True, 'stale': stale, 'fetched_at': now.isoformat(),
+                        'windows': [{'id': 'credits', 'used_pct': used, 'resets_at': reset}]}
+                # A conflicting retired cache must never override the shared source.
+                providers = {'grok-bot': {**grok, 'windows': [{'id': 'weekly', 'used_pct': 0, 'resets_at': reset}]}}
+                if not missing:
+                    providers['grok'] = grok
+                cache.write_text(json.dumps({'providers': providers}))
+                usage = route_judge.usage_snapshot(cache, accounts=['grok-bot'], now=now)
+                plan = allocator.plan({'work_kind': 'text_in_text_out', 'difficulty': 'routine', 'expected_hours': .2},
+                                      usage, now, accounts=accounts, records=[], overrides=[],
+                                      host_policy_config={'allowed_accounts': ['grok-bot']})
+                candidate = next(c for c in plan['ranking'] if c['id'] == 'grok_bot')
+                self.assertEqual(bool(candidate['excluded']), blocked)
+                self.assertEqual(plan['choice'] == 'grok_bot', not blocked)
+                bot = plan['usage']['accounts']['grok-bot']
+                self.assertEqual(bot['windows'], plan['usage']['accounts']['grok']['windows'])
+                self.assertEqual(bot['status'], plan['usage']['accounts']['grok']['status'])
+                self.assertIsNone(candidate['expected_usd'])  # No invented Bot dollar price.
+                if blocked and not stale:
+                    with self.assertRaisesRegex(ValueError, 'credits.*launch protection'):
                         dispatch_registry.check_launch_quota(candidate['bundle'], accounts, usage, now)
+                else:
+                    dispatch_registry.check_launch_quota(candidate['bundle'], accounts, usage, now)
+
+    def test_shared_capacity_and_reservations_keep_execution_enablement_separate(self):
+        now = datetime.now(timezone.utc)
+        snapshot = {'accounts': {
+            'grok': {'family': 'grok', 'status': 'ready', 'usage_windows': ['credits']},
+            'grok-bot': {'family': 'grok-bot', 'status': 'ready'}}, 'launchers': {}}
+        accounts = provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
+        source = accounts['accounts']['grok']
+        source['observed'] = {'credits': {'pct_per_hour_24h': 2.0}}
+        source['capacity_usd'] = {'credits': 200}
+        provider_inventory.apply_shared_quota(accounts)
+        bot = accounts['accounts']['grok-bot']
+        for key in ('windows', 'observed', 'capacity_usd', 'burn_pct_per_worker_hour'):
+            self.assertEqual(bot[key], source[key])
+        records = [{'stage': 'dispatch', 'dispatch_id': name, 'state': 'started',
+                    'lease_until': (now + timedelta(hours=1)).isoformat(),
+                    'bundle': {'account': name, 'model': 'grok-bot' if name == 'grok-bot' else 'grok-4.7'},
+                    'expected_usd': 10} for name in ('grok', 'grok-bot', 'codex')]
+        for account in ('grok', 'grok-bot'):
+            reserved = allocator.inflight_reserved_usd(account, accounts['accounts'][account],
+                'credits', {}, {}, 200, records + records, accounts, accounts['scoring'], now)
+            self.assertEqual(reserved, 20)  # Shared reservations counted once, other pools excluded.
+        # Canonical execution identities stay independent (including an explicit Grok disable).
+        self.assertEqual(allocator.bundles(accounts)['grok_bot']['account'], 'grok-bot')
+        source['bundles']['grok47_high']['disabled'] = True
+        self.assertFalse(bot['bundles']['grok_bot'].get('disabled', False))
 
     def test_missing_receipt_foreign_or_unrecognized_thread_cannot_complete(self):
         task = self.accepted()
@@ -216,9 +249,9 @@ class GrokBotTests(unittest.TestCase):
                 'error': {'code': 'render-failed', 'message': 'Set CURSOR_ACCESS_TOKEN, or gateway session.'}}))
             with self.assertRaises(runner.TransportError) as error:
                 runner.gbot('bots', 'list')
-            self.assertIn('keep it awake', str(error.exception))
-            self.assertIn('Ctrl+Q', str(error.exception))
+            # An actionable public troubleshooting link is contractual; shortcut prose is not.
             self.assertIn('/issues/147', str(error.exception))
+            self.assertNotIn('CURSOR_ACCESS_TOKEN', str(error.exception))
 
     def test_doctor_preserves_only_controlled_http_diagnostic(self):
         import io
@@ -340,7 +373,9 @@ class GrokBotTests(unittest.TestCase):
     def test_discovery_routes_remote_text_automatically_without_replacing_grok(self):
         home = self.root / 'home'
         home.mkdir()
-        env = {'PATH': '', 'ROUTER_STATE_DIR': str(self.root)}
+        cache = self.root / 'usage-cache.json'
+        cache.write_text(json.dumps({'providers': {'grok': {'windows': [{'id': 'credits'}]}}}))
+        env = {'PATH': '', 'ROUTER_STATE_DIR': str(self.root), 'ROUTER_USAGE_CACHE': str(cache)}
         fake_cli = self.root / 'gbot.mjs'
         fake_cli.touch()
         with patch.object(provider_inventory, 'GROK_BOT_CLI', fake_cli), \
@@ -378,60 +413,55 @@ class GrokBotTests(unittest.TestCase):
         self.assertNotEqual(plan()['choice'], 'grok_bot')
         applied['accounts']['grok-bot']['bundles']['grok_bot'].pop('disabled')
         now = datetime.now(timezone.utc)
-        weekly = {'id': 'weekly', 'remaining_pct_before_reset': 1,
+        weekly = {'id': 'credits', 'remaining_pct_before_reset': 1,
                   'resets_at': (now + timedelta(days=2)).isoformat(), 'seconds_until_reset': 172800}
         observation = {'status': 'fresh', 'fetched_at': now.isoformat(), 'windows': [weekly]}
-        depleted = plan(usage={'accounts': {'grok-bot': observation}})
-        self.assertTrue(any('launch protection' in r for c in depleted['ranking']
+        depleted = plan(usage={'accounts': {'grok': observation}})
+        self.assertTrue(any('credits' in r for c in depleted['ranking']
                             if c['id'] == 'grok_bot' for r in c['excluded']))
         stale = {**observation, 'status': 'stale', 'stale': True,
                  'windows': [{**weekly, 'remaining_pct_before_reset': None, 'observed_remaining_pct': 1}]}
-        self.assertEqual(plan(usage={'accounts': {'grok-bot': stale}})['choice'], 'grok_bot')
+        self.assertEqual(plan(usage={'accounts': {'grok': stale}})['choice'], 'none')
         (runner.STATE / 'config.json').unlink()
         snapshot = provider_inventory.discover(home, env)
         self.assertEqual(snapshot['accounts']['grok-bot']['status'], 'missing_configuration')
 
-    def test_roll_receipt_and_continuation_cover_accepted_unknown_and_rejected(self):
+    def test_roll_delivery_and_wait_recovery_preserve_receipts_without_replay(self):
         prompt = self.root / 'prompt.md'
         prompt.write_text('Task')
-        args = SimpleNamespace(file=[], apply_to=None, local_only=None, wait=0)
         bundle = {'provider': 'grok-bot', 'account': 'grok-bot', 'model': 'grok-bot'}
-        for delivery, state, launched in [('accepted', 'accepted', True), ('unknown', 'unknown', None),
-                                          ('rejected', 'failed', False)]:
+        cases = [
+            ('accepted', 'accepted', True, None),
+            ('unknown', 'unknown', None, None),
+            ('rejected', 'failed', False, None),
+            ('accepted', 'accepted', True, TimeoutError('Override store is busy')),
+            ('accepted', 'accepted', True, OSError('Receipt temporarily unreadable')),
+        ]
+        for delivery, state, launched, error in cases:
             receipt = {'task_id': 'a' * 32, 'state': state, 'delivery': delivery}
-            with self.subTest(delivery=delivery), patch.object(runner, 'submit', return_value=receipt):
+            args = SimpleNamespace(file=[], apply_to=None, local_only=None, wait=30 if error else 0)
+            with self.subTest(delivery=delivery, error=type(error).__name__), \
+                    patch.object(runner, 'submit', return_value=receipt) as submit, \
+                    patch.object(runner, 'status', side_effect=error) as status:
                 result, code = roll.grok_bot(args, {'parent_id': 'parent'}, prompt, {'task_id': 'task'}, bundle)
-            self.assertEqual(result['launched'], launched)
+            submit.assert_called_once()
+            self.assertIs(result['launched'], launched)
             self.assertEqual(result['dispatch_mode'], 'grok-bot')
             self.assertEqual(code, 1 if delivery == 'rejected' else 0)
             self.assertEqual('continuation_argv' in result, delivery != 'rejected')
+            self.assertNotIn('read_error', receipt)
+            if error:
+                status.assert_called_once_with(receipt['task_id'], 30)
+                self.assertEqual(result['caller_action'], 'already_launched_do_not_respawn')
+                self.assertEqual(result['worker'], {**receipt, 'read_error': str(error)})
+                self.assertIn(receipt['task_id'], result['continuation_argv'])
+            else:
+                status.assert_not_called()
         for option, value in [('file', [prompt]), ('local_only', 'local dependency'), ('apply_to', self.root)]:
             with self.subTest(option=option), patch.object(runner, 'submit', side_effect=AssertionError('no send')):
                 with self.assertRaises(ValueError):
                     roll.grok_bot(SimpleNamespace(**{**vars(args), option: value}), {}, prompt, {}, bundle)
 
-    def test_roll_wait_failure_preserves_accepted_receipt_and_continuation(self):
-        prompt = self.root / 'prompt.md'
-        prompt.write_text('Task')
-        args = SimpleNamespace(file=[], apply_to=None, local_only=None, wait=30)
-        bundle = {'provider': 'grok-bot', 'account': 'grok-bot', 'model': 'grok-bot'}
-        receipt = {'task_id': 'a' * 32, 'state': 'accepted', 'delivery': 'accepted',
-                   'message_id': 'message-1'}
-        for error in (TimeoutError('Override store is busy'), OSError('Receipt temporarily unreadable')):
-            with self.subTest(error=type(error).__name__), \
-                    patch.object(runner, 'submit', return_value=receipt) as submit, \
-                    patch.object(runner, 'status', side_effect=error) as status:
-                result, code = roll.grok_bot(args, {'parent_id': 'parent'}, prompt, {'task_id': 'task'}, bundle)
-            submit.assert_called_once()
-            status.assert_called_once_with(receipt['task_id'], 30)
-            self.assertEqual(code, 0)
-            self.assertIs(result['launched'], True)
-            self.assertEqual(result['caller_action'], 'already_launched_do_not_respawn')
-            self.assertEqual(result['worker'], {**receipt, 'read_error': str(error)})
-            self.assertIn(receipt['task_id'], result['continuation_argv'])
-            self.assertNotIn('read_error', receipt)
-
-    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'Pinned artifact installation and Node required')
     def test_production_roll_records_known_contract_before_mocked_external_send(self):
         brief = self.root / 'brief.md'
         brief.write_text('Reply with the fixture marker. Do not use tools.')
@@ -448,7 +478,9 @@ class GrokBotTests(unittest.TestCase):
                    ROUTER_LEDGER=str(self.root / 'ledger.jsonl'),
                    ROUTER_CAPACITY=str(self.root / 'capacity.json'),
                    DOT2API_BASE_URL='http://127.0.0.1:1',
-                   PASEO_AGENT_ID='fixture-parent')
+                   # The fixture fleet declares the Grok pool; discovery reads Grok's meter from this cache.
+                   ROUTER_ACCOUNTS_FILE=str(allocator.reference_fleet_path()), ROUTER_USAGE_CACHE=str(usage),
+                   HOME=str(self.root), ROUTER_DISABLE_LIVE_SCORER='1', PASEO_AGENT_ID='fixture-parent')
         script = '''
 import json, sys
 from pathlib import Path
@@ -456,17 +488,32 @@ from unittest.mock import patch
 sys.path.insert(0, sys.argv.pop(1))
 import route_judge
 import run_grok_bot as runner
+import provider_inventory as inventory
+fake_cli = Path(sys.argv.pop(1))
+real_which = runner.shutil.which
+def fixture_which(name, *args, **kwargs):
+    return 'fixture-node' if name == 'node' else real_which(name, *args, **kwargs)
+
 def accept(text, parent, task):
     return {'provider': 'grok-bot', 'task_id': 'a' * 32, 'state': 'accepted',
             'delivery': 'accepted', 'message_id': 'fixture-message', 'mocked_send': True}
 with patch.object(runner, 'submit', side_effect=accept), patch.object(
+        inventory, 'GROK_BOT_CLI', fake_cli), patch.object(runner.shutil, 'which', side_effect=fixture_which), patch.object(
         route_judge.dispatch_flow, 'launch', side_effect=AssertionError('unexpected external provider launch')):
     raise SystemExit(route_judge.main())
 '''
-        command = [sys.executable, '-X', 'utf8', '-c', script, str(Path(roll.__file__).parent),
+        fake_cli = self.root / 'gbot.mjs'
+        fake_cli.touch()
+        command = [sys.executable, '-X', 'utf8', '-c', script, str(Path(roll.__file__).parent), str(fake_cli),
                    'roll', '--brief', str(brief), '--hours', '0.02', '--provider', 'grok-bot',
                    '--account', 'grok-bot', '--model', 'grok-bot', '--basis', 'Fixture explicit Bot request',
                    '--usage-cache', str(usage), '--wait', '0']
+        dry = subprocess.run(command + ['--dry-run'], capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
+        self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+        result = json.loads(dry.stdout)
+        self.assertEqual(result['dispatch_mode'], 'dry_run')
+        self.assertEqual(result['route']['bundle']['provider'], 'grok-bot')
+        self.assertFalse((runner.STATE / 'tasks').exists())
         proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         result = json.loads(proc.stdout)
@@ -509,21 +556,22 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
                                       encoding='utf-8', env=env, timeout=30)
                 self.assertNotIn('mocked_send', proc.stdout)
                 self.assertFalse(json.loads(proc.stdout)['launched'])
-        # A native trial need not report a reset. Automatic and explicit record
-        # admission must agree; the real transport remains mocked throughout.
+        # Shared Grok admission agrees for automatic and explicit record paths.
+        # The real transport remains mocked throughout.
         for used, stale, blocked in ((100, False, True), (20, False, False),
                                      (100, True, False), (None, False, False)):
-            usage.write_text(json.dumps({'providers': {'grok-bot': {
+            usage.write_text(json.dumps({'providers': {'grok': {
                 'available': True, 'stale': stale, 'fetched_at': datetime.now(timezone.utc).isoformat(),
-                'windows': [{'id': 'trial', 'used_pct': used, 'resets_at': None}]}}}))
+                'windows': [{'id': 'credits', 'used_pct': used,
+                             'resets_at': (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()}]}}}))
             for entry in (automatic, command):
                 with self.subTest(explicit=entry is command, used=used, stale=stale):
                     proc = subprocess.run(entry, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
-                    if blocked:
+                    if blocked or (stale and entry is automatic):
                         self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                         self.assertNotIn('mocked_send', proc.stdout)
                         if entry is command:
-                            self.assertIn('trial', proc.stdout)
+                            self.assertIn('credits', proc.stdout)
                     else:
                         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                         self.assertTrue(json.loads(proc.stdout)['worker']['mocked_send'])
@@ -551,29 +599,7 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
         self.assertIn(str(host_policy), blocked['next'])
         self.assertNotIn('mocked_send', proc.stdout)
 
-    @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'Pinned artifact installation and Node required')
-    def test_actual_roll_explicit_override_dry_run_with_isolated_configuration(self):
-        brief = self.root / 'brief.md'
-        brief.write_text('Reply with the fixture marker. Do not use tools.')
-        host_policy = self.root / 'host-policy.json'
-        host_policy.write_text(json.dumps({'allowed_accounts': ['grok-bot']}))
-        usage = self.root / 'usage.json'
-        usage.write_text('{"providers": {}}')
-        env = {key: value for key, value in runner.os.environ.items()
-               if key.upper() in ('PATH', 'SYSTEMROOT', 'TEMP', 'TMP')}
-        env.update(USERPROFILE=str(self.root), ROUTER_STATE_DIR=str(self.root),
-                   ROUTER_PROVIDER_HOME=str(self.root), PASEO_HOME=str(self.root / 'paseo'),
-                   ROUTER_HOST_POLICY=str(host_policy), ROUTER_OVERRIDES=str(self.root / 'overrides.json'))
-        command = [sys.executable, '-X', 'utf8', str(Path(roll.__file__).with_name('route_judge.py')),
-                   'roll', '--brief', str(brief), '--hours', '0.1', '--provider', 'grok-bot',
-                   '--account', 'grok-bot', '--model', 'grok-bot', '--basis', 'Fixture explicit Bot request',
-                   '--usage-cache', str(usage), '--dry-run']
-        proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        result = json.loads(proc.stdout)
-        self.assertEqual(result['dispatch_mode'], 'dry_run')
-        self.assertEqual(result['route']['bundle']['provider'], 'grok-bot')
-        self.assertFalse((runner.STATE / 'tasks').exists())
+
 
     @unittest.skipUnless(runner.CLI.is_file() and runner.shutil.which('node'), 'Pinned artifact installation and Node required')
     def test_pinned_upstream_cli_against_loopback_gateway(self):

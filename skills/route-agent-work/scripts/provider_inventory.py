@@ -23,6 +23,59 @@ MAX_BYTES = 5 * 1024 * 1024
 GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/runtime/bin/gbot.mjs'
 
 
+PLAN_TEMPLATES = Path(__file__).resolve().parents[1] / 'references/plan-templates.json'
+POOL_KEYS = ('windows', 'burn_pct_per_worker_hour', 'capacity_usd', 'capacity_change', 'observed', 'expires_at')
+
+
+def quota_sources(accounts):
+    """Accounts that draw on another account's quota, as declared in the account document.
+
+    Either a top-level `quota_sources` map ({account: source}) or a per-account `quota_source`.
+    Nothing is pooled by default: two products only share a pool when the user's config says so.
+    """
+    accounts = obj(accounts)
+    declared = {k: v for k, v in obj(accounts.get('quota_sources')).items()}
+    for name, spec in obj(accounts.get('accounts')).items():
+        if isinstance(spec, dict) and 'quota_source' in spec:
+            declared[name] = spec['quota_source']
+    return {name: source for name, source in declared.items()
+            if isinstance(name, str) and isinstance(source, str) and source and source != name}
+
+
+def quota_source(account, accounts=None):
+    return quota_sources(accounts).get(account, account) if accounts else account
+
+
+def apply_shared_quota(accounts):
+    """A pooled account mirrors its source's quota state; execution settings stay its own."""
+    specs = accounts['accounts']
+    for name, source_name in quota_sources(accounts).items():
+        if name not in specs or source_name not in specs:
+            continue
+        bot, source = specs[name], specs[source_name]
+        bot['quota_source'] = source_name
+        for key in POOL_KEYS:
+            if key in source:
+                bot[key] = copy.deepcopy(source[key])
+            else:
+                bot.pop(key, None)
+        # An unread source meter is unknown, not free, for the account drawing on it.
+        bot.pop('unmetered', None)
+        bot.pop('unlimited', None)
+
+
+def plan_defaults(accounts, family, plan):
+    """Quota template for a subscription plan, independent of any configured account instance.
+
+    The account document's `plan_templates` overrides the shipped references/plan-templates.json
+    per family and plan.
+    """
+    shipped, _ = read_json(PLAN_TEMPLATES)
+    configured = obj(obj(obj(accounts).get('plan_templates')).get(family)).get(plan)
+    template = configured if isinstance(configured, dict) else obj(obj(shipped.get(family)).get(plan))
+    return copy.deepcopy(template) or None
+
+
 def digest(*values):
     return hashlib.sha256('\0'.join(str(v or '') for v in values).encode()).hexdigest()
 
@@ -346,6 +399,36 @@ def apply_removals(result, previous):
     result['removed'] = list(kept.values())
 
 
+def consult_home(home, environ):
+    """The ChatGPT Web bridge profile the consultation client uses: PRO_CONSULT_HOME, else the default folder."""
+    value = str(environ.get('PRO_CONSULT_HOME') or '').strip()
+    return Path(os.path.expandvars(value)).expanduser() if value else home / '.codex-chatgpt-web-consult'
+
+
+def dot_configuration(home, environ):
+    """Dot is configured by DOT2API_BASE_URL plus DOT2API_API_KEY, or a client.json with both values."""
+    if str(environ.get('DOT2API_BASE_URL') or '').strip() and str(environ.get('DOT2API_API_KEY') or '').strip():
+        return 'ready'
+    config, error = read_json(home / '.dot2api/client.json')
+    if error:
+        return 'missing_configuration' if error == 'missing' else 'invalid_configuration'
+    base, key = config.get('base_url'), config.get('api_key')
+    valid = (isinstance(base, str) and base.strip().startswith(('http://', 'https://'))
+             and isinstance(key, str) and bool(key.strip()))
+    return 'ready' if valid else 'invalid_configuration'
+
+
+def consult_configuration(web_home):
+    """The same local checks the consultation client applies before it contacts the bridge."""
+    config, error = read_json(web_home / 'config.json')
+    if error:
+        return 'missing_configuration' if error == 'missing' else 'invalid_configuration'
+    valid = (config.get('mode') == 'browser-only' and config.get('browserInteractionMode') == 'automatic'
+             and config.get('host') == '127.0.0.1' and isinstance(config.get('port'), int)
+             and not isinstance(config.get('port'), bool) and config.get('proAvailable') is True)
+    return 'ready' if valid else 'invalid_configuration'
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
@@ -580,11 +663,12 @@ def discover(home=None, environ=None, now=None):
                     **({'cwd_regex': pspec['cwd_regex']} if pspec.get('cwd_regex') else {}),
                 }
                 result['launchers'][pname] = {'family': pfamily, 'status': pstatus}
-    for name, config_path in (('dot', home / '.dot2api/client.json'),
-                              ('chatgpt-web', home / '.codex-chatgpt-web-consult/config.json')):
-        _, error = read_json(config_path)
-        result['accounts'][name] = {'family': name, 'provider': name, 'sources': ['native'],
-                                    'status': 'ready' if error is None else 'missing_configuration'}
+    # Configuration validity only; whether the local service answers is checked at dispatch.
+    web_home = consult_home(home, environ)
+    result['source_paths']['chatgpt-web'] = str(web_home)
+    for name, status in (('dot', dot_configuration(home, environ)),
+                         ('chatgpt-web', consult_configuration(web_home))):
+        result['accounts'][name] = {'family': name, 'provider': name, 'sources': ['native'], 'status': status}
     # Remote external runner. No model benchmarks, inferred quota or credential reads.
     bot_config, bot_error = read_json(state_dir / 'grok-bot/config.json')
     bot_configured = bot_error is None and isinstance(bot_config.get('bot_id'), str) and bool(bot_config['bot_id'].strip())
@@ -670,6 +754,21 @@ def launcher_family(provider):
         return provider
     row = current().get('launchers', {}).get(provider) or {}
     return row.get('family') if row.get('status') == 'ready' else None
+
+
+def account_family(account, accounts=None, inventory=None):
+    """Resolve account type from discovery or its explicit bundle specification, never its name."""
+    if inventory is None:
+        inventory = (accounts or {}).get('_discovery')
+    if inventory is None:
+        inventory = current()
+    row = obj(obj(inventory.get('accounts')).get(account))
+    spec = obj(obj((accounts or {}).get('accounts')).get(account))
+    if row.get('family') or spec.get('family'):
+        return row.get('family') or spec['family']
+    families = {b.get('harness') or b.get('provider') for b in obj(spec.get('bundles')).values()
+                if isinstance(b, dict)} - {None}
+    return next(iter(families)) if len(families) == 1 else None
 
 
 def configured_plan(family, label):
@@ -793,7 +892,8 @@ def apply(accounts, inventory=None):
     templates = copy.deepcopy(specs)
     if inventory.get('accounts'):
         for name in list(specs):
-            if name.startswith(('claude-', 'codex-')):
+            family = account_family(name, accounts, inventory)
+            if family in ('claude', 'codex') and name != family:
                 row = inventory['accounts'].get(name)
                 if not row or row.get('status') == 'missing_credentials':
                     specs.pop(name, None)
@@ -839,8 +939,7 @@ def apply(accounts, inventory=None):
                 })
             elif family == 'grok-bot':
                 specs[name] = {'plan': 'unknown', 'billing': 'unknown',
-                    'windows': {'weekly': {'hours': 168, 'launch_min_remaining_pct': 5},
-                                'trial': {'launch_min_remaining_pct': 5}}, 'bundles': {
+                    'windows': {}, 'bundles': {
                     'grok_bot': {'provider': name, 'harness': 'grok-bot', 'model': 'grok-bot'},
                 }}
             elif family in ('claude', 'codex') and family in templates:
@@ -888,9 +987,7 @@ def apply(accounts, inventory=None):
         if plan:
             previous_plan = configured_plan(family, spec.get('plan'))
             spec['plan'] = plan
-            template = ((templates.get('claude-2') or templates.get('claude')) if family == 'claude' and plan == 'pro' else
-                        templates.get('claude') if family == 'claude' and plan in ('max5', 'max20') else
-                        templates.get('codex') if family == 'codex' and plan == 'pro' else None)
+            template = plan_defaults(accounts, family, plan)
             if previous_plan == plan:
                 pass  # same named plan can have account-specific promotional capacity
             elif template:
@@ -899,23 +996,9 @@ def apply(accounts, inventory=None):
                         spec[key] = copy.deepcopy(template[key])
                     else:
                         spec.pop(key, None)
-                if family == 'claude' and plan == 'max5':
-                    spec['capacity_usd'] = {'seven_day': 595, 'five_hour': 94, 'weekly_fable': 298}
-                    spec['burn_pct_per_worker_hour'] = {'seven_day': 1.08, 'weekly_fable': 1.08}
-                    spec.pop('capacity_change', None)
             elif family in ('claude', 'codex'):
                 for key in ('capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour'):
                     spec.pop(key, None)
-            if family == 'claude' and plan == 'pro' and name != 'claude':
-                has_max_peer = any(
-                    other != name and r.get('family') == 'claude' and r.get('status') == 'ready'
-                    and configured_plan('claude', r.get('plan')) in ('max5', 'max20')
-                    for other, r in inventory['accounts'].items()
-                )
-                if has_max_peer:
-                    for b in spec.get('bundles', {}).values():
-                        if b.get('model') == 'claude-opus-5-5' and not b.get('disabled'):
-                            b['disabled'] = f'{name} is a Claude Pro account ($156/week); Opus is reserved for the Max account'
         if row.get('billing') and row['billing'] != 'unknown':
             spec['billing'] = row['billing']
         if family in ('claude', 'codex') and (not plan or row.get('billing') == 'metered'):
@@ -944,6 +1027,7 @@ def apply(accounts, inventory=None):
                 specs[owner]['bundles'][bid] = {**bundle, 'provider': bundle.get('provider', name)}
             specs[name]['bundles'] = {}
             specs[name]['quota_account'] = owner
+    apply_shared_quota(accounts)
     return accounts
 
 
@@ -965,4 +1049,9 @@ def merge_usage(usage, accounts, now, names=None):
                 and row.get('usage_binding') == 'matches' and source.get('status') == 'fresh'
                 and target.get('status') != 'fresh'):
             result.setdefault('accounts', {})[owner] = copy.deepcopy(source)
+    rows = result.setdefault('accounts', {})
+    for name, source in quota_sources(accounts).items():
+        if names is None or name in names:
+            rows[name] = {**copy.deepcopy(rows.get(source) or {
+                'status': 'unknown', 'reason': 'account_missing', 'windows': []}), 'quota_source': source}
     return result

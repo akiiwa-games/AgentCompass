@@ -101,23 +101,34 @@ class DiscoveryTests(unittest.TestCase):
             allocator.load_accounts()
             self.assertFalse(host_policy.account_allowed(host_policy.load_policy(), 'codex-work'))
 
-    def test_grok_local_sources_and_cache_only_availability(self):
-        cached = {'providers': {'grok': {'plan_label': 'SuperGrok'}}}
-        self.write('.usage-float/usage-cache.json', cached)
-        self.assertEqual(self.discover()['accounts']['grok']['status'], 'missing_client')
-        (self.home / '.grok').mkdir()
-        row = self.discover()['accounts']['grok']
-        self.assertEqual((row['status'], row['family'], row['billing'], row['plan']),
-                         ('ready', 'grok', 'subscription', 'SuperGrok'))
-        self.assertIn('native', row['sources'])
-        self.paseo({'grok': {'extends': 'acp', 'enabled': False}})
-        self.assertEqual(self.discover()['accounts']['grok']['status'], 'disabled')
-        self.paseo({'grok': {'extends': 'acp', 'enabled': True}})
-        self.assertEqual(self.discover()['launchers']['grok'], {'family': 'grok', 'status': 'ready'})
-
-    def test_grok_native_cli_without_configuration_or_cache(self):
-        with patch.object(inventory.shutil, 'which', side_effect=lambda name, **kwargs: 'grok.exe' if name == 'grok' else None):
-            self.assertEqual(self.discover()['accounts']['grok']['status'], 'ready')
+    def test_grok_requires_live_client_evidence_and_honors_launcher_switch(self):
+        parent = self.home
+        for label, cached, native, enabled, executable, status in (
+            ('cache only', True, False, None, False, 'missing_client'),
+            ('native and cache', True, True, None, False, 'ready'),
+            ('disabled launcher', True, True, False, False, 'disabled'),
+            ('enabled launcher', True, True, True, False, 'ready'),
+            ('native executable', False, False, None, True, 'ready'),
+        ):
+            with self.subTest(case=label):
+                self.home = parent / label
+                self.home.mkdir()
+                if cached:
+                    self.write('.usage-float/usage-cache.json', {'providers': {'grok': {'plan_label': 'SuperGrok'}}})
+                if native:
+                    (self.home / '.grok').mkdir()
+                if enabled is not None:
+                    self.paseo({'grok': {'extends': 'acp', 'enabled': enabled}})
+                with patch.object(inventory.shutil, 'which', side_effect=lambda name, **kwargs:
+                                  'grok.exe' if executable and name == 'grok' else None):
+                    snapshot = self.discover()
+                row = snapshot['accounts']['grok']
+                self.assertEqual(row['status'], status)
+                if label == 'native and cache':
+                    self.assertEqual((row['family'], row['billing'], row['plan']), ('grok', 'subscription', 'SuperGrok'))
+                    self.assertIn('native', row['sources'])
+                if enabled:
+                    self.assertEqual(snapshot['launchers']['grok'], {'family': 'grok', 'status': 'ready'})
 
     def test_active_grokbuild_official_binds_health_and_disable(self):
         dbpath = self.cc([('official', 'grokbuild', 'Grok Official', {}, 1)])
@@ -226,7 +237,8 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_route_manager_plugin_switch_pauses_dot_and_chatgpt_web_until_reenabled(self):
         self.write('.dot2api/client.json', {'base_url': 'http://127.0.0.1:8788', 'api_key': 'SECRET'})
-        self.write('.codex-chatgpt-web-consult/config.json', {'mode': 'browser-only', 'host': '127.0.0.1'})
+        self.write('.codex-chatgpt-web-consult/config.json', {'mode': 'browser-only', 'browserInteractionMode': 'automatic',
+                                                             'host': '127.0.0.1', 'port': 8790, 'proAvailable': True})
         accounts = self.discover()['accounts']
         self.assertEqual((accounts['dot']['status'], accounts['chatgpt-web']['status']), ('ready', 'ready'))
         for plugin_id, account in (('dot2api', 'dot'), ('chatgpt-web', 'chatgpt-web')):
@@ -279,9 +291,6 @@ class DiscoveryTests(unittest.TestCase):
         self.paseo({'claude-work': {'extends': 'claude', 'enabled': False,
                     'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-work')}}})
         self.assertEqual(self.discover()['accounts']['claude-work']['status'], 'disabled')
-
-
-
 
     def test_same_subscription_has_one_quota_owner_across_live_launchers(self):
         self.native_codex('codex-2', 'account-A')
@@ -385,9 +394,6 @@ class DiscoveryTests(unittest.TestCase):
             'credential_key': fingerprint, 'plan_label': 'pro'}}})
         row = self.discover()['accounts']['claude']
         self.assertEqual((row['usage_binding'], row['billing'], row['plan']), ('matches', 'subscription', 'pro'))
-
-
-
 
     def test_local_magpie_pause_revoke_restore_and_secret_free_snapshot(self):
         login = {'id': 'saved-A', 'agent': 'codex', 'user': 'private@example.test',
@@ -578,7 +584,8 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(magpie_spec['verified'])
         self.assertEqual(magpie_spec['capacity_usd']['seven_day'], 156)
         self.assertEqual(magpie_spec['windows']['five_hour']['launch_min_remaining_pct'], 25)
-        self.assertIn('disabled', magpie_spec['bundles']['claude-magpie__opus55_high'])
+        # No implicit model reservation between plans; bundle switches are the user's.
+        self.assertNotIn('disabled', magpie_spec['bundles']['claude-magpie__opus55_high'])
         self.assertNotIn('disabled', magpie_spec['bundles']['claude-magpie__sonnet55_high'])
         override_path = self.write('.route-manager/accounts-override.json', {
             'accounts': {
@@ -594,7 +601,7 @@ class DiscoveryTests(unittest.TestCase):
             merged = allocator.load_accounts()
             self.assertEqual(
                 merged['accounts']['claude-magpie']['bundles']['claude-magpie__sonnet55_high'].get('disabled'),
-                'user disabled',
+                True,
             )
 
     def test_pi_and_litellm_proxy_auto_enrolled_into_router(self):
@@ -667,19 +674,20 @@ class IsolationRecipeTests(unittest.TestCase):
         (self.real / '.codex-2').mkdir()
         (self.real / '.codex-2/auth.json').write_text(json.dumps({'tokens': {'account_id': 'X', 'access_token': 'SECRET'}}), encoding='utf-8')
 
-    def test_inherited_paseo_home_reaches_the_real_accounts(self):
-        leaked = inventory.discover(self.sandbox, {'PATH': '', 'PASEO_HOME': str(self.real / '.paseo')})
-        self.assertEqual(leaked['accounts']['codex-2']['status'], 'ready')
-        self.assertEqual(Path(leaked['accounts']['codex-2']['home']), self.real / '.codex-2')
-
-    def test_explicit_environ_isolates_the_new_user(self):
-        clean = inventory.discover(self.sandbox, {'PATH': ''})
-        self.assertNotIn('codex-2', clean['accounts'])
-        self.assertFalse([n for n, row in clean['accounts'].items() if row['status'] == 'ready'])
-
-    def test_unnamed_slots_follow_inherited_config_dirs(self):
-        leaked = inventory.discover(self.sandbox, {'PATH': '', 'CODEX_HOME': str(self.real / '.codex-2')})
-        self.assertEqual(leaked['accounts']['codex']['status'], 'ready')
+    def test_discovery_uses_only_the_explicit_environment(self):
+        for variables, expected_account in (
+            ({'PASEO_HOME': str(self.real / '.paseo')}, 'codex-2'),
+            ({'CODEX_HOME': str(self.real / '.codex-2')}, 'codex'),
+            ({}, None),
+        ):
+            with self.subTest(variables=variables):
+                snapshot = inventory.discover(self.sandbox, {'PATH': '', **variables})
+                if expected_account:
+                    self.assertEqual(snapshot['accounts'][expected_account]['status'], 'ready')
+                    self.assertEqual(Path(snapshot['accounts'][expected_account]['home']), self.real / '.codex-2')
+                else:
+                    self.assertNotIn('codex-2', snapshot['accounts'])
+                    self.assertFalse([n for n, row in snapshot['accounts'].items() if row['status'] == 'ready'])
 
     def test_shipped_fleet_gives_a_new_user_no_candidates(self):
         """The shipped accounts.json is an unverified template; discovery or a saved fleet makes an account routable."""

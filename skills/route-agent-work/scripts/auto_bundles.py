@@ -25,8 +25,6 @@ EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 EFFORT_SUFFIX = re.compile(r'^(?P<base>.+?)-(?P<effort>' + '|'.join(EFFORTS) + r')$')
 NON_CHAT = re.compile(r'embed|image|imagen|dall-?e|tts|speech|audio|whisper|transcri|rerank|moderation|veo|video', re.I)
 SMALL_NAME = re.compile(r'(?:^|[-_.])(flash|lite|mini|nano|air|small|tiny|haiku|luna)(?:$|[-_.])', re.I)
-# Older generations kept selectable but off until the user opts in (user decision 2026-10-28).
-LEGACY_DEFAULT_OFF = frozenset({'claude-haiku-4-5'})
 FAMILY_TIER_SHRINK = 0.3
 FAMILY_VECTOR_SHRINK = 0.9
 SMALL_DEFAULT = {
@@ -262,7 +260,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                 # the model family (other efforts, older/newer generations), that curation stands; extras wait too.
                 default_disabled = (metered or profile['source'] != 'calibrated' or bool(spec.get('unmetered') or spec.get('unlimited'))
                                     or (harness, model_family(key)) in manual_families
-                                    or key in LEGACY_DEFAULT_OFF)
+                                    or ((spec.get('model_defaults') or {}).get(key) or {}).get('disabled', False))
                 bundle = {
                     'provider': provider, 'harness': harness, 'model': model_name, 'launch_model': raw,
                     **({'effort': effort} if effort else {}),

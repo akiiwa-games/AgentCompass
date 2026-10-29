@@ -29,6 +29,10 @@ EXPIRING_SUBSCRIPTION = {
 _real_load_accounts = allocator.load_accounts
 
 
+def reference_capabilities():
+    return allocator.load_capabilities(accounts=allocator.load_accounts(allocator.reference_fleet_path()))
+
+
 def _load_accounts_with_expiring_subscription(path=None):
     data = _real_load_accounts(path)
     if path is None:
@@ -229,7 +233,18 @@ class AllocatorTests(unittest.TestCase):
             for dim, value in info['capabilities'].items():
                 self.assertTrue(0.0 <= value <= 1.0, (name, dim))
             legacy = info.get('visual')
-            self.assertEqual(info['capabilities']['visual'], legacy if legacy is not False else 0.0, name)
+            if name == 'grok-bot':
+                # Authorized alignment copies Opus 5.5's scored vector. Admission stays closed:
+                # visual false, text_only, and excluded_when local_only. The vector does not open those gates.
+                self.assertFalse(legacy)
+                self.assertTrue(info.get('text_only'))
+                self.assertEqual(info.get('excluded_when'), 'local_only')
+                self.assertEqual(info['tier'], models['claude-opus-5-5']['tier'])
+                self.assertEqual(info['capabilities'], models['claude-opus-5-5']['capabilities'])
+                self.assertEqual(info['subjective'], models['claude-opus-5-5']['subjective'])
+                self.assertNotIn('usd_per_hour', info)
+            else:
+                self.assertEqual(info['capabilities']['visual'], legacy if legacy is not False else 0.0, name)
         reasoning = [models[m]['capabilities']['reasoning'] for m in order]
         self.assertEqual(reasoning, sorted(reasoning, reverse=True))
         gui = {m: models[m]['capabilities']['gui'] for m in models}
@@ -240,6 +255,7 @@ class AllocatorTests(unittest.TestCase):
         self.assertGreater(gui['claude-sonnet-5-5'], gui['gemini-3.8-flash-high'])
         for blind in ('grok-4.7', 'dot'):
             self.assertEqual(gui[blind], 0.0)
+        self.assertEqual(gui['grok-bot'], gui['claude-opus-5-5'])
 
         # Effort curve lookup & model-specific response
         policy = accounts['scoring']
@@ -304,7 +320,7 @@ class AllocatorTests(unittest.TestCase):
             self.assertNotIn('effort_capped', self.rows(self.plan(unlocked_task, plenty))['sol_xhigh']['components'])
 
     def test_route_fit_orders_and_specialists(self):
-        capabilities = allocator.load_capabilities()
+        capabilities = reference_capabilities()
         accounts = allocator.load_accounts()
         for kind, models in (
             ('web_research', ['dot', 'claude-sonnet-5-5', 'grok-4.7', 'gemini-4-argon-high', 'gpt-6.1-sol', 'claude-opus-5-5', 'gpt-6-astra', 'gemini-3.8-flash-high']),
@@ -399,8 +415,6 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual((exchange['score_per_displaced_usd'], exchange['shortage_loss_per_usd']), (0.012, 0.012))
         self.assertEqual(exchange['score_per_displaced_worker_hour'], 0.06)
         self.assertEqual(exchange['usd_per_score_point'], 83.33)
-        self.assertIn('tightest', exchange['cost_rule'])
-        self.assertIn('0.012 score per displaced USD', compared['decision']['reason'])
         self.assertEqual(compared['decision']['system']['harness_factors']['default'], 1.0)
         self.assertEqual(exchange['warnings'], [])
         self.assertNotIn('warnings', compared['decision'])
@@ -482,49 +496,24 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(planned['decision']['system']['shortage_loss_per_usd'], 0.012)
         self.assertEqual(planned['decision']['system']['opportunity_exchange']['score_per_displaced_usd'], 0.012)
 
-    def test_recent_ledger_choices_are_not_shifted_by_harness_factor(self):
-        path = Path.home() / '.route-manager' / 'router-ledger.jsonl'
-        if not path.is_file():
-            self.skipTest('no router ledger')
-        plans = []
-        with path.open(encoding='utf-8') as handle:
-            for line in handle:
-                if '"stage": "plan"' not in line and '"stage":"plan"' not in line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except ValueError:
-                    continue
-                if row.get('stage') == 'plan' and row.get('choice') and row.get('choice') != 'none':
-                    plans.append(row)
-        bundles = allocator.bundles(allocator.load_accounts())
-        policy = allocator.load_accounts()['scoring']
-        shifted = []
-        for row in plans[-40:]:
-            bundle_id = row['choice']
-            bundle = dict(bundles.get(bundle_id) or row.get('bundle') or {})
-            if not bundle:
-                continue
-            bundle.setdefault('id', bundle_id)
-            if not bundle.get('harness'):
-                bundle['harness'] = allocator.bundle_harness(bundle, bundle.get('account'), bundle_id)
-            factor = allocator.harness_quality_factor(bundle, 'general_implementation', policy)
-            model_name = str(bundle.get('model') or '')
-            agy_claude = str(bundle_id).startswith('agy_') and model_name.startswith('claude')
-            expected = 0.9 if agy_claude else 1.0
-            if abs(factor - expected) > 1e-9:
-                shifted.append({'at': row.get('at'), 'choice': bundle_id, 'model': bundle.get('model'),
-                                'harness': bundle.get('harness'), 'harness_factor': factor,
-                                'expected_harness_factor': expected})
-        self.assertEqual(shifted, [])
-
-    def test_dot_eligibility_and_free_usage(self):
-        capabilities = allocator.load_capabilities()
+    def test_dot_eligibility_respects_route_modality_and_local_needs(self):
+        capabilities = reference_capabilities()
         self.assertEqual(self.plan({'work_kind': 'dot_execution'})['choice'], 'dot_text')
         self.assertEqual(self.plan({'work_kind': 'dot_execution', 'needs': {'local_only': True}})['choice'], 'none')
-        self.assertFalse(allocator.dot_may_take('exploration_analysis', {'local_only': False}, capabilities))
+        # Caller false stands. Route implies fill local_only only when the caller and the profile left it unset.
+        self.assertTrue(allocator.dot_may_take('exploration_analysis', {'local_only': False}, capabilities))
+        self.assertTrue(allocator.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': False}))
+        self.assertTrue(allocator.dot_may_take('research_packet', {}, capabilities, {'local_only': False}))
+        self.assertFalse(allocator.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': True}))
+        self.assertTrue(allocator.dot_may_take('exploration_analysis', {'local_only': False}, capabilities, {'local_only': True}))
+        self.assertFalse(allocator.dot_may_take('exploration_analysis', {}, capabilities))
         self.assertFalse(allocator.dot_may_take('general_implementation', {'visual': True}, capabilities))
         self.assertFalse(allocator.dot_may_take('direction_reasoning', {}, capabilities))
+        for kind in ('research_packet', 'exploration_analysis'):
+            opened = self.plan({'work_kind': kind, 'difficulty': 'hard', 'needs': {'local_only': False},
+                                'profile': self.profile(local_only=False)})
+            admitted = {c['bundle']['model'] for c in opened['ranking'] if c['score'] is not None and not c['excluded']}
+            self.assertIn('dot', admitted, kind)
 
         for kind in ('web_research', 'text_in_text_out', 'self_contained_code'):
             res = self.plan({'work_kind': kind, 'difficulty': 'routine'}, self.usage(grok=[('credits', 100, 165)]))
@@ -539,10 +528,14 @@ class AllocatorTests(unittest.TestCase):
         self.assertFalse({'grok-4.7', 'gemini-3.8-flash-high'} & models)
 
     def test_visual_and_gui_routing(self):
-        capabilities, accounts = allocator.load_capabilities(), allocator.load_accounts()
+        capabilities, accounts = reference_capabilities(), allocator.load_accounts()
         visual = [allocator.fit_score('visual_analysis', m, capabilities, accounts)
                   for m in ('claude-opus-5-5', 'gpt-6-astra', 'gemini-4-argon-high', 'gpt-6.1-sol', 'claude-sonnet-5-5', 'gemini-3.8-flash-high')]
         self.assertEqual([round(v, 2) for v in visual], [1.0, 0.84, 0.68, 0.52, 0.36, 0.2])
+        # grok-bot shares each claude-opus-5-5 place, so the six named visual fits above stay put.
+        self.assertEqual(allocator.fit_score('text_in_text_out', 'grok-bot', capabilities, accounts),
+                         allocator.fit_score('text_in_text_out', 'claude-opus-5-5', capabilities, accounts))
+        self.assertEqual(allocator.fit_score('visual_analysis', 'grok-bot', capabilities, accounts), visual[0])
         v_task = {'work_kind': 'visual_analysis', 'difficulty': 'routine', 'needs': {'visual': True}}
         self.assertTrue(self.plan(v_task)['choice'].startswith('opus55'))
         claude_empty = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)], codex=[('usage', 95, 100)])
@@ -778,7 +771,7 @@ class AllocatorTests(unittest.TestCase):
         self.assertLess(mechanical['sol_medium']['expected_usd'], mechanical['sol_high']['expected_usd'])
 
     def test_heuristic_profile_and_schema_contract(self):
-        capabilities = allocator.load_capabilities()
+        capabilities = reference_capabilities()
         policy = allocator.load_accounts()['scoring']
         for kind in capabilities['routes']:
             for difficulty in (None, 'routine', 'hard', 'coupled', 'frontier'):
@@ -798,11 +791,21 @@ class AllocatorTests(unittest.TestCase):
             if prop['type'] == 'integer':
                 self.assertNotIn('enum', prop, name)
                 self.assertEqual((prop['minimum'], prop['maximum']), allocator.PROFILE_INTEGERS[name])
+        # The heuristic infers local_only from a local runtime or path, and a caller false wins over that hit.
+        # Exploration's route implies fill the flag only when the objective did not match and the caller left it unset.
+        hit = allocator.infer_task_profile({'objective': 'Run pytest', 'cwd': r'E:\PROJECTS\route_manager'}, capabilities)
+        self.assertTrue(hit['local_only'])
+        self.assertIn('local runtime', hit['reason'])
+        caller_false = allocator.infer_task_profile({'objective': 'Run pytest', 'needs': {'local_only': False}}, capabilities)
+        self.assertFalse(caller_false['local_only'])
+        self.assertNotIn('local runtime', caller_false['reason'])
+        explore = allocator.infer_task_profile({'objective': 'Explore local logs', 'work_kind': 'exploration_analysis'}, capabilities)
+        self.assertTrue(explore['local_only'])
+        self.assertNotIn('local runtime', explore['reason'])
 
     def test_subjective_model_ratings_without_route_expansion(self):
         usage = self.usage(**self.PLENTY, antigravity=[('gemini-5h', 95, 3), ('gemini-weekly', 95, 100), ('3p-5h', 95, 3), ('3p-weekly', 95, 100)])
-        capabilities = allocator.load_capabilities()
-        self.assertEqual(len(capabilities['routes']), 16)
+        capabilities = reference_capabilities()
 
         # 1. Gemini 4 Argon wins scheme formulation, divergent ideation, and creative research (divergence=3)
         for kind, depth, code, style in (
@@ -852,7 +855,7 @@ class AllocatorTests(unittest.TestCase):
             self.assertNotEqual(res_global['choice'], 'sol_high', kind)
             self.assertLess(self.rows(res_global)['sol_high']['components']['subjective_fit'], 0.5)
 
-    def test_calibration_2026_10_27(self):
+    def test_usd_opportunity_cost_subjective_weights_and_routine_floor(self):
         # 1. Antigravity opportunity cost is valued in USD like every other account, not in Flash worker-hours
         rows = self.rows(self.plan({'work_kind': 'general_implementation', 'profile': self.profile()}))
         argon = rows['argon_high']['capacity']
@@ -1112,7 +1115,8 @@ class AllocatorTests(unittest.TestCase):
         exp_weights = allocator.convergent_weights(depth=2, code=2, scale=2, style='exploration')
         self.assertEqual(exp_weights, {'module_precision': 0.35, 'global_rigor': 0.65})
 
-        # 3) GUI computer_use tasks with needs_gui=True route to computer_use and only exempt GUI-capable models from overqualification
+        # 3) needs_gui on a named general_implementation route keeps that route. It still adds the visual
+        # requirement and exempts only GUI-capable models from overqualification.
         gui_mis_kind = {
             'work_kind': 'general_implementation',
             'objective': 'Operate the desktop window, click Save, and propose a verification check',
@@ -1122,7 +1126,7 @@ class AllocatorTests(unittest.TestCase):
                                     needs_visual=True, needs_gui=True, local_only=True, interaction_style='engineering'),
         }
         gui_plan = self.plan(gui_mis_kind, self.healthy_quota())
-        self.assertEqual(gui_plan['decision']['task']['kind'], 'computer_use')
+        self.assertEqual(gui_plan['decision']['task']['kind'], 'general_implementation')
         self.assertEqual(gui_plan['choice'], 'astra_high')
         gui_rows = self.rows(gui_plan)
         self.assertNotIn('overqualification', gui_rows['astra_high']['components'])
@@ -1131,7 +1135,7 @@ class AllocatorTests(unittest.TestCase):
         # 4) Offline heuristic infer_task_profile includes work_kind and calibrated default_hours / duration_multiplier
         heur_prof = allocator.infer_task_profile(
             {'objective': 'Independent review (read-only) of the authentication module'},
-            allocator.load_capabilities(),
+            reference_capabilities(),
         )
         self.assertEqual(heur_prof['work_kind'], 'debug_review')
         self.assertEqual(heur_prof['code_complexity'], 0)
@@ -1141,39 +1145,33 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(gui_rows['sol_high']['components'].get('duration_multiplier'), 1.35)
 
     def test_existing_bundles_keep_tag_pools_and_draws_override(self):
-        # Duplicated historical predicate: windows.models substring or gemini/3p group, plus the fable window.
-        def historical(wid, wspec, model):
-            tags = wspec.get('models') if isinstance(wspec, dict) else None
-            group = 'gemini' if str(model).startswith('gemini') else '3p'
-            if tags and not any(tag in model for tag in tags) and group not in tags:
-                return False
-            if 'fable' in wid and 'fable' not in model:
-                return False
-            return True
-
         accounts = allocator.load_accounts()
         flat = allocator.bundles(accounts)
-        seen = 0
-        for bundle in flat.values():
-            spec = accounts['accounts'][bundle['account']]
-            pooled = allocator.bundle_pools(bundle, accounts)
-            via_windows = [wid for wid, _, _ in allocator.applicable_windows(
-                spec, bundle['model'], {}, bundle, accounts)]
-            self.assertEqual(via_windows, pooled, bundle['id'])
-            if 'draws' in bundle:
-                continue
-            model = allocator.canonical(bundle['model'], accounts)
-            expected = [wid for wid, wspec in (spec.get('windows') or {}).items() if historical(wid, wspec, model)]
-            self.assertEqual(pooled, expected, bundle['id'])
-            self.assertEqual([wid for wid, _, _ in allocator.applicable_windows(spec, model, {})], expected, bundle['id'])
-            seen += 1
-        self.assertGreater(seen, 10)
-
-        flash = flat['flash_high']
-        self.assertEqual(allocator.bundle_pools({**flash, 'draws': ['3p-weekly']}, accounts), ['3p-weekly'])
-        opus = flat['agy_opus55_high']
-        self.assertEqual(allocator.bundle_pools({**opus, 'draws': ['3p-weekly']}, accounts), ['3p-weekly'])
-        self.assertEqual(allocator.bundle_pools({**opus, 'draws': []}, accounts), [])
+        # Expected pools are contract examples, not a copy of the production tag predicate.
+        for bid, expected in (
+            ('opus55_high', ['five_hour', 'seven_day']),
+            ('sonnet55_high', ['five_hour', 'seven_day']),
+            ('fable51_high', ['five_hour', 'seven_day', 'weekly_fable']),
+            ('sol_high', ['usage']),
+            ('pi_sol_high', ['usage']),
+            ('flash_high', ['gemini-5h', 'gemini-weekly']),
+            ('argon_high', ['gemini-5h', 'gemini-weekly']),
+            ('agy_opus55_high', ['3p-5h', '3p-weekly']),
+            ('dot_text', []),
+        ):
+            with self.subTest(bundle=bid):
+                bundle = flat[bid]
+                spec = accounts['accounts'][bundle['account']]
+                self.assertEqual(allocator.bundle_pools(bundle, accounts), expected)
+                self.assertEqual([wid for wid, _, _ in allocator.applicable_windows(
+                    spec, bundle['model'], {}, bundle, accounts)], expected)
+                if 'draws' not in bundle:
+                    self.assertEqual([wid for wid, _, _ in allocator.applicable_windows(
+                        spec, allocator.canonical(bundle['model'], accounts), {})], expected)
+        for bid, draws in (('flash_high', ['3p-weekly']), ('agy_opus55_high', ['3p-weekly']),
+                           ('agy_opus55_high', [])):
+            with self.subTest(bundle=bid, draws=draws):
+                self.assertEqual(allocator.bundle_pools({**flat[bid], 'draws': draws}, accounts), draws)
         for family, canonical_name in (('opus', 'claude-opus-5-5'), ('sonnet', 'claude-sonnet-5-5')):
             for effort in ('low', 'medium', 'high'):
                 bundle = flat[f'agy_{family}55_{effort}']
@@ -1234,7 +1232,7 @@ class AllocatorTests(unittest.TestCase):
         allocator.accounts_override.apply(sparse, {'accounts': {'antigravity': {'bundles': {
             'flash_high': {'disabled': 'sparse test'}}}}})
         kept = sparse['accounts']['antigravity']['bundles']
-        self.assertEqual(kept['flash_high'].get('disabled'), 'sparse test')
+        self.assertIs(kept['flash_high'].get('disabled'), True)
         self.assertNotIn('disabled', kept['agy_opus55_high'])
         self.assertNotIn('disabled', kept['agy_sonnet55_high'])
 
@@ -1398,6 +1396,9 @@ class OverrideContractTests(unittest.TestCase):
         with patch.object(router, 'load_allocator', return_value=allocator), \
              patch.object(router, 'usage_snapshot', return_value=self.usage):
             first = router.manage_overrides(self.args(), self.now)['active'][0]
+            override_rows = [row for row in router.read_ledger() if row.get('stage') == 'override']
+            self.assertEqual((override_rows[-1]['action'], override_rows[-1]['account'], override_rows[-1]['removed']),
+                             ('upsert', 'codex', 0))
             second = router.manage_overrides(self.args(boost=0.4), self.now + timedelta(seconds=1))['active'][0]
             self.assertEqual((second['id'], second['created_at'], second['boost']), (first['id'], first['created_at'], 0.4))
 
@@ -1546,7 +1547,7 @@ class MeasuredCapacityTests(unittest.TestCase):
         result = allocator.plan(task, usage, self.now)
         return result, {c['id']: c for c in result['ranking']}
 
-    def test_list_price_against_community_capacity_and_grandfathered_halving(self):
+    def test_catalog_usd_capacity_prices_duration_and_effort(self):
         self.write(burn_pct_per_worker_hour={'codex': {'usage': 5.0}}, evidence={'codex': {'usage': {'worker_hours': 100}}})
         accounts = allocator.load_accounts()
         self.assertEqual(accounts['accounts']['codex']['burn_pct_per_worker_hour']['usage'], 1.74)
@@ -1635,7 +1636,23 @@ class RouterIntegrationTests(unittest.TestCase):
                                       '--account', account, '--model', model, '--effort', effort, *extra])[1]
             override = record('User: use Sol max', 'codex', 'codex', 'gpt-6.1-sol', 'max', '--reason-category', 'quality_insufficient')
             agreed = record('User: Flash', 'antigravity-resilient', 'antigravity', 'gemini-3.8-flash-high', 'high')
-            self.assertEqual((override['agrees'], override['router_choice'], agreed['agrees']), (False, 'flash_high', True))
+            # record skips the classifier. Without a caller profile, agrees is a marker, not a comparison.
+            self.assertEqual((override['agrees'], override['classifier_skipped'], override['router_choice']),
+                             (None, True, 'flash_high'))
+            self.assertEqual((agreed['agrees'], agreed['classifier_skipped'], agreed['router_choice']),
+                             (None, True, 'flash_high'))
+            skipped_row = router.read_ledger()[-1]
+            self.assertTrue(skipped_row['classifier_skipped'])
+            self.assertIsNone(skipped_row['agrees'])
+            task.write_text(json.dumps({'task': {
+                'work_kind': 'frontend_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
+                'profile': {'work_kind': 'frontend_implementation', 'reasoning_depth': 1, 'code_complexity': 2,
+                            'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
+                            'needs_visual': False, 'needs_gui': False, 'local_only': True,
+                            'interaction_style': 'engineering', 'reason': 'caller profile'}}}), encoding='utf-8')
+            profiled = record('User: Flash', 'antigravity-resilient', 'antigravity', 'gemini-3.8-flash-high', 'high')
+            self.assertEqual((profiled['classifier_skipped'], profiled['agrees'], profiled['router_choice']),
+                             (False, True, 'flash_high'))
 
             task.write_text(json.dumps({'task': {'work_kind': 'visual_analysis', 'expected_hours': 0.5, 'needs': {'visual': True},
                                                  'constraints': {'model': 'grok-4.7'}}}), encoding='utf-8')

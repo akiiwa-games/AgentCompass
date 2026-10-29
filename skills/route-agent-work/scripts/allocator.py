@@ -11,6 +11,7 @@ import json
 from math import erf, exp, pi, sqrt
 import os
 from pathlib import Path
+import re
 import sys
 
 # Also support the path-loaded allocator and python -I entrypoints.
@@ -24,7 +25,6 @@ import cwd_policy
 from model_resolution import generic_model_spec, resolve_canonical_model
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
-HARD_ROUTE_BASIS = ('User require', 'Standing user order')   # routes with these bases restrict the model set
 WINDOW_ALIASES = {'seven_day': 'usage', 'usage-10080m': 'usage', 'usage-5h': 'five_hour', 'usage-300m': 'five_hour'}
 
 
@@ -306,17 +306,17 @@ def session_log(agent_id, home=None):
     provider, session = persistence.get('provider'), persistence.get('sessionId')
     if not provider or not session or any(c in str(session) for c in '*?[]/\\'):
         return None
-    patterns = {'codex': [f'.codex/sessions/**/rollout-*-{session}.jsonl', f'.{provider}/sessions/**/rollout-*-{session}.jsonl',
-                          f'.codex-*/sessions/**/rollout-*-{session}.jsonl',
-                          f'.codex/archived_sessions/rollout-*-{session}.jsonl', f'.{provider}/archived_sessions/rollout-*-{session}.jsonl',
-                          f'.codex-*/archived_sessions/rollout-*-{session}.jsonl'],
-                'claude': [f'.claude/projects/*/{session}.jsonl', f'.{provider}/projects/*/{session}.jsonl',
-                           f'.claude-*/projects/*/{session}.jsonl'],
-                'pi': [f'.pi/agent/sessions/**/*{session}*.jsonl']}
-    for pattern in patterns.get(provider.split('-')[0], []):
-        found = next(home.glob(pattern), None)
+    inventory = provider_inventory.discover(home=home)
+    row = (inventory.get('accounts') or {}).get(provider) or {}
+    family = row.get('family') or provider_inventory.launcher_family(provider)
+    root = Path(row['home']) if row.get('home') else home / ('.pi/agent' if family == 'pi' else '.' + str(family))
+    patterns = {'codex': [f'sessions/**/rollout-*-{session}.jsonl', f'archived_sessions/rollout-*-{session}.jsonl'],
+                'claude': [f'projects/*/{session}.jsonl'],
+                'pi': [f'sessions/**/*{session}*.jsonl']}
+    for pattern in patterns.get(family, []):
+        found = next(root.glob(pattern), None)
         if found:
-            return provider, found
+            return family, found
     return None
 
 
@@ -335,7 +335,7 @@ def session_state(agent_id, home=None):
     try:
         with open(path, encoding='utf-8', errors='ignore') as handle:
             for line in handle:
-                if provider.startswith('codex'):
+                if provider == 'codex':
                     if '"type":"compacted"' in line:
                         compactions, compacted, context = compactions + 1, compacted + (context or 0), None
                     elif '"token_count"' in line and '"last_token_usage"' in line:
@@ -343,7 +343,7 @@ def session_state(agent_id, home=None):
                         inp = usage.get('input_tokens')
                         if isinstance(inp, (int, float)) and not isinstance(inp, bool) and inp > 0:
                             context = int(inp)
-                elif provider.startswith('claude'):
+                elif provider == 'claude':
                     if '"compact_boundary"' in line:
                         meta = json.loads(line).get('compactMetadata') or {}
                         before = meta.get('preTokens')
@@ -439,6 +439,15 @@ def fleet_document_path(environ=None):
     return local if local is not None else REFERENCES / 'accounts.json'
 
 
+def configured_quota_sources(environ=None):
+    """Declared quota pools from the fleet document, without running discovery."""
+    try:
+        doc = json.loads(fleet_document_path(environ).read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError):
+        return {}
+    return provider_inventory.quota_sources(doc)
+
+
 def reference_fleet_path():
     """Checked-in fleet fixture for tests. It is not read from the user home."""
     return Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json'
@@ -446,7 +455,7 @@ def reference_fleet_path():
 
 def load_accounts(path=None):
     source = Path(path) if path is not None else fleet_document_path()
-    accounts = json.loads(source.read_text(encoding='utf-8-sig'))
+    accounts = accounts_override.normalize(json.loads(source.read_text(encoding='utf-8-sig')))
     if path is None:
         user_file = accounts_override_path()
         user_doc = None
@@ -477,7 +486,7 @@ def load_accounts(path=None):
                     if (harnesses.get(harness) or {}).get('disabled'):
                         bundle['_harness_disabled'] = True
                         bundle['_model_disabled'] = bundle.get('disabled', False)
-                        bundle['disabled'] = 'Harness disabled by user'
+                        bundle['disabled'] = True
     override = None if path else capacity_override_path()
     if override is not None:
         try:
@@ -485,13 +494,14 @@ def load_accounts(path=None):
         except (OSError, ValueError):
             measured = {}
         apply_measured(accounts, measured if isinstance(measured, dict) else {}, datetime.now(timezone.utc))
+    provider_inventory.apply_shared_quota(accounts)
     if path is None:
         try:
             accounts['_host_policy_sync'] = host_policy.sync_discovered(accounts)
         except (OSError, host_policy.HostPolicyError) as exc:
             # Discovery still reports local facts; existing policy checks retain the denial.
             accounts['_host_policy_sync'] = {'mode': 'error', 'added': [], 'error': str(exc)}
-    return accounts
+    return accounts_override.normalize(accounts)
 
 
 def apply_measured(accounts, measured, now):
@@ -647,7 +657,7 @@ def inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records
         if rec.get('state') not in ('prepared', 'launching', 'launched', 'started') or expiry is None or expiry <= now:
             continue
         bundle = rec.get('bundle') or {}
-        if bundle.get('account') != account:
+        if provider_inventory.quota_source(bundle.get('account'), accounts) != provider_inventory.quota_source(account, accounts):
             continue
         bound = dict(bundle)
         bound.setdefault('account', account)
@@ -719,8 +729,11 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
             'opportunity_cost': round(cost, 4)}
 
 
-def load_capabilities(path=None):
-    return json.loads((path or REFERENCES / 'model-capabilities.json').read_text(encoding='utf-8-sig'))
+def load_capabilities(path=None, accounts=None):
+    if path is not None:
+        return json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    from capability_catalog import compose
+    return compose(load_accounts() if accounts is None else accounts)
 
 
 def parse_time(value):
@@ -750,7 +763,7 @@ def model_spec(accounts, model):
     return value if isinstance(value, dict) else generic_model_spec()
 
 
-def bundle_harness(bundle, account=None, bundle_id=None):
+def bundle_harness(bundle, account=None, bundle_id=None, *, family=None):
     """Execution harness family for a bundle (distinct from its billing account or gateway provider)."""
     explicit = str((bundle or {}).get('harness') or '').strip().lower()
     if explicit:
@@ -759,15 +772,17 @@ def bundle_harness(bundle, account=None, bundle_id=None):
     bid = str(bundle_id or (bundle or {}).get('id') or '').strip().lower()
     launch_m = str((bundle or {}).get('launch_model') or '').strip().lower()
     model = str((bundle or {}).get('model') or '').strip().lower()
-    if prov == 'pi' or prov.startswith('pi-') or bid.startswith('pi_') or '__pi_' in bid or launch_m.startswith('openai-codex/'):
+    family = family or (prov if prov in ('claude', 'codex', 'pi', 'opencode', 'grok', 'grok-bot',
+                                         'antigravity', 'antigravity-resilient') else None)
+    if family:
+        return 'antigravity-resilient' if family == 'antigravity' else family
+    if bid.startswith('pi_') or '__pi_' in bid or launch_m.startswith('openai-codex/'):
         return 'pi'
-    if prov == 'opencode' or prov.startswith('opencode-') or launch_m.startswith('opencode/'):
+    if launch_m.startswith('opencode/'):
         return 'opencode'
-    if prov in ('antigravity', 'antigravity-resilient') or prov.startswith('antigravity-'):
-        return 'antigravity-resilient'
     if prov in ('dot', 'chatgpt-web'):
         return prov
-    if prov == 'claude' or prov.startswith('claude-') or 'claude' in model:
+    if 'claude' in model:
         return 'claude'
     return 'codex'
 
@@ -775,11 +790,15 @@ def bundle_harness(bundle, account=None, bundle_id=None):
 def bundles(accounts):
     """Flat list of launchable bundles with their account and execution harness attached."""
     out = {}
+    inventory = accounts.get('_discovery') or {}
     for account, spec in accounts['accounts'].items():
         for bundle_id, bundle in spec.get('bundles', {}).items():
             provider = bundle.get('provider', account)
+            row = ((inventory.get('launchers') or {}).get(provider)
+                   or (inventory.get('accounts') or {}).get(provider)
+                   or ((accounts.get('accounts') or {}).get(provider) or {}))
             out[bundle_id] = {'id': bundle_id, 'account': account, 'provider': provider,
-                              'harness': bundle_harness(bundle, account, bundle_id),
+                              'harness': bundle_harness(bundle, account, bundle_id, family=row.get('family')),
                               'model': bundle['model'], 'effort': bundle.get('effort'),
                               **{k: bundle[k] for k in ('modeId', 'disabled', 'launch_model', 'when', 'discovery_unavailable', 'draws',
                                                         'auto', 'billing', 'score_source', 'score_basis', 'cost_estimated',
@@ -787,15 +806,35 @@ def bundles(accounts):
     return out
 
 
+def route_preference(preferred, peers=None):
+    """Drop a peer whose anchor is also listed. The peer then shares that anchor's place."""
+    peers = peers or {}
+    present = set(preferred)
+    collapsed = []
+    for name in preferred:
+        anchor = peers.get(name)
+        if anchor and anchor in present:
+            continue
+        collapsed.append(name)
+    return collapsed
+
+
 def fit_score(kind, model, capabilities, accounts):
     """First of the route's preferred list is 1.0. Behind it a `strict_order` route (the user's ranked order, e.g.
     visual) steps down evenly to 0.2; on any other route the fallbacks sit in a narrow band, so ability and opportunity
-    cost choose among them. Stepping 0.2 per place starved every model the lists put low or left out."""
+    cost choose among them. Stepping 0.2 per place starved every model the lists put low or left out.
+    A configured route-order peer shares its anchor's place."""
     route = capabilities['routes'].get(kind) or {}
-    preferred = [canonical(m, accounts) for m in route.get('preferred', [])]
-    if not preferred:
+    raw = [canonical(m, accounts) for m in route.get('preferred', [])]
+    peers = capabilities.get('route_fit_peers') or {}
+    preferred = route_preference(raw, peers)
+    if not preferred and not raw:
         return 0.6
-    place = preferred.index(model) if model in preferred else None
+    anchor = peers.get(model)
+    if anchor and anchor in preferred and model in raw:
+        place = preferred.index(anchor)
+    else:
+        place = preferred.index(model) if model in preferred else None
     if place is None and route.get('capability_fit'):
         # A route that names the capability it needs ranks the models it does not list by their vectors, so a model
         # joins or leaves with its subscription and no route edit (router upgrade 2026-10-19; was a flat 0.3).
@@ -895,6 +934,17 @@ KIND_TRAITS = {
     'other_or_mixed': (1, 1, 2, 2, 'engineering'),
 }
 GUI_WORDS = ('click', 'screenshot', ' gui', 'desktop app', 'mouse', '点击', '截图', '桌面', '鼠标')
+# Same pattern as route_judge.OBJECTIVE_LOCAL_RUNTIME_RE. Kept here so the allocator does not import route_judge
+# (route_judge.load_allocator execs this file). A caller true/false still wins over both patterns.
+OBJECTIVE_LOCAL_RUNTIME_RE = re.compile(
+    r'\b(?:ssh|ssh-agent|vps|localhost|127\.0\.0\.1|pytest|unittest|sqlite|daemon|worktree|adb|emulator|intranet|webhook|credentials?)\b',
+    re.I,
+)
+LOCAL_MACHINE_RE = re.compile(
+    r'(?:[A-Za-z]:[\\/]|~/|\\\\)|\b(?:working tree|git checkout|local repo|this repo|local daemon|local git)\b',
+    re.I,
+)
+GENERIC_CALLER_KINDS = (None, 'general_implementation', 'tool_execution', 'debug_review', 'other_or_mixed')
 FAST_REQUEST_WORDS = (
     'use fast mode', 'enable fast mode', 'in fast mode', 'with fast mode',
     'complete quickly', 'finish quickly', 'as quickly as possible', 'quick turnaround', 'fast turnaround',
@@ -1043,13 +1093,29 @@ def infer_task_profile(task, capabilities):
     if needs.get('critical'):
         cost = 3
     divergence = infer_divergence(objective, kind, style)
+    caller_set_local = 'local_only' in needs and needs.get('local_only') is not None
+    evidence = ' '.join(str(task.get(key) or '') for key in ('objective', 'context', 'environment', 'cwd'))
+    local_hit = OBJECTIVE_LOCAL_RUNTIME_RE.search(evidence) or LOCAL_MACHINE_RE.search(evidence)
+    if caller_set_local:
+        local_only = bool(needs.get('local_only'))
+        local_note = ''
+    elif local_hit:
+        local_only = True
+        local_note = '; objective names a local runtime, path, or machine dependency'
+    elif implies.get('local_only'):
+        local_only = True
+        local_note = ''
+    else:
+        local_only = False
+        local_note = ''
+    reason = (f'heuristic from work_kind={kind}, difficulty={difficulty}'
+              + ('' if task.get('difficulty') else ' (route default)') + local_note)
     return validate_profile({
         'work_kind': kind,
         'reasoning_depth': depth, 'code_complexity': code, 'context_scale': context, 'divergence': divergence,
         'hallucination_risk': risk, 'error_cost': cost,
         'needs_visual': bool(needs.get('visual') or implies.get('visual') or gui), 'needs_gui': gui,
-        'local_only': bool(needs.get('local_only') or implies.get('local_only')), 'interaction_style': style,
-        'reason': f'heuristic from work_kind={kind}, difficulty={difficulty}' + ('' if task.get('difficulty') else ' (route default)')})
+        'local_only': local_only, 'interaction_style': style, 'reason': reason})
 
 
 def profile_difficulty(profile, policy):
@@ -1057,12 +1123,24 @@ def profile_difficulty(profile, policy):
     return table.get(str(profile['reasoning_depth'])) or {1: 'routine', 2: 'hard', 3: 'coupled', 4: 'frontier'}[profile['reasoning_depth']]
 
 
+def named_route(profile):
+    """A classifier route other than the unmatched bucket. None when the profile did not name one."""
+    named = profile.get('work_kind') if isinstance(profile, dict) else None
+    if named in KIND_TRAITS and named != 'other_or_mixed':
+        return named
+    return None
+
+
 def profile_kind(profile, policy):
-    """The route a profile implies when the caller named none."""
+    """The route a profile implies when the caller named none.
+
+    A named route stands. needs_gui becomes computer_use only when the profile did not name one;
+    the GUI requirement itself is needs_visual / needs_gui, not a route rewrite."""
+    named = named_route(profile)
+    if named:
+        return named
     if profile['needs_gui']:
         return 'computer_use'
-    if profile.get('work_kind') in KIND_TRAITS and profile['work_kind'] != 'other_or_mixed':
-        return profile['work_kind']
     if profile['needs_visual'] and profile['code_complexity'] == 0 and profile['interaction_style'] != 'text_only':
         return 'visual_analysis'
     if profile['interaction_style'] == 'engineering' and profile['code_complexity'] == 0:
@@ -1076,9 +1154,15 @@ def task_kind(task, capabilities, policy=None):
     if not isinstance(task, dict):
         return 'other_or_mixed'
     prof = task.get('profile') if isinstance(task.get('profile'), dict) else None
-    if prof and prof.get('needs_gui') and task.get('work_kind') in (None, 'general_implementation', 'tool_execution', 'debug_review', 'other_or_mixed'):
+    caller = task.get('work_kind')
+    named = named_route(prof)
+    # The classifier's route stands when the caller left the kind unset or repeated it.
+    # A generic caller kind plus needs_gui becomes computer_use only when the profile named no real route.
+    if named in routes and (caller is None or caller == named):
+        return named
+    if prof and prof.get('needs_gui') and caller in GENERIC_CALLER_KINDS and named is None:
         return 'computer_use'
-    if task.get('work_kind') in routes:
+    if caller in routes:
         return task['work_kind']
     if not task.get('work_kind') and prof is not None:
         try:
@@ -1325,12 +1409,7 @@ def below_launch_floor(window, observed, usage_row, now):
             or not -60 <= (now - fetched).total_seconds() <= 900):
         return False
     remaining = (observed or {}).get('remaining_pct_before_reset')
-    # An allowance with no declared cycle can still be freshly exhausted. Do not
-    # invent a reset or use an observation whose reported reset has already passed.
-    no_cycle = window.get('hours') is None
-    if no_cycle and reset is None:
-        remaining = (observed or {}).get('observed_remaining_pct', remaining)
-    return bool(floor is not None and ((reset and reset > now) or (no_cycle and reset is None))
+    return bool(floor is not None and reset is not None and reset > now
                 and isinstance(remaining, (int, float)) and remaining <= floor)
 
 
@@ -1441,10 +1520,7 @@ def evaluate_bundle(bundle, task, ctx):
     if not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude('excluded by host policy')
     if bundle.get('disabled'):
-        # Manual bundles carry a reason string; settings toggles and auto defaults store a plain boolean.
-        exclude(bundle['disabled'] if isinstance(bundle['disabled'], str) else
-                'auto bundle disabled (off by default or in model settings)' if bundle.get('auto')
-                else 'disabled in model settings')
+        exclude('disabled by user')
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
                 else 'model not detected by discovery for 7+ days')
@@ -1465,7 +1541,7 @@ def evaluate_bundle(bundle, task, ctx):
     if info.get('text_only') and task.get('file_transfer'):
         exclude('this text-only runner cannot transfer or apply local files')
     route = capabilities['routes'].get(kind) or {}
-    if route.get('basis', '').startswith(HARD_ROUTE_BASIS) and route.get('preferred'):
+    if route.get('restrict_models') is True and route.get('preferred'):
         allowed = {canonical(m, accounts) for m in route['preferred']}
         if model not in allowed:
             exclude(f'{kind} is a specialist route')
@@ -1533,11 +1609,6 @@ def evaluate_bundle(bundle, task, ctx):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
-            if wspec.get('hours') is None:
-                if below_launch_floor(wspec, observed, acct_usage, now):
-                    exclude(f'{wid} is below its existing launch protection ({wspec["launch_min_remaining_pct"]}% remaining floor)')
-                if observed:
-                    result['notes'].append(f'{wid}: native allowance has no known cycle; consumption rate unknown')
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'], account_stale=acct_stale)
             unit = unit_rate(spec, wid, model, bundle.get('effort'), policy, curves, info, now)
             if not state['known']:
@@ -1736,16 +1807,7 @@ def evaluate_bundle(bundle, task, ctx):
         fit = (fit + visual) / 2     # the user's visual ability order counts alongside the work kind's fit
     if task['profile'] is not None and (not route.get('strict_order') or route.get('capability_fit')):
         # A user-ranked strict order (visual_analysis) stays as stated; elsewhere the profile's needs share the fit.
-        prof = task['profile']
-        div = task.get('divergence', prof.get('divergence', 1))
-        span_floor = floor + (policy.get('profile') or {}).get('saturation_span', 0.3)
-        if ((div >= 2 or prof['context_scale'] == 3 or prof['code_complexity'] == 3
-             or (kind == 'debug_review' and prof['code_complexity'] == 0)
-             or (prof['reasoning_depth'] == 1 and info.get('tier', 0) > span_floor))
-                and kind != 'frontend_implementation' and model not in ('gemini-3.8-flash-high', 'dot', 'gpt-6-pro')
-                and not route.get('strict_order') and not route.get('capability_fit')):
-            band = accounts['scoring'].get('fallback_fit', {})
-            fit = min(fit, band.get('start', 0.6) + band.get('step', 0.015))
+        # Route fit is not capped. Listed place, ability, the capability vector and the subjective vector decide.
         vfit = vector_fit(task['requirements'], capability_vector(info))
         s_weights = task.get('subjective_weights') or {}
         s_cfg = (policy.get('profile') or {}).get('subjective') if isinstance(info.get('subjective'), dict) else None
@@ -2030,16 +2092,48 @@ def apply_harness_order(eligible, kind, policy, capabilities, style=None, weight
             c['components']['harness'] = round(-penalty, 3)
 
 
-def dot_may_take(kind, needs, capabilities):
+def _flag_present(mapping, key):
+    return isinstance(mapping, dict) and key in mapping and mapping.get(key) is not None
+
+
+def resolve_modality_needs(needs, profile, implies):
+    """Resolve visual and local_only.
+
+    An explicit caller true or false wins, including false. A profile value fills a flag the caller
+    left unset (a missing profile key stays unset). Route implies fill only what both left unset.
+    needs_gui still forces visual, which is the GUI requirement and not a work_kind rewrite.
+    """
+    needs = needs if isinstance(needs, dict) else {}
+    profile = profile if isinstance(profile, dict) else None
+    implies = implies if isinstance(implies, dict) else {}
+    if _flag_present(needs, 'visual'):
+        visual = bool(needs.get('visual'))
+    elif profile is not None and (_flag_present(profile, 'needs_visual') or _flag_present(profile, 'needs_gui')):
+        visual = bool(profile.get('needs_visual') or profile.get('needs_gui'))
+    else:
+        visual = bool(implies.get('visual'))
+    if profile is not None and profile.get('needs_gui'):
+        visual = True
+    if _flag_present(needs, 'local_only'):
+        local_only = bool(needs.get('local_only'))
+    elif profile is not None and _flag_present(profile, 'local_only'):
+        local_only = bool(profile.get('local_only'))
+    else:
+        local_only = bool(implies.get('local_only'))
+    return {'visual': visual, 'local_only': local_only}
+
+
+def dot_may_take(kind, needs, capabilities, profile=None):
     """Whether Dot is a candidate. It has its own computer and several ways to receive data and return files, so every route
-    admits it except specialist routes that do not list it, work that needs vision, and work the parent marks needs.local_only
-    (it must run on this machine). needs.independent_text is no longer read: it used to be the gate. dot_execution marked
-    local-only is a contradiction, so Dot is not offered and the plan asks the user."""
+    admits it except specialist routes that do not list it, work that needs vision, and work the caller or classifier
+    marks needs.local_only (it must run on this machine). needs.independent_text is no longer read: it used to be the gate. dot_execution marked
+    local-only is a contradiction, so Dot is not offered and the plan asks the user.
+    Explicit false is kept. Route implies fill a flag only when the caller and the profile left it unset."""
     route = capabilities['routes'].get(kind) or {}
-    needs = {**(route.get('implies') or {}), **{k: v for k, v in (needs or {}).items() if v}}
-    if needs.get('local_only') or needs.get('visual'):
+    resolved = resolve_modality_needs(needs, profile, route.get('implies') or {})
+    if resolved.get('local_only') or resolved.get('visual'):
         return False
-    if route.get('basis', '').startswith(HARD_ROUTE_BASIS) and route.get('preferred'):
+    if route.get('restrict_models') is True and route.get('preferred'):
         return 'dot' in route['preferred']
     return True
 
@@ -2066,17 +2160,11 @@ def normalize_task(raw, policy, capabilities, accounts):
     hours = float(task.get('expected_hours') or policy['default_hours'][difficulty])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
     needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
-    if profile:
-        # The caller's explicit needs win; the profile fills what the caller left out. A GUI task must see the screen.
-        for need, value in (('visual', profile['needs_visual'] or profile['needs_gui']),
-                            ('local_only', profile['local_only']), ('critical', profile['error_cost'] >= 3)):
-            if needs.get(need) is None:
-                needs[need] = value
-        if profile['needs_gui']:
-            needs['visual'] = True
+    if profile and needs.get('critical') is None:
+        needs['critical'] = profile['error_cost'] >= 3
     implies = capabilities['routes'][kind].get('implies') or {}
-    for need in ('visual', 'local_only'):
-        needs[need] = bool(needs.get(need) or implies.get(need))
+    # Caller false stands. The profile fills an unset flag. Route implies fill only what both left unset.
+    needs.update(resolve_modality_needs(needs, profile, implies))
     critical = bool(needs.get('critical'))
     depth = profile['reasoning_depth'] if profile else None
     raw_div = (profile.get('divergence') if profile else None) or infer_divergence(
@@ -2127,8 +2215,8 @@ def normalize_task(raw, policy, capabilities, accounts):
 
 def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None, capabilities=None, overrides=None,
          host_policy_config=None):
-    accounts = accounts or load_accounts()
-    capabilities = capabilities or load_capabilities()
+    accounts = accounts_override.normalize(accounts or load_accounts())
+    capabilities = capabilities or load_capabilities(accounts=accounts)
     now = now or datetime.now(timezone.utc)
     usage = provider_inventory.merge_usage(usage, accounts, now)
     usage, accounts, applied = apply_overrides(load_overrides(now) if overrides is None else overrides, usage, accounts, now)

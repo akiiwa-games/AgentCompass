@@ -152,7 +152,8 @@ class HostPolicyTests(unittest.TestCase):
             ledger = router.read_ledger()
         self.assertFalse(result['host_policy_violation']['dispatch_allowed'])
         self.assertEqual(ledger[0]['host_policy_violation'], result['host_policy_violation'])
-        self.assertFalse(result['agrees'])
+        self.assertIsNone(result['agrees'])
+        self.assertTrue(result['classifier_skipped'])
         self.assertIn('excluded by host policy', result['override_cost']['excluded'])
 
     def test_same_policy_at_different_paths_has_identical_allocation(self):

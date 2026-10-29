@@ -188,6 +188,12 @@ def bound_hash(request):
     return digest({k: value[k] for k in BOUND})
 
 
+# The one table of launcher families this Paseo adapter launches, with each family's permission mode.
+# Accounts are admitted by their discovered family, never by name.
+PASEO_LAUNCHER_MODES = {'codex': 'full-access', 'claude': 'bypassPermissions', 'pi': 'full-access',
+                        'antigravity-resilient': 'full-access', 'opencode': 'build', 'grok': None, 'acp': None}
+
+
 def launch_request(bundle, launch):
     if not isinstance(launch, dict) or not isinstance(launch.get('initialPrompt'), str) or not launch['initialPrompt'].strip():
         raise ValueError('launch.initialPrompt must contain the reviewed assignment')
@@ -201,18 +207,16 @@ def launch_request(bundle, launch):
         raise ValueError('router.* labels are generated, not caller supplied')
     provider = bundle['provider']
     family = provider_inventory.launcher_family(provider)
-    if provider not in ('codex', 'codex-2', 'claude', 'claude-2', 'pi', 'antigravity-resilient', 'opencode') and family not in ('codex', 'claude', 'pi', 'antigravity-resilient', 'opencode', 'grok', 'acp'):
+    if family not in PASEO_LAUNCHER_MODES:
         raise ValueError('This dispatch adapter supports verified Paseo providers only; use the provider-specific runner otherwise')
     model = bundle.get('launch_model') or bundle['model']
     settings = {}
-    mode = bundle.get('modeId') or ({'codex': 'full-access', 'codex-2': 'full-access',
-        'claude': 'bypassPermissions', 'claude-2': 'bypassPermissions', 'antigravity-resilient': 'full-access',
-        'opencode': 'build', 'pi': 'full-access'}.get(family or provider))
+    mode = bundle.get('modeId') or PASEO_LAUNCHER_MODES[family]
     if mode:
         settings['modeId'] = mode
-    if bundle.get('effort') and provider != 'antigravity-resilient' and family != 'antigravity-resilient':
+    if bundle.get('effort') and family != 'antigravity-resilient':
         settings['thinkingOptionId'] = bundle['effort']
-    if bundle.get('fast') and (provider in ('codex', 'codex-2') or family == 'codex'):
+    if bundle.get('fast') and family == 'codex':
         settings['features'] = {'fast_mode': True}
     return canonical_request(dict(launch, provider=provider + '/' + model, settings=settings))
 

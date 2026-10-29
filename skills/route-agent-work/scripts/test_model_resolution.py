@@ -106,7 +106,7 @@ class ModelResolutionTests(unittest.TestCase):
         self.assertGreater(row['score'], 0)
 
     def test_mainstream_defaults_have_complete_bounded_vectors_and_matching_reference(self):
-        defaults = json.loads((allocator.REFERENCES / 'model-capabilities.json').read_text(encoding='utf-8'))['mainstream_defaults']['models']
+        defaults = allocator.load_capabilities(accounts=self.accounts)['mainstream_defaults']['models']
         scored = {k: v for k, v in self.accounts['models'].items() if isinstance(v, dict)}
         self.assertEqual(set(defaults), set(scored))
         for name, row in defaults.items():

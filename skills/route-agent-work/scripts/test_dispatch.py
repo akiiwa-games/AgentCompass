@@ -52,6 +52,11 @@ class DispatchTests(unittest.TestCase):
         })
         env.start()
         self.addCleanup(env.stop)
+        # Launchers are admitted by discovered family, not by name: report the fixture's Claude account.
+        discovered = patch.object(registry.provider_inventory, 'current', return_value={
+            'accounts': {}, 'launchers': {'claude-2': {'family': 'claude', 'status': 'ready'}}})
+        discovered.start()
+        self.addCleanup(discovered.stop)
         self.task = {'task_id': 'test-task', 'parent_agent_id': 'parent-a', 'objective': 'fixture work',
                      'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 0.7,
                      'needs': {'local_only': True, 'local_only_reason': 'requires local daemon state'}}

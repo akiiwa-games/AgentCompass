@@ -349,7 +349,9 @@ def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
 
 
 def router_module(name: str):
-    skill = Path(os.environ.get("ROUTER_SKILL_ROOT") or HOME / ".codex/skills/route-agent-work")
+    checkout = Path(__file__).resolve().parents[1] / "skills/route-agent-work"
+    skill = Path(os.environ.get("ROUTER_SKILL_ROOT") or (
+        checkout if (checkout / "scripts").is_dir() else HOME / ".codex/skills/route-agent-work"))
     if str(skill / "scripts") not in sys.path:
         sys.path.insert(0, str(skill / "scripts"))
     return importlib.import_module(name)

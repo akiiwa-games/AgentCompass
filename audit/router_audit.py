@@ -775,6 +775,36 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     return "\n".join(lines)
 
 
+def log_roots() -> dict[str, list[str]]:
+    """Session-log roots of every discovered Claude/Codex account, plus capacity-sources.json entries."""
+    codex_home = Path(os.environ.get("CODEX_HOME") or HOME / ".codex").expanduser()
+    claude_home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or HOME / ".claude").expanduser()
+    roots = {"codex": [codex_home / "sessions", codex_home / "archived_sessions"], "claude": [claude_home / "projects"]}
+    try:
+        if str(SKILL_SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(SKILL_SCRIPTS))
+        import provider_inventory
+        accounts = provider_inventory.discover().get("accounts") or {}
+    except Exception:
+        accounts = {}
+    for row in accounts.values():
+        home = Path(row["home"]) if isinstance(row, dict) and row.get("home") else None
+        if home and row.get("family") == "codex":
+            roots["codex"] += [home / "sessions", home / "archived_sessions"]
+        elif home and row.get("family") == "claude":
+            roots["claude"].append(home / "projects")
+    state = Path(os.environ.get("ROUTER_STATE_DIR") or HOME / ".route-manager")
+    try:
+        extra = json.loads((state / "capacity-sources.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        extra = {}
+    for spec in (extra.values() if isinstance(extra, dict) else ()):
+        if isinstance(spec, dict) and spec.get("kind") in roots and isinstance(spec.get("roots"), list):
+            roots[spec["kind"]] += [Path(r) for r in spec["roots"]]
+    # A session file is read once even when two accounts resolve to the same home.
+    return {kind: list(dict.fromkeys(str(Path(r).resolve()) for r in paths)) for kind, paths in roots.items()}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=7)
@@ -788,9 +818,12 @@ def main() -> int:
     since_dt = now - dt.timedelta(days=args.days)
     since = since_dt.timestamp()
     pick = lambda pattern: [f for f in glob.glob(str(HOME / pattern), recursive=True) if os.path.getmtime(f) >= since]
-    codex_files = pick(".codex/sessions/**/*.jsonl") + pick(".codex/archived_sessions/*.jsonl") + pick(".codex-2/sessions/**/*.jsonl")
-    claude_subagent_files = pick(".claude/projects/*/*/subagents/*.jsonl") + pick(".claude-2/projects/*/*/subagents/*.jsonl")
-    claude_files = pick(".claude/projects/*/*.jsonl") + pick(".claude-2/projects/*/*.jsonl") + claude_subagent_files
+    under = lambda roots, pattern: list(dict.fromkeys(
+        f for root in roots for f in glob.glob(str(Path(root) / pattern), recursive=True) if os.path.getmtime(f) >= since))
+    homes = log_roots()
+    codex_files = under(homes["codex"], "**/*.jsonl")
+    claude_subagent_files = under(homes["claude"], "*/*/subagents/*.jsonl")
+    claude_files = under(homes["claude"], "*/*.jsonl") + claude_subagent_files
     pi_files = pick(".pi/agent/sessions/**/*.jsonl")
     paseo_files = pick(".paseo/creations/*.json")
     ledger_rows = from_ledger(LEDGER)

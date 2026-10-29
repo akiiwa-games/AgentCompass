@@ -15,25 +15,8 @@ SAMPLE_DOCUMENT = {'task': {
 
 
 def reference_accounts(allocator):
-    """Prefer this machine's saved fleet. A blocked home falls back to the shipped template.
-
-    Tests patch Path.home so it raises. The shipped template marks every slot unverified; the demo
-    forces those simulated accounts launchable. A saved fleet is used as written.
-    """
-    shipped = allocator.REFERENCES / 'accounts.json'
-    source = shipped
-    try:
-        local = Path.home() / '.route-manager' / 'accounts.local.json'
-        if local.is_file():
-            source = local
-    except (OSError, RuntimeError, AssertionError):
-        source = shipped
-    accounts = allocator.load_accounts(source)
-    if Path(source).resolve() == shipped.resolve():
-        for spec in (accounts.get('accounts') or {}).values():
-            if isinstance(spec, dict):
-                spec['verified'] = True
-    return accounts
+    """Use an explicit offline fleet; never inspect this machine's saved account state."""
+    return allocator.load_accounts(allocator.reference_fleet_path())
 
 
 def plan(document, allocator):
