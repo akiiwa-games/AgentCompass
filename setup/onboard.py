@@ -349,7 +349,7 @@ def setup_main(argv: list[str] | None = None) -> int:
     if dry:
         _line("\nDry run complete; nothing was changed.")
     else:
-        _line("\nTry it: python -X utf8 skills/route-agent-work/scripts/route_judge.py providers")
+        _line(f"\nTry it: {_try_command()}")
     return 0
 
 
