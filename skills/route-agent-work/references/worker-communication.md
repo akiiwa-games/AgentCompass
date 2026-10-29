@@ -1,6 +1,6 @@
 # Worker-to-parent communication contract
 
-This rule applies when a delegated worker, subagent or advisor needs clarification, a decision or missing input from its originating/main session. An interactive question in the worker's UI is not a message to that session and can leave the workflow stuck.
+This rule applies both when a delegated worker, subagent or advisor needs clarification, a decision or missing input from its originating/main session, and when it finishes with a done, failed or blocked result. An interactive question or local final reply alone is not a message to that session.
 
 **Launch prerequisite:** the delivered assignment must contain the actual originating parent session ID, its host and its messaging address. Missing parent information stops dispatch; `top-level`, task IDs and the worker's own ID are not substitutes. For Paseo use the launching `PASEO_AGENT_ID`. For native host orchestrators carry the parent session ID, the bound coordinator inbox address, and preserve the live injected preamble's sender handle and lifecycle IDs. Never send a non-Paseo session ID to the Paseo API.
 
@@ -11,14 +11,22 @@ This rule applies when a delegated worker, subagent or advisor needs clarificati
 
 This does not prohibit the main session from asking the real user a question, and does not replace or bypass platform-required approvals.
 
-**Parent-to-worker continuation:** when the main session uses `send_agent_prompt` to add work, give clearance or resume its own worker, it must set `notifyOnFinish: true` (or omit it to retain the default); completion notifications and the final reply are the result channel for workers without messaging tools, such as agy. The `notifyOnFinish: false` rule above applies only to worker-to-parent questions.
+## Final reports
+
+**Workers with an agent-messaging tool must send their final report to the actual parent before ending the turn**, whether the result is done, failed or blocked. Use the same real message channel as for questions; in Paseo use `send_agent_prompt` with `{agentId: <parent ID>, prompt: <report>, background: true, notifyOnFinish: false}`. When the host's schema omits `background`, use its equivalent nonblocking agent-message delivery. Check the send result; an error is not delivery. Do not wait synchronously for a reply.
+
+Identify this message as **[Worker final report]**, state done/failed/blocked, and include the result, validation, commit/artifact references and any remaining blocker or decision. The message may contain the full report or a concise summary with an accessible location for the full report. Retain the full report in the worker's final reply as well. If sending fails, include the delivery failure in that final reply so the parent can collect it through the fallback result channel; do not claim the report was delivered.
+
+**Workers without messaging tools, such as agy, must write their complete report in the final reply and end the turn.** For `roll`'s Paseo launches, the router notifier delivers a short **[Route Manager worker notification]** with the worker ID, state and a pointer to the response. This automatic state notice is separate from a worker-authored final report; workers with messaging tools must still send their report. The parent follows the pointer to collect the full result when needed. CLI workers have no automatic notifier: their caller must collect `worker.output` and `worker.stderr` and manage the process as specified by `roll.next`.
+
+**Parent-to-worker continuation:** when the main session uses `send_agent_prompt` to add work, give clearance or resume its own worker, it must set `notifyOnFinish: true` (or omit it to retain the default); completion notifications and the final reply are the result channel for workers without messaging tools, such as agy. The `notifyOnFinish: false` rule above applies only to worker-to-parent questions and final reports.
 
 ## Completion-notification gate contract
 
 - **Failure:** disabling completion notifications can lose the result of a worker without messaging tools.
 - **Action:** block only `send_agent_prompt` with explicit `notifyOnFinish: false` from a parent to its own worker, including statically parsed wrapper calls.
 - **Decision:** the hook's caller ID must equal the target's locally persisted `router.parent_id` / `paseo.parent-agent-id`; conflicting labels do not prove ownership. No network lookup is needed.
-- **Recovery:** set `notifyOnFinish: true` or omit the parameter. Worker-to-parent questions remain allowed.
+- **Recovery:** set `notifyOnFinish: true` or omit the parameter. Worker-to-parent questions and final reports remain allowed with `false`.
 - **Degrade:** missing caller identity, missing/unreadable target records, ambiguous ownership or dynamic wrapper arguments leave this check open; other router checks still apply.
 
 In native host orchestrators use the real host message channel to the bound coordinator inbox, preserving the live preamble's exact sender and lifecycle arguments. A durable question message is a parent message; a local question TUI is not. Follow this router contract's end-turn rule rather than leaving a worker synchronously waiting on its parent.
