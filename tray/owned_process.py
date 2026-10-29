@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import component_launch
 from pathlib import Path
 from typing import NamedTuple
 
@@ -45,7 +46,13 @@ class OwnedTimeout(OwnedProcessError):
 
 def python() -> str:
     """python.exe, not pythonw.exe: the helper needs real standard handles."""
-    return str(Path(sys.executable).with_name("python.exe")) if os.name == "nt" else sys.executable
+    return sys.executable if component_launch.frozen() else str(Path(sys.executable).with_name("python.exe")) if os.name == "nt" else sys.executable
+
+
+def helper_command(argv: list[str]) -> list[str]:
+    if component_launch.frozen():
+        return component_launch.command("owned_command", *argv)
+    return [python(), "-S", "-c", HELPER, *argv]
 
 
 def _text(stream) -> str:
@@ -111,7 +118,7 @@ def _run_job(argv, timeout, env, cwd) -> Result:
     started = time.monotonic()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
-            proc = subprocess.Popen([python(), "-S", "-c", HELPER, *argv], stdin=subprocess.PIPE, stdout=out,
+            proc = subprocess.Popen(helper_command(argv), stdin=subprocess.PIPE, stdout=out,
                                     stderr=err, env=env, cwd=cwd, creationflags=subprocess.CREATE_NO_WINDOW)
             try:
                 win32job.AssignProcessToJobObject(job, int(proc._handle))
@@ -184,3 +191,22 @@ def _run_group(argv, timeout, env, cwd) -> Result:
             terminate()
             raise OwnedTimeout(_tr("命令超时，已停止本次启动的全部子进程"), _text(out), _text(err)) from None
         return Result(proc.returncode, _text(out), _text(err))
+
+
+if __name__ == "__main__":
+    # Diagnostic command runner, including from AgentCompass.exe --run-component owned_process.
+    import argparse
+    parser = argparse.ArgumentParser(description="Run a command in an owned process tree")
+    parser.add_argument("--timeout", type=float, default=30)
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    if not args.command:
+        parser.error("a command is required")
+    try:
+        result = run(args.command, timeout=args.timeout)
+    except OwnedProcessError as error:
+        print(error, file=sys.stderr)
+        raise SystemExit(124)
+    print(result.stdout)
+    print(result.stderr, file=sys.stderr)
+    raise SystemExit(result.returncode)

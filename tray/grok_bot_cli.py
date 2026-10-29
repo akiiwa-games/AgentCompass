@@ -11,6 +11,8 @@ import threading
 import time
 
 from i18n import translate as _tr
+from i18n import tr
+import component_launch
 
 ROOT = Path(__file__).resolve().parents[1] / 'skills' / 'route-agent-work'
 PACKAGE = ROOT / 'grok-bot'
@@ -27,11 +29,20 @@ def _run(argv, timeout):
 
 
 def python():
+    if component_launch.frozen():
+        raise RuntimeError(frozen_message())
     return str(Path(sys.executable).with_name('python.exe')) if os.name == 'nt' else sys.executable
+
+
+def frozen_message():
+    return tr('安装包暂不支持 Grok Bot CLI 管理；此功能需要外部 Python 和路由技能源码。请在已安装 Python 的终端中使用 agentcompass 路由 CLI。',
+              'Grok Bot CLI management needs external Python and the router skill source. Use the agentcompass router CLI in a terminal with Python installed.')
 
 
 def snapshot():
     """Local installation and last result; the active page owns check scheduling."""
+    if component_launch.frozen():
+        return {'label': frozen_message(), 'kind': 'warn'}
     node = shutil.which('node')
     if not node:
         return {'label': _tr('缺少 Node.js'), 'kind': 'warn'}
@@ -60,6 +71,8 @@ def _install():
     import updates
 
     _connection = None
+    if component_launch.frozen():
+        return frozen_message()
     if not shutil.which('node'):
         return _tr('请安装 Node.js 22.19 或更新版本，再安装/修复。')
     updates.run([python(), str(PACKAGE / 'install_cli.py')], PACKAGE)
@@ -98,6 +111,8 @@ def check():
 
 
 def guide():
+    if not GUIDE.is_file():
+        return frozen_message()
     os.startfile(GUIDE)
     return _tr('已打开 Grok Bot CLI 使用说明。')
 

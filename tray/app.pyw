@@ -247,6 +247,15 @@ def open_panel(icon=None, item=None) -> None:
         log_error(exc)
 
 
+def restart_tray(icon=None, item=None) -> None:
+    """Let an independent helper close this tray and replace it after the mutex is released."""
+    import subprocess
+    import component_launch
+    subprocess.Popen(component_launch.command("deploy", "restart"),
+                     creationflags=services.CREATE_NO_WINDOW | services.CREATE_NEW_PROCESS_GROUP,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 PLUGIN_ACTIONS = {
     "usage-float": lambda: services.component_action("usage-float", "show"),
     "chatgpt-web": lambda: services.start_chatgpt_web(True),
@@ -296,7 +305,7 @@ def build_menu() -> Menu:
     if shown:
         items.append(Menu.SEPARATOR)
         items += [plugin_item(plugin) for plugin in shown]
-    items += [Menu.SEPARATOR, MenuItem(_tr("退出"), quit_tray)]
+    items += [Menu.SEPARATOR, MenuItem(tr("重启托盘", "Restart tray"), restart_tray), MenuItem(_tr("退出"), quit_tray)]
     return Menu(*items)
 
 

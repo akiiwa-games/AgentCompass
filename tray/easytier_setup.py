@@ -217,12 +217,12 @@ def register_main_task(user_sid: str) -> None:
 
 
 def register_helper(name: str, subcommand: list[str], minutes_from_now: int | None) -> None:
-    python = Path(sys.executable)
-    arguments = subprocess.list2cmdline([str(Path(__file__).resolve()), *subcommand])
+    launcher, *args = component_launch.command(__file__, *subcommand, windowed=False)
+    arguments = subprocess.list2cmdline(args)
     boundary = None
     if minutes_from_now is not None:
         boundary = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + minutes_from_now * 60))
-    register_task(name, task_xml(str(python), arguments, "once" if boundary else "none", False, boundary), None)
+    register_task(name, task_xml(launcher, arguments, "once" if boundary else "none", False, boundary), None)
 
 
 # ---------- processes and health ----------

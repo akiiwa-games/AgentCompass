@@ -37,6 +37,7 @@ import chatgpt_web_patch as web_patch
 import easytier
 import services
 import updates
+import component_launch
 
 TRAY_DIR = Path(__file__).resolve().parent
 APP = TRAY_DIR / "app.pyw"
@@ -76,8 +77,8 @@ def set_user_env(name: str, value: str) -> None:
 def wanted_env() -> dict[str, str]:
     """User environment: how the route reaches the launcher, and the switch that keeps ChatGPT Web from adding its own tray icon."""
     return {
-        "PRO_CONSULT_LAUNCHER": str(PYTHONW),
-        "PRO_CONSULT_LAUNCHER_ARGS": str(LAUNCHER),
+        "PRO_CONSULT_LAUNCHER": sys.executable if component_launch.frozen() else str(PYTHONW),
+        "PRO_CONSULT_LAUNCHER_ARGS": "--run-component web_launcher" if component_launch.frozen() else str(LAUNCHER),
         "CODEX_WEB_GPT_EXTERNAL_TRAY": "1",
     }
 
@@ -118,10 +119,12 @@ def startup_fields() -> tuple[str, str] | None:
     script = (f"$t = Get-ScheduledTask -TaskName '{TASK_NAME}' -ErrorAction SilentlyContinue; "
               "if ($t) { $t.Actions[0].Execute; $t.Actions[0].Arguments }")
     out = powershell(script).stdout.splitlines()
-    return (out[0].strip(), out[1].strip()) if len(out) >= 2 else None
+    return (out[0].strip(), out[1].strip() if len(out) >= 2 else "") if out else None
 
 
 def startup_ok(fields: tuple[str, str] | None) -> bool:
+    if component_launch.frozen():
+        return fields is not None and Path(fields[0]) == Path(sys.executable) and not fields[1].strip()
     return fields is not None and Path(fields[0]) == PYTHONW and fields[1].strip('"') == str(APP)
 
 
@@ -133,8 +136,13 @@ def write_startup() -> None:
     """Register the login task: normal priority (tasks default to below normal, which the services would inherit),
     no time limit (the default stops a task after 72 hours), and on battery too."""
     user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ['USERNAME']}"
+    launcher = sys.executable if component_launch.frozen() else str(PYTHONW)
+    arguments = "" if component_launch.frozen() else f" -Argument '\"{str(APP).replace(chr(39), chr(39) * 2)}\"'"
+    working = Path(sys.executable).parent if component_launch.frozen() else services.ROOT
+    def quote(value):
+        return str(value).replace("'", "''")
     script = (
-        f"$a = New-ScheduledTaskAction -Execute '{PYTHONW}' -Argument '\"{APP}\"' -WorkingDirectory '{services.ROOT}'; "
+        f"$a = New-ScheduledTaskAction -Execute '{quote(launcher)}'{arguments} -WorkingDirectory '{quote(working)}'; "
         f"$t = New-ScheduledTaskTrigger -AtLogOn -User '{user}'; $t.Delay = '{TASK_DELAY}'; "
         f"$p = New-ScheduledTaskPrincipal -UserId '{user}' -LogonType Interactive -RunLevel Limited; "
         "$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries "
@@ -215,6 +223,10 @@ def tray_processes() -> list[psutil.Process]:
     found = []
     for proc in psutil.process_iter(["name", "cmdline"]):
         arguments = proc.info["cmdline"] or []
+        if component_launch.frozen():
+            if arguments and Path(arguments[0]) == Path(sys.executable) and all(arg == "--attach-only" for arg in arguments[1:]):
+                found.append(proc)
+            continue
         if (proc.info["name"] or "").lower() in ("pythonw.exe", "python.exe") and any(Path(part) == APP for part in arguments[1:] if part.endswith(".pyw")):
             found.append(proc)
     return found
@@ -228,7 +240,8 @@ def check() -> list[tuple[str, bool, str]]:
             rows.append((_tr('python 依赖 {0}').format(f'{module}'), True, ""))
         except ImportError:
             rows.append((_tr('python 依赖 {0}').format(f'{module}'), False, f"pip install {module}"))
-    rows.append(("pythonw", PYTHONW.is_file(), str(PYTHONW)))
+    launcher = Path(sys.executable) if component_launch.frozen() else PYTHONW
+    rows.append(("AgentCompass" if component_launch.frozen() else "pythonw", launcher.is_file(), str(launcher)))
     rows.append((_tr("ChatGPT Web 源码（工程内的 git 克隆）"), (services.CHATGPT_ROOT / ".git").exists(), str(services.CHATGPT_ROOT)))
     bun = services.bun_exe()
     rows.append(("Bun", bun is not None, str(bun or services.BUN)))
@@ -323,7 +336,7 @@ def restart() -> list[str]:
     services.STATE_DIR.mkdir(parents=True, exist_ok=True)
     with (services.STATE_DIR / "tray-start.log").open("ab", buffering=0) as log:
         subprocess.Popen(
-            [str(PYTHONW), "-X", "faulthandler", str(APP)], cwd=str(services.ROOT),
+            component_launch.tray_command(), cwd=str(Path(sys.executable).parent if component_launch.frozen() else services.ROOT),
             creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
             close_fds=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
         )
@@ -335,9 +348,11 @@ def restart() -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=("check", "install", "restart", "all"))
+    parser.add_argument("action", choices=("check", "install", "restart", "all", "startup"))
     action = parser.parse_args().action
     status = 0
+    if action == "startup":
+        write_startup()
     if action in ("install", "all"):
         for line in install():
             print(line)
