@@ -23,8 +23,17 @@ sys.path.insert(0, str(SKILL_SCRIPTS))
 import host_policy
 import allocator
 
-STATE = Path.home() / '.route-manager'
-SUBSCRIPTIONS = ['claude', 'claude-2', 'codex', 'codex-2', 'grok', 'grok-bot', 'antigravity']
+STATE = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.route-manager').expanduser()
+# Families Usage Float reads directly; account names come from discovery.
+COLLECTED_FAMILIES = ('claude', 'codex', 'pi', 'grok', 'antigravity')
+
+
+def inventory_subscriptions() -> list[str]:
+    """The router's discovered accounts the collector can read, for collectors without a discovery API."""
+    rows = (allocator.provider_inventory.current().get('accounts') or {})
+    return [name for name, row in rows.items()
+            if (row.get('family') in COLLECTED_FAMILIES or row.get('backend_kind') == 'litellm')
+            and row.get('quota_account') in (None, name)]
 
 
 def discovered_subscriptions(usage) -> list[str]:
@@ -37,17 +46,22 @@ def discovered_subscriptions(usage) -> list[str]:
         items: list[str] = []
         extra_litellm = tuple(discover_litellm().keys()) if callable(discover_litellm) else ()
         extra_pi = ('pi',) if (callable(read_pi) and read_pi()[0] is not None and (not callable(pi_linked) or pi_linked() is None)) else ()
-        for pid in (*discover_claude().keys(), *discover_codex().keys(), *extra_pi, *extra_litellm, 'grok', 'grok-bot', 'antigravity'):
+        for pid in (*discover_claude().keys(), *discover_codex().keys(), *extra_pi, *extra_litellm, 'grok', 'antigravity'):
             if pid not in items:
                 items.append(pid)
         return items
-    return list(SUBSCRIPTIONS)
+    return inventory_subscriptions()
 
 
 def collect():
     import usage_float as usage
-    allocator.load_accounts()  # Refresh opted-in admission before filtering newly discovered subscriptions.
-    subscriptions = host_policy.usage_providers(host_policy.load_policy(), discovered_subscriptions(usage))
+    # Refresh opted-in admission before filtering newly discovered subscriptions.
+    accounts = allocator.load_accounts()
+    # A permitted account that draws on another's quota needs that meter even when the source's execution is disabled.
+    sources = allocator.provider_inventory.quota_sources(accounts)
+    defaults = discovered_subscriptions(usage)
+    subscriptions = host_policy.usage_providers(host_policy.load_policy(), defaults + [n for n in sources if n not in defaults])
+    subscriptions = list(dict.fromkeys(sources.get(name, name) for name in subscriptions))
     selected = usage.active_providers(subscriptions)
     observations = usage.fetch_all(selected, force=False)
     result = {'hostname': socket.gethostname(), 'collection_mode': 'direct',

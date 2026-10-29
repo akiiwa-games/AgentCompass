@@ -54,6 +54,22 @@ class Claude2ConfigTests(unittest.TestCase):
             self.assertEqual(providers['claude-2'], config.provider_config(home))
             self.assertEqual(providers['claude'], {'enabled': True})
 
+    def test_any_account_name_and_home_register_the_same_way(self):
+        with TemporaryDirectory() as directory:
+            home = Path(directory)
+            account_home = home / 'profiles' / 'work-claude'
+            account_home.mkdir(parents=True)
+            (account_home / '.credentials.json').touch()
+            config.configure(home, 'team-backup', account_home)
+            provider = json.loads((home / '.paseo' / 'config.json').read_text(encoding='utf-8'))['agents']['providers']['team-backup']
+            self.assertEqual((provider['label'], provider['env']['CLAUDE_CONFIG_DIR']), ('Claude Team Backup', str(account_home)))
+            floating = json.loads((home / '.usage-float' / 'config.json').read_text(encoding='utf-8'))
+            self.assertEqual(floating['providers'], ['team-backup:7d', 'team-backup:5h'])
+            sources = json.loads((home / '.route-manager' / 'capacity-sources.json').read_text(encoding='utf-8'))
+            self.assertEqual(sources['team-backup']['roots'], [str(account_home / 'projects')])
+            with self.assertRaises(ValueError):
+                config.configure(home, 'Work Account', account_home)
+
     def test_requires_a_separate_login(self):
         with TemporaryDirectory() as directory:
             with self.assertRaises(RuntimeError):

@@ -1,4 +1,5 @@
 import copy
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
@@ -46,12 +47,14 @@ def test_regex_and_legacy_prefix_intersect_in_allocator():
 
 
 def test_plan_explains_regex_exclusion_and_legacy_intersection():
-    accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
-    accounts['accounts']['codex'].update(cwd_regex='^E:/P4(/|$)', allowed_cwd=['E:/P4'])
+    scoring = json.loads(allocator.reference_fleet_path().read_text(encoding='utf-8'))['scoring']
+    accounts = {'scoring': scoring, 'models': {'fixture-model': {'ability': 4}}, 'accounts': {
+        'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)', 'allowed_cwd': ['E:/P4'],
+                            'bundles': {'fixture-bundle': {'model': 'fixture-model', 'effort': 'high'}}}}}
     plan = allocator.plan({'objective': 'Implement a parser', 'work_kind': 'general_implementation',
                            'expected_hours': .1, 'cwd': 'E:/PROJECTS/route_manager'},
                           {'accounts': {}}, datetime(2026, 10, 28, tzinfo=timezone.utc),
-                          accounts=accounts, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
-    row = next(row for row in plan['ranking'] if row['id'] == 'sol_high')
+                          accounts=accounts, capabilities={}, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
+    row = next(row for row in plan['ranking'] if row['id'] == 'fixture-bundle')
     assert 'outside account cwd restriction (^E:/P4(/|$))' in row['excluded']
     assert any('cwd_regex and legacy allowed_cwd' in warning for warning in plan['decision']['warnings'])

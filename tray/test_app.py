@@ -124,7 +124,8 @@ class MenuTests(TrayTestCase):
             {'label': 'Astra', 'id': 'rule-a', 'revision': 'revision-a'}],
             'targets': [
                 {'account': a, 'model': m, 'window': 'usage', 'label': label, 'selected': label == 'Astra'}
-                for a, m, label in app.router_priority.TOP_MODELS]}
+                for a, m, label in (('codex', 'gpt-6-astra', 'Astra'), ('antigravity', 'gemini-4-argon-high', 'Argon'),
+                                    ('claude', 'claude-opus-5-5', 'Opus 5.5'))]}
         with mock.patch.object(app.router_priority, 'snapshot', side_effect=AssertionError('UI must not read files')):
             menu = app.build_menu().items[1].submenu
             items = [i for i in menu.items if i.text != app.Menu.SEPARATOR.text]

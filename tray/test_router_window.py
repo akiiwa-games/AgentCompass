@@ -8,11 +8,15 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/route-agent-work/scripts'))
 
+import allocator
+from tk_test_support import desktop_test, require_tk
+require_tk()
 import radar_chart
 import router_data
 
-ACCOUNTS_JSON = Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "references" / "accounts.json"
+CATALOG_JSON = Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "references" / "accounts.json"
 
 
 class ScoreDimensionTests(unittest.TestCase):
@@ -56,9 +60,9 @@ class DnaDimensionTests(unittest.TestCase):
         self.assertEqual(values["reasoning"], 0.0)
 
     def test_real_model_table_values_stay_in_range(self):
-        models = {k: v for k, v in json.loads(ACCOUNTS_JSON.read_text(encoding="utf-8"))["models"].items()
+        models = {k: v for k, v in json.loads(CATALOG_JSON.read_text(encoding="utf-8"))["models"].items()
                   if isinstance(v, dict)}
-        self.assertIn("claude-opus-5-5", models)
+        self.assertTrue(models)
         for name, info in models.items():
             for value in radar_chart.dna_dimensions(info).values():
                 self.assertTrue(0 <= value <= 1, name)
@@ -238,6 +242,7 @@ class AccountCardTests(unittest.TestCase):
         router.usage_snapshot.return_value = {"accounts": {"claude-2": {"status": "fresh", "windows": [window]}}}
         inventory = mock.Mock()
         inventory.current.return_value = {"accounts": {}}
+        inventory.quota_sources.return_value = {}
         with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, "modules", return_value=(allocator, router)),                 mock.patch.dict(sys.modules, {"provider_inventory": inventory}),                 mock.patch.object(router_data, "STATE_DIR", Path(directory)),                 mock.patch.object(router_data.plugins, "load", return_value={}),                 mock.patch.object(router_data, "account_badge", return_value=("", "")):
             return router_data.account_cards()[0]["windows"][0]
 
@@ -261,22 +266,34 @@ class SettingsTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.dir = Path(directory.name)
+        self.accounts = self.dir / 'fixture-accounts.json'
+        shutil.copy(allocator.reference_fleet_path(), self.accounts)
         patcher = mock.patch.object(router_data, "STATE_DIR", self.dir)
         patcher.start()
         self.addCleanup(patcher.stop)
         policy = self.dir / "host-policy-fixture.json"
-        names = list(json.loads(ACCOUNTS_JSON.read_text(encoding="utf-8-sig"))["accounts"])
+        names = list(json.loads(self.accounts.read_text(encoding="utf-8-sig"))["accounts"])
         policy.write_text(json.dumps({"allowed_accounts": names}), encoding="utf-8")
         environment = mock.patch.dict("os.environ", {
             "ROUTER_ACCOUNTS_OVERRIDE": str(self.dir / "accounts-override.json"),
             "ROUTER_HOST_POLICY": str(policy),
+            "ROUTER_ACCOUNTS_FILE": str(self.accounts),
+            "ROUTER_STATE_DIR": str(self.dir),
+            "ROUTER_CAPACITY": str(self.dir / 'capacity.json'),
         })
         environment.start()
         self.addCleanup(environment.stop)
+        for patcher in (
+            mock.patch.object(router_data, 'modules', return_value=(allocator, mock.Mock())),
+            mock.patch.object(router_data, '_accounts_path', return_value=self.accounts),
+            mock.patch.object(allocator.provider_inventory, 'apply', return_value=None),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_tuning_is_changed_in_place_backed_up_and_restored_byte_for_byte(self):
         target = self.dir / "accounts.json"
-        shutil.copy(ACCOUNTS_JSON, target)
+        shutil.copy(self.accounts, target)
         original = target.read_bytes()
         message = router_data.save_tuning({"safety_margin_pct": 7, "subjective.weight": 0.6,
                                            "subjective.route_weight": 0.06}, target)
@@ -380,13 +397,16 @@ class SettingsTests(unittest.TestCase):
                 router_data.add_boost("claude", None, 0.2, 5, False)
 
     def test_usage_refresh_asks_usage_float_for_named_accounts_only(self):
-        with mock.patch.object(router_data, "collect_usage_now") as collect:
-            self.assertIn("Claude 2", router_data.refresh_usage(["claude-2", "dot"]))
-            collect.assert_called_once_with(["claude-2"])
+        accounts = {'accounts': {}, '_discovery': {'accounts': {
+            'team-main': {'family': 'claude'}, 'team-backup': {'family': 'claude'}, 'dot': {'family': 'dot'}}}}
+        with mock.patch.object(allocator, 'load_accounts', return_value=accounts), \
+                mock.patch.object(router_data, "collect_usage_now") as collect:
+            self.assertIn("Team Main", router_data.refresh_usage(["team-main", "dot"]))
+            collect.assert_called_once_with(["team-main"])
             collect.reset_mock()
-            self.assertIn("Claude Magpie", router_data.refresh_usage(["claude-magpie", "dot"]))
-            collect.assert_called_once_with(["claude-magpie"])
-        self.assertEqual(router_data.refresh_usage(["dot"]), "该账号没有可刷新的额度来源")
+            self.assertIn("Team Backup", router_data.refresh_usage(["team-backup", "dot"]))
+            collect.assert_called_once_with(["team-backup"])
+            self.assertEqual(router_data.refresh_usage(["dot"]), "该账号没有可刷新的额度来源")
 
     def test_countdown(self):
         self.assertEqual(router_data.countdown(90061), "1天1小时")
@@ -669,6 +689,7 @@ class WindowHelperTests(unittest.TestCase):
         self.assertEqual(router_window.clip("abcdef", 4), "abc…")
         self.assertEqual(router_window.clip(None), "—")
 
+    @desktop_test
     def test_filled_scroll_frame_keeps_the_table_rows_visible(self):
         """Tall content above the worker table scrolls instead of squeezing the table to its headings."""
         import tkinter as tk
@@ -742,6 +763,7 @@ class WindowHelperTests(unittest.TestCase):
         # Unmetered opencode follows metered cards into the shortest remaining column (claude-2, col 1).
         self.assertEqual(placements[4], (7, 1, 3))
 
+    @desktop_test
     def test_quota_page_regrids_without_rebuilding_and_keeps_worker_table_visible(self):
         import sqlite3
         import router_window
@@ -771,7 +793,7 @@ class WindowHelperTests(unittest.TestCase):
             conn.commit()
             conn.close()
             # The repo definition, not this host's accounts: other hosts may lack a claude account.
-            res = router_data.pool_reservations(db=db, accounts=router_data.modules()[0].load_accounts(ACCOUNTS_JSON))
+            res = router_data.pool_reservations(db=db, accounts=allocator.load_accounts(allocator.reference_fleet_path()))
             self.assertIn(("claude", "seven_day"), res)
             self.assertGreater(res[("claude", "seven_day")]["pct"], 0.0)
             self.assertEqual(res[("claude", "seven_day")]["usd"], 20.0)

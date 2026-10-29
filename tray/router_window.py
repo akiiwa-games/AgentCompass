@@ -128,7 +128,7 @@ def bundle_labels(bundles: list[dict]) -> list[str]:
 
 
 def short_badge(text: str) -> str:
-    """'已暂停：disabled' → '已暂停' for the narrow quota cards; the settings page shows the reason."""
+    """Show only the status on quota cards and settings rows."""
     return (text or "").split("：", 1)[0].split(": ", 1)[0]
 
 
@@ -503,10 +503,6 @@ class Panel:
         self.closing = False
         self.long_jobs: list[threading.Thread] = []
         theme.apply(root, TITLE, "1120x680" if i18n.is_en() else "1020x660", (880, 560))
-        try:
-            theme.set_window_icon(root)
-        except Exception as exc:
-            log_error(exc)
         self.mono = theme.mono_font(root)
         self.status = tk.StringVar(value=_tr("就绪"))
         self.plan_result = None
@@ -1354,7 +1350,6 @@ class Panel:
         self.run(lambda: self.data_module().refresh_usage(accounts), self.say(lambda: done(None)), _tr("正在请求刷新额度…"))
 
     def quota_cards_loaded(self, cards):
-        refreshable = self.data_module().USAGE_ACCOUNTS
         shape = tuple((card["account"], tuple(w["id"] for w in card["windows"])) for card in cards)
         metered_cards = [card for card in cards if card["windows"]]
         unmetered_cards = [card for card in cards if not card["windows"]]
@@ -1367,11 +1362,11 @@ class Panel:
                 for child in self.quota_unmetered.winfo_children():
                     child.destroy()
                 self.quota_cards = [
-                    self.build_quota_card(index, card, card["account"] in refreshable)
+                    self.build_quota_card(index, card, bool(card.get("refreshable")))
                     for index, card in enumerate(metered_cards)
                 ]
                 self.quota_unmetered_cards = [
-                    self.build_unmetered_chip(index, card, card["account"] in refreshable)
+                    self.build_unmetered_chip(index, card, bool(card.get("refreshable")))
                     for index, card in enumerate(unmetered_cards)
                 ]
                 self.quota_shape = shape
@@ -1569,10 +1564,9 @@ class Panel:
         # The priority strip owns its one line; the table scrolls inside the remaining space.
         strip = theme.card(frame, padding=(10, 6), fill="x", side="bottom", pady=(8, 0))
         ttk.Label(strip, text=_tr("临时优先加权"), style="Card.TLabel").pack(side="left", padx=(0, 8))
-        import router_priority
-        for account, model, label in router_priority.TOP_MODELS:
-            ttk.Button(strip, text=f"+ {label}", style="Tiny.TButton",
-                       command=lambda a=account, m=model: self.enable_priority(a, m)).pack(side="left", padx=(0, 4))
+        quick = ttk.Frame(strip, style="Card.TFrame")
+        quick.pack(side="left")
+        self.fill_priority_buttons(quick, "Tiny.TButton", (0, 4), "+ ")
         ttk.Button(strip, text=_tr("自定义…"), style="Tiny.TButton", command=self.open_boost_editor).pack(side="right")
         self.boost_chips = ttk.Frame(strip, style="Card.TFrame")
         self.boost_chips.pack(side="left", fill="x", expand=True, padx=(6, 4))
@@ -1927,11 +1921,7 @@ class Panel:
         quick = ttk.Frame(box, style="Card.TFrame")
         quick.pack(fill="x")
         ttk.Label(quick, text=_tr("一键优先"), style="CardH3.TLabel").pack(side="left", padx=(0, 10))
-        import router_priority
-
-        for account, model, label in router_priority.TOP_MODELS:
-            ttk.Button(quick, text=label, style="Small.TButton",
-                       command=lambda a=account, m=model: self.enable_priority(a, m)).pack(side="left", padx=(0, 6))
+        self.fill_priority_buttons(quick, "Small.TButton", (0, 6))
         form = ttk.Frame(box, style="Card.TFrame")
         form.pack(fill="x", pady=(12, 10))
         ttk.Label(form, text=_tr("自定义加成"), style="CardH3.TLabel").pack(side="left", padx=(0, 10))
@@ -1985,9 +1975,24 @@ class Panel:
             self.rule_table.insert("", "end", values=(_tr("当前没有生效规则"), "", "", "", ""), tags=("muted",))
         self.boost_pairs = [(a, None) for a in dict.fromkeys(a for a, _ in targets)] + targets
         self.boost_target.configure(values=[
-            f"{data.ACCOUNT_LABELS.get(a, a)} / {data.model_label(m) if m else _tr('全部模型')}" for a, m in self.boost_pairs])
+            f"{data.account_label(a)} / {data.model_label(m) if m else _tr('全部模型')}" for a, m in self.boost_pairs])
         if not self.boost_target.get() and self.boost_pairs:
             self.boost_target.current(0)
+
+    def fill_priority_buttons(self, frame, style, padx, prefix=""):
+        """One-click reset-priority buttons for the targets the router derives from this fleet."""
+        import router_priority
+
+        def work():
+            allocator, _ = router_priority.modules()
+            return router_priority.targets(allocator, allocator.load_accounts())
+
+        def done(targets):
+            for target in targets or ():
+                self.ttk.Button(frame, text=f"{prefix}{target['label']}", style=style,
+                                command=lambda a=target["account"], m=target["model"]: self.enable_priority(a, m)
+                                ).pack(side="left", padx=padx)
+        self.run(work, done)
 
     def enable_priority(self, account, model):
         import router_priority
@@ -3177,6 +3182,7 @@ class Panel:
 def main() -> None:
     import tkinter as tk
 
+    theme.identify_process()
     theme.dpi_aware()
     page = sys.argv[sys.argv.index("--page") + 1] if "--page" in sys.argv[:-1] else "scoring"
     root = tk.Tk()

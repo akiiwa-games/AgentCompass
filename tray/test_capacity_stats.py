@@ -73,6 +73,13 @@ class Fixture(unittest.TestCase):
         activity_env = mock.patch.dict(cs.os.environ, {'ROUTE_MANAGER_ACTIVITY_FILE': str(self.root / 'usage-activity.json')})
         activity_env.start()
         self.addCleanup(activity_env.stop)
+        # Home overrides would point the scan at this machine's real logs.
+        for key in ('PASEO_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR'):
+            if key in cs.os.environ:
+                cleared = mock.patch.dict(cs.os.environ)
+                cleared.start()
+                self.addCleanup(cleared.stop)
+                del cs.os.environ[key]
         for name, value in {"HOME": self.root, "STATE_DIR": self.root, "STATE_FILE": self.root / "state.json", "OUTPUT": self.root / "capacity.json",
                             "STATS_FILE": self.root / "stats.json", "LOCK_FILE": self.root / "capacity.lock",
                             "SOURCES_FILE": self.root / "sources.json", "USAGE_CACHE": self.root / "usage-cache.json"}.items():

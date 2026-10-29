@@ -57,7 +57,7 @@ AGY_EFFORT = re.compile(r"-(low|medium|high|xhigh|max)$")
 STEP_TIME_RANGE = (1_700_000_000, 2_100_000_000)   # epoch seconds a step timestamp can take (late 2023 to 2036)
 
 HOME = Path.home()
-STATE_DIR = HOME / ".route-manager"
+STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or HOME / ".route-manager").expanduser()
 STATE_FILE = Path(os.environ.get("ROUTER_CAPACITY_STATE", STATE_DIR / "capacity-state.json"))
 OUTPUT = Path(os.environ.get("ROUTER_CAPACITY", STATE_DIR / "capacity.json"))
 STATS_FILE = Path(os.environ.get("ROUTER_USAGE_STATS", STATE_DIR / "usage-stats.json"))
@@ -128,23 +128,30 @@ def list_usd(model: str, fresh: int = 0, write_5m: int = 0, write_1h: int = 0, r
 
 def sources() -> dict[str, dict]:
     """Accounts whose logs can be read. capacity-sources.json may add or replace entries (e.g. a second Codex home)."""
+    # Primary homes follow the same overrides the CLIs and provider discovery honour.
+    codex_home = Path(os.environ.get("CODEX_HOME") or HOME / ".codex").expanduser()
+    claude_home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or HOME / ".claude").expanduser()
     found = {
-        "codex": {"kind": "codex", "roots": [str(HOME / ".codex" / "sessions"), str(HOME / ".codex" / "archived_sessions")]},
-        "claude": {"kind": "claude", "roots": [str(HOME / ".claude" / "projects")]},
+        "codex": {"kind": "codex", "roots": [str(codex_home / "sessions"), str(codex_home / "archived_sessions")]},
+        "claude": {"kind": "claude", "roots": [str(claude_home / "projects")]},
         "antigravity": {"kind": "antigravity", "roots": [str(HOME / ".gemini" / "antigravity-cli" / "conversations")]},
         "codex-pi": {"kind": "pi", "account": "codex", "roots": [str(HOME / ".pi" / "agent" / "sessions")]},
         "opencode": {"kind": "opencode", "account": "opencode", "roots": [str(HOME / ".local" / "share" / "opencode")]},
     }
     try:
-        paseo_cfg = json.loads((HOME / ".paseo" / "config.json").read_text(encoding="utf-8-sig"))
+        paseo_cfg = json.loads((Path(os.environ.get("PASEO_HOME") or HOME / ".paseo") / "config.json").read_text(encoding="utf-8-sig"))
         paseo_providers = ((paseo_cfg.get("agents") or {}).get("providers") or {}) if isinstance(paseo_cfg, dict) else {}
     except (OSError, ValueError):
         paseo_providers = {}
     for pid, spec in (paseo_providers.items() if isinstance(paseo_providers, dict) else []):
-        if not isinstance(spec, dict) or spec.get("enabled") is False or pid in found:
+        if not isinstance(spec, dict) or spec.get("enabled") is False:
             continue
         extends = str(spec.get("extends") or "").strip().lower()
         env = spec.get("env") if isinstance(spec.get("env"), dict) else {}
+        # A built-in provider is replaced only when Paseo points it at another home.
+        if pid in found and not (pid in ("claude", "codex") and env.get("CLAUDE_CONFIG_DIR" if pid == "claude" else "CODEX_HOME")):
+            continue
+        extends = extends or (pid if pid in ("claude", "codex") else "")
         if extends == "claude" or (not extends and str(pid).startswith("claude-")):
             chome = Path(str(env.get("CLAUDE_CONFIG_DIR") or (HOME / f".{pid}"))).expanduser()
             found[pid] = {"kind": "claude", "roots": [str(chome / "projects")]}

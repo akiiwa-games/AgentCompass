@@ -19,12 +19,11 @@ import uuid
 DURATIONS = (3, 6, 24)
 BOOST = 0.35
 INTENT = 'tray:anticipated-reset'
-TOP_MODELS = (('codex', 'gpt-6-astra', 'Astra'),
-              ('antigravity', 'gemini-4-argon-high', 'Argon'),
-              ('claude', 'claude-opus-5-5', 'Opus 5.5'))
+# Quick reset-priority targets: the fleet document's `priority_targets` ([{account, model, label?}]) when set,
+# otherwise the strongest enabled model of each account with a weekly-or-longer window.
+QUICK_LIMIT = 3
 DEFAULT_HOURS = 24
 RESET_BADGE_HOURS = 12
-LABELS = {'codex': 'Codex', 'claude': 'Claude', 'claude-2': 'Claude 2', 'antigravity': 'Antigravity'}
 
 
 class RouterMissing(ValueError):
@@ -55,8 +54,22 @@ def revision(row):
     return hashlib.sha256(json.dumps(row, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
-def model_label(model):
-    return next((label for _, mid, label in TOP_MODELS if mid == model), model)
+def _display():
+    try:
+        import router_data
+        return router_data.account_label, router_data.model_label
+    except Exception:
+        return (lambda name: name or ''), (lambda model: model)
+
+
+def account_label(account):
+    return _display()[0](account)
+
+
+def model_label(model, accounts=None):
+    configured = next((t.get('label') for t in (accounts or {}).get('priority_targets') or ()
+                       if isinstance(t, dict) and t.get('model') == model and t.get('label')), None)
+    return configured or _display()[1](model)
 
 
 def window_label(wid, spec):
@@ -93,20 +106,50 @@ def overlaps(row, account, model, now, allocator, accounts):
             and (not row.get('model') or allocator.canonical(row['model'], accounts) == model))
 
 
-def targets(allocator, accounts):
+def _candidates(allocator, accounts):
+    """(account, model) pairs with an enabled, launchable bundle on an allowed account, in fleet order."""
     policy = allocator.host_policy.load_policy()
+    pairs = []
+    for bundle in allocator.bundles(accounts).values():
+        account, model = bundle.get('account'), bundle.get('model')
+        spec = (accounts.get('accounts') or {}).get(account) or {}
+        if (not account or not model or bundle.get('disabled') or bundle.get('discovery_unavailable')
+                or spec.get('verified') is False or not allocator.host_policy.account_allowed(policy, account)):
+            continue
+        if (account, model) not in pairs:
+            pairs.append((account, model))
+    return pairs
+
+
+def _weekly_window(allocator, accounts, account, model):
+    windows = [(wid, spec) for wid, spec, _ in allocator.applicable_windows(
+        accounts['accounts'][account], model, {}) if spec.get('hours', 0) >= 24]
+    return max(windows, key=lambda w: w[1]['hours'])[0] if windows else None
+
+
+def targets(allocator, accounts):
+    candidates = _candidates(allocator, accounts)
+    configured = [t for t in accounts.get('priority_targets') or () if isinstance(t, dict)]
+    if configured:
+        wanted = [(t.get('account'), t.get('model')) for t in configured]
+        pairs = [pair for pair in wanted if pair in candidates]
+    else:
+        models = accounts.get('models') or {}
+        best = {}
+        for account, model in candidates:
+            tier = (models.get(model) or {}).get('tier') or 0
+            if _weekly_window(allocator, accounts, account, model) and tier > best.get(account, (None, -1))[1]:
+                best[account] = (model, tier)
+        pairs = sorted(((a, m) for a, (m, _) in best.items()), key=lambda pair: -best[pair[0]][1])[:QUICK_LIMIT]
     result = []
-    bundles = allocator.bundles(accounts).values()
-    for account, model, label in TOP_MODELS:
-        if not allocator.host_policy.account_allowed(policy, account) or not any(
-                b['account'] == account and b['model'] == model and not b.get('disabled') for b in bundles):
-            continue
-        windows = [(wid, spec) for wid, spec, _ in allocator.applicable_windows(
-            accounts['accounts'][account], model, {}) if spec.get('hours', 0) >= 24]
-        if not windows:
-            continue
-        wid, _ = max(windows, key=lambda w: w[1]['hours'])
-        result.append({'account': account, 'model': model, 'window': wid, 'label': label})
+    for account, model in pairs:
+        wid = _weekly_window(allocator, accounts, account, model)
+        if wid:
+            result.append({'account': account, 'model': model, 'window': wid, 'label': model_label(model, accounts)})
+    labels = [t['label'] for t in result]
+    for t in result:
+        if labels.count(t['label']) > 1:
+            t['label'] = f"{t['label']} · {account_label(t['account'])}"
     return result
 
 
@@ -166,16 +209,16 @@ def enable(account, model, window, hours, now=None):
                'until': (now+timedelta(hours=hours)).isoformat(), 'stop_on_reset': True,
                'reset_confirmation': 'replenishment', 'baseline_windows': {window: base},
                'basis': _tr('用户在托盘选择预计临时重置，优先 {0}/{1}；额度回升后 router 自动撤销').format(f'{account}', f'{model}')}
-        # The compact chooser is single selection, not three cumulative boosts.
-        # Replace reset-only priorities for these three models, not unrelated expiry constraints.
-        selected_models = {(a, m) for a, m, _ in TOP_MODELS}
+        # The compact chooser is single selection, not cumulative boosts.
+        # Replace reset-only priorities for the chooser's models, not unrelated expiry constraints.
+        selected_models = {(t['account'], t['model']) for t in targets(allocator, accounts)}
         doc['overrides'] = [r for r in doc['overrides'] if not (
             r.get('stop_on_reset') and not r.get('expires_at')
             and (r.get('account'), r.get('model')) in selected_models)]
         doc.pop('last_reset', None)
         doc['overrides'].append(row)
         save(allocator, path, {**doc, 'v': 1})
-    return _tr('已开启 {0}/{1} 临时优先；重置确认后撤销，最迟 {2} 失效').format(f'{LABELS.get(account, account)}', f'{model_label(model)}', f"{stamp(row['until'], allocator)}")
+    return _tr('已开启 {0}/{1} 临时优先；重置确认后撤销，最迟 {2} 失效').format(f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(row['until'], allocator)}")
 
 
 def cancel(entry_id, expected_revision):
@@ -215,7 +258,7 @@ def snapshot(now=None):
         doc = read_document(path)
     rows = [r for r in doc['overrides'] if active(r, now, allocator)
             and not allocator.override_reset_landed(r, None, accounts, now)]
-    entries = [{'label': model_label(r.get('model') or LABELS.get(r.get('account'), _tr('其他'))),
+    entries = [{'label': model_label(r['model'], accounts) if r.get('model') else account_label(r.get('account')) or _tr('其他'),
                 'id': r['id'], 'revision': revision(r)} for r in rows]
     choices = targets(allocator, accounts)
     for t in choices:

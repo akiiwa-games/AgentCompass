@@ -34,10 +34,10 @@ def test_migration_preserves_explicit_choices_and_reports_ambiguity():
     assert migrated['schema_version'] == 2
     assert migrated['scoring'] == {'profile': {'subjective': {'weight': .7}}}
     assert migrated['accounts']['codex']['bundles'] == {
-        'sol_medium': {'disabled': False}, 'sol_high': {'disabled': 'User selected off'}}
+        'sol_medium': {'disabled': False}, 'sol_high': {'disabled': True}}
     assert migrated['migration_ambiguous_enabled'] == [{'account': 'codex', 'bundle': 'experimental'}]
     accounts_override.apply(base, migrated)
-    assert base['accounts']['codex']['bundles']['experimental']['disabled'] == 'Reserved for the primary quota account'
+    assert base['accounts']['codex']['bundles']['experimental']['disabled'] is True
     assert 'disabled' not in base['accounts']['codex']['bundles']['pi_sol_high']
 
 
@@ -60,18 +60,6 @@ def test_omitted_disabled_never_removes_new_default():
     assert base['accounts']['codex']['bundles']['experimental']['disabled'] is True
     accounts_override.apply(base, {'accounts': {'codex': {'bundles': {'experimental': {'disabled': False}}}}})
     assert base['accounts']['codex']['bundles']['experimental']['disabled'] is False
-
-
-def test_claude_second_account_opus_keeps_repository_disabled_reason():
-    root = Path(__file__).resolve().parents[1]
-    base = json.loads((root / 'skills/route-agent-work/references/accounts.json').read_text(encoding='utf-8-sig'))
-    default = base['accounts']['claude-2']['bundles']['opus55_high_2']['disabled']
-    assert isinstance(default, str) and bool(default)
-    old = {'accounts': {'claude-2': {'bundles': {'opus55_high_2': {'model': 'claude-opus-5-5'}}}}}
-    migrated = accounts_override.migrate(old, base)
-    accounts_override.apply(base, migrated)
-    assert base['accounts']['claude-2']['bundles']['opus55_high_2']['disabled'] == default
-    assert {'account': 'claude-2', 'bundle': 'opus55_high_2'} in migrated['migration_ambiguous_enabled']
 
 
 def settings(tmp_path, monkeypatch):
@@ -106,6 +94,50 @@ def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_pa
     live = allocator.load_accounts()['accounts']['codex']['bundles']
     assert live['sol_medium']['disabled'] and live['sol_high']['disabled']
     assert not live['pi_sol_high'].get('disabled')
+
+
+def test_legacy_disabled_strings_load_and_save_as_boolean_state(tmp_path, monkeypatch):
+    target = settings(tmp_path, monkeypatch)
+    for version in (1, 2):
+        for old_value in ('Legacy explanation', ''):
+            original = {'schema_version': version, 'accounts': {'codex': {'bundles': {
+                'sol_high': {'disabled': old_value}, 'sol_medium': {'disabled': False}}}},
+                'harness_overrides': {'codex': {'pi': {'disabled': old_value}}}}
+            target.write_text(json.dumps(original))
+            live = allocator.load_accounts()['accounts']['codex']['bundles']
+            assert live['sol_high']['disabled'] is True
+            assert live['sol_medium']['disabled'] is False
+            assert live['pi_sol_high']['disabled'] is True
+            assert live['pi_sol_high']['_model_disabled'] is False
+            rows = router_data.harness_model_rows()
+            assert not next(row for row in rows if row['harness'] == 'pi')['enabled']
+            # An unrelated save must not carry legacy explanations back to disk.
+            router_data.save_tuning({'safety_margin_pct': 7})
+            saved = json.loads(target.read_text())
+            assert saved['accounts']['codex']['bundles'] == {
+                'sol_high': {'disabled': True}, 'sol_medium': {'disabled': False}}
+            assert saved['harness_overrides']['codex']['pi']['disabled'] is True
+            assert old_value == '' or old_value not in target.read_text()
+
+
+def test_direct_file_toggle_normalizes_other_flags_and_writes_explicit_state(tmp_path, monkeypatch):
+    settings(tmp_path, monkeypatch)
+    target = tmp_path / 'custom-accounts.json'
+    data = document()
+    data['accounts']['codex']['bundles']['experimental']['disabled'] = 'Legacy explanation'
+    data['accounts']['codex']['bundles']['sol_high']['disabled'] = ''
+    target.write_text(json.dumps(data))
+    router_data.toggle_bundle('codex', 'sol_high', target)
+    saved = json.loads(target.read_text())['accounts']['codex']['bundles']
+    assert saved['sol_high']['disabled'] is False
+    assert saved['experimental']['disabled'] is True
+    router_data.toggle_bundle('codex', 'sol_high', target)
+    assert json.loads(target.read_text())['accounts']['codex']['bundles']['sol_high']['disabled'] is True
+    data = json.loads(target.read_text())
+    data['accounts']['codex']['bundles']['experimental']['disabled'] = 'Legacy explanation'
+    target.write_text(json.dumps(data))
+    router_data.save_tuning({'safety_margin_pct': 7}, target)
+    assert json.loads(target.read_text())['accounts']['codex']['bundles']['experimental']['disabled'] is True
 
 
 def test_harness_suspension_keeps_model_memory_and_other_harness(tmp_path, monkeypatch):

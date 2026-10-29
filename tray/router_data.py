@@ -23,7 +23,7 @@ import radar_chart
 import router_priority
 import i18n
 
-STATE_DIR = Path.home() / ".route-manager"
+STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or Path.home() / ".route-manager").expanduser()
 
 
 def get_ui_language() -> str:
@@ -39,16 +39,44 @@ def strategy_preset_key(name: str) -> str:
     return next((key for key in STRATEGY_PRESETS if name in (key, i18n.english(key))), name)
 
 
-CARD_ACCOUNTS = ("claude", "claude-2", "codex", "codex-2", "antigravity", "opencode", "dot", "chatgpt-web")
-ACCOUNT_LABELS = {"claude": "Claude", "claude-2": "Claude 2", "codex": "Codex", "codex-2": "Codex 2",
-                  "antigravity": "Antigravity", "opencode": "OpenCode", "dot": "Dot", "chatgpt-web": "ChatGPT Web",
-                  "api-proxy": "API Proxy", "llmproxy": "LLM Proxy", "grok": "Grok"}
+# Cards are ordered and named by product family; account names come only from config and discovery.
+FAMILY_ORDER = ("claude", "codex", "antigravity", "opencode", "dot", "chatgpt-web", "pi", "grok", "grok-bot")
+FAMILY_LABELS = {"claude": "Claude", "codex": "Codex", "antigravity": "Antigravity", "opencode": "OpenCode",
+                 "dot": "Dot", "chatgpt-web": "ChatGPT Web", "pi": "Pi", "grok": "Grok", "grok-bot": "Grok Bot",
+                 "api-proxy": "API Proxy", "llmproxy": "LLM Proxy"}
+# Families whose quota the Usage Float collector reads.
+USAGE_FAMILIES = ("claude", "codex", "pi", "antigravity", "grok")
 
 
-def account_label(name: str | None) -> str:
+def account_family(name: str, row: dict | None = None) -> str:
+    family = (row or {}).get("family")
+    if family:
+        return family
+    return next((f for f in FAMILY_LABELS if name == f or name.startswith(f + "-")), name)
+
+
+def account_label(name: str | None, family: str | None = None) -> str:
+    """A configured label wins; otherwise the family name plus the account suffix (claude-work -> Claude Work)."""
     if not name:
         return "—"
-    return ACCOUNT_LABELS.get(name) or str(name).replace("-", " ").title()
+    if name in FAMILY_LABELS:
+        return FAMILY_LABELS[name]
+    family = family or account_family(name)
+    if family in FAMILY_LABELS and name.startswith(family + "-"):
+        return f"{FAMILY_LABELS[family]} {name[len(family) + 1:].replace('-', ' ').title()}"
+    return str(name).replace("-", " ").title()
+
+
+def card_order(names, inventory_rows: dict) -> list[str]:
+    """Family order, the family's primary account first, then discovery/config order."""
+    names = list(dict.fromkeys(names))
+    rank = {family: index for index, family in enumerate(FAMILY_ORDER)}
+
+    def key(item):
+        index, name = item
+        family = account_family(name, inventory_rows.get(name))
+        return (rank.get(family, len(rank)), name != family, index)
+    return [name for _, name in sorted(enumerate(names), key=key)]
 MODEL_LABELS = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-fable-5-1": "Fable 5.1",
                 "gpt-5.6-sol": "Sol 5.6", "grok-bot": "Grok Bot",
                 "gpt-6-astra": "Astra 6", "gpt-6.1-sol": "Sol 6.1", "gpt-6-pro": "GPT 6 Pro",
@@ -318,19 +346,35 @@ def account_cards() -> list[dict]:
     cards = []
     inv_accounts = inventory.get("accounts") or {}
     acc_table = accounts.get("accounts") or {}
-    ordered = list(dict.fromkeys([*CARD_ACCOUNTS, *inv_accounts.keys(), *acc_table.keys()]))
+    # An account drawing on another's quota (fleet `quota_sources`) shows as that pool's one card,
+    # visible while any member of the pool is allowed on this host.
+    sources = provider_inventory.quota_sources(accounts)
+    members: dict[str, list[str]] = {}
+    for member, source in sources.items():
+        members.setdefault(source, []).append(member)
+
+    def pool_allowed(name):
+        return any(allocator.host_policy.account_allowed(policy, n) for n in (name, *members.get(name, ())))
+    ordered = card_order([*inv_accounts.keys(), *acc_table.keys()], inv_accounts)
     names = [
         n for n in ordered
-        if n in acc_table and not (
+        if n in acc_table and n not in sources and (n not in members or pool_allowed(n)) and not (
             (inv_accounts.get(n) or {}).get("quota_account") not in (None, n)
             and not (acc_table.get(n) or {}).get("bundles")
         )
     ]
     reservations = pool_reservations(accounts=accounts, now=now)
+    try:
+        priority = router_priority.targets(allocator, accounts)
+    except Exception:
+        priority = []
     for name in names:
         spec = acc_table.get(name) or {}
         row = inv_accounts.get(name)
         text, kind = account_badge(name, row, config, policy)
+        if name in members:
+            # Quota visibility belongs to the pool, not the source account's execution switch.
+            text, kind = account_badge(name, row, config, None)
         usage_row = (usage.get("accounts") or {}).get(name) or {}
         windows = []
         for window in usage_row.get("windows") or []:
@@ -367,12 +411,14 @@ def account_cards() -> list[dict]:
             eff = bspec.get("effort")
             b_label = f"{m_label}·{eff}" if eff and eff not in ("high", "default") else m_label
             bundle_pills.append({"id": bid, "label": b_label, "enabled": not bool(bspec.get("disabled"))})
-        cards.append({"account": name, "label": account_label(name), "badge": text, "kind": kind,
+        cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
+                      "badge": text, "kind": kind,
                       "plan": (row or {}).get("plan") or spec.get("plan"), "usage_status": usage_row.get("status"),
                       "windows": windows, "bundles": bundle_pills,
-                      "host_enabled": bool(allocator.host_policy.account_allowed(policy, name)),
+                      "host_enabled": bool(pool_allowed(name)),
                       "verified": bool(spec.get("verified", True)),
-                      "priority_targets": [t for t in router_priority.TOP_MODELS if t[0] == name]})
+                      "refreshable": bool(usage_providers([name], accounts)),
+                      "priority_targets": [(t["account"], t["model"], t["label"]) for t in priority if t["account"] == name]})
     return cards
 
 
@@ -428,7 +474,7 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
             total_usd = 0.0
             for rec in records:
                 bundle = rec["bundle"]
-                if bundle.get("account") != account:
+                if ('grok' if bundle.get('account') == 'grok-bot' else bundle.get('account')) != ('grok' if account == 'grok-bot' else account):
                     continue
                 usd = 0.0
                 if callable(bundle_pools_fn):
@@ -468,16 +514,20 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
     return result
 
 
-USAGE_ACCOUNTS = ("claude", "claude-2", "codex", "codex-2", "antigravity")
-
-
-def _is_usage_account(name: str) -> bool:
-    return (
-        name in USAGE_ACCOUNTS
-        or name in ("grok", "llmproxy", "api-proxy")
-        or name.startswith("claude-")
-        or name.startswith("codex-")
-    )
+def usage_providers(names, accounts: dict | None = None) -> list[str]:
+    """Collector provider IDs for these accounts: a pooled account reads its source, by discovered family."""
+    import provider_inventory
+    if accounts is None:
+        accounts = modules()[0].load_accounts()
+    rows = ((accounts.get("_discovery") or {}).get("accounts") or {})
+    sources = provider_inventory.quota_sources(accounts)
+    result = []
+    for name in names:
+        source = sources.get(name, name)
+        row = rows.get(source) or {}
+        if row.get("family") in USAGE_FAMILIES or row.get("backend_kind") == "litellm":
+            result.append(source)
+    return list(dict.fromkeys(result))
 
 
 def collect_usage_now(providers: list[str]) -> None:
@@ -492,8 +542,8 @@ def collect_usage_now(providers: list[str]) -> None:
 def refresh_usage(accounts: list[str] | None = None, timeout: float = 130) -> str:
     """Ask Usage Float to re-read these accounts directly and update ~/.usage-float/usage-cache.json."""
     if accounts is None:
-        accounts = [c["account"] for c in account_cards() if _is_usage_account(c["account"])] or list(USAGE_ACCOUNTS)
-    providers = [a for a in accounts if _is_usage_account(a)]
+        accounts = [c["account"] for c in account_cards() if c.get("refreshable")]
+    providers = usage_providers(accounts)
     if not providers:
         return _tr("该账号没有可刷新的额度来源")
     try:
@@ -585,7 +635,7 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
         model = bundle.get("model") or (doc.get("config") or {}).get("model") or (doc.get("runtimeInfo") or {}).get("model")
         owner = labels.get("router.account") or bundle.get("account") or doc.get("provider") or ""
         bundle_text = (labels.get("router.bundle_id") or bundle.get("bundle_id") or bundle.get("id")
-                       or f"{ACCOUNT_LABELS.get(owner, owner)} · {model_label(model or '—')}")
+                       or f"{account_label(owner)} · {model_label(model or '—')}")
         title = (doc.get("title") or (row.get("request") or {}).get("title") or row.get("task_id") or "")[:60]
         if not agent:
             session = {}
@@ -625,7 +675,7 @@ def overrides(now: datetime | None = None) -> list[dict]:
         rows.append({"id": row["id"], "revision": router_priority.revision(row), "account": row.get("account"),
                      "model": row.get("model"), "boost": row.get("boost"), "until": router_priority.stamp(row.get("until"), allocator),
                      "stop_on_reset": bool(row.get("stop_on_reset")), "intent": row.get("intent") or "",
-                     "label": f"{ACCOUNT_LABELS.get(row.get('account'), row.get('account'))}"
+                     "label": f"{account_label(row.get('account'))}"
                               + (f" / {model_label(row['model'])}" if row.get("model") else "")})
     return rows
 
@@ -678,7 +728,7 @@ def add_boost(account: str, model: str | None, boost: float, hours: int, stop_on
             row.update(window=wid, stop_on_reset=True, reset_confirmation="replenishment", baseline_windows={wid: base})
         document["overrides"].append(row)
         router_priority.save(allocator, path, {**document, "v": 1})
-    return _tr('已添加 {0}{1} +{2} 临时优先，{3} 小时后失效').format(f'{ACCOUNT_LABELS.get(account, account)}', f"{(' / ' + model_label(model) if model else '')}", f'{boost:.2f}', f'{hours}')
+    return _tr('已添加 {0}{1} +{2} 临时优先，{3} 小时后失效').format(f'{account_label(account)}', f"{(' / ' + model_label(model) if model else '')}", f'{boost:.2f}', f'{hours}')
 
 
 def host_policy_state() -> dict:
@@ -749,9 +799,10 @@ def _user_accounts_path(create: bool = False) -> Path:
                 original = json.loads(user_file.read_text(encoding="utf-8-sig"))
                 if not isinstance(original, dict):
                     raise ValueError("Invalid accounts override document")
-                if original.get("schema_version") != 2:
-                    allocator, _ = modules()
-                    migrated = allocator.accounts_override.migrate(original, _read_json(_accounts_path()))
+                import accounts_override
+                baseline = {} if original.get("schema_version") == 2 else _read_json(_accounts_path())
+                migrated = accounts_override.migrate(original, baseline)
+                if migrated != original:
                     _backup(user_file, "accounts-legacy")
                     _atomic_json(user_file, migrated)
             else:
@@ -878,9 +929,15 @@ def save_tuning(values: dict | str, path: Path | None = None) -> str:
     if json.loads(text) != expected:
         raise ValueError(_tr("accounts.json 定位修改后内容不符，未保存"))
     _backup(target, "accounts-json")
-    temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
-    temporary.write_bytes((codecs.BOM_UTF8 if bom else b"") + text.encode("utf-8"))
-    temporary.replace(target)
+    modules()
+    import accounts_override
+    normalized = accounts_override.normalize(json.loads(text))
+    if normalized != expected:
+        _atomic_json(target, normalized)
+    else:
+        temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+        temporary.write_bytes((codecs.BOM_UTF8 if bom else b"") + text.encode("utf-8"))
+        temporary.replace(target)
     return _tr('已保存 {0} 项路由参数（已备份原文件）').format(f'{len(changed)}')
 
 
@@ -905,6 +962,9 @@ def _backup(path: Path, tag: str) -> Path | None:
 
 
 def _atomic_json(path: Path, value: dict, indent: int | None = 2) -> None:
+    modules()  # Make the shared settings normalizer importable.
+    import accounts_override
+    value = accounts_override.normalize(value)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=indent) + "\n", encoding="utf-8")
@@ -932,7 +992,7 @@ def harness_model_rows() -> list[dict]:
     allocator, _ = modules()
     accounts = allocator.load_accounts()
     policy = allocator.host_policy.load_policy()
-    preferences = _read_json(STATE_DIR / "accounts-override.json")
+    preferences = allocator.accounts_override.normalize(_read_json(STATE_DIR / "accounts-override.json"))
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
     table = accounts.get("accounts") or {}
     groups = {}
@@ -1455,7 +1515,9 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
             "bundles", {}).setdefault(bundle_id, {}).update(disabled=not enable_now))
         return _tr('{0} · {1} 已{2}').format(account_label(account), bundle_id, _tr('启用') if enable_now else _tr('停用'))
     target = path or _user_accounts_path(create=True)
-    doc = json.loads(target.read_text(encoding="utf-8-sig"))
+    modules()
+    import accounts_override
+    doc = accounts_override.normalize(json.loads(target.read_text(encoding="utf-8-sig")))
     bundles = ((doc.get("accounts") or {}).get(account) or {}).get("bundles") or {}
     if bundle_id not in bundles:
         allocator, _ = modules()
@@ -1469,12 +1531,7 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
             if bid not in bundles and isinstance(bspec, dict):
                 bundles[bid] = dict(bspec)
     enable_now = bool(bundles[bundle_id].get("disabled"))
-    for bid in (bundle_id,):
-        if bid in bundles:
-            if enable_now:
-                bundles[bid].pop("disabled", None)
-            else:
-                bundles[bid]["disabled"] = _tr("用户在控制台停用该档位")
+    bundles[bundle_id]["disabled"] = not enable_now
     _backup(target, "accounts-json")
     _atomic_json(target, doc)
     return _tr('{0} · {1} 已{2}').format(f'{account_label(account)}', f'{bundle_id}', f"{(_tr('启用') if enable_now else _tr('停用'))}")

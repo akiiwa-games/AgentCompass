@@ -124,17 +124,17 @@ def test_invalid_rows_and_legacy_keys_do_not_write(tmp_path, monkeypatch):
 
 def test_choices_come_from_router_values_and_factor_is_zero_to_two(tmp_path, monkeypatch):
     settings(tmp_path, monkeypatch)
-    (tmp_path / "references" / "model-capabilities.json").write_text(
-        json.dumps({"routes": {"general_implementation": {}, "debug_review": {}}}), encoding="utf-8")
     path = tmp_path / "references" / "accounts.json"
     document = json.loads(path.read_text(encoding="utf-8"))
+    routes = {"fixture_build": {}, "fixture_review": {}}
+    document["capability_policy"] = {"routes": routes}
     document["scoring"]["harness_factors"] = {"default": 1, "rules": [
         {"harness": "antigravity", "model_prefix": "claude", "factor": 0.9}]}
     path.write_text(json.dumps(document), encoding="utf-8")
     choices = router_data.strategy_factor_choices()
     assert choices["harness"][:4] == ["claude", "codex", "pi", "antigravity-resilient"]
     assert "antigravity" in choices["harness"]
-    assert choices["work_kind"] == ["general_implementation", "debug_review"]
+    assert choices["work_kind"] == list(routes)
     assert "gpt-6.1-sol" in choices["model"] and "other" in choices["model"]
     assert router_data.HARNESS_FACTOR_RANGE == (0.0, 2.0)
     kept = router_data.validate_harness_factors({"default": 0, "rules": [
