@@ -96,6 +96,25 @@ def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_pa
     assert not live['pi_sol_high'].get('disabled')
 
 
+def test_four_ability_ratings_roundtrip_and_economy_is_not_editable(tmp_path, monkeypatch):
+    target = settings(tmp_path, monkeypatch)
+    ratings = {'divergence': .8, 'global_rigor': .7, 'module_precision': .9, 'capability': .34}
+    router_data.save_strategy({}, 'gpt-6.1-sol', {**ratings, 'economy': 0})
+    saved = json.loads(target.read_text())['models']['gpt-6.1-sol']['subjective']
+    assert saved == ratings
+    info = router_data.model_table()['gpt-6.1-sol']
+    assert info['subjective'] == ratings
+    assert info['default_subjective'] == {'divergence': .5, 'global_rigor': .6}
+    assert router_data.radar_chart.dna_dimensions(info)['capability'] == .34
+    # Legacy three-field callers must not erase a saved fourth rating.
+    router_data.save_strategy({}, 'gpt-6.1-sol', {k: v for k, v in ratings.items() if k != 'capability'})
+    assert router_data.model_table()['gpt-6.1-sol']['subjective']['capability'] == .34
+    router_data.save_model_subjective('gpt-6.1-sol', .8, .7, .9, capability=0)
+    assert router_data.model_table()['gpt-6.1-sol']['subjective']['capability'] == 0
+    router_data.save_model_subjective('gpt-6.1-sol', .8, .7, .9)
+    assert router_data.model_table()['gpt-6.1-sol']['subjective']['capability'] == 0
+
+
 def test_legacy_disabled_strings_load_and_save_as_boolean_state(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     for version in (1, 2):

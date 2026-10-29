@@ -92,7 +92,7 @@ class AnimationTests(unittest.TestCase):
         self.assertAlmostEqual((x0 + x1) / 2, x)
         self.assertAlmostEqual((y0 + y1) / 2, y)
 
-    def test_interrupted_update_starts_from_visible_values_and_mode_change_from_center(self):
+    def test_interrupted_update_preserves_visible_values_across_unified_sources(self):
         chart = self.chart
         chart._display_values = [[.35] * 5]
         new = [{"label": "B", "values": {key: .6 for key, _, _ in radar.DNA_AXES}}]
@@ -105,7 +105,7 @@ class AnimationTests(unittest.TestCase):
             self.assertEqual(chart.series[0]["values"]["divergence"], .6)
             chart.show(radar.SCORE_AXES, [{"label": "Score", "values": {key: .7 for key, _, _ in radar.SCORE_AXES}}])
             self.assertNotIn(old, self.pending())
-            self.assertEqual(chart._display_values, [[0] * 5])
+            self.assertEqual(chart._display_values, [[.35] * 5])
             old = chart._animation_id
             chart.show((), [])
             self.assertNotIn(old, self.pending())

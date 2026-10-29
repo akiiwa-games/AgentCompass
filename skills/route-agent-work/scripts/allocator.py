@@ -8,7 +8,7 @@ choice can be traced to the input that caused it.
 
 from datetime import datetime, timedelta, timezone
 import json
-from math import erf, exp, pi, sqrt
+from math import erf, exp, isnan, pi, sqrt
 import os
 from pathlib import Path
 import re
@@ -1226,6 +1226,21 @@ def subjective_vector(info):
     return {dim: clamp(float(raw.get(dim, 0.5)), 0.0, 1.0) for dim in SUBJECTIVE_DIMENSIONS}
 
 
+def vision_tools_score(info):
+    """Fourth radar capability: explicit rating, otherwise vision/GUI baseline."""
+    subjective = (info or {}).get('subjective') or {}
+    caps = (info or {}).get('capabilities') or {}
+    def rating(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return clamp(number, 0.0, 1.0) if not isnan(number) else 0.0
+    if subjective.get('capability') is not None:
+        return rating(subjective['capability'])
+    return round(max(rating(caps.get('visual')), rating(caps.get('gui'))), 2)
+
+
 SUBJECTIVE_DIVERGENCE_SHARE = 0.4    # the divergence share a multi-hypothesis (divergence 2) task adds to its convergent blend
 
 
@@ -1505,7 +1520,14 @@ def evaluate_bundle(bundle, task, ctx):
     chain_hours = base_chain_hours * dur_mult
     result = {'id': bundle['id'], 'bundle': {k: bundle.get(k) for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'draws')
                                               if bundle.get(k) is not None},
-              'excluded': [], 'notes': [], 'components': {}, 'score': None}
+              'excluded': [], 'notes': [],
+              'components': {**subjective_vector(info), 'capability': vision_tools_score(info)}, 'score': None}
+    visual_override = (info.get('subjective') or {}).get('capability')
+    if visual_override is not None:
+        result['components']['capability_override'] = visual_override
+    else:
+        caps = info.get('capabilities') or {}
+        result['components'].update({key: caps.get(key, 0) for key in ('visual', 'gui')})
     now = ctx['now']
 
     def exclude(reason):

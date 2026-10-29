@@ -1,6 +1,21 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
+    '模型能力 · 静态价格经济性': 'Model capabilities · Static price economy',
+    '决策候选 · 本次额度成本': 'Decision candidates · Quota costs for this run',
+    '评分与能力': 'Scoring & Capabilities',
+    '视觉与工具': 'Vision & Tools',
+    '任务匹配权重（和为 1）': 'Task Match Weights (sum = 1)',
+    '三项能力匹配': 'Three Capability Ratings',
+    '权重用于任务匹配；雷达展示四项能力与额度经济。': 'Weights control task matching; the radar shows four capabilities and quota economy.',
+    '4 项能力可手动微调；额度经济由模型价格或实时窗口余量自动计算，不可手动调节。': 'Four capabilities can be adjusted manually. Quota economy is calculated from model prices or live window availability and cannot be adjusted manually.',
+    'divergence：模型的开放探索与方案创新能力；旧记录回退到 vector_fit / fit': 'divergence: open exploration and solution innovation; older records fall back to vector_fit / fit',
+    'global_rigor：模型的系统级推理与架构严密性；旧记录回退到 vector_fit / fit': 'global_rigor: system-level reasoning and architectural rigor; older records fall back to vector_fit / fit',
+    'module_precision：模型的局部实现精度与指令遵循；旧记录回退到 vector_fit / fit': 'module_precision: precise implementation and instruction following; older records fall back to vector_fit / fit',
+    'capability：手动覆写值或 max(visual, gui)；旧记录回退到 vector_fit / fit': 'capability: manual override or max(visual, gui); older records fall back to vector_fit / fit',
+    'clamp(1 − 5×opportunity_cost + reset_bonus + free_usage + boost − overqualification − effort_penalty)：额度与档位消耗合并计分': 'clamp(1 - 5*opportunity_cost + reset_bonus + free_usage + boost - overqualification - effort_penalty): quota and effort costs combined',
+    'subjective.capability 优先，否则 max(capabilities.visual, capabilities.gui)；结果限制在 0..1': 'subjective.capability takes priority; otherwise max(capabilities.visual, capabilities.gui), clamped to 0..1',
+    '1 / (1 + usd_per_hour / 15)：静态价格经济性，免费为 1，未知为 0.75；不代表实时剩余额度': '1 / (1 + usd_per_hour / 15): static price economy; free = 1, unknown = 0.75; not live quota availability',
     '模型设置': 'Model Settings',
     '模型与加权': 'Models & Boost',
     '未选模型': 'No models selected',

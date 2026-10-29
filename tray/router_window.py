@@ -32,10 +32,11 @@ LEGACY_TITLE = "Route Manager · 控制台"  # a panel started before the rename
 _process = None
 PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "模型设置", "⚙"), ("plugins", "外部集成", "▦"))
 PAGES = LocalizedSequence(PAGES)
-SETTINGS = (("models", "模型与加权"), ("strategy", "评分与画像"), ("system", "系统选项"))
+SETTINGS = (("models", "模型与加权"), ("strategy", "评分与能力"), ("system", "系统选项"))
 SETTING_ALIASES = {"accounts": "models", "boost": "models", "cli": "models", "tuning": "strategy", "dna": "strategy"}
 SETTINGS = LocalizedSequence(SETTINGS)
-DNA_KEYS = (("divergence", "发散创新"), ("global_rigor", "全局严密"), ("module_precision", "模块精准"))
+DNA_KEYS = (("divergence", "发散创新"), ("global_rigor", "全局严密"), ("module_precision", "模块精准"),
+            ("capability", "视觉与工具"))
 DNA_KEYS = LocalizedSequence(DNA_KEYS)
 TRACK = "#E2E8F0"  # segmented switch track on the page background
 
@@ -801,11 +802,9 @@ class Panel:
 
     def build_scoring(self, page):
         tk, ttk = self.tk, self.ttk
-        bar = self.header(page, _tr("决策罗盘"))
+        self.header(page, _tr("决策罗盘"))
+        # One chart: decision components when available, otherwise the model catalog.
         self.mode = tk.StringVar(value="score")
-        self.mode_switch = theme.Segmented(bar, (("score", _tr("单次评分")), ("dna", _tr("模型画像"))), self.set_mode,
-                                           track=TRACK)
-        self.mode_switch.frame.pack(side="right")
         body = ttk.Frame(page)
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1, uniform="split")
@@ -815,7 +814,9 @@ class Panel:
         radar_card = theme.card(body, padding=12)
         radar_card.outer.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         self.radar_title = ttk.Label(radar_card, text=radar_chart.axis_title(), style="CardH3.TLabel")
-        self.radar_title.pack(anchor="w", pady=(0, 8))
+        self.radar_title.pack(anchor="w")
+        self.radar_source = ttk.Label(radar_card, style="CardTiny.TLabel")
+        self.radar_source.pack(anchor="w", pady=(2, 8))
         picks = ttk.Frame(radar_card, style="Card.TFrame")
         picks.pack(fill="x")
         tk.Label(picks, text="●", bg=theme.CARD, fg=theme.ACCENT, font=(theme.FONT, 10)).pack(side="left")
@@ -920,7 +921,6 @@ class Panel:
 
     def set_mode(self, mode):
         self.mode.set(mode)
-        self.mode_switch.set(mode)
         if mode == "dna":
             if not self.models:
                 try:
@@ -935,9 +935,8 @@ class Panel:
 
     def models_loaded(self, models):
         self.models = models or {}
-        if "scoring" in self.built and self.mode.get() == "dna":
-            self.fill_pickers()
-            self.render_radar()
+        if "scoring" in self.built and not self.plan_result:
+            self.set_mode("dna")
         if getattr(self, "dna_picker", None) is not None:
             self.fill_dna_models()
 
@@ -972,6 +971,8 @@ class Panel:
     def render_radar(self):
         data = self.data_module()
         self.radar_title.configure(text=radar_chart.axis_title(self.mode.get()))
+        self.radar_source.configure(text=_tr("模型能力 · 静态价格经济性") if self.mode.get() == "dna"
+                                    else _tr("决策候选 · 本次额度成本"))
         if self.mode.get() == "dna":
             if not self.models:
                 self.radar.show((), [])
@@ -2099,11 +2100,11 @@ class Panel:
 
         weights = ttk.Frame(cols, style="Card.TFrame")
         weights.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
-        ttk.Label(weights, text=_tr("合成权重（和为 1）"), style="CardH3.TLabel").grid(row=0, column=0, columnspan=3,
+        ttk.Label(weights, text=_tr("任务匹配权重（和为 1）"), style="CardH3.TLabel").grid(row=0, column=0, columnspan=3,
                                                                           sticky="w", pady=(0, 6))
         self.tuning_vars = {}
         self.weight_scales = {}
-        for row, (key, label) in enumerate((("subjective.weight", _tr("主观倾向")), ("subjective.vector_weight", _tr("能力向量")),
+        for row, (key, label) in enumerate((("subjective.weight", _tr("三项能力匹配")), ("subjective.vector_weight", _tr("能力向量")),
                                             ("subjective.route_weight", _tr("路由顺位"))), start=1):
             ttk.Label(weights, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=5)
             s_var = tk.DoubleVar(value=TUNING_DEFAULTS[key])
@@ -2114,6 +2115,9 @@ class Panel:
             self.weight_scales[key] = s_var
             self.tuning_vars[key] = t_var
         weights.columnconfigure(1, weight=1)
+        ttk.Label(weights, text=_tr("权重用于任务匹配；雷达展示四项能力与额度经济。"),
+                  style="CardTiny.TLabel", wraplength=theme.px(300)).grid(
+                      row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         numbers = ttk.Frame(cols, style="Card.TFrame")
         numbers.grid(row=0, column=1, sticky="nsew")
@@ -2443,10 +2447,13 @@ class Panel:
             ttk.Label(left, textvariable=text, style="Mono.TLabel", width=5).grid(row=row, column=2, sticky="e")
             self.dna_vars[key], self.dna_texts[key] = var, text
         buttons = ttk.Frame(left, style="Card.TFrame")
-        buttons.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        buttons.grid(row=2 + len(DNA_KEYS), column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Button(buttons, text=_tr("还原画像"), style="Small.TButton", command=self.revert_dna).pack(side="left")
         self.dna_radar = radar_chart.RadarChartCanvas(box, size=theme.px(195), bg=theme.CARD)
         self.dna_radar.grid(row=0, column=1, sticky="nsew")
+        ttk.Label(box, text=_tr("4 项能力可手动微调；额度经济由模型价格或实时窗口余量自动计算，不可手动调节。"),
+                  style="CardTiny.TLabel", wraplength=theme.px(600)).grid(
+                      row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
         if self.models:
             self.fill_dna_models()
         else:
@@ -2474,8 +2481,8 @@ class Panel:
         self.dna_model_changed()
 
     def saved_dna(self, model):
-        subj = (self.models.get(model) or {}).get("subjective") or {}
-        return {key: round(float(subj.get(key, 0.5)), 2) for key, _ in DNA_KEYS}
+        values = radar_chart.dna_dimensions(self.models.get(model) or {})
+        return {key: round(values[key], 2) for key, _ in DNA_KEYS}
 
     def dna_model_changed(self):
         self.dna_model = self.dna_labels.get(self.dna_picker.get())
@@ -2525,7 +2532,10 @@ class Panel:
 
     def revert_dna(self):
         if self.dna_model:
-            self.dna_draft = self.saved_dna(self.dna_model)
+            info = self.models.get(self.dna_model) or {}
+            baseline = {**info, "subjective": info.get("default_subjective", {})}
+            values = radar_chart.dna_dimensions(baseline)
+            self.dna_draft = {key: round(values[key], 2) for key, _ in DNA_KEYS}
             self.sync_dna_sliders()
 
     def save_dna(self):
@@ -2541,7 +2551,8 @@ class Panel:
             if "scoring" in self.built and self.mode.get() == "dna":
                 self.render_radar()
         self.run(lambda: self.data_module().save_model_subjective(
-            model, draft["divergence"], draft["global_rigor"], draft["module_precision"]), done)
+            model, draft["divergence"], draft["global_rigor"], draft["module_precision"],
+            capability=draft["capability"]), done)
 
     # system
 

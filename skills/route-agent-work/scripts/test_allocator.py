@@ -80,6 +80,23 @@ class AllocatorTests(unittest.TestCase):
     def rows(self, result):
         return {c['id']: c for c in result['ranking']}
 
+    def test_radar_components_export_model_abilities_with_legacy_terms(self):
+        accounts = allocator.load_accounts()
+        result = self.plan({'work_kind': 'debug_review', 'difficulty': 'hard', 'profile': self.profile()})
+        for row in result['ranking']:
+            info = allocator.model_spec(accounts, row['bundle']['model'])
+            for key, value in allocator.subjective_vector(info).items():
+                self.assertEqual(row['components'][key], value, row['id'])
+            self.assertEqual(row['components']['capability'], allocator.vision_tools_score(info), row['id'])
+            if (info.get('subjective') or {}).get('capability') is not None:
+                self.assertEqual(row['components']['capability_override'], info['subjective']['capability'])
+            else:
+                for key in ('visual', 'gui'):
+                    self.assertEqual(row['components'][key], (info.get('capabilities') or {}).get(key, 0))
+            if row['score'] is not None:
+                for key in ('fit', 'ability', 'opportunity_cost', 'route_fit', 'vector_fit', 'subjective_fit'):
+                    self.assertIn(key, row['components'], row['id'])
+
     def chain(self, bundle='sol_xhigh', coupling='high', total=6, tokens=120000, compacted=None, compactions=None, **extra):
         worker = {'bundle': bundle, 'context_tokens': tokens,
                   **({'compacted_tokens': compacted} if compacted is not None else {}),

@@ -1,4 +1,4 @@
-"""The five-axis radar: routing-score dimensions of a decision, or a model's capability profile.
+"""One five-axis radar: four capabilities and quota economy, from decisions or model settings.
 
 The maths (dimension values, polygon geometry) is plain Python so it is unit-tested without a display;
 RadarChartCanvas draws it on a tk.Canvas.
@@ -26,11 +26,11 @@ def clamp(value, low=0.0, high=1.0) -> float:
 
 # (key, label, formula shown on hover)
 SCORE_AXES = (
-    ("subjective", "主观倾向", "subjective_fit：任务对发散创新 / 全局严密 / 模块精准的倾向与模型主观评分的匹配度（合成权重 65%）"),
-    ("capability", "能力满足", "vector_fit：6D 能力向量对任务需求阈值的满足率，min(1, 能力/需求) 的加权平均（20%）"),
-    ("route", "路由顺位", "route_fit：work_kind 路由表中该模型的顺位契合度（15%）"),
-    ("tier", "档位裕度", "ability − overqualification − effort_penalty：跨过难度底线后的有效能力净值"),
-    ("economy", "额度经济", "1 − 5×opportunity_cost + reset_bonus + free_usage + boost：额度充裕、低机会成本与加成"),
+    ("divergence", "发散创新", "divergence：模型的开放探索与方案创新能力；旧记录回退到 vector_fit / fit"),
+    ("global_rigor", "全局严密", "global_rigor：模型的系统级推理与架构严密性；旧记录回退到 vector_fit / fit"),
+    ("module_precision", "模块精准", "module_precision：模型的局部实现精度与指令遵循；旧记录回退到 vector_fit / fit"),
+    ("capability", "视觉与工具", "capability：手动覆写值或 max(visual, gui)；旧记录回退到 vector_fit / fit"),
+    ("economy", "额度经济", "clamp(1 − 5×opportunity_cost + reset_bonus + free_usage + boost − overqualification − effort_penalty)：额度与档位消耗合并计分"),
 )
 SCORE_AXES = LocalizedSequence(SCORE_AXES)
 
@@ -38,27 +38,34 @@ DNA_AXES = (
     ("divergence", "发散创新", "subjective.divergence：发散思维、方案创新"),
     ("global_rigor", "全局严密", "subjective.global_rigor：架构落地严密度与全局思考"),
     ("module_precision", "模块精准", "subjective.module_precision：具体模块实现精度"),
-    ("reasoning", "推理抗幻觉", "(capabilities.reasoning + capabilities.anti_hallucination) / 2"),
-    ("visual", "视觉与 GUI", "max(capabilities.visual, capabilities.gui)"),
+    ("capability", "视觉与工具", "subjective.capability 优先，否则 max(capabilities.visual, capabilities.gui)；结果限制在 0..1"),
+    ("economy", "额度经济", "1 / (1 + usd_per_hour / 15)：静态价格经济性，免费为 1，未知为 0.75；不代表实时剩余额度"),
 )
 DNA_AXES = LocalizedSequence(DNA_AXES)
 
 
 def axis_title(mode: str = "score") -> str:
-    return tr("模型基因五维", "5-Axis Model DNA") if mode == "dna" else tr("决策得分五维", "5-Axis Decision Score")
+    return tr("能力与额度五维", "Capabilities & Quota")
+
+
+ABILITY_AXES = ("divergence", "global_rigor", "module_precision", "capability")
+
+
+def _score_ability_raw(c, key):
+    for source in (key, "vector_fit", "fit"):
+        if c.get(source) is not None:
+            return {source: c[source]}
+    return {}
 
 
 def score_dimensions(components: dict) -> dict:
     """Five 0..1 values from an allocator candidate's `components`."""
     c = components or {}
-    fit = c.get("fit", 0)
     return {
-        "subjective": clamp(c.get("subjective_fit", fit)),
-        "capability": clamp(c.get("vector_fit", fit)),
-        "route": clamp(c.get("route_fit", fit)),
-        "tier": clamp((c.get("ability") or 0) - (c.get("overqualification") or 0) - (c.get("effort_penalty") or 0)),
+        **{key: clamp(next(iter(_score_ability_raw(c, key).values()), 0)) for key in ABILITY_AXES},
         "economy": clamp(1.0 - (c.get("opportunity_cost") or 0) * 5.0 + (c.get("reset_bonus") or 0)
-                         + (c.get("free_usage") or 0) + (c.get("boost") or 0)),
+                         + (c.get("free_usage") or 0) + (c.get("boost") or 0)
+                         - (c.get("overqualification") or 0) - (c.get("effort_penalty") or 0)),
     }
 
 
@@ -66,9 +73,11 @@ def score_raw(components: dict) -> dict:
     """The raw component values each score axis is built from, for the hover text."""
     c = components or {}
     pick = lambda *keys: {k: c[k] for k in keys if k in c}
-    return {"subjective": pick("subjective_fit", "fit"), "capability": pick("vector_fit", "fit"),
-            "route": pick("route_fit", "fit"), "tier": pick("ability", "overqualification", "effort_penalty"),
-            "economy": pick("opportunity_cost", "reset_bonus", "free_usage", "boost")}
+    return {**{key: _score_ability_raw(c, key) for key in ABILITY_AXES},
+            "capability": (pick("capability_override") if c.get("capability_override") is not None else
+                           pick("visual", "gui") or _score_ability_raw(c, "capability")),
+            "economy": pick("opportunity_cost", "reset_bonus", "free_usage", "boost",
+                            "overqualification", "effort_penalty")}
 
 
 def dna_dimensions(info: dict) -> dict:
@@ -76,12 +85,14 @@ def dna_dimensions(info: dict) -> dict:
     info = info or {}
     subjective = info.get("subjective") or {}
     caps = info.get("capabilities") or {}
+    price = info.get("usd_per_hour")
     return {
         "divergence": clamp(subjective.get("divergence", 0.5)),
         "global_rigor": clamp(subjective.get("global_rigor", 0.5)),
         "module_precision": clamp(subjective.get("module_precision", 0.5)),
-        "reasoning": round(clamp((clamp(caps.get("reasoning")) + clamp(caps.get("anti_hallucination"))) / 2), 2),
-        "visual": round(max(clamp(caps.get("visual")), clamp(caps.get("gui"))), 2),
+        "capability": clamp(subjective["capability"]) if subjective.get("capability") is not None
+                      else round(max(clamp(caps.get("visual")), clamp(caps.get("gui"))), 2),
+        "economy": clamp(1 / (1 + max(0.0, float(price)) / 15)) if price is not None else 0.75,
     }
 
 
@@ -92,8 +103,10 @@ def dna_raw(info: dict) -> dict:
     return {"divergence": {"divergence": subjective.get("divergence")},
             "global_rigor": {"global_rigor": subjective.get("global_rigor")},
             "module_precision": {"module_precision": subjective.get("module_precision")},
-            "reasoning": {"reasoning": caps.get("reasoning"), "anti_hallucination": caps.get("anti_hallucination")},
-            "visual": {"visual": caps.get("visual"), "gui": caps.get("gui")}}
+            "capability": {"subjective.capability": subjective["capability"]}
+                          if subjective.get("capability") is not None else
+                          {k: caps.get(k, 0) for k in ("visual", "gui")},
+            "economy": {"usd_per_hour": info.get("usd_per_hour")}}
 
 
 def axis_angle(index: int, count: int) -> float:

@@ -267,7 +267,9 @@ def decision_series(pair: list[dict]) -> tuple[list[dict], list[dict]]:
 def model_table() -> dict:
     allocator, _ = modules()
     accounts = allocator.load_accounts(allocator.REFERENCES / "accounts.json")
-    models = allocator.models_table(accounts)
+    models = {name: {**info, "usd_per_hour": allocator.model_usd_per_hour(name, info),
+                     "default_subjective": dict(info.get("subjective") or {})}
+              for name, info in allocator.models_table(accounts).items()}
     override = STATE_DIR / "accounts-override.json"
     if override.is_file():
         try:
@@ -1245,7 +1247,7 @@ def normalize_weights(changed_key: str, new_val: float, current: dict[str, float
 
 
 def save_model_subjective(model: str, divergence: float, global_rigor: float, module_precision: float,
-                          path: Path | None = None) -> str:
+                          path: Path | None = None, *, capability: float | None = None) -> str:
     """Save subjective DNA ratings for a model in accounts-override.json."""
     if path is None:
         if model not in model_table():
@@ -1253,18 +1255,23 @@ def save_model_subjective(model: str, divergence: float, global_rigor: float, mo
         ratings = dict(zip(("divergence", "global_rigor", "module_precision"),
                            [round(max(0.0, min(1.0, float(v))), 2) for v in
                             (divergence, global_rigor, module_precision)]))
-        _edit_preferences(lambda doc: doc.setdefault("models", {}).setdefault(model, {}).update(subjective=ratings))
+        if capability is not None:
+            ratings["capability"] = round(radar_chart.clamp(float(capability)), 2)
+        _edit_preferences(lambda doc: doc.setdefault("models", {}).setdefault(model, {}).setdefault(
+            "subjective", {}).update(ratings))
         return _tr('已保存 {0} 主观基因评分').format(model_label(model))
     target = path
     doc = json.loads(target.read_text(encoding="utf-8-sig"))
     models = doc.get("models") or {}
     if model not in models or not isinstance(models[model], dict):
         raise ValueError(_tr('未知模型 {0}').format(f'{model}'))
-    models[model]["subjective"] = {
+    models[model].setdefault("subjective", {}).update({
         "divergence": round(max(0.0, min(1.0, float(divergence))), 2),
         "global_rigor": round(max(0.0, min(1.0, float(global_rigor))), 2),
         "module_precision": round(max(0.0, min(1.0, float(module_precision))), 2),
-    }
+    })
+    if capability is not None:
+        models[model]["subjective"]["capability"] = round(radar_chart.clamp(float(capability)), 2)
     _backup(target, "accounts-json")
     _atomic_json(target, doc)
     return _tr('已保存 {0} 主观基因评分').format(f'{model_label(model)}')
@@ -1475,6 +1482,8 @@ def save_strategy(values: dict, model: str | None, ratings: dict, harness_factor
         raise ValueError(_tr('未知模型 {0}').format(model))
     subjective = {key: round(max(0.0, min(1.0, float(ratings[key]))), 2)
                   for key in ("divergence", "global_rigor", "module_precision")} if model else {}
+    if model and "capability" in ratings:
+        subjective["capability"] = round(radar_chart.clamp(float(ratings["capability"])), 2)
     def change(document):
         scoring = document.setdefault("scoring", {})
         for key, value in clean.items():
@@ -1498,7 +1507,7 @@ def save_strategy(values: dict, model: str | None, ratings: dict, harness_factor
             block.update(exchange)
             scoring["opportunity_exchange"] = block
         if model:
-            document.setdefault("models", {}).setdefault(model, {})["subjective"] = subjective
+            document.setdefault("models", {}).setdefault(model, {}).setdefault("subjective", {}).update(subjective)
     _edit_preferences(change)
     return _tr("已保存策略与模型画像")
 
