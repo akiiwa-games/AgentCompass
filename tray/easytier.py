@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import psutil
+import service_ports
 
 CREATE_NO_WINDOW = 0x08000000
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +31,7 @@ CLI = BIN / "easytier-cli.exe"
 SUPERVISOR = BIN / "easytier-supervisor.ps1"
 CONFIG = PRIVATE / "node.toml"
 TASK_NAME = "Route Manager EasyTier"
-RPC_PORTAL = "127.0.0.1:15888"
+RPC_PORTAL = f"127.0.0.1:{service_ports.get('easytier_rpc')}"
 # Task Scheduler's TASK_STATE values.
 TASK_DISABLED, TASK_QUEUED, TASK_READY, TASK_RUNNING = 1, 2, 3, 4
 STOP_WAIT = 20.0

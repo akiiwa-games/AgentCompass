@@ -19,12 +19,14 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
 import chatgpt_web_patch as web_patch
 import gateways
 import plugins
+import runtime_paths
 import services
 
 LOCK = threading.Lock()
@@ -81,15 +83,17 @@ def changed(root: Path) -> list[str]:
 
 
 def install_dependencies() -> None:
+    bun = str(runtime_paths.bun_path())
     for directory in (services.CHATGPT_ROOT, services.CHATGPT_LAUNCHER):
-        run([str(services.BUN), "install", "--frozen-lockfile"], directory, env=services.chatgpt_env())
+        run([bun, "install", "--frozen-lockfile"], directory, env=services.chatgpt_env())
 
 
 def build() -> None:
     """Dependencies, the launcher window, and the browser helper (which carries the patched source)."""
+    bun = str(runtime_paths.bun_path())
     install_dependencies()
-    run([str(services.BUN), "run", "build:renderer"], services.CHATGPT_LAUNCHER, env=services.chatgpt_env())
-    run([str(services.BUN), "run", "scripts/build-browser-helper.ts"], services.CHATGPT_ROOT, env=services.chatgpt_env())
+    run([bun, "run", "build:renderer"], services.CHATGPT_LAUNCHER, env=services.chatgpt_env())
+    run([bun, "run", "scripts/build-browser-helper.ts"], services.CHATGPT_ROOT, env=services.chatgpt_env())
 
 
 def patch_and_build() -> None:
@@ -319,12 +323,106 @@ def update_all(progress=None) -> str:
                 result = _tr('{0} 更新出错：{1}').format(f'{label}', f'{error}')
             results.append(result)
             report("result", result)
+        notice = product_notice()
+        if notice:
+            results.append(notice)
+            report("result", notice)
         report("finish", _tr("本轮更新检查结束"), "")
         return "；".join(results)
     finally:
         _progress.callback = None
         _progress.component = ""
         LOCK.release()
+
+
+def local_version(root: Path | None = None) -> str:
+    root = root or Path(__file__).resolve().parents[1]
+    init = root / "agentcompass" / "__init__.py"
+    if init.is_file():
+        import re
+        match = re.search(r'^__version__\s*=\s*[\'"]([^\'"]+)[\'"]', init.read_text(encoding="utf-8"), re.M)
+        if match:
+            return match.group(1)
+    return "0.0.0"
+
+
+def _version_key(text: str) -> tuple[int, ...]:
+    text = text.strip().lstrip("vV")
+    parts: list[int] = []
+    for piece in text.split("."):
+        number = ""
+        for char in piece:
+            if char.isdigit():
+                number += char
+            else:
+                break
+        if number == "":
+            break
+        parts.append(int(number))
+    return tuple(parts) or (0,)
+
+
+def release_notice(root: Path, opener=None) -> str:
+    """Tell a non-git install how to upgrade. Does not download or replace files."""
+    if str(root) not in os.sys.path:
+        os.sys.path.append(str(root))
+    from agentcompass.origin import RELEASES_API, RELEASES_PAGE
+
+    local = local_version(root)
+    request = urllib.request.Request(
+        RELEASES_API,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "agentcompass"},
+    )
+    open_url = opener or urllib.request.urlopen
+    try:
+        with open_url(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as error:
+        return (
+            f"AgentCompass {local} has no .git checkout, so it cannot git pull. "
+            f"Could not read GitHub releases ({error}). "
+            f"Upgrade with: uv tool upgrade agentcompass "
+            f"or download the installer from {RELEASES_PAGE}"
+        )
+    tag = str(payload.get("tag_name") or "")
+    page = str(payload.get("html_url") or RELEASES_PAGE)
+    remote = _version_key(tag)
+    here = _version_key(local)
+    if remote > here:
+        return (
+            f"AgentCompass {local} is not a git checkout. GitHub release {tag} is newer. "
+            f"Upgrade the router with: uv tool upgrade agentcompass "
+            f"Or download the Windows installer from: {page}"
+        )
+    if remote == here:
+        return f"AgentCompass {local} matches GitHub release {tag}. No upgrade is waiting."
+    return f"AgentCompass {local} is newer than GitHub release {tag or 'unknown'}."
+
+
+def product_notice(root: Path | None = None, opener=None) -> str:
+    """Empty for a dev checkout, so the existing git updater is unchanged."""
+    root = root or Path(__file__).resolve().parents[1]
+    if (root / ".git").exists():
+        return ""
+    try:
+        return release_notice(root, opener=opener)
+    except Exception as error:
+        return (
+            f"AgentCompass has no git checkout and the release check failed: {error}. "
+            "Upgrade with: uv tool upgrade agentcompass "
+            "or download the installer from https://github.com/akiiwa-games/AgentCompass/releases/latest"
+        )
+
+
+def dev_checkout_line(root: Path | None = None) -> str:
+    root = root or Path(__file__).resolve().parents[1]
+    if not (root / ".git").exists():
+        return ""
+    try:
+        described = git(root, "describe", "--tags", "--always")
+    except Exception as error:
+        described = f"unknown ({error})"
+    return f"AgentCompass is a dev checkout ({described}). Update it with git pull in {root}."
 
 
 def main() -> int:
@@ -338,6 +436,11 @@ def main() -> int:
         from update_status import record
         print(update_all(progress=record))
     else:
+        root = Path(__file__).resolve().parents[1]
+        if (root / ".git").exists():
+            print(dev_checkout_line(root))
+        else:
+            print(product_notice(root))
         for name, root in (("Dot2API", services.DOT_ROOT), ("ChatGPT Web", services.CHATGPT_ROOT),
                            ("Usage Float", services.USAGE_FLOAT_ROOT)):
             count = behind(root)

@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentcompass"
+dynamic = ["version"]
+description = "Deterministic multi-agent task router and subscription quota scheduler."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "akiiwa-games" }]
+keywords = ["agents", "router", "quota"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = []
+
+[project.optional-dependencies]
+tray = ["psutil", "pystray", "Pillow", "pywin32"]
+
+[project.urls]
+Homepage = "https://github.com/akiiwa-games/AgentCompass"
+Repository = "https://github.com/akiiwa-games/AgentCompass"
+Releases = "https://github.com/akiiwa-games/AgentCompass/releases"
+
+[project.scripts]
+agentcompass = "agentcompass.cli:main"
+
+[tool.hatch.version]
+path = "agentcompass/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentcompass"]
+exclude = ["agentcompass/test_*.py"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "agentcompass",
+  "skills",
+  "setup",
+  "packaging/stage_data.py",
+  "packaging/hatch_build.py",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
+]
+exclude = [
+  "setup/host_sync/out",
+  "**/node_modules",
+  "**/__pycache__",
+  "**/*.pyc",
+  "packaging/.staged",
+  "packaging/.build",
+]
+
+[tool.hatch.build.targets.sdist.force-include]
+"packaging/stage_data.py" = "packaging/stage_data.py"
+"packaging/hatch_build.py" = "packaging/hatch_build.py"
+
+[tool.hatch.build.hooks.custom]
+path = "packaging/hatch_build.py"

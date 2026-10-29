@@ -245,7 +245,12 @@ def own_core(proc: dict) -> bool:
 
 
 def peer_names() -> list[str] | None:
-    result = run([str(BIN / "easytier-cli.exe"), "-p", "127.0.0.1:15888", "-o", "json", "peer"], check=False, timeout=15)
+    try:
+        import service_ports
+        portal = f"127.0.0.1:{service_ports.get('easytier_rpc')}"
+    except Exception:
+        portal = "127.0.0.1:15888"
+    result = run([str(BIN / "easytier-cli.exe"), "-p", portal, "-o", "json", "peer"], check=False, timeout=15)
     if result.returncode != 0:
         return None
     try:

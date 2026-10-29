@@ -48,7 +48,7 @@ try {
         '--disable-env-parsing',
         '--console-log-level', 'warn',
         '--file-log-level', 'off',
-        '--rpc-portal', '127.0.0.1:15888',
+        '--rpc-portal', $(if ($env:AGENTCOMPASS_PORT_EASYTIER) { "127.0.0.1:$($env:AGENTCOMPASS_PORT_EASYTIER)" } else { '127.0.0.1:15888' }),
         '--rpc-portal-whitelist', '127.0.0.1/32,::1/128'
     )
     $process = Start-Process -FilePath $core -ArgumentList $arguments -WorkingDirectory $bin -NoNewWindow -PassThru `

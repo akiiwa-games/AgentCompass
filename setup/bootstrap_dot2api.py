@@ -12,6 +12,7 @@ from pathlib import Path
 WORKSPACE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WORKSPACE / 'tray'))
 from runtime_paths import uv_path
+from service_ports import get as service_port
 
 ROOT = WORKSPACE / 'dot2api'
 UV = uv_path()
@@ -20,12 +21,13 @@ DATA = HOME / "data"
 CLIENT = HOME / "client.json"
 CONNECT = HOME / "connect.json"
 
+DOT_PORT = str(service_port("dot2api"))
 ENV = os.environ.copy()
 ENV.update(
     {
         "DOT2API_DATA_DIR": str(DATA),
         "DOT2API_HOST": "127.0.0.1",
-        "DOT2API_PORT": "8788",
+        "DOT2API_PORT": DOT_PORT,
         "DOT2API_CAPABILITY_URLS": "1",
         "DOT2API_DOH": "1",
         "DOT2API_QUEUE": "dot",
@@ -66,7 +68,7 @@ def main() -> None:
     CLIENT.write_text(
         json.dumps(
             {
-                "base_url": "http://127.0.0.1:8788",
+                "base_url": f"http://127.0.0.1:{DOT_PORT}",
                 "api_key": payload["api_key"],
                 "queue": payload["queue"],
                 "completion_timeout": 900,

@@ -29,7 +29,9 @@ sys.path.insert(0, str(REPO / "skills" / "route-agent-work" / "scripts"))
 import provider_inventory  # noqa: E402
 import sync_host_globals as sg  # noqa: E402
 
-DEFAULT_ORG = "akiiwa-games"
+if str(REPO) not in sys.path:
+    sys.path.append(str(REPO))
+from agentcompass.origin import DEFAULT_ORG  # noqa: E402
 # Accounts whose sign-in cannot be read from disk: an installed CLI is taken as signed in unless the user says otherwise.
 UNVERIFIABLE_FAMILIES = ("antigravity", "opencode", "grok")
 CLI_ACCOUNTS = ("claude", "codex", "pi", "antigravity", "opencode", "grok")
@@ -165,11 +167,8 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
 
 
 def usage_float_repo_url() -> str:
-    explicit = os.environ.get("ROUTE_MANAGER_USAGE_FLOAT_REPO", "").strip()
-    if explicit:
-        return explicit
-    org = os.environ.get("ROUTE_MANAGER_GITHUB_ORG", "").strip() or DEFAULT_ORG
-    return f"https://github.com/{org}/usage-float.git"
+    from agentcompass.origin import usage_float_repo
+    return usage_float_repo()
 
 
 def usage_float_dir(home: Path) -> Path | None:

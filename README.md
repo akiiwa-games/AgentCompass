@@ -12,7 +12,7 @@ matching each brief to the most economical `model × effort` worker that clears 
 API-equivalent dollars against live 5-hour and 7-day rate-limit windows, spending surplus before weekly resets, rotating workers at
 2M cumulative context tokens, and enforcing a `PreToolUse` spawn gate.
 
-![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![Router](https://img.shields.io/badge/router-Python%20%2B%20JSON-555)
 ![Cockpit](https://img.shields.io/badge/cockpit-Windows%2011-0078D4)
 
@@ -65,7 +65,7 @@ Until onboarding has run (or an account is signed in and the usage collector has
 guess: `plan`/`roll` return `no_ready_account` (no choice) when nothing is signed in, and carry a `no_usage_data` warning
 when there are no quota readings, both pointing back at `setup/onboard.py`.
 
-Run these commands from the repository root with Python 3.10+. The demo prints a ranked table using a fixed,
+Run these commands from the repository root with Python 3.11+. The demo prints a ranked table using a fixed,
 synthetic quota snapshot and the reference fleet; it makes no network calls, writes no ledger, and launches no workers.
 It uses the same 1.5-hour local coding/test scenario as the historical decision above; scores change with policy and
 quota inputs. Add `--format json` for the full demo breakdown. The normal dry run uses your machine's configuration
@@ -85,6 +85,42 @@ if npm is unavailable it prints this command and continues the other host setup.
 > IDs in `accounts.json`; they are examples, not a required list of subscriptions.
 
 ---
+
+## Install
+
+The router is a Python package. It is not frozen into an executable. Skill directories stay real files on disk
+because Claude, Codex, and Antigravity read `SKILL.md`, and `route_judge.py` loads its sibling scripts by path
+(`python -I`). Python 3.11 or newer is required: the provider inventory imports `tomllib`.
+
+```bash
+# Core router only (stdlib). From a checkout, or from a release wheel / git URL.
+uv tool install "git+https://github.com/akiiwa-games/AgentCompass"
+# or: pip install git+https://github.com/akiiwa-games/AgentCompass
+
+agentcompass setup          # same entry as setup/onboard.py setup_main
+agentcompass doctor         # read-only; add --home <dir> to inspect another home
+agentcompass plan --input examples/task.json --dry-run
+agentcompass uninstall      # same entry as setup/onboard.py uninstall_main
+```
+
+A checkout without a `.git` directory (any packaged install) checks GitHub Releases of
+[akiiwa-games/AgentCompass](https://github.com/akiiwa-games/AgentCompass/releases) and tells you to upgrade with
+`uv tool upgrade agentcompass` or by downloading the installer. A development checkout still fast-forwards with git.
+`ROUTE_MANAGER_GITHUB_ORG` and `ROUTE_MANAGER_USAGE_FLOAT_REPO` override the public org and the usage-float clone URL.
+
+The Windows tray is optional. `pip install "agentcompass[tray]"` adds psutil, pystray, Pillow, and pywin32.
+`packaging/build.ps1` builds a one-folder PyInstaller tray and, when Inno Setup 6 (`ISCC`) is installed, a per-user
+installer (`PrivilegesRequired=lowest`, no admin). The installer registers the "Route Manager" scheduled task.
+Uninstall runs `agentcompass uninstall`, deletes that task, removes `PRO_CONSULT_LAUNCHER`,
+`PRO_CONSULT_LAUNCHER_ARGS`, and `CODEX_WEB_GPT_EXTERNAL_TRAY`, and deletes `Route Manager.lnk` and
+`AgentCompass.lnk` from the user Startup folder. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate
+are set; SmartScreen will warn. See `packaging/SIGNING.md`. Tagged pushes (`v*`) attach the wheel and the installer
+to a GitHub Release.
+
+Ports default to the same loopback values the tray already uses (Dot2API 8788, ChatGPT Web 17843, Gemini Web 17849,
+account login 17851, EasyTier 15888, Grok2API 8790, Muse2API 18610). `AGENTCOMPASS_PORT_*` overrides
+`~/.route-manager/ports.json`, which overrides those defaults. Doctor reports conflicts. Nothing writes that file
+unless you create it.
 
 ## Why
 

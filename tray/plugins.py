@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from i18n import translate
@@ -20,15 +20,17 @@ LEGACY_UF_AUTOSTART_OFF = STATE_DIR / "usage-float-autostart-disabled"
 
 
 def _sibling_repo(name: str) -> str:
-    org = os.environ.get("ROUTE_MANAGER_GITHUB_ORG", "").strip()
-    if not org:
-        try:
-            cfg = (ROOT / ".git" / "config").read_text(encoding="utf-8", errors="ignore")
-            m = re.search(r"github\.com[:/]([^/\s]+)/", cfg)
-            org = m.group(1) if m else "agent-compass"
-        except OSError:
-            org = "agent-compass"
-    return f"https://github.com/{org}/{name}.git"
+    """Clone URL for a sibling repo. A checkout's git origin wins; a packaged install uses akiiwa-games."""
+    if str(ROOT) not in sys.path:
+        sys.path.append(str(ROOT))
+    from agentcompass.origin import sibling_repo
+
+    config = None
+    try:
+        config = (ROOT / ".git" / "config").read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        config = None
+    return sibling_repo(name, git_config=config)
 
 
 @dataclass(frozen=True)

@@ -23,15 +23,16 @@ import webbrowser
 from pathlib import Path
 
 import plugins
+import service_ports
 
-GROK_PORT = 8790
+GROK_PORT = service_ports.get("grok2api")
 GROK_HOME = Path.home() / ".grok2api"
 GROK_CONFIG = GROK_HOME / "config.yaml"
 GROK_EXE = GROK_HOME / "bin" / "grok2api.exe"
 GROK_LOG = GROK_HOME / "serve.log"
 GROK_URL = f"http://127.0.0.1:{GROK_PORT}"
 
-MUSE_PORT = 18610
+MUSE_PORT = service_ports.get("muse2api")
 MUSE_HOME = Path.home() / ".muse2api"
 MUSE_LOG = MUSE_HOME / "serve.log"
 MUSE_URL = f"http://127.0.0.1:{MUSE_PORT}"

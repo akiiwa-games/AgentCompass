@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import plugins
+import runtime_paths
 import services
 
 
@@ -428,6 +429,59 @@ class CapacityTickTests(unittest.TestCase):
             services._capacity["proc"] = self.child(True)
             services.stop_capacity()
             kill.assert_called_once_with(4242)
+
+
+class ToolMissingDegradesTests(unittest.TestCase):
+    def test_missing_uv_does_not_start_dot2api(self):
+        missing = runtime_paths.ToolMissing("uv", "Dot2API", "Install uv.", "ROUTE_MANAGER_UV")
+        with mock.patch.object(services, "dot_ready", return_value=False), \
+                mock.patch.object(services, "uv_path", side_effect=missing), \
+                mock.patch.object(services, "hidden_popen") as popen:
+            message = services.start_dot2api()
+        self.assertIn("uv", message)
+        self.assertIn("Install uv", message)
+        popen.assert_not_called()
+
+    def test_missing_cloudflared_still_starts_the_local_server(self):
+        missing = runtime_paths.ToolMissing(
+            "cloudflared", "the Dot2API public quick tunnel", "Install cloudflared.", "ROUTE_MANAGER_CLOUDFLARED"
+        )
+        with mock.patch.object(services, "dot_ready", return_value=False), \
+                mock.patch.object(services, "tunnel_pids", return_value=[]), \
+                mock.patch.object(services, "uv_path", return_value=Path("uv.exe")), \
+                mock.patch.object(services, "cloudflared_path", side_effect=missing), \
+                mock.patch.object(services, "hidden_popen") as popen:
+            message = services.start_dot2api()
+        self.assertIn("已启动 Dot2API", message)
+        self.assertIn("cloudflared", message)
+        self.assertEqual(popen.call_count, 1)
+
+    def test_unbuilt_launcher_with_bun_keeps_the_install_sentence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bun = Path(directory) / "bun.exe"
+            bun.write_bytes(b"x")
+            with mock.patch.object(services, "chatgpt_built", return_value=False), \
+                    mock.patch.object(services, "chatgpt_main_pid", return_value=None), \
+                    mock.patch.object(services, "BUN", bun), \
+                    mock.patch.object(services, "hidden_popen") as popen:
+                message = services.start_chatgpt_web(False)
+        self.assertIn("deploy.py install", message)
+        self.assertNotIn("is not installed", message)
+        popen.assert_not_called()
+
+    def test_unbuilt_launcher_without_bun_names_the_tool(self):
+        missing = runtime_paths.ToolMissing(
+            "bun", "the ChatGPT Web bridge", "Install Bun.", "ROUTE_MANAGER_BUN"
+        )
+        with mock.patch.object(services, "chatgpt_built", return_value=False), \
+                mock.patch.object(services, "chatgpt_main_pid", return_value=None), \
+                mock.patch.object(services, "BUN", Path("Z:/missing-bun.exe")), \
+                mock.patch.object(runtime_paths, "bun_path", side_effect=missing), \
+                mock.patch.object(services, "hidden_popen") as popen:
+            message = services.start_chatgpt_web(False)
+        self.assertIn("deploy.py install", message)
+        self.assertIn("bun", message)
+        popen.assert_not_called()
 
 
 if __name__ == "__main__":

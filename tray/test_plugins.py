@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -157,6 +158,47 @@ class LifecycleTests(unittest.TestCase):
                 msg = updates.ensure_plugin("usage-float")
             self.assertIn("已下载并部署", msg)
             self.assertTrue((plugins_dir / "usage-float" / ".git").exists())
+
+
+class SiblingRepoTests(unittest.TestCase):
+    def _env(self, **extra):
+        env = os.environ.copy()
+        env.pop("ROUTE_MANAGER_GITHUB_ORG", None)
+        env.pop("ROUTE_MANAGER_USAGE_FLOAT_REPO", None)
+        env.update(extra)
+        return env
+
+    def test_packaged_fallback_uses_akiiwa_games(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(os.environ, self._env(), clear=True):
+                self.assertEqual(
+                    plugins._sibling_repo("usage-float"),
+                    "https://github.com/akiiwa-games/usage-float.git",
+                )
+                self.assertNotIn("agent-compass", plugins._sibling_repo("gemini-web"))
+
+    def test_env_org_and_git_origin_override_the_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git = root / ".git"
+            git.mkdir()
+            (git / "config").write_text(
+                '[remote "origin"]\n\turl = git@github.com:fork-org/AgentCompass.git\n',
+                encoding="utf-8",
+            )
+            with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(os.environ, self._env(), clear=True):
+                self.assertEqual(
+                    plugins._sibling_repo("usage-float"),
+                    "https://github.com/fork-org/usage-float.git",
+                )
+            with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(
+                os.environ, self._env(ROUTE_MANAGER_GITHUB_ORG="override-org"), clear=True
+            ):
+                self.assertEqual(
+                    plugins._sibling_repo("usage-float"),
+                    "https://github.com/override-org/usage-float.git",
+                )
 
 
 if __name__ == "__main__":

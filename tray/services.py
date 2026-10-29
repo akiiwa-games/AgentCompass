@@ -115,7 +115,7 @@ def dot_env() -> dict[str, str]:
         {
             "DOT2API_DATA_DIR": str(LOG_DIR / "data"),
             "DOT2API_HOST": "127.0.0.1",
-            "DOT2API_PORT": "8788",
+            "DOT2API_PORT": str(dot_port()),
             "DOT2API_CAPABILITY_URLS": "1",
             "DOT2API_DOH": "1",
             "DOT2API_QUEUE": "dot",
@@ -128,6 +128,11 @@ def dot_env() -> dict[str, str]:
     return env
 
 
+def dot_port() -> int:
+    import service_ports
+    return service_ports.get("dot2api")
+
+
 def uv_path() -> Path:
     return runtime_paths.uv_path()
 
@@ -137,7 +142,7 @@ def cloudflared_path() -> Path:
 
 
 def dot_ready() -> bool:
-    return http_ok("http://127.0.0.1:8788/readyz")
+    return http_ok(f"http://127.0.0.1:{dot_port()}/readyz")
 
 
 def named_processes(name: str) -> list[psutil.Process]:
@@ -188,8 +193,9 @@ def tunnel_pids() -> list[int]:
         for proc in named_processes("cloudflared.exe"):
             try:
                 arguments = proc.cmdline()
+                dot_urls = {f"http://127.0.0.1:{dot_port()}", f"http://localhost:{dot_port()}"}
                 if ("tunnel" in arguments and any(
-                        arguments[index + 1] in ("http://127.0.0.1:8788", "http://localhost:8788")
+                        arguments[index + 1] in dot_urls
                         for index, part in enumerate(arguments[:-1]) if part == "--url")):
                     found.append(proc)
             except psutil.Error:
@@ -205,8 +211,12 @@ def start_dot2api() -> str:
     if dot_ready():
         messages.append(_tr("Dot2API 已在运行"))
     else:
+        try:
+            uv = uv_path()
+        except runtime_paths.ToolMissing as error:
+            return str(error)
         hidden_popen(
-            [str(uv_path()), "run", "--no-sync", "dot2api", "--data-dir", str(LOG_DIR / "data"), "serve"],
+            [str(uv), "run", "--no-sync", "dot2api", "--data-dir", str(LOG_DIR / "data"), "serve"],
             dot_env(),
             DOT_ROOT,
             LOG_DIR / "serve.log",
@@ -215,14 +225,19 @@ def start_dot2api() -> str:
     if tunnel_pids():
         messages.append(_tr("隧道已在运行"))
     else:
+        try:
+            cloudflared = cloudflared_path()
+        except runtime_paths.ToolMissing as error:
+            messages.append(str(error))
+            return "；".join(messages)
         log = LOG_DIR / "tunnel.log"
         log.write_bytes(b"")
         tunnel = hidden_popen(
             [
-                str(cloudflared_path()),
+                str(cloudflared),
                 "tunnel",
                 "--url",
-                "http://127.0.0.1:8788",
+                f"http://127.0.0.1:{dot_port()}",
                 "--protocol",
                 "http2",
                 "--no-autoupdate",
@@ -239,7 +254,7 @@ def start_dot2api() -> str:
 
 def stop_dot2api(tunnel: bool = True) -> str:
     """Stop the server and, unless told to keep it, the tunnel (a new tunnel gets a new public address)."""
-    pid = listener_pid(8788)
+    pid = listener_pid(dot_port())
     if pid:
         kill_pid(pid)
     if tunnel:
@@ -369,7 +384,13 @@ def start_chatgpt_web(show: bool = False) -> str:
         # Already running, or still starting: a second `--hidden` launch would raise its window.
         return _tr("ChatGPT Web 已在运行") if chatgpt_ready() else _tr("ChatGPT Web 正在启动")
     if not chatgpt_built():
-        return _tr("ChatGPT Web 还没有构建，先运行 deploy.py install")
+        message = _tr("ChatGPT Web 还没有构建，先运行 deploy.py install")
+        if not BUN.is_file():
+            try:
+                runtime_paths.bun_path()
+            except runtime_paths.ToolMissing as error:
+                return f"{message}；{error}"
+        return message
     hidden_popen(chatgpt_command() if show else chatgpt_command("--hidden"), chatgpt_env(), CHATGPT_LAUNCHER,
                  STATE_DIR / "chatgpt-web.log")
     return _tr("已打开 ChatGPT Web 窗口") if show else _tr("已启动 ChatGPT Web")
