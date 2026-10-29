@@ -13,6 +13,7 @@
 // The URL is read from a file so that it (it carries a secret) never appears in a process listing.
 // Prints one JSON line: {"ok": true, ...} or {"ok": false, "step": "...", "error": "..."}.
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 
 const [endpoint, command, ...rest] = process.argv.slice(2);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,8 +70,47 @@ async function click(page, step, findSource) {
   if (!done) throw new Step(step, `element not found: ${step}`);
 }
 
-const byText = (selector, text, root = "document") =>
-  `return [...${root}.querySelectorAll(${JSON.stringify(selector)})].find((e) => (e.innerText || "").trim() === ${JSON.stringify(text)});`;
+// Attributes and roles take precedence over translated labels. Refuse ambiguous matches.
+export function findControl(root, selectors, labels, role = "button, [role=button]") {
+  if (!root) return null;
+  const enabled = (element) => !element.disabled && element.getAttribute("aria-disabled") !== "true";
+  for (const selector of selectors) {
+    const matches = [...root.querySelectorAll(selector)].filter(enabled);
+    if (matches.length === 1) return matches[0];
+  }
+  for (const label of labels) {
+    const matches = [...root.querySelectorAll(role)].filter((element) => {
+      const labelledBy = (element.getAttribute("aria-labelledby") || "").split(/\s+/)
+        .map((id) => element.ownerDocument?.getElementById(id)?.textContent || "").join(" ").trim();
+      return enabled(element) && [element.getAttribute("aria-label"), labelledBy,
+        element.getAttribute("title"), element.innerText].some((value) => (value || "").trim().toLowerCase() === label.toLowerCase());
+    });
+    if (matches.length === 1) return matches[0];
+  }
+  return null;
+}
+
+const actions = {
+  add: [["button[data-testid=add-plugin]", "button[data-action=add-plugin]"], ["Add", "添加"]],
+  custom: [["[role=menuitem][data-testid=add-custom-mcp]", "[role=menuitem][data-action=add-custom-mcp]"],
+    ["Add custom MCP server", "Add a custom MCP server", "添加自定义 MCP 服务器"], "[role=menuitem]"],
+  refresh: [["button[data-testid=refresh-tools]", "button[data-action=refresh-tools]"], ["Refresh tools", "刷新工具"]],
+  connect: [["button[data-testid=connect-plugin]", "button[data-action=connect-plugin]"], ["Connect", "关联", "连接"]],
+  remove: [["button[data-testid=delete-plugin]", "button[data-action=delete-plugin]"], ["Delete app", "Delete plugin", "Remove app", "删除应用"]],
+  cancel: [["button[data-testid=cancel]", "button[data-action=cancel]"] , ["Cancel", "取消"]],
+  create: [["button[type=submit]", "button[data-testid=create-plugin]"], ["Create plugin", "Create as plugin", "创建为插件"]],
+  confirmDelete: [["button[type=submit]", "button[data-testid=confirm-delete]", "button[data-action=delete-plugin]"], ["Delete", "Remove", "删除", "删除应用"]],
+  send: [["button[data-testid=send-button]", "button[data-testid=fruitjuice-send-button]"], ["Send", "Send message", "发送"]],
+};
+
+export function actionExpression(action, root = "document", name = "") {
+  const [selectors, labels, role] = actions[action];
+  const names = action === "connect" && name ? [`Connect ${name}`, `连接 ${name}`, ...labels] : labels;
+  return `(${findControl.toString()})(${root}, ${JSON.stringify(selectors)}, ${JSON.stringify(names)}, ${JSON.stringify(role || "button, [role=button]")})`;
+}
+
+const actionSource = (action, root, name) => `return ${actionExpression(action, root, name)};`;
+const hasAction = (action, root, name) => `!!${actionExpression(action, root, name)}`;
 
 async function go(page, url, readyExpression) {
   await page.call("Page.navigate", { url });
@@ -79,8 +119,7 @@ async function go(page, url, readyExpression) {
 }
 
 async function listPlugins(page) {
-  await go(page, "https://chatgpt.com/plugins", `[...document.querySelectorAll("button")].some((b) => (b.innerText || "").trim() === "添加")`);
-  await until(page, "plugin list", `[...document.querySelectorAll('a[href^="/plugins/plugin_"]')].some((a) => (a.innerText || "").trim())`, 30);
+  await go(page, "https://chatgpt.com/plugins", hasAction("add"));
   await sleep(1500);
   return page.evaluate(`[...document.querySelectorAll('a[href^="/plugins/plugin_"]')].map((a) => (a.innerText || "").trim().split(String.fromCharCode(10))[0].trim())`);
 }
@@ -91,13 +130,13 @@ async function ensureConnected(page, name) {
   if (!installed.includes(name)) throw new Step("verify", "the new plugin is not in the installed list");
   const href = await page.evaluate(`[...document.querySelectorAll('a[href^="/plugins/plugin_"]')].find((a) => (a.innerText || "").trim().split(String.fromCharCode(10))[0].trim() === ${JSON.stringify(name)})?.href ?? ""`);
   if (!href) throw new Step("verify", `no manage link for ${name}`);
-  await go(page, href, `[...document.querySelectorAll("button")].some((b) => (b.innerText || "").trim() === "删除应用")`);
+  await go(page, href, hasAction("remove"));
   await sleep(1500);
-  const state = `(() => { const t = [...document.querySelectorAll("button")].map((b) => (b.innerText || "").trim()); return t.includes("刷新工具") ? "connected" : t.includes("关联") ? "unconnected" : "unknown"; })()`;
+  const state = `(${hasAction("refresh")} ? "connected" : ${hasAction("connect")} ? "unconnected" : "unknown")`;
   if ((await page.evaluate(state)) === "unconnected") {
-    await click(page, "open the connect dialog", byText("button", "关联"));
-    await until(page, "connect dialog", `(document.querySelector("[role=dialog]")?.innerText ?? "").includes(${JSON.stringify("连接 " + name)})`, 20);
-    await click(page, "connect", byText("[role=dialog] button", `连接 ${name}`));
+    await click(page, "open the connect dialog", actionSource("connect"));
+    await until(page, "connect dialog", hasAction("connect", 'document.querySelector("[role=dialog]")', name), 20);
+    await click(page, "connect", actionSource("connect", 'document.querySelector("[role=dialog]")', name));
     await until(page, "connected", `!document.querySelector("[role=dialog]")`, 30);
     await sleep(2000);
   }
@@ -108,10 +147,10 @@ async function ensureConnected(page, name) {
 async function register(page, name, description, url) {
   const before = await listPlugins(page);
   if (!before.includes(name)) {
-    await click(page, "open the add menu", byText("button", "添加"));
-    await until(page, "add menu", `!![...document.querySelectorAll('[role=menuitem]')].find((e) => e.innerText.trim() === "添加自定义 MCP 服务器")`);
-    await click(page, "choose custom MCP server", byText("[role=menuitem]", "添加自定义 MCP 服务器"));
-    await until(page, "form", `!!document.querySelector('[role=dialog] input[placeholder="https://example.com/mcp"]')`);
+    await click(page, "open the add menu", actionSource("add"));
+    await until(page, "add menu", hasAction("custom"));
+    await click(page, "choose custom MCP server", actionSource("custom"));
+    await until(page, "form", `!!document.querySelector('[role=dialog] input[type=url], [role=dialog] input[name=url], [role=dialog] input[placeholder="https://example.com/mcp"]')`);
     const filled = await page.evaluate(`(() => {
       const set = (el, v) => {
         const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : el.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
@@ -120,8 +159,10 @@ async function register(page, name, description, url) {
         el.dispatchEvent(new Event("change", { bubbles: true }));
       };
       const d = document.querySelector("[role=dialog]");
-      const fields = [d.querySelector('input[placeholder="自定义工具"]'), d.querySelector("textarea"),
-        d.querySelector('input[placeholder="https://example.com/mcp"]'), d.querySelector("select")];
+      const urlInput = d.querySelector('input[type=url], input[name=url], input[placeholder="https://example.com/mcp"]');
+      const textInputs = [...d.querySelectorAll('input:not([type=hidden]):not([type=checkbox])')].filter((e) => e !== urlInput);
+      const fields = [d.querySelector('input[name=name], input[data-testid=plugin-name]') || (textInputs.length === 1 ? textInputs[0] : null) ||
+        d.querySelector('input[placeholder="Custom tool"], input[placeholder="自定义工具"]'), d.querySelector("textarea"), urlInput, d.querySelector("select")];
       if (fields.some((f) => !f)) return false;
       set(fields[0], ${JSON.stringify(name)});
       set(fields[1], ${JSON.stringify(description)});
@@ -132,14 +173,14 @@ async function register(page, name, description, url) {
     if (!filled) throw new Step("fill", "the add form has changed shape");
     await click(page, "accept the risk box", `return document.querySelector("[role=dialog] button[role=checkbox]");`);
     await until(page, "submit enabled", `(() => { const b = document.querySelector("[role=dialog] button[type=submit]"); return !!b && !b.disabled; })()`, 10);
-    await click(page, "create", byText("[role=dialog] button", "创建为插件"));
+    await click(page, "create", actionSource("create", 'document.querySelector("[role=dialog]")'));
     // Success opens the connect dialog (it can take a minute); a refused address shows the error in the form instead.
     // If the dialog never shows, the plugin still exists and is connected from its detail page below.
     for (let i = 0; i < 360; i++) {
       const text = await page.evaluate(`document.querySelector("[role=dialog]")?.innerText ?? ""`);
-      if (text.includes("无法连接到 MCP 服务器")) throw new Step("create", "ChatGPT could not reach the MCP server at that address");
-      if (text.includes(`连接 ${name}`)) {
-        await click(page, "connect", byText("[role=dialog] button", `连接 ${name}`));
+      if (/无法连接到 MCP 服务器|unable to connect to (the )?MCP server|could not connect to (the )?MCP server/i.test(text)) throw new Step("create", "ChatGPT could not reach the MCP server at that address");
+      if (await page.evaluate(hasAction("connect", 'document.querySelector("[role=dialog]")', name))) {
+        await click(page, "connect", actionSource("connect", 'document.querySelector("[role=dialog]")', name));
         await until(page, "connect dialog closed", `!document.querySelector("[role=dialog]")`, 30);
         break;
       }
@@ -156,16 +197,16 @@ async function remove(page, names) {
     if (!installed.includes(name)) continue;
     const href = await page.evaluate(`[...document.querySelectorAll('a[href^="/plugins/plugin_"]')].find((a) => (a.innerText || "").trim().split(String.fromCharCode(10))[0].trim() === ${JSON.stringify(name)})?.href ?? ""`);
     if (!href) throw new Step("find", `no manage link for ${name}`);
-    await go(page, href, `[...document.querySelectorAll("button")].some((b) => (b.innerText || "").trim() === "删除应用")`);
-    await click(page, "delete", byText("button", "删除应用"));
+    await go(page, href, hasAction("remove"));
+    await click(page, "delete", actionSource("remove"));
     await until(page, "confirm", `!!document.querySelector("[role=dialog]")`, 10);
     const dialog = await page.evaluate(`document.querySelector("[role=dialog]").innerText`);
     if (!dialog.includes(name)) throw new Step("confirm", `the delete dialog does not name ${name}: ${dialog.slice(0, 80)}`);
     if (process.env.DOT_PLUGIN_DRY) {
-      await click(page, "cancel", byText("[role=dialog] button", "取消"));
+      await click(page, "cancel", actionSource("cancel", 'document.querySelector("[role=dialog]")'));
       return { dry: true, dialog };
     }
-    await click(page, "confirm delete", `const d = document.querySelector("[role=dialog]"); return [...d.querySelectorAll("button")].reverse().find((b) => /删除/.test(b.innerText || ""));`);
+    await click(page, "confirm delete", actionSource("confirmDelete", 'document.querySelector("[role=dialog]")'));
     await until(page, "deleted", `!document.querySelector("[role=dialog]")`, 20);
     removed.push(name);
   }
@@ -175,7 +216,7 @@ async function remove(page, names) {
 // Sends a message to the Dot (the "你的 dot" thread): it holds the standing instructions, and only a message
 // there makes it subscribe to the queue through the plugin that is connected at that moment.
 async function wake(page, text) {
-  const composer = `document.querySelector('div[contenteditable="true"][aria-label="消息"]')`;
+  const composer = `document.querySelector('#prompt-textarea[contenteditable=true], [data-testid=dot-composer][contenteditable=true], [role=textbox][contenteditable=true], div[contenteditable=true][aria-label=Message], div[contenteditable=true][aria-label="消息"]')`;
   await go(page, "https://chatgpt.com/dots/home", `!!${composer}`);
   await sleep(2500);
   const typed = await page.evaluate(`(() => {
@@ -187,11 +228,12 @@ async function wake(page, text) {
   })()`);
   if (!typed) throw new Step("type", "the message did not reach the Dot composer");
   await sleep(500);
-  await click(page, "send", `return document.querySelector('button[aria-label="发送"]');`);
+  await click(page, "send", actionSource("send"));
   await until(page, "message sent", `(${composer}?.innerText ?? "").trim().length === 0`, 15);
   return { sent: true };
 }
 
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 let page;
 try {
   page = await connect();
@@ -216,3 +258,4 @@ try {
 }
 page?.close();
 process.exit(0);
+}
