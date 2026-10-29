@@ -15,6 +15,7 @@ import allocator
 import antigravity_telemetry
 import override_store
 import route_judge as router
+from router_test_support import isolated_router_state, temporary_root, usage_windows
 
 
 EXPIRING_SUBSCRIPTION = {
@@ -26,7 +27,6 @@ EXPIRING_SUBSCRIPTION = {
     'bundles': {'grok47_high': {'model': 'grok-4.7', 'effort': 'high'}},
 }
 _real_load_accounts = allocator.load_accounts
-_fixture_patch = None
 
 
 def _load_accounts_with_expiring_subscription(path=None):
@@ -37,32 +37,10 @@ def _load_accounts_with_expiring_subscription(path=None):
 
 
 def setUpModule():
-    global _fixture_patch
-    account_override = patch.dict(allocator.os.environ, {
-        'ROUTER_ACCOUNTS_OVERRIDE': str(Path(tempfile.gettempdir()) / 'no-such-router-accounts-override.json')})
-    account_override.start()
-    unittest.addModuleCleanup(account_override.stop)
-    discovery = patch.object(allocator.provider_inventory, 'current', return_value={'accounts': {}, 'launchers': {}})
-    discovery.start()
-    unittest.addModuleCleanup(discovery.stop)
-    availability = patch.object(allocator.host_policy, 'load_policy', return_value=None)
-    availability.start()
-    unittest.addModuleCleanup(availability.stop)
-    _fixture_patch = patch.object(allocator, 'load_accounts', _load_accounts_with_expiring_subscription)
-    _fixture_patch.start()
-    registry_temp = tempfile.TemporaryDirectory(prefix='router-registry-test-')
-    unittest.addModuleCleanup(registry_temp.cleanup)
-    registry_env = patch.dict(router.os.environ, {'ROUTER_DISPATCH_DB': str(Path(registry_temp.name) / 'dispatch.sqlite3')})
-    registry_env.start()
-    unittest.addModuleCleanup(registry_env.stop)
-    overrides = patch.dict(allocator.os.environ, {'ROUTER_OVERRIDES': str(Path(tempfile.gettempdir()) / 'no-such-router-overrides.json')})
-    overrides.start()
-    unittest.addModuleCleanup(overrides.stop)
-
-
-def tearDownModule():
-    _fixture_patch.stop()
-    unittest.case.doModuleCleanups()
+    isolated_router_state(unittest.addModuleCleanup)
+    fixture = patch.object(allocator, 'load_accounts', _load_accounts_with_expiring_subscription)
+    fixture.start()
+    unittest.addModuleCleanup(fixture.stop)
 
 
 class AllocatorTests(unittest.TestCase):
@@ -73,9 +51,6 @@ class AllocatorTests(unittest.TestCase):
 
     def setUp(self):
         self.now = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)
-        patcher = patch.object(allocator, 'capacity_override_path', return_value=Path(tempfile.gettempdir()) / 'no-such-capacity.json')
-        patcher.start()
-        self.addCleanup(patcher.stop)
 
     def usage(self, **overrides):
         windows = {
@@ -86,11 +61,7 @@ class AllocatorTests(unittest.TestCase):
         }
         windows.update(overrides)
         windows.setdefault('claude-2', list(windows['claude']))
-        accounts = {name: {'windows': [
-            {'id': wid, 'remaining_pct_before_reset': rem, 'observed_remaining_pct': rem,
-             'seconds_until_reset': hours * 3600, 'resets_at': (self.now + timedelta(hours=hours)).isoformat()}
-            for wid, rem, hours in rows]} for name, rows in windows.items()}
-        return {'read_ok': True, 'accounts': accounts}
+        return usage_windows(self.now, windows)
 
     def no_flash(self, **accounts):
         flash = [('gemini-5h', 3, 3), ('gemini-weekly', 5, 100), ('3p-5h', 3, 3), ('3p-weekly', 5, 100)]
@@ -1320,14 +1291,12 @@ class OverrideContractTests(unittest.TestCase):
     """Contract tests for temporary priority overrides, reset confirmation, receipts, and atomic store."""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        self.root = temporary_root(self.addCleanup)
         self.path = self.root / 'overrides.json'
         self.now = datetime(2026, 10, 16, 9, tzinfo=timezone.utc)
         self.baseline = self.now - timedelta(hours=1)
         self.reset = self.now + timedelta(days=6)
-        self.accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
         self.usage = {'accounts': {'codex': {
             'status': 'fresh', 'fetched_at': self.now.isoformat(), 'observation_id': 'new',
             'windows': [{'id': 'usage', 'used_pct': 94, 'remaining_pct_before_reset': 6,
@@ -1483,9 +1452,7 @@ class AntigravityTelemetryTests(unittest.TestCase):
     """Contract tests for Antigravity resilient transcript telemetry and handoff rotation."""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.home = Path(self.tmp.name)
+        self.home = temporary_root(self.addCleanup)
         self.agent = self.home / '.paseo/agents/workspace/agent.json'
         self.agent.parent.mkdir(parents=True)
         self.log = self.home / '.gemini/antigravity-cli/brain/fixture/.system_generated/logs/transcript.jsonl'
@@ -1496,7 +1463,7 @@ class AntigravityTelemetryTests(unittest.TestCase):
             'sessionId': session or 'plugin:' + json.dumps({'version': 1, 'data': data or {'conversationId': 'fixture'}})}}))
 
     def test_resilient_bundles_and_session_key_binding(self):
-        bundles = allocator.bundles(allocator.load_accounts(allocator.REFERENCES / 'accounts.json'))
+        bundles = allocator.bundles(allocator.load_accounts(allocator.reference_fleet_path()))
         for name in ('flash_high', 'argon_high'):
             self.assertEqual((bundles[name]['provider'], bundles[name]['account'], bundles[name]['modeId']),
                              ('antigravity-resilient', 'antigravity', 'full-access'))
@@ -1543,7 +1510,7 @@ class AntigravityTelemetryTests(unittest.TestCase):
             {'type': 'CHECKPOINT', 'step_index': 2},
             {'type': 'PLANNER_RESPONSE', 'step_index': 3, 'usage': {'input_tokens': 22000}},
         ])))
-        accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+        accounts = allocator.load_accounts(allocator.reference_fleet_path())
         now = datetime(2026, 10, 16, 9, tzinfo=timezone.utc)
         original_session_log = allocator.session_log
         with patch.object(allocator, 'session_log', side_effect=lambda agent_id, home=None: original_session_log(agent_id, self.home)):
@@ -1561,9 +1528,7 @@ class MeasuredCapacityTests(unittest.TestCase):
 
     def setUp(self):
         self.now = datetime.now(timezone.utc)
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / 'capacity.json'
+        self.path = temporary_root(self.addCleanup) / 'capacity.json'
         patcher = patch.object(allocator, 'capacity_override_path', return_value=self.path)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -1575,11 +1540,7 @@ class MeasuredCapacityTests(unittest.TestCase):
         self.path.write_text(json.dumps(document), encoding='utf-8')
 
     def usage(self, **windows):
-        accounts = {name: {'windows': [
-            {'id': wid, 'remaining_pct_before_reset': rem, 'observed_remaining_pct': rem,
-             'seconds_until_reset': hours * 3600, 'resets_at': (self.now + timedelta(hours=hours)).isoformat()}
-            for wid, rem, hours in rows]} for name, rows in windows.items()}
-        return {'read_ok': True, 'accounts': accounts}
+        return usage_windows(self.now, windows)
 
     def ranking(self, task, usage):
         result = allocator.plan(task, usage, self.now)
@@ -1621,9 +1582,6 @@ class MeasuredCapacityTests(unittest.TestCase):
 class RouterIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime.now(timezone.utc)
-        patcher = patch.object(allocator, 'capacity_override_path', return_value=Path(tempfile.gettempdir()) / 'no-such-capacity.json')
-        patcher.start()
-        self.addCleanup(patcher.stop)
         scorer_env = patch.dict(os.environ, {'ROUTER_DISABLE_LIVE_SCORER': '1'})
         scorer_env.start()
         self.addCleanup(scorer_env.stop)

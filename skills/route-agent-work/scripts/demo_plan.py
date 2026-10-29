@@ -1,6 +1,39 @@
 """Offline reference-fleet simulation. Never issues a dispatch receipt or reads host state."""
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+
+# The same bounded task as examples/task.json, so `plan --demo` needs no file from the repository.
+SAMPLE_DOCUMENT = {'task': {
+    'objective': 'Add a missing timeout option to a Python command-line tool, update its help text, and run the existing pytest suite.',
+    'context': 'A bounded coding task in an existing checkout, estimated at 1.5 active worker-hours. '
+               'The local test fixtures are needed to verify the change.',
+    'expected_hours': 1.5,
+    'needs': {'local_only': True, 'local_only_reason': 'Runs pytest against local repository fixtures on this machine.'},
+}}
+
+
+def reference_accounts(allocator):
+    """Prefer this machine's saved fleet. A blocked home falls back to the shipped template.
+
+    Tests patch Path.home so it raises. The shipped template marks every slot unverified; the demo
+    forces those simulated accounts launchable. A saved fleet is used as written.
+    """
+    shipped = allocator.REFERENCES / 'accounts.json'
+    source = shipped
+    try:
+        local = Path.home() / '.route-manager' / 'accounts.local.json'
+        if local.is_file():
+            source = local
+    except (OSError, RuntimeError, AssertionError):
+        source = shipped
+    accounts = allocator.load_accounts(source)
+    if Path(source).resolve() == shipped.resolve():
+        for spec in (accounts.get('accounts') or {}).values():
+            if isinstance(spec, dict):
+                spec['verified'] = True
+    return accounts
 
 
 def plan(document, allocator):
@@ -10,7 +43,7 @@ def plan(document, allocator):
     # Continuations refer to live sessions; a demo always starts a fresh simulated task.
     task = {k: v for k, v in task.items() if k not in ('chain', 'worker')}
     now = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
-    accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+    accounts = reference_accounts(allocator)
     # Illustrative observations, not a claim about current subscriptions or model availability.
     snapshot = {'claude': (55, 112), 'codex': (83, 144), 'antigravity': (63, 89), 'dot': (100, 168)}
     accounts['accounts'] = {k: v for k, v in accounts['accounts'].items() if k in snapshot}

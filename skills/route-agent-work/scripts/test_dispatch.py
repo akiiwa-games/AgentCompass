@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -15,15 +14,16 @@ import allocator
 import dispatch_flow as flow
 import dispatch_registry as registry
 
+from router_test_support import isolated_router_state, temporary_root
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup, policy=False)
+
 
 class DispatchTests(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory(prefix='dispatch-test-')
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
-        discovery = patch.object(allocator.provider_inventory, 'current', return_value={'accounts': {}, 'launchers': {}})
-        discovery.start()
-        self.addCleanup(discovery.stop)
+        self.root = temporary_root(self.addCleanup)
         # Subprocess integration also uses isolated, signed-in local fixtures.
         for folder, filename, document in (
             ('.codex', 'auth.json', {'tokens': {'access_token': 'fixture-codex', 'account_id': 'fixture-account',
@@ -36,7 +36,7 @@ class DispatchTests(unittest.TestCase):
             (self.root / folder).mkdir()
             (self.root / folder / filename).write_text(json.dumps(document), encoding='utf-8')
         self.now = registry.utcnow()
-        self.accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
         (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-2', 'codex', 'antigravity']}))
         (self.root / 'usage.json').write_text(json.dumps({'providers': {'codex': {}}}))
         env = patch.dict(os.environ, {
@@ -610,7 +610,7 @@ class RollTests(unittest.TestCase):
                     return {'ok': True, 'agent': self.snapshot({'request': request['request']}, provider='grok',
                                                                model='grok-4.7', currentModeId=None)}
                 return {'ok': True, 'agent': None}
-            inventory = {'accounts': {'grok': {'family': 'grok', 'provider': 'grok', 'sources': ['native', 'paseo'],
+            inventory = {'accounts': {'grok': {'family': 'grok', 'provider': 'grok', 'sources': ['native', 'paseo', 'usage-cache'],
                                                'status': status, 'plan': 'subscription', 'billing': 'subscription'}},
                          'launchers': {'grok': {'family': 'grok', 'status': status}}}
             with self.subTest(status), patch.object(allocator.provider_inventory, 'current', return_value=inventory), \

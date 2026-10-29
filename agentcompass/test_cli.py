@@ -1,3 +1,4 @@
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -50,6 +51,40 @@ class CliTests(unittest.TestCase):
 
     def test_unknown_command_returns_2(self):
         self.assertEqual(cli.main(["nope"]), 2)
+
+    def test_plan_without_a_task_explains_how_to_pass_one(self):
+        out = io.StringIO()
+        with patch("agentcompass.cli.readiness_notice", return_value=None), \
+                patch("agentcompass.cli.subprocess.call", side_effect=AssertionError("route_judge must not run")), \
+                patch("sys.stdout", out):
+            code = cli.main(["plan", "--dry-run"])
+        text = out.getvalue()
+        self.assertEqual(code, 1)
+        self.assertIn("agentcompass plan --input <task.json>", text)
+        self.assertIn("agentcompass roll --brief <task.md>", text)
+        self.assertIn("agentcompass plan --demo --dry-run", text)
+
+    def test_plan_without_a_task_includes_the_setup_guidance_when_nothing_is_ready(self):
+        notice = (
+            "No provider account is ready on this machine (no signed-in CLI was found). "
+            "Run `python -X utf8 setup/onboard.py` (or `agentcompass setup`) to detect the CLIs you are signed in to "
+            "and start usage collection."
+        )
+        out = io.StringIO()
+        with patch("agentcompass.cli.readiness_notice", return_value=notice), \
+                patch("agentcompass.cli.subprocess.call", side_effect=AssertionError("route_judge must not run")), \
+                patch("sys.stdout", out):
+            code = cli.main(["plan", "--brief", "task.md"])
+        text = out.getvalue()
+        self.assertEqual(code, 1)
+        self.assertIn("agentcompass setup", text)
+        self.assertIn("--input", text)
+
+    def test_plan_demo_still_reaches_route_judge(self):
+        with patch("agentcompass.cli.subprocess.call", return_value=0) as call, \
+                patch("agentcompass.cli.readiness_notice", side_effect=AssertionError("demo has a task")):
+            self.assertEqual(cli.main(["plan", "--demo", "--dry-run"]), 0)
+        self.assertEqual(call.call_args.args[0][5:], ["plan", "--demo", "--dry-run"])
 
 
 if __name__ == "__main__":

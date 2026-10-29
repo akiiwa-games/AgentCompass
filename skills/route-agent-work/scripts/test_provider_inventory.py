@@ -6,7 +6,6 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
-import tempfile
 import socket
 import unittest
 from unittest.mock import patch
@@ -16,12 +15,16 @@ import dispatch_registry
 import host_policy
 import provider_inventory as inventory
 
+from router_test_support import isolated_router_state, temporary_root
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup, discovery=False, policy=False)
+
 
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
-        temp = tempfile.TemporaryDirectory(prefix='provider-discovery-test-')
-        self.addCleanup(temp.cleanup)
-        self.home = Path(temp.name)
+        self.home = temporary_root(self.addCleanup)
         self.now = datetime(2026, 10, 26, 7, tzinfo=timezone.utc)
         self.env = {'PATH': ''}
         self.paseo({'codex': {'enabled': True}})
@@ -69,7 +72,7 @@ class DiscoveryTests(unittest.TestCase):
         return result
 
     def apply(self, snapshot):
-        accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+        accounts = allocator.load_accounts(allocator.reference_fleet_path())
         return inventory.apply(accounts, snapshot)
 
     def test_new_launcher_later_signin_enrolls_via_real_account_loading(self):
@@ -141,10 +144,12 @@ class DiscoveryTests(unittest.TestCase):
     def test_grok_no_usage_is_eligible_without_unlimited_bonus_and_launchable(self):
         self.paseo({'grok': {'extends': 'acp', 'enabled': True}})
         snapshot = self.discover()
-        accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+        accounts = allocator.load_accounts(allocator.reference_fleet_path())
         accounts['accounts'].pop('grok')  # custom catalog without a Grok template
         inventory.apply(accounts, snapshot)
         spec = accounts['accounts']['grok']
+        self.assertFalse(spec['verified'])  # installed, with no usage-cache, is not a confident pick
+        spec['verified'] = True
         self.assertTrue(spec['unmetered'])
         self.assertFalse(spec.get('unlimited', False))
         self.assertEqual(spec['windows'], {})
@@ -652,10 +657,9 @@ class IsolationRecipeTests(unittest.TestCase):
     """
 
     def setUp(self):
-        outer = tempfile.TemporaryDirectory(prefix='isolation-test-')
-        self.addCleanup(outer.cleanup)
-        self.real = Path(outer.name) / 'real-home'
-        self.sandbox = Path(outer.name) / 'new-user'
+        outer = temporary_root(self.addCleanup)
+        self.real = outer / 'real-home'
+        self.sandbox = outer / 'new-user'
         self.sandbox.mkdir(parents=True)
         (self.real / '.paseo').mkdir(parents=True)
         (self.real / '.paseo/config.json').write_text(json.dumps({'agents': {'providers': {
@@ -678,7 +682,7 @@ class IsolationRecipeTests(unittest.TestCase):
         self.assertEqual(leaked['accounts']['codex']['status'], 'ready')
 
     def test_shipped_fleet_gives_a_new_user_no_candidates(self):
-        """accounts.json is the author's fleet; only discovery may make an account routable."""
+        """The shipped accounts.json is an unverified template; discovery or a saved fleet makes an account routable."""
         env = {'ROUTER_PROVIDER_HOME': str(self.sandbox), 'ROUTER_STATE_DIR': str(self.sandbox / '.route-manager'),
                'PASEO_HOME': str(self.sandbox / '.paseo'), 'USERPROFILE': str(self.sandbox), 'HOME': str(self.sandbox),
                'ROUTER_CAPACITY': str(self.sandbox / 'capacity.json'), 'PATH': ''}

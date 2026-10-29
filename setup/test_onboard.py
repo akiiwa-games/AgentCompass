@@ -361,7 +361,21 @@ class OverrideTests(HomeCase):
         self.write(".route-manager/onboarding.json", state)
         result = onboard.write_override(self.home, self.detection(), set())
         self.assertEqual(result["removed"], ["opencode"])
-        self.assertNotIn("accounts", json.loads(onboard.override_path(self.home).read_text(encoding="utf-8")))
+        document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
+        self.assertIs(document["accounts"]["opencode"]["verified"], True)
+
+    def test_an_accepted_unverifiable_account_is_marked_verified(self):
+        result = onboard.write_override(self.home, self.detection(), set())
+        document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
+        self.assertEqual(result["enabled"], ["opencode"])
+        self.assertIs(document["accounts"]["opencode"]["verified"], True)
+        self.assertNotIn("claude", document["accounts"])
+
+    def test_a_user_disabled_unverifiable_account_stays_off(self):
+        self.write(".route-manager/accounts-override.json", {"schema_version": 2, "accounts": {"opencode": {"verified": False}}})
+        onboard.write_override(self.home, self.detection(), set())
+        document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
+        self.assertIs(document["accounts"]["opencode"]["verified"], False)
 
     def test_dry_run_writes_nothing(self):
         onboard.write_override(self.home, self.detection(), {"opencode"}, dry_run=True)
@@ -441,6 +455,14 @@ class SetupFlowTests(HomeCase):
         self.assertEqual(code, 0)
         self.assertIn("Dry run complete", output)
         self.assertEqual(sorted(str(p) for p in self.home.rglob("*")), before)
+
+    def test_installed_unverifiable_cli_uses_the_doctor_words_and_stays_routable(self):
+        self.cli = {"opencode": "opencode"}
+        code, output = self.run_setup("--no-docs", "--no-skills")
+        self.assertEqual(code, 0)
+        self.assertIn("opencode     installed, sign-in unverified", output)
+        document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
+        self.assertIs(document["accounts"]["opencode"]["verified"], True)
 
     def test_no_signed_in_cli_says_so(self):
         _, output = self.run_setup("--no-docs", "--no-skills")

@@ -7,10 +7,16 @@ from unittest.mock import patch
 import allocator
 from model_resolution import resolve_canonical_model
 
+from router_test_support import isolated_router_state
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup)
+
 
 class ModelResolutionTests(unittest.TestCase):
     def setUp(self):
-        self.accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
 
     def test_decorated_names_aliases_and_family_defaults(self):
         cases = {

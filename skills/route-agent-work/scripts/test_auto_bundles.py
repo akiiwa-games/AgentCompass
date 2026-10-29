@@ -5,7 +5,13 @@ import unittest
 import auto_bundles as ab
 import allocator
 
-REAL = json.loads((Path(__file__).resolve().parents[1] / 'references/accounts.json').read_text(encoding='utf-8-sig'))
+from router_test_support import isolated_router_state
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup)
+
+REAL = json.loads(allocator.reference_fleet_path().read_text(encoding='utf-8-sig'))
 NOW = 2_000_000_000.0
 
 
@@ -149,7 +155,7 @@ class SharedHooks(unittest.TestCase):
 
     def test_boolean_disabled_gives_reason_string(self):
         from datetime import datetime, timezone
-        merged = allocator.load_accounts()
+        merged = json.loads(json.dumps(REAL))
         owner, bid = next((o, b) for o, s in merged['accounts'].items() for b in (s.get('bundles') or {}))
         merged['accounts'][owner]['bundles'][bid].update(disabled=True, discovery_unavailable=True)
         task = {'work_kind': 'implementation', 'difficulty': 'routine', 'needs': {'local_only': True}}

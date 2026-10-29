@@ -11,32 +11,11 @@ import unittest
 from unittest.mock import patch
 
 import route_judge as router
+from router_test_support import isolated_router_state, temporary_root
 
 
 def setUpModule():
-    discovery = patch.object(router.provider_inventory, 'current', return_value={'accounts': {}, 'launchers': {}})
-    discovery.start()
-    unittest.addModuleCleanup(discovery.stop)
-    availability = patch.object(router.host_policy, 'load_policy', return_value=None)
-    availability.start()
-    unittest.addModuleCleanup(availability.stop)
-    registry_temp = tempfile.TemporaryDirectory(prefix='router-registry-test-')
-    unittest.addModuleCleanup(registry_temp.cleanup)
-    registry_env = patch.dict(router.os.environ, {'ROUTER_DISPATCH_DB': str(Path(registry_temp.name) / 'dispatch.sqlite3')})
-    registry_env.start()
-    unittest.addModuleCleanup(registry_env.stop)
-    overrides = patch.dict(router.os.environ, {'ROUTER_OVERRIDES': str(Path(tempfile.gettempdir()) / 'no-such-router-overrides.json')})
-    overrides.start()
-    unittest.addModuleCleanup(overrides.stop)
-    # Tests never read the user's real scorer choice or keys.
-    scorer = patch.dict(router.os.environ, {'ROUTER_SCORER_CONFIG': str(Path(tempfile.gettempdir()) / 'no-such-scorer-config.json'),
-                                            'ROUTER_SCORER_TYPE': ''})
-    scorer.start()
-    unittest.addModuleCleanup(scorer.stop)
-
-
-def tearDownModule():
-    unittest.case.doModuleCleanups()
+    isolated_router_state(unittest.addModuleCleanup)
 
 
 class RoutingTests(unittest.TestCase):

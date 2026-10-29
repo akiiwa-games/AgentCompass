@@ -30,6 +30,7 @@ class RouterGateHookTests(unittest.TestCase):
             "ROUTER_DISPATCH_DB": str(self.state / "dispatch.sqlite3"),
             "ROUTER_HOST_POLICY": str(self.state / "host-policy.json"),
             "ROUTER_ACCOUNTS_OVERRIDE": str(self.state / "accounts-override.json"),
+            "ROUTER_ACCOUNTS_FILE": str(Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "scripts" / "fixtures" / "reference-accounts.json"),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -869,13 +870,14 @@ class BoundDispatchGateTests(unittest.TestCase):
             'ROUTER_GATE_BYPASS': '0', 'PASEO_AGENT_ID': '', 'ROUTER_PASEO_LEGACY_NO_LABELS': '0',
             'ROUTER_HOST_POLICY': str(root / 'host-policy.json'),
             'ROUTER_ACCOUNTS_OVERRIDE': str(root / 'accounts-override.json'),
+            'ROUTER_ACCOUNTS_FILE': str(Path(__file__).resolve().parents[1] / 'skills' / 'route-agent-work' / 'scripts' / 'fixtures' / 'reference-accounts.json'),
         })
         env.start()
         self.addCleanup(env.stop)
         policy = mock.patch.object(allocator.host_policy, 'load_policy', return_value=None)
         policy.start()
         self.addCleanup(policy.stop)
-        accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+        accounts = allocator.load_accounts(allocator.reference_fleet_path())
         bundle = dict(allocator.bundles(accounts)['argon_high'], bundle_id='argon_high')
         self.task = {'parent_agent_id': 'parent-fixture', 'task_id': 'task-fixture',
                      'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 0.5,

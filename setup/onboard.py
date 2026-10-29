@@ -132,7 +132,7 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
     accounts = document.setdefault("accounts", {})
     detected = {row["name"]: row for row in detection["accounts"]}
     wanted_off = {name for name in disabled if name in detected and detected[name]["signed_in"] is not False}
-    added, removed = [], []
+    added, removed, enabled = [], [], []
     for name in sorted(wanted_off):
         entry = accounts.setdefault(name, {})
         if entry.get("verified") is not False:
@@ -147,11 +147,23 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
             removed.append(name)
             if not entry:
                 accounts.pop(name)
+    # An accepted CLI whose sign-in cannot be read stays routable only when the override says so.
+    # Discovery no longer promotes "installed" to a confident pick by itself.
+    for name, row in sorted(detected.items()):
+        if row.get("signed_in") is not None or name in wanted_off:
+            continue
+        entry = accounts.get(name)
+        if isinstance(entry, dict) and entry.get("verified") is False and name not in ours_before:
+            continue              # the user turned this slot off; do not flip it back
+        entry = accounts.setdefault(name, {})
+        if entry.get("verified") is not True:
+            entry["verified"] = True
+            enabled.append(name)
     if not accounts:
         document.pop("accounts")
-    changed = bool(added or removed) or not existed
+    changed = bool(added or removed or enabled) or not existed
     result = {"path": str(path), "created": not existed or bool(previous_state.get("override_created")),
-              "added": added, "removed": removed, "disabled": sorted(wanted_off), "backup": None}
+              "added": added, "removed": removed, "enabled": enabled, "disabled": sorted(wanted_off), "backup": None}
     if changed and not dry_run:
         if existed:
             backup = home / ".route-manager" / "backups" / f"onboard-{datetime.now().strftime('%Y%m%d-%H%M%S')}" / path.name
@@ -286,7 +298,7 @@ def setup_main(argv: list[str] | None = None) -> int:
     summary["detected"] = [{k: v for k, v in row.items() if k != "home"} for row in detection["accounts"]]
     _line("\nDetected agent CLIs:")
     for row in detection["accounts"]:
-        state = {True: "signed in", False: "not available", None: "installed (sign-in cannot be verified)"}[row["signed_in"]]
+        state = {True: "signed in", False: "not available", None: "installed, sign-in unverified"}[row["signed_in"]]
         _line(f"  {row['name']:<12} {state}" + (f"  plan={row['plan']}" if row.get("plan") else ""))
     paseo = detection["paseo"]
     _line(f"  {'paseo':<12} " + ("installed" if paseo["installed"] else "not found") + (", config present" if paseo["config"] else ""))

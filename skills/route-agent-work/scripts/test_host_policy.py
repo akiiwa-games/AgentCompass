@@ -1,8 +1,6 @@
 """Host exclusions apply at dispatch boundaries; fixtures never read real host state."""
 from datetime import datetime, timezone
 import json
-from pathlib import Path
-import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -10,18 +8,19 @@ import allocator
 import host_policy
 import route_judge as router
 
+from router_test_support import isolated_router_state, temporary_root
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup, policy=False)
+
 LS = {'allowed_accounts': ['codex', 'antigravity', 'dot', 'chatgpt-web'],
       'judges': ['codex'], 'usage_providers': ['codex', 'antigravity']}
 
 
 class HostPolicyTests(unittest.TestCase):
     def setUp(self):
-        discovery = patch.object(allocator.provider_inventory, 'current', return_value={'accounts': {}, 'launchers': {}})
-        discovery.start()
-        self.addCleanup(discovery.stop)
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.directory = Path(temporary.name)
+        self.directory = temporary_root(self.addCleanup)
         registry_env = patch.dict(router.os.environ, {'ROUTER_DISPATCH_DB': str(self.directory / 'dispatch.sqlite3')})
         registry_env.start()
         self.addCleanup(registry_env.stop)
@@ -30,7 +29,7 @@ class HostPolicyTests(unittest.TestCase):
         patcher = patch.object(host_policy, 'policy_path', return_value=(self.path, False))
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.accounts = allocator.load_accounts(allocator.REFERENCES/'accounts.json')
+        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
         self.now = datetime(2026, 10, 11, tzinfo=timezone.utc)
 
     def write(self, data):

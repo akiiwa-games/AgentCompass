@@ -7,7 +7,6 @@ from pathlib import Path
 import subprocess
 import sqlite3
 import sys
-import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
@@ -20,12 +19,16 @@ import route_judge
 import roll
 import run_grok_bot as runner
 
+from router_test_support import isolated_router_state, temporary_root
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup, discovery=False, policy=False)
+
 
 class GrokBotTests(unittest.TestCase):
     def setUp(self):
-        temp = tempfile.TemporaryDirectory(prefix='grok-bot-test-')
-        self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        self.root = temporary_root(self.addCleanup)
         state = patch.object(runner, 'STATE', self.root / 'grok-bot')
         state.start()
         self.addCleanup(state.stop)
@@ -156,7 +159,7 @@ class GrokBotTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         snapshot = {'accounts': {'grok-bot': {'family': 'grok-bot', 'status': 'ready'}},
                     'launchers': {'grok-bot': {'family': 'grok-bot', 'status': 'ready'}}}
-        accounts = provider_inventory.apply(allocator.load_accounts(allocator.REFERENCES / 'accounts.json'), snapshot)
+        accounts = provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
         self.assertNotIn('hours', accounts['accounts']['grok-bot']['windows']['trial'])
         cache = self.root / 'trial-usage.json'
         for reset in (None, (now + timedelta(days=2)).isoformat()):
@@ -347,7 +350,7 @@ class GrokBotTests(unittest.TestCase):
         self.assertEqual((row['status'], row['billing'], row['execution'], row['dispatch']),
                          ('ready', 'unknown', 'remote', 'automatic'))
         self.assertIn('grok', snapshot['accounts'])
-        applied = provider_inventory.apply(allocator.load_accounts(allocator.REFERENCES / 'accounts.json'), snapshot)
+        applied = provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
         bundle = allocator.bundles(applied)['grok_bot']
         self.assertEqual((bundle['provider'], bundle['account'], bundle['model'], bundle['effort']),
                          ('grok-bot', 'grok-bot', 'grok-bot', None))

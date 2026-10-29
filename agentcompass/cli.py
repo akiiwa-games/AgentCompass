@@ -68,6 +68,66 @@ def passthrough(stage: str, args: list[str]) -> int:
     return subprocess.call(command)
 
 
+PLAN_NEEDS_TASK = """\
+plan needs a task. Pass one of:
+  agentcompass plan --input <task.json> [--dry-run]
+  agentcompass roll --brief <task.md>
+  agentcompass plan --demo --dry-run
+"""
+
+
+def _has_option(args: list[str], name: str) -> bool:
+    return any(arg == name or arg.startswith(name + "=") for arg in args)
+
+
+def readiness_notice() -> str | None:
+    """The existing no_ready_account text, when this machine has nothing launchable.
+
+    This reads discovery and the account files. It does not refresh provider-inventory.json and it
+    does not enroll accounts into host policy; a missing task is not a plan.
+    """
+    try:
+        scripts = locations.skill_root() / "route-agent-work" / "scripts"
+        if str(scripts) not in sys.path:
+            sys.path.append(str(scripts))
+        import json
+
+        import accounts_override
+        import allocator
+        import route_judge
+
+        accounts = json.loads(allocator.fleet_document_path().read_text(encoding="utf-8-sig"))
+        user_file = allocator.accounts_override_path()
+        user_doc = None
+        if user_file.is_file():
+            loaded = json.loads(user_file.read_text(encoding="utf-8-sig"))
+            if isinstance(loaded, dict):
+                user_doc = accounts_override.migrate(loaded, accounts)
+        allocator.provider_inventory.apply(accounts, allocator.provider_inventory.discover())
+        if user_doc is not None:
+            accounts_override.apply(accounts, user_doc)
+        gap = route_judge.readiness_gap(accounts, route_judge.usage_snapshot())
+    except Exception:
+        return None
+    if isinstance(gap, dict) and gap.get("code") == "no_ready_account":
+        message = gap.get("message")
+        return message if isinstance(message, str) and message.strip() else None
+    return None
+
+
+def plan_passthrough(args: list[str]) -> int:
+    """Explain a missing task before route_judge turns it into a bare ValueError."""
+    if _has_option(args, "-h") or _has_option(args, "--help"):
+        return passthrough("plan", args)
+    if not _has_option(args, "--input") and not _has_option(args, "--demo"):
+        sys.stdout.write(PLAN_NEEDS_TASK)
+        notice = readiness_notice()
+        if notice:
+            sys.stdout.write("\n" + notice + "\n")
+        return 1
+    return passthrough("plan", args)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
@@ -83,7 +143,9 @@ def main(argv: list[str] | None = None) -> int:
             return doctor_main(rest)
         if command in ("setup", "uninstall"):
             return call_onboard(command, rest)
-        if command in ("plan", "roll", "providers"):
+        if command == "plan":
+            return plan_passthrough(rest)
+        if command in ("roll", "providers"):
             return passthrough(command, rest)
     except SystemExit as exc:
         code = exc.code

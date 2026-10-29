@@ -747,6 +747,44 @@ def _apply_auto_bundles(accounts, inventory, live):
                                  'seen': derived['seen'] if live else {}}
 
 
+UNVERIFIABLE_SIGN_IN = ('antigravity', 'opencode', 'grok')
+UNVERIFIED_SIGN_IN_LABEL = 'installed, sign-in unverified'
+
+
+def sign_in_proven(row):
+    """True when discovery can tell this account is signed in, not merely that its CLI is installed."""
+    if not isinstance(row, dict) or row.get('family') not in UNVERIFIABLE_SIGN_IN:
+        return True
+    sources = row.get('sources') or []
+    if isinstance(sources, str):
+        sources = [sources]
+    return 'usage-cache' in sources or bool(row.get('identity') or row.get('credential_key'))
+
+
+def launch_verified(row, previous):
+    """Decide whether a discovered account may be a confident routing pick.
+
+    Antigravity, OpenCode and Grok report status ready when the CLI is installed, which is not a
+    sign-in. The shipped template leaves them unverified. A machine fleet that already marked the
+    slot verified, or a usage-cache reading, keeps the previous launchable state. The status string
+    itself stays `ready` so provider listings do not change.
+    """
+    if not isinstance(row, dict):
+        return False
+    ready = row.get('status') == 'ready'
+    if row.get('family') not in UNVERIFIABLE_SIGN_IN or sign_in_proven(row):
+        return ready
+    return bool(previous is True and ready)
+
+
+def account_state_label(row):
+    """Same words setup uses when a CLI is installed but sign-in cannot be read."""
+    status = row.get('status') if isinstance(row, dict) else None
+    if isinstance(row, dict) and row.get('family') in UNVERIFIABLE_SIGN_IN and status == 'ready':
+        return UNVERIFIED_SIGN_IN_LABEL
+    return status
+
+
 def apply(accounts, inventory=None):
     live = inventory is None
     inventory = current() if inventory is None else inventory
@@ -824,7 +862,7 @@ def apply(accounts, inventory=None):
             else:
                 continue
         spec = specs[name]
-        spec['verified'] = row['status'] == 'ready'
+        spec['verified'] = launch_verified(row, spec.get('verified'))
         spec['discovery_status'] = row['status']
         if family == 'grok':
             window_ids = row.get('usage_windows') or []
@@ -850,7 +888,7 @@ def apply(accounts, inventory=None):
         if plan:
             previous_plan = configured_plan(family, spec.get('plan'))
             spec['plan'] = plan
-            template = (templates.get('claude-2') if family == 'claude' and plan == 'pro' else
+            template = ((templates.get('claude-2') or templates.get('claude')) if family == 'claude' and plan == 'pro' else
                         templates.get('claude') if family == 'claude' and plan in ('max5', 'max20') else
                         templates.get('codex') if family == 'codex' and plan == 'pro' else None)
             if previous_plan == plan:

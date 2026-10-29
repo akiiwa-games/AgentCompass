@@ -78,10 +78,12 @@ def account_rows(home: Path, environ: dict | None) -> list | str:
         row = accounts[name]
         if not isinstance(row, dict):
             continue
+        label = getattr(module, "account_state_label", None)
+        status = label(row) if callable(label) else row.get("status")
         rows.append({
             "name": name,
             "family": row.get("family"),
-            "status": row.get("status"),
+            "status": status,
             "plan": row.get("plan"),
             "home": row.get("home"),
         })

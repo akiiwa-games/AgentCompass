@@ -404,8 +404,49 @@ def accounts_override_path(environ=None):
     return Path.home() / '.route-manager' / 'accounts-override.json'
 
 
+def local_fleet_path(environ=None):
+    """Full account document for this machine, when one has been saved.
+
+    The shipped accounts.json is a neutral template. A file named accounts.local.json in the router
+    state directory replaces it as the base document; the sparse accounts-override.json still applies
+    on top. A pinned override path means this process is a test or another home, so the real machine
+    fleet stays out of it. An explicit load_accounts(path) never comes here.
+    """
+    env = os.environ if environ is None else environ
+    configured = (env.get('ROUTER_ACCOUNTS_FILE') or '').strip()
+    if configured:
+        path = Path(configured).expanduser()
+        return path if path.is_file() else None
+    # An explicit state directory is the whole router home for this process. Do not fall
+    # through to the real user fleet when that directory has no saved document.
+    state = (env.get('ROUTER_STATE_DIR') or '').strip()
+    if state:
+        candidate = Path(state).expanduser() / 'accounts.local.json'
+        return candidate if candidate.is_file() else None
+    override = (env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE') or '').strip()
+    if override:
+        candidate = Path(override).expanduser().parent / 'accounts.local.json'
+        return candidate if candidate.is_file() else None
+    try:
+        candidate = Path.home() / '.route-manager' / 'accounts.local.json'
+    except (OSError, RuntimeError):
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def fleet_document_path(environ=None):
+    local = local_fleet_path(environ)
+    return local if local is not None else REFERENCES / 'accounts.json'
+
+
+def reference_fleet_path():
+    """Checked-in fleet fixture for tests. It is not read from the user home."""
+    return Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json'
+
+
 def load_accounts(path=None):
-    accounts = json.loads((path or REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
+    source = Path(path) if path is not None else fleet_document_path()
+    accounts = json.loads(source.read_text(encoding='utf-8-sig'))
     if path is None:
         user_file = accounts_override_path()
         user_doc = None

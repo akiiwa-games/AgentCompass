@@ -7,6 +7,12 @@ from unittest.mock import Mock, patch
 
 import roll
 
+from router_test_support import isolated_router_state
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup)
+
 
 class RollNotificationTests(unittest.TestCase):
     def test_paseo_only_promises_registered_notifications(self):

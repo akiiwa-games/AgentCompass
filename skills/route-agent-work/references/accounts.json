@@ -1560,15 +1560,311 @@
     }
   },
   "accounts": {
+    "claude": {
+      "plan": "Claude subscription",
+      "billing": "subscription",
+      "verified": false,
+      "expires_at": null,
+      "windows": {
+        "five_hour": {
+          "hours": 5
+        },
+        "seven_day": {
+          "hours": 168
+        },
+        "weekly_fable": {
+          "hours": 168,
+          "models": [
+            "fable"
+          ]
+        }
+      },
+      "capacity_usd": {
+        "seven_day": 2380,
+        "five_hour": 376,
+        "weekly_fable": 1190
+      },
+      "burn_pct_per_worker_hour": {
+        "seven_day": 0.27,
+        "weekly_fable": 0.27
+      },
+      "burn_basis": "Generic Claude slot. Unverified until a local Claude sign-in is detected. Capacity figures are default priors, not a claim about this machine.",
+      "bundles": {
+        "fable51_high": {
+          "model": "claude-fable-5-1",
+          "effort": "high"
+        },
+        "opus55_xhigh": {
+          "model": "claude-opus-5-5",
+          "effort": "xhigh"
+        },
+        "opus55_high": {
+          "model": "claude-opus-5-5",
+          "effort": "high"
+        },
+        "sonnet55_high": {
+          "model": "claude-sonnet-5-5",
+          "effort": "high"
+        }
+      }
+    },
+    "codex": {
+      "plan": "Codex subscription",
+      "billing": "subscription",
+      "verified": false,
+      "expires_at": null,
+      "windows": {
+        "usage": {
+          "hours": 168
+        }
+      },
+      "capacity_usd": {
+        "usage": 650
+      },
+      "burn_pct_per_worker_hour": {
+        "usage": 1.74
+      },
+      "burn_basis": "Generic Codex slot. Unverified until a local Codex sign-in is detected. Capacity figures are default priors, not a claim about this machine.",
+      "bundles": {
+        "sol_max": {
+          "model": "gpt-6.1-sol",
+          "effort": "max"
+        },
+        "sol_xhigh": {
+          "model": "gpt-6.1-sol",
+          "effort": "xhigh"
+        },
+        "sol_high": {
+          "model": "gpt-6.1-sol",
+          "effort": "high"
+        },
+        "sol_medium": {
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "when": {
+            "max_reasoning_depth": 1
+          }
+        },
+        "astra_high": {
+          "model": "gpt-6-astra",
+          "effort": "high"
+        },
+        "astra_xhigh": {
+          "model": "gpt-6-astra",
+          "effort": "xhigh"
+        },
+        "pi_sol_max": {
+          "model": "gpt-6.1-sol",
+          "effort": "max",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.1-sol"
+        },
+        "pi_sol_xhigh": {
+          "model": "gpt-6.1-sol",
+          "effort": "xhigh",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.1-sol"
+        },
+        "pi_sol_high": {
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.1-sol"
+        },
+        "pi_sol_medium": {
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.1-sol",
+          "when": {
+            "max_reasoning_depth": 1
+          }
+        },
+        "pi_astra_high": {
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6-astra"
+        },
+        "pi_astra_xhigh": {
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6-astra"
+        }
+      }
+    },
+    "antigravity": {
+      "plan": "Antigravity subscription",
+      "billing": "subscription",
+      "verified": false,
+      "expires_at": null,
+      "windows": {
+        "gemini-5h": {
+          "hours": 5,
+          "models": [
+            "gemini"
+          ]
+        },
+        "gemini-weekly": {
+          "hours": 168,
+          "models": [
+            "gemini"
+          ]
+        },
+        "3p-5h": {
+          "hours": 5,
+          "models": [
+            "3p"
+          ]
+        },
+        "3p-weekly": {
+          "hours": 168,
+          "models": [
+            "3p"
+          ]
+        }
+      },
+      "burn_pct_per_worker_hour": {
+        "gemini-weekly": 0.08,
+        "gemini-5h": 0.27
+      },
+      "capacity_usd": {
+        "gemini-weekly": 625,
+        "gemini-5h": 182,
+        "3p-weekly": 88,
+        "3p-5h": 17.6
+      },
+      "burn_basis": "Generic Antigravity slot. An installed CLI does not prove sign-in; this slot stays unverified until a login is detected.",
+      "bundles": {
+        "flash_high": {
+          "provider": "antigravity-resilient",
+          "model": "gemini-3.8-flash-high",
+          "effort": "high",
+          "modeId": "full-access"
+        },
+        "argon_high": {
+          "provider": "antigravity-resilient",
+          "model": "gemini-4-argon-high",
+          "effort": "high",
+          "modeId": "full-access"
+        },
+        "agy_opus55_low": {
+          "provider": "antigravity-resilient",
+          "model": "claude-opus-5-5-low",
+          "launch_model": "claude-opus-5-5-low",
+          "effort": "low",
+          "modeId": "full-access",
+          "draws": [
+            "3p-5h",
+            "3p-weekly"
+          ],
+          "when": {
+            "max_reasoning_depth": 1
+          }
+        },
+        "agy_opus55_medium": {
+          "provider": "antigravity-resilient",
+          "model": "claude-opus-5-5-medium",
+          "launch_model": "claude-opus-5-5-medium",
+          "effort": "medium",
+          "modeId": "full-access",
+          "draws": [
+            "3p-5h",
+            "3p-weekly"
+          ]
+        },
+        "agy_opus55_high": {
+          "provider": "antigravity-resilient",
+          "model": "claude-opus-5-5-high",
+          "launch_model": "claude-opus-5-5-high",
+          "effort": "high",
+          "modeId": "full-access",
+          "draws": [
+            "3p-5h",
+            "3p-weekly"
+          ]
+        },
+        "agy_sonnet55_low": {
+          "provider": "antigravity-resilient",
+          "model": "claude-sonnet-5-5-low",
+          "launch_model": "claude-sonnet-5-5-low",
+          "effort": "low",
+          "modeId": "full-access",
+          "draws": [
+            "3p-5h",
+            "3p-weekly"
+          ]
+        },
+        "agy_sonnet55_medium": {
+          "provider": "antigravity-resilient",
+          "model": "claude-sonnet-5-5-medium",
+          "launch_model": "claude-sonnet-5-5-medium",
+          "effort": "medium",
+          "modeId": "full-access",
+          "draws": [
+            "3p-5h",
+            "3p-weekly"
+          ]
+        },
+        "agy_sonnet55_high": {
+          "provider": "antigravity-resilient",
+          "model": "claude-sonnet-5-5-high",
+          "launch_model": "claude-sonnet-5-5-high",
+          "effort": "high",
+          "modeId": "full-access",
+          "draws": [
+            "3p-5h",
+            "3p-weekly"
+          ]
+        }
+      }
+    },
+    "opencode": {
+      "plan": "OpenCode",
+      "billing": "subscription",
+      "verified": false,
+      "expires_at": null,
+      "unmetered": true,
+      "unlimited": true,
+      "windows": {},
+      "burn_pct_per_worker_hour": {},
+      "burn_basis": "Generic OpenCode slot. An installed CLI does not prove sign-in; this slot stays unverified until a login is detected.",
+      "bundles": {
+        "deepseek_flash_high": {
+          "provider": "opencode",
+          "model": "deepseek-v4.1-flash-free",
+          "launch_model": "opencode/deepseek-v4.1-flash-free",
+          "effort": "high",
+          "modeId": "build"
+        }
+      }
+    },
+    "pi": {
+      "plan": "Pi",
+      "billing": "subscription",
+      "verified": false,
+      "expires_at": null,
+      "windows": {
+        "usage": {
+          "hours": 168
+        }
+      },
+      "burn_pct_per_worker_hour": {
+        "usage": 1.74
+      },
+      "burn_basis": "Generic Pi slot. Unverified until the Pi client and its sign-in are detected. Pi harness bundles stay on the Codex slot so one Codex login is not counted twice.",
+      "bundles": {}
+    },
     "grok": {
-      "plan": "subscription",
+      "plan": "Grok subscription",
       "billing": "subscription",
       "verified": false,
       "expires_at": null,
       "unmetered": true,
       "windows": {},
       "burn_pct_per_worker_hour": {},
-      "burn_basis": "No local usage window: unmetered without an unlimited bonus. Discovery restores reported windows; absent capacity uses a provisional 1%/worker-hour prior.",
+      "burn_basis": "Generic Grok slot. An installed CLI does not prove sign-in; this slot stays unverified until a login is detected.",
       "bundles": {
         "grok47_high": {
           "provider": "grok",
@@ -1578,166 +1874,40 @@
         }
       }
     },
-    "claude": {
-      "plan": "Max 20x",
-      "billing": "subscription",
-      "verified": true,
-      "expires_at": null,
-      "windows": {"five_hour": {"hours": 5}, "seven_day": {"hours": 168}, "weekly_fable": {"hours": 168, "models": ["fable"]}},
-      "capacity_usd": {"seven_day": 2380, "five_hour": 376, "weekly_fable": 1190},
-      "burn_pct_per_worker_hour": {"seven_day": 0.27, "weekly_fable": 0.27},
-      "burn_basis": "Max 20x ($200/mo): empirical 100% capacity seven_day=$2,380 (0.27%/h), five_hour=$376 (1.71%/h), weekly_fable=$1,190.",
-      "bundles": {
-        "fable51_high": {
-          "model": "claude-fable-5-1",
-          "effort": "high",
-          "disabled": "User 2026-10-09: Fable is not used until Fable 5.5 is released; planning goes to Pro"
-        },
-        "opus55_xhigh": {"model": "claude-opus-5-5", "effort": "xhigh"},
-        "opus55_high": {"model": "claude-opus-5-5", "effort": "high"},
-        "sonnet55_high": {"model": "claude-sonnet-5-5", "effort": "high"}
-      }
-    },
-    "claude-2": {
-      "plan": "Claude Pro (second account)",
-      "billing": "subscription",
-      "verified": true,
-      "expires_at": null,
-      "windows": {
-        "five_hour": {"hours": 5, "launch_min_remaining_pct": 25},
-        "seven_day": {"hours": 168},
-        "weekly_fable": {"hours": 168, "models": ["fable"]}
-      },
-      "capacity_usd": {"seven_day": 156, "five_hour": 18, "weekly_fable": 78},
-      "burn_pct_per_worker_hour": {"seven_day": 2.7, "five_hour": 24.0, "weekly_fable": 2.7},
-      "burn_basis": "Claude Pro ($20/mo): five_hour=$18 (25% launch floor, 12% post-step margin), empirical seven_day=$156 (2.7%/h). Sonnet-only worker; participates in normal weekly allocation while guarded against the 5h wall.",
-      "bundles": {
-        "fable51_high_2": {
-          "model": "claude-fable-5-1",
-          "effort": "high",
-          "disabled": "User 2026-10-09: Fable is not used until Fable 5.5 is released; planning goes to Pro"
-        },
-        "opus55_xhigh_2": {
-          "model": "claude-opus-5-5",
-          "effort": "xhigh",
-          "disabled": "User 2026-10-15: claude-2 is a Claude Pro account ($156/week) with very little quota; Opus is reserved for the primary Max 20x account"
-        },
-        "opus55_high_2": {
-          "model": "claude-opus-5-5",
-          "effort": "high",
-          "disabled": "User 2026-10-15: claude-2 is a Claude Pro account ($156/week) with very little quota; Opus is reserved for the primary Max 20x account"
-        },
-        "sonnet55_high_2": {"model": "claude-sonnet-5-5", "effort": "high"}
-      }
-    },
-    "codex": {
-      "plan": "ChatGPT Pro",
-      "billing": "subscription",
-      "verified": true,
-      "expires_at": null,
-      "windows": {"usage": {"hours": 168}},
-      "capacity_usd": {"usage": 650},
-      "capacity_change": {"usage": {"at": "2026-10-30T00:00:00Z", "usd": 650}},
-      "burn_pct_per_worker_hour": {"usage": 1.74},
-      "burn_basis": "ChatGPT Pro ($200/mo): empirical ~$650/wk API-equivalent (1.74%/h across recent weekly reset cycles). Sol $2.6/h, Astra $22.6/h.",
-      "bundles": {
-        "sol_max": {"model": "gpt-6.1-sol", "effort": "max"},
-        "sol_xhigh": {"model": "gpt-6.1-sol", "effort": "xhigh"},
-        "sol_high": {"model": "gpt-6.1-sol", "effort": "high"},
-        "sol_medium": {"model": "gpt-6.1-sol", "effort": "medium", "when": {"max_reasoning_depth": 1}},
-        "astra_high": {"model": "gpt-6-astra", "effort": "high"},
-        "astra_xhigh": {"model": "gpt-6-astra", "effort": "xhigh"},
-        "pi_sol_max": {"model": "gpt-6.1-sol", "effort": "max", "provider": "pi", "launch_model": "openai-codex/gpt-6.1-sol"},
-        "pi_sol_xhigh": {"model": "gpt-6.1-sol", "effort": "xhigh", "provider": "pi", "launch_model": "openai-codex/gpt-6.1-sol"},
-        "pi_sol_high": {"model": "gpt-6.1-sol", "effort": "high", "provider": "pi", "launch_model": "openai-codex/gpt-6.1-sol"},
-        "pi_sol_medium": {
-          "model": "gpt-6.1-sol",
-          "effort": "medium",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.1-sol",
-          "when": {"max_reasoning_depth": 1}
-        },
-        "pi_astra_high": {"model": "gpt-6-astra", "effort": "high", "provider": "pi", "launch_model": "openai-codex/gpt-6-astra"},
-        "pi_astra_xhigh": {"model": "gpt-6-astra", "effort": "xhigh", "provider": "pi", "launch_model": "openai-codex/gpt-6-astra"}
-      }
-    },
-    "codex-2": {
-      "plan": "ChatGPT Pro (second account)",
+    "dot": {
+      "plan": "Dot",
       "billing": "subscription",
       "verified": false,
       "expires_at": null,
-      "windows": {"usage": {"hours": 168}},
-      "capacity_usd": {"usage": 650},
-      "burn_pct_per_worker_hour": {"usage": 1.74},
-      "burn_basis": "Assumed equal to codex. The collector's last observation is 2026-09-24, so launchability and capacity are unverified; excluded until `verified` is true.",
-      "bundles": {"sol_xhigh_2": {"model": "gpt-6.1-sol", "effort": "xhigh"}}
-    },
-    "antigravity": {
-      "plan": "Antigravity (Gemini + 3p pool)",
-      "billing": "subscription",
-      "verified": true,
-      "expires_at": null,
-      "windows": {
-        "gemini-5h": {"hours": 5, "models": ["gemini"]},
-        "gemini-weekly": {"hours": 168, "models": ["gemini"]},
-        "3p-5h": {"hours": 5, "models": ["3p"]},
-        "3p-weekly": {"hours": 168, "models": ["3p"]}
-      },
-      "burn_pct_per_worker_hour": {"gemini-weekly": 0.08, "gemini-5h": 0.27},
-      "capacity_usd": {"gemini-weekly": 625, "gemini-5h": 182, "3p-weekly": 88, "3p-5h": 17.6},
-      "capacity_basis": "API-equivalent pool at list price, calibrated to empirical Argon burn (Argon $4.0/h = 0.62%/h of gemini-weekly -> $625, 2.13%/h of gemini-5h -> $182; Flash $0.5/h = 0.08%/h weekly, 0.27%/h 5h).",
-      "burn_basis": "Empirical calibration (2026-10-27): Google AI Ultra gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly). Claude on antigravity draws only 3p-5h/3p-weekly via bundle draws, priced at the Claude model's usd_per_hour against those pools ($17.6 / $88).",
+      "unmetered": true,
+      "unlimited": true,
+      "windows": {},
+      "burn_pct_per_worker_hour": {},
+      "burn_basis": "Generic Dot slot. Unverified until a local dot2api client configuration is detected.",
       "bundles": {
-        "flash_high": {"provider": "antigravity-resilient", "model": "gemini-3.8-flash-high", "effort": "high", "modeId": "full-access"},
-        "argon_high": {"provider": "antigravity-resilient", "model": "gemini-4-argon-high", "effort": "high", "modeId": "full-access"},
-        "agy_opus55_low": {"provider": "antigravity-resilient", "model": "claude-opus-5-5-low", "launch_model": "claude-opus-5-5-low", "effort": "low", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"], "when": {"max_reasoning_depth": 1}},
-        "agy_opus55_medium": {"provider": "antigravity-resilient", "model": "claude-opus-5-5-medium", "launch_model": "claude-opus-5-5-medium", "effort": "medium", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
-        "agy_opus55_high": {"provider": "antigravity-resilient", "model": "claude-opus-5-5-high", "launch_model": "claude-opus-5-5-high", "effort": "high", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
-        "agy_sonnet55_low": {"provider": "antigravity-resilient", "model": "claude-sonnet-5-5-low", "launch_model": "claude-sonnet-5-5-low", "effort": "low", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
-        "agy_sonnet55_medium": {"provider": "antigravity-resilient", "model": "claude-sonnet-5-5-medium", "launch_model": "claude-sonnet-5-5-medium", "effort": "medium", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]},
-        "agy_sonnet55_high": {"provider": "antigravity-resilient", "model": "claude-sonnet-5-5-high", "launch_model": "claude-sonnet-5-5-high", "effort": "high", "modeId": "full-access", "draws": ["3p-5h", "3p-weekly"]}
+        "dot_text": {
+          "model": "dot",
+          "provider": "dot"
+        }
       }
     },
-    "dot": {
-      "plan": "Dot (own OpenAI agent through dot2api)",
-      "billing": "subscription",
-      "verified": true,
-      "expires_at": null,
-      "unmetered": true,
-      "unlimited": true,
-      "windows": {},
-      "burn_pct_per_worker_hour": {},
-      "burn_basis": "OpenAI Dot remote worker via dot2api (127.0.0.1:8319); zero local quota burn.",
-      "bundles": {"dot_text": {"model": "dot", "provider": "dot"}}
-    },
     "chatgpt-web": {
-      "plan": "ChatGPT Pro web",
+      "plan": "ChatGPT web",
       "billing": "subscription",
-      "verified": true,
+      "verified": false,
       "expires_at": null,
       "unmetered": true,
       "windows": {},
       "burn_pct_per_worker_hour": {},
-      "burn_basis": "Placeholder prior (confidence: none): ChatGPT Pro web bridge advisor.",
-      "bundles": {"pro_max": {"model": "gpt-6-pro", "effort": "max", "provider": "chatgpt-web", "when": {"min_difficulty": "frontier"}}}
-    },
-    "opencode": {
-      "plan": "OpenCode Free",
-      "billing": "subscription",
-      "verified": true,
-      "expires_at": null,
-      "unmetered": true,
-      "unlimited": true,
-      "windows": {},
-      "burn_pct_per_worker_hour": {},
-      "burn_basis": "OpenCode free models via Paseo (`opencode/deepseek-v4.1-flash-free`); zero local subscription quota burn.",
+      "burn_basis": "Generic ChatGPT web slot. Unverified until the local web-bridge configuration is detected.",
       "bundles": {
-        "deepseek_flash_high": {
-          "provider": "opencode",
-          "model": "deepseek-v4.1-flash-free",
-          "launch_model": "opencode/deepseek-v4.1-flash-free",
-          "effort": "high",
-          "modeId": "build"
+        "pro_max": {
+          "model": "gpt-6-pro",
+          "effort": "max",
+          "provider": "chatgpt-web",
+          "when": {
+            "min_difficulty": "frontier"
+          }
         }
       }
     }

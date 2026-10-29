@@ -1856,7 +1856,19 @@ def readiness_gap(accounts, usage):
     so every pick is made without quota readings. A ready account with data on file is unaffected.
     """
     inventory = ((accounts.get('_discovery') or {}).get('accounts') or {})
-    if inventory and not any(row.get('status') == 'ready' for row in inventory.values() if isinstance(row, dict)):
+    specs = accounts.get('accounts') if isinstance(accounts.get('accounts'), dict) else {}
+
+    def launchable(name, row):
+        if not isinstance(row, dict) or row.get('status') != 'ready':
+            return False
+        # A missing spec keeps the old contract: discovery status ready is enough.
+        # verified false is an explicit "do not pick this confidently".
+        spec = specs.get(name)
+        if isinstance(spec, dict) and spec.get('verified') is False:
+            return False
+        return True
+
+    if inventory and not any(launchable(name, row) for name, row in inventory.items()):
         return {'code': 'no_ready_account', 'fatal': True,
                 'message': 'No provider account is ready on this machine (no signed-in CLI was found). ' + ONBOARD_HINT}
     if not usage.get('read_ok'):
@@ -2146,9 +2158,13 @@ def main():
             result = record_constraint(args)
             code = 0
         elif args.stage == 'plan':
-            if args.input is None:
+            if args.input is None and args.demo:
+                from demo_plan import SAMPLE_DOCUMENT
+                document = json.loads(json.dumps(SAMPLE_DOCUMENT))
+            elif args.input is None:
                 raise ValueError('plan requires --input.')
-            document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+            else:
+                document = json.loads(args.input.read_text(encoding='utf-8-sig'))
             result, code = plan_stage(document, args)
         else:
             if args.input is None:
