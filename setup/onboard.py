@@ -27,6 +27,7 @@ sys.path.insert(0, str(SETUP))
 sys.path.insert(0, str(REPO / "skills" / "route-agent-work" / "scripts"))
 
 import provider_inventory  # noqa: E402
+import accounts_override  # noqa: E402
 import sync_host_globals as sg  # noqa: E402
 
 if str(REPO) not in sys.path:
@@ -171,7 +172,7 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
             shutil.copy2(path, backup)
             result["backup"] = str(backup)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+        path.write_text(json.dumps(accounts_override.normalize(document), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return result
 
 
@@ -393,7 +394,7 @@ def uninstall_main(argv: list[str] | None = None) -> int:
             print(f"[uninstall] {path}: removed (created by setup)")
         else:
             if not args.dry_run:
-                path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+                path.write_text(json.dumps(accounts_override.normalize(document), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
             print(f"[uninstall] {path}: onboarding entries removed")
     if state and not args.dry_run:
         onboarding_path(home).unlink(missing_ok=True)

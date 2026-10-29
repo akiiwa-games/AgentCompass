@@ -365,7 +365,6 @@ EN = {
     '未知模型 {0}': 'Unknown model {0}',
     '已保存 {0} 主观基因评分': 'Saved subjective DNA ratings for {0}',
     '未知档位 {0}': 'Unknown tier {0}',
-    '用户在控制台停用该档位': 'User disabled this tier in the console',
     '{0} · {1} 已{2}': '{0} · {1}: {2}',
     '停用': 'Disabled',
     'Antigravity · Gemini 3.8 Flash Low（默认）': 'Antigravity · Gemini 3.8 Flash Low (default)',

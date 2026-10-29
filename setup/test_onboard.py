@@ -349,7 +349,7 @@ class OverrideTests(HomeCase):
             "claude": {"bundles": {"x": {"disabled": "mine"}}}, "opencode": {"verified": True}}})
         result = onboard.write_override(self.home, self.detection(), {"opencode", "claude"})
         document = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(document["accounts"]["claude"]["bundles"], {"x": {"disabled": "mine"}})
+        self.assertEqual(document["accounts"]["claude"]["bundles"], {"x": {"disabled": True}})
         self.assertIs(document["accounts"]["claude"]["verified"], False)
         self.assertIs(document["accounts"]["opencode"]["verified"], True)   # set by the user: left alone
         self.assertEqual(result["added"], ["claude"])

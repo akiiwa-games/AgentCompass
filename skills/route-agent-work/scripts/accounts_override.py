@@ -2,6 +2,24 @@
 from copy import deepcopy
 
 
+def normalize(document):
+    """Normalize disabled flags in place; settings hold state only, never reasons.
+
+    Every legacy string means disabled, including an empty string. Other old
+    non-boolean values retain their truth value as a plain boolean.
+    """
+    if isinstance(document, dict):
+        for key, value in document.items():
+            if key == 'disabled':
+                document[key] = True if isinstance(value, str) else bool(value)
+            else:
+                normalize(value)
+    elif isinstance(document, list):
+        for value in document:
+            normalize(value)
+    return document
+
+
 def harness(bundle, account, bundle_id, resolver):
     # Older allocators default unknown providers to Codex. These providers have
     # their own execution channels and must remain separate in the preferences.
@@ -16,9 +34,10 @@ def preference_account(bundle, owner, accounts):
     provider = bundle.get('provider') or owner
     inventory = (accounts.get('_discovery') or {}).get('accounts') or {}
     profile, quota = inventory.get(provider) or {}, inventory.get(owner) or {}
-    same_family = profile.get('family') and profile.get('family') == quota.get('family')
-    same_prefix = provider.split('-', 1)[0] == owner.split('-', 1)[0]
-    if provider in accounts.get('accounts', {}) and (same_family or same_prefix):
+    specs = accounts.get('accounts') or {}
+    profile_family = profile.get('family') or (specs.get(provider) or {}).get('family')
+    quota_family = quota.get('family') or (specs.get(owner) or {}).get('family')
+    if provider in specs and profile_family and profile_family == quota_family:
         return provider
     return owner
 
@@ -30,7 +49,7 @@ def merge(base, override):
             result[key] = merge(result[key], value)
         else:
             result[key] = deepcopy(value)
-    return result
+    return normalize(result)
 
 
 def _delta(value, baseline):
@@ -46,8 +65,9 @@ def migrate(document, baseline):
     Callers that persist this result must back up the original first. Explicit false
     is an enduring enable choice, even if the current baseline is already enabled.
     """
+    document = normalize(deepcopy(document))
     if document.get('schema_version') == 2:
-        return deepcopy(document)
+        return document
     result = {'schema_version': 2}
     # Locally defined providers are user configuration, not a copy of defaults.
     # In particular a proxy may carry its endpoint/model contract here.
@@ -95,6 +115,8 @@ def migrate(document, baseline):
 
 def apply(accounts, document):
     """Apply only explicit preferences, after live discovery has supplied bundles."""
+    normalize(accounts)
+    document = normalize(deepcopy(document))
     # Choices saved under the retired proxy ids (`<proxy>__<model>_high`) carry over to their auto bundle;
     # a choice already stored under the auto id wins.
     legacy = (accounts.get('_auto_bundles') or {}).get('legacy_aliases') or {}
