@@ -768,7 +768,7 @@ def evaluate_payload(
                         '[Router Gate] Parent-to-worker send_agent_prompt must keep completion '
                         'notifications enabled. Set notifyOnFinish: true or omit it; completion '
                         'notifications and the final reply are the result channel for workers '
-                        'without messaging tools (e.g. agy). Worker-to-parent questions may use false.')
+                        'without messaging tools (e.g. agy). Worker-to-parent questions and final reports may use false.')
         trigger = detect_subagent_launch(name, args)
         if trigger or name in PASEO_TURN_TOOLS or (
             name in CODEMODE_TOOLS | SHELL_TOOLS and CODEMODE_TURN_AGENT_RE.search(json.dumps(args, ensure_ascii=False))
