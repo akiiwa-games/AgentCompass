@@ -9,6 +9,9 @@ from i18n import translate as _tr, LocalizedSequence, tr
 from i18n import is_en
 
 import math
+import time
+
+from PIL import Image, ImageColor, ImageDraw, ImageTk
 
 
 def clamp(value, low=0.0, high=1.0) -> float:
@@ -114,9 +117,92 @@ def polygon(values: list[float], cx: float, cy: float, radius: float) -> list[tu
 
 
 SERIES_STYLES = (
-    {"color": "#4F46E5", "fill": "#EEF2FF", "stipple": "", "dash": ()},
-    {"color": "#06B6D4", "fill": "", "stipple": "", "dash": (6, 4)},
+    {"color": "#4F46E5", "dash": ()},
+    {"color": "#06B6D4", "dash": (5, 3.5)},
 )
+
+
+def ease_out(progress: float) -> float:
+    """Cubic ease-out with exact endpoints and no overshoot."""
+    return 1 - (1 - clamp(progress)) ** 3
+
+
+def interpolate_values(start, target, progress):
+    if progress >= 1:
+        return [list(row) for row in target]
+    amount = ease_out(progress)
+    return [[a + (b - a) * amount for a, b in zip(old, new)]
+            for old, new in zip(start, target)]
+
+
+class RadarRenderer:
+    """Cache the static grid at 3x physical resolution; rasterize only the plot, never text."""
+
+    supersample = 3
+
+    def __init__(self, radius, count, scale, bg):
+        self.radius, self.count, self.scale = radius, count, scale
+        padding = math.ceil(8 * scale)
+        self.center = radius + padding
+        self.size = math.ceil(self.center * 2)
+        self.grid = Image.new("RGB", (self.size * self.supersample,) * 2, bg)
+        draw = ImageDraw.Draw(self.grid)
+        outer = self.points([1] * count)
+        draw.polygon(outer, fill="#F8FAFC")
+        for level in (.25, .5, .75, 1):
+            points = self.points([level] * count)
+            draw.line(points + points[:1], fill="#E2E8F0" if level < 1 else "#CBD5E1",
+                      width=self.width(.75 if level < 1 else 1), joint="curve")
+        center = (self.center * self.supersample,) * 2
+        for vertex in outer:
+            draw.line([center, vertex], fill="#E2E8F0", width=self.width(.75))
+
+    def width(self, logical):
+        # Preserve fractional DIP widths until rasterization, instead of rounding at screen resolution.
+        return max(1, round(logical * self.scale * self.supersample))
+
+    def points(self, values):
+        return [(x * self.supersample, y * self.supersample)
+                for x, y in polygon(values, self.center, self.center, self.radius)]
+
+    def dashed_line(self, draw, points, color, width):
+        dash, gap = 5 * self.scale * self.supersample, 3.5 * self.scale * self.supersample
+        phase = 0.0
+        for start, end in zip(points, points[1:] + points[:1]):
+            length = math.dist(start, end)
+            position = 0.0
+            while position < length:
+                visible = phase < dash
+                step = min((dash if visible else dash + gap) - phase, length - position)
+                if visible:
+                    a, b = position / length, (position + step) / length
+                    draw.line([(start[0] + (end[0] - start[0]) * t,
+                                start[1] + (end[1] - start[1]) * t) for t in (a, b)],
+                              fill=color, width=width)
+                position += step
+                phase = (phase + step) % (dash + gap)
+
+    def render(self, values):
+        image = self.grid.copy()
+        # Blend alpha directly into the opaque backing. RGB downsampling is much cheaper than RGBA.
+        draw = ImageDraw.Draw(image, "RGBA")
+        for order in range(len(values) - 1, -1, -1):
+            color = ImageColor.getrgb(SERIES_STYLES[order]["color"])
+            points = self.points(values[order])
+            draw.polygon(points, fill=(*color, 28 if order == 0 else 12))
+            if order == 0:
+                draw.line(points + points[:1], fill=color, width=self.width(2.2), joint="curve")
+            else:
+                self.dashed_line(draw, points, color, self.width(1.7))
+            for x, y in points:
+                r = (3.5 if order == 0 else 3) * self.scale * self.supersample
+                if order == 0:
+                    halo = 6 * self.scale * self.supersample
+                    draw.ellipse((x - halo, y - halo, x + halo, y + halo), fill=(*color, 22))
+                draw.ellipse((x - r, y - r, x + r, y + r),
+                             fill=color if order == 0 else "#FFFFFF", outline=color,
+                             width=self.width(1.5))
+        return image.resize((self.size, self.size), Image.Resampling.LANCZOS).convert("RGBA")
 
 
 class RadarChartCanvas:
@@ -135,7 +221,15 @@ class RadarChartCanvas:
         self.raw = []
         self.hover = None
         self._last_size = None
+        self._animation_id = None
+        self._display_values = []
+        self._renderer = None
+        self._photo = None
+        self._destroyed = False
         self.canvas.bind("<Configure>", self.on_configure)
+        self.canvas.bind("<Map>", self.on_map)
+        self.canvas.bind("<Unmap>", lambda event: self.cancel_animation())
+        self.canvas.bind("<Destroy>", self.on_destroy)
         self.canvas.bind("<Motion>", self.on_motion)
         self.canvas.bind("<Leave>", lambda event: self.hide_tip())
         self.canvas.bind("<Button-1>", self.on_motion)
@@ -157,10 +251,57 @@ class RadarChartCanvas:
 
     def show(self, axes, series: list[dict], raw: list[dict] | None = None) -> None:
         """series: [{'label', 'values': {axis key: 0..1}}], primary first."""
+        previous_axes = [axis[0] for axis in self.axes]
+        previous = self._display_values
+        self.cancel_animation()
         self.axes = tuple(axes)
-        self.series = list(series)[:2]
+        self.series = [{**s, "values": dict(s["values"])} for s in series[:2]]
         self.raw = list(raw or [])[:2]
-        self.draw()
+        target = self.target_values()
+        start = [previous[i] if previous_axes == [axis[0] for axis in self.axes] and i < len(previous)
+                 else [0] * len(self.axes) for i in range(len(target))]
+        self.draw(start if self.canvas.winfo_ismapped() else target)
+        if start != target and self.canvas.winfo_ismapped():
+            self.animate(start)
+
+    def target_values(self):
+        return [[clamp(s["values"].get(key, 0)) for key, _, _ in self.axes] for s in self.series]
+
+    def cancel_animation(self):
+        if self._animation_id is not None:
+            self.canvas.after_cancel(self._animation_id)
+            self._animation_id = None
+
+    def on_destroy(self, event):
+        if event.widget is self.canvas:
+            self.cancel_animation()
+            self._destroyed = True
+            self._photo = self._renderer = None
+
+    def on_map(self, _event):
+        if len(self.axes) >= 3 and self.series:
+            self.cancel_animation()
+            self.animate([[0] * len(self.axes) for _ in self.series])
+
+    def animate(self, start):
+        if len(self.axes) < 3 or not self.series or self._destroyed:
+            return
+        target = self.target_values()
+        began = time.perf_counter()
+
+        def frame():
+            self._animation_id = None
+            if self._destroyed:
+                return
+            frame_start = time.perf_counter()
+            progress = min(1, (frame_start - began) / .320)
+            self._display_values = interpolate_values(start, target, progress)
+            self.draw_series()
+            if progress < 1:
+                delay = max(1, 16 - round((time.perf_counter() - frame_start) * 1000))
+                self._animation_id = self.canvas.after(delay, frame)
+
+        frame()
 
     def geometry(self):
         px = self.theme.px
@@ -172,51 +313,45 @@ class RadarChartCanvas:
         cy = min(height / 2 + 0.095 * radius, height - px(49) - 0.809 * radius)
         return width / 2, cy, radius
 
-    def draw(self) -> None:
+    def draw(self, values=None) -> None:
+        self.cancel_animation()
+        self._display_values = self.target_values() if values is None else values
         theme = self.theme
         c = self.canvas
         c.delete("all")
         self.hide_tip()
         count = len(self.axes)
         if count < 3:
+            self._photo = None
             c.create_text(c.winfo_width() / 2, c.winfo_height() / 2, text=_tr("选择一次决策或两个模型以查看五维图"),
                           fill=theme.FAINT, font=(theme.FONT, 10))
             return
         cx, cy, radius = self.geometry()
-        for level in (0.25, 0.5, 0.75, 1.0):
-            points = ring(cx, cy, radius * level, count)
-            c.create_polygon(*sum(points, ()), outline="#E2E8F0" if level < 1 else "#CBD5E1",
-                             fill="#F8FAFC" if level == 1.0 else "", width=1)
-            if level < 1:
-                x, y = point(cx, cy, radius * level, 0, count)
-                c.create_text(x + self.theme.px(4), y, text=f"{int(level * 100)}", anchor="w", fill=theme.FAINT, font=(theme.FONT, 7))
-        for index in range(count):
-            x, y = point(cx, cy, radius, index, count)
-            c.create_line(cx, cy, x, y, fill="#E2E8F0")
-        c.create_oval(cx - 2, cy - 2, cx + 2, cy + 2, fill="#CBD5E1", outline="")
-        for order in range(len(self.series) - 1, -1, -1):
-            self.draw_series(order, cx, cy, radius)
+        key = (radius, count, theme.FACTOR, self.bg)
+        if self._renderer is None or key != self._renderer_key:
+            self._renderer = RadarRenderer(*key)
+            self._renderer_key = key
+        self._image_item = c.create_image(cx - self._renderer.center, cy - self._renderer.center, anchor="nw")
+        for order in range(len(self.series)):
+            for index in range(count):
+                c.create_oval(0, 0, 0, 0, fill="", outline="", tags=(f"vertex-{order}-{index}",))
+        self.draw_series()
+        for level in ((.25, .5, .75) if radius >= theme.px(70) else ()):
+            x, y = point(cx, cy, radius * level, 0, count)
+            c.create_text(x + theme.px(8), y, text=f"{int(level * 100)}", anchor="w",
+                          fill=theme.FAINT, font=(theme.FONT, 7))
         self.draw_labels(cx, cy, radius)
         self.draw_legend()
 
-    def draw_series(self, order: int, cx: float, cy: float, radius: float) -> None:
+    def draw_series(self) -> None:
         c = self.canvas
-        style = SERIES_STYLES[order]
-        values = [self.series[order]["values"].get(key, 0) for key, _, _ in self.axes]
-        points = polygon(values, cx, cy, radius)
-        flat = sum(points, ())
-        if style["fill"]:
-            c.create_polygon(*flat, fill=style["fill"], outline="", stipple="gray50")
-        px = self.theme.px
-        c.create_polygon(*flat, fill="", outline=style["color"], width=px(2.5 if order == 0 else 2),
-                         dash=style["dash"])
-        for index, (x, y) in enumerate(points):
-            r = px(5 if order == 0 else 4)
-            if order == 0:
-                halo = px(3)
-                c.create_oval(x - r - halo, y - r - halo, x + r + halo, y + r + halo, fill="#E0E7FF", outline="")
-            c.create_oval(x - r, y - r, x + r, y + r, fill=style["color"] if order == 0 else "#FFFFFF",
-                          outline=style["color"], width=2, tags=(f"vertex-{order}-{index}",))
+        self._photo = ImageTk.PhotoImage(self._renderer.render(self._display_values), master=c)
+        c.itemconfigure(self._image_item, image=self._photo)
+        cx, cy, radius = self.geometry()
+        for order, values in enumerate(self._display_values):
+            for index, (x, y) in enumerate(polygon(values, cx, cy, radius)):
+                r = self.theme.px(6)
+                c.coords(f"vertex-{order}-{index}", x - r, y - r, x + r, y + r)
 
     def draw_labels(self, cx: float, cy: float, radius: float) -> None:
         theme = self.theme
@@ -276,7 +411,8 @@ class RadarChartCanvas:
             style = SERIES_STYLES[order]
             if order > 0 and x + px(80) > max_x:
                 x, y = px(4), y + px(18)
-            c.create_line(x, y, x + px(16), y, fill=style["color"], width=px(3), dash=style["dash"])
+            c.create_line(x, y, x + px(16), y, fill=style["color"], width=px(2.2 if order == 0 else 1.7),
+                          dash=tuple(max(1, px(d)) for d in style["dash"]))
             wrap = max(px(80), int(max_x - x - px(20))) if top_label_y < px(32) else 0
             text = c.create_text(x + px(20), y, text=series["label"], anchor="w", width=wrap,
                                  fill=theme.TEXT, font=(theme.FONT, 8))
@@ -293,8 +429,7 @@ class RadarChartCanvas:
             return None
         cx, cy, radius = self.geometry()
         best, distance = None, float(self.theme.px(30))
-        for order, series in enumerate(self.series):
-            values = [series["values"].get(key, 0) for key, _, _ in self.axes]
+        for order, values in enumerate(self._display_values):
             for index, (px, py) in enumerate(polygon(values, cx, cy, radius)):
                 d = math.hypot(px - x, py - y)
                 if d < distance:
