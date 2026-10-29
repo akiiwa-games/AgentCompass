@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tk_test_support import require_tk
+require_tk()
 import grok_bot_cli as cli
 import plugins
 import router_window

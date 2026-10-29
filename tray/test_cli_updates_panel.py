@@ -4,12 +4,13 @@ import sys
 import tempfile
 import threading
 import time
-import tkinter as tk
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from tk_test_support import require_tk
+tk = require_tk()
 import cli_updates
 import i18n
 import plugins

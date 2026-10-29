@@ -329,6 +329,7 @@ def watch_component_menus(icon) -> None:
 def main() -> None:
     import os
 
+    ui_theme.identify_process()
     global PLUGINS
     log_info(f"tray starting pid={os.getpid()} attach_only={'--attach-only' in sys.argv}")
     if not single_instance():

@@ -6,6 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from tk_test_support import require_windows
+
+require_windows("win32gui", "win32process")
 import deploy
 
 
@@ -125,7 +128,8 @@ class InstallTests(unittest.TestCase):
 
     def run_install(self, patch_state="original", running=None, link=None, env=None, built=False):
         env = env or {}
-        with mock.patch.object(deploy.web_patch, "status", return_value=patch_state), \
+        with mock.patch.object(deploy, "brand_shortcuts", return_value=[]), \
+                mock.patch.object(deploy.web_patch, "status", return_value=patch_state), \
                 mock.patch.object(deploy.web_patch, "apply") as apply, \
                 mock.patch.object(deploy.services, "chatgpt_built", return_value=built), \
                 mock.patch.object(deploy.updates, "build") as build, \
@@ -186,6 +190,45 @@ class InstallTests(unittest.TestCase):
         with mock.patch.object(deploy.web_patch, "status", return_value="partial"):
             with self.assertRaisesRegex(RuntimeError, "partial"):
                 deploy.install()
+
+
+class ShortcutBrandingTests(unittest.TestCase):
+    def test_owned_links_get_icon_and_identity_without_changing_launch_or_foreign_links(self):
+        from win32com.client import Dispatch
+        from win32com.propsys import propsys, pscon
+        from win32com.shell import shell, shellcon
+        import ui_theme
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            programs, desktop, startup = (base / name for name in ("Programs", "Desktop", "Startup"))
+            for folder in (programs, desktop, startup):
+                folder.mkdir()
+            links = Dispatch("WScript.Shell")
+            owned = programs / "Route Manager.lnk"
+            foreign = desktop / "UsageFloat.lnk"
+            for path, argument in ((owned, str(deploy.APP)), (foreign, "C:/Other/usage_float.py")):
+                link = links.CreateShortcut(str(path))
+                link.TargetPath = str(deploy.PYTHONW)
+                link.Arguments = f'"{argument}"'
+                link.Save()
+            original_foreign = foreign.read_bytes()
+            original_owned = owned.read_bytes()
+            folders = {shellcon.CSIDL_PROGRAMS: str(programs), shellcon.CSIDL_DESKTOPDIRECTORY: str(desktop)}
+            with mock.patch.object(shell, "SHGetFolderPath", side_effect=lambda _, kind, *args: folders[kind]), \
+                    mock.patch.object(deploy, "STARTUP", startup), \
+                    mock.patch.object(deploy, "BACKUPS", base / "backup"), \
+                    mock.patch.object(ui_theme, "ICON_CACHE_DIR", base / "icons"):
+                self.assertEqual(len(deploy.brand_shortcuts()), 1)
+                self.assertEqual(deploy.brand_shortcuts(), [])
+                link = links.CreateShortcut(str(owned))
+                self.assertEqual(link.Arguments, f'"{deploy.APP}"')
+                self.assertEqual(link.IconLocation, f"{ui_theme.window_icon_path()},0")
+                store = propsys.SHGetPropertyStoreFromParsingName(str(owned))
+                self.assertEqual(store.GetValue(pscon.PKEY_AppUserModel_ID).GetValue(), ui_theme.APP_ID)
+                del store
+                self.assertEqual((base / "backup/icons/Programs/Route Manager.lnk").read_bytes(), original_owned)
+                self.assertEqual(foreign.read_bytes(), original_foreign)
 
 
 class UsageStartupTests(unittest.TestCase):

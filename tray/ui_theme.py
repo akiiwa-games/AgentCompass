@@ -1,6 +1,25 @@
 """One visual language for every AgentCompass window (main panel, network status, update progress)."""
 from __future__ import annotations
 
+import logging
+import os
+from pathlib import Path
+import sys
+
+APP_ID = "AgentCompass.RouteManager"
+ICON_CACHE_DIR = Path.home() / ".route-manager" / "icons"
+
+
+def identify_process() -> None:
+    """Give each GUI process the same shell identity before creating any windows."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    result = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    if result != 0:
+        logging.getLogger(__name__).warning("Could not set Windows app identity: HRESULT %s", result)
+
 BG = "#F4F6F9"
 CARD = "#FFFFFF"
 BORDER = "#E2E8F0"
@@ -70,6 +89,7 @@ def apply(root, title: str | None = None, geometry: str | None = None, minsize: 
         FACTOR = 1.0
     if title:
         root.title(title)
+    set_window_icon(root)
     if geometry:
         width, height = (int(v) for v in geometry.split("x"))
         root.geometry(f"{px(width)}x{px(height)}")
@@ -220,13 +240,43 @@ def compass_image(size: int = 64, tile: bool = True):
     return image.resize((size, size), Image.LANCZOS)
 
 
-def set_window_icon(root) -> None:
-    """The AgentCompass mark in the titlebar and on the taskbar button."""
-    from PIL import ImageTk
+def window_icon_path(cache_dir: Path | None = None) -> Path:
+    """Cache a multi-resolution shell icon; atomically publish it across GUI processes."""
+    import tempfile
 
-    images = [ImageTk.PhotoImage(compass_image(n), master=root) for n in (64, 32)]
+    directory = cache_dir if cache_dir is not None else ICON_CACHE_DIR
+    path = directory / "agentcompass-v1.ico"
+    if path.is_file():
+        return path
+    directory.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=directory, suffix=".ico", delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        compass_image(256).save(temporary, format="ICO",
+                                sizes=[(n, n) for n in (16, 24, 32, 48, 64, 128, 256)])
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return path
+
+
+def set_window_icon(root) -> None:
+    """Brand this window and future dialogs, including Windows' large and small icons."""
+    from PIL import ImageTk
+    from tkinter import TclError
+
+    images = [ImageTk.PhotoImage(compass_image(n), master=root) for n in (64, 32, 16)]
     root._compass_icon = images  # PhotoImages must outlive this call
     root.iconphoto(True, *images)
+    if sys.platform == "win32":
+        try:
+            # Tk loads both native HICON sizes from the ICO and supplies defaults
+            # for later Toplevels and native message boxes in this interpreter.
+            icon = str(window_icon_path())
+            root.iconbitmap(default=icon)
+            root.iconbitmap(icon)
+        except (OSError, TclError) as exc:
+            logging.getLogger(__name__).warning("Could not cache Windows icon; using Tk icon: %s", exc)
 
 
 def card(parent, padding: int = 16, **pack):

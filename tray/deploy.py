@@ -4,6 +4,7 @@
     python deploy.py install    patch and build ChatGPT Web (it runs from codex-chatgpt-web/), fix the startup entries,
                                 point the route at the launcher, link the skills in skills/ into ~/.codex and ~/.claude
     python deploy.py restart    close the running tray (services keep running) and start it again, detached
+    python deploy.py icons      repair branding of this installation's existing Windows shortcuts only
     python deploy.py all        install, then restart
 
 Every step is safe to repeat. A replaced startup shortcut is moved to ~/.route-manager/backups/startup, not deleted.
@@ -157,6 +158,46 @@ def remove_startup() -> None:
     powershell(f"Unregister-ScheduledTask -TaskName '{TASK_NAME}' -Confirm:$false -ErrorAction SilentlyContinue")
 
 
+def brand_shortcuts() -> list[str]:
+    """Update only known links targeting this checkout; preserve their launch behavior."""
+    from win32com.client import Dispatch
+    from win32com.propsys import propsys, pscon
+    from win32com.shell import shell, shellcon
+    import ui_theme
+
+    programs = Path(shell.SHGetFolderPath(0, shellcon.CSIDL_PROGRAMS, None, 0))
+    desktop = Path(shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOPDIRECTORY, None, 0))
+    candidates = [folder / name for folder in (programs, desktop, STARTUP)
+                  for name in ("AgentCompass.lnk", "Route Manager.lnk", "UsageFloat.lnk")]
+    allowed = {APP, TRAY_DIR / "router_window.py", TRAY_DIR / "launch_usage_float.pyw"}
+    links = Dispatch("WScript.Shell")
+    changed = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        link = links.CreateShortcut(str(path))
+        if Path(link.TargetPath) != PYTHONW or Path(link.Arguments.strip('"')) not in allowed:
+            continue
+        icon = f"{ui_theme.window_icon_path()},0"
+        store = propsys.SHGetPropertyStoreFromParsingName(str(path), None, shellcon.GPS_READWRITE)
+        app_id = store.GetValue(pscon.PKEY_AppUserModel_ID).GetValue()
+        del store  # release the file before WScript saves it
+        if link.IconLocation == icon and app_id == ui_theme.APP_ID:
+            continue
+        backup = BACKUPS / "icons" / path.parent.name / path.name
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        if not backup.exists():
+            shutil.copy2(path, backup)
+        link.IconLocation = icon
+        link.Save()
+        store = propsys.SHGetPropertyStoreFromParsingName(str(path), None, shellcon.GPS_READWRITE)
+        store.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(ui_theme.APP_ID))
+        store.Commit()
+        del store
+        changed.append(f"Updated shortcut icon: {path}")
+    return changed
+
+
 def adopt_usage_float_startup() -> list[str]:
     """The unified tray owns HUD startup; remove only this project's old Run entry."""
     location = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -212,7 +253,7 @@ def link_skills() -> list[str]:
             done.append(_tr('已移走 {0}（备份在 {1}）').format(f'{link}', f'{backup}'))
         link.parent.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True,
-                                encoding="mbcs", errors="replace")
+                                encoding="mbcs", errors="replace", creationflags=services.CREATE_NO_WINDOW)
         if result.returncode != 0:
             raise RuntimeError(_tr('无法链接 skill {0} -> {1}：{2}').format(f'{link}', f'{target}', f'{(result.stderr or result.stdout).strip()}'))
         done.append(_tr('已链接 skill {0} -> {1}').format(f'{link}', f'{target}'))
@@ -306,6 +347,7 @@ def install() -> list[str]:
         broadcast_environment()
     done.extend(adopt_usage_float_startup())
     done.extend(link_skills())
+    done.extend(brand_shortcuts())
     return done or [_tr("无需改动")]
 
 
@@ -348,11 +390,14 @@ def restart() -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=("check", "install", "restart", "all", "startup"))
+    parser.add_argument("action", choices=("check", "install", "restart", "all", "icons", "startup"))
     action = parser.parse_args().action
     status = 0
     if action == "startup":
         write_startup()
+    if action == "icons":
+        for line in brand_shortcuts():
+            print(line)
     if action in ("install", "all"):
         for line in install():
             print(line)

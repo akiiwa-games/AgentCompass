@@ -57,7 +57,7 @@ class NetworkWindow:
         self.addresses = {}
         import ui_theme as theme
 
-        theme.apply(root, _tr("局域网状态 · Route Manager"), "1080x520", (820, 390))
+        theme.apply(root, _tr("局域网状态 · AgentCompass"), "1080x520", (820, 390))
         ttk.Style(root).configure("Treeview", rowheight=theme.px(36))
         body = ttk.Frame(root, padding=24)
         body.pack(fill="both", expand=True)
@@ -161,10 +161,11 @@ class NetworkWindow:
 
 
 def main():
-    import ctypes
     import tkinter as tk
+    import ui_theme as theme
 
-    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    theme.identify_process()
+    theme.dpi_aware()
     root = tk.Tk()
     NetworkWindow(root)
     root.mainloop()

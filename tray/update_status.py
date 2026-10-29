@@ -14,7 +14,7 @@ import time
 import component_launch
 
 DIRECTORY = Path.home() / ".route-manager"
-TITLE = "更新进度 · Route Manager"
+TITLE = "更新进度 · AgentCompass"
 _lock = threading.Lock()
 _process = None
 _state = {}
@@ -80,6 +80,7 @@ def main() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import ui_theme as theme
 
+    theme.identify_process()
     theme.dpi_aware()
     root = tk.Tk()
     theme.apply(root, _tr(TITLE), "900x540", (720, 420))

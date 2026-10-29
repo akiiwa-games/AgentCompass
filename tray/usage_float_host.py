@@ -144,6 +144,9 @@ def attach(root, scope):
 
 def main():
     import tkinter as tk
+    import ui_theme as theme
+
+    theme.identify_process()
     import usage_float as native
 
     # Warm the scheduled-task autostart cache off the UI thread so right-clicking
@@ -156,6 +159,7 @@ def main():
         frame = sys._getframe(1)
         if frame.f_code.co_name != "run_ui" or frame.f_globals.get("__name__") != native.__name__:
             return original_mainloop(root, *args, **kwargs)
+        theme.set_window_icon(root)
         server = attach(root, frame.f_locals)
         try:
             return original_mainloop(root, *args, **kwargs)
