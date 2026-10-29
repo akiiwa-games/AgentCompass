@@ -103,7 +103,7 @@
         "weight": 0.49,
         "vector_weight": 0.34,
         "route_weight": 0.17,
-        "basis": "User subjective model ratings (2026-10-21): Gemini 4 Argon leads in divergent/expansive thinking and architectural innovation (formulating schemes, proposing creative research); Claude Opus 5.5 leads in architectural landing rigor and comprehensive global thinking; GPT 6.1 Sol lacks global vision (penalized on context_scale=3 / cross-module architecture) but has high concrete module implementation precision (context_scale=1, code_complexity=1..2)."
+        "basis": "Gemini 4 Argon leads in divergent/expansive thinking and architectural innovation (formulating schemes, proposing creative research); Claude Opus 5.5 leads in architectural landing rigor and comprehensive global thinking; GPT 6.1 Sol lacks global vision (penalized on context_scale=3 / cross-module architecture) but has high concrete module implementation precision (context_scale=1, code_complexity=1..2)."
       },
       "overqualification_weight": 0.08,
       "overqualification_span": 0.6,
@@ -242,7 +242,7 @@
         "global_rigor": 0.35,
         "module_precision": 0.55
       },
-      "basis": "OpenCode free DeepSeek V4.1 Flash model (`opencode/deepseek-v4.1-flash-free`); explicit user-override worker below the automatic routine floor."
+      "basis": "OpenCode free DeepSeek V4.1 Flash model (`opencode/deepseek-v4.1-flash-free`); explicit override worker below the automatic routine floor."
     },
     "claude-fable-5-1": {
       "tier": 4.6,
@@ -281,7 +281,7 @@
         "global_rigor": 0.98,
         "module_precision": 0.92
       },
-      "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); 14d local $9.30/h (207.3h). Subjective: #1 in architectural landing rigor and comprehensive global thinking."
+      "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); 14d local $9.30/h (207.3h)."
     },
     "gpt-6.1-sol": {
       "tier": 3.6,
@@ -303,7 +303,7 @@
         "global_rigor": 0.25,
         "module_precision": 0.95
       },
-      "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; 14d local $2.19/h at high (159.1h). Subjective: lacks global vision (global_rigor 0.25), but high precision on concrete single-module implementation (module_precision 0.95)."
+      "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; 14d local $2.19/h at high (159.1h)."
     },
     "gpt-6-astra": {
       "tier": 4.2,
@@ -349,7 +349,7 @@
         "global_rigor": 0.8,
         "module_precision": 0.8
       },
-      "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); 14d local 94.5h. Subjective: #1 in divergent/expansive thinking and architectural innovation (preferred for formulating schemes and creative research)."
+      "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); 14d local 94.5h."
     },
     "claude-sonnet-5-5": {
       "tier": 3.9,
@@ -1084,7 +1084,7 @@
     },
     "usd_basis": "`usd_per_hour`: API list price (platform.claude.com/docs/en/about-claude/pricing, developers.openai.com/api/docs/pricing; cache reads and writes priced separately) of the tokens one active session-hour spent, from 14 days of local session logs to 2026-10-12, pooled over efforts (the hourly spend barely moves with effort; a higher effort runs longer instead): Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Fable has no history: Opus times the 2.5x list-price ratio. Recompute from usage-stats.json when prices or models change.",
     "capabilities_basis": "6D vectors: benchmark-calibrated core rows retain their existing basis; newly discovered frontier rows use explicitly provisional routing priors, not measured benchmark scores. Visual/GUI zero for text-only catalog entries. Full catalog evidence and compatibility policy: model-capabilities.md (2026-10-27).",
-    "basis": "Absolute tiers (at High effort) are provisional: derived from the ordering already in model-capabilities.md (Grok behind the leaders, Flash by user preference) and the user's ratings. Stated by the user 2026-10-09 and updated 2026-10-14 with Gemini 4 Argon: absolute ability order Opus > Astra > Argon > Sonnet > Sol > Grok > Flash; Dot is Astra (the user told me to treat it so, and OpenAI documents Dot as Astra-powered), so it has Astra's tier, meets every difficulty floor and has unlimited usage. User 2026-10-09: Dot is not limited to text; it has its own computer and can receive code, public data and handed-over tables and return files, so it is a candidate for every route unless the parent marks the work `needs.local_only` (`excluded_when: local_only`) or it needs vision; visual ability Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash (the numeric `visual` values 1.0/0.8/0.75/0.7/0.6/0.3 encode that order; false means no vision). Argon shares the Antigravity Gemini pool with Flash but burns roughly 8x as much quota per hour (`burn_pct_per_worker_hour`). Fable is on hold. Correct the rest here; nothing else encodes a global ranking.",
+    "basis": "Absolute tiers (at High effort) are provisional: derived from the ordering already in model-capabilities.md (Grok behind the leaders, Flash as volume sink). Calibrated ability order: Opus > Astra > Argon > Sonnet > Sol > Grok > Flash; Dot is Astra-powered (OpenAI documents Dot as Astra-powered), so it has Astra's tier, meets every difficulty floor and has unlimited usage. Dot is not limited to text; it has its own computer and can receive code, public data and handed-over tables and return files, so it is a candidate for every route unless the parent marks the work `needs.local_only` (`excluded_when: local_only`) or it needs vision; visual ability order is Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash (the numeric `visual` values 1.0/0.8/0.75/0.7/0.6/0.3 encode that order; false means no vision). Argon shares the Antigravity Gemini pool with Flash but burns roughly 8x as much quota per hour (`burn_pct_per_worker_hour`). Fable is on hold. Correct the rest here; nothing else encodes a global ranking.",
     "order_basis": "Zero-to-frontier-ceiling normalization over AA v4.3.2 (2026-10-19), Bug Hunt Bench (n=2..5 runs), Terminal-Bench 2.0/4.0, Mercor BrowseComp, MMMU-Pro, OSWorld/GUI harness grounding, and 14d local usage-stats.json."
   },
   "dispatch_efforts": {
@@ -1703,7 +1703,7 @@
         "seven_day": 0.27,
         "weekly_fable": 0.27
       },
-      "burn_basis": "Max 20x ($200/mo): empirical 100% capacity seven_day=$2,380 (0.27%/h), five_hour=$376 (1.71%/h), weekly_fable=$1,190.",
+      "burn_basis": "Empirical 100% capacity seven_day=$2,380 (0.27%/h), five_hour=$376 (1.71%/h), weekly_fable=$1,190.",
       "bundles": {
         "fable51_high": {
           "model": "claude-fable-5-1",
@@ -1760,7 +1760,7 @@
         "five_hour": 24.0,
         "weekly_fable": 2.7
       },
-      "burn_basis": "Claude Pro ($20/mo): five_hour=$18 (25% launch floor, 12% post-step margin), empirical seven_day=$156 (2.7%/h). Sonnet-only worker; participates in normal weekly allocation while guarded against the 5h wall.",
+      "burn_basis": "Five_hour=$18 (25% launch floor, 12% post-step margin), empirical seven_day=$156 (2.7%/h). Sonnet-only worker; participates in normal weekly allocation while guarded against the 5h wall.",
       "bundles": {
         "fable51_high_2": {
           "model": "claude-fable-5-1",
@@ -1811,7 +1811,7 @@
       "burn_pct_per_worker_hour": {
         "usage": 1.74
       },
-      "burn_basis": "ChatGPT Pro ($200/mo): empirical ~$650/wk API-equivalent (1.74%/h across recent weekly reset cycles). Sol $2.6/h, Astra $22.6/h.",
+      "burn_basis": "Empirical ~$650/wk API-equivalent (1.74%/h across recent weekly reset cycles). Sol $2.6/h, Astra $22.6/h.",
       "bundles": {
         "sol_max": {
           "model": "gpt-6.1-sol",
@@ -1958,7 +1958,7 @@
         "3p-5h": 17.6
       },
       "capacity_basis": "API-equivalent pool at list price, calibrated to empirical Argon burn (Argon $4.0/h = 0.62%/h of gemini-weekly -> $625, 2.13%/h of gemini-5h -> $182; Flash $0.5/h = 0.08%/h weekly, 0.27%/h 5h).",
-      "burn_basis": "Empirical calibration (2026-10-27): Google AI Ultra gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly). Claude on antigravity draws only 3p-5h/3p-weekly via bundle draws, priced at the Claude model's usd_per_hour against those pools ($17.6 / $88).",
+      "burn_basis": "Empirical calibration (2026-10-27): gemini-5h/weekly shared by Flash (1x = 0.08%/h weekly) and Argon (8x = 0.62%/h weekly). Claude on antigravity draws only 3p-5h/3p-weekly via bundle draws, priced at the Claude model's usd_per_hour against those pools ($17.6 / $88).",
       "bundles": {
         "flash_high": {
           "provider": "antigravity-resilient",
@@ -2128,7 +2128,7 @@
   "capability_policy": {
     "reviewed_at": "2026-10-27",
     "evidence_reference": "model-capabilities.md",
-    "precedence": "Honor explicit user instructions and specialist requirements. Preserve the user's Dot closed-loop exception outside the subscription auction. Establish quality, tools, permissions and runtime eligibility. Gemini 3.8 Flash is not the preferred coder: its quota is very large, so simple coding-plus-tool-call work (difficulty `routine`) goes to it first when it has usable capacity, and anything harder is not eligible for it (the `hard` ability floor sits above Flash); then balance quota/reset/demand. Preserve the route's earlier ordering as fallback. Other rankings remain soft priors.",
+    "precedence": "Honor explicit user instructions and specialist requirements. Preserve the Dot closed-loop exception outside the subscription auction. Establish quality, tools, permissions and runtime eligibility. Gemini 3.8 Flash is not the preferred coder: its quota is very large, so simple coding-plus-tool-call work (difficulty `routine`) goes to it first when it has usable capacity, and anything harder is not eligible for it (the `hard` ability floor sits above Flash); then balance quota/reset/demand. Preserve the route's earlier ordering as fallback. Other rankings remain soft priors.",
     "execution_preference": {
       "gemini-3.8-flash-high": "Routine coding & tool-execution volume sink (tier 3.0); barred above routine difficulty.",
       "claude-sonnet-5-5": "Primary exploration, research-packet, and multi-hop synthesis workhorse (BrowseComp #1, Bug Hunt Max #1).",
@@ -2142,16 +2142,16 @@
     "resource_balancing": {
       "rule": "Match task profile to minimum-sufficient tier; spend free/expiring or high-headroom pools first; reserve Opus and Astra for coupled/frontier/critical or specialized GUI/visual work."
     },
-    "delegation": "Send work to the user's own Dot whenever the assignment can be handed over and its result returned as files or text: Dot has its own computer, receives code/files in the packet (`run_dot_task.py --file <path> --apply-to .`), fetches public data itself and takes other data through the verified hand-offs (dot-subagent). Ordinary file creation or modification is NOT a reason for `needs.local_only`. Callers should mark the work `needs.local_only` (with a required `needs.local_only_reason` naming the concrete local dependency) when it must run against this machine's local tools/daemons/git/test environment, local secrets, live logged-in accounts, or multi-step parent interaction. When the caller leaves `needs.local_only` unset, trust the classifier's `profile.local_only` judgment and carry its `reason` into `needs.local_only_reason` without a second reason gate; explicit caller values take precedence. Compare the parent's actual model, effort, tools and context with specialist needs for every other assignment. Delegate a bounded specialist question or artifact when its capability or independent perspective adds value, even without parallelism. If the parent already meets the specialist need, staying local is valid unless independent work is requested. Do not hand off just because a model name appears.",
+    "delegation": "Send work to Dot whenever the assignment can be handed over and its result returned as files or text: Dot has its own computer, receives code/files in the packet (`run_dot_task.py --file <path> --apply-to .`), fetches public data itself and takes other data through the verified hand-offs (dot-subagent). Ordinary file creation or modification is NOT a reason for `needs.local_only`. Callers should mark the work `needs.local_only` (with a required `needs.local_only_reason` naming the concrete local dependency) when it must run against this machine's local tools/daemons/git/test environment, local secrets, live logged-in accounts, or multi-step parent interaction. When the caller leaves `needs.local_only` unset, trust the classifier's `profile.local_only` judgment and carry its `reason` into `needs.local_only_reason` without a second reason gate; explicit caller values take precedence. Compare the parent's actual model, effort, tools and context with specialist needs for every other assignment. Delegate a bounded specialist question or artifact when its capability or independent perspective adds value, even without parallelism. If the parent already meets the specialist need, staying local is valid unless independent work is requested. Do not hand off just because a model name appears.",
     "routes": {
       "dot_execution": {
-        "scope": "A bounded assignment the user's own OpenAI Dot can finish end to end and return as a completed text deliverable.",
+        "scope": "A bounded assignment Dot can finish end to end and return as a completed text deliverable.",
         "preferred": [
           "dot"
         ],
         "effort": "the Dot's own",
         "role": "worker",
-        "basis": "Standing user order, 2026-10-08: choose Dot only when it can close the loop.",
+        "basis": "Choose Dot only when it can close the loop.",
         "restrict_models": true
       },
       "web_research": {
@@ -2173,7 +2173,7 @@
         ],
         "effort": "As supported and justified by the task",
         "role": "worker",
-        "basis": "Design choice 2026-10-09, on the user's instruction that scores decide: Dot has its own computer and is free, so gathering and organizing in",
+        "basis": "Scores decide: Dot has its own computer and is unmetered, suitable for gathering and organizing public info.",
         "restrict_models": false
       },
       "text_in_text_out": {
@@ -2195,7 +2195,7 @@
         ],
         "effort": "As supported and justified by the task",
         "role": "worker",
-        "basis": "Design choice 2026-10-09, on the user's instruction that scores decide: text in, text out is Dot's class, and Dot is a candidate on every ro",
+        "basis": "Scores decide: text in, text out is Dot's class, and Dot is a candidate on every route.",
         "restrict_models": false
       },
       "exploration_analysis": {
@@ -2261,7 +2261,7 @@
         ],
         "effort": "As supported and justified by the task",
         "role": "worker",
-        "basis": "Design choice 2026-10-09 (the user: add the Dot self-contained code route).",
+        "basis": "Self-contained code route suitable for remote execution with tests.",
         "restrict_models": false
       },
       "visual_analysis": {
@@ -2277,7 +2277,7 @@
         ],
         "effort": "Opus high or xhigh, Astra high, Argon high, Sol high, Sonnet high, Flash high",
         "role": "visual analyst",
-        "basis": "User rating 2026-10-09 and 2026-10-14: visual ability Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash; capacity decides among them in that o",
+        "basis": "Visual ability order: Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash; capacity decides among them in that order.",
         "strict_order": true,
         "restrict_models": false
       },
@@ -2293,7 +2293,7 @@
         ],
         "effort": "Argon/Opus high for worker sessions; highest available Pro effort in the web UI at frontier difficulty.",
         "role": "advisor or scheme designer",
-        "basis": "User requirement 2026-10-21: Gemini 4 Argon leads in divergent thinking and architectural innovation for formulating schemes; frontier advisory consultations use ChatGPT Pro.",
+        "basis": "Gemini 4 Argon leads in divergent thinking and architectural innovation for formulating schemes; frontier advisory consultations use ChatGPT Pro.",
         "restrict_models": true
       },
       "complex_build_plan": {
@@ -2308,7 +2308,7 @@
         ],
         "effort": "Argon/Opus high for worker sessions; highest available Pro effort in the web UI at frontier difficulty.",
         "role": "planner (worker or advisory output)",
-        "basis": "User requirement 2026-10-21: Gemini 4 Argon is prioritized when formulating plans/schemes; Opus 5.5 backs comprehensive architectural rigor; frontier web advisor uses ChatGPT Pro.",
+        "basis": "Gemini 4 Argon is prioritized when formulating plans/schemes; Opus 5.5 backs comprehensive architectural rigor; frontier web advisor uses ChatGPT Pro.",
         "restrict_models": true
       },
       "general_implementation": {
@@ -2346,7 +2346,7 @@
         ],
         "effort": "Supported high/xhigh on the models listed first, more for coupled difficult failures; Argon/Flash high when assigned.",
         "role": "reviewer or debugging worker, as assigned",
-        "basis": "Review and diagnosis are judgment work, not the simple coding-plus-tool-call work that goes to Flash, so it is listed last (user, 2026-10-09",
+        "basis": "Review and diagnosis are judgment work, not the simple coding-plus-tool-call work that goes to Flash, so it is listed last.",
         "restrict_models": false
       },
       "frontend_implementation": {
@@ -2363,7 +2363,7 @@
         ],
         "effort": "Flash/Argon high for every worker packet; supported high/medium on fallbacks.",
         "role": "worker",
-        "basis": "Flash is listed first only as the volume sink for simple (`routine`) UI changes (user, 2026-10-09: its quota is very large); frontend work d",
+        "basis": "Flash is listed first only as the volume sink for simple (`routine`) UI changes (its quota is very large); harder frontend work requires higher capability.",
         "restrict_models": false
       },
       "bounded_bulk_work": {
@@ -2380,7 +2380,7 @@
         ],
         "effort": "Flash/Argon high for every worker packet; supported medium/high on fallbacks.",
         "role": "bounded leaf worker",
-        "basis": "Flash first as the volume sink for homogeneous simple coding/tool work (user, 2026-10-09: its quota is very large); for harder homogeneous w",
+        "basis": "Flash first as the volume sink for homogeneous simple coding/tool work (its quota is very large); harder homogeneous work uses higher tiers.",
         "restrict_models": false
       },
       "tool_execution": {
@@ -2397,7 +2397,7 @@
         ],
         "effort": "Flash/Argon high for every worker packet; level is encoded in the model ID. Fallback effort follows assignment difficulty and runtime support.",
         "role": "tool-execution worker",
-        "basis": "Flash first as the volume sink for simple tool-call work (user, 2026-10-09: its quota is very large; not a quality ranking).",
+        "basis": "Flash first as the volume sink for simple tool-call work (its quota is very large; not a quality ranking).",
         "restrict_models": false
       },
       "computer_use": {
@@ -2419,7 +2419,7 @@
         ],
         "effort": "High on the models listed (Astra, Sol); unlisted vision models rank by their `gui` capability. Default difficulty is `hard` (Flash closed); a profiled small GUI task (reasoning_depth 1) or an explicit `routine` opens it to Flash and Sol.",
         "role": "computer-use worker",
-        "basis": "User rating 2026-10-10: Codex scores higher at computer use, and the router must choose it without the user naming it.",
+        "basis": "Codex scores higher at computer use, and the router chooses it without explicit manual naming.",
         "restrict_models": false
       },
       "other_or_mixed": {
@@ -2433,7 +2433,7 @@
     },
     "limits": [
       "These capability preferences are not permission to delegate or transfer data.",
-      "The user-designated specialist routes must not be replaced with a cheaper model merely to balance quota. Report unavailable specialist capability and continue independent feasible work.",
+      "Designated specialist routes must not be replaced with a cheaper model merely to balance quota. Report unavailable specialist capability and continue independent feasible work.",
       "The usage snapshot's provider/account usage does not prove per-model availability or ChatGPT Pro web quota. Fable and Opus may share Claude limits; inspect applicable windows.",
       "Metered API access, including any harness funded by it, is only eligible after no suitable subscription remains available.",
       "dot_execution is not a subscription model and is not entered in the quota auction."

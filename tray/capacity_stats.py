@@ -9,7 +9,7 @@ worker time, samples the usage-float cache, and rewrites two files in ~/.route-m
   usage-stats.json  per-day worker-hours, calls, tokens and list-price dollars by account and model/effort, for the
                     daily inspection and to recompute a model's `usd_per_hour` in accounts.json
 
-There is no fit of percent against tokens any more (user, 2026-10-12: too inaccurate); the router prices work at
+There is no fit of percent against tokens any more; the router prices work at
 list price against community-measured window capacity.
 
 Codex rollouts carry the account's own rate-limit percentage on every call, so Codex history needs no other

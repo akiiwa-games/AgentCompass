@@ -12,8 +12,8 @@ start another agent, or widen the assignment.
 Without a router-owned dispatch, return `Status: blocked` before calling the runner or
 transmitting content. The dispatch must name the outcome, the exact text the Dot may see, that the destination is the
 user's own Dot, and, when data is handed over, the dataset. The standing authorization covers that packet. It does not
-cover credentials, keys, or regulated or live financial data, and it does not cover any other destination. The user also
-approved (2026-10-09) handing Dot data they designate, never credentials (see [Getting data to Dot](#getting-data-to-dot)).
+cover credentials, keys, or regulated or live financial data, and it does not cover any other destination. Standing policy
+authorizes handing Dot explicitly designated data, never credentials (see [Getting data to Dot](#getting-data-to-dot)).
 
 
 ## Host dispatch availability

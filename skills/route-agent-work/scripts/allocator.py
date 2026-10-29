@@ -75,7 +75,7 @@ def load_overrides(now, path=None, usage=None, accounts=None, prune=True):
 
 
 def override_depleted(override, usage, accounts):
-    """A priority whose quota is down to the safety margin (user 2026-10-16: "到5%的时候取消").
+    """A priority whose quota is down to the safety margin (retires at 5%).
 
     At or below `safety_margin_pct` the allocator already refuses new work there, so the boost can only mislead; the
     rule is retired instead of waiting for its reset or `until`. Only a fresh reading counts, only weekly windows (or the
@@ -507,7 +507,7 @@ def load_accounts(path=None):
 def apply_measured(accounts, measured, now):
     """Layer the usage readings from the tray service's capacity.json (each window's used percent and its 3h and 24h
     rise, confirmed within `OBSERVED_MAX_AGE_HOURS`) over accounts.json; they feed the demand forecast. Consumption is
-    priced from accounts.json alone (list price against community capacity, user 2026-10-12): the tray's usage fit
+    priced from accounts.json alone (list price against community capacity): the tray's usage fit
     is no longer read."""
     generated = parse_time(measured.get('generated_at'))
     if measured.get('v') != 2 or generated is None or now - generated > timedelta(days=MEASURED_MAX_AGE_DAYS):
