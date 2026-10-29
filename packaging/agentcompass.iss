@@ -5,7 +5,7 @@
 ; This script does not sign binaries. See packaging/SIGNING.md.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #error MyAppVersion must be supplied by packaging/build.ps1
 #endif
 
 #define MyAppName "AgentCompass"

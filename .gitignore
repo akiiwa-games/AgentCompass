@@ -66,6 +66,7 @@
 !/packaging/*.md
 !/.github/
 /.github/*
+!/.github/RELEASE_NOTES.md
 !/.github/workflows/
 /.github/workflows/*
 !/.github/workflows/*.yml
