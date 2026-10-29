@@ -22,6 +22,7 @@ import psutil
 import easytier
 import gateways
 import local_controls
+import component_launch
 import plugins
 import runtime_paths
 
@@ -37,7 +38,7 @@ USAGE_FLOAT_SCRIPT = USAGE_FLOAT_ROOT / "usage_float.py"
 _component_lock = threading.Lock()
 _component_children = {}
 UPDATING_COMPONENTS = set()
-BUN = ROOT / "tools" / "bun" / "bun.exe"
+BUN = ROOT / "tools" / "bun" / "bun.exe"   # workspace copy only; use bun_exe() for the one that runs
 STATE_DIR = Path.home() / ".route-manager"
 LOG_DIR = Path.home() / ".dot2api"
 TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
@@ -48,7 +49,7 @@ def hidden_popen(args: list[str], env: dict[str, str], cwd: Path, log_path: Path
     log = open(log_path, "ab", buffering=0)
     startup = subprocess.STARTUPINFO()
     exe_name = Path(args[0]).name.lower() if args else ""
-    if "--hidden" in args or "--quit" in args or not exe_name.startswith(("electron", "pythonw")):
+    if "--hidden" in args or "--quit" in args or not exe_name.startswith(("electron", "pythonw", "agentcompass")):
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup.wShowWindow = 0
     return subprocess.Popen(
@@ -322,20 +323,38 @@ def chatgpt_command(*flags: str) -> list[str]:
     return [str(chatgpt_exe()), str(CHATGPT_LAUNCHER), *flags]
 
 
+def bun_exe() -> Path | None:
+    """The Bun that will run: the workspace copy, ROUTE_MANAGER_BUN, PATH or ~/.bun. None when there is none."""
+    try:
+        return runtime_paths.bun_path()
+    except runtime_paths.ToolMissing:
+        return None
+
+
 def chatgpt_built() -> bool:
     """Everything the launcher needs before it can start: Electron, Bun, the built window and the browser helper."""
-    return all(path.is_file() for path in (
-        chatgpt_exe(), BUN, CHATGPT_LAUNCHER / "dist" / "index.html", CHATGPT_ROOT / ".launcher-runtime" / "browser-helper.cjs"))
+    return bun_exe() is not None and all(path.is_file() for path in (
+        chatgpt_exe(), CHATGPT_LAUNCHER / "dist" / "index.html", CHATGPT_ROOT / ".launcher-runtime" / "browser-helper.cjs"))
+
+
+def launcher_data_dir() -> Path:
+    """The launcher's data folder: the user's choice, else under %LOCALAPPDATA% (which may be redirected)."""
+    configured = os.environ.get("CODEX_WEB_GPT_LAUNCHER_DATA_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    base = os.environ.get("LOCALAPPDATA")
+    return (Path(base) if base else Path.home() / "AppData" / "Local") / "Codex Pro Consult"
 
 
 def chatgpt_env() -> dict[str, str]:
     env = os.environ.copy()
-    env["CODEX_HOME"] = str(Path.home() / ".codex-pro-consult")
+    # The bridge keeps its own Codex profile so it never touches the user's real ~/.codex.
+    env["CODEX_HOME"] = os.environ.get("ROUTE_MANAGER_CHATGPT_CODEX_HOME") or str(Path.home() / ".codex-pro-consult")
     env["CODEX_CHATGPT_WEB_HOME"] = str(bridge_home())
-    env["CODEX_WEB_GPT_LAUNCHER_DATA_DIR"] = str(
-        Path.home() / "AppData" / "Local" / "Codex Pro Consult"
-    )
-    env["CODEX_WEB_GPT_BUN"] = env["CODEX_CHATGPT_WEB_BUN"] = str(BUN)
+    env["CODEX_WEB_GPT_LAUNCHER_DATA_DIR"] = str(launcher_data_dir())
+    bun = bun_exe()
+    if bun is not None:
+        env["CODEX_WEB_GPT_BUN"] = env["CODEX_CHATGPT_WEB_BUN"] = str(bun)
     # The patched launcher then shows no tray icon of its own and hides, rather than quits, when its window closes.
     env["CODEX_WEB_GPT_EXTERNAL_TRAY"] = "1"
     return env
@@ -385,7 +404,7 @@ def start_chatgpt_web(show: bool = False) -> str:
         return _tr("ChatGPT Web 已在运行") if chatgpt_ready() else _tr("ChatGPT Web 正在启动")
     if not chatgpt_built():
         message = _tr("ChatGPT Web 还没有构建，先运行 deploy.py install")
-        if not BUN.is_file():
+        if bun_exe() is None:
             try:
                 runtime_paths.bun_path()
             except runtime_paths.ToolMissing as error:
@@ -574,9 +593,8 @@ def start_usage_float() -> str:
             return _tr("Usage Float 已在运行")
         env = os.environ.copy()
         env["ROUTE_MANAGER_HOSTED"] = "1"
-        pythonw = Path(sys.executable).with_name("pythonw.exe")
         _component_children["usage-float"] = hidden_popen(
-            [str(pythonw), str(ROOT / "tray" / "usage_float_host.py")], env, USAGE_FLOAT_ROOT,
+            component_launch.command(ROOT / "tray" / "usage_float_host.py"), env, USAGE_FLOAT_ROOT,
             STATE_DIR / "usage-float.log")
     return _tr("已启动 Usage Float")
 
@@ -869,7 +887,7 @@ def capacity_tick(force: bool = False) -> bool:
         return False
     _capacity["started"] = time.monotonic()
     _capacity["proc"] = hidden_popen(
-        [sys.executable, str(CAPACITY_SCRIPT), "--once", "--quiet"],
+        component_launch.command(CAPACITY_SCRIPT, "--once", "--quiet", windowed=False),
         os.environ.copy(),
         ROOT,
         STATE_DIR / "capacity.log",

@@ -30,6 +30,8 @@ import time
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+import component_launch
+
 CREATE_NO_WINDOW = 0x08000000
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -386,8 +388,8 @@ def without_option(argv: list[str], option: str) -> list[str]:
 def relaunch_elevated(argv: list[str]) -> int:
     USER_LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = USER_LOG_DIR / f"setup-{time.strftime('%Y%m%d-%H%M%S')}.log"
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
-    parameters = subprocess.list2cmdline([str(Path(__file__).resolve()), *argv, "--log", str(log_path)])
+    launcher, *launcher_args = component_launch.command(__file__, *argv, "--log", str(log_path))
+    parameters = subprocess.list2cmdline(launcher_args)
 
     class ShellExecuteInfo(ctypes.Structure):
         _fields_ = [("cbSize", ctypes.c_ulong), ("fMask", ctypes.c_ulong), ("hwnd", ctypes.c_void_p),
@@ -399,7 +401,7 @@ def relaunch_elevated(argv: list[str]) -> int:
     info = ShellExecuteInfo()
     info.cbSize = ctypes.sizeof(info)
     info.fMask = 0x40  # SEE_MASK_NOCLOSEPROCESS
-    info.lpVerb, info.lpFile, info.lpParameters, info.nShow = "runas", str(pythonw), parameters, 0
+    info.lpVerb, info.lpFile, info.lpParameters, info.nShow = "runas", launcher, parameters, 0
     if not ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(info)):
         print("没有获得管理员权限（UAC 被取消或不可用）")
         return 1

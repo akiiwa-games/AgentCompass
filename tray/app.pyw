@@ -346,6 +346,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import component_launch
+
+    helper_exit = component_launch.dispatch(sys.argv)   # AgentCompass.exe --run-component <name>: a helper, not a second tray
+    if helper_exit is not None:
+        raise SystemExit(helper_exit)
     try:
         main()
     except BaseException as exc:

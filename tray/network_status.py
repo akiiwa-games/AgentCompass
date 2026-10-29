@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 
+import component_launch
 import easytier
 
 _process = None
@@ -31,9 +32,7 @@ def open_window() -> None:
                     win32gui.FlashWindow(hwnd, True)
         win32gui.EnumWindows(show, None)
         return
-    python = Path(sys.executable).with_name("pythonw.exe")
-    _process = subprocess.Popen([str(python), str(Path(__file__).resolve())],
-                                creationflags=easytier.CREATE_NO_WINDOW)
+    _process = subprocess.Popen(component_launch.command(__file__), creationflags=easytier.CREATE_NO_WINDOW)
 
 
 def peer_values(peer: dict) -> tuple:

@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import component_launch
 import plugins
 import radar_chart
 import ui_theme as theme
@@ -55,8 +56,7 @@ def open_window(page: str | None = None) -> None:
         return
     if _process is not None and _process.poll() is None:
         return
-    python = Path(sys.executable).with_name("pythonw.exe")
-    _process = subprocess.Popen([str(python), str(Path(__file__).resolve())] + (["--page", page] if page else []),
+    _process = subprocess.Popen(component_launch.command(__file__, *(["--page", page] if page else [])),
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 close_fds=True, creationflags=0x08000000)
 

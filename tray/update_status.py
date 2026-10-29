@@ -11,6 +11,8 @@ import sys
 import threading
 import time
 
+import component_launch
+
 DIRECTORY = Path.home() / ".route-manager"
 TITLE = "更新进度 · Route Manager"
 _lock = threading.Lock()
@@ -67,8 +69,7 @@ def open_window() -> None:
         return
     if _process is not None and _process.poll() is None:
         return
-    python = Path(sys.executable).with_name("pythonw.exe")
-    _process = subprocess.Popen([str(python), str(Path(__file__).resolve())], creationflags=0x08000000)
+    _process = subprocess.Popen(component_launch.command(__file__), creationflags=0x08000000)
 
 
 def main() -> None:

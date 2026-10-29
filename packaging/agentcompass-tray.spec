@@ -5,10 +5,41 @@ Do not add codex-chatgpt-web or any node_modules tree as data. Do not run the
 built AgentCompass.exe from a developer machine: it starts the tray services.
 """
 
+import ast
+import sys
 from pathlib import Path
 
 root = Path(SPECPATH).resolve().parent
 tray = root / "tray"
+router_scripts = root / "skills" / "route-agent-work" / "scripts"
+
+# The router skill is not frozen, but the tray imports its scripts in-process (priority menu, router
+# window), so the frozen interpreter must carry every standard-library module they import.
+# Usage Float, run from its own checkout through usage_float_host, adds the Tk and Windows modules below.
+USAGE_FLOAT_STDLIB = [
+    "tkinter", "tkinter.ttk", "tkinter.font", "tkinter.messagebox", "tkinter.filedialog",
+    "tkinter.colorchooser", "tkinter.simpledialog", "zoneinfo", "decimal", "html", "uuid", "struct",
+    "base64", "ctypes", "dataclasses", "winreg", "msvcrt",
+]
+
+
+def stdlib_imports(folder):
+    found = set()
+    for path in sorted(folder.glob("*.py")):
+        if path.name.startswith("test_"):
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
+            if isinstance(node, ast.Import):
+                found.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                found.add(node.module.split(".")[0])
+    return sorted(name for name in found if name in sys.stdlib_module_names)
+
+
+# Tray modules the executable runs as helpers: AgentCompass.exe --run-component <name> (tray/component_launch.py).
+HELPER_MODULES = [
+    "capacity_stats", "easytier_setup", "network_status", "router_window", "update_status", "usage_float_host",
+]
 
 a = Analysis(
     [str(tray / "app.pyw")],
@@ -33,6 +64,9 @@ a = Analysis(
         "agentcompass.ports",
         "agentcompass.origin",
         "agentcompass.tools",
+        *HELPER_MODULES,
+        *stdlib_imports(router_scripts),
+        *USAGE_FLOAT_STDLIB,
     ],
     hookspath=[],
     hooksconfig={},

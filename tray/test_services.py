@@ -241,15 +241,16 @@ class ChatGPTWebTests(unittest.TestCase):
 
     def test_the_launcher_is_started_from_its_source_for_the_tray_and_never_twice(self):
         with mock.patch.object(services, "hidden_popen") as popen, mock.patch.object(services, "chatgpt_ready", return_value=False), \
-                mock.patch.object(services, "chatgpt_built", return_value=True):
+                mock.patch.object(services, "chatgpt_built", return_value=True), \
+                mock.patch.object(services, "bun_exe", return_value=Path("Z:/tools/bun.exe")):
             with mock.patch.object(services, "chatgpt_main_pid", return_value=None):
                 self.assertEqual(services.start_chatgpt_web(False), "已启动 ChatGPT Web")
             args, env = popen.call_args.args[0], popen.call_args.args[1]
             self.assertEqual(args, [str(services.chatgpt_exe()), str(services.CHATGPT_LAUNCHER), "--hidden"])
             self.assertEqual(popen.call_args.args[2], services.CHATGPT_LAUNCHER)
             self.assertEqual(env["CODEX_WEB_GPT_EXTERNAL_TRAY"], "1")
-            self.assertEqual(env["CODEX_CHATGPT_WEB_BUN"], str(services.BUN))
-            self.assertEqual(env["CODEX_WEB_GPT_BUN"], str(services.BUN))
+            self.assertEqual(env["CODEX_CHATGPT_WEB_BUN"], str(Path("Z:/tools/bun.exe")))
+            self.assertEqual(env["CODEX_WEB_GPT_BUN"], str(Path("Z:/tools/bun.exe")))
             self.assertTrue(env["CODEX_CHATGPT_WEB_HOME"].endswith(".codex-chatgpt-web-consult"))
             popen.reset_mock()
             with mock.patch.object(services, "chatgpt_main_pid", return_value=50):
@@ -271,7 +272,7 @@ class ChatGPTWebTests(unittest.TestCase):
             files = [launcher / "node_modules" / "electron" / "dist" / "electron.exe", root / "bun.exe",
                      launcher / "dist" / "index.html", root / ".launcher-runtime" / "browser-helper.cjs"]
             with mock.patch.object(services, "CHATGPT_ROOT", root), mock.patch.object(services, "CHATGPT_LAUNCHER", launcher), \
-                    mock.patch.object(services, "BUN", root / "bun.exe"):
+                    mock.patch.object(services, "bun_exe", return_value=root / "bun.exe"):
                 self.assertFalse(services.chatgpt_built())
                 for file in files:
                     file.parent.mkdir(parents=True, exist_ok=True)
@@ -279,6 +280,35 @@ class ChatGPTWebTests(unittest.TestCase):
                 self.assertTrue(services.chatgpt_built())
                 files[2].unlink()
                 self.assertFalse(services.chatgpt_built())
+                files[2].write_bytes(b"x")
+                with mock.patch.object(services, "bun_exe", return_value=None):
+                    self.assertFalse(services.chatgpt_built())
+
+    def test_a_bun_found_through_the_runtime_paths_counts_without_a_workspace_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bun = Path(directory) / "bun.exe"
+            bun.write_bytes(b"x")
+            with mock.patch.object(runtime_paths, "bun_path", return_value=bun):
+                self.assertEqual(services.bun_exe(), bun)
+        with mock.patch.object(runtime_paths, "bun_path", side_effect=runtime_paths.ToolMissing("bun", "x", "y", "Z")):
+            self.assertIsNone(services.bun_exe())
+
+    def test_the_launcher_data_folder_follows_localappdata_and_the_users_choice(self):
+        with mock.patch.dict(services.os.environ, {"LOCALAPPDATA": "D:/Redirected/Local"}):
+            services.os.environ.pop("CODEX_WEB_GPT_LAUNCHER_DATA_DIR", None)
+            self.assertEqual(services.launcher_data_dir(), Path("D:/Redirected/Local") / "Codex Pro Consult")
+            services.os.environ["CODEX_WEB_GPT_LAUNCHER_DATA_DIR"] = "D:/My Launcher Data"
+            self.assertEqual(services.launcher_data_dir(), Path("D:/My Launcher Data"))
+            with mock.patch.object(services, "bridge_home", return_value=Path("D:/bridge")), \
+                    mock.patch.object(services, "bun_exe", return_value=None):
+                env = services.chatgpt_env()
+            self.assertEqual(env["CODEX_WEB_GPT_LAUNCHER_DATA_DIR"], str(Path("D:/My Launcher Data")))
+
+    def test_the_bridge_profile_can_be_chosen(self):
+        with mock.patch.dict(services.os.environ, {"ROUTE_MANAGER_CHATGPT_CODEX_HOME": "D:/profiles/pro"}), \
+                mock.patch.object(services, "bridge_home", return_value=Path("D:/bridge")), \
+                mock.patch.object(services, "bun_exe", return_value=None):
+            self.assertEqual(services.chatgpt_env()["CODEX_HOME"], "D:/profiles/pro")
 
     def test_stop_refuses_while_a_request_is_in_flight(self):
         with mock.patch.object(services, "chatgpt_main_pid", return_value=50), \
@@ -405,6 +435,14 @@ class CapacityTickTests(unittest.TestCase):
         self.assertEqual(log.name, "capacity.log")
         self.assertEqual(flags, services.BELOW_NORMAL_PRIORITY_CLASS)
 
+    def test_the_frozen_tray_runs_the_statistics_pass_through_its_own_executable(self):
+        with mock.patch.object(services.component_launch, "frozen", return_value=True), \
+                mock.patch.object(services.sys, "executable", "C:/Apps/AgentCompass.exe"), \
+                mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
+            self.assertTrue(services.capacity_tick())
+        self.assertEqual(popen.call_args.args[0],
+                         ["C:/Apps/AgentCompass.exe", "--run-component", "capacity_stats", "--once", "--quiet"])
+
     def test_a_running_pass_is_not_doubled(self):
         with mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
             services.capacity_tick()
@@ -462,7 +500,7 @@ class ToolMissingDegradesTests(unittest.TestCase):
             bun.write_bytes(b"x")
             with mock.patch.object(services, "chatgpt_built", return_value=False), \
                     mock.patch.object(services, "chatgpt_main_pid", return_value=None), \
-                    mock.patch.object(services, "BUN", bun), \
+                    mock.patch.object(services, "bun_exe", return_value=bun), \
                     mock.patch.object(services, "hidden_popen") as popen:
                 message = services.start_chatgpt_web(False)
         self.assertIn("deploy.py install", message)
@@ -475,7 +513,7 @@ class ToolMissingDegradesTests(unittest.TestCase):
         )
         with mock.patch.object(services, "chatgpt_built", return_value=False), \
                 mock.patch.object(services, "chatgpt_main_pid", return_value=None), \
-                mock.patch.object(services, "BUN", Path("Z:/missing-bun.exe")), \
+                mock.patch.object(services, "bun_exe", return_value=None), \
                 mock.patch.object(runtime_paths, "bun_path", side_effect=missing), \
                 mock.patch.object(services, "hidden_popen") as popen:
             message = services.start_chatgpt_web(False)

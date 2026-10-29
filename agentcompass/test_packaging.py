@@ -109,6 +109,20 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(sorted(name for name in names if name not in tracked), [])
         self.assertFalse(any(name.startswith("setup/host_sync/") for name in names))
 
+    def test_the_frozen_tray_carries_the_helpers_it_starts_and_what_the_router_scripts_import(self):
+        import re
+        spec = (ROOT / "packaging" / "agentcompass-tray.spec").read_text(encoding="utf-8")
+        launch = (ROOT / "tray" / "component_launch.py").read_text(encoding="utf-8")
+        components = re.findall(r'"(\w+)",', launch[launch.index("COMPONENTS"):launch.index(")", launch.index("COMPONENTS"))])
+        self.assertTrue(components)
+        helpers = spec[spec.index("HELPER_MODULES = ["):spec.index("]", spec.index("HELPER_MODULES = ["))]
+        for name in components:
+            self.assertIn(f'"{name}"', helpers)
+        self.assertIn("*stdlib_imports(router_scripts)", spec)
+        # provider_inventory reads TOML, which the frozen interpreter only has when it is named.
+        scripts = (ROOT / "skills" / "route-agent-work" / "scripts" / "provider_inventory.py").read_text(encoding="utf-8")
+        self.assertIn("import tomllib", scripts)
+
     def test_payload_check_flags_untracked_files_in_a_wheel_sdist_and_pyinstaller_table(self):
         import tarfile
         import zipfile
