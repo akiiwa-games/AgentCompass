@@ -299,7 +299,7 @@ def setup_main(argv: list[str] | None = None) -> int:
     _line("\nDetected agent CLIs:")
     for row in detection["accounts"]:
         state = {True: "signed in", False: "not available", None: "installed, sign-in unverified"}[row["signed_in"]]
-        _line(f"  {row['name']:<12} {state}" + (f"  plan={row['plan']}" if row.get("plan") else ""))
+        _line(f"  {row['name']:<12} {state}" + (f"  plan={row['plan']}" if row.get("plan") and row["signed_in"] is not False else ""))
     paseo = detection["paseo"]
     _line(f"  {'paseo':<12} " + ("installed" if paseo["installed"] else "not found") + (", config present" if paseo["config"] else ""))
     usable = [r for r in detection["accounts"] if r["signed_in"] is not False]

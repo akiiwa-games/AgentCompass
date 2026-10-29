@@ -151,6 +151,14 @@ class MenuTests(TrayTestCase):
         self.assertEqual(app.PRIORITY['label'], '重置前优先')
         self.assertEqual(app.STATE, services_before)
 
+    def test_missing_router_skill_is_a_quiet_status_not_a_logged_error(self):
+        icon = mock.Mock()
+        with mock.patch.object(app.router_priority, 'snapshot', side_effect=app.router_priority.RouterMissing('missing')),                 mock.patch.object(app, 'log_error') as log_error:
+            app.refresh_priority(icon)
+        log_error.assert_not_called()
+        self.assertEqual(app.PRIORITY['entries'], [])
+        self.assertIn('agentcompass setup', app.PRIORITY['label'])
+
     def test_switching_a_plugin_off_in_the_panel_rebuilds_the_menu(self):
         icon = mock.Mock()
         app.plugins.set_flag("chatgpt-web", "enabled", False)

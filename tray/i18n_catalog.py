@@ -405,6 +405,7 @@ EN = {
     '{0}；隧道 {1}': '{0}; tunnel {1}',
     '操作失败，详见日志': 'Action failed; see logs',
     '优先状态异常': 'Priority status error',
+    '未安装 router（运行 agentcompass setup）': 'Router not installed (run agentcompass setup)',
     '取消优先': 'Cancel Priority',
     '取消 {0}': 'Cancel {0}',
     '打开 AgentCompass': 'Open AgentCompass',

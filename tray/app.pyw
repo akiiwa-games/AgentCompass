@@ -219,6 +219,8 @@ def refresh_priority(icon) -> None:
     global PRIORITY
     try:
         latest = router_priority.snapshot()
+    except router_priority.RouterMissing:
+        latest = {"label": _tr("未安装 router（运行 agentcompass setup）"), "entries": [], "targets": []}
     except Exception as exc:
         log_error(exc)
         latest = {"label": _tr("优先状态异常"), "entries": [], "targets": []}

@@ -80,6 +80,12 @@ class CliTests(unittest.TestCase):
         self.assertIn("agentcompass setup", text)
         self.assertIn("--input", text)
 
+    def test_setup_hint_names_only_the_installed_command(self):
+        text = cli.packaged_wording(
+            "No provider account is ready. Run `python -X utf8 setup/onboard.py` (or `agentcompass setup`) to detect the CLIs.")
+        self.assertIn("Run `agentcompass setup` to detect", text)
+        self.assertNotIn("onboard.py", text)
+
     def test_plan_demo_still_reaches_route_judge(self):
         with patch("agentcompass.cli.subprocess.call", return_value=0) as call, \
                 patch("agentcompass.cli.readiness_notice", side_effect=AssertionError("demo has a task")):

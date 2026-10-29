@@ -80,6 +80,11 @@ def _has_option(args: list[str], name: str) -> bool:
     return any(arg == name or arg.startswith(name + "=") for arg in args)
 
 
+def packaged_wording(message: str) -> str:
+    """A packaged install has no setup/onboard.py to run."""
+    return message.replace("`python -X utf8 setup/onboard.py` (or `agentcompass setup`)", "`agentcompass setup`")
+
+
 def readiness_notice() -> str | None:
     """The existing no_ready_account text, when this machine has nothing launchable.
 
@@ -111,7 +116,9 @@ def readiness_notice() -> str | None:
         return None
     if isinstance(gap, dict) and gap.get("code") == "no_ready_account":
         message = gap.get("message")
-        return message if isinstance(message, str) and message.strip() else None
+        if not isinstance(message, str) or not message.strip():
+            return None
+        return packaged_wording(message)
     return None
 
 
