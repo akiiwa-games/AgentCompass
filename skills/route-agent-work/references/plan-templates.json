@@ -1,0 +1,27 @@
+{
+  "_doc": "Default quota priors per subscription plan, applied when discovery reports an account's plan and that account's configured plan differs. Figures are API-equivalent list-price priors, not a claim about any machine. Override per family/plan with a top-level plan_templates object in accounts.local.json.",
+  "claude": {
+    "pro": {
+      "windows": {"five_hour": {"hours": 5, "launch_min_remaining_pct": 25}, "seven_day": {"hours": 168}, "weekly_fable": {"hours": 168, "models": ["fable"]}},
+      "capacity_usd": {"seven_day": 156, "five_hour": 18, "weekly_fable": 78},
+      "burn_pct_per_worker_hour": {"seven_day": 2.7, "five_hour": 24.0, "weekly_fable": 2.7}
+    },
+    "max5": {
+      "windows": {"five_hour": {"hours": 5}, "seven_day": {"hours": 168}, "weekly_fable": {"hours": 168, "models": ["fable"]}},
+      "capacity_usd": {"seven_day": 595, "five_hour": 94, "weekly_fable": 298},
+      "burn_pct_per_worker_hour": {"seven_day": 1.08, "weekly_fable": 1.08}
+    },
+    "max20": {
+      "windows": {"five_hour": {"hours": 5}, "seven_day": {"hours": 168}, "weekly_fable": {"hours": 168, "models": ["fable"]}},
+      "capacity_usd": {"seven_day": 2380, "five_hour": 376, "weekly_fable": 1190},
+      "burn_pct_per_worker_hour": {"seven_day": 0.27, "weekly_fable": 0.27}
+    }
+  },
+  "codex": {
+    "pro": {
+      "windows": {"usage": {"hours": 168}},
+      "capacity_usd": {"usage": 650},
+      "burn_pct_per_worker_hour": {"usage": 1.74}
+    }
+  }
+}

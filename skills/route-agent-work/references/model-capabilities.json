@@ -1,173 +1,127 @@
 {
-  "reviewed_at": "2026-10-27",
-  "evidence_reference": "model-capabilities.md",
-  "precedence": "Honor explicit user instructions and specialist requirements. Preserve the user's Dot closed-loop exception outside the subscription auction. Establish quality, tools, permissions and runtime eligibility. Gemini 3.8 Flash is not the preferred coder: its quota is very large, so simple coding-plus-tool-call work (difficulty `routine`) goes to it first when it has usable capacity, and anything harder is not eligible for it (the `hard` ability floor sits above Flash); then balance quota/reset/demand. Preserve the route's earlier ordering as fallback. Other rankings remain soft priors.",
+  "schema_version": 1,
+  "routes": {
+    "dot_execution": {
+      "scope": "A bounded assignment the user's own OpenAI Dot can finish end to end and return as a completed text deliverable.",
+      "role": "worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task",
+      "implies": {
+        "local_only": false
+      }
+    },
+    "web_research": {
+      "scope": "Gather, check and organize information from the open web or other public sources on Dot's own computer, and return a written, sourced result: surveys of options or vendors, current prices, specs or versions, documentation and changelog lookups, fact-checks, news and background roundups, comparison tables.",
+      "role": "worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "text_in_text_out": {
+      "scope": "Self-contained work whose whole input fits in the packet and whose deliverable is text returned to the parent: drafting, rewriting, translating, summarizing, critiquing, comparing, explaining, and reviewing the logic of a document given in full (mark that `hard`).",
+      "role": "worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "exploration_analysis": {
+      "scope": "Explore and analyze material on this machine and return findings as text, with light or no code: map how a codebase or system works, trace where and why something happens, read logs, configs, data files or documents, run read-only commands and throwaway scripts to measure something, audit or compare options against the local evidence, and check a document against the code, configuration or data it describes.",
+      "implies": {
+        "local_only": true
+      },
+      "role": "explorer or analyst (findings to the parent)",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "research_packet": {
+      "scope": "Run a defined quantitative experiment, evaluation benchmark, simulation, backtest or data analysis pipeline on this machine's data. Use existing tooling or bounded experiment scripts, compare named variants against a baseline, verify statistical results and report metrics, uncertainty and reproducible artifacts.",
+      "implies": {
+        "local_only": true
+      },
+      "role": "research worker (single owner of the packet)",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "self_contained_code": {
+      "scope": "Self-contained code and validation work whose whole input fits in the packet (the spec, interfaces and any existing source it must match; keep it to about 40,000 characters) and whose deliverable is new files with their unit tests, or a report of numbers, returned as text: a module and its tests, a script, a data-processing, backtest or validation routine.",
+      "role": "worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "visual_analysis": {
+      "scope": "Interpret screenshots, charts, diagrams, spatial layouts, image evidence or visual discrepancies; distinct from writing frontend code.",
+      "role": "visual analyst",
+      "preferred": [],
+      "effort": "As supported and justified by the task",
+      "implies": {
+        "visual": true
+      }
+    },
+    "direction_reasoning": {
+      "scope": "Deep reasoning and discussion of solution direction, competing architectures, assumptions, causal explanations, or which problem to solve.",
+      "role": "advisor or scheme designer",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "complex_build_plan": {
+      "scope": "Turn an agreed direction into a repository-grounded multi-system build plan: dependencies, interfaces, staged migrations, sequencing, validation and rollback.",
+      "role": "planner (worker or advisory output)",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "general_implementation": {
+      "scope": "Implement an agreed plan, maintain production features, refactor bounded code or deliver ordinary repository changes.",
+      "role": "worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "debug_review": {
+      "scope": "Subtle bug diagnosis, regression analysis, review of code and diffs, invariants, test-driven repairs and checking existing behavior.",
+      "role": "reviewer or debugging worker, as assigned",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "frontend_implementation": {
+      "scope": "Write UI components, interactions, animations and styling from the accepted design; visual evidence inspection is a separate visual_analysis task when material.",
+      "role": "worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "bounded_bulk_work": {
+      "scope": "Homogeneous small changes, independent extraction or inventory, boilerplate and fixed transformations with explicit acceptance.",
+      "role": "bounded leaf worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "tool_execution": {
+      "scope": "A bounded outcome primarily requiring file, shell, browser, API or other tool calls, with direction and authorized actions already established.",
+      "role": "tool-execution worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "computer_use": {
+      "scope": "Operate a graphical computer or app through screenshots, mouse and keyboard (computer use): GUI-only applications, desktop or browser flows with no API, clicking through settings.",
+      "implies": {
+        "visual": true
+      },
+      "capability_fit": {
+        "gui": 1.0
+      },
+      "role": "computer-use worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    },
+    "other_or_mixed": {
+      "scope": "Unmatched or mixed work.",
+      "role": "parent or bounded worker",
+      "preferred": [],
+      "effort": "As supported and justified by the task"
+    }
+  },
   "mainstream_defaults": {
-    "basis": "October 2026 installed/catalog frontier defaults. accounts.json is authoritative; calibrated core rows retain their evidence, additions are provisional routing priors. Compatibility rows are marked by basis. Costs are estimates, not live API quotes. See model-capabilities.md for exact catalog sources and absent candidates.",
     "models": {
       "deepseek-v4.1-flash-free": {
-        "tier": 2.8,
-        "usd_per_hour": 0.0,
-        "capabilities": {
-          "reasoning": 0.48,
-          "coding": 0.5,
-          "exploration": 0.5,
-          "anti_hallucination": 0.45,
-          "visual": 0.0,
-          "gui": 0.0
-        },
-        "subjective": {
-          "divergence": 0.45,
-          "global_rigor": 0.35,
-          "module_precision": 0.55
-        },
-        "basis": "OpenCode free DeepSeek V4.1 Flash model (`opencode/deepseek-v4.1-flash-free`); explicit user-override worker below the automatic routine floor."
-      },
-      "claude-fable-5-1": {
-        "tier": 4.6,
-        "usd_per_hour": 18.7,
-        "capabilities": {
-          "reasoning": 0.98,
-          "coding": 0.95,
-          "exploration": 0.9,
-          "anti_hallucination": 0.9,
-          "visual": 0.0,
-          "gui": 0.0
-        },
-        "subjective": {
-          "divergence": 0.92,
-          "global_rigor": 0.95,
-          "module_precision": 0.9
-        }
-      },
-      "claude-opus-5-5": {
-        "tier": 4.6,
-        "usd_per_hour": 7.5,
-        "capabilities": {
-          "reasoning": 0.89,
-          "coding": 0.91,
-          "exploration": 0.88,
-          "anti_hallucination": 0.92,
-          "visual": 1.0,
-          "gui": 0.55
-        },
-        "subjective": {
-          "divergence": 0.62,
-          "global_rigor": 0.98,
-          "module_precision": 0.92
-        },
-        "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); 14d local $9.30/h (207.3h). Subjective: #1 in architectural landing rigor and comprehensive global thinking."
-      },
-      "gpt-6.1-sol": {
-        "tier": 3.6,
-        "usd_per_hour": 2.6,
-        "capabilities": {
-          "reasoning": 0.71,
-          "coding": 0.85,
-          "exploration": 0.62,
-          "anti_hallucination": 0.74,
-          "visual": 0.7,
-          "gui": 0.82
-        },
-        "subjective": {
-          "divergence": 0.4,
-          "global_rigor": 0.25,
-          "module_precision": 0.95
-        },
-        "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; 14d local $2.19/h at high (159.1h). Subjective: lacks global vision (global_rigor 0.25), but high precision on concrete single-module implementation (module_precision 0.95)."
-      },
-      "gpt-6-astra": {
-        "tier": 4.2,
-        "usd_per_hour": 22.6,
-        "capabilities": {
-          "reasoning": 0.8,
-          "coding": 0.79,
-          "exploration": 0.8,
-          "anti_hallucination": 0.78,
-          "visual": 0.8,
-          "gui": 0.95
-        },
-        "subjective": {
-          "divergence": 0.68,
-          "global_rigor": 0.82,
-          "module_precision": 0.84
-        },
-        "basis": "AA v4.3.2 High 50.9 / Max 52.7, Terminal-Bench 58.2%, Omniscience 43.7, MMMU-Pro 86.4%, Bug Hunt 35.0-45.0/105, #1 Codex GUI/cua_repl grounding; 14d local $22.75/h (41.5h)."
-      },
-      "gemini-4-argon-high": {
-        "tier": 4.0,
-        "usd_per_hour": 4.0,
-        "capabilities": {
-          "reasoning": 0.78,
-          "coding": 0.83,
-          "exploration": 0.86,
-          "anti_hallucination": 0.81,
-          "visual": 0.75,
-          "gui": 0.62
-        },
-        "subjective": {
-          "divergence": 0.96,
-          "global_rigor": 0.8,
-          "module_precision": 0.8
-        },
-        "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); 14d local 94.5h. Subjective: #1 in divergent/expansive thinking and architectural innovation (preferred for formulating schemes and creative research)."
-      },
-      "claude-sonnet-5-5": {
-        "tier": 3.9,
-        "usd_per_hour": 4.4,
-        "capabilities": {
-          "reasoning": 0.74,
-          "coding": 0.82,
-          "exploration": 0.89,
-          "anti_hallucination": 0.73,
-          "visual": 0.6,
-          "gui": 0.55
-        },
-        "subjective": {
-          "divergence": 0.6,
-          "global_rigor": 0.76,
-          "module_precision": 0.78
-        },
-        "basis": "AA v4.3.2 High 46.8 / Max 56.0, Bug Hunt Max 51.3/105 (#1) / High 34.3/105 (76.2% prec), Mercor BrowseComp 73.0% (#1), AA-Briefcase 57.5% (#1), Terminal-Bench 61.8%; 14d local $3.73/h (63.7h)."
-      },
-      "grok-4.7": {
-        "tier": 3.4,
-        "usd_per_hour": 1.5,
-        "capabilities": {
-          "reasoning": 0.59,
-          "coding": 0.58,
-          "exploration": 0.6,
-          "anti_hallucination": 0.62,
-          "visual": 0.0,
-          "gui": 0.0
-        },
-        "subjective": {
-          "divergence": 0.45,
-          "global_rigor": 0.4,
-          "module_precision": 0.58
-        },
-        "basis": "AA v4.3.2 High 46.3 / xHigh 46.4, GDPval 60.3%, AA-Briefcase 55.0%, Terminal-Bench 37.6%, Bug Hunt 19.3-29.0/105; text-only CLI."
-      },
-      "gemini-3.8-flash-high": {
-        "tier": 3.0,
-        "usd_per_hour": 0.5,
-        "capabilities": {
-          "reasoning": 0.52,
-          "coding": 0.47,
-          "exploration": 0.5,
-          "anti_hallucination": 0.72,
-          "visual": 0.3,
-          "gui": 0.42
-        },
-        "subjective": {
-          "divergence": 0.35,
-          "global_rigor": 0.35,
-          "module_precision": 0.65
-        },
-        "basis": "AA v4.3.2 Low 33.5 / Med 39.8 / High 40.9, LCR 81.3%, MMMU-Pro 85.6%, Bug Hunt 18.0/105 (81.8% prec); high-quota Antigravity volume sink for routine tasks."
-      },
-      "grok-bot": {
+        "visual": false,
         "tier": 3.3,
+        "cost": 2,
         "capabilities": {
           "reasoning": 0.55,
           "coding": 0.55,
@@ -176,828 +130,634 @@
           "visual": 0.0,
           "gui": 0.0
         },
-        "subjective": {
-          "divergence": 0.5,
-          "global_rigor": 0.5,
-          "module_precision": 0.5
-        },
-        "basis": "Provisional service-level routing assumption: reuse the generic text baseline, not a measured benchmark or underlying Grok model identity. Remote text input/output only; USD price, quota capacity and burn rate unknown."
+        "prior": true,
+        "confidence": "low"
       },
-      "dot": {
-        "tier": 4.2,
-        "capabilities": {
-          "reasoning": 0.8,
-          "coding": 0.79,
-          "exploration": 0.8,
-          "anti_hallucination": 0.78,
-          "visual": 0.0,
-          "gui": 0.0
-        },
-        "subjective": {
-          "divergence": 0.68,
-          "global_rigor": 0.82,
-          "module_precision": 0.84
-        },
-        "basis": "OpenAI Dot remote worker via dot2api; GPT-6 Astra class text/code/exploration intelligence without local vision or GUI."
-      },
-      "gpt-6-pro": {
-        "tier": 5.0,
-        "capabilities": {
-          "reasoning": 1.0,
-          "coding": 0.9,
-          "exploration": 0.78,
-          "anti_hallucination": 0.95,
-          "visual": 0.0,
-          "gui": 0.0
-        },
-        "subjective": {
-          "divergence": 0.95,
-          "global_rigor": 0.96,
-          "module_precision": 0.9
-        },
-        "basis": "ChatGPT Pro web bridge advisor; ceiling anchor across reasoning (1.00) and anti_hallucination (0.95)."
-      },
-      "claude-haiku-5-5": {
-        "tier": 3.2,
-        "usd_per_hour": 0.8,
-        "capabilities": {
-          "reasoning": 0.58,
-          "coding": 0.65,
-          "exploration": 0.62,
-          "anti_hallucination": 0.62,
-          "visual": 0.48,
-          "gui": 0.35
-        },
-        "subjective": {
-          "divergence": 0.42,
-          "global_rigor": 0.53,
-          "module_precision": 0.67
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "gpt-6.1-terra": {
-        "tier": 3.7,
-        "usd_per_hour": 3.0,
-        "capabilities": {
-          "reasoning": 0.73,
-          "coding": 0.83,
-          "exploration": 0.71,
-          "anti_hallucination": 0.75,
-          "visual": 0.72,
-          "gui": 0.8
-        },
-        "subjective": {
-          "divergence": 0.5,
-          "global_rigor": 0.65,
-          "module_precision": 0.88
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models and opencode cache openai/gpt-6.1-terra. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "gpt-6-sol": {
-        "tier": 3.5,
-        "usd_per_hour": 2.6,
-        "capabilities": {
-          "reasoning": 0.69,
-          "coding": 0.82,
-          "exploration": 0.6,
-          "anti_hallucination": 0.72,
-          "visual": 0.68,
-          "gui": 0.8
-        },
-        "subjective": {
-          "divergence": 0.4,
-          "global_rigor": 0.25,
-          "module_precision": 0.92
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "gpt-6-luna": {
-        "tier": 3.2,
-        "usd_per_hour": 0.8,
-        "capabilities": {
-          "reasoning": 0.58,
-          "coding": 0.65,
-          "exploration": 0.57,
-          "anti_hallucination": 0.62,
-          "visual": 0.55,
-          "gui": 0.5
-        },
-        "subjective": {
-          "divergence": 0.4,
-          "global_rigor": 0.45,
-          "module_precision": 0.68
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "gpt-5.6-sol": {
-        "tier": 3.4,
-        "usd_per_hour": 2.4,
-        "capabilities": {
-          "reasoning": 0.67,
-          "coding": 0.79,
-          "exploration": 0.58,
-          "anti_hallucination": 0.7,
-          "visual": 0.65,
-          "gui": 0.75
-        },
-        "subjective": {
-          "divergence": 0.4,
-          "global_rigor": 0.25,
-          "module_precision": 0.88
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "gpt-5.6-terra": {
-        "tier": 3.5,
-        "usd_per_hour": 2.7,
-        "capabilities": {
-          "reasoning": 0.69,
-          "coding": 0.78,
-          "exploration": 0.66,
-          "anti_hallucination": 0.71,
-          "visual": 0.67,
-          "gui": 0.74
-        },
-        "subjective": {
-          "divergence": 0.48,
-          "global_rigor": 0.6,
-          "module_precision": 0.83
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "gpt-5.6-luna": {
-        "tier": 3.1,
-        "usd_per_hour": 0.7,
+      "claude-fable-5-1": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
         "capabilities": {
           "reasoning": 0.55,
-          "coding": 0.62,
-          "exploration": 0.54,
-          "anti_hallucination": 0.59,
-          "visual": 0.5,
-          "gui": 0.45
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
         },
-        "subjective": {
-          "divergence": 0.38,
-          "global_rigor": 0.42,
-          "module_precision": 0.65
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+        "prior": true,
+        "confidence": "low"
       },
-      "grok-4.7-build-fast": {
-        "tier": 3.1,
-        "usd_per_hour": 0.5,
+      "claude-opus-5-5": {
+        "visual": 1.0,
+        "tier": 3.3,
+        "cost": 2,
         "capabilities": {
-          "reasoning": 0.54,
-          "coding": 0.58,
-          "exploration": 0.54,
-          "anti_hallucination": 0.55,
-          "visual": 0,
-          "gui": 0
-        },
-        "subjective": {
-          "divergence": 0.55,
-          "global_rigor": 0.45,
-          "module_precision": 0.6
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in ~/.grok/models_cache.json. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "deepseek-v4-pro": {
-        "tier": 3.9,
-        "usd_per_hour": 1.2,
-        "capabilities": {
-          "reasoning": 0.78,
-          "coding": 0.82,
-          "exploration": 0.72,
-          "anti_hallucination": 0.75,
-          "visual": 0,
-          "gui": 0
-        },
-        "subjective": {
-          "divergence": 0.62,
-          "global_rigor": 0.74,
-          "module_precision": 0.84
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache deepseek/deepseek-v4-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "glm-5.3": {
-        "tier": 3.7,
-        "usd_per_hour": 1.0,
-        "capabilities": {
-          "reasoning": 0.72,
-          "coding": 0.78,
-          "exploration": 0.74,
-          "anti_hallucination": 0.72,
-          "visual": 0.6,
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
           "gui": 0.55
         },
-        "subjective": {
-          "divergence": 0.6,
-          "global_rigor": 0.72,
-          "module_precision": 0.8
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache zhipuai/glm-5.3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+        "prior": true,
+        "confidence": "low"
       },
-      "glm-5.3-flash-free": {
-        "tier": 2.9,
-        "usd_per_hour": 0,
-        "capabilities": {
-          "reasoning": 0.5,
-          "coding": 0.54,
-          "exploration": 0.52,
-          "anti_hallucination": 0.52,
-          "visual": 0.4,
-          "gui": 0.3
-        },
-        "subjective": {
-          "divergence": 0.45,
-          "global_rigor": 0.42,
-          "module_precision": 0.58
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "qwen3-coder-next": {
-        "tier": 3.7,
-        "usd_per_hour": 1.0,
-        "capabilities": {
-          "reasoning": 0.7,
-          "coding": 0.82,
-          "exploration": 0.65,
-          "anti_hallucination": 0.66,
-          "visual": 0,
-          "gui": 0
-        },
-        "subjective": {
-          "divergence": 0.48,
-          "global_rigor": 0.67,
-          "module_precision": 0.84
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache openrouter/qwen/qwen3-coder-next. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "qwen3.8-max": {
-        "tier": 3.9,
-        "usd_per_hour": 1.5,
-        "capabilities": {
-          "reasoning": 0.78,
-          "coding": 0.8,
-          "exploration": 0.75,
-          "anti_hallucination": 0.74,
-          "visual": 0.65,
-          "gui": 0.48
-        },
-        "subjective": {
-          "divergence": 0.67,
-          "global_rigor": 0.75,
-          "module_precision": 0.8
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache alibaba/qwen3.8-max. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "kimi-k3.1-pro": {
-        "tier": 4.0,
-        "usd_per_hour": 1.8,
-        "capabilities": {
-          "reasoning": 0.79,
-          "coding": 0.82,
-          "exploration": 0.83,
-          "anti_hallucination": 0.74,
-          "visual": 0.68,
-          "gui": 0.5
-        },
-        "subjective": {
-          "divergence": 0.72,
-          "global_rigor": 0.76,
-          "module_precision": 0.81
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache moonshotai/kimi-k3.1-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "kimi-k3": {
-        "tier": 3.8,
-        "usd_per_hour": 1.2,
-        "capabilities": {
-          "reasoning": 0.74,
-          "coding": 0.79,
-          "exploration": 0.8,
-          "anti_hallucination": 0.7,
-          "visual": 0.62,
-          "gui": 0.45
-        },
-        "subjective": {
-          "divergence": 0.7,
-          "global_rigor": 0.71,
-          "module_precision": 0.78
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache moonshotai/kimi-k3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "minimax-m3": {
-        "tier": 3.8,
-        "usd_per_hour": 1.0,
-        "capabilities": {
-          "reasoning": 0.73,
-          "coding": 0.81,
-          "exploration": 0.75,
-          "anti_hallucination": 0.7,
-          "visual": 0.6,
-          "gui": 0.45
-        },
-        "subjective": {
-          "divergence": 0.63,
-          "global_rigor": 0.7,
-          "module_precision": 0.82
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache minimax/MiniMax-M3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "minimax-m3.1-flash": {
-        "tier": 3.5,
-        "usd_per_hour": 0.6,
-        "capabilities": {
-          "reasoning": 0.66,
-          "coding": 0.74,
-          "exploration": 0.68,
-          "anti_hallucination": 0.65,
-          "visual": 0.55,
-          "gui": 0.4
-        },
-        "subjective": {
-          "divergence": 0.58,
-          "global_rigor": 0.62,
-          "module_precision": 0.76
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache minimax/MiniMax-M3.1-Flash. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "doubao-seed-2-1-pro-260628": {
-        "tier": 3.7,
-        "usd_per_hour": 0.8,
-        "capabilities": {
-          "reasoning": 0.72,
-          "coding": 0.74,
-          "exploration": 0.74,
-          "anti_hallucination": 0.7,
-          "visual": 0.65,
-          "gui": 0.5
-        },
-        "subjective": {
-          "divergence": 0.66,
-          "global_rigor": 0.68,
-          "module_precision": 0.74
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache volcengine/doubao-seed-2-1-pro-260628. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "mimo-v2.6-pro": {
-        "tier": 3.7,
-        "usd_per_hour": 0.8,
-        "capabilities": {
-          "reasoning": 0.72,
-          "coding": 0.79,
-          "exploration": 0.7,
-          "anti_hallucination": 0.69,
-          "visual": 0.6,
-          "gui": 0.45
-        },
-        "subjective": {
-          "divergence": 0.57,
-          "global_rigor": 0.67,
-          "module_precision": 0.8
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache xiaomi/mimo-v2.6-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "mimo-v2.6-flash-free": {
-        "tier": 2.9,
-        "usd_per_hour": 0,
-        "capabilities": {
-          "reasoning": 0.51,
-          "coding": 0.55,
-          "exploration": 0.51,
-          "anti_hallucination": 0.5,
-          "visual": 0.4,
-          "gui": 0.3
-        },
-        "subjective": {
-          "divergence": 0.45,
-          "global_rigor": 0.42,
-          "module_precision": 0.58
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "nemotron-3-ultra-free": {
-        "tier": 3.4,
-        "usd_per_hour": 0,
-        "capabilities": {
-          "reasoning": 0.65,
-          "coding": 0.7,
-          "exploration": 0.65,
-          "anti_hallucination": 0.63,
-          "visual": 0,
-          "gui": 0
-        },
-        "subjective": {
-          "divergence": 0.53,
-          "global_rigor": 0.62,
-          "module_precision": 0.71
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "nemotron-3.5-super-vl-free": {
+      "gpt-6.1-sol": {
+        "visual": 0.7,
+        "fast_capable": true,
         "tier": 3.3,
-        "usd_per_hour": 0,
-        "capabilities": {
-          "reasoning": 0.62,
-          "coding": 0.65,
-          "exploration": 0.63,
-          "anti_hallucination": 0.62,
-          "visual": 0.65,
-          "gui": 0.45
-        },
-        "subjective": {
-          "divergence": 0.52,
-          "global_rigor": 0.59,
-          "module_precision": 0.66
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "nemotron-3.5-lightning-free": {
-        "tier": 2.9,
-        "usd_per_hour": 0,
-        "capabilities": {
-          "reasoning": 0.5,
-          "coding": 0.54,
-          "exploration": 0.5,
-          "anti_hallucination": 0.48,
-          "visual": 0,
-          "gui": 0
-        },
-        "subjective": {
-          "divergence": 0.42,
-          "global_rigor": 0.42,
-          "module_precision": 0.56
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "mistral-large-4": {
-        "tier": 3.8,
-        "usd_per_hour": 1.2,
-        "capabilities": {
-          "reasoning": 0.74,
-          "coding": 0.78,
-          "exploration": 0.73,
-          "anti_hallucination": 0.71,
-          "visual": 0.65,
-          "gui": 0.45
-        },
-        "subjective": {
-          "divergence": 0.65,
-          "global_rigor": 0.71,
-          "module_precision": 0.78
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache mistral/mistral-large-4. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "muse-wonder-1.0": {
-        "tier": 3.9,
-        "usd_per_hour": 1.5,
-        "capabilities": {
-          "reasoning": 0.77,
-          "coding": 0.77,
-          "exploration": 0.79,
-          "anti_hallucination": 0.73,
-          "visual": 0.72,
-          "gui": 0.48
-        },
-        "subjective": {
-          "divergence": 0.71,
-          "global_rigor": 0.73,
-          "module_precision": 0.77
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode cache meta/muse-wonder-1.0. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "beam-free": {
-        "tier": 3.0,
-        "usd_per_hour": 0,
-        "capabilities": {
-          "reasoning": 0.53,
-          "coding": 0.56,
-          "exploration": 0.53,
-          "anti_hallucination": 0.5,
-          "visual": 0,
-          "gui": 0
-        },
-        "subjective": {
-          "divergence": 0.45,
-          "global_rigor": 0.45,
-          "module_precision": 0.58
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "flint-40b-free": {
-        "tier": 2.8,
-        "usd_per_hour": 0,
-        "capabilities": {
-          "reasoning": 0.48,
-          "coding": 0.52,
-          "exploration": 0.48,
-          "anti_hallucination": 0.46,
-          "visual": 0,
-          "gui": 0
-        },
-        "subjective": {
-          "divergence": 0.4,
-          "global_rigor": 0.4,
-          "module_precision": 0.54
-        },
-        "basis": "Provisional routing prior, 2026-10-27; ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
-      },
-      "claude-haiku-4-5": {
-        "tier": 3.2,
-        "usd_per_hour": 0.8,
+        "cost": 2,
         "capabilities": {
           "reasoning": 0.55,
-          "coding": 0.61,
-          "exploration": 0.59,
-          "anti_hallucination": 0.57,
-          "visual": 0.45,
-          "gui": 0.32
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
         },
-        "subjective": {
-          "divergence": 0.42,
-          "global_rigor": 0.5,
-          "module_precision": 0.64
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-6-astra": {
+        "visual": 0.8,
+        "fast_capable": true,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
         },
-        "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+        "prior": true,
+        "confidence": "low"
+      },
+      "gemini-4-argon-high": {
+        "visual": 0.75,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "claude-sonnet-5-5": {
+        "visual": 0.6,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "grok-4.7": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gemini-3.8-flash-high": {
+        "visual": 0.3,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "grok-bot": {
+        "visual": false,
+        "excluded_when": "local_only",
+        "text_only": true,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "dot": {
+        "visual": false,
+        "excluded_when": "local_only",
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-6-pro": {
+        "visual": false,
+        "advisor_only": true,
+        "advisor_for": [
+          "direction_reasoning",
+          "complex_build_plan"
+        ],
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "claude-haiku-5-5": {
+        "visual": 0.48,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-6.1-terra": {
+        "visual": 0.72,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-6-sol": {
+        "visual": 0.68,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-6-luna": {
+        "visual": 0.55,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-5.6-sol": {
+        "visual": 0.65,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-5.6-terra": {
+        "visual": 0.67,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "gpt-5.6-luna": {
+        "visual": 0.5,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "grok-4.7-build-fast": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "deepseek-v4-pro": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "glm-5.3": {
+        "visual": 0.6,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "glm-5.3-flash-free": {
+        "visual": 0.4,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "qwen3-coder-next": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "qwen3.8-max": {
+        "visual": 0.65,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "kimi-k3.1-pro": {
+        "visual": 0.68,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "kimi-k3": {
+        "visual": 0.62,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "minimax-m3": {
+        "visual": 0.6,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "minimax-m3.1-flash": {
+        "visual": 0.55,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "doubao-seed-2-1-pro-260628": {
+        "visual": 0.65,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "mimo-v2.6-pro": {
+        "visual": 0.6,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "mimo-v2.6-flash-free": {
+        "visual": 0.4,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "nemotron-3-ultra-free": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "nemotron-3.5-super-vl-free": {
+        "visual": 0.65,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "nemotron-3.5-lightning-free": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "mistral-large-4": {
+        "visual": 0.65,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "muse-wonder-1.0": {
+        "visual": 0.72,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "beam-free": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "flint-40b-free": {
+        "visual": false,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "prior": true,
+        "confidence": "low"
+      },
+      "claude-haiku-4-5": {
+        "visual": 0.45,
+        "tier": 3.3,
+        "cost": 2,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
+        },
+        "prior": true,
+        "confidence": "low"
       },
       "claude-opus-4-6": {
-        "tier": 4.4,
-        "usd_per_hour": 7.5,
+        "visual": 0.95,
+        "tier": 3.3,
+        "cost": 2,
         "capabilities": {
-          "reasoning": 0.85,
-          "coding": 0.87,
-          "exploration": 0.84,
-          "anti_hallucination": 0.88,
-          "visual": 0.95,
-          "gui": 0.52
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
         },
-        "subjective": {
-          "divergence": 0.6,
-          "global_rigor": 0.93,
-          "module_precision": 0.88
-        },
-        "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+        "prior": true,
+        "confidence": "low"
       },
       "claude-sonnet-4-6": {
-        "tier": 3.8,
-        "usd_per_hour": 3.5,
+        "visual": 0.6,
+        "tier": 3.3,
+        "cost": 2,
         "capabilities": {
-          "reasoning": 0.71,
-          "coding": 0.79,
-          "exploration": 0.83,
-          "anti_hallucination": 0.7,
-          "visual": 0.6,
-          "gui": 0.5
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.55,
+          "gui": 0.55
         },
-        "subjective": {
-          "divergence": 0.58,
-          "global_rigor": 0.73,
-          "module_precision": 0.76
-        },
-        "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified 2026-10-27. Frontier family fallbacks use Claude 5.5."
+        "prior": true,
+        "confidence": "low"
       }
     }
-  },
-  "execution_preference": {
-    "gemini-3.8-flash-high": "Routine coding & tool-execution volume sink (tier 3.0); barred above routine difficulty.",
-    "claude-sonnet-5-5": "Primary exploration, research-packet, and multi-hop synthesis workhorse (BrowseComp #1, Bug Hunt Max #1).",
-    "gpt-6.1-sol": "Concrete single-module implementation & localized debugging specialist (module_precision 0.95, $2.19/h local); lacks global vision (global_rigor 0.25) so penalized on global or cross-module architectural work.",
-    "gemini-4-argon-high": "Divergent thinking, expansive ideation, and architectural innovation leader (divergence 0.96); prioritized when formulating schemes/plans or proposing creative research.",
-    "claude-opus-5-5": "Apex architect for cross-module architectural landing rigor, comprehensive holistic thinking (global_rigor 0.98), critical changes, and visual inspection.",
-    "gpt-6-astra": "OpenAI frontier model & #1 GUI/computer-use specialist ($22.75/h local).",
-    "dot": "Free Astra-tier remote worker via dot2api for any non-local, non-visual work."
-  },
-  "resource_balancing": {
-    "rule": "Match task profile to minimum-sufficient tier; spend free/expiring or high-headroom pools first; reserve Opus and Astra for coupled/frontier/critical or specialized GUI/visual work."
-  },
-  "delegation": "Send work to the user's own Dot whenever the assignment can be handed over and its result returned as files or text: Dot has its own computer, receives code/files in the packet (`run_dot_task.py --file <path> --apply-to .`), fetches public data itself and takes other data through the verified hand-offs (dot-subagent). Ordinary file creation or modification is NOT a reason for `needs.local_only`. Mark the work `needs.local_only` (with a required `needs.local_only_reason` naming the concrete local dependency) only when it must run against this machine's local tools/daemons/git/test environment, local secrets, live logged-in accounts, or multi-step parent interaction. Compare the parent's actual model, effort, tools and context with specialist needs for every other assignment. Delegate a bounded specialist question or artifact when its capability or independent perspective adds value, even without parallelism. If the parent already meets the specialist need, staying local is valid unless independent work is requested. Do not hand off just because a model name appears.",
-  "routes": {
-    "dot_execution": {
-      "scope": "A bounded assignment the user's own OpenAI Dot can finish end to end and return as a completed text deliverable.",
-      "preferred": ["dot"],
-      "effort": "the Dot's own",
-      "role": "worker",
-      "basis": "Standing user order, 2026-10-08: choose Dot only when it can close the loop."
-    },
-    "web_research": {
-      "scope": "Gather, check and organize information from the open web or other public sources on Dot's own computer, and return a written, sourced result: surveys of options or vendors, current prices, specs or versions, documentation and changelog lookups, fact-checks, news and background roundups, comparison tables.",
-      "preferred": [
-        "dot",
-        "claude-sonnet-5",
-        "grok-4.7",
-        "gemini-4-argon-high",
-        "gpt-6.1-sol",
-        "claude-opus-5",
-        "gpt-6-astra",
-        "gemini-3.8-flash-high"
-      ],
-      "harness_order": ["pi", "codex"],
-      "effort": "As supported and justified by the task",
-      "role": "worker",
-      "basis": "Design choice 2026-10-09, on the user's instruction that scores decide: Dot has its own computer and is free, so gathering and organizing in"
-    },
-    "text_in_text_out": {
-      "scope": "Self-contained work whose whole input fits in the packet and whose deliverable is text returned to the parent: drafting, rewriting, translating, summarizing, critiquing, comparing, explaining, and reviewing the logic of a document given in full (mark that `hard`).",
-      "preferred": [
-        "claude-opus-5",
-        "claude-sonnet-5",
-        "dot",
-        "gpt-6-astra",
-        "gemini-4-argon-high",
-        "gpt-6.1-sol",
-        "grok-4.7",
-        "gemini-3.8-flash-high"
-      ],
-      "harness_order": ["pi", "codex"],
-      "effort": "As supported and justified by the task",
-      "role": "worker",
-      "basis": "Design choice 2026-10-09, on the user's instruction that scores decide: text in, text out is Dot's class, and Dot is a candidate on every ro"
-    },
-    "exploration_analysis": {
-      "scope": "Explore and analyze material on this machine and return findings as text, with light or no code: map how a codebase or system works, trace where and why something happens, read logs, configs, data files or documents, run read-only commands and throwaway scripts to measure something, audit or compare options against the local evidence, and check a document against the code, configuration or data it describes.",
-      "preferred": [
-        "claude-sonnet-5",
-        "gpt-6.1-sol",
-        "claude-opus-5",
-        "gpt-6-astra",
-        "gemini-4-argon-high",
-        "grok-4.7",
-        "gemini-3.8-flash-high"
-      ],
-      "implies": {"local_only": true},
-      "harness_order": ["pi", "codex"],
-      "effort": "High by default; xhigh when the analysis is coupled or the evidence is large and conflicting.",
-      "role": "explorer or analyst (findings to the parent)",
-      "basis": "Route added 2026-10-11 with the Pi harness."
-    },
-    "research_packet": {
-      "scope": "Run a defined quantitative experiment, evaluation benchmark, simulation, backtest or data analysis pipeline on this machine's data. Use existing tooling or bounded experiment scripts, compare named variants against a baseline, verify statistical results and report metrics, uncertainty and reproducible artifacts.",
-      "preferred": [
-        "claude-sonnet-5",
-        "claude-opus-5",
-        "gpt-6-astra",
-        "gemini-4-argon-high",
-        "gpt-6.1-sol",
-        "grok-4.7",
-        "gemini-3.8-flash-high"
-      ],
-      "implies": {"local_only": true},
-      "harness_order": ["pi", "codex"],
-      "effort": "High by default; xhigh when the discrimination chain is long or the readings conflict.",
-      "role": "research worker (single owner of the packet)",
-      "basis": "Route added 2026-10-12."
-    },
-    "self_contained_code": {
-      "scope": "Self-contained code and validation work whose whole input fits in the packet (the spec, interfaces and any existing source it must match; keep it to about 40,000 characters) and whose deliverable is new files with their unit tests, or a report of numbers, returned as text: a module and its tests, a script, a data-processing, backtest or validation routine.",
-      "preferred": [
-        "dot",
-        "claude-opus-5",
-        "claude-sonnet-5",
-        "gpt-6-astra",
-        "gemini-4-argon-high",
-        "gpt-6.1-sol",
-        "grok-4.7",
-        "gemini-3.8-flash-high"
-      ],
-      "effort": "As supported and justified by the task",
-      "role": "worker",
-      "basis": "Design choice 2026-10-09 (the user: add the Dot self-contained code route)."
-    },
-    "visual_analysis": {
-      "scope": "Interpret screenshots, charts, diagrams, spatial layouts, image evidence or visual discrepancies; distinct from writing frontend code.",
-      "preferred": ["claude-opus-5", "gpt-6-astra", "gemini-4-argon-high", "gpt-6.1-sol", "claude-sonnet-5", "gemini-3.8-flash-high"],
-      "effort": "Opus high or xhigh, Astra high, Argon high, Sol high, Sonnet high, Flash high",
-      "role": "visual analyst",
-      "basis": "User rating 2026-10-09 and 2026-10-14: visual ability Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash; capacity decides among them in that o",
-      "strict_order": true
-    },
-    "direction_reasoning": {
-      "scope": "Deep reasoning and discussion of solution direction, competing architectures, assumptions, causal explanations, or which problem to solve.",
-      "preferred": [
-        "ChatGPT Pro via chatgpt-pro-consult",
-        "gemini-4-argon-high",
-        "claude-opus-5",
-        "gpt-6-astra",
-        "claude-sonnet-5"
-      ],
-      "effort": "Argon/Opus high for worker sessions; highest available Pro effort in the web UI at frontier difficulty.",
-      "role": "advisor or scheme designer",
-      "basis": "User requirement 2026-10-21: Gemini 4 Argon leads in divergent thinking and architectural innovation for formulating schemes; frontier advisory consultations use ChatGPT Pro."
-    },
-    "complex_build_plan": {
-      "scope": "Turn an agreed direction into a repository-grounded multi-system build plan: dependencies, interfaces, staged migrations, sequencing, validation and rollback.",
-      "preferred": [
-        "ChatGPT Pro via chatgpt-pro-consult",
-        "gemini-4-argon-high",
-        "claude-opus-5",
-        "gpt-6-astra",
-        "claude-sonnet-5"
-      ],
-      "effort": "Argon/Opus high for worker sessions; highest available Pro effort in the web UI at frontier difficulty.",
-      "role": "planner (worker or advisory output)",
-      "basis": "User requirement 2026-10-21: Gemini 4 Argon is prioritized when formulating plans/schemes; Opus 5.5 backs comprehensive architectural rigor; frontier web advisor uses ChatGPT Pro."
-    },
-    "general_implementation": {
-      "scope": "Implement an agreed plan, maintain production features, refactor bounded code or deliver ordinary repository changes.",
-      "preferred": [
-        "gemini-3.8-flash-high",
-        "claude-opus-5",
-        "claude-sonnet-5",
-        "gpt-6-astra",
-        "gemini-4-argon-high",
-        "gpt-6.1-sol",
-        "grok-4.7"
-      ],
-      "effort": "Flash/Argon high for every worker packet; level is encoded in the model ID. Use the original supported medium/high efforts on fallbacks.",
-      "role": "worker",
-      "basis": "Flash is listed first only as the volume sink for simple (`routine`) work: its quota is very large, and the `hard` ability floor keeps it of"
-    },
-    "debug_review": {
-      "scope": "Subtle bug diagnosis, regression analysis, review of code and diffs, invariants, test-driven repairs and checking existing behavior.",
-      "preferred": [
-        "gpt-6.1-sol",
-        "claude-sonnet-5",
-        "gpt-6-astra",
-        "claude-opus-5",
-        "gemini-4-argon-high",
-        "grok-4.7",
-        "gemini-3.8-flash-high"
-      ],
-      "harness_order": ["codex", "pi"],
-      "effort": "Supported high/xhigh on the models listed first, more for coupled difficult failures; Argon/Flash high when assigned.",
-      "role": "reviewer or debugging worker, as assigned",
-      "basis": "Review and diagnosis are judgment work, not the simple coding-plus-tool-call work that goes to Flash, so it is listed last (user, 2026-10-09"
-    },
-    "frontend_implementation": {
-      "scope": "Write UI components, interactions, animations and styling from the accepted design; visual evidence inspection is a separate visual_analysis task when material.",
-      "preferred": [
-        "gemini-3.8-flash-high",
-        "claude-opus-5",
-        "gemini-4-argon-high",
-        "gpt-6-astra",
-        "claude-sonnet-5",
-        "gpt-6.1-sol",
-        "grok-4.7"
-      ],
-      "effort": "Flash/Argon high for every worker packet; supported high/medium on fallbacks.",
-      "role": "worker",
-      "basis": "Flash is listed first only as the volume sink for simple (`routine`) UI changes (user, 2026-10-09: its quota is very large); frontend work d"
-    },
-    "bounded_bulk_work": {
-      "scope": "Homogeneous small changes, independent extraction or inventory, boilerplate and fixed transformations with explicit acceptance.",
-      "preferred": [
-        "gemini-3.8-flash-high",
-        "grok-4.7",
-        "gpt-6.1-sol",
-        "claude-sonnet-5",
-        "gemini-4-argon-high",
-        "gpt-6-astra",
-        "claude-opus-5"
-      ],
-      "effort": "Flash/Argon high for every worker packet; supported medium/high on fallbacks.",
-      "role": "bounded leaf worker",
-      "basis": "Flash first as the volume sink for homogeneous simple coding/tool work (user, 2026-10-09: its quota is very large); for harder homogeneous w"
-    },
-    "tool_execution": {
-      "scope": "A bounded outcome primarily requiring file, shell, browser, API or other tool calls, with direction and authorized actions already established.",
-      "preferred": [
-        "gemini-3.8-flash-high",
-        "gpt-6.1-sol",
-        "claude-sonnet-5",
-        "gemini-4-argon-high",
-        "claude-opus-5",
-        "gpt-6-astra",
-        "grok-4.7"
-      ],
-      "effort": "Flash/Argon high for every worker packet; level is encoded in the model ID. Fallback effort follows assignment difficulty and runtime support.",
-      "role": "tool-execution worker",
-      "basis": "Flash first as the volume sink for simple tool-call work (user, 2026-10-09: its quota is very large; not a quality ranking)."
-    },
-    "computer_use": {
-      "scope": "Operate a graphical computer or app through screenshots, mouse and keyboard (computer use): GUI-only applications, desktop or browser flows with no API, clicking through settings.",
-      "preferred": ["gpt-6-astra", "gpt-6.1-sol"],
-      "implies": {"visual": true},
-      "strict_order": true,
-      "capability_fit": {"gui": 1.0},
-      "harness_order": ["codex", "pi"],
-      "effort": "High on the models listed (Astra, Sol); unlisted vision models rank by their `gui` capability. Default difficulty is `hard` (Flash closed); a profiled small GUI task (reasoning_depth 1) or an explicit `routine` opens it to Flash and Sol.",
-      "role": "computer-use worker",
-      "basis": "User rating 2026-10-10: Codex scores higher at computer use, and the router must choose it without the user naming it."
-    },
-    "other_or_mixed": {
-      "scope": "Unmatched or mixed work.",
-      "preferred": [],
-      "effort": "As supported and justified by the task",
-      "role": "parent or bounded worker",
-      "basis": "Parent judgment with task evidence; no mandatory Pro-to-Fable-to-coder pipeline."
-    }
-  },
-  "limits": [
-    "These capability preferences are not permission to delegate or transfer data.",
-    "The user-designated specialist routes must not be replaced with a cheaper model merely to balance quota. Report unavailable specialist capability and continue independent feasible work.",
-    "The usage snapshot's provider/account usage does not prove per-model availability or ChatGPT Pro web quota. Fable and Opus may share Claude limits; inspect applicable windows.",
-    "Metered API access, including any harness funded by it, is only eligible after no suitable subscription remains available.",
-    "dot_execution is not a subscription model and is not entered in the quota auction."
-  ]
+  }
 }
