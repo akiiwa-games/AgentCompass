@@ -102,18 +102,19 @@ class GithubSendTests(unittest.TestCase):
         for part in manifest["parts"]:
             self.assertIn(part["blob"], listed)
 
-    def test_the_default_root_is_found_on_dots_side_and_scratch_comes_before_the_shared_fallback(self):
+    def test_the_default_root_is_verified_on_dots_side_without_a_legacy_fallback(self):
         github_send.stage(self.source, self.repo, self.packet, xfer="auto", plain=True, push=False)
         text = self.packet.read_text(encoding="utf-8")
-        self.assertIn("/workspace/scratch/*/", text)
-        self.assertLess(text.index("/workspace/scratch/*/"), text.index("ROOT=/workspace/shared"))
+        self.assertIn("DOT_WORK_ROOT", text)
+        self.assertIn("TemporaryFile", text)
+        self.assertNotIn("/workspace/shared", text)
         self.assertIn("ROOT:", text)
         self.assertIn("Leave `$ROOT/rm-xfer-auto` in place", text)       # the unpacked file is kept by default
 
     def test_a_pinned_root_is_used_literally_and_a_bad_one_is_refused(self):
         github_send.stage(self.source, self.repo, self.packet, xfer="pin", plain=True, push=False, root="/workspace/scratch/example-root")
         text = self.packet.read_text(encoding="utf-8")
-        self.assertIn("ROOT=/workspace/scratch/example-root;", text)
+        self.assertIn("ROOT=/workspace/scratch/example-root &&", text)
         self.assertNotIn("/workspace/scratch/*/", text)
         for bad in ("relative/dir", "/a b", "/x;rm -rf /"):
             with self.assertRaises(ValueError):
@@ -154,7 +155,7 @@ class GithubSendTests(unittest.TestCase):
         again = self.base / "again.md"
         github_send.repacket(str(self.packet) + ".json", again, root="/workspace/scratch/zzz")
         new = again.read_text(encoding="utf-8")
-        self.assertIn("ROOT=/workspace/scratch/zzz;", new)
+        self.assertIn("ROOT=/workspace/scratch/zzz &&", new)
         self.assertNotEqual(old, new)
         self.assertEqual(re.search(r"printf '%s' '([^']+)'", old).group(1), re.search(r"printf '%s' '([^']+)'", new).group(1))
         self.assertEqual(simulate_dot(self.repo, "again", new), self.data)

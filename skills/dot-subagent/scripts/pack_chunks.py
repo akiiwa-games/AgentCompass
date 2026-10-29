@@ -4,7 +4,7 @@
     python -I -X utf8 pack_chunks.py check <out-dir> <reply-dir>
 
 `pack` writes part_001.md ... part_NNN.md (each self-contained: it tells Dot to write one base64 part under
-<ROOT>/rm-xfer-<id>/ (ROOT = the first writable /workspace/scratch/* directory, or --root), decode it and report its size and sha256), assemble.md (join the parts, check the
+<ROOT>/rm-xfer-<id>/ (ROOT = a verified writable directory on the remote host, or --root), decode it and report its size and sha256), assemble.md (join the parts, check the
 whole, decompress, report the original's sha256) and manifest.json (the expected hashes, kept locally). Send the
 part packets with dot-subagent in any order or in parallel; send assemble.md after all of them returned. `check`
 compares the replies (reply_part_001.md ..., reply_assemble.md in <reply-dir>) with the manifest and exits 0 only
@@ -24,25 +24,11 @@ import re
 import sys
 import zlib
 
-SCRATCH = "/workspace/scratch"
-FALLBACK_ROOT = "/workspace/shared"
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # also support the documented python -I invocation
+from remote_root import root_step, check_root
 ROOT = "$ROOT"        # the shell variable set by root_step in every packet
 
 
-def root_step(xfer, root="auto"):
-    """The command that sets ROOT on Dot's computer and creates the job directory (every task repeats it)."""
-    if root == "auto":
-        pick = (f"ROOT=$(for d in {SCRATCH}/*/; do [ -w \"$d\" ] && printf '%s' \"${{d%/}}\" && break; done); "
-                f"[ -n \"$ROOT\" ] || ROOT={FALLBACK_ROOT}")
-    else:
-        pick = f"ROOT={root}"
-    return (f"`{pick}; mkdir -p \"$ROOT/rm-xfer-{xfer}\" && echo \"ROOT=$ROOT\"`. If no ROOT line is printed, reply `NOT EXECUTED` with the "
-            f"error. Use the printed ROOT as a literal path in every later command (variables may not survive between commands)")
-
-
-def check_root(root):
-    if root != "auto" and not re.fullmatch(r"/[A-Za-z0-9_./\-]+", root):
-        raise ValueError(f"root must be 'auto' or an absolute path of plain characters, got {root!r}")
 CODECS = ("zlib", "lzma", "none")
 
 
@@ -186,7 +172,7 @@ def main(argv=None):
     pk.add_argument("--codec", choices=CODECS, default="zlib")
     pk.add_argument("--id")
     pk.add_argument("--keep", action="store_true", help="the assemble job leaves the directory on Dot's disk")
-    pk.add_argument("--root", default="auto", help="'auto' (first writable /workspace/scratch/* directory) or an absolute path")
+    pk.add_argument("--root", default="auto", help="'auto' (verify a writable root in the remote environment) or an absolute path")
     ck = sub.add_parser("check")
     ck.add_argument("out")
     ck.add_argument("replies")

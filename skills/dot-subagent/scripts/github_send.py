@@ -19,9 +19,9 @@ with the right hash, so a failed one is simply sent again) and a final `<stem>.a
 joins and decrypts. A long transfer therefore never sits in one fragile task. Send them with dot-subagent, then run `check`
 with every reply (the last reply that mentions a part or a hash wins).
 
-Where the files go: --root auto (default) makes Dot use the first writable directory under /workspace/scratch/ and report it
-as ROOT; `/workspace/shared` became read-only and was wiped on 2026-10-09, so it is only the fallback. Give --root /path to
-pin it. `repacket` rebuilds the packets from the manifest for a new root without touching GitHub. The decrypted file stays
+Where the files go: --root auto (default) probes the current remote environment and verifies a writable root with a file.
+Set remote DOT_WORK_ROOT or give --root /path to pin it, and reuse the reported ROOT in subsequent packets.
+`repacket` rebuilds the packets from the manifest for a new root without touching GitHub. The decrypted file stays
 in place unless --cleanup is given (use it for test transfers only).
 
 The manifest (<packet-out.md>.json) holds the passphrase: treat it and the packets like the data. Git history keeps pushed
@@ -42,8 +42,8 @@ import subprocess
 import sys
 import tempfile
 
-FALLBACK_ROOT = "/workspace/shared"
-SCRATCH = "/workspace/scratch"
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # also support the documented python -I invocation
+from remote_root import root_step as _root_step, check_root
 def _default_repo() -> str:
     if os.environ.get("DOT_TRANSFER_REPO"):
         return os.environ["DOT_TRANSFER_REPO"]
@@ -118,17 +118,7 @@ def parts_of(payload, part_bytes):
 
 
 def root_step(xfer, root):
-    work = f'"$ROOT/rm-xfer-{xfer}"'
-    if root == "auto":
-        pick = (f"ROOT=$(for d in {SCRATCH}/*/; do [ -w \"$d\" ] && printf '%s' \"${{d%/}}\" && break; done); "
-                f"[ -n \"$ROOT\" ] || ROOT={FALLBACK_ROOT}")
-        intro = f"Choose your work root: the first writable directory under {SCRATCH}/ (else {FALLBACK_ROOT}). Run exactly: "
-    else:
-        pick = f"ROOT={root}"
-        intro = "Set the work root. Run exactly: "
-    return (f"0. {intro}`{pick}; mkdir -p {work}/parts && touch {work}/.w && rm {work}/.w && echo \"ROOT=$ROOT\"`. "
-            f"If that does not print a ROOT line, stop and reply `EXECUTED: no` with the error. Use the printed ROOT as a literal path in "
-            f"every later command (your shell may not keep variables between commands) and report it as `ROOT:` in the reply.")
+    return "0. Discover and verify the writable work root: " + _root_step(xfer, root) + "."
 
 
 def part_listing(xfer, numbered):
@@ -141,7 +131,7 @@ def fetch_steps(xfer, numbered):
 {part_listing(xfer, numbered)}"""
 
 
-HEAD = """The user owns the private repository `{repo}` (branch `{branch}`) and connected GitHub to this account on purpose. Use only that connector; do not ask for or write any token or key. Do not estimate: run things and report exact output. Do not change the repository. Do not use `/workspace/shared` unless step 0 chose it."""
+HEAD = """The user owns the private repository `{repo}` (branch `{branch}`) and connected GitHub to this account on purpose. Use only that connector; do not ask for or write any token or key. Do not estimate: run things and report exact output. Do not change the repository. Use only the writable work root verified in step 0."""
 
 PART_LINES = "PART_<n>: <name> <bytes> <sha256> FETCHED|SKIPPED|FAILED   (one line for each file above, n as numbered)"
 
@@ -278,10 +268,6 @@ def stage(source, repo_dir, packet_out, xfer=None, part_mb=3, plain=False, clean
             raise ValueError("git stored different content than was staged (line-ending conversion?)")
     return manifest
 
-
-def check_root(root):
-    if root != "auto" and not re.fullmatch(r"/[A-Za-z0-9_./\-]+", root):
-        raise ValueError(f"--root must be 'auto' or an absolute path of plain characters, got {root!r}")
 
 
 def repacket(manifest_path, packet_out, root="auto", per_packet=15, cleanup=False):

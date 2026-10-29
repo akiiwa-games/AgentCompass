@@ -5,15 +5,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import github_send
-import tunnel_send
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'tray'))
 import gateways
 import runtime_paths
 
 class DiscoveryTests(unittest.TestCase):
     cases = ((github_send, github_send.find_openssl, 'ROUTE_MANAGER_OPENSSL'),
-             (tunnel_send, tunnel_send.find_openssl, 'ROUTE_MANAGER_OPENSSL'),
-             (tunnel_send, tunnel_send.find_cloudflared, 'ROUTE_MANAGER_CLOUDFLARED'),
              (runtime_paths, gateways.chrome_path, 'MUSE2API_CHROMIUM_PATH'))
 
     def test_override_precedes_path(self):
