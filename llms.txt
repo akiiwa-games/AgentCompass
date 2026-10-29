@@ -11,6 +11,7 @@
 ## Core Entry Points
 
 - [README.md](README.md): Architecture overview, scoring formula, 5-axis decision console, and host setup.
+- [Decision Theatre demo](docs/decision-theatre.gif): Synthetic replay of task → kind → routes → ranking → top-two radar → winner with effort; illustrative scores, no live account data.
 - [skills/route-agent-work/SKILL.md](skills/route-agent-work/SKILL.md): Primary Agent Skill definition (`roll`, `plan`, `select`, `record`, `providers`) and worker communication contract.
 - [skills/route-agent-work/scripts/route_judge.py](skills/route-agent-work/scripts/route_judge.py): CLI entry point (`roll --brief <task.md> --hours <n>`) combining System-One task classification, deterministic allocation, ledger recording, and worker dispatch.
 - [skills/route-agent-work/scripts/allocator.py](skills/route-agent-work/scripts/allocator.py): Deterministic mathematical allocator scoring candidate `model × effort` bundles across hard gates, 6D capability fit, 3D model DNA (`divergence`, `global_rigor`, `module_precision`), ability floor, pre-reset spend-down, and opportunity cost.

@@ -20,6 +20,10 @@ alongside observed quota windows, spending surplus before resets, rotating worke
 
 <sub>The author's Windows cockpit (optional). The router underneath is a portable Python Agent Skill (<code>SKILL.md</code>) with JSON config · <a href="llms.txt"><code>llms.txt</code></a></sub>
 
+<p><img src="docs/decision-theatre.gif" width="680" alt="Synthetic Decision Theatre replay from task classification through candidate routes and radar comparison to the winning model and effort"></p>
+
+<sub>A synthetic Decision Theatre replay: task → kind → routes → ranking → top-two radar → winner with effort. Illustrative scores, no live account data.</sub>
+
 
 </div>
 
