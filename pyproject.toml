@@ -41,8 +41,6 @@ exclude = ["agentcompass/test_*.py"]
 [tool.hatch.build.targets.sdist]
 only-include = [
   "agentcompass",
-  "skills",
-  "setup",
   "packaging/stage_data.py",
   "packaging/hatch_build.py",
   "README.md",
@@ -50,6 +48,7 @@ only-include = [
   "pyproject.toml",
 ]
 exclude = [
+  "setup/host_sync",
   "setup/host_sync/out",
   "**/node_modules",
   "**/__pycache__",
