@@ -22,6 +22,7 @@ commands:
   doctor      read-only report of Python, CLIs, accounts, cache, plugins, ports, and hooks
   plan        pass the remaining arguments to route_judge.py plan
   roll        pass the remaining arguments to route_judge.py roll
+  providers   pass the remaining arguments to route_judge.py providers
 
 The router is not frozen into an executable. Skills stay real directories.
 """
@@ -82,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
             return doctor_main(rest)
         if command in ("setup", "uninstall"):
             return call_onboard(command, rest)
-        if command in ("plan", "roll"):
+        if command in ("plan", "roll", "providers"):
             return passthrough(command, rest)
     except SystemExit as exc:
         code = exc.code

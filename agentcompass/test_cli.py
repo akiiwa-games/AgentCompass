@@ -43,6 +43,11 @@ class CliTests(unittest.TestCase):
         self.assertTrue(command[4].replace("\\", "/").endswith("skills/route-agent-work/scripts/route_judge.py"))
         self.assertEqual(command[5:], ["plan", "--input", "examples/task.json", "--dry-run"])
 
+    def test_providers_is_passed_through_to_route_judge(self):
+        with patch("agentcompass.cli.subprocess.call", return_value=0) as call:
+            self.assertEqual(cli.main(["providers", "--format", "json"]), 0)
+        self.assertEqual(call.call_args.args[0][5:], ["providers", "--format", "json"])
+
     def test_unknown_command_returns_2(self):
         self.assertEqual(cli.main(["nope"]), 2)
 

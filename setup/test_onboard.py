@@ -51,6 +51,16 @@ class HomeCase(unittest.TestCase):
         return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
 
 
+class AskerTests(unittest.TestCase):
+    def test_closed_stdin_falls_back_to_the_default(self):
+        asker = onboard.Asker(assume_yes=False)
+        asker.interactive = True
+        with patch("builtins.input", side_effect=EOFError), contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(asker.ask("Route work?", True))
+            self.assertFalse(asker.ask("Install hook?", False))
+        self.assertFalse(asker.interactive)
+
+
 class MarkerBlockTests(unittest.TestCase):
     def test_new_or_empty_file_gets_only_the_block(self):
         text, mode = sg.merge_block(None, "rules\n")

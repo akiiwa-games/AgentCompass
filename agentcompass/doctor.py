@@ -105,9 +105,9 @@ def _tool_lines(checkout: Path | None) -> list[str]:
             try:
                 lines.append(f"  {label}: {fn()}")
             except runtime_paths.ToolMissing as error:
-                lines.append(f"  {label}: missing — {error}")
+                lines.append(f"  {label}: missing - {error}")
             except OSError as error:
-                lines.append(f"  {label}: missing — {error}")
+                lines.append(f"  {label}: missing - {error}")
         return lines
     lines = []
     for file_name, item in HINTS.items():
@@ -115,7 +115,7 @@ def _tool_lines(checkout: Path | None) -> list[str]:
         if found:
             lines.append(f"  {item['tool']}: {found}")
         else:
-            lines.append(f"  {item['tool']}: missing — {item['feature']} needs it. {item['install']}")
+            lines.append(f"  {item['tool']}: missing - {item['feature']} needs it. {item['install']}")
     return lines
 
 

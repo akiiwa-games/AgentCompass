@@ -39,7 +39,7 @@ HOOK_EXPLANATION = (
     "The router gate hook blocks every sub-agent launch (including Claude Code's built-in Explore agent) "
     "unless `route_judge.py roll` recorded a routing decision in the last 15 minutes. It enforces routing, "
     "but it will block agents until you get used to running `roll` first. You can remove it at any time with "
-    "`python -X utf8 setup/onboard.py uninstall`."
+    "`{undo}`."
 )
 
 
@@ -231,8 +231,25 @@ class Asker:
         if not self.interactive:
             return default
         suffix = "[Y/n]" if default else "[y/N]"
-        answer = input(f"{question} {suffix} ").strip().lower()
+        try:
+            answer = input(f"{question} {suffix} ").strip().lower()
+        except EOFError:
+            self.interactive = False
+            print()
+            return default
         return default if not answer else answer.startswith("y")
+
+
+def _packaged() -> bool:
+    return "site-packages" in Path(__file__).resolve().parts
+
+
+def _undo_command() -> str:
+    return "agentcompass uninstall" if _packaged() else "python -X utf8 setup/onboard.py uninstall"
+
+
+def _try_command() -> str:
+    return "agentcompass providers" if _packaged() else "python -X utf8 skills/route-agent-work/scripts/route_judge.py providers"
 
 
 def _line(text: str = "") -> None:
@@ -328,7 +345,7 @@ def setup_main(argv: list[str] | None = None) -> int:
     _line(f"  global rules  : {'written' if do_docs else 'skipped'}  (overlay folder: {home / '.route-manager' / 'host-rules'})")
     _line(f"  router hook   : {summary['hooks']}")
     _line(f"  backups       : {home / '.route-manager' / 'backups'}")
-    _line("  undo          : python -X utf8 setup/onboard.py uninstall")
+    _line(f"  undo          : {_undo_command()}")
     if dry:
         _line("\nDry run complete; nothing was changed.")
     else:
