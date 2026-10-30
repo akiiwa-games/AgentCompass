@@ -540,6 +540,10 @@ class SystemOneScorerTests(unittest.TestCase):
     def setUp(self):
         self.allocator = router.load_allocator()
         self.capabilities = reference_capabilities(self.allocator)
+        # Tests rescore one objective with different fake answers; a cache hit would replay the first.
+        patcher = patch.dict(router.os.environ, {'ROUTER_SCORE_CACHE': 'off'})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def envelope(self, structured=None, response='', status='SUCCESS'):
         return json.dumps({'conversation_id': 'c', 'status': status, 'response': response,
@@ -757,7 +761,7 @@ class SelectableScorerTests(unittest.TestCase):
         self.capabilities = reference_capabilities(self.allocator)
         self.path = temporary_root(self.addCleanup) / 'scorer-config.json'
         env = patch.dict(router.os.environ, {'ROUTER_SCORER_CONFIG': str(self.path), 'ROUTER_SCORER_TYPE': '',
-                                             'ROUTER_DISABLE_LIVE_SCORER': ''})
+                                             'ROUTER_DISABLE_LIVE_SCORER': '', 'ROUTER_SCORE_CACHE': 'off'})
         env.start()
         self.addCleanup(env.stop)
         no_user_env = patch.object(router, 'user_env', return_value=None)
