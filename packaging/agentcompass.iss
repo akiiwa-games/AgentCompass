@@ -36,12 +36,13 @@ UninstallDisplayName={#MyAppName} tray
 Source: "..\dist\AgentCompass\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName 'Route Manager' -Description 'AgentCompass tray' -Action (New-ScheduledTaskAction -Execute '{app}\{#MyAppExeName}') -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null"""; Flags: runhidden waituntilterminated
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName 'AgentCompass' -Description 'AgentCompass tray' -Action (New-ScheduledTaskAction -Execute '{app}\{#MyAppExeName}') -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null; Unregister-ScheduledTask -TaskName 'Route Manager' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated
 
 [UninstallRun]
 Filename: "taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; RunOnceId: "AcStopTray"; Flags: runhidden waituntilterminated
 Filename: "cmd.exe"; Parameters: "/D /C agentcompass uninstall"; RunOnceId: "AcUninstallCli"; Flags: runhidden waituntilterminated
-Filename: "schtasks.exe"; Parameters: "/Delete /TN ""Route Manager"" /F"; RunOnceId: "AcDeleteTask"; Flags: runhidden waituntilterminated
+Filename: "schtasks.exe"; Parameters: "/Delete /TN ""AgentCompass"" /F"; RunOnceId: "AcDeleteTask"; Flags: runhidden waituntilterminated
+Filename: "schtasks.exe"; Parameters: "/Delete /TN ""Route Manager"" /F"; RunOnceId: "AcDeleteLegacyTask"; Flags: runhidden waituntilterminated
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""foreach ($n in 'PRO_CONSULT_LAUNCHER','PRO_CONSULT_LAUNCHER_ARGS','CODEX_WEB_GPT_EXTERNAL_TRAY') {{ Remove-ItemProperty -Path 'HKCU:\Environment' -Name $n -ErrorAction SilentlyContinue }}"""; RunOnceId: "AcRemoveEnv"; Flags: runhidden waituntilterminated
 
 [UninstallDelete]

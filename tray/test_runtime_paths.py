@@ -27,9 +27,17 @@ class RuntimePathsTests(unittest.TestCase):
                 self.assertEqual(rp.cloudflared_path(), exe)
 
     def test_explicit_missing_override_reports_it_instead_of_using_another_install(self):
-        with patch.dict(rp.os.environ, {'ROUTE_MANAGER_UV': 'Z:/absent-uv.exe'}):
+        with patch.dict(rp.os.environ, {'AGENTCOMPASS_UV': 'Z:/absent-uv.exe'}):
             with self.assertRaises(FileNotFoundError):
                 rp.uv_path()
+
+    def test_the_pre_rename_variable_still_names_the_executable(self):
+        with tempfile.TemporaryDirectory() as td:
+            uv = Path(td) / 'uv.exe'
+            uv.touch()
+            with patch.dict(rp.os.environ, {'ROUTE_MANAGER_UV': str(uv)}):
+                rp.os.environ.pop('AGENTCOMPASS_UV', None)
+                self.assertEqual(rp.uv_path(), uv)
 
 
 if __name__ == '__main__':

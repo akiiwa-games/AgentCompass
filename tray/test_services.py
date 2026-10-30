@@ -305,7 +305,7 @@ class ChatGPTWebTests(unittest.TestCase):
             self.assertEqual(env["CODEX_WEB_GPT_LAUNCHER_DATA_DIR"], str(Path("D:/My Launcher Data")))
 
     def test_the_bridge_profile_can_be_chosen(self):
-        with mock.patch.dict(services.os.environ, {"ROUTE_MANAGER_CHATGPT_CODEX_HOME": "D:/profiles/pro"}), \
+        with mock.patch.dict(services.os.environ, {"AGENTCOMPASS_CHATGPT_CODEX_HOME": "D:/profiles/pro"}), \
                 mock.patch.object(services, "bridge_home", return_value=Path("D:/bridge")), \
                 mock.patch.object(services, "bun_exe", return_value=None):
             self.assertEqual(services.chatgpt_env()["CODEX_HOME"], "D:/profiles/pro")
@@ -471,7 +471,7 @@ class CapacityTickTests(unittest.TestCase):
 
 class ToolMissingDegradesTests(unittest.TestCase):
     def test_missing_uv_does_not_start_dot2api(self):
-        missing = runtime_paths.ToolMissing("uv", "Dot2API", "Install uv.", "ROUTE_MANAGER_UV")
+        missing = runtime_paths.ToolMissing("uv", "Dot2API", "Install uv.", "AGENTCOMPASS_UV")
         with mock.patch.object(services, "dot_ready", return_value=False), \
                 mock.patch.object(services, "uv_path", side_effect=missing), \
                 mock.patch.object(services, "hidden_popen") as popen:
@@ -482,7 +482,7 @@ class ToolMissingDegradesTests(unittest.TestCase):
 
     def test_missing_cloudflared_still_starts_the_local_server(self):
         missing = runtime_paths.ToolMissing(
-            "cloudflared", "the Dot2API public quick tunnel", "Install cloudflared.", "ROUTE_MANAGER_CLOUDFLARED"
+            "cloudflared", "the Dot2API public quick tunnel", "Install cloudflared.", "AGENTCOMPASS_CLOUDFLARED"
         )
         with mock.patch.object(services, "dot_ready", return_value=False), \
                 mock.patch.object(services, "tunnel_pids", return_value=[]), \
@@ -509,7 +509,7 @@ class ToolMissingDegradesTests(unittest.TestCase):
 
     def test_unbuilt_launcher_without_bun_names_the_tool(self):
         missing = runtime_paths.ToolMissing(
-            "bun", "the ChatGPT Web bridge", "Install Bun.", "ROUTE_MANAGER_BUN"
+            "bun", "the ChatGPT Web bridge", "Install Bun.", "AGENTCOMPASS_BUN"
         )
         with mock.patch.object(services, "chatgpt_built", return_value=False), \
                 mock.patch.object(services, "chatgpt_main_pid", return_value=None), \

@@ -656,12 +656,12 @@ def measure(state: dict, now: float, days: int = LOOKBACK_DAYS) -> dict:
                 "pct_per_hour_24h": rate_in(series, now, OBSERVE_LONG_HOURS)}
     # Usage Float owns live activity. These log scans still measure costs and
     # worker-hours, but must not maintain a second definition of running/idle.
-    activity_path = Path(os.environ.get('ROUTE_MANAGER_ACTIVITY_FILE') or STATE_DIR / 'usage-activity.json')
+    activity_path = Path((os.environ.get('AGENTCOMPASS_ACTIVITY_FILE') or os.environ.get('ROUTE_MANAGER_ACTIVITY_FILE')) or STATE_DIR / 'usage-activity.json')
     document['activity_status'] = 'unknown'
     try:
         activity = json.loads(activity_path.read_text(encoding='utf-8-sig'))
         observed = parse_ts(activity.get('generated_at'))
-        if (activity.get('schema') == 'route-manager.activity.v1' and observed is not None
+        if (activity.get('schema') in ('agent-compass.activity.v1', 'route-manager.activity.v1') and observed is not None
                 and 0 <= now - observed <= 180 and isinstance(activity.get('active_workers'), dict)):
             document['active_workers'] = activity['active_workers']
             document['activity_generated_at'] = activity['generated_at']

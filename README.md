@@ -122,8 +122,8 @@ AgentCompass picks a *worker per task* and manages flat-rate windows that *expir
 <summary><b>Install details: packaging, upgrades, ports, Paseo bridge</b></summary>
 
 - The router is a Python package, not a frozen executable: skills stay real directories because Claude, Codex and Antigravity read `SKILL.md`, and `route_judge.py` loads sibling scripts by path (`python -I`).
-- A packaged install (no `.git`) checks [GitHub Releases](https://github.com/akiiwa-games/AgentCompass/releases) and tells you to run `uv tool upgrade agentcompass`; a development checkout fast-forwards with git. `ROUTE_MANAGER_GITHUB_ORG` and `ROUTE_MANAGER_USAGE_FLOAT_REPO` override the org and the usage-float clone URL.
-- Tray extras: `pip install "agentcompass[tray]"`. `packaging/build.ps1` builds a one-folder PyInstaller tray and, with Inno Setup 6, a per-user installer (`PrivilegesRequired=lowest`) that registers the "Route Manager" scheduled task; uninstall removes the task, the `PRO_CONSULT_*` / `CODEX_WEB_GPT_EXTERNAL_TRAY` variables and the Startup shortcuts. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate are set (SmartScreen will warn; see `packaging/SIGNING.md`). Tagged pushes (`v*`) attach the wheel and installer to a Release.
+- A packaged install (no `.git`) checks [GitHub Releases](https://github.com/akiiwa-games/AgentCompass/releases) and tells you to run `uv tool upgrade agentcompass`; a development checkout fast-forwards with git. `AGENTCOMPASS_GITHUB_ORG` and `AGENTCOMPASS_USAGE_FLOAT_REPO` override the org and the usage-float clone URL. Every `AGENTCOMPASS_*` variable that had a `ROUTE_MANAGER_*` name before the rename still accepts the old name.
+- Tray extras: `pip install "agentcompass[tray]"`. `packaging/build.ps1` builds a one-folder PyInstaller tray and, with Inno Setup 6, a per-user installer (`PrivilegesRequired=lowest`) that registers the "AgentCompass" scheduled task (and removes the pre-rename "Route Manager" one); uninstall removes the task, the `PRO_CONSULT_*` / `CODEX_WEB_GPT_EXTERNAL_TRAY` variables and the Startup shortcuts. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate are set (SmartScreen will warn; see `packaging/SIGNING.md`). Tagged pushes (`v*`) attach the wheel and installer to a Release.
 - Loopback ports default to Dot2API 8788, ChatGPT Web 17843, Gemini Web 17849, account login 17851, EasyTier 15888, Muse2API 18610. `AGENTCOMPASS_PORT_*` overrides `~/.agent-compass/ports.json`, which overrides the defaults; `doctor` reports conflicts.
 - Paseo dispatch via `roll` needs Node.js: `npm --prefix setup/paseo-bridge ci` (the host rollout script does this when it detects Paseo).
 - The demo uses a fixed synthetic quota snapshot and reference fleet, makes no network calls, writes no ledger and launches nothing. Add `--format json` for the full breakdown.
@@ -236,7 +236,7 @@ Selecting a model in the **Pre-Reset Priority** submenu applies a `+0.35` score 
 
 ### EasyTier Mesh Setup
 
-The tray remains unprivileged while `Route Manager EasyTier` runs as a `SYSTEM` scheduled task (`SDDL GRGX` grants the interactive user only read/start/stop permissions on that task, while `easytier/bin/`, `private/`, `logs/`, and `state/` are writable only by `SYSTEM` and `Administrators`):
+The tray remains unprivileged while `AgentCompass EasyTier` runs as a `SYSTEM` scheduled task (`SDDL GRGX` grants the interactive user only read/start/stop permissions on that task, while `easytier/bin/`, `private/`, `logs/`, and `state/` are writable only by `SYSTEM` and `Administrators`):
 
 ```powershell
 python tray\easytier_setup.py check
@@ -247,6 +247,8 @@ python tray\easytier_setup.py detach-switch --expect-peer HOSTNAME
 python tray\easytier_setup.py cleanup
 python tray\easytier_setup.py uninstall
 ```
+
+A node registered before the AgentCompass rename still runs as `Route Manager EasyTier`; the tray reads either name. Re-running `install --binaries easytier\bin --config easytier\private\node.toml` (elevated through UAC) registers `AgentCompass EasyTier`, deletes the old tasks and starts the new one.
 
 ### Host Rollout & System-Level Skill Loading (`setup/sync_host_globals.py`)
 

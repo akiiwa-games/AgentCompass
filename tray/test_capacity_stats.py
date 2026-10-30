@@ -70,7 +70,7 @@ class Fixture(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
-        activity_env = mock.patch.dict(cs.os.environ, {'ROUTE_MANAGER_ACTIVITY_FILE': str(self.root / 'usage-activity.json')})
+        activity_env = mock.patch.dict(cs.os.environ, {'AGENTCOMPASS_ACTIVITY_FILE': str(self.root / 'usage-activity.json')})
         activity_env.start()
         self.addCleanup(activity_env.stop)
         # Home overrides would point the scan at this machine's real logs.

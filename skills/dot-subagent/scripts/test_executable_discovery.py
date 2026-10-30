@@ -10,7 +10,7 @@ import gateways
 import runtime_paths
 
 class DiscoveryTests(unittest.TestCase):
-    cases = ((github_send, github_send.find_openssl, 'ROUTE_MANAGER_OPENSSL'),
+    cases = ((github_send, github_send.find_openssl, 'AGENTCOMPASS_OPENSSL'),
              (runtime_paths, gateways.chrome_path, 'MUSE2API_CHROMIUM_PATH'))
 
     def test_override_precedes_path(self):

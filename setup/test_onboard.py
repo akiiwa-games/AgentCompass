@@ -407,8 +407,9 @@ class UsagePluginTests(HomeCase):
         self.cli["git"] = "git"
         calls = []
         with patch.object(onboard, "REPO", self.home / "no-checkout"), patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("ROUTE_MANAGER_GITHUB_ORG", None)
-            os.environ.pop("ROUTE_MANAGER_USAGE_FLOAT_REPO", None)
+            for key in ("AGENTCOMPASS_GITHUB_ORG", "AGENTCOMPASS_USAGE_FLOAT_REPO", "ROUTE_MANAGER_GITHUB_ORG",
+                        "ROUTE_MANAGER_USAGE_FLOAT_REPO"):
+                os.environ.pop(key, None)
             result = onboard.ensure_usage_float(self.home, run=lambda c, **k: calls.append(c) or type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
         self.assertEqual(result["action"], "cloned")
         self.assertIn("https://github.com/akiiwa-games/usage-float.git", calls[0])

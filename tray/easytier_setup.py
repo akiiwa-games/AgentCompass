@@ -10,7 +10,7 @@
 
 `install` copies the official v2.6.4 binaries and this host's own config (never another host's) into
 AgentCompass/easytier/, locks bin/private/logs/state down to SYSTEM and Administrators (read for others where there
-is no secret), and registers the SYSTEM task "Route Manager EasyTier" with a start trigger at boot. The only right the
+is no secret), and registers the SYSTEM task "AgentCompass EasyTier" with a start trigger at boot. The only right the
 installing user gets on the task is read, run and stop, so the unelevated tray can control it but not rewrite it.
 It relaunches itself elevated (UAC, hidden) when needed. The legacy spec (JSON) names how the previous runtime is
 stopped and brought back: {"task": "...", "command": [...], "cwd": "...", "kill_cmdline_contains": [...]}.
@@ -40,9 +40,11 @@ CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 ROOT = Path(__file__).resolve().parents[1]
 HOME = ROOT / "easytier"
 BIN, PRIVATE, LOGS, STATE, BACKUP = (HOME / name for name in ("bin", "private", "logs", "state", "backup"))
-TASK_NAME = "Route Manager EasyTier"
-RECOVER_TASK = "Route Manager EasyTier Recover"
-SWITCH_TASK = "Route Manager EasyTier Switch"
+TASK_NAME = "AgentCompass EasyTier"
+RECOVER_TASK = "AgentCompass EasyTier Recover"
+SWITCH_TASK = "AgentCompass EasyTier Switch"
+# Names before the AgentCompass rename. install deletes them after registering TASK_NAME; until then they still run the node.
+LEGACY_TASKS = ("Route Manager EasyTier", "Route Manager EasyTier Recover", "Route Manager EasyTier Switch")
 USER_LOG_DIR = Path.home() / ".agent-compass" / "easytier-setup"
 PINNED = {"easytier-core.exe": "da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d"}
 REQUIRED = ("easytier-core.exe", "easytier-cli.exe", "Packet.dll", "wintun.dll")
@@ -441,13 +443,20 @@ def command_install(args) -> int:
         log("已记录旧运行方式（供回滚）")
     register_main_task(args.user_sid or current_user_sid())
     log(f"已注册计划任务 {TASK_NAME}（SYSTEM，开机启动，当前用户只可读/运行/停止）")
+    replaced = [name for name in LEGACY_TASKS if task_exists(name)]
+    for name in replaced:
+        delete_task(name)      # ends the old task's node first, so the new task never runs a second core beside it
+    if replaced:
+        log("已删除改名前的计划任务：" + "、".join(replaced))
+        if not args.switch:
+            run(["schtasks", "/Run", "/TN", TASK_NAME], check=False)
     if args.switch:
         return switch(args.expect_peer)
     return 0
 
 
 def command_uninstall() -> int:
-    for name in (TASK_NAME, RECOVER_TASK, SWITCH_TASK):
+    for name in (TASK_NAME, RECOVER_TASK, SWITCH_TASK, *LEGACY_TASKS):
         delete_task(name)
     log("已删除计划任务（easytier/ 里的文件保留）")
     return 0

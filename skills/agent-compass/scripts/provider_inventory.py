@@ -505,7 +505,7 @@ def _discover(home=None, environ=None, now=None):
         definitions = {}
     cache, _ = read_json(Path(environ.get('ROUTER_USAGE_CACHE') or home / '.usage-float/usage-cache.json'))
     cache_rows = cache.get('providers') if isinstance(cache.get('providers'), dict) else {}
-    result = {'schema': 'route-manager.providers.v2.local', 'generated_at': now.isoformat(),
+    result = {'schema': 'agent-compass.providers.v2.local', 'generated_at': now.isoformat(),
               'accounts': {}, 'launchers': {}, 'saved': [], 'source_paths': {},
               'sources': {'paseo': paseo_error or 'read'}}
     # Conventional alternate homes (.claude-*, .codex-*) are also shown when they have no launcher.
@@ -672,7 +672,8 @@ def _discover(home=None, environ=None, now=None):
             'billing': 'subscription',
             **({'quota_account': matched_codex} if matched_codex else {}),
         }
-    override_env = environ.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE') or environ.get('ROUTER_ACCOUNTS_OVERRIDE')
+    override_env = (environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE') or environ.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE')
+                    or environ.get('ROUTER_ACCOUNTS_OVERRIDE'))
     override_path = Path(override_env).expanduser() if override_env else state_dir / 'accounts-override.json'
     override_doc, _ = read_json(override_path)
     for section in ('litellm_proxies', 'accounts'):

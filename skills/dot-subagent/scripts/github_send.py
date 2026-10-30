@@ -71,7 +71,7 @@ def blob_sha(data):
 
 
 def find_executable(name, override, candidates):
-    configured = os.environ.get(override)
+    configured = os.environ.get(override) or os.environ.get(override.replace("AGENTCOMPASS_", "ROUTE_MANAGER_", 1))
     if configured:
         executable = Path(configured).expanduser()
         if not executable.is_file():
@@ -87,7 +87,7 @@ def find_executable(name, override, candidates):
 
 
 def find_openssl():
-    return find_executable("openssl", "ROUTE_MANAGER_OPENSSL", (
+    return find_executable("openssl", "AGENTCOMPASS_OPENSSL", (
         Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/usr/bin/openssl.exe",
         Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Git/usr/bin/openssl.exe",
         Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "Programs/Git/usr/bin/openssl.exe",

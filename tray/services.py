@@ -324,7 +324,7 @@ def chatgpt_command(*flags: str) -> list[str]:
 
 
 def bun_exe() -> Path | None:
-    """The Bun that will run: the workspace copy, ROUTE_MANAGER_BUN, PATH or ~/.bun. None when there is none."""
+    """The Bun that will run: the workspace copy, AGENTCOMPASS_BUN, PATH or ~/.bun. None when there is none."""
     try:
         return runtime_paths.bun_path()
     except runtime_paths.ToolMissing:
@@ -349,7 +349,7 @@ def launcher_data_dir() -> Path:
 def chatgpt_env() -> dict[str, str]:
     env = os.environ.copy()
     # The bridge keeps its own Codex profile so it never touches the user's real ~/.codex.
-    env["CODEX_HOME"] = os.environ.get("ROUTE_MANAGER_CHATGPT_CODEX_HOME") or str(Path.home() / ".codex-pro-consult")
+    env["CODEX_HOME"] = (os.environ.get("AGENTCOMPASS_CHATGPT_CODEX_HOME") or os.environ.get("ROUTE_MANAGER_CHATGPT_CODEX_HOME")) or str(Path.home() / ".codex-pro-consult")
     env["CODEX_CHATGPT_WEB_HOME"] = str(bridge_home())
     env["CODEX_WEB_GPT_LAUNCHER_DATA_DIR"] = str(launcher_data_dir())
     bun = bun_exe()
@@ -560,7 +560,7 @@ def start_usage_float() -> str:
         if local_controls.read_snapshot("usage-float") or (child and child.poll() is None):
             return _tr("Usage Float 已在运行")
         env = os.environ.copy()
-        env["ROUTE_MANAGER_HOSTED"] = "1"
+        env["AGENTCOMPASS_HOSTED"] = env["ROUTE_MANAGER_HOSTED"] = "1"      # old name for plugin copies predating the rename
         _component_children["usage-float"] = hidden_popen(
             component_launch.command(ROOT / "tray" / "usage_float_host.py"), env, USAGE_FLOAT_ROOT,
             STATE_DIR / "usage-float.log")

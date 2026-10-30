@@ -23,7 +23,7 @@ def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
     root = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='router-tests-')))
     # Inherited daemon/provider paths survive HOME changes unless removed explicitly.
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith(('ROUTER_', 'ROUTE_MANAGER_', 'PASEO_', 'DOT2API_'))
+           if not key.startswith(('ROUTER_', 'AGENTCOMPASS_', 'ROUTE_MANAGER_', 'PASEO_', 'DOT2API_'))
            and key not in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'JEV_API_KEY')}
     env.update(HOME=str(root), USERPROFILE=str(root), ROUTER_PROVIDER_HOME=str(root),
                ROUTER_STATE_DIR=str(root / '.agent-compass'), PASEO_HOME=str(root / '.paseo'),

@@ -177,7 +177,7 @@ There is no background watcher: the caller owns continuation and relays question
 to the real parent. A repeated roll with the same parent, task and prompt reuses
 the receipt. Use the original receipt if configuration or task text changes.
 
-For a smoke test, put `Reply with ROUTE_MANAGER_GROK_BOT_OK. Do not use tools,
+For a smoke test, put `Reply with AGENTCOMPASS_GROK_BOT_OK. Do not use tools,
 files, connected apps or other side effects.` in a temporary brief and use the
 roll command above. Submit once, then use continuation. Do not send repository
 contents just to test connectivity.

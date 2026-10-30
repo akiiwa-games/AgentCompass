@@ -180,7 +180,8 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("pywin32", pyproject)
         self.assertIn("PrivilegesRequired=lowest", iss)
         self.assertIn("agentcompass uninstall", iss)
-        self.assertIn("Route Manager", iss)
+        self.assertIn("-TaskName 'AgentCompass'", iss)
+        self.assertIn('/TN ""Route Manager""', iss)      # the pre-rename task is still removed
         self.assertIn("PRO_CONSULT_LAUNCHER", iss)
         self.assertIn("CODEX_WEB_GPT_EXTERNAL_TRAY", iss)
         self.assertIn("SmartScreen", signing)

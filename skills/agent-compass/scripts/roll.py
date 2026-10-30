@@ -227,7 +227,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
 
 def _router_override_proxy_spec(provider):
     state_dir = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass')
-    override_env = os.environ.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE') or os.environ.get('ROUTER_ACCOUNTS_OVERRIDE')
+    override_env = (os.environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE') or os.environ.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE')
+                    or os.environ.get('ROUTER_ACCOUNTS_OVERRIDE'))
     override_path = Path(override_env).expanduser() if override_env else state_dir / 'accounts-override.json'
     doc, _ = provider_inventory.read_json(override_path)
     for section in ('litellm_proxies', 'accounts'):

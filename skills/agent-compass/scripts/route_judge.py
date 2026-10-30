@@ -1127,7 +1127,7 @@ def scorer_api_settings(scorer_type, config):
 def post_json(url, body, api_key, timeout):
     request = urllib.request.Request(url, data=json.dumps(body, ensure_ascii=False).encode('utf-8'), method='POST',
                                      headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json',
-                                              'Accept': 'application/json', 'User-Agent': 'route-manager-scorer/1'})
+                                              'Accept': 'application/json', 'User-Agent': 'agent-compass-scorer/1'})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode('utf-8'))

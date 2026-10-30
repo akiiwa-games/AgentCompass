@@ -39,12 +39,17 @@ def _hint(name: str) -> dict:
     return hint(name)
 
 
+def legacy_name(variable: str) -> str:
+    """The pre-rename spelling of an AgentCompass variable, still honoured: AGENTCOMPASS_X -> ROUTE_MANAGER_X."""
+    return variable.replace("AGENTCOMPASS_", "ROUTE_MANAGER_", 1) if variable.startswith("AGENTCOMPASS_") else variable
+
+
 def executable(name: str, override: str, candidates=(), *, prefer_candidates: bool = False) -> Path:
     def missing(detail: str = "") -> ToolMissing:
         info = _hint(name)
         return ToolMissing(info["tool"], info["feature"], info["install"], override, detail=detail)
 
-    configured = os.environ.get(override)
+    configured = os.environ.get(override) or os.environ.get(legacy_name(override))
     if configured:
         path = Path(configured).expanduser()
         if not path.is_file():
@@ -76,7 +81,7 @@ def executable(name: str, override: str, candidates=(), *, prefer_candidates: bo
 
 def uv_path() -> Path:
     user_scripts = Path(sysconfig.get_path('scripts', scheme='nt_user'))
-    return executable('uv.exe', 'ROUTE_MANAGER_UV', (
+    return executable('uv.exe', 'AGENTCOMPASS_UV', (
         Path(sys.executable).parent / 'uv.exe',
         Path(sysconfig.get_path('scripts')) / 'uv.exe',
         user_scripts / 'uv.exe', Path.home() / '.local/bin/uv.exe',
@@ -86,14 +91,14 @@ def uv_path() -> Path:
 
 def bun_path() -> Path:
     """Workspace copy first, so a dev checkout keeps using tools/bun/bun.exe."""
-    return executable('bun.exe', 'ROUTE_MANAGER_BUN', (
+    return executable('bun.exe', 'AGENTCOMPASS_BUN', (
         ROOT / 'tools/bun/bun.exe',
         Path.home() / '.bun/bin/bun.exe',
     ), prefer_candidates=True)
 
 
 def cloudflared_path() -> Path:
-    return executable('cloudflared.exe', 'ROUTE_MANAGER_CLOUDFLARED', (
+    return executable('cloudflared.exe', 'AGENTCOMPASS_CLOUDFLARED', (
         ROOT / 'tools/cloudflared/cloudflared.exe',
         Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'cloudflared/cloudflared.exe',
         Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'cloudflared/cloudflared.exe',
@@ -101,7 +106,7 @@ def cloudflared_path() -> Path:
 
 
 def node_path() -> Path:
-    return executable('node.exe', 'ROUTE_MANAGER_NODE', (
+    return executable('node.exe', 'AGENTCOMPASS_NODE', (
         Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'nodejs/node.exe',
         Path.home() / 'AppData/Roaming/nvm/current/node.exe',
     ))

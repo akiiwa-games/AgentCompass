@@ -126,7 +126,7 @@ class InstallTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def run_install(self, patch_state="original", running=None, link=None, env=None, built=False):
+    def run_install(self, patch_state="original", running=None, link=None, env=None, built=False, legacy=None):
         env = env or {}
         with mock.patch.object(deploy, "brand_shortcuts", return_value=[]), \
                 mock.patch.object(deploy.web_patch, "status", return_value=patch_state), \
@@ -136,6 +136,7 @@ class InstallTests(unittest.TestCase):
                 mock.patch.object(deploy.services, "chatgpt_main_pid", side_effect=[running, None]), \
                 mock.patch.object(deploy.services, "stop_chatgpt_web", return_value="已停止 ChatGPT Web") as stop, \
                 mock.patch.object(deploy, "startup_fields", return_value=link), \
+                mock.patch.object(deploy, "legacy_tasks", return_value=legacy or []), \
                 mock.patch.object(deploy, "write_startup") as write, \
                 mock.patch.object(deploy, "user_env", side_effect=lambda name: env.get(name)), \
                 mock.patch.object(deploy, "set_user_env") as set_env, \
@@ -185,6 +186,13 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(done, ["无需改动"])
         for mocked in (apply, write, set_env, broadcast, self.build):
             mocked.assert_not_called()
+
+    def test_a_login_task_under_the_pre_rename_name_is_re_registered(self):
+        self.old.unlink()
+        link = (str(deploy.PYTHONW), f'"{deploy.APP}"')
+        done, apply, stop, write, set_env, broadcast = self.run_install(
+            patch_state="patched", link=link, env=deploy.wanted_env(), built=True, legacy=["Route Manager"])
+        write.assert_called_once()
 
     def test_a_half_patched_tree_is_an_error(self):
         with mock.patch.object(deploy.web_patch, "status", return_value="partial"):

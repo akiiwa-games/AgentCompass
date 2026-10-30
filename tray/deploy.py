@@ -50,7 +50,8 @@ SUPERSEDED = (
     STARTUP / "Pro Consult.lnk",      # started the ChatGPT Web launcher (with a second tray icon) at login
     SHORTCUT,
 )
-TASK_NAME = "Route Manager"
+TASK_NAME = "AgentCompass"
+LEGACY_TASK_NAMES = ("Route Manager",)      # the login task before the AgentCompass rename
 TASK_DELAY = "PT20S"      # let the taskbar come up before pystray adds its icon
 BACKUPS = Path.home() / ".agent-compass" / "backups" / "startup"
 SKILLS = TRAY_DIR.parent / "skills"
@@ -116,11 +117,18 @@ def powershell(script: str, check: bool = False) -> subprocess.CompletedProcess:
 
 
 def startup_fields() -> tuple[str, str] | None:
-    """(program, arguments) of the login task, or None when it is not registered."""
-    script = (f"$t = Get-ScheduledTask -TaskName '{TASK_NAME}' -ErrorAction SilentlyContinue; "
-              "if ($t) { $t.Actions[0].Execute; $t.Actions[0].Arguments }")
+    """(program, arguments) of the login task (or of its pre-rename name), or None when it is not registered."""
+    names = ", ".join(f"'{name}'" for name in (TASK_NAME, *LEGACY_TASK_NAMES))
+    script = (f"$t = foreach ($n in @({names})) {{ Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue }}; "
+              "$t = @($t)[0]; if ($t) { $t.Actions[0].Execute; $t.Actions[0].Arguments }")
     out = powershell(script).stdout.splitlines()
     return (out[0].strip(), out[1].strip() if len(out) >= 2 else "") if out else None
+
+
+def legacy_tasks() -> list[str]:
+    script = "; ".join(f"if (Get-ScheduledTask -TaskName '{name}' -ErrorAction SilentlyContinue) {{ '{name}' }}"
+                       for name in LEGACY_TASK_NAMES)
+    return [line.strip() for line in powershell(script).stdout.splitlines() if line.strip()]
 
 
 def startup_ok(fields: tuple[str, str] | None) -> bool:
@@ -152,10 +160,17 @@ def write_startup() -> None:
         "-Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
     )
     powershell(script, check=True)
+    remove_legacy_tasks()
+
+
+def remove_legacy_tasks() -> None:
+    for name in LEGACY_TASK_NAMES:
+        powershell(f"Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false -ErrorAction SilentlyContinue")
 
 
 def remove_startup() -> None:
     powershell(f"Unregister-ScheduledTask -TaskName '{TASK_NAME}' -Confirm:$false -ErrorAction SilentlyContinue")
+    remove_legacy_tasks()
 
 
 def brand_shortcuts() -> list[str]:
@@ -329,7 +344,7 @@ def install() -> list[str]:
     if patched_now or not services.chatgpt_built():
         updates.build()
         done.append(_tr("已构建 ChatGPT Web"))
-    if not startup_ok(startup_fields()):
+    if not startup_ok(startup_fields()) or legacy_tasks():
         write_startup()
         done.append(_tr('已注册开机启动计划任务 {0}').format(f'{TASK_NAME}'))
     for old in SUPERSEDED:

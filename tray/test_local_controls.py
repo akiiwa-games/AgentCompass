@@ -118,7 +118,7 @@ class ComponentLifecycleTests(unittest.TestCase):
         args, env, cwd, _log = popen.call_args.args
         self.assertEqual(Path(args[1]), services.ROOT / "tray" / "usage_float_host.py")
         self.assertEqual(cwd, services.USAGE_FLOAT_ROOT)
-        self.assertEqual(env["ROUTE_MANAGER_HOSTED"], "1")
+        self.assertEqual(env["AGENTCOMPASS_HOSTED"], "1")
 
 
 if __name__ == "__main__":

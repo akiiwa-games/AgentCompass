@@ -1,6 +1,6 @@
 """EasyTier for the tray: status, start, stop and restart of the host's one EasyTier node.
 
-The node is the SYSTEM scheduled task "Route Manager EasyTier", registered once by easytier_setup.py. Its
+The node is the SYSTEM scheduled task "AgentCompass EasyTier", registered once by easytier_setup.py. Its
 program, config and logs live under AgentCompass/easytier/. The tray itself stays unelevated: the task grants this
 user only read, run and stop on that one task (not edit), so every action here is a Task Scheduler call plus,
 for status, the bundled easytier-cli talking to the loopback RPC portal.
@@ -30,7 +30,8 @@ CORE = BIN / "easytier-core.exe"
 CLI = BIN / "easytier-cli.exe"
 SUPERVISOR = BIN / "easytier-supervisor.ps1"
 CONFIG = PRIVATE / "node.toml"
-TASK_NAME = "Route Manager EasyTier"
+TASK_NAME = "AgentCompass EasyTier"
+LEGACY_TASK_NAME = "Route Manager EasyTier"      # registered before the rename; easytier_setup install replaces it
 RPC_PORTAL = f"127.0.0.1:{service_ports.get('easytier_rpc')}"
 # Task Scheduler's TASK_STATE values.
 TASK_DISABLED, TASK_QUEUED, TASK_READY, TASK_RUNNING = 1, 2, 3, 4
@@ -52,7 +53,11 @@ def _scheduler_task():
     try:
         service = win32com.client.Dispatch("Schedule.Service")
         service.Connect()
-        return service.GetFolder("\\").GetTask(TASK_NAME)
+        folder = service.GetFolder("\\")
+        try:
+            return folder.GetTask(TASK_NAME)
+        except Exception:
+            return folder.GetTask(LEGACY_TASK_NAME)
     except Exception:
         pythoncom.CoUninitialize()
         raise

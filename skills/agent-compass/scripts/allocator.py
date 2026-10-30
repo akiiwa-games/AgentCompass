@@ -428,7 +428,8 @@ OBSERVED_MAX_AGE_HOURS = 2      # the live burn rate is only worth acting on whi
 
 def accounts_override_path(environ=None):
     env = os.environ if environ is None else environ
-    configured = env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE')
+    configured = (env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
+                  or env.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE'))
     if configured:
         return Path(configured).expanduser()
     state_dir = env.get('ROUTER_STATE_DIR')
@@ -456,7 +457,8 @@ def local_fleet_path(environ=None):
     if state:
         candidate = Path(state).expanduser() / 'accounts.local.json'
         return candidate if candidate.is_file() else None
-    override = (env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE') or '').strip()
+    override = (env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
+                  or env.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE') or '').strip()
     if override:
         candidate = Path(override).expanduser().parent / 'accounts.local.json'
         return candidate if candidate.is_file() else None

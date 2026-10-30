@@ -162,8 +162,9 @@ class LifecycleTests(unittest.TestCase):
 class SiblingRepoTests(unittest.TestCase):
     def _env(self, **extra):
         env = os.environ.copy()
-        env.pop("ROUTE_MANAGER_GITHUB_ORG", None)
-        env.pop("ROUTE_MANAGER_USAGE_FLOAT_REPO", None)
+        for key in ("AGENTCOMPASS_GITHUB_ORG", "AGENTCOMPASS_USAGE_FLOAT_REPO", "ROUTE_MANAGER_GITHUB_ORG",
+                    "ROUTE_MANAGER_USAGE_FLOAT_REPO"):
+            env.pop(key, None)
         env.update(extra)
         return env
 
@@ -192,7 +193,7 @@ class SiblingRepoTests(unittest.TestCase):
                     "https://github.com/fork-org/usage-float.git",
                 )
             with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(
-                os.environ, self._env(ROUTE_MANAGER_GITHUB_ORG="override-org"), clear=True
+                os.environ, self._env(AGENTCOMPASS_GITHUB_ORG="override-org"), clear=True
             ):
                 self.assertEqual(
                     plugins._sibling_repo("usage-float"),

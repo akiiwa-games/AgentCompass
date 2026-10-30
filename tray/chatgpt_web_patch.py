@@ -28,7 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plugins
 
 SOURCE = plugins.plugin_root("chatgpt-web")
-MARK = "route-manager:"
+MARK = "agent-compass:"
+LEGACY_MARKS = ("route-manager:",)      # trees patched before the AgentCompass rename; renamed on the next apply
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 MAIN = "launcher/electron/main.cjs"
@@ -131,10 +132,21 @@ def write(path: Path, text: str) -> None:
     path.write_bytes(text.encode("utf-8"))
 
 
+def marked(source: str) -> bool:
+    return any(mark in source for mark in (MARK, *LEGACY_MARKS))
+
+
+def current_marks(source: str) -> str:
+    for mark in LEGACY_MARKS:
+        source = source.replace(mark, MARK)
+    return source
+
+
 def patch_source(source: str, edits: list[tuple[str, str]]) -> str:
-    """The file with the edits applied; unchanged when they already are; ValueError when an anchor has moved."""
-    if MARK in source:
-        return source
+    """The file with the edits applied; only the markers renamed when they already are; ValueError when an anchor
+    has moved."""
+    if marked(source):
+        return current_marks(source)
     eol = "\r\n" if "\r\n" in source else "\n"
     for anchor, replacement in edits:
         if source.count(anchor) != 1:
@@ -157,7 +169,7 @@ def status(root: Path = SOURCE) -> str:
         path = root / name
         if not path.is_file():
             return "missing"
-        states.append(MARK in read(path))
+        states.append(marked(read(path)))
     return "patched" if all(states) else "original" if not any(states) else "partial"
 
 
@@ -174,6 +186,11 @@ def fits(root: Path = SOURCE) -> str | None:
 def apply(root: Path = SOURCE) -> str:
     """Patch the tree. Nothing is written unless every file patches."""
     current = status(root)
+    if current == "patched":
+        for name in EDITS:
+            text = read(root / name)
+            if current_marks(text) != text:
+                write(root / name, current_marks(text))
     if current in ("patched", "missing"):
         return current
     if current == "partial":
@@ -194,9 +211,9 @@ def revert(root: Path = SOURCE) -> str:
     restored = {}
     for name, edits in EDITS.items():
         path = root / name
-        if not path.is_file() or MARK not in read(path):
+        if not path.is_file() or not marked(read(path)):
             continue
-        source = read(path)
+        source = current_marks(read(path))
         eol = "\r\n" if "\r\n" in source else "\n"
         for original, replacement in reversed(edits):
             candidates = [

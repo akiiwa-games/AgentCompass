@@ -1,6 +1,6 @@
-# Route Manager EasyTier supervisor. Source copy: tray/easytier_supervisor.ps1.
+# AgentCompass EasyTier supervisor. Source copy: tray/easytier_supervisor.ps1.
 # easytier_setup.py installs it into easytier\bin (writable by SYSTEM and Administrators only); the SYSTEM
-# task "Route Manager EasyTier" runs that installed copy, never this one. No window: the task runs in session 0.
+# task "AgentCompass EasyTier" runs that installed copy, never this one. No window: the task runs in session 0.
 # Layout, relative to this script: ..\private\node.toml (host identity, private), ..\private\pre-start.ps1
 # (optional host policy hook), ..\logs\core.log. Exit code is the core's, so Task Scheduler restarts on failure.
 $ErrorActionPreference = 'Stop'

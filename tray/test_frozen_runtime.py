@@ -25,7 +25,7 @@ class FrozenRuntimeTests(unittest.TestCase):
     def test_startup_registration_and_detection_use_executable_without_script_argument(self):
         with mock.patch.object(deploy, 'powershell') as ps:
             deploy.write_startup()
-            script = ps.call_args.args[0]
+            script = ps.call_args_list[0].args[0]
         self.assertIn("-Execute 'C:/Apps/Agent Compass/AgentCompass.exe'", script)
         self.assertNotIn('-Argument', script)
         self.assertNotIn('python', script)

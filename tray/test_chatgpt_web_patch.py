@@ -103,6 +103,19 @@ class SourcePatchTests(unittest.TestCase):
         self.assertEqual({name: self.text(name) for name in FILES}, after)
         self.assertEqual(patch.status(self.root), "patched")
 
+    def test_a_tree_patched_before_the_rename_counts_as_patched_and_gets_the_new_marker(self):
+        patch.apply(self.root)
+        current = {name: self.text(name) for name in FILES}
+        for name, text in current.items():
+            (self.root / name).write_bytes(text.replace(patch.MARK, "route-manager:").encode("utf-8"))
+        self.assertEqual(patch.status(self.root), "patched")
+        self.assertEqual(patch.apply(self.root), "patched")
+        self.assertEqual({name: self.text(name) for name in FILES}, current)
+        for name in FILES:
+            (self.root / name).write_bytes(current[name].replace(patch.MARK, "route-manager:").encode("utf-8"))
+        patch.revert(self.root)
+        self.assertEqual({name: (self.root / name).read_bytes() for name in FILES}, self.originals)
+
     def test_the_launcher_patch_removes_its_tray_icon_and_quits_on_request(self):
         patch.apply(self.root)
         main = self.text(patch.MAIN)
