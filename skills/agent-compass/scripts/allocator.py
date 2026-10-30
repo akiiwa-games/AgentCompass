@@ -663,8 +663,7 @@ def window_capacity_usd(spec, wid, now=None):
     explicit = capacity_usd(spec, wid, now or datetime.now(timezone.utc))
     if explicit is not None:
         return explicit
-    # Relative routing scale for Google AI Ultra 20x, not billed USD: Argon's assumed $4/h of work over the measured 0.62%/h
-    # weekly burn (the 3p rows are an unmeasured placeholder). See plan-templates.json antigravity.ultra20.
+    # Routing-scale prior for Google AI Ultra 20x (not billed USD); mirrors plan-templates.json antigravity.ultra20.
     derived = {'gemini-weekly': 625.0, 'gemini-5h': 182.0, '3p-weekly': 88.0, '3p-5h': 17.6}.get(wid)
     if derived is not None:
         return derived

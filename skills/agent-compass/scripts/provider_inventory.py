@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -24,6 +25,7 @@ GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/runtime/bin/gbot.
 
 
 PLAN_TEMPLATES = Path(__file__).resolve().parents[1] / 'references/plan-templates.json'
+TEMPLATE_KEYS = ('windows', 'capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour')
 POOL_KEYS = ('windows', 'burn_pct_per_worker_hour', 'capacity_usd', 'capacity_change', 'observed', 'expires_at')
 
 
@@ -68,12 +70,34 @@ def plan_defaults(accounts, family, plan):
     """Quota template for a subscription plan, independent of any configured account instance.
 
     The account document's `plan_templates` overrides the shipped references/plan-templates.json
-    per family and plan.
+    per family and plan. A template of `{"alias": "<plan>"}` resolves to that plan's template. Only
+    `windows`, `capacity_usd`, `capacity_change` and `burn_pct_per_worker_hour` are copied onto an
+    account; other keys (provenance, basis, price) are documentation.
     """
     shipped, _ = read_json(PLAN_TEMPLATES)
-    configured = obj(obj(obj(accounts).get('plan_templates')).get(family)).get(plan)
-    template = configured if isinstance(configured, dict) else obj(obj(shipped.get(family)).get(plan))
-    return copy.deepcopy(template) or None
+    overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
+    base = obj(shipped.get(family))
+    template = None
+    for _ in range(3):
+        configured = overrides.get(plan)
+        template = configured if isinstance(configured, dict) else obj(base.get(plan))
+        plan = template.get('alias')
+        if not isinstance(plan, str) or not template:
+            break
+    return copy.deepcopy({k: v for k, v in template.items() if k != 'alias'}) or None
+
+
+def fill_template_gaps(spec, template):
+    """Add template values the account does not set; never overwrite what the account already declares."""
+    for key in TEMPLATE_KEYS:
+        if key not in template:
+            continue
+        have = spec.get(key)
+        if not have:
+            spec[key] = copy.deepcopy(template[key])
+        elif isinstance(have, dict) and isinstance(template[key], dict) and key != 'windows':
+            for wid, value in template[key].items():
+                have.setdefault(wid, copy.deepcopy(value))
 
 
 def digest(*values):
@@ -805,6 +829,10 @@ def configured_plan(family, label):
             return 'max20'
         if '5x' in label or label == 'max5':
             return 'max5'
+    if family == 'codex' and (label == 'pro100' or re.search(r'\b100\b', label)):
+        return 'pro100'
+    if family == 'antigravity' and 'ultra' in label:
+        return 'ultra5' if '5x' in label or label.endswith('ultra5') else 'ultra20' if '20x' in label or label.endswith('ultra20') else 'ultra'
     for name in ('pro', 'plus', 'free', 'team', 'enterprise'):
         if name in label:
             return name
@@ -1011,14 +1039,17 @@ def apply(accounts, inventory=None):
             spec.setdefault('bundles', {})
             continue
         plan = row.get('plan')
+        # A plan the user wrote in the account document seeds the template when discovery reports none
+        # (claude/codex without a discovered plan stay unknown below).
+        template_plan = configured_plan(family, plan or (spec.get('plan') if family not in ('claude', 'codex') else None))
+        template = plan_defaults(accounts, family, template_plan) if template_plan else None
         if plan:
             previous_plan = configured_plan(family, spec.get('plan'))
             spec['plan'] = plan
-            template = plan_defaults(accounts, family, plan)
-            if previous_plan == plan:
+            if previous_plan == template_plan:
                 pass  # same named plan can have account-specific promotional capacity
             elif template:
-                for key in ('windows', 'capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour'):
+                for key in TEMPLATE_KEYS:
                     if key in template:
                         spec[key] = copy.deepcopy(template[key])
                     else:
@@ -1026,6 +1057,8 @@ def apply(accounts, inventory=None):
             elif family in ('claude', 'codex'):
                 for key in ('capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour'):
                     spec.pop(key, None)
+        if template and not (family in ('claude', 'codex') and not plan):
+            fill_template_gaps(spec, template)
         if row.get('billing') and row['billing'] != 'unknown':
             spec['billing'] = row['billing']
         if family in ('claude', 'codex') and (not plan or row.get('billing') == 'metered'):

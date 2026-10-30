@@ -726,3 +726,68 @@ class DiscoverySnapshotTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             inventory.discover()
             self.assertEqual(len(calls), 3)
+
+
+class PlanTemplateTests(unittest.TestCase):
+    def apply(self, spec, family='antigravity', name='antigravity', plan=None, accounts_extra=None):
+        accounts = {'accounts': {name: spec}, **(accounts_extra or {})}
+        row = {'family': family, 'status': 'ready', 'billing': 'subscription'}
+        if plan:
+            row['plan'] = plan
+        inv = {'accounts': {name: row}, 'launchers': {name: {'family': family, 'status': 'ready'}}}
+        return inventory.apply(accounts, inv)['accounts'][name]
+
+    def test_shipped_templates_are_plain_family_plan_dicts(self):
+        shipped, _ = inventory.read_json(inventory.PLAN_TEMPLATES)
+        self.assertEqual(set(shipped), {'claude', 'codex', 'antigravity'})
+        for family, plans in shipped.items():
+            for plan, template in plans.items():
+                self.assertIsInstance(template, dict, (family, plan))
+                if 'alias' in template:
+                    self.assertIn(template['alias'], plans)
+                    continue
+                for pool, capacity in template['capacity_usd'].items():
+                    self.assertIn(pool, template['windows'], (family, plan, pool))
+                    self.assertGreater(template['burn_pct_per_worker_hour'][pool], 0, (family, plan, pool))
+                self.assertEqual(set(template['capacity_usd']), set(template['burn_pct_per_worker_hour']), (family, plan))
+
+    def test_plan_labels_resolve_to_templates(self):
+        for family, label, expected in (
+                ('antigravity', 'Google AI Ultra (20x)', 'ultra20'), ('antigravity', 'Google AI Ultra (5x)', 'ultra5'),
+                ('antigravity', 'ultra5', 'ultra5'), ('antigravity', 'Google AI Ultra', 'ultra'),
+                ('antigravity', 'Google AI Pro', 'pro'), ('codex', 'ChatGPT Pro 100', 'pro100'),
+                ('codex', 'pro100', 'pro100'), ('codex', 'Team', 'team'), ('claude', 'Claude Max 5x', 'max5')):
+            with self.subTest(label=label):
+                plan = inventory.configured_plan(family, label)
+                self.assertEqual(plan, expected)
+                self.assertTrue(inventory.plan_defaults({}, family, plan))
+        self.assertEqual(inventory.plan_defaults({}, 'codex', 'team')['capacity_usd'], {'usage': 67})
+        self.assertEqual(inventory.plan_defaults({}, 'claude', 'max')['capacity_usd']['seven_day'], 1400)
+        self.assertNotIn('alias', inventory.plan_defaults({}, 'antigravity', 'ultra'))
+
+    def test_claude_max_plans_ship_a_five_hour_burn(self):
+        for plan in ('max5', 'max20'):
+            self.assertIn('five_hour', inventory.plan_defaults({}, 'claude', plan)['burn_pct_per_worker_hour'])
+
+    def test_configured_plan_seeds_capacity_when_discovery_reports_none(self):
+        spec = self.apply({'plan': 'Google AI Ultra (5x)', 'billing': 'subscription', 'windows': {}, 'bundles': {}})
+        self.assertEqual(spec['plan'], 'Google AI Ultra (5x)')
+        self.assertEqual(spec['capacity_usd']['gemini-weekly'], 156)
+        self.assertEqual(spec['burn_pct_per_worker_hour']['3p-5h'], 11.4)
+        self.assertIn('gemini-5h', spec['windows'])
+
+    def test_same_plan_fills_gaps_but_keeps_account_values(self):
+        spec = self.apply({'plan': 'pro', 'billing': 'subscription', 'windows': {'usage': {'hours': 168}},
+                           'capacity_usd': {'usage': 999}, 'bundles': {}}, family='codex', name='codex', plan='pro')
+        self.assertEqual(spec['capacity_usd'], {'usage': 999})
+        self.assertEqual(spec['burn_pct_per_worker_hour'], {'usage': 3.48})
+        spec = self.apply({'plan': 'pro', 'billing': 'subscription', 'windows': {'usage': {'hours': 168}},
+                           'burn_pct_per_worker_hour': {'usage': 1.0}, 'bundles': {}}, family='codex', name='codex', plan='pro')
+        self.assertEqual(spec['burn_pct_per_worker_hour'], {'usage': 1.0})
+        self.assertEqual(spec['capacity_usd'], {'usage': 325})
+
+    def test_account_plan_templates_override_shipped(self):
+        spec = self.apply({'plan': 'x', 'billing': 'subscription', 'windows': {}, 'bundles': {}}, family='codex', name='codex',
+                          plan='plus', accounts_extra={'plan_templates': {'codex': {'plus': {
+                              'windows': {'usage': {'hours': 168}}, 'capacity_usd': {'usage': 80}}}}})
+        self.assertEqual(spec['capacity_usd'], {'usage': 80})

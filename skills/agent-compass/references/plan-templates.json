@@ -1,62 +1,59 @@
 {
-  "_doc": "Default quota priors per subscription plan, applied when discovery reports an account's plan and that account's configured plan differs. Figures are API-equivalent list-price priors, not a claim about any machine. Override per family/plan with a top-level plan_templates object in accounts.local.json. Only windows, capacity_usd, capacity_change and burn_pct_per_worker_hour are copied onto an account; every other key (provenance, basis, notes, pre_* values) is documentation. Calibrated 2026-10-30 against capacity-audit-2026-10-30.md.",
-  "_provenance_values": {
-    "measured_local": "Aggregated from this host's own usage samples (Δ list-price USD ÷ Δ percentage points).",
-    "measured_local_and_community": "Measured locally and independently confirmed by a multi-account community panel.",
-    "measured_local_halved_2026_10_30": "Measured locally under the previous allowance, then halved for the 2026-10-30 allowance cut; not re-measured.",
-    "community_measured": "Community-measured median from multi-window samples; no local account of this plan.",
-    "community_prior": "Anchored on community measurements (not an exact ratio of another plan); no local account and no direct sample.",
-    "community_prior_unverified_weekly": "Only the 5-hour ratio is official; the weekly figure is a community estimate or a proportional scale with no measurement.",
-    "relative_scale_from_local_pct_burn": "A routing scale derived from locally measured percentage burn and an assumed hourly cost; not billed USD.",
-    "derived_50pct_cap": "Derived from Anthropic's published rule that Fable may use at most 50% of the weekly allowance; never consumed locally.",
-    "guard_value": "A launch guard, not measured capacity."
-  },
   "claude": {
     "pro": {
-      "provenance": "measured_local_and_community",
-      "basis": "seven_day 156: local claude-2 aggregate $169, Wokey 103-account median $157. five_hour 18 is the launch guard (25% launch floor, 12% margin); measured capacity is about $13 locally and $11 per window in the Wokey panel. No weekly_fable window: Claude Pro includes no Fable allowance (Fable is billed from usage credits), so the former 78 (= 156/2) was invented and is removed.",
-      "capacity_provenance": {"seven_day": "measured_local_and_community", "five_hour": "guard_value"},
+      "provenance": "community_benchmark",
+      "price_usd_per_month": 20,
+      "basis": "Community-measured median weekly allowance about $157 of list-price usage. five_hour 18 is a launch guard (25% launch floor, 12% margin) above the roughly $11-$13 measured per window. No weekly_fable window: Claude Pro includes no Fable allowance.",
       "windows": {"five_hour": {"hours": 5, "launch_min_remaining_pct": 25}, "seven_day": {"hours": 168}},
       "capacity_usd": {"seven_day": 156, "five_hour": 18},
       "burn_pct_per_worker_hour": {"seven_day": 3.85, "five_hour": 24.0}
     },
     "max5": {
-      "provenance": "community_prior",
-      "burn_basis": "No local Max 5x account. five_hour from the official 1:4 ratio to Max 20x and the FinOps full-window range ($93-$127); seven_day from the FinOps lower bound (a busiest week of $1,217-$1,461 that did not hit the cap, about 58% of Max 20x), not 1/4. Community 20x:5x weekly ratios run 1.3x-2.0x, not 4x. The earlier 595/94/298/1.08 were max20 divided by four.",
-      "capacity_provenance": {"seven_day": "community_prior", "five_hour": "community_prior", "weekly_fable": "derived_50pct_cap"},
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 100,
+      "basis": "five_hour from the official 1:4 ratio to Max 20x and the community full-window range ($93-$127); seven_day from the community lower bound for a busiest week that did not hit the cap (about 58% of Max 20x), not 1/4. weekly_fable is half of seven_day, from the published 50% Fable rule.",
       "windows": {"five_hour": {"hours": 5}, "seven_day": {"hours": 168}, "weekly_fable": {"hours": 168, "models": ["fable"]}},
       "capacity_usd": {"seven_day": 1400, "five_hour": 94, "weekly_fable": 700},
-      "burn_pct_per_worker_hour": {"seven_day": 0.46, "weekly_fable": 0.46}
+      "burn_pct_per_worker_hour": {"seven_day": 0.46, "five_hour": 6.8, "weekly_fable": 0.46}
     },
     "max20": {
-      "provenance": "measured_local",
-      "basis": "Local: two full weekly cycles $2,410 / $2,396 and 53 five-hour windows aggregating $390. Community: Wokey 21-account median seven_day $1,602 and five_hour $263; FinOps seven_day $1,860. The local figures run higher because the workload is mostly Opus 5.5 with 1h cache writes. weekly_fable is derived from the 50% rule and was never consumed locally.",
-      "capacity_provenance": {"seven_day": "measured_local", "five_hour": "measured_local", "weekly_fable": "derived_50pct_cap"},
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 200,
+      "basis": "Measured seven_day $2,380 (0.27%/h), five_hour $376 (1.71%/h); community medians run lower ($1,602 weekly, $263 per 5h) for lighter workloads. weekly_fable is half of seven_day, from the published 50% Fable rule.",
       "windows": {"five_hour": {"hours": 5}, "seven_day": {"hours": 168}, "weekly_fable": {"hours": 168, "models": ["fable"]}},
       "capacity_usd": {"seven_day": 2380, "five_hour": 376, "weekly_fable": 1190},
-      "burn_pct_per_worker_hour": {"seven_day": 0.27, "weekly_fable": 0.27}
+      "burn_pct_per_worker_hour": {"seven_day": 0.27, "five_hour": 1.71, "weekly_fable": 0.27}
+    },
+    "max": {
+      "alias": "max5",
+      "basis": "Plan tier not reported as 5x or 20x; falls back to the smaller Max 5x prior."
     }
   },
   "codex": {
     "plus": {
-      "provenance": "community_measured",
-      "basis": "FinOps: 27 full weekly cycles, median $67 per week (range $61-$81). Burn assumes the same roughly $10 per worker-hour as the Pro rows.",
+      "provenance": "community_benchmark",
+      "price_usd_per_month": 20,
+      "basis": "Community panel: 27 full weekly cycles, median $67 per week (range $61-$81). Burn assumes about $10 per worker-hour.",
       "windows": {"usage": {"hours": 168}},
       "capacity_usd": {"usage": 67},
       "burn_pct_per_worker_hour": {"usage": 15.0}
     },
+    "team": {
+      "alias": "plus",
+      "basis": "Team seats use the same per-seat allowance prior as Plus."
+    },
     "pro100": {
-      "provenance": "community_measured",
-      "basis": "FinOps: median $175 per week, only 2.6x Plus rather than the advertised 5x. Burn assumes the same roughly $10 per worker-hour.",
+      "provenance": "community_benchmark",
+      "price_usd_per_month": 100,
+      "basis": "Community panel: median $175 per week, about 2.6x Plus rather than the advertised 5x. Burn assumes about $10 per worker-hour.",
       "windows": {"usage": {"hours": 168}},
       "capacity_usd": {"usage": 175},
       "burn_pct_per_worker_hour": {"usage": 5.7}
     },
     "pro": {
-      "provenance": "measured_local_halved_2026_10_30",
-      "pre_2026_10_30_measured_usd": 574,
-      "pre_2026_10_30_burn_pct_per_worker_hour": 1.74,
-      "basis": "Local aggregate over 8 weekly cycles was $574 under the 20x allowance that applied before 2026-10-30. From 2026-10-30 OpenAI halves the Pro $200 Codex allowance (20x to 10x): FinOps converts that to about $351, and half of the local figure is $287; 325 sits between. Burn doubles from 1.74 to 3.48 for the same workload. Re-measure after a full post-cut cycle.",
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 200,
+      "basis": "Prior for the 10x allowance in force from 2026-10-30 (previously 20x): community conversion about $351 per week, half of the earlier measurement about $287; 325 sits between. Re-measure after a full cycle.",
       "windows": {"usage": {"hours": 168}},
       "capacity_usd": {"usage": 325},
       "burn_pct_per_worker_hour": {"usage": 3.48}
@@ -64,10 +61,9 @@
   },
   "antigravity": {
     "ultra20": {
-      "provenance": "relative_scale_from_local_pct_burn",
+      "provenance": "empirical_prior",
       "price_usd_per_month": 199.99,
-      "basis": "This host is on Google AI Ultra 20x. What was measured is percentage burn: Argon about 0.62%/h of the weekly Gemini pool and about 2.1-2.2%/h of the 5h pool, Flash about 0.08%/h weekly. The USD figures are a routing scale, not billed USD: Argon's assumed $4/h of equivalent work divided by the measured 0.62%/h gives gemini-weekly 625, with the 5h and third-party rows scaled from it; the 3p rows have no sample and are a placeholder for an independent fixed pool. Community estimates for Ultra 20x are about $800 per week and $200 per 5h. Keep 625/182/88/17.6 so Claude/Codex cost-effectiveness comparisons stay aligned; the same values are hard-coded in allocator.window_capacity_usd.",
-      "capacity_provenance": {"gemini-weekly": "relative_scale_from_local_pct_burn", "gemini-5h": "relative_scale_from_local_pct_burn", "3p-weekly": "unmeasured_placeholder", "3p-5h": "unmeasured_placeholder"},
+      "basis": "Google AI Ultra 20x. USD figures are a routing scale, not billed USD, derived from measured percentage burn (about 0.62%/h of the weekly Gemini pool, 2.1-2.2%/h of the 5h pool) and an assumed worker-hour cost; community estimates are about $800 per week and $200 per 5h. The 3p rows are an unmeasured placeholder for an independent pool. The same values are the fallback in allocator.window_capacity_usd.",
       "windows": {
         "gemini-5h": {"hours": 5, "models": ["gemini"]},
         "gemini-weekly": {"hours": 168, "models": ["gemini"]},
@@ -75,12 +71,12 @@
         "3p-weekly": {"hours": 168, "models": ["3p"]}
       },
       "capacity_usd": {"gemini-weekly": 625, "gemini-5h": 182, "3p-weekly": 88, "3p-5h": 17.6},
-      "burn_pct_per_worker_hour": {"gemini-weekly": 0.08, "gemini-5h": 0.27}
+      "burn_pct_per_worker_hour": {"gemini-weekly": 0.08, "gemini-5h": 0.27, "3p-weekly": 0.57, "3p-5h": 2.84}
     },
     "ultra5": {
-      "provenance": "community_prior_unverified_weekly",
+      "provenance": "empirical_prior",
       "price_usd_per_month": 99.99,
-      "basis": "Google guarantees only that the 5h allowance is 1/4 of Ultra 20x; no weekly multiple is published. Values here are the Ultra 20x routing scale divided by four (community estimate: 5h about $50, weekly $200-$600). Spec-level burn is multiplied by four for the smaller pool.",
+      "basis": "Google AI Ultra 5x. Only the 5h allowance ratio (1/4 of Ultra 20x) is published; capacity is the Ultra 20x routing scale divided by four and burn is multiplied by four for the smaller pool.",
       "windows": {
         "gemini-5h": {"hours": 5, "models": ["gemini"]},
         "gemini-weekly": {"hours": 168, "models": ["gemini"]},
@@ -88,12 +84,12 @@
         "3p-weekly": {"hours": 168, "models": ["3p"]}
       },
       "capacity_usd": {"gemini-weekly": 156, "gemini-5h": 45.5, "3p-weekly": 22, "3p-5h": 4.4},
-      "burn_pct_per_worker_hour": {"gemini-weekly": 0.32, "gemini-5h": 1.08}
+      "burn_pct_per_worker_hour": {"gemini-weekly": 0.32, "gemini-5h": 1.08, "3p-weekly": 2.27, "3p-5h": 11.4}
     },
     "pro": {
-      "provenance": "community_prior_unverified_weekly",
+      "provenance": "empirical_prior",
       "price_usd_per_month": 19.99,
-      "basis": "Google guarantees only that the 5h allowance is 1/20 of Ultra 20x; no weekly multiple is published. Values here are the Ultra 20x routing scale divided by twenty (community estimate: 5h about $3.75-$10, weekly $15-$40). Spec-level burn is multiplied by twenty for the smaller pool.",
+      "basis": "Google AI Pro. Only the 5h allowance ratio (1/20 of Ultra 20x) is published; capacity is the Ultra 20x routing scale divided by twenty and burn is multiplied by twenty for the smaller pool.",
       "windows": {
         "gemini-5h": {"hours": 5, "models": ["gemini"]},
         "gemini-weekly": {"hours": 168, "models": ["gemini"]},
@@ -101,7 +97,11 @@
         "3p-weekly": {"hours": 168, "models": ["3p"]}
       },
       "capacity_usd": {"gemini-weekly": 31, "gemini-5h": 9.1, "3p-weekly": 4.4, "3p-5h": 0.9},
-      "burn_pct_per_worker_hour": {"gemini-weekly": 1.6, "gemini-5h": 5.4}
+      "burn_pct_per_worker_hour": {"gemini-weekly": 1.6, "gemini-5h": 5.4, "3p-weekly": 11.4, "3p-5h": 56.8}
+    },
+    "ultra": {
+      "alias": "ultra20",
+      "basis": "Ultra tier not reported as 5x or 20x; falls back to the Ultra 20x prior."
     }
   }
 }
