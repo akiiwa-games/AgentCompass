@@ -20,6 +20,10 @@ import render_ui_screenshots as shots
 
 OUTPUT = shots.ROOT / "docs" / "hero.gif"
 HOLD_MS = 2000
+# GitHub shows only the first frame when animated images do not autoplay, so the GIF opens on
+# the top-two radar comparison (story time near the end of the "compare" beat) before replaying.
+POSTER_STORY = 7.7
+POSTER_MS = 1500
 # Flat page and key ink colours kept exact so the paper tone never bands.
 RESERVED = [(254, 254, 253), (255, 255, 255), (79, 70, 229), (6, 182, 212),
             (15, 23, 42), (100, 116, 139), (148, 163, 184), (226, 232, 240)]
@@ -77,6 +81,9 @@ def frames_from_window(args, state):
     start = next(i for i in range(1000) if theatre.story_time(i / args.fps) >= theatre.TITLE_IN)
     stop = round(theatre.DURATION * args.fps)
     args.frames = [composite(min(i / args.fps, theatre.DURATION)) for i in range(start, stop + 1)]
+    poster = settled.copy()
+    poster.paste(renderer.frame(args.poster), (x, y))
+    args.frames.insert(0, poster)
     args.stage = (x, y, x + width, y + height)
     panel.closing = True
     root.destroy()
@@ -111,13 +118,14 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--scale", type=float, default=1.15, help="display scale; 1.15 gives a ~1300 px wide window")
     parser.add_argument("--fps", type=int, default=25)
+    parser.add_argument("--poster", type=float, default=POSTER_STORY, help="story time of the opening still")
     parser.add_argument("--check-dir", type=Path, help="also save the real/composite check captures here")
     args = parser.parse_args()
     import ui_theme
     ui_theme.dpi_aware()
     shots.offscreen(lambda state: frames_from_window(args, state), "agentcompass-hero-")
     encoded = encode(args.frames, args.stage)
-    durations = [round(1000 / args.fps)] * (len(encoded) - 1) + [HOLD_MS]
+    durations = [POSTER_MS] + [round(1000 / args.fps)] * (len(encoded) - 2) + [HOLD_MS]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     encoded[0].save(args.output, save_all=True, append_images=encoded[1:], duration=durations,
                     loop=0, optimize=True, disposal=1)
