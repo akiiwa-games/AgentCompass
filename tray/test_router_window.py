@@ -341,11 +341,11 @@ class AccountCardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, "modules", return_value=(allocator, router)),                 mock.patch.dict(sys.modules, {"provider_inventory": inventory}),                 mock.patch.object(router_data, "STATE_DIR", Path(directory)),                 mock.patch.object(router_data.plugins, "load", return_value={}),                 mock.patch.object(router_data, "account_badge", return_value=("", "")):
             return router_data.account_cards()[0]["windows"][0]
 
-    def test_a_window_past_its_reset_shows_refilled_pending_a_new_reading(self):
+    def test_a_window_past_its_reset_waits_for_a_new_reading(self):
         window = self.cards({"id": "five_hour", "used_pct": 100, "reset_time_passed": True,
                              "seconds_until_reset": 0, "observed_remaining_pct": 0,
                              "remaining_pct_before_reset": None})
-        self.assertEqual((window["remaining_pct"], window["reset_in"], window["stale"]), (100.0, "已重置", True))
+        self.assertEqual((window["remaining_pct"], window["reset_in"], window["stale"]), (None, "已重置", True))
 
     def test_a_current_window_keeps_its_reading(self):
         window = self.cards({"id": "five_hour", "used_pct": 90, "reset_time_passed": False,
@@ -474,7 +474,7 @@ class SettingsTests(unittest.TestCase):
                 saved = json.loads(path.read_text())
                 self.assertNotIn('codex-new', saved['known_accounts'])
                 ready = {'_discovery': {'accounts': {'codex-new': {'status': 'ready'}}},
-                         'accounts': {'codex-new': {'verified': True,
+                         'accounts': {'codex-new': {'verified': True, 'billing': 'subscription',
                                                    'bundles': {'worker': {'provider': 'codex-new'}}}}}
                 self.assertEqual(allocator.host_policy.sync_discovered(ready)['added'], ['codex-new'])
                 change(['codex'], 'codex-new', mode)

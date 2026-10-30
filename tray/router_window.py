@@ -204,7 +204,7 @@ def short_window_name(window: dict, multi: bool = True) -> str:
     if wid.endswith("-5h"):
         return f"{wid[:-3]} 5h"
     if wid == "credits":
-        return "credits"
+        return span or _tr("订阅额度")
     if wid in ("usage", "spend", "default", ""):
         return span or wid or "7d"
     return f"{wid} {span}".strip() if span and not wid.endswith(span) else wid
@@ -1585,7 +1585,7 @@ class Panel:
         if "name" in widgets:
             widgets["name"].configure(text=card["label"])
         if not card.get("windows"):
-            plan = clip(card.get("plan"), 14)
+            plan = card.get('usage_note') or clip(card.get("plan"), 14)
             badge = short_badge(card.get("badge"))
             if "detail" in widgets:
                 widgets["detail"].configure(text=f"{badge} · {plan}" if plan and plan != "—" else badge)

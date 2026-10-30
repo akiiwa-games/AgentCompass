@@ -64,7 +64,8 @@ def query_paseo(spec: dict) -> list[dict]:
         cli = str(candidate) if candidate.is_file() else None
     if not cli:
         raise RuntimeError('Paseo CLI unavailable')
-    result = owned_process.run([cli, 'provider', 'models', provider, '--json'], timeout=QUERY_TIMEOUT)
+    result = owned_process.run([cli, 'provider', 'models', provider, '--json'], timeout=QUERY_TIMEOUT,
+                               output_limit=2 * 1024 * 1024)
     if result.returncode:
         raise RuntimeError('Model discovery unavailable')
     value = json.loads(result.stdout)
@@ -77,7 +78,7 @@ def query_paseo(spec: dict) -> list[dict]:
 
 PROBE_TYPES = {'paseo_provider': query_paseo, 'openai_compatible': query_proxy,
                'static': lambda spec: spec.get('configured_models') or []}
-PASEO_HARNESSES = {'claude', 'codex', 'pi', 'opencode', 'grok', 'antigravity-resilient'}
+PASEO_HARNESSES = {'claude', 'codex', 'pi', 'omp', 'dsh', 'copilot', 'muse', 'opencode', 'grok', 'antigravity-resilient'}
 
 
 def probe_definition(provider: str, definition: dict | None = None) -> dict:

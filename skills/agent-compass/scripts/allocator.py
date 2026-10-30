@@ -837,7 +837,7 @@ def bundle_harness(bundle, account=None, bundle_id=None, *, family=None):
     bid = str(bundle_id or (bundle or {}).get('id') or '').strip().lower()
     launch_m = str((bundle or {}).get('launch_model') or '').strip().lower()
     model = str((bundle or {}).get('model') or '').strip().lower()
-    family = family or (prov if prov in ('claude', 'codex', 'pi', 'opencode', 'grok', 'grok-bot',
+    family = family or (prov if prov in ('claude', 'codex', 'pi', 'omp', 'opencode', 'grok', 'grok-bot',
                                          'antigravity', 'antigravity-resilient') else None)
     if family:
         return 'antigravity-resilient' if family == 'antigravity' else family
@@ -867,7 +867,7 @@ def bundles(accounts):
                               'model': bundle['model'], 'effort': bundle.get('effort'),
                               **{k: bundle[k] for k in ('modeId', 'disabled', 'launch_model', 'when', 'discovery_unavailable', 'draws',
                                                         'auto', 'billing', 'score_source', 'score_basis', 'cost_estimated',
-                                                        'availability', 'compatibility', 'compatibility_reason') if k in bundle}}
+                                                        'availability', 'compatibility', 'compatibility_reason', 'user_enabled') if k in bundle}}
     return out
 
 
@@ -1595,6 +1595,8 @@ def below_launch_floor(window, observed, usage_row, now):
             or not -60 <= (now - fetched).total_seconds() <= 900):
         return False
     remaining = (observed or {}).get('remaining_pct_before_reset')
+    if isinstance(remaining, (int, float)) and remaining <= 0 and (reset is None or reset > now):
+        return True
     return bool(floor is not None and reset is not None and reset > now
                 and isinstance(remaining, (int, float)) and remaining <= floor)
 
@@ -1729,10 +1731,14 @@ def evaluate_bundle(bundle, task, ctx):
                 else 'model not detected by discovery for 7+ days')
     if bundle['id'] in ctx['unavailable']:
         exclude('marked unavailable by the parent')
-    if spec.get('billing') == 'metered' and not task['metered_ok']:
-        if (task['constraint_model'] != bundle['id']
+    # Only subscription accounts join automatic routing by default. Metered (API) and
+    # unknown billing stay available to an explicit selection or a user's explicit enable.
+    billing = accounts_override.manual_only_billing(bundle['account'], accounts)
+    if billing and not task['metered_ok'] and not bundle.get('user_enabled'):
+        if (task['constraint_model'] not in (bundle['id'], model) and task.get('pinned_bundle') != bundle['id']
                 and not any(o.get('account') == bundle['account'] for o in ctx['overrides'])):
-            exclude('metered access is a last resort')
+            exclude('metered access is a last resort' if billing == 'metered'
+                    else f'{billing} billing: explicit selection only')
     if not spec.get('verified', True) and not task['include_unverified']:
         exclude('account not verified as launchable')
     if info.get('advisor_only') and kind not in info.get('advisor_for', ()):
@@ -1814,6 +1820,8 @@ def evaluate_bundle(bundle, task, ctx):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
+            if below_launch_floor(wspec, observed, acct_usage, now):
+                exclude(f'{wid}: confirmed exhausted or below launch floor; refresh quota or replan')
             expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                  account_stale=acct_stale, expected_reset_at=expected)
@@ -2483,9 +2491,8 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
             task['worker'] = {**task['worker'], 'bundle': resolved}
     candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied, records,
                                         host_policy_config)
-    if not eligible and not task['metered_ok'] and any(c['excluded'] == ['metered access is a last resort'] for c in candidates):
-        candidates, eligible, system = rank({**task, 'metered_ok': True}, usage, policy, accounts, capabilities, now,
-                                            unavailable, applied, records, host_policy_config)
+    # No automatic metered fallback: non-subscription billing needs an explicit selection,
+    # task.metered_ok, or the user's explicit bundle enable (evaluate_bundle).
     worker_id = (task['worker'] or {}).get('bundle')
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'critical', 'hours', 'chain_hours', 'coupling')}, 'system': system,

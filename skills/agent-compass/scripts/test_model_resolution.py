@@ -94,7 +94,7 @@ class ModelResolutionTests(unittest.TestCase):
         self.assertEqual((spec['tier'], spec['usd_per_hour'], spec['visual']), (3.3, 1.5, False))
         spec['capabilities']['coding'] = 0
         self.assertGreater(allocator.model_spec(self.accounts, 'another')['capabilities']['coding'], 0)
-        self.accounts['accounts'] = {'custom': {'verified': True, 'unmetered': True, 'windows': {},
+        self.accounts['accounts'] = {'custom': {'billing': 'subscription', 'verified': True, 'unmetered': True, 'windows': {},
             'bundles': {'unknown_high': {'model': 'new-vendor/unknown', 'provider': 'custom', 'effort': 'high'}}}}
         with patch.object(allocator.host_policy, 'load_policy', return_value=None):
             result = allocator.plan({'work_kind': 'web_research', 'difficulty': 'routine', 'expected_hours': .1},

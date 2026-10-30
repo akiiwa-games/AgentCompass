@@ -55,6 +55,8 @@ def discovered_subscriptions(usage) -> list[str]:
 
 def collect():
     import usage_float as usage
+    import venice_usage
+    venice_usage.refresh(STATE)
     # Refresh opted-in admission before filtering newly discovered subscriptions.
     accounts = allocator.load_accounts()
     # A permitted account that draws on another's quota needs that meter even when the source's execution is disabled.

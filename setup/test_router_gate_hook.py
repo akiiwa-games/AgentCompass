@@ -51,6 +51,15 @@ def tearDownModule():
 
 
 class RouterGateHookTests(unittest.TestCase):
+    def test_confirmed_exhaustion_blocks_without_cache_and_recovers(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {'ROUTER_STATE_DIR': directory}):
+            exhaustion = gate.router_module('quota_exhaustion')
+            exhaustion.record('worker', 'Individual quota reached')
+            missing = Path(directory) / 'missing.json'
+            self.assertIsNotNone(gate.check_account_quota_exhausted('worker', missing, T0))
+            exhaustion.clear('worker')
+            self.assertIsNone(gate.check_account_quota_exhausted('worker', missing, T0))
+
     def setUp(self):
         state = tempfile.TemporaryDirectory()
         self.addCleanup(state.cleanup)

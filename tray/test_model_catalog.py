@@ -78,7 +78,8 @@ def test_union_marks_unrouted_and_missing_but_a_failed_probe_falls_back(tmp_path
     codex = next(row for row in decorated if row['harness'] == 'codex')
     by_model = {model['model']: model for model in codex['models']}
     assert by_model['gpt-6.1-sol']['availability'] == 'missing'
-    assert 'new-model' not in by_model
+    assert by_model['new-model']['routed'] is False
+    assert by_model['new-model']['enabled'] is False
     failed = router_data.decorate_model_rows(copy.deepcopy(rows), accounts, {'providers': {'codex': {'ok': False}}})
     codex = next(row for row in failed if row['harness'] == 'codex')
     assert len(codex['models']) == 2
@@ -100,7 +101,7 @@ def test_new_bundle_is_discovered_without_a_hardcoded_model_list(tmp_path, monke
     (target.parent / 'model-catalog.json').write_text(json.dumps({'providers': {
         'codex': {'ok': True, 'models': [{'id': 'new-model', 'label': 'New Model'}]}}}))
     row = next(row for row in router_data.harness_model_rows() if row['harness'] == 'codex')
-    assert all(model['model'] != 'new-model' for model in row['models'])
+    assert next(model for model in row['models'] if model['model'] == 'new-model')['routed'] is False
     reference = router_data._accounts_path()
     document = json.loads(reference.read_text())
     document['accounts']['codex']['bundles']['new_high'] = {'model': 'new-model', 'effort': 'high'}

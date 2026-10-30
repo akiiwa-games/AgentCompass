@@ -26,6 +26,7 @@ class CollectorPolicyTests(unittest.TestCase):
             active_providers=Mock(side_effect=lambda names: names), fetch_all=Mock(return_value=[]),
             mark_provider_stale=Mock())
         for patcher in (patch.dict(sys.modules, {'usage_float': self.usage}),
+                        patch('venice_usage.refresh'),
                         patch.object(collector.allocator, 'load_accounts', return_value={}),
                         patch.object(collector.allocator.provider_inventory, 'current', return_value=self.inventory),
                         patch.object(collector, 'STATE', self.root),
