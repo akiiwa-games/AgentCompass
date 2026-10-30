@@ -493,6 +493,21 @@ def _clean_agy_path(raw_path: str) -> str:
     return ";".join(cleaned)
 
 
+def reload_paseo_daemon(paseo_home: Path) -> None:
+    """The daemon reads config.json once at start; `paseo reload` re-reads it without touching running agents."""
+    if HOME.resolve() != Path.home().resolve():
+        return      # a rehearsal home must never poke the real daemon
+    local = os.environ.get("LOCALAPPDATA")
+    cli = shutil.which("paseo") or next((str(c) for c in (Path(local) / "Programs" / "Paseo" / "resources" / "bin" / "paseo.cmd",) if local and c.is_file()), None)
+    if not cli:
+        return
+    try:
+        done = subprocess.run([cli, "reload", "--home", str(paseo_home)], capture_output=True, text=True, timeout=60)
+        report(f"[paseo] reload: {(done.stdout or done.stderr).strip() or done.returncode}")
+    except (OSError, subprocess.SubprocessError) as exc:
+        report(f"[paseo] reload skipped ({exc}); run `paseo reload` to apply the new appendSystemPrompt")
+
+
 def update_paseo_config() -> None:
     cfg_path = paseo_config_path()
     if not cfg_path.is_file():
@@ -534,6 +549,8 @@ def update_paseo_config() -> None:
         if not DRY_RUN:
             cfg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         report(f"[paseo] Updated {cfg_path} (appendSystemPrompt {mode}, {source} rules)")
+        if not DRY_RUN:
+            reload_paseo_daemon(cfg_path.parent)
     else:
         report(f"[paseo] Up to date {cfg_path}")
     state["config"] = str(cfg_path)

@@ -229,6 +229,8 @@ class ShortcutBrandingTests(unittest.TestCase):
                     mock.patch.object(ui_theme, "ICON_CACHE_DIR", base / "icons"):
                 self.assertEqual(len(deploy.brand_shortcuts()), 1)
                 self.assertEqual(deploy.brand_shortcuts(), [])
+                self.assertFalse(owned.exists())      # the pre-rename link name becomes AgentCompass.lnk
+                owned = programs / "AgentCompass.lnk"
                 link = links.CreateShortcut(str(owned))
                 self.assertEqual(link.Arguments, f'"{deploy.APP}"')
                 self.assertEqual(link.IconLocation, f"{ui_theme.window_icon_path()},0")

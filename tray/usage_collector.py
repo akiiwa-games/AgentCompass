@@ -88,7 +88,7 @@ def main():
     if not args.once and os.name == 'nt':
         import ctypes
         kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.CreateMutexW(None, False, 'Local\\RouteManagerUsageCollector')
+        kernel.CreateMutexW(None, False, 'Local\\AgentCompassUsageCollector')
         if ctypes.get_last_error() == 183:
             return
     while True:

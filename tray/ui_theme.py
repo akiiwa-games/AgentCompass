@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import sys
 
-APP_ID = "AgentCompass.RouteManager"
+APP_ID = "AgentCompass.Tray"
 ICON_CACHE_DIR = Path.home() / ".agent-compass" / "icons"
 
 

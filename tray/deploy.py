@@ -185,31 +185,37 @@ def brand_shortcuts() -> list[str]:
     candidates = [folder / name for folder in (programs, desktop, STARTUP)
                   for name in ("AgentCompass.lnk", "Route Manager.lnk", "UsageFloat.lnk")]
     allowed = {APP, TRAY_DIR / "router_window.py", TRAY_DIR / "launch_usage_float.pyw"}
+    allowed_real = {os.path.normcase(os.path.realpath(entry)): entry for entry in allowed}      # same file via either checkout name
     links = Dispatch("WScript.Shell")
     changed = []
     for path in candidates:
         if not path.is_file():
             continue
         link = links.CreateShortcut(str(path))
-        if Path(link.TargetPath) != PYTHONW or Path(link.Arguments.strip('"')) not in allowed:
+        wanted = allowed_real.get(os.path.normcase(os.path.realpath(link.Arguments.strip('"'))))
+        if Path(link.TargetPath) != PYTHONW or wanted is None:
             continue
+        final = path.with_name("AgentCompass.lnk") if path.name == "Route Manager.lnk" and not path.with_name("AgentCompass.lnk").exists() else path
         icon = f"{ui_theme.window_icon_path()},0"
         store = propsys.SHGetPropertyStoreFromParsingName(str(path), None, shellcon.GPS_READWRITE)
         app_id = store.GetValue(pscon.PKEY_AppUserModel_ID).GetValue()
         del store  # release the file before WScript saves it
-        if link.IconLocation == icon and app_id == ui_theme.APP_ID:
+        if link.IconLocation == icon and app_id == ui_theme.APP_ID and link.Arguments == f'"{wanted}"' and final == path:
             continue
         backup = BACKUPS / "icons" / path.parent.name / path.name
         backup.parent.mkdir(parents=True, exist_ok=True)
         if not backup.exists():
             shutil.copy2(path, backup)
         link.IconLocation = icon
+        link.Arguments = f'"{wanted}"'
         link.Save()
-        store = propsys.SHGetPropertyStoreFromParsingName(str(path), None, shellcon.GPS_READWRITE)
+        if final != path:      # the pre-rename link name; the target keeps launching the same tray
+            path.replace(final)
+        store = propsys.SHGetPropertyStoreFromParsingName(str(final), None, shellcon.GPS_READWRITE)
         store.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(ui_theme.APP_ID))
         store.Commit()
         del store
-        changed.append(f"Updated shortcut icon: {path}")
+        changed.append(f"Updated shortcut: {final}")
     return changed
 
 

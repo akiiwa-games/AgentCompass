@@ -51,7 +51,7 @@ def single_instance() -> bool:
     import ctypes
 
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateMutexW(None, False, "Local\\RouteManagerTray")
+    kernel.CreateMutexW(None, False, "Local\\AgentCompassTray")
     return ctypes.get_last_error() != 183
 
 
