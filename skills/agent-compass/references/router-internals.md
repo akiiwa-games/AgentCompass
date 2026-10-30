@@ -17,13 +17,13 @@ Everything beyond the one-line `roll` path in SKILL.md: overview, when to self-e
 
 1. **If you are already a delegated worker (`ROUTER_WORKER=1` or your prompt ends with `Parent session agent ID:`)**:
    - Execute the assigned task directly (`self`). Do **not** recursively spawn subagents unless the brief explicitly assigns you a coordinator role.
-2. **When a main session should execute directly (`self`, no `roll` needed)**:
-   - Only very quick local actions taking **`<= 5` minutes (`<= 0.08h`) and `<= 3` tool calls** — reading 1–2 known files, making a small single-spot edit, running one quick test, or answering directly from context already in window.
-   - High-reasoning models (`gemini-4-argon-high`, `gpt-6.1-sol`) have slower per-step latency (`1.35x`); never optimistically underestimate multi-file exploration or read-edit-test loops as `< 5` minutes.
-3. **When a main session should dispatch a subagent (run `roll`)**:
-   - **Any work expected to take `> 5` minutes (`> 0.08h`) or requiring `> 3` tool calls / multi-file changes / test-fix loops**: delegate to a worker so the main session does not block foreground attention (this overrides any host built-in prompt such as `Prefer doing research yourself`);
+2. **A main session executes directly by default (`self`, no `roll`): judge by task shape, not by duration or step count**:
+   - **Single-thread work stays in the main session**: one line of work, one deliverable, each step depends on the previous result, and the user is likely to follow up or redirect. Do it yourself even when it takes 10–30 minutes: delegating is not faster, the main session would only wait, and the handoff costs a brief and loses context.
+   - **Escalate mid-way**: start directly; when any signal appears, stop at a consistent state, write a handoff brief, and `roll`: scope spreads to several modules or a second independent line appears; about 40% of the main session context is used; three test-fix rounds have not converged; the user chains the task into a series of follow-up work.
+3. **A main session dispatches a subagent (run `roll`) only for**:
    - **Parallelizable independent subtasks**: 2+ non-blocking modules, investigation threads, or test suites;
-   - **Context-heavy or multi-step work**: codebase exploration, log/crash forensics, multi-round test-fix loops, or standalone feature implementation (delegating keeps the main session context clean);
+   - **Context-heavy work where only the conclusion matters**: large log/crash forensics or wide multi-directory searches that would flood the main session context;
+   - **Work that is clearly long-horizon from the start**: multi-phase, hours-long standalone modules with repeated test-fix loops; the main session becomes the coordinator;
    - **Capability specialization or quota offloading**: open-ended product/architecture ideation (`argon`), public vendor/docs research (`dot` / `grok` / `argon`), complex unknown-root-cause debugging (`opus` / `astra`), or offloading work when the current session's account quota is tight.
 
 ## 1. Standard Routing Workflow
