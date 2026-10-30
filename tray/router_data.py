@@ -385,6 +385,7 @@ def account_cards() -> list[dict]:
             text, kind = account_badge(name, row, config, None)
         usage_row = (usage.get("accounts") or {}).get(name) or {}
         windows = []
+        latched = set((row or {}).get("exhausted_windows") or ())  # Only these windows are latched out.
         for window in usage_row.get("windows") or []:
             wid = window.get("id")
             c_wid = allocator.canonical_window_id(spec, wid)
@@ -396,7 +397,7 @@ def account_cards() -> list[dict]:
                 remaining = None  # A passed reset is not a fresh quota observation.
             elif remaining is None:
                 remaining = window.get("observed_remaining_pct")
-            if (row or {}).get('status') == 'quota_exhausted':
+            if (row or {}).get('status') == 'quota_exhausted' or wid in latched or c_wid in latched:
                 remaining = 0.0  # Explicit upstream exhaustion outranks an older positive cache.
             cap = allocator.window_capacity_usd(spec, c_wid, now) if spec else None
             acct_obs = observed.get(name) or {}

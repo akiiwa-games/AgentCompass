@@ -15,6 +15,15 @@ import sqlite3
 import uuid
 import provider_inventory
 
+
+def bundle_windows(bundle):
+    """Quota windows a dispatched bundle draws; None (whole account) when they cannot be resolved."""
+    try:
+        import allocator
+        return allocator.bundle_pools(bundle, allocator.load_accounts()) or None
+    except Exception:
+        return None
+
 ACTIVE = ('prepared', 'launching', 'launched', 'started')
 TERMINAL = ('completed', 'failed', 'canceled', 'expired')
 DECISION_TTL = 900
@@ -402,7 +411,7 @@ def observe(dispatch_id, snapshot, now=None, path=None):
             if isinstance(updated_error, str) and parse(updated_error) >= parse(row['launched_at']):
                 import quota_exhaustion
                 quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
-                                        at=updated_error, source=agent_id)
+                                        windows=bundle_windows(row['bundle']), at=updated_error, source=agent_id)
         if row['state'] in TERMINAL and row['state'] != 'expired':
             return row
         if row['state'] == 'prepared':

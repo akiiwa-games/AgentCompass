@@ -1821,8 +1821,12 @@ def evaluate_bundle(bundle, task, ctx):
     if not spec.get('unmetered'):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
+        latched = set((((accounts.get('_discovery') or {}).get('accounts') or {}).get(bundle['account']) or {})
+                      .get('exhausted_windows') or ())
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
-            if below_launch_floor(wspec, observed, acct_usage, now):
+            if wid in latched:
+                exclude(f'{wid}: quota confirmed exhausted; refresh quota or replan')
+            elif below_launch_floor(wspec, observed, acct_usage, now):
                 exclude(f'{wid}: confirmed exhausted or below launch floor; refresh quota or replan')
             expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
