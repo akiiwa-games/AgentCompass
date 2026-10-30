@@ -7,6 +7,13 @@ description: Choose owner, model and effort, outbound authorization, advisor use
 
 Before starting any subagent, worker, or advisor session (Claude `Agent`, Codex `spawn_agent`, Antigravity `invoke_subagent`, Paseo `create_agent`, `run_dot_task.py`, or direct CLI), write the task brief and `roll` it; the router picks and launches the worker.
 
+## Overview & Quickstart
+
+- **Purpose**: task-level router for coding agents (Claude Code, Codex, Antigravity, Paseo). It scores a task's difficulty and kind, then allocates the best-fit model and effort across your subscribed accounts using live quota windows.
+- **Credential-free demo** (run from the repository root; synthetic quotas, no network, no ledger writes, no worker launched): `python -X utf8 skills/route-agent-work/scripts/route_judge.py plan --input examples/task.json --dry-run --demo`
+- **Dispatch**: write the task brief to a file, then `python -X utf8 skills/route-agent-work/scripts/route_judge.py roll --brief task.md --hours 0.5`.
+- **Requirements & permissions**: Python 3.11+. Reads local quota telemetry (`~/.usage-float/usage-cache.json`, written by [usage-float](https://github.com/akiiwa-games/usage-float)) and local policy configuration; writes a local routing ledger under `~/.route-manager/`; launches locally installed provider CLIs (or Paseo) only when `roll` dispatches a worker.
+
 > **System-Level Skill Loading Requirement (Host Rollout)**: `route-agent-work` and its companion skills (`dot-subagent`, `chatgpt-pro-consult`, `gemini-web`) must be installed at the **system level** via `python -X utf8 setup/sync_host_globals.py` so every session loads them regardless of workspace:
 > - `~/.codex/skills/<name>`, `~/.claude/skills/<name>` (`~/.claude-*/skills`), and `~/.pi/agent/skills/<name>` via directory junctions;
 > - `~/.gemini/config/skills.json` (absolute paths) **plus** real top-level directories in `~/.gemini/skills/<name>` (real `SKILL.md` + live subdirectory junctions for `scripts/` and `references/`, required because Antigravity's `os.ReadDir` scanner skips top-level Windows `ReparsePoint` junctions).
