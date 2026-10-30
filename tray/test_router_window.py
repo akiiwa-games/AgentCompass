@@ -214,6 +214,25 @@ class DecisionBindingTests(unittest.TestCase):
             self.assertTrue(panel.radar.canvas.pack_info())
             self.assertEqual(panel.theatre.canvas.winfo_manager(), "")
 
+    def test_opening_decision_skips_a_newest_row_that_replays_to_none(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
+                mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+        none = {"choice": None, "ranking": PLAN["ranking"]}
+        rows = [{"id": "empty"}, {"id": "real"}]
+        summary = {"at": "t", "kind_label": "k", "choice_label": "c", "objective": "o"}
+        with mock.patch.object(router_data, 'replay', side_effect=lambda row: none if row["id"] == "empty" else PLAN), \
+                mock.patch.object(router_data, 'ledger_summary', return_value=summary):
+            panel.ledger_loaded(rows)
+        self.assertEqual(panel.ledger_table.selection(), ("1",))
+        self.assertIs(panel.plan_result, PLAN)
+        self.assertEqual(panel.theatre.scene.winner.id, 'opus')
+        self.assertTrue(panel._suppress_next_select)
+
     def test_breakdown_rows_carry_bonus_penalty_and_hard_gate_reasons(self):
         rows = {r["id"]: r for r in router_data.candidate_rows(PLAN)}
         self.assertEqual(rows["opus"]["bonus"], 0.2)

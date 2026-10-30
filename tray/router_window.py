@@ -42,6 +42,7 @@ DNA_KEYS = (("divergence", "发散创新"), ("global_rigor", "全局严密"), ("
             ("capability", "视觉与工具"))
 DNA_KEYS = LocalizedSequence(DNA_KEYS)
 TRACK = "#E2E8F0"  # segmented switch track on the page background
+AUTO_REPLAY_ROWS = 5  # newest ledger rows tried for the opening decision; legacy rows replan, so keep it small
 
 
 def open_window(page: str | None = None) -> None:
@@ -1184,7 +1185,7 @@ class Panel:
             self.fill_pickers()
             self.render_radar()
         choice = self.plan_result.get("choice")
-        winner = next((label for label, row in zip(self.breakdown_labels, rows) if row["id"] == choice), choice)
+        winner = next((label for label, row in zip(self.breakdown_labels, rows) if row["id"] == choice), choice or "—")
         message = _tr('评分完成：{0} 个候选，胜出 {1}').format(f'{len(rows)}', f"{winner}")
         if self.plan_result.get("theatre_source") == "recomputed":
             message += tr("（按当前额度重算）", " (recomputed with current quota)")
@@ -1241,9 +1242,28 @@ class Panel:
         # Open on the latest real decision so the radar is never empty on first sight.
         if self.ledger_rows and not self.plan_result and not self.auto_replayed:
             self.auto_replayed = True
-            self._suppress_next_select = True
-            self.ledger_table.selection_set("0")
-            self.prefill(lambda: self.data_module().replay(self.ledger_rows[0]), self.plan_loaded)
+            self.prefill(self.latest_decision, self.auto_selected)
+
+    def latest_decision(self):
+        """The newest ledger row whose replay names a winner; a None result has no film to play."""
+        for index, row in enumerate(self.ledger_rows[:AUTO_REPLAY_ROWS]):
+            try:
+                result = self.data_module().replay(row)
+            except Exception as exc:
+                log_error(exc)
+                continue
+            if result and result.get("choice"):
+                return index, result
+        return None
+
+    def auto_selected(self, found):
+        if found is None:
+            return
+        index, result = found
+        self._suppress_next_select = True
+        self.ledger_table.selection_set(str(index))
+        self.ledger_table.see(str(index))
+        self.plan_loaded(result)
 
     # ---------- page 2: quota & workers ----------
 
