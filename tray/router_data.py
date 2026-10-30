@@ -322,6 +322,13 @@ def countdown(seconds) -> str:
     return _tr('{0}分').format(f'{minutes}')
 
 
+def signed_out(row: dict | None) -> bool:
+    """A Claude/Codex slot whose login discovery can check but found none (installed CLI, template entry)."""
+    if not isinstance(row, dict) or row.get("family") not in ("claude", "codex"):
+        return False
+    return not (row.get("identity") or row.get("credential_key"))
+
+
 def account_cards() -> list[dict]:
     allocator, router = modules()
     import provider_inventory
@@ -352,7 +359,8 @@ def account_cards() -> list[dict]:
     ordered = card_order([*inv_accounts.keys(), *acc_table.keys()], inv_accounts)
     names = [
         n for n in ordered
-        if n in acc_table and n not in sources and (n not in members or pool_allowed(n)) and not (
+        if n in acc_table and n not in sources and (n not in members or pool_allowed(n))
+        and not signed_out(inv_accounts.get(n)) and not (
             (inv_accounts.get(n) or {}).get("quota_account") not in (None, n)
             and not (acc_table.get(n) or {}).get("bundles")
         )
