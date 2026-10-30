@@ -1016,7 +1016,8 @@ class ScorerConfigTests(unittest.TestCase):
         self.path = Path(self.temp.name) / "scorer-config.json"
         for patcher in (mock.patch.object(router_data, "modules", return_value=(allocator, route_judge)),
                         mock.patch.dict(route_judge.os.environ, {"ROUTER_SCORER_CONFIG": str(self.path),
-                                                                 "ROUTER_SCORER_TYPE": ""}),
+                                                                 "ROUTER_SCORER_TYPE": "",
+                                                                 "ROUTER_SCORE_CACHE": "off"}),
                         mock.patch.object(route_judge, "user_env", return_value=None)):
             patcher.start()
             self.addCleanup(patcher.stop)
