@@ -27,13 +27,13 @@ RESET_BADGE_HOURS = 12
 
 
 class RouterMissing(ValueError):
-    """No route-agent-work skill for this user yet (the tray was installed before `agentcompass setup`)."""
+    """No agent-compass skill for this user yet (the tray was installed before `agentcompass setup`)."""
 
 
 def modules():
-    scripts = Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'skills/route-agent-work/scripts'
+    scripts = Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'skills/agent-compass/scripts'
     if not (scripts/'route_judge.py').is_file():
-        raise RouterMissing(_tr('未找到 route-agent-work，请先安装 router 技能'))
+        raise RouterMissing(_tr('未找到 agent-compass，请先安装 router 技能'))
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
     return importlib.import_module('allocator'), importlib.import_module('route_judge')

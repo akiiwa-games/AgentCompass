@@ -2,7 +2,7 @@
 
 Runs as a short-lived process the tray starts every few minutes (`--once`). Each run reads only the bytes
 appended to the Codex and Claude session logs since the last run, folds them into per-hour buckets of active
-worker time, samples the usage-float cache, and rewrites two files in ~/.route-manager:
+worker time, samples the usage-float cache, and rewrites two files in ~/.agent-compass:
 
   capacity.json     what the router's allocator reads: each window's latest used percent with its rise over the
                     last 3 and 24 hours (the demand forecast), and the workers running right now
@@ -57,7 +57,7 @@ AGY_EFFORT = re.compile(r"-(low|medium|high|xhigh|max)$")
 STEP_TIME_RANGE = (1_700_000_000, 2_100_000_000)   # epoch seconds a step timestamp can take (late 2023 to 2036)
 
 HOME = Path.home()
-STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or HOME / ".route-manager").expanduser()
+STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or HOME / ".agent-compass").expanduser()
 STATE_FILE = Path(os.environ.get("ROUTER_CAPACITY_STATE", STATE_DIR / "capacity-state.json"))
 OUTPUT = Path(os.environ.get("ROUTER_CAPACITY", STATE_DIR / "capacity.json"))
 STATS_FILE = Path(os.environ.get("ROUTER_USAGE_STATS", STATE_DIR / "usage-stats.json"))

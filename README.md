@@ -43,7 +43,7 @@ recorded in an auditable, replayable ledger.
 
 ```bash
 # 1. Offline demo: no credentials, provider CLIs, or quota cache needed
-python -X utf8 skills/route-agent-work/scripts/route_judge.py plan --input examples/task.json --dry-run --demo
+python -X utf8 skills/agent-compass/scripts/route_judge.py plan --input examples/task.json --dry-run --demo
 
 # 2. First-run onboarding: detect your signed-in CLIs, choose which accounts the router may use,
 #    fetch the usage collector, link the router skill and write the global agent rules.
@@ -51,7 +51,7 @@ python -X utf8 skills/route-agent-work/scripts/route_judge.py plan --input examp
 python -X utf8 setup/onboard.py            # add --dry-run to preview, --yes for non-interactive defaults
 
 # 3. Rank your own machine's signed-in providers using its local quota observations
-python -X utf8 skills/route-agent-work/scripts/route_judge.py plan --input examples/task.json --dry-run
+python -X utf8 skills/agent-compass/scripts/route_judge.py plan --input examples/task.json --dry-run
 
 # Undo everything onboarding did (managed blocks, hook entries, junctions, Paseo prompt, account choices)
 python -X utf8 setup/onboard.py uninstall
@@ -79,7 +79,7 @@ if npm is unavailable it prints this command and continues the other host setup.
 
 > **Status: alpha.** The shipped `accounts.json` is the public catalogue: neutral account slots, models and
 > conservative capability priors. Discovery resolves your signed-in accounts and launcher homes. Personal account,
-> scoring and capability policy belongs in `~/.route-manager/accounts.local.json`; `accounts-override.json` holds
+> scoring and capability policy belongs in `~/.agent-compass/accounts.local.json`; `accounts-override.json` holds
 > subsequent user overrides. `model-capabilities.json` and `.md` are generated views, not separate configuration.
 > Bundle/model identifiers are logical profiles and aliases, not a required account list. The offline demo uses
 > an explicit synthetic reference fleet; ordinary routing uses your effective local configuration.
@@ -119,7 +119,7 @@ to a GitHub Release.
 
 Ports default to the same loopback values the tray already uses (Dot2API 8788, ChatGPT Web 17843, Gemini Web 17849,
 account login 17851, EasyTier 15888, Muse2API 18610). `AGENTCOMPASS_PORT_*` overrides
-`~/.route-manager/ports.json`, which overrides those defaults. Doctor reports conflicts. Nothing writes that file
+`~/.agent-compass/ports.json`, which overrides those defaults. Doctor reports conflicts. Nothing writes that file
 unless you create it.
 
 ## Why
@@ -165,15 +165,15 @@ The USD terms apply when prices and capacity are configured. Unknown capacity re
 
 Hard gates run first: local sign-in and credential health, host policy, modality (text-only models never receive visual
 work), `local_only`, ability floor by difficulty, and per-window safety reserves net of in-flight work. Weights and
-thresholds, models and capability priors live in [`accounts.json`](skills/route-agent-work/references/accounts.json),
-composed with local policy. [`model-capabilities.json`](skills/route-agent-work/references/model-capabilities.json)
+thresholds, models and capability priors live in [`accounts.json`](skills/agent-compass/references/accounts.json),
+composed with local policy. [`model-capabilities.json`](skills/agent-compass/references/model-capabilities.json)
 is a generated view. Prices and capacity estimates are optional; absent measurements remain unknown.
 
 ## What's in the box
 
 | Layer | What it is | Runs on | Required? |
 |---|---|---|---|
-| **Core**: [`skills/route-agent-work`](skills/route-agent-work/SKILL.md) | Classifier, deterministic allocator, ledger, and `roll` (`classify → allocate → launch` with explicit permission mode and parent-session contract) | Python 3.10+; Windows-first, POSIX-compatible core | **Yes** |
+| **Core**: [`skills/agent-compass`](skills/agent-compass/SKILL.md) | Classifier, deterministic allocator, ledger, and `roll` (`classify → allocate → launch` with explicit permission mode and parent-session contract) | Python 3.10+; Windows-first, POSIX-compatible core | **Yes** |
 | **Gate**: [`setup/router_gate_hook.py`](setup/router_gate_hook.py) | Spawn gate and 2M-token context rotation guard for Claude Code, Codex, Antigravity, and Paseo | Any host supporting pre-tool hooks | **Opt-in** |
 | **Cockpit**: [`tray/`](tray/) | Windows system tray, 5-axis decision compass, live quota HUD ([`usage-float`](https://github.com/akiiwa-games/usage-float)), and local bridges ([`gemini-web`](https://github.com/akiiwa-games/gemini-web), `codex-chatgpt-web`, `dot2api`, `easytier`) | Windows 11 | **Optional** |
 
@@ -189,9 +189,9 @@ The companion repositories and runtime directories listed below are separate loc
 
 | Path | Description |
 |---|---|
-| `skills/` | Agent skills (`route-agent-work`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`). Loaded at the system level across every host: directory junctions in `~/.codex/skills/<name>`, `~/.claude/skills/<name>` (`~/.claude-*/skills`), and `~/.pi/agent/skills/<name>`, plus `~/.gemini/config/skills.json` and materialized real top-level directories in `~/.gemini/skills/<name>` (with live subdirectory junctions) so Antigravity (`agy`) loads them in every workspace. |
-| `tray/` | Windows cockpit and service supervisor: `app.pyw` (system tray), `router_window.py` + `router_data.py` + `radar_chart.py` + `ui_theme.py` (decision console and shared UI theme), `plugins.py` (optional plugin registry in `~/.route-manager/plugins.json`), `services.py` (process lifecycle), `updates.py` (fast-forward updater and builder), `chatgpt_web_patch.py` (anchored source patches for ChatGPT Web), `usage_collector.py` (headless subscription quota collector), `capacity_stats.py` (session burn and worker-hour analytics), and `deploy.py`. |
-| `audit/` | `router_audit.py`: read-only daily compliance audit checking sub-agent launches against `~/.route-manager/router-ledger.jsonl`. |
+| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`). Loaded at the system level across every host: directory junctions in `~/.codex/skills/<name>`, `~/.claude/skills/<name>` (`~/.claude-*/skills`), and `~/.pi/agent/skills/<name>`, plus `~/.gemini/config/skills.json` and materialized real top-level directories in `~/.gemini/skills/<name>` (with live subdirectory junctions) so Antigravity (`agy`) loads them in every workspace. |
+| `tray/` | Windows cockpit and service supervisor: `app.pyw` (system tray), `router_window.py` + `router_data.py` + `radar_chart.py` + `ui_theme.py` (decision console and shared UI theme), `plugins.py` (optional plugin registry in `~/.agent-compass/plugins.json`), `services.py` (process lifecycle), `updates.py` (fast-forward updater and builder), `chatgpt_web_patch.py` (anchored source patches for ChatGPT Web), `usage_collector.py` (headless subscription quota collector), `capacity_stats.py` (session burn and worker-hour analytics), and `deploy.py`. |
+| `audit/` | `router_audit.py`: read-only daily compliance audit checking sub-agent launches against `~/.agent-compass/router-ledger.jsonl`. |
 | `usage-float/` | Borderless Windows subscription usage HUD and mpv/web live-wallpaper switcher; also serves as the direct local quota collector (`usage_float.py`, `magpie_usage.py`). See [`usage-float/README.md`](https://github.com/akiiwa-games/usage-float#readme). |
 | `gemini-web/` | Persistent Google Chrome CDP bridge (`127.0.0.1:17849`) for Gemini, Google AI Studio, and Flow, plus the `omni.py` Gemini Omni 1.1 Flash video runner. See [`gemini-web/README.md`](https://github.com/akiiwa-games/gemini-web#readme). |
 | `dot2api/` | Local checkout of `Pluviobyte/dot2api` with its own `.venv`, exposing remote Dot workers behind a Cloudflared quick tunnel. |
@@ -205,21 +205,21 @@ The companion repositories and runtime directories listed below are separate loc
 ## Dynamic Provider Inventory & Quota Discovery
 
 AgentCompass discovers local account availability on every allocation through
-[`skills/route-agent-work/scripts/provider_inventory.py`](skills/route-agent-work/scripts/provider_inventory.py) without making network calls:
+[`skills/agent-compass/scripts/provider_inventory.py`](skills/agent-compass/scripts/provider_inventory.py) without making network calls:
 
 - **Multi-Source Local Discovery**: Inspects native CLI sign-ins (`~/.claude`, `~/.claude-*`, `~/.codex`, `~/.codex-*`, `~/.grok`, `agy`), Paseo provider bindings (`~/.paseo/config.json`), CC Switch SQLite provider/health records, and Magpie gateway configurations (`usage-float.json` / `settings.json`).
-- **Automatic Pause & Resume**: Disabled or removed accounts, rejected credentials, or plugins turned off in the cockpit (`status=paused`, `reason=plugin_disabled_in_route_manager`) are excluded automatically on the next allocation and resume as soon as credentials or plugins are restored.
+- **Automatic Pause & Resume**: Disabled or removed accounts, rejected credentials, or plugins turned off in the cockpit (`status=paused`, `reason=plugin_disabled_in_agentcompass`) are excluded automatically on the next allocation and resume as soon as credentials or plugins are restored.
 - **Deduplicated Quota Owners**: Duplicate launchers or aliases pointing to the same underlying subscription share a single quota owner so concurrent tasks never double-count remaining allowance.
 
 Inspect the live inventory at any time:
 
 ```bash
-python -X utf8 skills/route-agent-work/scripts/route_judge.py providers
+python -X utf8 skills/agent-compass/scripts/route_judge.py providers
 ```
 
 ### Direct Subscription Quota Collection (`usage-float` + `usage_collector.py`)
 
-Quota windows are collected directly by [`usage-float/usage_float.py`](https://github.com/akiiwa-games/usage-float/blob/main/usage_float.py) and scheduled headlessly by [`tray/usage_collector.py`](tray/usage_collector.py) every 5 minutes into `~/.usage-float/usage-cache.json` (with a diagnostic receipt at `~/.route-manager/usage-collector.json`):
+Quota windows are collected directly by [`usage-float/usage_float.py`](https://github.com/akiiwa-games/usage-float/blob/main/usage_float.py) and scheduled headlessly by [`tray/usage_collector.py`](tray/usage_collector.py) every 5 minutes into `~/.usage-float/usage-cache.json` (with a diagnostic receipt at `~/.agent-compass/usage-collector.json`):
 
 - **Dynamic Multi-Account Discovery**: Automatically detects primary and conventional additional Claude/Codex homes (`~/.claude`, `~/.claude-*`, `~/.codex`, `~/.codex-*`), arbitrary named Paseo accounts with configured homes, and remote Magpie gateways (`magpie_usage.py`). Account family and launcher settings determine behavior.
 - **Activity-Aware Polling Cadence**: Active accounts poll roughly every 5 minutes, idle accounts every 30 minutes, and accounts with unknown/stale activity every 15 minutes. Failed probes respect the same cadence and per-credential `429` backoff.
@@ -242,7 +242,7 @@ After signing in to the isolated home:
 
 The tray menu is at most two levels deep and performs zero blocking I/O or network probes when opened:
 
-1. **Open Route Manager** (default action on left-click) — opens the main decision and management panel.
+1. **Open AgentCompass** (default action on left-click) — opens the main decision and management panel.
 2. **Pre-Reset Priority** — quick submenu to boost a subscription whose weekly quota is about to reset.
 3. **One single-click entry per enabled window plugin**:
    - `Usage Float: …` — shows the floating HUD or auxiliary-screen panel.
@@ -264,7 +264,7 @@ The tray icon displays a status dot: **green** when core usage collection and al
 - **Account Quotas & In-Flight Tasks**:
   - Live status badges (`Ready`, `Paused`, `Plugin Disabled`, `Blocked by Host Policy`), remaining percentage and API-equivalent USD per window, 3h/24h burn rates, reset countdowns, one-click quota refresh, and active worker sessions with their cumulative uncompressed context against the 2M-token rotation limit.
 - **Model Settings** — three tabs: **Models & Boost**, **Scoring & DNA**, and **System Options**.
-  - The home page shows discovered harness/account combinations, selected model chips and a model picker with select-all, invert and clear. Model discovery runs in the background through registered `paseo_provider`, `openai_compatible` or `static` probes. Discovered chat models become selectable bundles scored from their default profile (subscription pools on by default, metered proxies off); models the router cannot run are not listed. The account directory icon edits one shared, case-insensitive `cwd_regex`; legacy `allowed_cwd` prefixes remain readable. Preferences are sparse overrides with backups under `~/.route-manager/backups/`.
+  - The home page shows discovered harness/account combinations, selected model chips and a model picker with select-all, invert and clear. Model discovery runs in the background through registered `paseo_provider`, `openai_compatible` or `static` probes. Discovered chat models become selectable bundles scored from their default profile (subscription pools on by default, metered proxies off); models the router cannot run are not listed. The account directory icon edits one shared, case-insensitive `cwd_regex`; legacy `allowed_cwd` prefixes remain readable. Preferences are sparse overrides with backups under `~/.agent-compass/backups/`.
   - Temporary priorities remain on the home page. Scoring weights and model DNA share one save action on the second tab.
   - **CLI updates** live in the home toolbar: **Update** checks and updates supported installs in the background, and **Auto-update daily** enables daily maintenance. Active CLI sessions defer their install's update and are never stopped. Provider environments select the same installation and npm prefix the router launches. Unknown/manual installs receive no guessed installer; Grok Bot's pinned build stays on Integrations. The CLI log opens from System Options.
 - **Plugins & Services**:
@@ -272,11 +272,11 @@ The tray icon displays a status dot: **green** when core usage collection and al
 
 ### Services & Optional Plugins
 
-State is stored atomically in `~/.route-manager/plugins.json`:
+State is stored atomically in `~/.agent-compass/plugins.json`:
 
 | Service / Plugin | Window in Tray Menu | Autostarts by Default | Description |
 |---|---|---|---|
-| **Usage Collector & Capacity Stats** (`core`) | No (background) | Always on | Runs `tray/usage_collector.py` and `tray/capacity_stats.py --once` every 5 minutes, writing `~/.usage-float/usage-cache.json` and `~/.route-manager/capacity.json`. |
+| **Usage Collector & Capacity Stats** (`core`) | No (background) | Always on | Runs `tray/usage_collector.py` and `tray/capacity_stats.py --once` every 5 minutes, writing `~/.usage-float/usage-cache.json` and `~/.agent-compass/capacity.json`. |
 | `usage-float` | Yes | Yes | Borderless subscription quota HUD and live wallpaper switcher (`usage-float/`). |
 | `chatgpt-web` | Yes | Yes | Local ChatGPT Web bridge (`127.0.0.1:17843`) run from `codex-chatgpt-web/` with anchored patches from `tray/chatgpt_web_patch.py`. |
 | `gemini-web` | Yes | No (on demand) | Dedicated Google Chrome profile with loopback CDP (`127.0.0.1:17849`) for Gemini, AI Studio, Flow, and Omni 1.1 video generation. |
@@ -288,7 +288,7 @@ State is stored atomically in `~/.route-manager/plugins.json`:
 
 ### Temporary Pre-Reset Priority
 
-Selecting a model in the **Pre-Reset Priority** submenu applies a `+0.35` score boost to that subscription's weekly window for up to 24 hours (`~/.route-manager/router-overrides.json`):
+Selecting a model in the **Pre-Reset Priority** submenu applies a `+0.35` score boost to that subscription's weekly window for up to 24 hours (`~/.agent-compass/router-overrides.json`):
 - Requires a fresh usage reading no older than 15 minutes and remaining weekly quota above `safety_margin_pct` (`5%`).
 - Once the weekly window resets, the allocator latches `reset_confirmed_at` and retires the boost automatically, displaying a `Reset Confirmed` badge for 12 hours.
 
@@ -308,7 +308,7 @@ python tray\easytier_setup.py uninstall
 
 ### Host Rollout & System-Level Skill Loading (`setup/sync_host_globals.py`)
 
-When landing AgentCompass on a machine, **system-level skill loading is mandatory** so every coding agent session discovers `route-agent-work` (and `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`) regardless of the active workspace directory:
+When landing AgentCompass on a machine, **system-level skill loading is mandatory** so every coding agent session discovers `agent-compass` (and `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`) regardless of the active workspace directory:
 
 ```powershell
 # Synchronize system-level skills and global rules (AGENTS.md / CLAUDE.md / GEMINI.md / Paseo prompt)
@@ -327,8 +327,8 @@ python -X utf8 setup\sync_host_globals.py --uninstall
 Safety properties of the sync (`setup/onboard.py` runs the same code):
 
 - **Your text is never replaced.** Rules go into a block between `<!-- agentcompass:begin -->` and `<!-- agentcompass:end -->`; anything outside it is kept. A file that is exactly an earlier generated copy is treated as wholly managed.
-- **The shipped rules are a neutral English default** (`setup/host_rules.py`). To use your own wording, put `shared.md` (Claude, Pi, Gemini, OpenCode), `codex.md` and `daemon-append.md` (Paseo `appendSystemPrompt`) into `~/.route-manager/host-rules/`; they are used verbatim, with `@@ROUTE_JUDGE@@`, `@@ROUTER_HOOK_SCRIPT@@` and `@@HOME_POSIX@@` filled in.
-- **Every run that changes a file backs it up first** into `~/.route-manager/backups/host-setup-<timestamp>/`, and records the change in `~/.route-manager/setup-manifest.json`, which `--uninstall` / `onboard.py uninstall` reads to remove the blocks, hook entries, junctions and Paseo prompt again.
+- **The shipped rules are a neutral English default** (`setup/host_rules.py`). To use your own wording, put `shared.md` (Claude, Pi, Gemini, OpenCode), `codex.md` and `daemon-append.md` (Paseo `appendSystemPrompt`) into `~/.agent-compass/host-rules/`; they are used verbatim, with `@@ROUTE_JUDGE@@`, `@@ROUTER_HOOK_SCRIPT@@` and `@@HOME_POSIX@@` filled in.
+- **Every run that changes a file backs it up first** into `~/.agent-compass/backups/host-setup-<timestamp>/`, and records the change in `~/.agent-compass/setup-manifest.json`, which `--uninstall` / `onboard.py uninstall` reads to remove the blocks, hook entries, junctions and Paseo prompt again.
 - **The spawn gate is opt-in** (`--hooks`). It blocks every sub-agent launch, including Claude Code's built-in Explore agent, unless `route_judge.py roll` recorded a routing decision in the last 15 minutes. Installations that already have the hook keep it up to date automatically.
 - Harness directories (`~/.pi`, `~/.gemini`, `~/.config/opencode`, ...) are only written when that harness is installed.
 
@@ -361,7 +361,7 @@ Tests for optional private host-handover tooling skip when that tooling is absen
 
 ```powershell
 # Router core & allocator unit tests
-python -m unittest discover -s skills/route-agent-work/scripts -p "test_*.py"
+python -m unittest discover -s skills/agent-compass/scripts -p "test_*.py"
 
 # Spawn gate & host setup unit tests
 python -m unittest discover -s setup -p "test_*.py"

@@ -14,7 +14,7 @@ from i18n import translate as _tr
 from i18n import tr
 import component_launch
 
-ROOT = Path(__file__).resolve().parents[1] / 'skills' / 'route-agent-work'
+ROOT = Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass'
 PACKAGE = ROOT / 'grok-bot'
 RUNNER = ROOT / 'scripts' / 'run_grok_bot.py'
 GUIDE = ROOT / 'references' / 'grok-bot.md'
@@ -99,7 +99,7 @@ def check():
                 reason = _tr('网关 {0} 返回 HTTP {1}；原因尚未确定。').format(diagnostic['operation'], diagnostic['status'])
             elif (isinstance(diagnostic, dict) and diagnostic.get('category') == 'local_runtime'
                   and diagnostic.get('component') in ('pywin32', 'process_ownership')):
-                reason = _tr('Windows 进程管理不可用；请修复 Route Manager 的 pywin32 运行环境。')
+                reason = _tr('Windows 进程管理不可用；请修复 AgentCompass 的 pywin32 运行环境。')
         except subprocess.TimeoutExpired:
             ready, reason = False, _tr('网关检查超时。')
         except (OSError, ValueError):

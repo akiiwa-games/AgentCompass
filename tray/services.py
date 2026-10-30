@@ -39,7 +39,7 @@ _component_lock = threading.Lock()
 _component_children = {}
 UPDATING_COMPONENTS = set()
 BUN = ROOT / "tools" / "bun" / "bun.exe"   # workspace copy only; use bun_exe() for the one that runs
-STATE_DIR = Path.home() / ".route-manager"
+STATE_DIR = Path.home() / ".agent-compass"
 LOG_DIR = Path.home() / ".dot2api"
 TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
@@ -438,7 +438,7 @@ def stop_chatgpt_web(wait: float = 20.0) -> str:
     return _tr("已停止 ChatGPT Web（强制结束）") if forced else _tr("已停止 ChatGPT Web")
 
 
-# Gemini Web: route_manager/gemini-web, the installed Chrome on a dedicated, signed-in profile for
+# Gemini Web: AgentCompass/gemini-web, the installed Chrome on a dedicated, signed-in profile for
 # Gemini / AI Studio / Flow tasks. It is a visible browser, so it starts on demand (tray click or a
 # client's first task), not with the tray.
 GEMINI_ROOT = plugins.plugin_root("gemini-web")
@@ -639,7 +639,7 @@ def services_up(config: dict | None = None) -> bool:
 
 
 def refresh_plugin_roots() -> None:
-    """Refresh module-level root paths after a plugin is cloned into ~/.route-manager/plugins/."""
+    """Refresh module-level root paths after a plugin is cloned into ~/.agent-compass/plugins/."""
     global DOT_ROOT, CHATGPT_ROOT, CHATGPT_LAUNCHER, USAGE_FLOAT_ROOT, USAGE_FLOAT_SCRIPT, GEMINI_ROOT, _gemini_module
     DOT_ROOT = plugins.plugin_root("dot2api")
     CHATGPT_ROOT = plugins.plugin_root("chatgpt-web")

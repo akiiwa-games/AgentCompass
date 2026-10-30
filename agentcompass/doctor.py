@@ -39,7 +39,7 @@ def pinned_environ(home: Path) -> dict[str, str]:
         APPDATA=str(home / "AppData" / "Roaming"),
         LOCALAPPDATA=str(home / "AppData" / "Local"),
         ROUTER_PROVIDER_HOME=str(home),
-        ROUTER_STATE_DIR=str(home / ".route-manager"),
+        ROUTER_STATE_DIR=str(home / ".agent-compass"),
         ROUTER_USAGE_CACHE=str(home / ".usage-float" / "usage-cache.json"),
         PASEO_HOME=str(home / ".paseo"),
     )
@@ -56,10 +56,10 @@ def _real_home(home: Path) -> bool:
 def account_rows(home: Path, environ: dict | None) -> list | str:
     """Statuses only. Credential material from the inventory is not copied out."""
     try:
-        scripts = locations.skill_root() / "route-agent-work" / "scripts"
+        scripts = locations.skill_root() / "agent-compass" / "scripts"
         script = scripts / "provider_inventory.py"
         if not script.is_file():
-            return "unavailable (route-agent-work is not installed)"
+            return "unavailable (agent-compass is not installed)"
         if str(scripts) not in sys.path:
             sys.path.append(str(scripts))
         spec = importlib.util.spec_from_file_location("agentcompass_provider_inventory", script)
@@ -167,7 +167,7 @@ def _cache_line(home: Path, environ: dict | None) -> str:
 
 
 def _plugin_lines(home: Path) -> list[str]:
-    path = home / ".route-manager" / "plugins.json"
+    path = home / ".agent-compass" / "plugins.json"
     lines = []
     try:
         import json
@@ -186,7 +186,7 @@ def _plugin_lines(home: Path) -> list[str]:
         lines.append("  config: missing")
     except ValueError:
         lines.append(f"  config: unreadable ({path})")
-    directory = home / ".route-manager" / "plugins"
+    directory = home / ".agent-compass" / "plugins"
     try:
         names = sorted(item.name for item in directory.iterdir() if item.is_dir()) if directory.is_dir() else []
     except OSError:
@@ -200,7 +200,7 @@ def collect(home: Path | None = None) -> dict:
     environ = None if _real_home(home) else pinned_environ(home)
     checkout = locations.checkout_root()
     try:
-        skill = str(locations.skill_root() / "route-agent-work")
+        skill = str(locations.skill_root() / "agent-compass")
     except FileNotFoundError as error:
         skill = f"missing ({error})"
     port_state = load(home, environ if environ is not None else os.environ)

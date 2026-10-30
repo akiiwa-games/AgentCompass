@@ -25,7 +25,7 @@ import i18n
 import display_names
 from display_names import MODEL_LABELS, model_label  # noqa: F401
 
-STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or Path.home() / ".route-manager").expanduser()
+STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or Path.home() / ".agent-compass").expanduser()
 
 
 def get_ui_language() -> str:
@@ -111,7 +111,7 @@ PANEL_INTENT = "panel:boost"
 
 
 def modules():
-    """(allocator, route_judge) from the installed route-agent-work skill."""
+    """(allocator, route_judge) from the installed agent-compass skill."""
     return router_priority.modules()
 
 
@@ -296,7 +296,7 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     """(text, colour kind) of an account's status."""
     allocator, _ = modules()
     row = inventory_row or {}
-    if row.get("reason") == "plugin_disabled_in_route_manager":
+    if row.get("reason") == "plugin_disabled_in_agentcompass":
         return _tr("集成已关闭"), "idle"
     if not allocator.host_policy.account_allowed(policy, name):
         return _tr("本机策略禁用"), "idle"
@@ -1642,7 +1642,7 @@ def _key_update(router, scorer_type: str, api_key: str | None, path: Path | None
 
 def save_scorer_config(scorer_type: str, api_key: str | None = None, base_url: str = "", model: str = "",
                        path: Path | None = None) -> str:
-    """Validate and atomically write ~/.route-manager/scorer-config.json. api_key: None or the masked placeholder keeps
+    """Validate and atomically write ~/.agent-compass/scorer-config.json. api_key: None or the masked placeholder keeps
     the saved key, '' clears it. Empty base_url/model fall back to the scorer's defaults (Jev) or are required (custom)."""
     _, router = modules()
     if scorer_type not in SCORER_LABELS:

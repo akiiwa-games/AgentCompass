@@ -89,7 +89,7 @@ def set_autostart(enabled: bool) -> tuple[bool, str]:
                 _autostart_state["refreshing"] = False
 
     threading.Thread(target=worker, daemon=True, name="uf-autostart-apply").start()
-    return True, "已更新 Route Manager 开机启动"
+    return True, "已更新 AgentCompass 开机启动"
 
 
 def attach(root, scope):

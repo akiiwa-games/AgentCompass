@@ -9,7 +9,7 @@
     python easytier_setup.py uninstall                         remove the task (files stay)
 
 `install` copies the official v2.6.4 binaries and this host's own config (never another host's) into
-route_manager/easytier/, locks bin/private/logs/state down to SYSTEM and Administrators (read for others where there
+AgentCompass/easytier/, locks bin/private/logs/state down to SYSTEM and Administrators (read for others where there
 is no secret), and registers the SYSTEM task "Route Manager EasyTier" with a start trigger at boot. The only right the
 installing user gets on the task is read, run and stop, so the unelevated tray can control it but not rewrite it.
 It relaunches itself elevated (UAC, hidden) when needed. The legacy spec (JSON) names how the previous runtime is
@@ -43,7 +43,7 @@ BIN, PRIVATE, LOGS, STATE, BACKUP = (HOME / name for name in ("bin", "private", 
 TASK_NAME = "Route Manager EasyTier"
 RECOVER_TASK = "Route Manager EasyTier Recover"
 SWITCH_TASK = "Route Manager EasyTier Switch"
-USER_LOG_DIR = Path.home() / ".route-manager" / "easytier-setup"
+USER_LOG_DIR = Path.home() / ".agent-compass" / "easytier-setup"
 PINNED = {"easytier-core.exe": "da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d"}
 REQUIRED = ("easytier-core.exe", "easytier-cli.exe", "Packet.dll", "wintun.dll")
 OPTIONAL = ("WinDivert64.sys",)

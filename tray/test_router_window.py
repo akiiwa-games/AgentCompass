@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/route-agent-work/scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 
 import allocator
 from tk_test_support import desktop_test, require_tk
@@ -17,7 +17,7 @@ import decision_theatre
 import radar_chart
 import router_data
 
-CATALOG_JSON = Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "references" / "accounts.json"
+CATALOG_JSON = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "references" / "accounts.json"
 
 
 class ScoreDimensionTests(unittest.TestCase):
@@ -997,7 +997,7 @@ class WindowHelperTests(unittest.TestCase):
             errors.assert_not_called()
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts"
 SECRET = "test-key-0000000000000000"
 
 

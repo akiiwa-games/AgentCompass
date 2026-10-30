@@ -4,7 +4,7 @@ A cloudflared quick tunnel gets a new address on every start (and after every re
 URL of a plugin. So when the published address is not the one the Dot was last given, this adds a plugin for the new
 address in the bridge's logged-in ChatGPT session, sends the Dot one message (it subscribes to the queue through the
 plugin connected at that moment) and removes the plugins that point at dead addresses. The page work is in
-`dot_plugin.mjs`; this decides when to run it and keeps the record in ~/.route-manager/dot-plugin.json.
+`dot_plugin.mjs`; this decides when to run it and keeps the record in ~/.agent-compass/dot-plugin.json.
 """
 
 from __future__ import annotations

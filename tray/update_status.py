@@ -13,7 +13,7 @@ import time
 
 import component_launch
 
-DIRECTORY = Path.home() / ".route-manager"
+DIRECTORY = Path.home() / ".agent-compass"
 TITLE = "更新进度 · AgentCompass"
 _lock = threading.Lock()
 _process = None

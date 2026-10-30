@@ -14,7 +14,7 @@ import router_gate_hook as gate
 UTC = dt.timezone.utc
 T0 = dt.datetime(2026, 10, 14, 6, 0, tzinfo=UTC)
 
-SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills/route-agent-work"
+SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills/agent-compass"
 
 
 def setUpModule():
@@ -33,7 +33,7 @@ def setUpModule():
         os.environ.pop(name, None)   # restored by _environment.stop(); discovery must not see the host's config homes
     home = Path(_state.name)
     _gate_paths = mock.patch.multiple(gate, HOME=home,
-        DEFAULT_LEDGER=home / '.route-manager/router-ledger.jsonl',
+        DEFAULT_LEDGER=home / '.agent-compass/router-ledger.jsonl',
         DEFAULT_USAGE_CACHE=home / '.usage-float/usage-cache.json',
         DEFAULT_PASEO_AGENTS=home / '.paseo/agents')
     _gate_paths.start()
@@ -65,7 +65,7 @@ class RouterGateHookTests(unittest.TestCase):
             "ROUTER_DISPATCH_DB": str(self.state / "dispatch.sqlite3"),
             "ROUTER_HOST_POLICY": str(self.state / "host-policy.json"),
             "ROUTER_ACCOUNTS_OVERRIDE": str(self.state / "accounts-override.json"),
-            "ROUTER_ACCOUNTS_FILE": str(Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "scripts" / "fixtures" / "reference-accounts.json"),
+            "ROUTER_ACCOUNTS_FILE": str(Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts" / "fixtures" / "reference-accounts.json"),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -944,7 +944,7 @@ class BoundDispatchGateTests(unittest.TestCase):
             'ROUTER_GATE_BYPASS': '0', 'PASEO_AGENT_ID': '', 'ROUTER_PASEO_LEGACY_NO_LABELS': '0',
             'ROUTER_HOST_POLICY': str(root / 'host-policy.json'),
             'ROUTER_ACCOUNTS_OVERRIDE': str(root / 'accounts-override.json'),
-            'ROUTER_ACCOUNTS_FILE': str(Path(__file__).resolve().parents[1] / 'skills' / 'route-agent-work' / 'scripts' / 'fixtures' / 'reference-accounts.json'),
+            'ROUTER_ACCOUNTS_FILE': str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts' / 'fixtures' / 'reference-accounts.json'),
         })
         env.start()
         self.addCleanup(env.stop)

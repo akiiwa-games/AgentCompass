@@ -1,6 +1,6 @@
 ---
 name: chatgpt-pro-consult
-description: Carry out a route-agent-work-authorized Pro consultation or plan critique through the isolated codex-chatgpt-web Browser-only bridge, with recorded submission and complete answer capture. Use for GPT Pro or 6pro reasoning queries; return advice, not execution or approval.
+description: Carry out a agent-compass-authorized Pro consultation or plan critique through the isolated codex-chatgpt-web Browser-only bridge, with recorded submission and complete answer capture. Use for GPT Pro or 6pro reasoning queries; return advice, not execution or approval.
 ---
 
 # ChatGPT Pro Consult
@@ -9,7 +9,7 @@ Default target: GPT-6 Pro at the highest effort available within Pro, unless the
 another target. This uses the user's ChatGPT web subscription through a local Browser-only bridge.
 Never silently switch to a billed API, a Codex model, another account, or a different prompt.
 
-This is a leaf. `$route-agent-work` owns whether to consult, the destination and outbound scope,
+This is a leaf. `$agent-compass` owns whether to consult, the destination and outbound scope,
 parent decisions and integration. Do not spawn agents, explore broad project scope, modify product
 files, or present advice as independent review or acceptance.
 
@@ -17,8 +17,8 @@ files, or present advice as independent review or acceptance.
 ## Host dispatch availability
 
 Before calling this runner directly, run `python -X utf8 scripts/host_policy.py --account chatgpt-web`
-from the installed sibling `route-agent-work` skill and require exit 0. It reads the optional
-`~/.route-manager/host-policy.json` / `ROUTER_HOST_POLICY` override. A denied account or invalid
+from the installed sibling `agent-compass` skill and require exit 0. It reads the optional
+`~/.agent-compass/host-policy.json` / `ROUTER_HOST_POLICY` override. A denied account or invalid
 profile blocks this dispatch only; Self may continue other work. A recorded user constraint does
 not bypass host availability. Router authorization is still required.
 
@@ -32,7 +32,7 @@ question or permitted transfer is unclear, return the specific gap to the parent
 intact; never infer broader permission.
 
 Every outgoing prompt, summary, bundle, manifest, attachment and substantive follow-up falls under
-the router's [transfer rules](../route-agent-work/SKILL.md#4-dispatch-authority-and-context).
+the router's [transfer rules](../agent-compass/SKILL.md#4-dispatch-authority-and-context).
 Credentials, authentication material, private keys, personal/regulated or live financial account
 data are never inputs. A leaf cannot broaden or substitute the package; return proposed changes to
 the parent. Existing session authorization covers revisions within its scope.

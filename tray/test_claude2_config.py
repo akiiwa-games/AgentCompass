@@ -36,7 +36,7 @@ class Claude2ConfigTests(unittest.TestCase):
             config.configure(home)
             self.assertEqual(json.loads(p.read_text(encoding='utf-8')), first)
             self.assertEqual((home / '.claude-2' / '.credentials.json').read_text(), 'secret-placeholder')
-            self.assertTrue(list((home / '.route-manager' / 'backups').glob('claude-2-*')))
+            self.assertTrue(list((home / '.agent-compass' / 'backups').glob('claude-2-*')))
 
     def test_repairs_empty_secure_storage_without_changing_other_providers(self):
         with TemporaryDirectory() as directory:
@@ -65,7 +65,7 @@ class Claude2ConfigTests(unittest.TestCase):
             self.assertEqual((provider['label'], provider['env']['CLAUDE_CONFIG_DIR']), ('Claude Team Backup', str(account_home)))
             floating = json.loads((home / '.usage-float' / 'config.json').read_text(encoding='utf-8'))
             self.assertEqual(floating['providers'], ['team-backup:7d', 'team-backup:5h'])
-            sources = json.loads((home / '.route-manager' / 'capacity-sources.json').read_text(encoding='utf-8'))
+            sources = json.loads((home / '.agent-compass' / 'capacity-sources.json').read_text(encoding='utf-8'))
             self.assertEqual(sources['team-backup']['roots'], [str(account_home / 'projects')])
             with self.assertRaises(ValueError):
                 config.configure(home, 'Work Account', account_home)

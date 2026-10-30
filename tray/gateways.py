@@ -1,4 +1,4 @@
-"""Muse2API: optional local API gateway, cloned into ~/.route-manager/plugins/<id> when enabled.
+"""Muse2API: optional local API gateway, cloned into ~/.agent-compass/plugins/<id> when enabled.
 
 Muse2API (github.com/www222fff/muse2api) is a Python FastAPI server. It gets a .venv in its clone (uv), runs with
 the browser driver on the installed Chrome, and keeps its data in ~/.muse2api/data. Accounts are muse.ai cookies,

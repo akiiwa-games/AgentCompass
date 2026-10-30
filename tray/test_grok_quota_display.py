@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import router_data
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'route-agent-work' / 'scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
 import provider_inventory as real_inventory
 
 

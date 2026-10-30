@@ -1,4 +1,4 @@
-"""Optional plugins and their on/off state (~/.route-manager/plugins.json).
+"""Optional plugins and their on/off state (~/.agent-compass/plugins.json).
 
 The core (router, capacity statistics, the headless usage service) always runs. Each plugin below can be
 enabled or disabled; only enabled plugins whose click opens a window appear in the tray's first menu level.
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from i18n import translate
 
-STATE_DIR = Path.home() / ".route-manager"
+STATE_DIR = Path.home() / ".agent-compass"
 PATH = STATE_DIR / "plugins.json"
 PLUGINS_DIR = STATE_DIR / "plugins"
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +65,7 @@ PLUGINS = (
     Plugin("dot2api", "Dot2API", "Dot", "Dot 远端任务队列与隧道", False, color="#8B5CF6",
            repo="https://github.com/Pluviobyte/dot2api.git", legacy_dir="dot2api"),
     Plugin("grok-bot", "Grok Bot CLI", "Bot", "Grok Bot 远端任务", False,
-           autostart=False, color="#111827", legacy_dir="skills/route-agent-work/grok-bot"),
+           autostart=False, color="#111827", legacy_dir="skills/agent-compass/grok-bot"),
     Plugin("muse2api", "Muse2API", "Muse", "muse.ai 聊天、出图、视频网关", False, color="#EC4899",
            repo="https://github.com/www222fff/muse2api.git", enabled_by_default=False),
 )
@@ -73,7 +73,7 @@ BY_ID = {plugin.id: plugin for plugin in PLUGINS}
 
 
 def plugin_root(plugin_id: str, plugins_dir: Path | None = None, repo_root: Path | None = None) -> Path:
-    """Resolve plugin directory in ~/.route-manager/plugins/<id> (falling back to legacy checkout if present)."""
+    """Resolve plugin directory in ~/.agent-compass/plugins/<id> (falling back to legacy checkout if present)."""
     plugin = BY_ID[plugin_id]
     base_root = repo_root or ROOT
     if plugin.repo is None:

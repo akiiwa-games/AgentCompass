@@ -22,8 +22,8 @@ import sys
 from pathlib import Path
 
 HOME = Path.home()
-SKILL_SCRIPTS = Path(os.environ.get("ROUTER_SKILL_DIR", HOME / ".codex" / "skills" / "route-agent-work" / "scripts"))
-LEDGER = Path(os.environ.get("ROUTER_LEDGER", HOME / ".route-manager" / "router-ledger.jsonl"))
+SKILL_SCRIPTS = Path(os.environ.get("ROUTER_SKILL_DIR", HOME / ".codex" / "skills" / "agent-compass" / "scripts"))
+LEDGER = Path(os.environ.get("ROUTER_LEDGER", HOME / ".agent-compass" / "router-ledger.jsonl"))
 DOT_DB = HOME / ".dot2api" / "data" / "dot2api.sqlite3"
 REPORT_DIR = Path(__file__).resolve().parent / "reports"
 UTC = dt.timezone.utc
@@ -46,8 +46,8 @@ PAIR_GAP_SECONDS = 15 * 60
 MARKERS = ("subscription_model_judgment", "judge_unavailable", "local_candidate_filter", "constraint_record")
 FIXED_WORDS = re.compile(r"explicit|required|retained|sole.?owner|authorized|honors|user-?named|指定|明确|授权", re.I)
 METERED = {"api-proxy"}
-CAPACITY = Path(os.environ.get("ROUTER_CAPACITY", HOME / ".route-manager" / "capacity.json"))
-USAGE_STATS = Path(os.environ.get("ROUTER_USAGE_STATS", HOME / ".route-manager" / "usage-stats.json"))
+CAPACITY = Path(os.environ.get("ROUTER_CAPACITY", HOME / ".agent-compass" / "capacity.json"))
+USAGE_STATS = Path(os.environ.get("ROUTER_USAGE_STATS", HOME / ".agent-compass" / "usage-stats.json"))
 CAPACITY_STALE_HOURS = 2   # the tray service rewrites capacity.json every five minutes
 UNROUTED_WINDOW_SECONDS = 15 * 60
 ROUTER_RULE_SINCE = dt.datetime(2026, 10, 10, 0, 0, tzinfo=dt.timezone(dt.timedelta(hours=8)))
@@ -528,7 +528,7 @@ def capacity_findings(capacity, now: dt.datetime, agent_days: dict | None = None
     if capacity is None:
         return [("warn", "capacity", "托盘用量统计服务没有产出 capacity.json",
                  f"{CAPACITY} 不存在或无法解析;router 没有实时用量读数,其他工作的需求只能按直线进度估计。",
-                 "确认托盘在运行,或手动运行 `python tray/capacity_stats.py --once`;失败日志在 ~/.route-manager/capacity.log。")]
+                 "确认托盘在运行,或手动运行 `python tray/capacity_stats.py --once`;失败日志在 ~/.agent-compass/capacity.log。")]
     out = []
     made = parse_ts(capacity.get("generated_at"))
     age = (now - made).total_seconds() / 3600 if made else None
@@ -793,7 +793,7 @@ def log_roots() -> dict[str, list[str]]:
             roots["codex"] += [home / "sessions", home / "archived_sessions"]
         elif home and row.get("family") == "claude":
             roots["claude"].append(home / "projects")
-    state = Path(os.environ.get("ROUTER_STATE_DIR") or HOME / ".route-manager")
+    state = Path(os.environ.get("ROUTER_STATE_DIR") or HOME / ".agent-compass")
     try:
         extra = json.loads((state / "capacity-sources.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):

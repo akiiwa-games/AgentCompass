@@ -21,7 +21,7 @@ _catalog = None
 
 def settings_path() -> Path:
     data = sys.modules.get("router_data")
-    return Path(getattr(data, "STATE_DIR", Path.home() / ".route-manager")) / "ui-settings.json"
+    return Path(getattr(data, "STATE_DIR", Path.home() / ".agent-compass")) / "ui-settings.json"
 
 
 def get_language() -> str:

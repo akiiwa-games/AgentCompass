@@ -6,7 +6,7 @@ description: Run Gemini web work through AgentCompass's signed-in Gemini Web Chr
 # Gemini Web
 
 AgentCompass keeps one Google Chrome signed in to the user's Google account for Gemini work:
-`<route_manager>/gemini-web/` (`gemini-web/README.md`).
+`<AgentCompass>/gemini-web/` (`gemini-web/README.md`).
 The tray's **Gemini** line opens its window. This is a local tool that runs in the calling agent.
 It is not a worker and launches nothing. A delegated task that uses it must run on this machine:
 pass `--local-only "Gemini Web browser on this machine"` to the router.

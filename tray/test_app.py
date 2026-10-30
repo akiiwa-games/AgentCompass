@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-LOADER = importlib.machinery.SourceFileLoader("route_manager_tray_app", str(Path(__file__).with_name("app.pyw")))
+LOADER = importlib.machinery.SourceFileLoader("AgentCompass_tray_app", str(Path(__file__).with_name("app.pyw")))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 app = importlib.util.module_from_spec(SPEC)
 LOADER.exec_module(app)
@@ -15,7 +15,7 @@ ALL_RUNNING = dict(dot="运行中", web="运行中", gemini="已停止", float="
 
 
 def setUpModule():
-    # Never read or write the real ~/.route-manager/plugins.json.
+    # Never read or write the real ~/.agent-compass/plugins.json.
     global _isolation
     directory = tempfile.TemporaryDirectory()
     _isolation = [directory, mock.patch.object(app.plugins, "PATH", Path(directory.name) / "plugins.json")]

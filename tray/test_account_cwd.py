@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/route-agent-work/scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 import allocator
 import cwd_policy
 import router_data
@@ -52,7 +52,7 @@ def test_plan_explains_regex_exclusion_and_legacy_intersection():
         'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)', 'allowed_cwd': ['E:/P4'],
                             'bundles': {'fixture-bundle': {'model': 'fixture-model', 'effort': 'high'}}}}}
     plan = allocator.plan({'objective': 'Implement a parser', 'work_kind': 'general_implementation',
-                           'expected_hours': .1, 'cwd': 'E:/PROJECTS/route_manager'},
+                           'expected_hours': .1, 'cwd': 'E:/PROJECTS/AgentCompass'},
                           {'accounts': {}}, datetime(2026, 10, 28, tzinfo=timezone.utc),
                           accounts=accounts, capabilities={}, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
     row = next(row for row in plan['ranking'] if row['id'] == 'fixture-bundle')

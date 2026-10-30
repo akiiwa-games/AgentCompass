@@ -136,7 +136,7 @@ def configure(home: Path, account: str = DEFAULT_ACCOUNT, account_home: Path | N
     sync_shared_claude_assets(home, account_home)
     paseo = home / '.paseo' / 'config.json'
     floating = home / '.usage-float' / 'config.json'
-    sources = home / '.route-manager' / 'capacity-sources.json'
+    sources = home / '.agent-compass' / 'capacity-sources.json'
     p = load(paseo)
     providers = p.setdefault('agents', {}).setdefault('providers', {})
     expected = provider_config(home, account, account_home, label)
@@ -152,7 +152,7 @@ def configure(home: Path, account: str = DEFAULT_ACCOUNT, account_home: Path | N
     f = float_config(load(floating), usage_rows(account))
     s = load(sources)
     s[account] = {'kind': 'claude', 'account': account, 'roots': [str(account_home / 'projects')]}
-    backups = home / '.route-manager' / 'backups' / (f'{account}-' + datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
+    backups = home / '.agent-compass' / 'backups' / (f'{account}-' + datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
     for path, data in ((paseo, p), (floating, f), (sources, s)):
         save_config(path, data, backups)
         print(f'Configured: {path}')

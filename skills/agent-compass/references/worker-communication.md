@@ -1,0 +1,40 @@
+# Worker-to-parent communication contract
+
+This rule applies both when a delegated worker, subagent or advisor needs clarification, a decision or missing input from its originating/main session, and when it finishes with a done, failed or blocked result. An interactive question or local final reply alone is not a message to that session.
+
+**Launch prerequisite:** the delivered assignment must contain the actual originating parent session ID, its host and its messaging address. Missing parent information stops dispatch; `top-level`, task IDs and the worker's own ID are not substitutes. For Paseo use the launching `PASEO_AGENT_ID`. For native host orchestrators carry the parent session ID, the bound coordinator inbox address, and preserve the live injected preamble's sender handle and lifecycle IDs. Never send a non-Paseo session ID to the Paseo API.
+
+1. **Send a real message directly to the parent session.** Use the host's available agent-messaging tool and the actual parent recipient. In Paseo, use `mcp__paseo__send_agent_prompt` / `send_agent_prompt` with `{agentId: <parent ID>, prompt: <question>, background: true, notifyOnFinish: false}`; on other hosts use their documented messaging API (such as `SendMessage`). The worker's own `PASEO_AGENT_ID` is not its parent's ID. Check the send result; an error is not delivery.
+2. **Workers must never use `request_user_input_async`, `request_user_input`, `AskUserQuestion`, `ask_user_question` or similar interactive/user-dialog tools.** These do not deliver the question to the main session. Local commentary, a TODO or a question written to an unmonitored file is not a substitute for sending it.
+3. Include the task, the blocker and the specific question/decision needed. After sending, finish the turn (or finish independent, already-authorized work first); resume dependent work only after a reply. Do not synchronously wait on the parent, repeatedly poll or treat silence as approval.
+4. If the parent recipient/message tool is unavailable, or delivery fails, return **BLOCKED / needs_input** with the question and delivery limitation through the existing result channel (completion callback, Dot result or CLI stdout), then end the turn. The caller must collect/relay that result. Do not invent a recipient, claim successful delivery or fall back to an interactive question tool.
+
+This does not prohibit the main session from asking the real user a question, and does not replace or bypass platform-required approvals.
+
+## Final reports
+
+**Workers with an agent-messaging tool must send their final report to the actual parent before ending the turn**, whether the result is done, failed or blocked. Use the same real message channel as for questions; in Paseo use `send_agent_prompt` with `{agentId: <parent ID>, prompt: <report>, background: true, notifyOnFinish: false}`. When the host's schema omits `background`, use its equivalent nonblocking agent-message delivery. Check the send result; an error is not delivery. Do not wait synchronously for a reply.
+
+Identify this message as **[Worker final report]**, state done/failed/blocked, and include the result, validation, commit/artifact references and any remaining blocker or decision. The message may contain the full report or a concise summary with an accessible location for the full report. Retain the full report in the worker's final reply as well. If sending fails, include the delivery failure in that final reply so the parent can collect it through the fallback result channel; do not claim the report was delivered.
+
+**Workers without messaging tools, such as agy, must write their complete report in the final reply and end the turn.** For `roll`'s Paseo launches, the router notifier delivers a short **[AgentCompass worker notification]** with the worker ID, state and a pointer to the response. This automatic state notice is separate from a worker-authored final report; workers with messaging tools must still send their report. The parent follows the pointer to collect the full result when needed. CLI workers have no automatic notifier: their caller must collect `worker.output` and `worker.stderr` and manage the process as specified by `roll.next`.
+
+**Parent-to-worker continuation:** when the main session uses `send_agent_prompt` to add work, give clearance or resume its own worker, it must set `notifyOnFinish: true` (or omit it to retain the default); completion notifications and the final reply are the result channel for workers without messaging tools, such as agy. The `notifyOnFinish: false` rule above applies only to worker-to-parent questions and final reports.
+
+## Completion-notification gate contract
+
+- **Failure:** disabling completion notifications can lose the result of a worker without messaging tools.
+- **Action:** block only `send_agent_prompt` with explicit `notifyOnFinish: false` from a parent to its own worker, including statically parsed wrapper calls.
+- **Decision:** the hook's caller ID must equal the target's locally persisted `router.parent_id` / `paseo.parent-agent-id`; conflicting labels do not prove ownership. No network lookup is needed.
+- **Recovery:** set `notifyOnFinish: true` or omit the parameter. Worker-to-parent questions and final reports remain allowed with `false`.
+- **Degrade:** missing caller identity, missing/unreadable target records, ambiguous ownership or dynamic wrapper arguments leave this check open; other router checks still apply.
+
+## Disabled-target and context-rotation gate contract
+
+- **Failure:** launching new work on a disabled account/bundle ignores the user's scheduling choice; starting another turn on a worker with >= 2M historical uncompressed tokens risks context drift. Blocking its parent's control messages during an existing turn instead prevents orderly wrap-up and handoff.
+- **Action:** block new launches on disabled targets and new turns on disabled or over-limit workers. Exempt only messages from the parent to its own currently running worker, so the parent can steer, cut scope, answer questions or request wrap-up. Quota and completion-notification checks remain unchanged.
+- **Decision:** reuse the completion-notification ownership test: a non-self caller must match every nonempty locally persisted `router.parent_id` / `paseo.parent-agent-id`. The local Paseo agent record must also say `lastStatus: running` (or `status: running` when present); an explicit current non-running `status` takes precedence. `activeTurn` alone, tool arguments and prompt wording do not prove a running turn. No network lookup is required. Idle workers remain blocked even for prompts requesting only commit/handoff/report: the API has no structured wrap-up-only operation.
+- **Recovery:** while the owned worker is running, send a control message with completion notifications enabled. Otherwise collect its existing output, use `cancel_agent` if necessary, write a handoff and run `route_judge.py roll --brief <handoff.md> --hours <n>`; a disabled account/bundle may instead be re-enabled in AgentCompass settings. An over-limit worker still requires rotation.
+- **Degrade:** missing/unreadable records, missing caller identity, conflicting ownership or unknown/non-running status grant no exemption; existing checks retain their existing degrade behavior. This keeps unknown/idle state from authorizing new work on a disabled target. Local `lastStatus` is the persisted snapshot, not an atomic daemon guarantee: status can change between the hook and message delivery, and offline records can be stale. Without a structured steer-only API this hook cannot eliminate that race; do not infer liveness from timestamps or message keywords.
+
+In native host orchestrators use the real host message channel to the bound coordinator inbox, preserving the live preamble's exact sender and lifecycle arguments. A durable question message is a parent message; a local question TUI is not. Follow this router contract's end-turn rule rather than leaving a worker synchronously waiting on its parent.

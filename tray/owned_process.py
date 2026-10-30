@@ -82,7 +82,7 @@ def _run_job(argv, timeout, env, cwd) -> Result:
         limits["BasicLimitInformation"]["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, limits)
     except Exception as exc:
-        raise OwnedProcessError(_tr("Windows 进程管理不可用；请修复 Route Manager 的 pywin32 运行环境。")) from exc
+        raise OwnedProcessError(_tr("Windows 进程管理不可用；请修复 AgentCompass 的 pywin32 运行环境。")) from exc
 
     def active() -> int:
         return win32job.QueryInformationJobObject(job, win32job.JobObjectBasicAccountingInformation)["ActiveProcesses"]

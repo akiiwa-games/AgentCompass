@@ -15,7 +15,7 @@ const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'cre
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
-  return path.join(process.env.ROUTER_STATE_DIR ?? path.join(os.homedir(), '.route-manager'),
+  return path.join(process.env.ROUTER_STATE_DIR ?? path.join(os.homedir(), '.agent-compass'),
     'paseo-notifications', `${dispatchId}.json`);
 }
 
@@ -113,7 +113,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
     if (event) {
       record.pending = {...event, messageId: createHash('sha256')
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
-      text: `[Route Manager worker notification]\nDispatch: ${record.dispatch_id}\n` +
+      text: `[AgentCompass worker notification]\nDispatch: ${record.dispatch_id}\n` +
         `Worker: ${record.dispatch_id}\nState: ${event.reason}\n` +
         `Read the worker's final response and details with get_agent_activity ` +
         `(agentId: ${record.dispatch_id}); use get_agent_status for pending permissions.`};

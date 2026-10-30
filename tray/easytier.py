@@ -1,7 +1,7 @@
 """EasyTier for the tray: status, start, stop and restart of the host's one EasyTier node.
 
 The node is the SYSTEM scheduled task "Route Manager EasyTier", registered once by easytier_setup.py. Its
-program, config and logs live under route_manager/easytier/. The tray itself stays unelevated: the task grants this
+program, config and logs live under AgentCompass/easytier/. The tray itself stays unelevated: the task grants this
 user only read, run and stop on that one task (not edit), so every action here is a Task Scheduler call plus,
 for status, the bundled easytier-cli talking to the loopback RPC portal.
 """

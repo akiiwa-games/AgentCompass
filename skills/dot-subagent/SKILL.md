@@ -1,11 +1,11 @@
 ---
 name: dot-subagent
-description: Leaf-only runner for the local OpenAI Dot through dot2api. Use only after route-agent-work has chosen Dot. Covers the runner, packets, code written and run on Dot's own computer, and how data reaches it (public re-fetch, text packets, the private GitHub repository) and how results come back. No routing and no spawning children.
+description: Leaf-only runner for the local OpenAI Dot through dot2api. Use only after agent-compass has chosen Dot. Covers the runner, packets, code written and run on Dot's own computer, and how data reaches it (public re-fetch, text packets, the private GitHub repository) and how results come back. No routing and no spawning children.
 ---
 
 # Dot Subagent (leaf)
 
-Leaf executor for the user's own Dot. The parent (`$route-agent-work` or the main agent)
+Leaf executor for the user's own Dot. The parent (`$agent-compass` or the main agent)
 owns routing, the outbound package, and integration. This leaf does not choose another model,
 start another agent, or widen the assignment.
 
@@ -19,8 +19,8 @@ authorizes handing Dot explicitly designated data, never credentials (see [Getti
 ## Host dispatch availability
 
 Before calling this runner directly, run `python -X utf8 scripts/host_policy.py --account dot`
-from the installed sibling `route-agent-work` skill and require exit 0. It reads the optional
-`~/.route-manager/host-policy.json` / `ROUTER_HOST_POLICY` override. A denied account or invalid
+from the installed sibling `agent-compass` skill and require exit 0. It reads the optional
+`~/.agent-compass/host-policy.json` / `ROUTER_HOST_POLICY` override. A denied account or invalid
 profile blocks this dispatch only; Self may continue other work. A recorded user constraint does
 not bypass host availability. Router authorization is still required.
 
@@ -114,7 +114,7 @@ to reuse a specific root. Every packet reports `ROOT:`; reuse that reported path
 packets and re-check every required file by size and hash. No path is guaranteed to persist.
 
 Historical measurements and the retired tunnel relay are preserved locally under
-`~/.route-manager/archive/dot-subagent-legacy-20261029/`; they describe past environments
+`~/.agent-compass/archive/dot-subagent-legacy-20261029/`; they describe past environments
 and are not prerequisites or capacity guarantees for a current job.
 
 ## Getting data to Dot

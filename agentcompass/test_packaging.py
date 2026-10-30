@@ -19,7 +19,7 @@ class PackagingTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
         with TemporaryDirectory() as directory:
             root = Path(directory) / "src"
-            skill = root / "skills" / "route-agent-work" / "scripts"
+            skill = root / "skills" / "agent-compass" / "scripts"
             skill.mkdir(parents=True)
             (skill / "route_judge.py").write_text("print('ok')\n", encoding="utf-8")
             cache = skill / "__pycache__"
@@ -42,7 +42,7 @@ class PackagingTests(unittest.TestCase):
             (huge / "blob.bin").write_bytes(b"x" * 32)
             (setup / "host_sync" / "build_bundle.py").write_text("print(1)\n", encoding="utf-8")
             staged = stage_data.stage(root, Path(directory) / "staged")
-            judge = staged / "skills" / "route-agent-work" / "scripts" / "route_judge.py"
+            judge = staged / "skills" / "agent-compass" / "scripts" / "route_judge.py"
             self.assertTrue(judge.is_file())
             self.assertFalse(judge.is_symlink())
             self.assertEqual(judge.read_text(encoding="utf-8"), "print('ok')\n")
@@ -66,16 +66,16 @@ class PackagingTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
             for relative, text in {
-                "skills/route-agent-work/SKILL.md": "skill\n",
-                "skills/route-agent-work/scripts/route_judge.py": "print(1)\n",
-                "skills/route-agent-work/grok-bot/runtime/bin/gbot.mjs": "installed runtime\n",
-                "skills/route-agent-work/notes-private.md": "private\n",
+                "skills/agent-compass/SKILL.md": "skill\n",
+                "skills/agent-compass/scripts/route_judge.py": "print(1)\n",
+                "skills/agent-compass/grok-bot/runtime/bin/gbot.mjs": "installed runtime\n",
+                "skills/agent-compass/notes-private.md": "private\n",
                 "setup/onboard.py": "x = 1\n",
                 "setup/scratch_untracked.py": "y = 2\n",
                 "setup/host_sync/repair-host.mjs": "legacy\n",
                 "setup/paseo-bridge/package.json": "{}\n",
                 "setup/paseo-bridge/secret-endpoint.txt": "http://private\n",
-                ".gitignore": "skills/route-agent-work/grok-bot/runtime/\nskills/route-agent-work/notes-private.md\n",
+                ".gitignore": "skills/agent-compass/grok-bot/runtime/\nskills/agent-compass/notes-private.md\n",
             }.items():
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,8 +87,8 @@ class PackagingTests(unittest.TestCase):
             staged = stage_data.stage(root, Path(directory) / "staged")
             names = {path.relative_to(staged).as_posix() for path in staged.rglob("*") if path.is_file()}
             self.assertEqual(names, {
-                "skills/route-agent-work/SKILL.md",
-                "skills/route-agent-work/scripts/route_judge.py",
+                "skills/agent-compass/SKILL.md",
+                "skills/agent-compass/scripts/route_judge.py",
                 "setup/onboard.py",
                 "setup/paseo-bridge/package.json",
             })
@@ -120,7 +120,7 @@ class PackagingTests(unittest.TestCase):
             self.assertIn(f'"{name}"', helpers)
         self.assertIn("*stdlib_imports(router_scripts)", spec)
         # provider_inventory reads TOML, which the frozen interpreter only has when it is named.
-        scripts = (ROOT / "skills" / "route-agent-work" / "scripts" / "provider_inventory.py").read_text(encoding="utf-8")
+        scripts = (ROOT / "skills" / "agent-compass" / "scripts" / "provider_inventory.py").read_text(encoding="utf-8")
         self.assertIn("import tomllib", scripts)
 
     def test_payload_check_flags_untracked_files_in_a_wheel_sdist_and_pyinstaller_table(self):

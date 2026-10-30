@@ -5,7 +5,7 @@
 The window lives on a private, never-displayed Win32 desktop (CreateDesktop) owned by a worker
 thread, is captured with PrintWindow, then destroyed. It never takes focus and never appears on
 the user's desktop. State lives in a temporary directory (neutral reference fleet, synthetic
-ledger); nothing under ~/.route-manager is read or written.
+ledger); nothing under ~/.agent-compass is read or written.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tray"))
-sys.path.insert(0, str(ROOT / "skills" / "route-agent-work" / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "agent-compass" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 

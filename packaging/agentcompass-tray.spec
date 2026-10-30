@@ -11,7 +11,7 @@ from pathlib import Path
 
 root = Path(SPECPATH).resolve().parent
 tray = root / "tray"
-router_scripts = root / "skills" / "route-agent-work" / "scripts"
+router_scripts = root / "skills" / "agent-compass" / "scripts"
 
 # The router skill is not frozen, but the tray imports its scripts in-process (priority menu, router
 # window), so the frozen interpreter must carry every standard-library module they import.

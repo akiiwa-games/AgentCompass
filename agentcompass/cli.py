@@ -53,7 +53,7 @@ def call_onboard(command: str, argv: list[str]) -> int:
 
 
 def route_judge_command(stage: str, args: list[str]) -> list[str]:
-    script = locations.skill_root() / "route-agent-work" / "scripts" / "route_judge.py"
+    script = locations.skill_root() / "agent-compass" / "scripts" / "route_judge.py"
     if not script.is_file():
         raise FileNotFoundError(script)
     return [sys.executable, "-I", "-X", "utf8", str(script), stage, *args]
@@ -92,7 +92,7 @@ def readiness_notice() -> str | None:
     does not enroll accounts into host policy; a missing task is not a plan.
     """
     try:
-        scripts = locations.skill_root() / "route-agent-work" / "scripts"
+        scripts = locations.skill_root() / "agent-compass" / "scripts"
         if str(scripts) not in sys.path:
             sys.path.append(str(scripts))
         import json

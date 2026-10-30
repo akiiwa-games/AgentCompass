@@ -89,14 +89,14 @@ MAX_NOTIFY_LENGTH = 240
 
 
 def log_error(exc: BaseException) -> None:
-    path = Path.home() / ".route-manager" / "tray.log"
+    path = Path.home() / ".agent-compass" / "tray.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
         traceback.print_exception(exc, file=stream)
 
 
 def log_info(message: str) -> None:
-    path = Path.home() / ".route-manager" / "tray.log"
+    path = Path.home() / ".agent-compass" / "tray.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with path.open("a", encoding="utf-8") as stream:
@@ -339,7 +339,7 @@ def main() -> None:
         log_info("tray startup skipped: another instance holds the mutex")
         return
     PLUGINS = plugins.load()
-    icon = pystray.Icon("route-manager", draw_icon(), "AgentCompass")
+    icon = pystray.Icon("agentcompass", draw_icon(), "AgentCompass")
     icon.menu = build_menu()
 
     def setup(icon: pystray.Icon) -> None:

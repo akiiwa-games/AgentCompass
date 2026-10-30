@@ -1,7 +1,7 @@
 """Local menu IPC. UI processes consume commands on their own event loop.
 
 Only menu labels, checks and opaque action IDs cross this boundary. Requests and
-receipts stay in the user's Route Manager state directory; no network listener.
+receipts stay in the user's AgentCompass state directory; no network listener.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import uuid
 
 import psutil
 
-DIRECTORY = Path.home() / ".route-manager" / "controls"
+DIRECTORY = Path.home() / ".agent-compass" / "controls"
 
 
 def component_directory(component: str) -> Path:

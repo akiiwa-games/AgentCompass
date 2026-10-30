@@ -48,7 +48,7 @@ def _default_repo() -> str:
     if os.environ.get("DOT_TRANSFER_REPO"):
         return os.environ["DOT_TRANSFER_REPO"]
     try:
-        cfg = json.loads((Path.home() / ".route-manager" / "dot-plugin.json").read_text(encoding="utf-8"))
+        cfg = json.loads((Path.home() / ".agent-compass" / "dot-plugin.json").read_text(encoding="utf-8"))
         if isinstance(cfg.get("transfer_repo"), str) and cfg["transfer_repo"].strip():
             return cfg["transfer_repo"].strip()
     except (OSError, ValueError):

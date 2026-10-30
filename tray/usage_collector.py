@@ -1,7 +1,7 @@
 """Headless client of Usage Float's direct subscription collector.
 
 Runs --once to refresh active local providers into ~/.usage-float/usage-cache.json
-and write a diagnostic receipt at ~/.route-manager/usage-collector.json.
+and write a diagnostic receipt at ~/.agent-compass/usage-collector.json.
 """
 from pathlib import Path
 import argparse
@@ -18,12 +18,12 @@ import plugins
 
 sys.path.insert(0, str(plugins.plugin_root('usage-float')))
 # Import the same policy implementation used by the installed router.
-SKILL_SCRIPTS = Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'skills/route-agent-work/scripts'
+SKILL_SCRIPTS = Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'skills/agent-compass/scripts'
 sys.path.insert(0, str(SKILL_SCRIPTS))
 import host_policy
 import allocator
 
-STATE = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.route-manager').expanduser()
+STATE = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass').expanduser()
 # Families Usage Float reads directly; account names come from discovery.
 COLLECTED_FAMILIES = ('claude', 'codex', 'pi', 'grok', 'antigravity')
 

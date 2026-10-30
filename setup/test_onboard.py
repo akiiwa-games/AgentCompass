@@ -47,7 +47,7 @@ class HomeCase(unittest.TestCase):
         return self.quiet(sg.sync, **kwargs)
 
     def backups(self):
-        root = self.home / ".route-manager" / "backups"
+        root = self.home / ".agent-compass" / "backups"
         return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
 
 
@@ -113,13 +113,13 @@ class RuleSourceTests(HomeCase):
         self.assertNotIn("@@", text)
         self.assertNotRegex(text, r"[\u4e00-\u9fff]")
         self.assertNotRegex(text, r"20\d\d-\d\d-\d\d")
-        for needle in ("roll --brief", "launched", "dispatch_mode", "caller_action", "bypassPermissions", "Parent session agent ID",
+        for needle in ("roll --task", "launched", "status", "next_action", "bypassPermissions", "Parent session agent ID",
                        "notifyOnFinish", "background process"):
             self.assertIn(needle.lower(), text.lower())
         self.assertIn(host_rules.ROUTE_JUDGE, text)
 
     def test_overlay_replaces_the_default_and_fills_placeholders(self):
-        overlay = self.write(".route-manager/host-rules/codex.md", "custom @@HOME_POSIX@@ @@ROUTER_HOOK_SCRIPT@@\n")
+        overlay = self.write(".agent-compass/host-rules/codex.md", "custom @@HOME_POSIX@@ @@ROUTER_HOOK_SCRIPT@@\n")
         text, source = host_rules.load("codex", self.home)
         self.assertEqual(source, "overlay")
         self.assertEqual(text, f"custom {self.home.as_posix()} {host_rules.ROUTER_HOOK_SCRIPT}\n")
@@ -128,7 +128,7 @@ class RuleSourceTests(HomeCase):
 
     def test_author_overlay_round_trip_is_byte_identical(self):
         legacy = "# 全局执行纪律\n\n门禁 @@ROUTER_HOOK_SCRIPT@@\n"
-        self.write(".route-manager/host-rules/shared.md", legacy)
+        self.write(".agent-compass/host-rules/shared.md", legacy)
         rendered = legacy.replace("@@ROUTER_HOOK_SCRIPT@@", host_rules.ROUTER_HOOK_SCRIPT)
         claude = self.write(".claude/CLAUDE.md", rendered)
         before = claude.read_bytes()
@@ -151,7 +151,7 @@ class SyncTests(HomeCase):
         self.sync()
         text = (self.home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertTrue(text.startswith("# my rules\n\n" + sg.MARKER_BEGIN))
-        backup = next((self.home / ".route-manager" / "backups").glob("host-setup-*/docs/claude-CLAUDE.md"))
+        backup = next((self.home / ".agent-compass" / "backups").glob("host-setup-*/docs/claude-CLAUDE.md"))
         self.assertEqual(backup.read_text(encoding="utf-8"), "# my rules\n")
 
     def test_second_run_is_idempotent_and_every_changing_run_gets_its_own_backup_dir(self):
@@ -162,7 +162,7 @@ class SyncTests(HomeCase):
         self.sync()
         self.assertEqual((self.home / ".claude" / "CLAUDE.md").read_bytes(), before)
         self.assertEqual(self.backups(), first)                   # no change, no new backup directory
-        self.write(".route-manager/host-rules/shared.md", "# changed rules\n")
+        self.write(".agent-compass/host-rules/shared.md", "# changed rules\n")
         self.sync()
         second = self.backups()
         self.assertEqual(len(second), 2)                          # an older backup never suppresses a new one
@@ -195,17 +195,17 @@ class SyncTests(HomeCase):
         self.sync()
         prompt = json.loads((self.home / ".paseo" / "config.json").read_text(encoding="utf-8"))["daemon"]["appendSystemPrompt"]
         self.assertTrue(prompt.startswith("Be terse.\n\n" + sg.MARKER_BEGIN))
-        self.assertIn("roll --brief", prompt)
+        self.assertIn("roll --task", prompt)
 
     def test_legacy_paseo_prompt_is_replaced_once_and_backed_up(self):
         legacy = "【全局强制纪律】旧的单行规则"
         config = self.write(".paseo/config.json", {"daemon": {"appendSystemPrompt": legacy}, "other": 1})
-        self.write(".route-manager/host-rules/daemon-append.md", "【全局强制纪律】新的单行规则\n")
+        self.write(".agent-compass/host-rules/daemon-append.md", "【全局强制纪律】新的单行规则\n")
         before = config.read_bytes()
         self.sync(skills=False)
         data = json.loads(config.read_text(encoding="utf-8"))
         self.assertEqual(data, {"daemon": {"appendSystemPrompt": sg.make_block("【全局强制纪律】新的单行规则\n")}, "other": 1})
-        backup = next((self.home / ".route-manager/backups").glob("host-setup-*/configs/paseo-config.json"))
+        backup = next((self.home / ".agent-compass/backups").glob("host-setup-*/configs/paseo-config.json"))
         self.assertEqual(backup.read_bytes(), before)
         after = config.read_bytes()
         self.sync(skills=False)
@@ -218,10 +218,10 @@ class GeminiMaterializationTests(HomeCase):
         self.write("source/SKILL.md", "v1")
         self.write("source/scripts/tool.py", "tool")
         hub = self.home / ".codex/skills"
-        sg.make_link(hub / "route-agent-work", source)
+        sg.make_link(hub / "agent-compass", source)
         (self.home / ".gemini").mkdir()
-        dst = self.home / ".gemini/skills/route-agent-work"
-        with patch.object(sg, "SKILLS_TO_CODEX", ["route-agent-work"]):
+        dst = self.home / ".gemini/skills/agent-compass"
+        with patch.object(sg, "SKILLS_TO_CODEX", ["agent-compass"]):
             self.sync(docs=False)
             self.assertTrue(sg.materialized_skill_matches(dst, source))
             before = (dst / "SKILL.md").stat().st_mtime_ns
@@ -239,7 +239,7 @@ class GeminiMaterializationTests(HomeCase):
             self.sync(docs=False)
             self.assertEqual((dst / "SKILL.md").read_text(), "v2")
             self.assertTrue(sg.materialized_skill_matches(dst, source))
-            saved = list((self.home / ".route-manager/backups").glob("host-setup-*/skills/gemini-route-agent-work/SKILL.md"))
+            saved = list((self.home / ".agent-compass/backups").glob("host-setup-*/skills/gemini-agent-compass/SKILL.md"))
             self.assertEqual([p.read_text() for p in saved], ["v1"])
             self.assertEqual(Path(sg.junction_target(saved[0].parent / "scripts")), (source / "scripts").resolve())
 
@@ -255,7 +255,7 @@ class GeminiMaterializationTests(HomeCase):
 class UninstallTests(HomeCase):
     def snapshot(self):
         return {str(p.relative_to(self.home)): (p.read_bytes() if p.is_file() else None)
-                for p in sorted(self.home.rglob("*")) if ".route-manager" not in p.parts}
+                for p in sorted(self.home.rglob("*")) if ".agent-compass" not in p.parts}
 
     def test_uninstall_restores_a_pristine_home(self):
         self.cli = {"claude": "claude", "codex": "codex", "pi": "pi", "agy": "agy"}
@@ -265,16 +265,16 @@ class UninstallTests(HomeCase):
         self.write(".codex/config.toml", "model = 'x'\n")
         self.write(".paseo/config.json", {"daemon": {"appendSystemPrompt": "Be terse."}, "agents": {"providers": {
             "antigravity": {"env": {"PATH": "C:\\a;C:\\codex-arg0\\x;C:\\a"}}}}})
-        skill_home = self.home / "checkout-skills" / "route-agent-work"
-        self.write("checkout-skills/route-agent-work/SKILL.md", "---\nname: route-agent-work\n---\n")
+        skill_home = self.home / "checkout-skills" / "agent-compass"
+        self.write("checkout-skills/agent-compass/SKILL.md", "---\nname: agent-compass\n---\n")
         before = self.snapshot()
         with patch.object(sg, "REPO_SKILLS", skill_home.parent):
             self.sync(hooks=True, link_repo_skills=True)
         self.assertNotEqual(self.snapshot(), before)
-        self.assertTrue((self.home / ".codex" / "skills" / "route-agent-work").exists())
+        self.assertTrue((self.home / ".codex" / "skills" / "agent-compass").exists())
         self.quiet(sg.uninstall)
         self.assertEqual(self.snapshot(), before)
-        self.assertFalse((self.home / ".route-manager" / "setup-manifest.json").exists())
+        self.assertFalse((self.home / ".agent-compass" / "setup-manifest.json").exists())
 
     def test_uninstall_keeps_text_the_user_added_after_setup(self):
         self.cli = {"claude": "claude"}
@@ -285,7 +285,7 @@ class UninstallTests(HomeCase):
         self.assertEqual(path.read_text(encoding="utf-8"), "\nadded later\n")
 
     def test_whole_file_that_was_edited_since_setup_is_left_alone(self):
-        self.write(".route-manager/host-rules/shared.md", "# Title\n\nbody\n")
+        self.write(".agent-compass/host-rules/shared.md", "# Title\n\nbody\n")
         self.write(".claude/CLAUDE.md", "# Title\n\nold body\n")           # earlier generation: replaced as a whole
         self.sync()
         path = self.home / ".claude" / "CLAUDE.md"
@@ -345,7 +345,7 @@ class OverrideTests(HomeCase):
                              {"name": "codex", "signed_in": False}]}
 
     def test_disabled_account_is_written_and_user_entries_are_never_overwritten(self):
-        path = self.write(".route-manager/accounts-override.json", {"schema_version": 2, "accounts": {
+        path = self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {
             "claude": {"bundles": {"x": {"disabled": "mine"}}}, "opencode": {"verified": True}}})
         result = onboard.write_override(self.home, self.detection(), {"opencode", "claude"})
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -358,7 +358,7 @@ class OverrideTests(HomeCase):
     def test_re_enabling_removes_only_what_onboarding_added(self):
         onboard.write_override(self.home, self.detection(), {"opencode"})
         state = {"disabled_by_onboarding": ["opencode"]}
-        self.write(".route-manager/onboarding.json", state)
+        self.write(".agent-compass/onboarding.json", state)
         result = onboard.write_override(self.home, self.detection(), set())
         self.assertEqual(result["removed"], ["opencode"])
         document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
@@ -372,7 +372,7 @@ class OverrideTests(HomeCase):
         self.assertNotIn("claude", document["accounts"])
 
     def test_a_user_disabled_unverifiable_account_stays_off(self):
-        self.write(".route-manager/accounts-override.json", {"schema_version": 2, "accounts": {"opencode": {"verified": False}}})
+        self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {"opencode": {"verified": False}}})
         onboard.write_override(self.home, self.detection(), set())
         document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
         self.assertIs(document["accounts"]["opencode"]["verified"], False)
@@ -384,7 +384,7 @@ class OverrideTests(HomeCase):
 
 class UsagePluginTests(HomeCase):
     def test_existing_checkout_is_used_and_collection_runs_once(self):
-        plugin = self.home / ".route-manager" / "plugins" / "usage-float"
+        plugin = self.home / ".agent-compass" / "plugins" / "usage-float"
         (plugin / ".git").mkdir(parents=True)
         (plugin / "usage_float.py").write_text("", encoding="utf-8")
         self.cli["git"] = "git"
@@ -433,7 +433,7 @@ class SetupFlowTests(HomeCase):
         self.assertIn("claude       signed in", output)
         self.assertIn("router hook   : not installed", output)
         self.assertFalse(sg.hooks_installed())
-        self.assertTrue((self.home / ".route-manager" / "onboarding.json").is_file())
+        self.assertTrue((self.home / ".agent-compass" / "onboarding.json").is_file())
 
     def test_uninstall_command_reverses_setup_including_the_override(self):
         self.cli = {"claude": "claude", "opencode": "opencode"}
@@ -445,7 +445,7 @@ class SetupFlowTests(HomeCase):
             self.assertEqual(onboard.main(["uninstall", "--home", str(self.home)]), 0)
         self.assertFalse(override.exists())
         self.assertFalse((self.home / ".claude" / "CLAUDE.md").exists())
-        self.assertFalse((self.home / ".route-manager" / "onboarding.json").exists())
+        self.assertFalse((self.home / ".agent-compass" / "onboarding.json").exists())
 
     def test_dry_run_writes_nothing(self):
         self.cli = {"claude": "claude"}

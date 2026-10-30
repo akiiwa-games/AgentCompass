@@ -112,7 +112,7 @@ def prepare_gateway(plugin_id: str) -> None:
 
 
 def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
-    """Clone a missing Git plugin into ~/.route-manager/plugins/<id> and run its initial build/setup."""
+    """Clone a missing Git plugin into ~/.agent-compass/plugins/<id> and run its initial build/setup."""
     plugin = plugins.BY_ID[plugin_id]
     if not plugin.repo:
         return _tr('{0} 无远端仓库').format(f'{plugin.name}')

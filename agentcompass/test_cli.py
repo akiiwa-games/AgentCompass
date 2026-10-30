@@ -41,7 +41,7 @@ class CliTests(unittest.TestCase):
     def test_plan_command_is_an_isolated_interpreter(self):
         command = cli.route_judge_command("plan", ["--input", "examples/task.json", "--dry-run"])
         self.assertEqual(command[:4], [sys.executable, "-I", "-X", "utf8"])
-        self.assertTrue(command[4].replace("\\", "/").endswith("skills/route-agent-work/scripts/route_judge.py"))
+        self.assertTrue(command[4].replace("\\", "/").endswith("skills/agent-compass/scripts/route_judge.py"))
         self.assertEqual(command[5:], ["plan", "--input", "examples/task.json", "--dry-run"])
 
     def test_providers_is_passed_through_to_route_judge(self):

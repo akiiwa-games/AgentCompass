@@ -66,7 +66,7 @@ def open_window(page: str | None = None) -> None:
 
 
 def log_error(exc: BaseException) -> None:
-    path = Path.home() / ".route-manager" / "router-window.log"
+    path = Path.home() / ".agent-compass" / "router-window.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
         stream.write(time.strftime("[%Y-%m-%d %H:%M:%S]\n"))
@@ -2685,7 +2685,7 @@ class Panel:
         frame = scroll.body
         box = theme.card(frame, padding=14, fill="x")
         box.columnconfigure(1, weight=1)
-        rows = ((_tr("开机自启"), _tr("AgentCompass 随 Windows 启动")), (_tr("宿主 Skill"), _tr("Claude / Codex 的 route-agent-work 链接")),
+        rows = ((_tr("开机自启"), _tr("AgentCompass 随 Windows 启动")), (_tr("宿主 Skill"), _tr("Claude / Codex 的 agent-compass 链接")),
                 (_tr("Dot 中转库"), _tr("GitHub 仓库 owner/name")))
         for row, (title, hint) in enumerate(rows):
             if row:
@@ -3027,7 +3027,7 @@ class Panel:
                 chrome = _tr("Chrome 已找到") if gateways.chrome_path().is_file() else _tr("缺 Chrome")
                 widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
             else:
-                widgets["info"].set(f"~/.route-manager/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
+                widgets["info"].set(f"~/.agent-compass/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
 
     def plugin_actions(self, plugin_id):
         import services
@@ -3037,7 +3037,7 @@ class Panel:
             return ((_tr("安装/修复"), grok_bot_cli.install), (_tr("检查连接"), grok_bot_cli.check),
                     (_tr("使用说明"), grok_bot_cli.guide))
 
-        state = Path.home() / ".route-manager"
+        state = Path.home() / ".agent-compass"
 
         def log(path):
             def open_log():
@@ -3216,7 +3216,7 @@ class Panel:
                 widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
             else:
                 deployed = (plugins.plugin_root(plugin.id) / ".git").exists()
-                widgets["info"].set(f"~/.route-manager/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
+                widgets["info"].set(f"~/.agent-compass/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
         self.status.set(_tr('集成状态已更新 · {0}').format(f"{time.strftime('%H:%M:%S')}"))
 
     def copy_tunnel(self):

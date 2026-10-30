@@ -1,4 +1,4 @@
-"""Deploy the Route Manager tray: the single tray for Dot2API, ChatGPT Web and the usage statistics.
+"""Deploy the AgentCompass tray: the single tray for Dot2API, ChatGPT Web and the usage statistics.
 
     python deploy.py check      report what is in place and what is not; changes nothing
     python deploy.py install    patch and build ChatGPT Web (it runs from codex-chatgpt-web/), fix the startup entries,
@@ -7,13 +7,13 @@
     python deploy.py icons      repair branding of this installation's existing Windows shortcuts only
     python deploy.py all        install, then restart
 
-Every step is safe to repeat. A replaced startup shortcut is moved to ~/.route-manager/backups/startup, not deleted.
+Every step is safe to repeat. A replaced startup shortcut is moved to ~/.agent-compass/backups/startup, not deleted.
 
 The skills live in skills/ and reach a host with git pull: ~/.codex/skills/<name> is a junction to skills/<name>, and
 ~/.claude/skills/<name> a junction to the ~/.codex one. A real directory in their place is moved to
-~/.route-manager/backups/skills first.
+~/.agent-compass/backups/skills first.
 
-Login start is the per-user scheduled task "Route Manager", not a Startup-folder shortcut: Explorer runs the Run keys
+Login start is the per-user scheduled task "AgentCompass", not a Startup-folder shortcut: Explorer runs the Run keys
 and the Startup folder one after another, and a blocking login startup item can stall the Startup
 folder (the tray, Snipaste) started at all.
 """
@@ -52,11 +52,11 @@ SUPERSEDED = (
 )
 TASK_NAME = "Route Manager"
 TASK_DELAY = "PT20S"      # let the taskbar come up before pystray adds its icon
-BACKUPS = Path.home() / ".route-manager" / "backups" / "startup"
+BACKUPS = Path.home() / ".agent-compass" / "backups" / "startup"
 SKILLS = TRAY_DIR.parent / "skills"
 CODEX_SKILLS = Path.home() / ".codex" / "skills"
 CLAUDE_SKILLS = Path.home() / ".claude" / "skills"
-SKILL_BACKUPS = Path.home() / ".route-manager" / "backups" / "skills"
+SKILL_BACKUPS = Path.home() / ".agent-compass" / "backups" / "skills"
 INSTALLED = Path.home() / "AppData" / "Local" / "Programs" / "Codex Web GPT"      # the packaged release this tree replaces
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -148,7 +148,7 @@ def write_startup() -> None:
         f"$p = New-ScheduledTaskPrincipal -UserId '{user}' -LogonType Interactive -RunLevel Limited; "
         "$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries "
         "-ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Priority 4; "
-        f"Register-ScheduledTask -TaskName '{TASK_NAME}' -Description 'Route Manager tray' "
+        f"Register-ScheduledTask -TaskName '{TASK_NAME}' -Description 'AgentCompass tray' "
         "-Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
     )
     powershell(script, check=True)
@@ -214,7 +214,7 @@ def adopt_usage_float_startup() -> list[str]:
                 import json
                 backup.write_text(json.dumps({"UsageFloat": command}), encoding="utf-8")
             winreg.DeleteValue(key, "UsageFloat")
-            return [_tr("已将 Usage Float 开机启动交给 Route Manager")]
+            return [_tr("已将 Usage Float 开机启动交给 AgentCompass")]
     except FileNotFoundError:
         return []
 
@@ -295,7 +295,7 @@ def check() -> list[tuple[str, bool, str]]:
     installed = (INSTALLED / "Codex Web GPT.exe").exists()
     rows.append((_tr("旧的安装版 Codex Web GPT 已卸载"), not installed, str(INSTALLED) if installed else ""))
     task = startup_fields()
-    rows.append((_tr('开机启动 Route Manager（计划任务 {0}）').format(f'{TASK_NAME}'), startup_ok(task),
+    rows.append((_tr('开机启动 AgentCompass（计划任务 {0}）').format(f'{TASK_NAME}'), startup_ok(task),
                  _tr("未创建") if task is None else f"{task[0]} {task[1]}"))
     for old in SUPERSEDED:
         rows.append((_tr('旧开机项 {0} 已移除').format(f'{old.name}'), not old.exists(), _tr("仍在启动文件夹") if old.exists() else ""))

@@ -1,4 +1,4 @@
 interface:
   display_name: "Gemini Web (Omni 1.1 via AI Studio)"
-  short_description: "Gemini, AI Studio and Omni 1.1 video through Route Manager's signed-in Gemini Web browser"
-  default_prompt: "Use $gemini-web to run the Gemini task through Route Manager's Gemini Web browser. For Omni 1.1 video, run omni.py with a new --out directory, report state.json's status and conversation_url, and stop for the user on login, consent or Google Drive prompts."
+  short_description: "Gemini, AI Studio and Omni 1.1 video through AgentCompass's signed-in Gemini Web browser"
+  default_prompt: "Use $gemini-web to run the Gemini task through AgentCompass's Gemini Web browser. For Omni 1.1 video, run omni.py with a new --out directory, report state.json's status and conversation_url, and stop for the user on login, consent or Google Drive prompts."

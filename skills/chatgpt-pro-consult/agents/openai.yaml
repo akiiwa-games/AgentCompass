@@ -1,4 +1,4 @@
 interface:
   display_name: "Pro Consult (Browser-only Bridge)"
   short_description: "Consult Pro for reasoning and plans through the isolated local bridge"
-  default_prompt: "Use $chatgpt-pro-consult with an authorized $route-agent-work dispatch to consult Pro through the Browser-only bridge. Send only the selected question and evidence, capture the complete advice, and leave execution and decisions to the parent."
+  default_prompt: "Use $chatgpt-pro-consult with an authorized $agent-compass dispatch to consult Pro through the Browser-only bridge. Send only the selected question and evidence, capture the complete advice, and leave execution and decisions to the parent."

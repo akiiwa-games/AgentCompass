@@ -1,6 +1,6 @@
 """Loopback ports for the local bridges.
 
-Environment variables win over ``~/.route-manager/ports.json``, which wins over the defaults.
+Environment variables win over ``~/.agent-compass/ports.json``, which wins over the defaults.
 A bad value is reported and the default is kept so a tray process still starts.
 """
 
@@ -48,7 +48,7 @@ def config_path(home: Path | None = None, environ: dict | None = None) -> Path:
     if home is None:
         raw = environ.get("USERPROFILE") or environ.get("HOME")
         home = Path(raw) if raw else Path.home()
-    return Path(home) / ".route-manager" / "ports.json"
+    return Path(home) / ".agent-compass" / "ports.json"
 
 
 def _parse_port(raw: object) -> int | None:

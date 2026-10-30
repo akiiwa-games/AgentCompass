@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "route-agent-work" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
@@ -44,7 +44,7 @@ class DoctorTests(unittest.TestCase):
             self.assertNotIn("credential_key", text)
             self.assertNotIn("api_key", text)
             self.assertIn("doctor", text)
-            self.assertFalse((home / ".route-manager" / "ports.json").exists())
+            self.assertFalse((home / ".agent-compass" / "ports.json").exists())
 
     def test_render_uses_the_same_unverified_sign_in_words_as_setup(self):
         row = {"family": "opencode", "status": "ready", "sources": ["native"]}

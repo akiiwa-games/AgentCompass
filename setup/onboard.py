@@ -4,7 +4,7 @@
     python -X utf8 setup/onboard.py uninstall [--dry-run]
 
 `setup` detects which agent CLIs are installed and signed in (claude, codex, agy, opencode, pi, grok, paseo), writes the
-accounts the router may use into ~/.route-manager/accounts-override.json, optionally fetches the usage-float plugin and
+accounts the router may use into ~/.agent-compass/accounts-override.json, optionally fetches the usage-float plugin and
 runs one usage collection, links the router skill, writes the global agent rules and (only on request) the router
 gate hook. Everything it changes is backed up and recorded so `uninstall` can reverse it.
 
@@ -24,7 +24,7 @@ from pathlib import Path
 SETUP = Path(__file__).resolve().parent
 REPO = SETUP.parent
 sys.path.insert(0, str(SETUP))
-sys.path.insert(0, str(REPO / "skills" / "route-agent-work" / "scripts"))
+sys.path.insert(0, str(REPO / "skills" / "agent-compass" / "scripts"))
 
 import provider_inventory  # noqa: E402
 import accounts_override  # noqa: E402
@@ -62,7 +62,7 @@ def detection_environ(home: Path, environ: dict | None = None) -> dict:
     for key in ("SYSTEMROOT", "PATHEXT", "TEMP", "TMP"):
         if source.get(key):
             env[key] = source[key]
-    env.update(ROUTER_PROVIDER_HOME=str(home), ROUTER_STATE_DIR=str(home / ".route-manager"),
+    env.update(ROUTER_PROVIDER_HOME=str(home), ROUTER_STATE_DIR=str(home / ".agent-compass"),
                PASEO_HOME=str(home / ".paseo"), APPDATA=str(home / "AppData" / "Roaming"),
                LOCALAPPDATA=str(home / "AppData" / "Local"), USERPROFILE=str(home), HOME=str(home))
     try:
@@ -115,11 +115,11 @@ def _read_json(path: Path) -> dict:
 
 
 def override_path(home: Path) -> Path:
-    return home / ".route-manager" / "accounts-override.json"
+    return home / ".agent-compass" / "accounts-override.json"
 
 
 def onboarding_path(home: Path) -> Path:
-    return home / ".route-manager" / "onboarding.json"
+    return home / ".agent-compass" / "onboarding.json"
 
 
 def write_override(home: Path, detection: dict, disabled: set[str], dry_run: bool = False) -> dict:
@@ -167,7 +167,7 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
               "added": added, "removed": removed, "enabled": enabled, "disabled": sorted(wanted_off), "backup": None}
     if changed and not dry_run:
         if existed:
-            backup = home / ".route-manager" / "backups" / f"onboard-{datetime.now().strftime('%Y%m%d-%H%M%S')}" / path.name
+            backup = home / ".agent-compass" / "backups" / f"onboard-{datetime.now().strftime('%Y%m%d-%H%M%S')}" / path.name
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, backup)
             result["backup"] = str(backup)
@@ -186,7 +186,7 @@ def usage_float_repo_url() -> str:
 
 def usage_float_dir(home: Path) -> Path | None:
     """An existing usage-float checkout: the user's plugin copy first, then a sibling folder of this checkout."""
-    for candidate in (home / ".route-manager" / "plugins" / "usage-float", REPO / "usage-float"):
+    for candidate in (home / ".agent-compass" / "plugins" / "usage-float", REPO / "usage-float"):
         if (candidate / "usage_float.py").is_file():
             return candidate
     return None
@@ -194,7 +194,7 @@ def usage_float_dir(home: Path) -> Path | None:
 
 def ensure_usage_float(home: Path, dry_run: bool = False, run=subprocess.run) -> dict:
     existing = usage_float_dir(home)
-    target = home / ".route-manager" / "plugins" / "usage-float"
+    target = home / ".agent-compass" / "plugins" / "usage-float"
     git = shutil.which("git")
     if existing is not None:
         if (existing / ".git").exists() and git and not dry_run:
@@ -262,7 +262,7 @@ def _undo_command() -> str:
 
 
 def _try_command() -> str:
-    return "agentcompass providers" if _packaged() else "python -X utf8 skills/route-agent-work/scripts/route_judge.py providers"
+    return "agentcompass providers" if _packaged() else "python -X utf8 skills/agent-compass/scripts/route_judge.py providers"
 
 
 def _line(text: str = "") -> None:
@@ -355,9 +355,9 @@ def setup_main(argv: list[str] | None = None) -> int:
         onboarding_path(home).write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     _line("\nSummary")
     _line(f"  accounts file : {override['path']}")
-    _line(f"  global rules  : {'written' if do_docs else 'skipped'}  (overlay folder: {home / '.route-manager' / 'host-rules'})")
+    _line(f"  global rules  : {'written' if do_docs else 'skipped'}  (overlay folder: {home / '.agent-compass' / 'host-rules'})")
     _line(f"  router hook   : {summary['hooks']}")
-    _line(f"  backups       : {home / '.route-manager' / 'backups'}")
+    _line(f"  backups       : {home / '.agent-compass' / 'backups'}")
     _line(f"  undo          : {_undo_command()}")
     if dry:
         _line("\nDry run complete; nothing was changed.")
@@ -398,7 +398,7 @@ def uninstall_main(argv: list[str] | None = None) -> int:
             print(f"[uninstall] {path}: onboarding entries removed")
     if state and not args.dry_run:
         onboarding_path(home).unlink(missing_ok=True)
-    plugin = home / ".route-manager" / "plugins" / "usage-float"
+    plugin = home / ".agent-compass" / "plugins" / "usage-float"
     if plugin.exists():
         print(f"[uninstall] {plugin} was left in place (remove it by hand if you do not use usage-float).")
     return code

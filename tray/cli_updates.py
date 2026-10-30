@@ -91,7 +91,7 @@ class Target:
 
 
 def state_dir() -> Path:
-    return Path(os.environ.get("ROUTER_STATE_DIR") or Path.home() / ".route-manager")
+    return Path(os.environ.get("ROUTER_STATE_DIR") or Path.home() / ".agent-compass")
 
 
 def log(line: str) -> None:

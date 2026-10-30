@@ -5,10 +5,10 @@ What it touches, and how it stays reversible:
 * Global rule files (~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ...) get a managed block between
   ``<!-- agentcompass:begin -->`` and ``<!-- agentcompass:end -->``; everything outside it is preserved. A file that
   already equals the generated text is treated as wholly managed (the pre-marker behaviour), as is one recorded as such.
-* The rule text is the neutral default in ``host_rules.py`` unless an overlay exists in ``~/.route-manager/host-rules/``.
+* The rule text is the neutral default in ``host_rules.py`` unless an overlay exists in ``~/.agent-compass/host-rules/``.
 * Every file that is about to change is first copied into a per-run backup directory
-  ``~/.route-manager/backups/host-setup-<timestamp>/``; nothing is skipped because an older backup exists.
-* Every change is recorded in ``~/.route-manager/setup-manifest.json`` so ``uninstall()`` can remove the managed blocks,
+  ``~/.agent-compass/backups/host-setup-<timestamp>/``; nothing is skipped because an older backup exists.
+* Every change is recorded in ``~/.agent-compass/setup-manifest.json`` so ``uninstall()`` can remove the managed blocks,
   hook entries, junctions and Paseo config changes again (restoring backups where a whole file was replaced).
 * The router gate hook is installed only when asked for (``--hooks``) or when it is already installed.
 """
@@ -128,7 +128,7 @@ def set_home(path: Path | str | None = None) -> None:
 
 
 def state_dir() -> Path:
-    return HOME / ".route-manager"
+    return HOME / ".agent-compass"
 
 
 def manifest_path() -> Path:
@@ -520,7 +520,7 @@ def update_paseo_config() -> None:
 
 # --- skills ----------------------------------------------------------------------------------------------------------
 
-SKILLS_TO_CODEX = ["route-agent-work", "dot-subagent", "chatgpt-pro-consult", "gemini-web", "gate-design-reflection"]
+SKILLS_TO_CODEX = ["agent-compass", "dot-subagent", "chatgpt-pro-consult", "gemini-web", "gate-design-reflection"]
 SKILLS_TO_AGENTS = ["paseo", "paseo-advisor", "paseo-committee", "paseo-handoff", "paseo-help", "paseo-plugin"]
 
 
@@ -676,7 +676,7 @@ def _sync_gemini_skills(codex_skills: Path, agents_skills: Path, claude_skills: 
 
 
 REPO_SKILLS = Path(__file__).resolve().parents[1] / "skills"
-SKILLS_FROM_REPO = ["route-agent-work"]
+SKILLS_FROM_REPO = ["agent-compass"]
 
 
 def link_repo_skills_into_hub() -> None:

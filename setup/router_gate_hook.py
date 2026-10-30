@@ -19,7 +19,7 @@ import sqlite3
 from pathlib import Path
 
 HOME = Path.home()
-DEFAULT_LEDGER = HOME / ".route-manager" / "router-ledger.jsonl"
+DEFAULT_LEDGER = HOME / ".agent-compass" / "router-ledger.jsonl"
 LEDGER_TAIL_BYTES = 1024 * 1024
 DEFAULT_USAGE_CACHE = HOME / ".usage-float" / "usage-cache.json"
 DEFAULT_PASEO_AGENTS = HOME / ".paseo" / "agents"
@@ -429,9 +429,9 @@ def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
 
 
 def router_module(name: str):
-    checkout = Path(__file__).resolve().parents[1] / "skills/route-agent-work"
+    checkout = Path(__file__).resolve().parents[1] / "skills/agent-compass"
     skill = Path(os.environ.get("ROUTER_SKILL_ROOT") or (
-        checkout if (checkout / "scripts").is_dir() else HOME / ".codex/skills/route-agent-work"))
+        checkout if (checkout / "scripts").is_dir() else HOME / ".codex/skills/agent-compass"))
     if str(skill / "scripts") not in sys.path:
         sys.path.insert(0, str(skill / "scripts"))
     return importlib.import_module(name)
@@ -520,7 +520,7 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
 DISABLED_RECOVERY = (
     "禁止启动该账号/档位的 worker 或向 idle/状态未知的旧 worker 开启新 turn；"
     "父会话仍可向自己明确运行中的 worker 发控制消息以收尾。否则请收取已有输出，必要时调用 cancel_agent，"
-    "把进展或任务写进 <task.md>，运行 python -X utf8 ~/.codex/skills/route-agent-work/scripts/route_judge.py "
+    "把进展或任务写进 <task.md>，运行 python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py "
     "roll --brief <task.md> --hours <n> 改派当前启用的账号（确需使用该账号时，先在 AgentCompass "
     "调度设置 -> 账号模型 中开启）。"
 )
@@ -796,9 +796,9 @@ def build_deny_reason(trigger: str, window_seconds: int) -> str:
     minutes = max(1, round(window_seconds / 60))
     return (
         f"[Router Gate] 拦截未路由的子 agent 启动 ({trigger})："
-        f"最近 {minutes} 分钟内 ~/.route-manager/router-ledger.jsonl 中无有效的 plan/select/record 记录。"
+        f"最近 {minutes} 分钟内 ~/.agent-compass/router-ledger.jsonl 中无有效的 plan/select/record 记录。"
         "把任务书写进 <task.md>，一条命令完成分类、选路与启动：\n"
-        "  python -X utf8 ~/.codex/skills/route-agent-work/scripts/route_judge.py roll --brief <task.md> --hours <n>\n"
+        "  python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py roll --brief <task.md> --hours <n>\n"
         "（用户在本次请求中点名了 model/effort 时追加 --provider <p> --account <a> --model <m> --effort <e> "
         "--basis \"<用户原话>\"；宿主没有自动启动器时 roll 会返回 route.bundle，按它原生启动。）"
     )

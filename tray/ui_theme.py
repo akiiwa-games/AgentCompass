@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 APP_ID = "AgentCompass.RouteManager"
-ICON_CACHE_DIR = Path.home() / ".route-manager" / "icons"
+ICON_CACHE_DIR = Path.home() / ".agent-compass" / "icons"
 
 
 def identify_process() -> None:
@@ -186,7 +186,7 @@ def check_indicator(root, style) -> None:
         return ImageTk.PhotoImage(image.resize((size, size), Image.LANCZOS), master=root)
 
     images = (make(False), make(True))
-    root._route_manager_checks = images  # PhotoImages must outlive this call
+    root._AgentCompass_checks = images  # PhotoImages must outlive this call
     style.element_create("RM.Checkbutton.indicator", "image", images[0], ("selected", images[1]),
                          sticky="w", padding=(0, 0, px(8), 0))
     style.layout("TCheckbutton", [("Checkbutton.padding", {"sticky": "nswe", "children": [

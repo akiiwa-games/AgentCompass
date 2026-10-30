@@ -3,7 +3,7 @@
 The tree is a git clone of the upstream project, so each patch is a handful of anchored line edits that are
 applied after a pull and taken back with `git checkout` before the next one. Together they
 
-  - give the launcher no tray icon of its own when the Route Manager tray starts it with
+  - give the launcher no tray icon of its own when the AgentCompass tray starts it with
     CODEX_WEB_GPT_EXTERNAL_TRAY=1: it hides on close rather than quitting, and quits on `--quit`;
   - recognise the Chinese "停止" (Stop) button of the ChatGPT composer, which upstream only knows in English;
   - report the canonical https://chatgpt.com/c/<id> address of the open chat in the diagnostic state, so a request
