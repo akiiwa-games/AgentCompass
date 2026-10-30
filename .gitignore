@@ -71,6 +71,7 @@
 !/.github/
 /.github/*
 !/.github/RELEASE_NOTES.md
+!/.github/RELEASE_SUBTITLE
 !/.github/workflows/
 /.github/workflows/*
 !/.github/workflows/*.yml

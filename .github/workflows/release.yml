@@ -62,9 +62,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      - name: Read the release subtitle
+        id: subtitle
+        run: echo "text=$(head -n 1 .github/RELEASE_SUBTITLE)" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
-          name: "${{ github.ref_name }} — Installable Distribution & First-run Onboarding"
+          name: "${{ github.ref_name }} — ${{ steps.subtitle.outputs.text }}"
           body_path: .github/RELEASE_NOTES.md
           make_latest: true
           fail_on_unmatched_files: true
