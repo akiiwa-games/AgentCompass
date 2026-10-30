@@ -16,7 +16,7 @@ alongside observed quota windows, spending surplus before resets, rotating worke
 ![Router](https://img.shields.io/badge/router-Python%20%2B%20JSON-555)
 ![Cockpit](https://img.shields.io/badge/cockpit-Windows%2011-0078D4)
 
-<img src="docs/hero.png" width="880" alt="AgentCompass decision compass: candidate scores and model-DNA radar">
+<img src="docs/hero.png" width="880" alt="AgentCompass Decision Compass: radar comparison of the winning and runner-up candidates, verdict strip and recent decisions">
 
 <sub>The author's Windows cockpit (optional). The router underneath is a portable Python Agent Skill (<code>SKILL.md</code>) with JSON config · <a href="llms.txt"><code>llms.txt</code></a></sub>
 

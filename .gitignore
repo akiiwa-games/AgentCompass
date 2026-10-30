@@ -11,6 +11,10 @@
 !/docs/
 /docs/*
 !/docs/*.png
+!/docs/*.gif
+!/docs/tools/
+/docs/tools/*
+!/docs/tools/*.py
 !/tray/
 /tray/*
 !/tray/*.py

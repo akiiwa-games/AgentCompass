@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tray"))
 
 import i18n
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import synthetic_decisions as demo
 
 # Force English in this process before building the scene; never load/save UI settings.
 i18n.get_language = lambda: "en"
@@ -24,41 +26,14 @@ OUTPUT = ROOT / "docs" / "decision-theatre.gif"
 
 
 def synthetic_result():
-    # Illustrative values only, not benchmark claims or live allocation inputs.
-    # Score = mean(four capabilities) - opportunity cost + reset bonus - effort penalty.
-    specs = [
-        ("claude-opus-5-5", "high", (.82, .94, .96, .78), .025, .04, .02),
-        ("gpt-6.1-sol", "high", (.76, .88, .94, .84), .045, .02, .02),
-        ("gemini-4-argon-high", "high", (.95, .82, .77, .86), .075, .01, .03),
-        ("claude-sonnet-5-5", "medium", (.72, .78, .84, .72), .035, .02, .01),
-        ("gemini-3.8-flash-high", "medium", (.65, .64, .68, .70), .020, .01, .01),
-    ]
-    ranking = []
-    for index, (model, effort, abilities, cost, bonus, penalty) in enumerate(specs):
-        excluded = ["below task ability floor"] if index == 4 else []
-        components = dict(zip(("divergence", "global_rigor", "module_precision", "capability"), abilities))
-        components.update(opportunity_cost=cost, reset_bonus=bonus, effort_penalty=penalty)
-        ranking.append({
-            "id": f"demo-{index + 1}",
-            "bundle": {"model": model, "effort": effort},
-            "score": None if excluded else round(sum(abilities) / 4 - cost + bonus - penalty, 4),
-            "components": components,
-            "excluded": excluded,
-            "capacity": {"remaining": 72 - index * 7},
-            "expected_pct": 6,
-        })
-    return theatre.snapshot_result({"decision_snapshot": {
-        "task": {"objective": "Refactor payment retries with integration tests",
-                 "work_kind": "general_implementation", "difficulty": "hard", "hours": 2},
-        "ranking": ranking,
-        "choice": "demo-1",
-    }})
+    row = demo.decision_row(demo.HEADLINE, demo.HEADLINE_KIND, 2, "opus55_high", "2026-10-30T09:00:00+00:00")
+    return theatre.snapshot_result(row)
 
 
 def main():
     result = synthetic_result()
     scene = theatre.scene_from_result(result)
-    assert not scene.recomputed and scene.winner.id == "demo-1"
+    assert not scene.recomputed and scene.winner.id == "opus55_high"
     stage = theatre.TheatreRenderer(scene, WIDTH, STAGE_HEIGHT, SCALE)
     strip = summary.SummaryRenderer(
         summary.summary_model(result, router_data.decision_pair(result)), WIDTH, SCALE
