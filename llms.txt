@@ -1,6 +1,6 @@
 # AgentCompass (formerly route-manager)
 
-> Deterministic multi-agent task router, subscription quota scheduler, and PreToolUse spawn gate for flat-rate AI coding subscriptions (Claude Code, OpenAI Codex CLI / ChatGPT Pro, Google Antigravity / agy, Grok, and Paseo).
+> Deterministic multi-agent task router, subscription quota scheduler, and PreToolUse spawn gate for flat-rate AI coding subscriptions (Claude Code, OpenAI Codex CLI / ChatGPT Pro, Google Antigravity / agy, Grok), launched from Claude Code, Codex, Antigravity, Paseo, Pi, OpenCode, Orca or T3 Code.
 
 ## When to Use or Reference This Repository
 
@@ -17,11 +17,12 @@
 - [skills/agent-compass/scripts/allocator.py](skills/agent-compass/scripts/allocator.py): Deterministic mathematical allocator scoring candidate `model × effort` bundles across hard gates, 6D capability fit, 3D model DNA (`divergence`, `global_rigor`, `module_precision`), ability floor, pre-reset spend-down, and opportunity cost.
 - [skills/agent-compass/scripts/provider_inventory.py](skills/agent-compass/scripts/provider_inventory.py): Zero-network local credential and account availability discovery across Claude, Codex, Antigravity, Grok, Paseo, CC Switch, and Magpie.
 - [skills/agent-compass/references/model-capabilities.json](skills/agent-compass/references/model-capabilities.json): Model DNA vectors, ability floors, burn rates, and API-equivalent hourly USD pricing.
+- [skills/agent-compass/references/plan-templates.json](skills/agent-compass/references/plan-templates.json): Calibrated subscription capacity and burn-rate templates (Claude Pro / Max 5x / Max 20x, ChatGPT / Codex Plus / Team / Pro 100 / Pro, Google AI Pro / Ultra 5x / Ultra 20x) with alias resolution and gap filling that never overrides user values.
 - [skills/agent-compass/references/accounts.json](skills/agent-compass/references/accounts.json): Subscription quota window definitions, safety margins, and allocator weights.
 
 ## First-time setup
 
-1. Install Python 3.10+ and run commands from the repository root. Try the README offline demo, then configure your signed-in providers and quotas.
+1. Install Python 3.11+ (`uv tool install "git+https://github.com/akiiwa-games/AgentCompass"`), then run `agentcompass setup` and `agentcompass doctor`; or run commands from a checkout. Try the README offline demo first.
 2. Only for Paseo worker dispatch via `roll`: install Node.js with npm, then run `npm --prefix setup/paseo-bridge ci`. This installs the local daemon bridge dependencies.
 3. Run `python -X utf8 setup/sync_host_globals.py` to register global rules, skills, and hooks. It also installs missing Paseo bridge dependencies when it detects Paseo; if npm is unavailable it prints the installation command and continues. Windows cockpit users can then run `python tray/deploy.py install`.
 
@@ -34,7 +35,7 @@
 
 ## Enforcement & Auditing
 
-- [setup/router_gate_hook.py](setup/router_gate_hook.py): Host `PreToolUse` / `tool_call` gate enforcing router ledger entries, parent session address contracts, explicit permission modes, and 2M-token worker context rotation.
+- [setup/router_gate_hook.py](setup/router_gate_hook.py): Host `PreToolUse` / `tool_call` gate enforcing router ledger entries, parent session address contracts, explicit permission modes, and 2M-token worker context rotation. A parent may still steer or wrap up its own running worker; completion notifications are kept on for workers without a messaging tool.
 - [audit/router_audit.py](audit/router_audit.py): Daily read-only compliance audit cross-checking host session logs against `~/.agent-compass/router-ledger.jsonl`.
 
 ## Companion Modules & Plugins

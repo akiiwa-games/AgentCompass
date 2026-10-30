@@ -2,26 +2,40 @@
 
 # 🧭 AgentCompass
 
-**Match each task to your configured models, capabilities and available quota.<br>
-Decided by arithmetic, not habit.**
-
-A deterministic **multi-agent task router and subscription quota scheduler** for the **flat-rate AI subscriptions** you
-already pay for: **Claude Code** (Claude Max / Pro), **OpenAI Codex CLI** / **ChatGPT Pro**, **Google Antigravity** (`agy` / Gemini CLI),
-**Grok**, and **Paseo**. Unlike per-token API prompt routers (RouteLLM, OpenRouter), AgentCompass dispatches **sub-agents per task** —
-matching each brief to a `model × effort` worker that clears the ability floor, using configured capacity and price estimates
-alongside observed quota windows, spending surplus before resets, rotating workers at
-2M cumulative context tokens, and enforcing a `PreToolUse` spawn gate.
+**Match each task to the right model, effort and subscription quota. Decided by arithmetic, not habit.**
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![Router](https://img.shields.io/badge/router-Python%20%2B%20JSON-555)
 ![Cockpit](https://img.shields.io/badge/cockpit-Windows%2011-0078D4)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 <img src="docs/hero.gif" width="880" alt="AgentCompass Decision Compass replaying a synthetic decision: task title, task kind, candidate routes, ranking, top-two radar comparison, then the winning model and effort, next to the scenario form and recent decisions">
 
-<sub>The author's Windows cockpit (optional), replaying a synthetic decision (illustrative scores, no live account data). The router underneath is a portable Python Agent Skill (<code>SKILL.md</code>) with JSON config · <a href="llms.txt"><code>llms.txt</code></a></sub>
-
+<sub>The optional Windows cockpit replaying a synthetic decision (illustrative scores, no live account data). The router underneath is a portable Python Agent Skill (<code>SKILL.md</code>) with JSON config · <a href="llms.txt"><code>llms.txt</code></a></sub>
 
 </div>
+
+A deterministic **multi-agent task router and subscription quota scheduler** for the flat-rate plans you already pay for
+(Claude Max / Pro, ChatGPT / Codex, Google AI Ultra / Pro, Grok). Unlike per-token prompt routers (RouteLLM, OpenRouter),
+it dispatches a **worker per task**: a `model × effort` bundle that clears the ability floor, spends quota that is about
+to expire, rotates workers at 2M context tokens, and is enforced by a `PreToolUse` spawn gate.
+
+## Quickstart
+
+```bash
+# Offline demo: no credentials, provider CLIs or quota cache needed
+python -X utf8 skills/agent-compass/scripts/route_judge.py plan --input examples/task.json --dry-run --demo
+
+# Install the CLI (Python 3.11+), then onboard: detects signed-in CLIs, asks before each step,
+# backs up every file it changes, never installs the spawn gate unless you say so
+uv tool install "git+https://github.com/akiiwa-games/AgentCompass"     # or: pip install git+https://github.com/akiiwa-games/AgentCompass
+agentcompass setup          # --dry-run to preview; `agentcompass uninstall` undoes it
+agentcompass doctor         # read-only health report
+agentcompass plan --input examples/task.json --dry-run
+```
+
+Windows users can instead run the per-user `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass/releases) (no admin rights). Or hand it to your coding agent:
+*"Read this repository. Run `setup/onboard.py --dry-run`, show me what it would change, then run it and route this task: …"*
 
 ### One real decision
 
@@ -35,105 +49,36 @@ runner-up sol_high     score 0.2528   (codex: 83% left, but observed demand ~84%
 excluded  dot          local_only: needs this machine
 ```
 
-No LLM makes the final call. A lightweight System-One classifier profiles the task brief, and a deterministic allocator
-ranks every signed-in `model × effort` bundle against ability floors, task fit, and quota economics. Every decision is
-recorded in an auditable, replayable ledger.
+No LLM makes the final call. A lightweight System-One classifier profiles the brief; a deterministic allocator ranks
+every signed-in `model × effort` bundle on ability floors, task fit and quota economics; every decision lands in an
+auditable, replayable ledger. With nothing signed in or no quota readings, `plan`/`roll` return `no_ready_account` /
+a `no_usage_data` warning pointing at `agentcompass setup` instead of guessing.
 
-### Try it
-
-```bash
-# 1. Offline demo: no credentials, provider CLIs, or quota cache needed
-python -X utf8 skills/agent-compass/scripts/route_judge.py plan --input examples/task.json --dry-run --demo
-
-# 2. First-run onboarding: detect your signed-in CLIs, choose which accounts the router may use,
-#    fetch the usage collector, link the router skill and write the global agent rules.
-#    It asks before each step, backs up every file it changes, and never installs the spawn gate unless you say so.
-python -X utf8 setup/onboard.py            # add --dry-run to preview, --yes for non-interactive defaults
-
-# 3. Rank your own machine's signed-in providers using its local quota observations
-python -X utf8 skills/agent-compass/scripts/route_judge.py plan --input examples/task.json --dry-run
-
-# Undo everything onboarding did (managed blocks, hook entries, junctions, Paseo prompt, account choices)
-python -X utf8 setup/onboard.py uninstall
-
-# Or hand it to your coding agent
-"Read this repository. Run setup/onboard.py --dry-run, show me what it would change, then run it and show me how the router routes this task: <your task>"
-
-```
-
-Until onboarding has run (or an account is signed in and the usage collector has produced a snapshot) the router does not
-guess: `plan`/`roll` return `no_ready_account` (no choice) when nothing is signed in, and carry a `no_usage_data` warning
-when there are no quota readings, both pointing back at `setup/onboard.py`.
-
-Run these commands from the repository root with Python 3.11+. The demo prints a ranked table using a fixed,
-synthetic quota snapshot and the reference fleet; it makes no network calls, writes no ledger, and launches no workers.
-It uses the same 1.5-hour local coding/test scenario as the historical decision above; scores change with policy and
-quota inputs. Add `--format json` for the full demo breakdown. The normal dry run uses your machine's configuration
-and may report no eligible providers until you sign in and collect quotas with [usage-float](https://github.com/akiiwa-games/usage-float).
-
-For Paseo worker dispatch via `roll`, install Node.js with npm, then run
-`npm --prefix setup/paseo-bridge ci` from this repository root before dispatching.
-These bridge dependencies are only needed when using Paseo. The host rollout script
-also installs them when it detects Paseo and the dependency directory is missing;
-if npm is unavailable it prints this command and continues the other host setup.
-
-> **Status: alpha.** The shipped `accounts.json` is the public catalogue: neutral account slots, models and
-> conservative capability priors. Discovery resolves your signed-in accounts and launcher homes. Personal account,
-> scoring and capability policy belongs in `~/.agent-compass/accounts.local.json`; `accounts-override.json` holds
-> subsequent user overrides. `model-capabilities.json` and `.md` are generated views, not separate configuration.
-> Bundle/model identifiers are logical profiles and aliases, not a required account list. The offline demo uses
-> an explicit synthetic reference fleet; ordinary routing uses your effective local configuration.
-
----
-
-## Install
-
-The router is a Python package. It is not frozen into an executable. Skill directories stay real files on disk
-because Claude, Codex, and Antigravity read `SKILL.md`, and `route_judge.py` loads its sibling scripts by path
-(`python -I`). Python 3.11 or newer is required: the provider inventory imports `tomllib`.
-
-```bash
-# Core router only (stdlib). From a checkout, or from a release wheel / git URL.
-uv tool install "git+https://github.com/akiiwa-games/AgentCompass"
-# or: pip install git+https://github.com/akiiwa-games/AgentCompass
-
-agentcompass setup          # same entry as setup/onboard.py setup_main
-agentcompass doctor         # read-only; add --home <dir> to inspect another home
-agentcompass plan --input examples/task.json --dry-run
-agentcompass uninstall      # same entry as setup/onboard.py uninstall_main
-```
-
-A checkout without a `.git` directory (any packaged install) checks GitHub Releases of
-[akiiwa-games/AgentCompass](https://github.com/akiiwa-games/AgentCompass/releases) and tells you to upgrade with
-`uv tool upgrade agentcompass` or by downloading the installer. A development checkout still fast-forwards with git.
-`ROUTE_MANAGER_GITHUB_ORG` and `ROUTE_MANAGER_USAGE_FLOAT_REPO` override the public org and the usage-float clone URL.
-
-The Windows tray is optional. `pip install "agentcompass[tray]"` adds psutil, pystray, Pillow, and pywin32.
-`packaging/build.ps1` builds a one-folder PyInstaller tray and, when Inno Setup 6 (`ISCC`) is installed, a per-user
-installer (`PrivilegesRequired=lowest`, no admin). The installer registers the "Route Manager" scheduled task.
-Uninstall runs `agentcompass uninstall`, deletes that task, removes `PRO_CONSULT_LAUNCHER`,
-`PRO_CONSULT_LAUNCHER_ARGS`, and `CODEX_WEB_GPT_EXTERNAL_TRAY`, and deletes `Route Manager.lnk` and
-`AgentCompass.lnk` from the user Startup folder. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate
-are set; SmartScreen will warn. See `packaging/SIGNING.md`. Tagged pushes (`v*`) attach the wheel and the installer
-to a GitHub Release.
-
-Ports default to the same loopback values the tray already uses (Dot2API 8788, ChatGPT Web 17843, Gemini Web 17849,
-account login 17851, EasyTier 15888, Muse2API 18610). `AGENTCOMPASS_PORT_*` overrides
-`~/.agent-compass/ports.json`, which overrides those defaults. Doctor reports conflicts. Nothing writes that file
-unless you create it.
+> **Alpha.** The shipped `accounts.json` is a neutral public catalogue. Personal accounts and scoring policy go in
+> `~/.agent-compass/accounts.local.json`; later overrides in `accounts-override.json`. Model-capability files are generated views.
 
 ## Why
 
-You pay ~$200/month each for frontier subscriptions whose quota windows reset on a fixed schedule, yet dispatch coding
-agents by feel. That fails in five predictable ways:
+You pay for frontier subscriptions whose quota windows reset on a fixed clock, yet dispatch agents by feel:
 
 | Vibe dispatching | AgentCompass |
 |---|---|
-| Every task gets Opus or Astra "to be safe"; the weekly window is gone by Wednesday. | **Minimum-sufficient ability.** Models far above the task's difficulty floor pay an over-qualification penalty scaled by their $/h burn. Chores go to Flash or the free remote Dot worker. |
-| Cross-module refactors go to a model that is sharp inside one file but blind across the repo. | **Model DNA fit.** Each model carries `divergence / global_rigor / module_precision`; repo-wide work with `context_scale = 3` heavily penalizes low-`global_rigor` models. |
-| Sunday night, 40% of a weekly window expires unused. | **Pre-reset spend-down.** Within 36 h of a weekly reset, surplus above forecast demand earns up to `+0.20` score so expiring quota gets spent first. |
-| A worker five compactions deep keeps "fixing" code it no longer remembers. | **2M-token rotation guard.** Tracks `compacted + live` context across the worker's full history. At 2M tokens, follow-up prompts are blocked and a fresh worker receives a handoff brief. |
-| The main agent spawns sub-agents however it likes. | **Spawn gate.** A `PreToolUse` / `tool_call` hook rejects any sub-agent launch without a matching router ledger entry in the last 15 minutes or without a real parent session address. |
+| Every task gets Opus or Astra "to be safe"; the weekly window is gone by Wednesday. | **Minimum-sufficient ability.** Models far above the difficulty floor pay an over-qualification penalty scaled by $/h burn. Chores go to Flash or the free remote Dot worker. |
+| Cross-module refactors go to a model that is sharp inside one file but blind across the repo. | **Model DNA fit.** Each model carries `divergence / global_rigor / module_precision`; repo-wide work (`context_scale = 3`) penalizes low-`global_rigor` models. |
+| Sunday night, 40% of a weekly window expires unused. | **Pre-reset spend-down.** Within 36 h of a weekly reset, surplus above forecast demand earns up to `+0.20` score. |
+| A worker five compactions deep keeps "fixing" code it no longer remembers. | **2M-token rotation guard.** Tracks `compacted + live` context over the worker's whole history; at 2M, new turns are blocked and a fresh worker gets a handoff brief. |
+| The main agent spawns sub-agents however it likes. | **Spawn gate.** A `PreToolUse` / `tool_call` hook rejects any launch (Claude's built-in Explore included) without a router ledger entry from the last 15 minutes or without a real parent session address. |
+
+## What's new
+
+| Area | What you get |
+|---|---|
+| **Hosts** | Claude Code, Codex CLI, Google Antigravity (`agy`), Paseo, Pi, OpenCode, plus the orchestrators **Orca** (`orca orchestration worker-start`, per-account Codex homes synced automatically) and **T3 Code** (`delegate_task`, detected from `T3_MCP_URL`). |
+| **Plan templates** | [`plan-templates.json`](skills/agent-compass/references/plan-templates.json) ships calibrated capacity and burn rates: Claude `Pro` / `Max 5x` / `Max 20x`, ChatGPT / Codex `Plus` / `Team` / `Pro 100` / `Pro`, Google AI `Pro` / `Ultra 5x` / `Ultra 20x`. Aliases resolve, missing fields are filled without overriding your values, and a configured plan seeds capacity when no probe result exists. |
+| **Install** | `agentcompass setup / doctor / plan / roll / providers / uninstall` via `uv tool install`, or the per-user Windows tray installer. |
+| **Smarter gate** | Blocks unrouted spawns, rotates workers at 2M historical context, and blocks launches on disabled accounts or tiers. A parent can still steer, wrap up or hand off its own **running** worker; completion notifications are guaranteed so workers without a messaging tool (e.g. `agy`) never lose their result. |
+| **Cockpit** | 5-axis decision console, ledger replay, dry-run simulator, three-tab model settings, background CLI auto-update that never interrupts live sessions. |
+| **usage-float** | Live quota HUD plus one-click redemption of official rate-limit reset credits (Claude 7d / 5h, ChatGPT / Codex). See [usage-float](https://github.com/akiiwa-games/usage-float). |
 
 ## How it decides
 
@@ -153,52 +98,49 @@ score = harness_factor × (w_fit·fit + w_ability·ability) + w_continuity·cont
       − opportunity_cost − effort_penalty − overqualification
 
 fit              = w_route·route_fit + w_capability·capability_fit + w_subjective·model_dna_fit
-harness_factor   = configured harness factor (default 1.0)
 expected_usd     = usd_per_hour × hours × burn / 0.70
 opportunity_cost = sum over windows of displaced_usd × score_per_displaced_usd (0.012)
 ```
 
-Same model, different harness: value stays the same unless `harness_factor` says the harness is worse. Codex versus Pi is still a sibling-only `0.03` step (`harness_order`); the best sibling keeps its score. A bundle that draws several pools must clear every window, and the cost above is the sum. The window with the highest cost is the binding window. One score point is about `$83` of displaced subscription USD (`scoring.opportunity_exchange`).
+Hard gates run first: sign-in and credential health, host policy, modality (text-only models never get visual work),
+`local_only`, ability floor by difficulty, and per-window safety reserves net of in-flight work. A bundle that draws
+several pools must clear every window; the costs add and the dearest window binds. One score point is about `$83` of
+displaced subscription USD. Same model on a different harness keeps its value unless `harness_factor` says otherwise
+(Codex vs Pi is a sibling-only `0.03` step). Public defaults give subjective ratings zero weight; unknown capacity stays unknown.
+Weights and capability priors live in [`accounts.json`](skills/agent-compass/references/accounts.json).
 
-Weights come from effective scoring policy; public defaults give subjective model ratings zero weight.
-The USD terms apply when prices and capacity are configured. Unknown capacity remains unknown.
+**Versus prompt routers.** RouteLLM, OpenRouter Auto and Not Diamond pick a model *per prompt* and bill *per token*.
+AgentCompass picks a *worker per task* and manages flat-rate windows that *expire*. Different layers; they combine.
 
-Hard gates run first: local sign-in and credential health, host policy, modality (text-only models never receive visual
-work), `local_only`, ability floor by difficulty, and per-window safety reserves net of in-flight work. Weights and
-thresholds, models and capability priors live in [`accounts.json`](skills/agent-compass/references/accounts.json),
-composed with local policy. [`model-capabilities.json`](skills/agent-compass/references/model-capabilities.json)
-is a generated view. Prices and capacity estimates are optional; absent measurements remain unknown.
+| Layer | What it is | Required? |
+|---|---|---|
+| **Core**: [`skills/agent-compass`](skills/agent-compass/SKILL.md) | Classifier, allocator, ledger, and `roll` (`classify → allocate → launch` with explicit permission mode and parent-session contract). Python 3.11+, Windows-first, POSIX-compatible. | **Yes** |
+| **Gate**: [`setup/router_gate_hook.py`](setup/router_gate_hook.py) | Spawn gate and 2M rotation guard for every host with pre-tool hooks. | Opt-in |
+| **Cockpit**: [`tray/`](tray/) | Windows tray, decision compass, quota HUD and local bridges ([`gemini-web`](https://github.com/akiiwa-games/gemini-web), `codex-chatgpt-web`, `dot2api`, `easytier`). | Optional |
 
-## What's in the box
+<details>
+<summary><b>Install details: packaging, upgrades, ports, Paseo bridge</b></summary>
 
-| Layer | What it is | Runs on | Required? |
-|---|---|---|---|
-| **Core**: [`skills/agent-compass`](skills/agent-compass/SKILL.md) | Classifier, deterministic allocator, ledger, and `roll` (`classify → allocate → launch` with explicit permission mode and parent-session contract) | Python 3.10+; Windows-first, POSIX-compatible core | **Yes** |
-| **Gate**: [`setup/router_gate_hook.py`](setup/router_gate_hook.py) | Spawn gate and 2M-token context rotation guard for Claude Code, Codex, Antigravity, and Paseo | Any host supporting pre-tool hooks | **Opt-in** |
-| **Cockpit**: [`tray/`](tray/) | Windows system tray, 5-axis decision compass, live quota HUD ([`usage-float`](https://github.com/akiiwa-games/usage-float)), and local bridges ([`gemini-web`](https://github.com/akiiwa-games/gemini-web), `codex-chatgpt-web`, `dot2api`, `easytier`) | Windows 11 | **Optional** |
+- The router is a Python package, not a frozen executable: skills stay real directories because Claude, Codex and Antigravity read `SKILL.md`, and `route_judge.py` loads sibling scripts by path (`python -I`).
+- A packaged install (no `.git`) checks [GitHub Releases](https://github.com/akiiwa-games/AgentCompass/releases) and tells you to run `uv tool upgrade agentcompass`; a development checkout fast-forwards with git. `ROUTE_MANAGER_GITHUB_ORG` and `ROUTE_MANAGER_USAGE_FLOAT_REPO` override the org and the usage-float clone URL.
+- Tray extras: `pip install "agentcompass[tray]"`. `packaging/build.ps1` builds a one-folder PyInstaller tray and, with Inno Setup 6, a per-user installer (`PrivilegesRequired=lowest`) that registers the "Route Manager" scheduled task; uninstall removes the task, the `PRO_CONSULT_*` / `CODEX_WEB_GPT_EXTERNAL_TRAY` variables and the Startup shortcuts. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate are set (SmartScreen will warn; see `packaging/SIGNING.md`). Tagged pushes (`v*`) attach the wheel and installer to a Release.
+- Loopback ports default to Dot2API 8788, ChatGPT Web 17843, Gemini Web 17849, account login 17851, EasyTier 15888, Muse2API 18610. `AGENTCOMPASS_PORT_*` overrides `~/.agent-compass/ports.json`, which overrides the defaults; `doctor` reports conflicts.
+- Paseo dispatch via `roll` needs Node.js: `npm --prefix setup/paseo-bridge ci` (the host rollout script does this when it detects Paseo).
+- The demo uses a fixed synthetic quota snapshot and reference fleet, makes no network calls, writes no ledger and launches nothing. Add `--format json` for the full breakdown.
 
-**How it differs from prompt routers.** RouteLLM, OpenRouter Auto, and Not Diamond choose a model **per prompt** and
-bill **per token**. AgentCompass chooses a **worker per task** and manages **flat-rate subscription windows that
-expire**. They solve different layers of the stack and can be used together.
-
----
+</details>
 
 ## Repository Layout
 
-The companion repositories and runtime directories listed below are separate local checkouts or ignored host state; they are not bundled in this repository. [Usage Float](https://github.com/akiiwa-games/usage-float) provides the standalone quota HUD and collector used by AgentCompass.
+Companion repositories and runtime directories are separate local checkouts or ignored host state, not bundled here.
 
 | Path | Description |
 |---|---|
-| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`). Loaded at the system level across every host: directory junctions in `~/.codex/skills/<name>`, `~/.claude/skills/<name>` (`~/.claude-*/skills`), and `~/.pi/agent/skills/<name>`, plus `~/.gemini/config/skills.json` and materialized real top-level directories in `~/.gemini/skills/<name>` (with live subdirectory junctions) so Antigravity (`agy`) loads them in every workspace. |
-| `tray/` | Windows cockpit and service supervisor: `app.pyw` (system tray), `router_window.py` + `router_data.py` + `radar_chart.py` + `ui_theme.py` (decision console and shared UI theme), `plugins.py` (optional plugin registry in `~/.agent-compass/plugins.json`), `services.py` (process lifecycle), `updates.py` (fast-forward updater and builder), `chatgpt_web_patch.py` (anchored source patches for ChatGPT Web), `usage_collector.py` (headless subscription quota collector), `capacity_stats.py` (session burn and worker-hour analytics), and `deploy.py`. |
-| `audit/` | `router_audit.py`: read-only daily compliance audit checking sub-agent launches against `~/.agent-compass/router-ledger.jsonl`. |
-| `usage-float/` | Borderless Windows subscription usage HUD and mpv/web live-wallpaper switcher; also serves as the direct local quota collector (`usage_float.py`, `magpie_usage.py`). See [`usage-float/README.md`](https://github.com/akiiwa-games/usage-float#readme). |
-| `gemini-web/` | Persistent Google Chrome CDP bridge (`127.0.0.1:17849`) for Gemini, Google AI Studio, and Flow, plus the `omni.py` Gemini Omni 1.1 Flash video runner. See [`gemini-web/README.md`](https://github.com/akiiwa-games/gemini-web#readme). |
-| `dot2api/` | Local checkout of `Pluviobyte/dot2api` with its own `.venv`, exposing remote Dot workers behind a Cloudflared quick tunnel. |
-| `codex-chatgpt-web/` | Local checkout of `miuuyy/codex-chatgpt-web` and its Electron launcher, driving ChatGPT Pro consultations from local Codex agents. |
-| `setup/` | Host bootstrap and synchronization scripts: `onboard.py` (first-run onboarding and uninstall), `sync_host_globals.py` + `host_rules.py` (skills and global rules, reversible), `router_gate_hook.py` (spawn gate), `bootstrap_dot2api.py`, `lock_dot2api_acl.py`, `pi_device_login.mjs`, and `claude2_config.py`. |
-| `easytier/` | Per-host EasyTier mesh node directory (untracked runtime files): `bin/`, `private/node.toml`, `logs/`, `state/`, managed by `tray/easytier.py` and `tray/easytier_setup.py`. |
-| `tools/bun/` | Pinned Bun runtime used to run the ChatGPT Web bridge and build its launcher. |
+| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), loaded at the system level on every host via junctions in `~/.codex/skills`, `~/.claude/skills` (`~/.claude-*/skills`), `~/.pi/agent/skills`, `~/.gemini/config/skills.json` and materialized directories in `~/.gemini/skills`. |
+| `tray/` | Windows cockpit and service supervisor: tray (`app.pyw`), decision console (`router_window.py`, `router_data.py`, `radar_chart.py`, `ui_theme.py`), plugin registry, service lifecycle, updater, headless quota collector (`usage_collector.py`) and capacity analytics. |
+| `audit/` | `router_audit.py`: read-only daily check of sub-agent launches against `~/.agent-compass/router-ledger.jsonl`. |
+| `setup/` | Onboarding (`onboard.py`), host sync (`sync_host_globals.py`, `host_rules.py`), spawn gate (`router_gate_hook.py`), Dot2API and Pi helpers, `claude2_config.py`. |
+| `usage-float/`, `gemini-web/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/`, `tools/bun/` | Companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme) and [gemini-web](https://github.com/akiiwa-games/gemini-web#readme). |
 
 ---
 
