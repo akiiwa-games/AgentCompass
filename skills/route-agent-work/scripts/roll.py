@@ -4,6 +4,7 @@ The classifier reads the original brief; the worker receives it unchanged plus t
 Classification, allocation, the ledger record, dispatch preparation and launch happen here.
 """
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -34,10 +35,12 @@ WORKER_COMMUNICATION = SKILLS / 'route-agent-work' / 'references' / 'worker-comm
 # others read it from stdin; grok reads neither (headless ignores stdin) and takes --prompt-file.
 CLI_RUNS = {
     'claude': ('claude', lambda model, effort, cwd, fast=False: ['-p', '--model', model, *(['--effort', effort] if effort else []),
-                                                                 '--permission-mode', 'bypassPermissions']),
+                                                                 '--permission-mode', 'bypassPermissions',
+                                                                 '--settings', json.dumps({'fastMode': bool(fast)})]),
     'codex': ('codex', lambda model, effort, cwd, fast=False: ['exec', '-m', model,
                                                                *(['-c', f'model_reasoning_effort="{effort}"'] if effort else []),
-                                                               *(['-c', 'features.fast_mode=true'] if fast else []),
+                                                               '-c', 'features.fast_mode=' + str(bool(fast)).lower(),
+                                                               '-c', 'service_tier="priority"' if fast else 'service_tier="default"',
                                                                '--dangerously-bypass-approvals-and-sandbox',
                                                                '--skip-git-repo-check', '-C', cwd, '-']),
     'pi': ('pi', lambda model, effort, cwd, fast=False: ['-p', '--model', model if '/' in model else f'openai-codex/{model}', *(['--thinking', effort] if effort else [])]),
@@ -85,7 +88,7 @@ def build_task(args, text, parent):
 def summary(decision):
     bundle = decision.get('selected_bundle') or {}
     return {'choice': decision.get('choice'),
-            'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast') if bundle.get(k)},
+            'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast', 'fast_billing') if bundle.get(k)},
             'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
                        (decision.get('decision') or {}).get('reason') or '')[:300] or None,
             'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn']}
@@ -328,6 +331,12 @@ def cli(args, out, bundle, text, judge):
     if family not in CLI_RUNS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=f'No Paseo daemon and no CLI here for {bundle["provider"]!r}' + native), 0
+    if bundle.get('fast'):
+        from fast_modes import validate
+        import allocator
+        accounts = allocator.load_accounts()
+        model = allocator.canonical(bundle['model'], accounts)
+        validate(family, model, allocator.model_spec(accounts, model))
     executable, flags = CLI_RUNS[family]
     cwd = str(Path.cwd())
     env = {k: v for k, v in judge.subscription_env().items() if not k.startswith(HOST_SESSION_ENV)}

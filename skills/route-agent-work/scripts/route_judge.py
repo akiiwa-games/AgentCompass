@@ -1692,14 +1692,15 @@ def record_constraint(args, task=None):
                 )
     c_model = allocator.canonical(args.model, accounts)
     fast_requested = bool(getattr(args, 'fast', False))
-    if fast_requested and allocator.bundle_harness(discovered or {'provider': args.provider}, args.account) != 'codex':
-        raise ValueError(f'Provider {args.provider!r} does not support fast mode.')
-    if fast_requested and not allocator.models_table(accounts).get(c_model, {}).get('fast_capable'):
-        raise ValueError(f'Model {c_model!r} does not support fast mode.')
+    if fast_requested:
+        allocator.fast_modes.validate(allocator.bundle_harness(discovered or {'provider': args.provider}, args.account),
+                                      c_model, allocator.model_spec(accounts, c_model))
     base_b = allocator.bundles(accounts).get(chosen) or {}
     bundle = {**base_b, 'provider': args.provider, 'account': args.account, 'model': c_model,
               'effort': args.effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
     bundle['harness'] = allocator.bundle_harness(bundle, args.account, chosen)
+    if fast_requested and bundle['harness'] == 'claude':
+        bundle['fast_billing'] = allocator.fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
               'reason_category': getattr(args, 'reason_category', None),

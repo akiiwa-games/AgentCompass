@@ -22,6 +22,29 @@ def setUpModule():
 
 
 class DispatchTests(unittest.TestCase):
+    def test_fast_opt_out_after_record_is_rechecked_at_prepare(self):
+        self.bundle = dict(allocator.bundles(self.accounts)['sol_high'], bundle_id='sol_high', fast=True)
+        with patch.object(allocator, 'load_accounts', return_value=self.accounts):
+            decision = self.issue(stage='record', choice='constraint', constraint='user_override',
+                                  basis='Diagnostic fixture')
+        self.accounts['models']['gpt-6.1-sol']['fast_capable'] = False
+        with self.assertRaisesRegex(ValueError, 'fast_capable'):
+            self.prepare(decision)
+        self.accounts['models']['gpt-6.1-sol']['fast_capable'] = True
+        row = self.prepare(decision)
+        self.assertTrue(row['bundle']['fast'])
+        self.assertEqual(row['request']['settings']['features']['service_tier'], 'priority')
+        self.accounts['models']['gpt-6.1-sol']['fast_capable'] = False
+        import route_judge
+        with patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+                patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
+            with self.assertRaisesRegex(ValueError, 'fast_capable'):
+                registry.claim(row['request'], parent_id='parent-a', call_id='fixture', now=self.now)
+            self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'prepared')
+            self.accounts['models']['gpt-6.1-sol']['fast_capable'] = True
+            self.assertEqual(registry.claim(row['request'], parent_id='parent-a',
+                                           call_id='fixture', now=self.now)['state'], 'launching')
+
     def test_pi_request_omits_unsupported_mode_including_saved_legacy_value(self):
         for legacy_mode in (None, 'full-access'):
             bundle = {'provider': 'pi', 'model': 'gpt-6-astra',
@@ -135,7 +158,7 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(registry.reservations(), [])
         row = self.prepare(decision)
         self.assertEqual(row['request']['provider'], 'codex/gpt-6-astra')
-        self.assertEqual(row['request']['settings'], {'thinkingOptionId': 'low', 'modeId': 'full-access'})
+        self.assertEqual(row['request']['settings'], {'thinkingOptionId': 'low', 'modeId': 'full-access', 'features': {'service_tier': 'default'}})
         expected = allocator.bundle_task_usd(self.accounts['accounts']['codex'], 'gpt-6-astra', 'low',
             self.task['expected_hours'], self.accounts['scoring'], self.accounts['effort_curves']['gpt-6-astra'],
             self.accounts['models']['gpt-6-astra'])
@@ -814,10 +837,10 @@ class RollTests(unittest.TestCase):
         bundles = allocator.bundles(self.accounts)
         brief = ['--print']
         cases = (('claude-lab via its Paseo definition', 'lab_sonnet55_high', 0,
-                  ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions'],
+                  ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions', '--settings', '{"fastMode": false}'],
                   'C:/fixture/.claude-lab', self.brief),
                  ('claude does not inherit the caller account', 'sonnet55_high', 5,
-                  ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions'],
+                  ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions', '--settings', '{"fastMode": false}'],
                   None, self.brief),
                  ('agy takes the brief as its last argument', 'flash_high', 0,
                   ['agy', '--dangerously-skip-permissions', '--model', bundles['flash_high']['model'], '--add-dir',
@@ -1064,7 +1087,7 @@ class RollTests(unittest.TestCase):
         self.assertEqual(normal_plan['choice'], 'sol_high')
         normal_dec = registry.issue(dict(normal_plan, stage='plan'), codex_task, self.now)
         normal_row = registry.prepare(normal_dec['decision_id'], codex_task, self.launch, codex_usage, self.accounts, self.now)
-        self.assertNotIn('features', normal_row['request']['settings'])
+        self.assertEqual(normal_row['request']['settings']['features'], {'service_tier': 'default'})
 
         fast_task = {**codex_task, 'task_id': 'task-fast-1', 'needs': {**codex_task['needs'], 'fast': True}}
         fast_plan = allocator.plan(fast_task, codex_usage, self.now, accounts=self.accounts)
@@ -1072,7 +1095,7 @@ class RollTests(unittest.TestCase):
         fast_dec = registry.issue(dict(fast_plan, stage='plan'), fast_task, self.now)
         fast_row = registry.prepare(fast_dec['decision_id'], fast_task, self.launch, codex_usage, self.accounts, self.now)
         self.assertEqual(fast_row['request']['settings'],
-                         {'modeId': 'full-access', 'thinkingOptionId': 'high', 'features': {'fast_mode': True}})
+                         {'modeId': 'full-access', 'thinkingOptionId': 'high', 'features': {'service_tier': 'priority'}})
         self.assertAlmostEqual(fast_row['expected_usd'], normal_row['expected_usd'] * 2.0, delta=0.02)
 
 

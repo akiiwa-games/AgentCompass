@@ -20,7 +20,7 @@
     "scarcity_usable_ref_pct": 45.0,
     "scarcity_penalty_max": 0.06,
     "high_precision_effort_weight": 0.14,
-    "fast_burn_multiplier": 2.0,
+    "fast_burn_multiplier": 2.5,
     "fast_plentiful_usable_pct": 45.0,
     "fast_max_shortage_prob": 0.2,
     "fast_max_extra_opportunity_cost": 0.015,
@@ -253,6 +253,7 @@
       }
     },
     "claude-opus-5-5": {
+      "fast_capable": true,
       "tier": 4.6,
       "cost": 4,
       "visual": 1.0,
@@ -486,6 +487,7 @@
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "gpt-6.1-terra": {
+      "fast_capable": true,
       "tier": 3.7,
       "cost": 3,
       "visual": 0.72,
@@ -507,6 +509,7 @@
       "context_window": 500000
     },
     "gpt-6-sol": {
+      "fast_capable": true,
       "tier": 3.5,
       "cost": 3,
       "visual": 0.68,
@@ -528,6 +531,7 @@
       "context_window": 272000
     },
     "gpt-6-luna": {
+      "fast_capable": true,
       "tier": 3.2,
       "cost": 1,
       "visual": 0.55,

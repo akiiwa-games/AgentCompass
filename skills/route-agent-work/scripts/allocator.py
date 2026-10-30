@@ -16,6 +16,7 @@ import sys
 
 # Also support the path-loaded allocator and python -I entrypoints.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fast_modes
 import host_policy
 import override_store
 import antigravity_telemetry
@@ -673,7 +674,7 @@ def bundle_task_usd(spec, model, effort, hours, policy, curves=None, info=None, 
     if spec.get('unlimited') or spec.get('unmetered'):
         return 0.0
     scale = burn_scale(policy, curves, effort)
-    fast_scale =float(policy.get('fast_burn_multiplier', 2.0)) if fast else 1.0
+    fast_scale = fast_modes.codex_burn_multiplier(policy, spec) if fast else 1.0
     return hours * model_usd_per_hour(model, info) * scale * context_scale * fast_scale
 
 
@@ -1872,8 +1873,8 @@ def evaluate_bundle(bundle, task, ctx):
             unknown = True
             opportunity += policy['unknown_capacity_penalty']
             result['notes'].append('no current capacity observation; unknown is not exhausted')
-    fast_mult = float(policy.get('fast_burn_multiplier', 2.0))
-    if (harness == 'codex' and info.get('fast_capable') and not task.get('disable_fast')
+    fast_mult = fast_modes.codex_burn_multiplier(policy, spec)
+    if (harness == 'codex' and fast_modes.supported(harness, model, info) and not task.get('disable_fast')
             and not result['excluded'] and available_at is None):
         horizon = float(policy.get('reset_horizon_hours') or 0)
         in_horizon = bool(binding and not binding.get('stale') and not binding.get('expires_first')
@@ -1965,14 +1966,27 @@ def evaluate_bundle(bundle, task, ctx):
                     step_usd, chain_usd = step_usd * fast_mult, chain_usd * fast_mult
                     result['notes'].append(f'fast mode enabled ({fast_reason}: {fast_mult:g}x quota burn, '
                                            f'{fast_binding["after"]:.0f}% left after step)')
+    paid_fast = (harness == 'claude' and fast_modes.supported(harness, model, info)
+                 and task.get('force_fast') and not task.get('disable_fast'))
+    if paid_fast:
+        # Preserve existing eligibility/protection checks above. Their subscription
+        # observations do NOT establish a credits balance or budget for this run.
+        result['bundle'].update(fast=True, fast_billing=fast_modes.claude_billing(spec))
+        result['components'].update(fast=True, fast_reason='explicit_paid_opt_in')
+        result['components'].pop('reset_bonus', None)
+        binding, step_pct, chain_pct = None, None, None
+        opportunity = policy['unknown_capacity_penalty']
+        result['notes'].append('Claude fast uses paid billing outside subscription limits; '
+                               'credit entitlement and remaining balance are unknown; provider enforces access. '
+                               'Existing subscription launch protections are retained conservatively.')
     result['capacity'] = binding
     result['expected_hours'] = round(hours, 2)
     if dur_mult != 1.0:
         result['components']['duration_multiplier'] = round(dur_mult, 2)
     result['expected_pct'] = None if step_pct is None else round(step_pct, 2)
     result['chain_pct'] = None if chain_pct is None else round(chain_pct, 2)
-    result['expected_usd'] = None if spec.get('billing') == 'unknown' else round(step_usd, 2)
-    result['chain_usd'] = None if spec.get('billing') == 'unknown' else round(chain_usd, 2)
+    result['expected_usd'] = None if paid_fast or spec.get('billing') == 'unknown' else round(step_usd, 2)
+    result['chain_usd'] = None if paid_fast or spec.get('billing') == 'unknown' else round(chain_usd, 2)
     result['available_in_hours'] = available_at
     action = 'start'
     if worker:

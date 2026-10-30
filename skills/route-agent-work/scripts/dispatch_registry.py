@@ -101,8 +101,9 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
     """Catalog defaults are not the complete supported explicit-effort contract."""
     import allocator
     model = allocator.canonical(bundle.get('model'), accounts)
-    if bundle.get('fast') and not allocator.models_table(accounts).get(model, {}).get('fast_capable'):
-        raise ValueError(f'Model {model!r} does not support fast mode')
+    if bundle.get('fast'):
+        allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle.get('account')), model,
+                                      allocator.model_spec(accounts, model))
     siblings = [b for b in allocator.bundles(accounts).values()
                 if allocator.canonical(b.get('model'), accounts) == model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
     exact = next((b for b in siblings if b.get('effort') == bundle.get('effort')), None)
@@ -132,6 +133,10 @@ def check_launch_quota(bundle, accounts, usage, now):
         raise ValueError(reason)
     if bundle['account'] not in accounts['accounts']:
         raise ValueError('Account is no longer configured; reroute using the current provider inventory')
+    if bundle.get('fast'):
+        model = allocator.canonical(bundle['model'], accounts)
+        allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle['account']), model,
+                                      allocator.model_spec(accounts, model))
     usage = provider_inventory.merge_usage(usage, accounts, now)
     spec = accounts['accounts'][bundle['account']]
     row = (usage.get('accounts') or {}).get(bundle['account']) or {}
@@ -218,8 +223,13 @@ def launch_request(bundle, launch):
         settings['modeId'] = mode
     if bundle.get('effort') and family != 'antigravity-resilient':
         settings['thinkingOptionId'] = bundle['effort']
-    if bundle.get('fast') and family == 'codex':
-        settings['features'] = {'fast_mode': True}
+    if bundle.get('fast'):
+        from fast_modes import validate
+        validate(family, bundle['model'])
+    if family == 'codex':
+        settings['features'] = {'service_tier': 'priority' if bundle.get('fast') else 'default'}
+    elif family == 'claude':
+        settings['features'] = {'fast_mode': bool(bundle.get('fast'))}
     return canonical_request(dict(launch, provider=provider + '/' + model, settings=settings))
 
 

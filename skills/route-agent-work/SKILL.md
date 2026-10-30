@@ -58,7 +58,7 @@ For uncertain delivery, `launched` is `null` and `caller_action` is
 Optional flags, only when they are facts:
 - `--file <path>` (repeatable): files Dot needs; Dot's returned files are applied to `--apply-to` (default: cwd). Local workers ignore it.
 - `--local-only "<concrete local dependency>"`: keep the work on this machine (local git/daemon/pytest/hardware/intranet/credentials).
-- `--fast`: prefer fast mode (`fast_mode: true` on Codex bundles at `2.0x` quota burn) when quota is plentiful (`>= 45%` remaining after `2.0x` burn with low shortage risk) or during a pre-reset sprint.
+- `--fast`: prefer Codex fast when quota is plentiful or during a pre-reset sprint (public subscription default: `2.5x`; explicit local calibration is retained). An explicit Claude provider/model override plus `--fast` opts into paid usage credits on supported Opus models; automatic quota/reset routing never enables paid Claude fast. See [fast contracts and verification](references/fast-modes.md).
 - `--title`, `--workspace <id>`, `--wait <seconds>` (block for the result instead of returning at once).
 - The user named the model/effort in this request: add `--provider <p> --account <a> --model <m> --effort <e> --basis "<exact user quote>"`.
 
