@@ -16,13 +16,9 @@ alongside observed quota windows, spending surplus before resets, rotating worke
 ![Router](https://img.shields.io/badge/router-Python%20%2B%20JSON-555)
 ![Cockpit](https://img.shields.io/badge/cockpit-Windows%2011-0078D4)
 
-<img src="docs/hero.png" width="880" alt="AgentCompass Decision Compass: radar comparison of the winning and runner-up candidates, verdict strip and recent decisions">
+<img src="docs/hero.gif" width="880" alt="AgentCompass Decision Compass replaying a synthetic decision: task title, task kind, candidate routes, ranking, top-two radar comparison, then the winning model and effort, next to the scenario form and recent decisions">
 
-<sub>The author's Windows cockpit (optional). The router underneath is a portable Python Agent Skill (<code>SKILL.md</code>) with JSON config · <a href="llms.txt"><code>llms.txt</code></a></sub>
-
-<p><img src="docs/decision-theatre.gif" width="680" alt="Synthetic Decision Theatre replay from task classification through candidate routes and radar comparison to the winning model and effort"></p>
-
-<sub>A synthetic Decision Theatre replay: task → kind → routes → ranking → top-two radar → winner with effort. Illustrative scores, no live account data.</sub>
+<sub>The author's Windows cockpit (optional), replaying a synthetic decision (illustrative scores, no live account data). The router underneath is a portable Python Agent Skill (<code>SKILL.md</code>) with JSON config · <a href="llms.txt"><code>llms.txt</code></a></sub>
 
 
 </div>

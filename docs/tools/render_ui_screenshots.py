@@ -76,7 +76,8 @@ def capture(top: int, width: int, height: int):
     return image
 
 
-def render(args, state: Path) -> None:
+def open_page(args, state: Path, view: str = "radar"):
+    """Open the real Decision Compass page with the synthetic ledger; returns (root, panel, top-level hwnd)."""
     import i18n
     i18n.get_language = lambda: "en"
     import allocator
@@ -89,7 +90,6 @@ def render(args, state: Path) -> None:
     import synthetic_decisions as demo
     import ui_theme
     import tkinter as tk
-    import win32gui
 
     root = tk.Tk()
     root.withdraw()
@@ -101,13 +101,11 @@ def render(args, state: Path) -> None:
     while time.time() < deadline and not (panel.plan_result and panel.ledger_rows):
         root.update()
         time.sleep(0.05)
-    for _ in range(40):
-        root.update()
-        time.sleep(0.02)
+    pump(root, 40)
     # Freeze the theatre at the radar-comparison moment; the real canvas draws it.
     decision_theatre.story_time = lambda wall: args.moment
     panel.theatre.skip()
-    if args.view == "radar":
+    if view == "radar":
         panel.render_radar()  # the static radar a user gets by picking a candidate
     panel.theatre_enabled.set(True)  # the default; only the freeze above turned it off
     panel.objective.insert("1.0", demo.HEADLINE)
@@ -115,14 +113,28 @@ def render(args, state: Path) -> None:
         panel.ledger_table.column(column, width=ui_theme.px(width))
     panel._suppress_next_select = True
     panel.ledger_table.selection_set("0")
-    for _ in range(20):
+    pump(root, 20)
+    return root, panel, ctypes.windll.user32.GetParent(root.winfo_id())
+
+
+def pump(root, ticks: int) -> None:
+    for _ in range(ticks):
         root.update()
         time.sleep(0.02)
-    top = ctypes.windll.user32.GetParent(root.winfo_id())
+
+
+def shoot(top: int, scale: float):
+    """PrintWindow the top-level window, minus the invisible resize border."""
+    import win32gui
+
     left, topy, right, bottom = win32gui.GetWindowRect(top)
     image = capture(top, right - left, bottom - topy)
-    # PrintWindow includes the invisible resize border; keep the visible frame only.
-    image = image.crop((0, 0, image.width - round(11 * args.scale / 1.5), image.height - round(10 * args.scale / 1.5)))
+    return image.crop((0, 0, image.width - round(11 * scale / 1.5), image.height - round(10 * scale / 1.5)))
+
+
+def render(args, state: Path) -> None:
+    root, panel, top = open_page(args, state, args.view)
+    image = shoot(top, args.scale)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     image.save(args.output)
     print(f"{args.output} {image.width}x{image.height}")
@@ -130,17 +142,10 @@ def render(args, state: Path) -> None:
     root.destroy()
 
 
-def main() -> None:
+def offscreen(job, state_prefix: str = "agentcompass-shot-") -> None:
+    """Run job(state_dir) on a worker thread bound to a private, never-displayed desktop."""
     import threading
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("output", type=Path)
-    parser.add_argument("--scale", type=float, default=1.5, help="display scale, 1.5 = 150%% DPI")
-    parser.add_argument("--view", choices=("radar", "theatre"), default="radar")
-    parser.add_argument("--moment", type=float, default=7.75, help="theatre story time (s) to freeze")
-    args = parser.parse_args()
-    import ui_theme
-    ui_theme.dpi_aware()
     user32 = ctypes.windll.user32
     user32.CreateDesktopW.restype = ctypes.c_void_p
     user32.SetThreadDesktop.argtypes = [ctypes.c_void_p]
@@ -148,7 +153,7 @@ def main() -> None:
     if not desktop:
         raise OSError("CreateDesktop failed; refusing to draw on the user's desktop")
     errors = []
-    with tempfile.TemporaryDirectory(prefix="agentcompass-shot-") as directory:
+    with tempfile.TemporaryDirectory(prefix=state_prefix) as directory:
         state = Path(directory)
         isolate(state)
         write_ledger(state / "ledger.jsonl")
@@ -157,8 +162,8 @@ def main() -> None:
             try:
                 if not user32.SetThreadDesktop(desktop):
                     raise OSError("SetThreadDesktop failed; refusing to draw on the user's desktop")
-                render(args, state)
-            except BaseException as exc:
+                job(state)
+            except BaseException:
                 import traceback
                 errors.append(traceback.format_exc())
 
@@ -168,6 +173,18 @@ def main() -> None:
     user32.CloseDesktop(ctypes.c_void_p(desktop))
     if errors:
         raise SystemExit(errors[0])
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--scale", type=float, default=1.5, help="display scale, 1.5 = 150%% DPI")
+    parser.add_argument("--view", choices=("radar", "theatre"), default="radar")
+    parser.add_argument("--moment", type=float, default=7.75, help="theatre story time (s) to freeze")
+    args = parser.parse_args()
+    import ui_theme
+    ui_theme.dpi_aware()
+    offscreen(lambda state: render(args, state))
 
 
 if __name__ == "__main__":
