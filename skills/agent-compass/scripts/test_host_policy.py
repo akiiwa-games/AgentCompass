@@ -174,7 +174,7 @@ class HostPolicyTests(unittest.TestCase):
 
     def registered(self, **states):
         return {'_discovery': {'accounts': {name: {'status': state} for name, state in states.items()}},
-                'accounts': {name: {'verified': state == 'ready', 'bundles': {
+                'accounts': {name: {'billing': 'subscription', 'verified': state == 'ready', 'bundles': {
                     name: {'provider': name, 'model': 'service'}}} for name, state in states.items()}}
 
     def test_legacy_migration_preserves_exclusions_and_new_ready_accounts_enroll_once(self):
@@ -217,7 +217,7 @@ class HostPolicyTests(unittest.TestCase):
         self.assertEqual(host_policy.sync_discovered(accounts)['added'], [])
         self.assertEqual(host_policy.load_policy()['known_accounts'], ['codex'])
         # Obtaining the missing registered contract later is sufficient; no second consent flag needed.
-        accounts['accounts']['unregistered'] = {'verified': True, 'bundles': {'real': {'provider': 'unregistered', 'model': 'real'}}}
+        accounts['accounts']['unregistered'] = {'billing': 'subscription', 'verified': True, 'bundles': {'real': {'provider': 'unregistered', 'model': 'real'}}}
         self.assertEqual(host_policy.sync_discovered(accounts)['added'], ['unregistered'])
         self.assertFalse(host_policy.account_allowed(host_policy.load_policy(), 'arbitrary-request-name'))
 

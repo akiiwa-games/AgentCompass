@@ -574,14 +574,20 @@ def check_account_quota_exhausted(
     if not account:
         return None
     cache = usage_cache_path or Path(os.environ.get("ROUTER_USAGE_CACHE", DEFAULT_USAGE_CACHE))
-    if not cache.is_file():
-        return None
     now = now or dt.datetime.now(dt.timezone.utc)
     try:
         doc = json.loads(cache.read_text(encoding="utf-8-sig"))
         row = ((doc.get("providers") or {}).get(account)) if isinstance(doc, dict) else None
     except (OSError, ValueError):
-        return None
+        row = None
+    # Confirmed upstream exhaustion is durable even with no/stale usage cache.
+    # This applies to new launches and resumed turns, never to read-only investigation.
+    try:
+        exhaustion = router_module('quota_exhaustion')
+    except ImportError:
+        exhaustion = None
+    if exhaustion is not None and exhaustion.blocked(account, row):
+        return '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear the exhaustion record.'
     if not isinstance(row, dict) or row.get("available") is False:
         return None
     fetched_at = parse_ts(row.get("fetched_at"))

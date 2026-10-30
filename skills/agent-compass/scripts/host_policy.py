@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 
+import accounts_override
 import override_store
 
 
@@ -66,7 +67,8 @@ def sync_discovered(accounts, enable=False):
     ready = []
     for name, row in rows.items():
         spec = specs.get(name) or {}
-        if row.get('status') != 'ready' or spec.get('verified') is not True:
+        # Only subscription accounts enroll automatically; metered/unknown billing needs an explicit allow.
+        if row.get('status') != 'ready' or spec.get('verified') is not True or accounts_override.manual_only_billing(name, accounts):
             continue
         if not any(not b.get('disabled') and not b.get('discovery_unavailable')
                    for b in (spec.get('bundles') or {}).values()):

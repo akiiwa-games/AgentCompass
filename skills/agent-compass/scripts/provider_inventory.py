@@ -22,6 +22,8 @@ from model_resolution import resolve_canonical_model
 
 MAX_BYTES = 5 * 1024 * 1024
 GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/runtime/bin/gbot.mjs'
+# Paseo built-in providers recognized from their Paseo entry without a model catalog.
+PASEO_RECOGNIZED_ONLY = ('copilot', 'muse', 'dsh')
 
 
 PLAN_TEMPLATES = Path(__file__).resolve().parents[1] / 'references/plan-templates.json'
@@ -633,6 +635,31 @@ def _discover(home=None, environ=None, now=None):
     if grok_windows:
         result['accounts']['grok']['usage_windows'] = [w['id'] for w in grok_windows]
     result['launchers']['grok'] = {'family': 'grok', 'status': grok_status}
+    # Oh My Pi is Paseo's built-in `omp` provider. Its models come from the user's own
+    # API keys (~/.omp/agent/models.yml), so it is metered: explicit selection only.
+    omp_native = (bool(shutil.which('omp', path=environ.get('PATH')))
+                  or (home / '.bun' / 'bin' / ('omp.exe' if os.name == 'nt' else 'omp')).is_file())
+    omp_defined = 'omp' in definitions
+    _, _, omp_enabled = resolve_definition('omp', definitions)
+    omp_status = ('disabled' if not omp_enabled or not omp_defined
+                  else 'ready' if omp_native or obj(definitions.get('omp')).get('command') else 'missing_client')
+    result['accounts']['omp'] = {'family': 'omp', 'provider': 'omp',
+        'sources': (['native'] if omp_native else []) + (['paseo'] if omp_defined else []),
+        'status': omp_status, 'plan': 'API (Oh My Pi)', 'billing': 'metered'}
+    result['launchers']['omp'] = {'family': 'omp', 'status': omp_status}
+    # Other Paseo built-in launchers are recognized from their Paseo entry alone. Their
+    # billing is unknown and no model is invented, so they produce no bundle until the
+    # user configures models; unknown billing then stays explicit-selection only.
+    for name in PASEO_RECOGNIZED_ONLY:
+        if name in definitions and name not in result['accounts']:
+            _, _, enabled = resolve_definition(name, definitions)
+            models = [m if isinstance(m, str) else m['id'] for m in array(obj(definitions[name]).get('models'))
+                      if isinstance(m, str) or isinstance(m, dict) and isinstance(m.get('id'), str)]
+            result['accounts'][name] = {'family': name, 'provider': name, 'sources': ['paseo'],
+                'status': 'ready' if enabled else 'disabled', 'billing': 'metered' if name == 'dsh' else 'unknown',
+                **({'plan': 'API (DeepSeek Harness)'} if name == 'dsh' else {}),
+                **({'models': models} if models else {})}
+            result['launchers'][name] = {'family': name, 'status': 'ready' if enabled else 'disabled'}
     # Other explicitly configured launchers can supply their own advertised IDs.
     # Saved product profiles alone do not imply a launchable client.
     for name, definition in definitions.items():
@@ -786,6 +813,10 @@ def _discover(home=None, environ=None, now=None):
         ident = row.get('identity')
         if ident and not row.get('quota_account'):
             row['quota_account'] = owners.setdefault((row['family'], ident), name)
+    import quota_exhaustion
+    for name, row in result['accounts'].items():
+        if quota_exhaustion.blocked(name, cache_rows.get(name), path=state_dir / 'quota-exhaustion.json'):
+            row.update(status='quota_exhausted', reason='confirmed quota exhausted; refresh quota after recovery')
     return result
 
 
@@ -802,7 +833,7 @@ def current():
 
 
 def launcher_family(provider):
-    if provider in ('claude', 'codex', 'pi', 'opencode', 'antigravity-resilient'):
+    if provider in ('claude', 'codex', 'pi', 'omp', 'opencode', 'antigravity-resilient'):
         return provider
     row = current().get('launchers', {}).get(provider) or {}
     return row.get('family') if row.get('status') == 'ready' else None

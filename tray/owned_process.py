@@ -55,10 +55,10 @@ def helper_command(argv: list[str]) -> list[str]:
     return [python(), "-S", "-c", HELPER, *argv]
 
 
-def _text(stream) -> str:
+def _text(stream, limit=OUTPUT_LIMIT) -> str:
     stream.seek(0, os.SEEK_END)
     size = stream.tell()
-    stream.seek(max(0, size - OUTPUT_LIMIT))
+    stream.seek(max(0, size - limit))
     data = stream.read()
     try:
         return data.decode("utf-8").strip()
@@ -66,13 +66,14 @@ def _text(stream) -> str:
         return data.decode("mbcs" if os.name == "nt" else "utf-8", errors="replace").strip()
 
 
-def run(argv: list[str], *, timeout: float, env: dict[str, str] | None = None, cwd: str | None = None) -> Result:
+def run(argv: list[str], *, timeout: float, env: dict[str, str] | None = None, cwd: str | None = None,
+        output_limit: int = OUTPUT_LIMIT) -> Result:
     if os.name == "nt":
-        return _run_job(argv, timeout, env, cwd)
-    return _run_group(argv, timeout, env, cwd)
+        return _run_job(argv, timeout, env, cwd, output_limit)
+    return _run_group(argv, timeout, env, cwd, output_limit)
 
 
-def _run_job(argv, timeout, env, cwd) -> Result:
+def _run_job(argv, timeout, env, cwd, output_limit=OUTPUT_LIMIT) -> Result:
     try:
         import win32api
         import win32event
@@ -151,12 +152,12 @@ def _run_job(argv, timeout, env, cwd) -> Result:
                     raise OwnedProcessError(_tr("命令的子进程未能确认已停止，请在任务管理器中检查"), _text(out), _text(err)) from exc
                 proc.wait(10)    # reap the helper so no Popen is left running
                 raise OwnedTimeout(_tr("命令超时，已停止本次启动的全部子进程"), _text(out), _text(err))
-            return Result(proc.returncode, _text(out), _text(err))
+            return Result(proc.returncode, _text(out, output_limit), _text(err, output_limit))
         finally:
             job.Close()
 
 
-def _run_group(argv, timeout, env, cwd) -> Result:
+def _run_group(argv, timeout, env, cwd, output_limit=OUTPUT_LIMIT) -> Result:
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=env, cwd=cwd,
                                 start_new_session=True)
@@ -190,7 +191,7 @@ def _run_group(argv, timeout, env, cwd) -> Result:
         except subprocess.TimeoutExpired:
             terminate()
             raise OwnedTimeout(_tr("命令超时，已停止本次启动的全部子进程"), _text(out), _text(err)) from None
-        return Result(proc.returncode, _text(out), _text(err))
+        return Result(proc.returncode, _text(out, output_limit), _text(err, output_limit))
 
 
 if __name__ == "__main__":

@@ -42,6 +42,24 @@ def preference_account(bundle, owner, accounts):
     return owner
 
 
+MANUAL_ONLY_BILLING = ('metered', 'unknown')
+
+
+def manual_only_billing(account, accounts):
+    """Billing that keeps an account out of automatic routing by default, else None.
+
+    Only subscription accounts route automatically. Metered (API) and unknown billing
+    are explicit-selection only. An account drawing on another account's quota
+    (`quota_source`) is judged by that source. A missing billing field is unknown:
+    an account entry alone is not consent to automatic routing.
+    """
+    specs = accounts.get('accounts') or {}
+    spec = specs.get(account) or {}
+    source = specs.get(spec.get('quota_source')) if spec.get('quota_source') else None
+    billing = (source or spec).get('billing') or 'unknown'
+    return None if billing == 'subscription' else billing
+
+
 def merge(base, override):
     result = deepcopy(base)
     for key, value in override.items():
@@ -146,3 +164,7 @@ def apply(accounts, document):
                                       if key == bid and entry.get('provider') == name), None)
             if isinstance(bundle, dict) and isinstance(target_bundle, dict) and 'disabled' in bundle:
                 target_bundle['disabled'] = bundle['disabled']
+                # An explicit enable is the user's opt-in to automatic routing for
+                # non-subscription billing (see allocator.evaluate_bundle).
+                if bundle['disabled'] is False:
+                    target_bundle['user_enabled'] = True

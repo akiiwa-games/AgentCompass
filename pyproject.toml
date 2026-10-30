@@ -21,6 +21,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+venice = ["openai>=1.0"]
 tray = ["psutil", "pystray", "Pillow", "pywin32"]
 
 [project.urls]

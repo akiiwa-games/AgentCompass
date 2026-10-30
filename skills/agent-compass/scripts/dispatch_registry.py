@@ -142,7 +142,7 @@ def check_launch_quota(bundle, accounts, usage, now):
     row = (usage.get('accounts') or {}).get(bundle['account']) or {}
     for wid, window, observed in allocator.applicable_windows(spec, bundle.get('model'), row, bundle, accounts):
         if allocator.below_launch_floor(window, observed, row, now):
-            floor = window['launch_min_remaining_pct']
+            floor = window.get('launch_min_remaining_pct', 0)
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
 
 
@@ -195,7 +195,7 @@ def bound_hash(request):
 
 # The one table of launcher families this Paseo adapter launches, with each family's permission mode.
 # Accounts are admitted by their discovered family, never by name.
-PASEO_LAUNCHER_MODES = {'codex': 'full-access', 'claude': 'bypassPermissions', 'pi': None,
+PASEO_LAUNCHER_MODES = {'codex': 'full-access', 'claude': 'bypassPermissions', 'pi': None, 'omp': 'full',
                         'antigravity-resilient': 'full-access', 'opencode': 'build', 'grok': None, 'acp': None}
 
 
@@ -396,6 +396,13 @@ def observe(dispatch_id, snapshot, now=None, path=None):
             effort = snapshot.get('effectiveThinkingOptionId') or snapshot.get('thinkingOptionId')
             if settings.get('thinkingOptionId') and effort != settings['thinkingOptionId']:
                 raise ValueError('Host thinking option differs from dispatched settings')
+        # A completed worker can be resumed; its later quota failure still matters.
+        if snapshot.get('status') == 'error':
+            updated_error = snapshot.get('updatedAt')
+            if isinstance(updated_error, str) and parse(updated_error) >= parse(row['launched_at']):
+                import quota_exhaustion
+                quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
+                                        at=updated_error, source=agent_id)
         if row['state'] in TERMINAL and row['state'] != 'expired':
             return row
         if row['state'] == 'prepared':

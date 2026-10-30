@@ -210,7 +210,9 @@
     "opencode/nemotron-3.5-super-vl-free": "nemotron-3.5-super-vl-free",
     "opencode/nemotron-3.5-lightning-free": "nemotron-3.5-lightning-free",
     "opencode/beam-free": "beam-free",
-    "opencode/flint-40b-free": "flint-40b-free"
+    "opencode/flint-40b-free": "flint-40b-free",
+    "zai-org-glm-5-2": "glm-5.2",
+    "venice-api/zai-org-glm-5-2": "glm-5.2"
   },
   "models": {
     "deepseek-v4.1-flash-free": {
@@ -1078,7 +1080,27 @@
     "usd_basis": "Synthetic hourly cost calibration, pooled over efforts from a 14-day sample: Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Cache reads and writes are priced separately. Fable uses Opus times the 2.5x list-price ratio. These retained test inputs are independent of plan labels and are not live price quotes.",
     "capabilities_basis": "6D vectors: benchmark-calibrated core rows retain their existing basis; newly discovered frontier rows use explicitly provisional routing priors, not measured benchmark scores. Visual/GUI zero for text-only catalog entries. Full catalog evidence and compatibility policy: model-capabilities.md.",
     "basis": "Absolute tiers (at High effort) are provisional: derived from the ordering already in model-capabilities.md (Grok behind the leaders, Flash as volume sink). Calibrated ability order: Opus > Astra > Argon > Sonnet > Sol > Grok > Flash; Dot is Astra-powered (OpenAI documents Dot as Astra-powered), so it has Astra's tier, meets every difficulty floor and has unlimited usage. Dot is not limited to text; it has its own computer and can receive code, public data and handed-over tables and return files, so it is a candidate for every route unless the parent marks the work `needs.local_only` (`excluded_when: local_only`) or it needs vision; visual ability order is Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash (the numeric `visual` values 1.0/0.8/0.75/0.7/0.6/0.3 encode that order; false means no vision). Argon shares the Antigravity Gemini pool with Flash but burns roughly 8x as much quota per hour (`burn_pct_per_worker_hour`). Fable is on hold. Correct the rest here; nothing else encodes a global ranking.",
-    "order_basis": "Zero-to-frontier-ceiling normalization over AA v4.3.2, Bug Hunt Bench (n=2..5 runs), Terminal-Bench 2.0/4.0, Mercor BrowseComp, MMMU-Pro, OSWorld/GUI harness grounding, and Calibration sample (14d) usage-stats.json."
+    "order_basis": "Zero-to-frontier-ceiling normalization over AA v4.3.2, Bug Hunt Bench (n=2..5 runs), Terminal-Bench 2.0/4.0, Mercor BrowseComp, MMMU-Pro, OSWorld/GUI harness grounding, and Calibration sample (14d) usage-stats.json.",
+    "glm-5.2": {
+      "tier": 3.5,
+      "cost": 2,
+      "visual": false,
+      "usd_per_hour": 1.0,
+      "capabilities": {
+        "reasoning": 0.68,
+        "coding": 0.74,
+        "exploration": 0.7,
+        "anti_hallucination": 0.68,
+        "visual": 0.0,
+        "gui": 0.0
+      },
+      "subjective": {
+        "divergence": 0.56,
+        "global_rigor": 0.68,
+        "module_precision": 0.74
+      },
+      "basis": "Provisional routing prior shrunk from glm-5.3. ID verified in Venice /models as zai-org-glm-5-2 (text-only per Venice model_spec, reasoning efforts none/high/max). Scores and hourly cost are estimates, not benchmarks or live quotes."
+    }
   },
   "dispatch_efforts": {
     "grok": {
@@ -1183,6 +1205,12 @@
         "low",
         "medium",
         "high"
+      ]
+    },
+    "omp": {
+      "glm-5.2": [
+        "high",
+        "max"
       ]
     }
   },
@@ -1967,6 +1995,24 @@
           "model": "gpt-6-pro",
           "effort": "max",
           "provider": "chatgpt-web"
+        }
+      },
+      "capacity_status": "unknown"
+    },
+    "omp": {
+      "plan": "Venice API (Oh My Pi)",
+      "billing": "metered",
+      "verified": false,
+      "expires_at": null,
+      "windows": {},
+      "bundles": {
+        "venice_glm52_high": {
+          "provider": "omp",
+          "harness": "omp",
+          "model": "glm-5.2",
+          "launch_model": "venice-api/zai-org-glm-5-2",
+          "effort": "high",
+          "modeId": "full"
         }
       },
       "capacity_status": "unknown"

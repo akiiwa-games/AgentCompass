@@ -42,10 +42,10 @@ def strategy_preset_key(name: str) -> str:
 
 
 # Cards are ordered and named by product family; account names come only from config and discovery.
-FAMILY_ORDER = ("claude", "codex", "antigravity", "opencode", "dot", "chatgpt-web", "pi", "grok", "grok-bot")
+FAMILY_ORDER = ("claude", "codex", "antigravity", "opencode", "dot", "chatgpt-web", "pi", "grok", "grok-bot", "omp", "dsh")
 FAMILY_LABELS = {"claude": "Claude", "codex": "Codex", "antigravity": "Antigravity", "opencode": "OpenCode",
                  "dot": "Dot", "chatgpt-web": "ChatGPT Web", "pi": "Pi", "grok": "Grok", "grok-bot": "Grok Bot",
-                 "api-proxy": "API Proxy", "llmproxy": "LLM Proxy"}
+                 "api-proxy": "API Proxy", "llmproxy": "LLM Proxy", "omp": "Oh My Pi", "dsh": "DeepSeek Harness"}
 # Families whose quota the Usage Float collector reads.
 USAGE_FAMILIES = ("claude", "codex", "pi", "antigravity", "grok")
 
@@ -299,8 +299,12 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     if row.get("reason") == "plugin_disabled_in_agentcompass":
         return _tr("集成已关闭"), "idle"
     if not allocator.host_policy.account_allowed(policy, name):
+        if row.get('billing') in ('metered', 'unknown'):
+            return _tr('仅手动使用'), 'idle'
         return _tr("本机策略禁用"), "idle"
     status = row.get("status")
+    if status == 'quota_exhausted':
+        return _tr('额度已耗尽，等待刷新恢复'), 'warn'
     if status == "ready":
         return _tr("就绪"), "ok"
     if status is None:
@@ -344,6 +348,8 @@ def account_cards() -> list[dict]:
     except Exception:
         policy = None
     config = plugins.load()
+    import venice_usage
+    api_usage = _read_json(STATE_DIR / 'venice-usage.json')
     cards = []
     inv_accounts = inventory.get("accounts") or {}
     acc_table = accounts.get("accounts") or {}
@@ -387,9 +393,11 @@ def account_cards() -> list[dict]:
             remaining = window.get("remaining_pct_before_reset")
             if reset_passed:
                 # The reading predates the reset: the window refilled, pending a new reading.
-                remaining = 100.0
+                remaining = None  # A passed reset is not a fresh quota observation.
             elif remaining is None:
                 remaining = window.get("observed_remaining_pct")
+            if (row or {}).get('status') == 'quota_exhausted':
+                remaining = 0.0  # Explicit upstream exhaustion outranks an older positive cache.
             cap = allocator.window_capacity_usd(spec, c_wid, now) if spec else None
             acct_obs = observed.get(name) or {}
             rates = acct_obs.get(wid) or acct_obs.get(c_wid) or {}
@@ -415,11 +423,14 @@ def account_cards() -> list[dict]:
             bundle_pills.append({"id": bid, "label": b_label, "enabled": not bool(bspec.get("disabled"))})
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,
-                      "plan": (row or {}).get("plan") or spec.get("plan"), "usage_status": usage_row.get("status"),
+                      "plan": (row or {}).get("plan") or spec.get("plan"),
+                      "usage_status": 'quota_exhausted' if (row or {}).get('status') == 'quota_exhausted' else usage_row.get("status"),
+                      "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
+                          _tr("API 余额未提供，非无限额度") if spec.get('billing') == 'metered' and not windows else None,
                       "windows": windows, "bundles": bundle_pills,
                       "host_enabled": bool(pool_allowed(name)),
                       "verified": bool(spec.get("verified", True)),
-                      "refreshable": bool(usage_providers([name], accounts)),
+                      "refreshable": name in ('omp', 'dsh') or bool(usage_providers([name], accounts)),
                       "priority_targets": [(t["account"], t["model"], t["label"]) for t in priority if t["account"] == name]})
     return cards
 
@@ -546,7 +557,13 @@ def refresh_usage(accounts: list[str] | None = None, timeout: float = 130) -> st
     if accounts is None:
         accounts = [c["account"] for c in account_cards() if c.get("refreshable")]
     providers = usage_providers(accounts)
+    api_requested = any(name in ('omp', 'dsh') for name in accounts)
+    if api_requested:
+        import venice_usage
+        api_result = venice_usage.refresh(STATE_DIR)
     if not providers:
+        if api_requested:
+            return _tr('已刷新 Venice API 余额') if (api_result or {}).get('available') else venice_usage.note(api_result or {})
         return _tr("该账号没有可刷新的额度来源")
     try:
         collect_usage_now(providers)
@@ -1067,6 +1084,16 @@ def harness_model_rows() -> list[dict]:
             group.update(_model_group_tags([b for _, _, b in bundles], flags))
             row["models"].append(group)
         rows.append(row)
+    present = {row['account'] for row in rows}
+    for account, spec in table.items():
+        inv = inventory.get(account) or {}
+        if account not in present and inv.get('models') and inv.get('status') == 'ready':
+            family = inv.get('family') or account
+            rows.append({'account': account, 'account_label': account_label(account), 'harness': family,
+                'harness_label': HARNESS_LABELS.get(family, family), 'plan': spec.get('plan'),
+                'host_enabled': bool(allocator.host_policy.account_allowed(policy, account)),
+                'enabled': False, 'verified': False, 'badge': _tr('仅手动使用'), 'kind': 'warn',
+                'models': [], 'providers': [account], 'cwd_regex': '', 'allowed_cwd': [], 'cwd_pattern': ''})
     order = {name: index for index, name in enumerate(HARNESS_ORDER)}
     rows = sorted(rows, key=lambda row: (order.get(row["harness"], len(order)), row["account"]))
     import model_catalog
@@ -1096,7 +1123,9 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
         resolved = allocator.canonical(raw, accounts)
         return re.sub(r"-(low|medium|high|xhigh|max|minimal|default|standard|extended)$", "", resolved)
     for row in rows:
+        row['models'] = [group for group in row['models'] if group.get('routed', True)]
         detected, known = {}, False
+        exact_catalog = row.get('harness') in ('omp', 'dsh')
         checked, failures = [], []
         for provider in row.get("providers", []):
             entry = (catalog.get("providers") or {}).get(provider)
@@ -1114,21 +1143,30 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
                 raw = model.get("id") if isinstance(model, dict) else model
                 if not isinstance(raw, str):
                     continue
-                key = canonical(raw)
+                key = raw if exact_catalog else canonical(raw)
                 label = (model.get("label") or model.get("model") or raw) if isinstance(model, dict) else raw
                 label = re.sub(r"\s*\((Low|Medium|High|XHigh|Max)\)$", "", label, flags=re.I)
                 detected[key] = model_label(key) if key in MODEL_LABELS else label
         row["models_checked_at"] = max(checked, default=None)
         row["models_probe_failed"] = any(failures)
         configured = {}
+        consumed = set()
         for group in row["models"]:
             key = canonical(group["model"])
             configured[key] = group
+            matched = next((item for item in detected if canonical(item) == key and item not in consumed), None)
+            if matched is not None:
+                consumed.add(matched)
             group["routed"] = True
             group["availability"] = ("missing" if group.get("auto_stale") else
-                                     "detected" if key in detected else "missing" if known else "unknown")
-        # Detected models without any bundle are those auto derivation rejected (non-chat, incompatible harness,
-        # context-window variants). They cannot be toggled, so they are not listed; plan output keeps the reasons.
+                                     "detected" if matched is not None else "missing" if known else "unknown")
+        # Discovery is a catalog, not an instruction to enable paid routing.
+        for key, label in detected.items():
+            if key not in consumed:
+                row['models'].append({'model': key, 'model_label': label, 'enabled': False,
+                    'partial': False, 'bundle_ids': [], 'bundle_refs': [], 'tags': ['仅目录'],
+                    'auto': False, 'auto_stale': False, 'efforts_on': [], 'efforts_off': [],
+                    'routed': False, 'availability': 'detected'})
     return rows
 
 
