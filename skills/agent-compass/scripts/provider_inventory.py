@@ -814,8 +814,12 @@ def _discover(home=None, environ=None, now=None):
             row['quota_account'] = owners.setdefault((row['family'], ident), name)
     import quota_exhaustion
     for name, row in result['accounts'].items():
-        if quota_exhaustion.blocked(name, cache_rows.get(name), path=state_dir / 'quota-exhaustion.json'):
+        latched = quota_exhaustion.exhausted_windows(name, cache_rows.get(name), path=state_dir / 'quota-exhaustion.json')
+        if quota_exhaustion.ALL in latched:
             row.update(status='quota_exhausted', reason='confirmed quota exhausted; refresh quota after recovery')
+        elif latched:
+            # Only these windows are out; the account's other windows stay routable.
+            row['exhausted_windows'] = sorted(latched)
     return result
 
 

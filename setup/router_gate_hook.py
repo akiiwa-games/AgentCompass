@@ -560,6 +560,17 @@ def load_dispatch_settings() -> tuple[dict | None, dict | None]:
     return accounts, policy if isinstance(policy, dict) and isinstance(policy.get("allowed_accounts"), list) else None
 
 
+def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] | None:
+    """Quota windows the resolved target bundles draw; None when unknown."""
+    if not candidates or not accounts:
+        return None
+    try:
+        pools = router_module("allocator").bundle_pools
+        return sorted({wid for bundle in candidates for wid in pools(dict(bundle, id=bundle["bundle_id"]), accounts)})
+    except Exception:
+        return None
+
+
 def quota_window_seconds(wid: str) -> int:
     return 5 * 3600 if wid in ("five_hour", "5h") else 7 * 86400
 
@@ -569,8 +580,13 @@ def check_account_quota_exhausted(
     usage_cache_path: Path | None = None,
     now: dt.datetime | None = None,
     accounts: dict | None = None,
+    windows: list[str] | None = None,
 ) -> str | None:
-    """Return a block reason if account's active quota window is exhausted in usage-cache.json."""
+    """Return a block reason if account's active quota window is exhausted in usage-cache.json.
+
+    `windows` are the quota windows the launch draws; a per-window exhaustion latch blocks only
+    launches drawing a latched window (an account-wide latch blocks every launch).
+    """
     if not account:
         return None
     cache = usage_cache_path or Path(os.environ.get("ROUTER_USAGE_CACHE", DEFAULT_USAGE_CACHE))
@@ -586,7 +602,7 @@ def check_account_quota_exhausted(
         exhaustion = router_module('quota_exhaustion')
     except ImportError:
         exhaustion = None
-    if exhaustion is not None and exhaustion.blocked(account, row):
+    if exhaustion is not None and exhaustion.blocked(account, row, windows=windows):
         return '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear the exhaustion record.'
     if not isinstance(row, dict) or row.get("available") is False:
         return None
@@ -904,7 +920,8 @@ def evaluate_payload(
             controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
             reason = ((None if controlling else check_target_disabled(target, account, candidates, accounts, policy)) or
                       check_account_quota_exhausted(account or target.get("provider"),
-                                                    usage_cache_path=usage_cache_path, now=now, accounts=accounts))
+                                                    usage_cache_path=usage_cache_path, now=now, accounts=accounts,
+                                                    windows=target_windows(candidates, accounts)))
             if reason:
                 return format_response(False, harness_kind, reason)
         if not trigger:
