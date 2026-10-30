@@ -469,5 +469,105 @@ class SetupFlowTests(HomeCase):
         self.assertIn("No signed-in agent CLI was found", output)
 
 
+class OrchestratorTests(HomeCase):
+    """A new user who runs Orca and T3 Code on top of Claude Code and Codex."""
+
+    def orca_account(self, name="acct-1", **files):
+        base = f"AppData/Roaming/orca/codex-accounts/{name}/home"
+        self.write(f"{base}/config.toml", "model = 'x'\n")
+        for rel, text in files.items():
+            self.write(f"{base}/{rel}", text)
+        return self.home / base
+
+    def new_user(self):
+        self.cli = {"claude": "claude", "codex": "codex"}
+        self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
+        self.write(".codex/config.toml", "model = 'y'\n")
+        self.write(".t3/userdata/state.sqlite", "t3")
+        self.write(".orca/agent-hooks/claude-hook.cmd", "@echo off\n")
+        skill = self.write("checkout-skills/agent-compass/SKILL.md", "---\nname: agent-compass\n---\n").parent
+        self.enterContext(patch.object(sg, "REPO_SKILLS", skill.parent))
+
+    def run_setup(self, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), patch.object(sys.stdin, "isatty", return_value=False):
+            code = onboard.main(["setup", "--home", str(self.home), "--yes", "--no-usage", *argv])
+        return code, out.getvalue()
+
+    def snapshot(self):
+        return {str(p.relative_to(self.home)): (p.read_bytes() if p.is_file() else None)
+                for p in sorted(self.home.rglob("*")) if ".agent-compass" not in p.parts}
+
+    def test_detection_finds_neither_in_an_empty_home(self):
+        found = onboard.detect(self.home, {"PATH": ""})["orchestrators"]
+        self.assertEqual((found["orca"]["installed"], found["t3"]["installed"]), (False, False))
+        self.assertEqual(found["orca"]["codex_homes"], [])
+
+    def test_detection_reads_directories_and_cli_without_the_inherited_environment(self):
+        self.orca_account()
+        found = onboard.detect(self.home, {"PATH": ""})["orchestrators"]
+        self.assertTrue(found["orca"]["installed"])
+        self.assertFalse(found["t3"]["installed"])
+        self.assertEqual(len(found["orca"]["codex_homes"]), 1)
+        self.write(".t3/userdata/state.sqlite", "t3")
+        self.assertTrue(onboard.detect(self.home, {"PATH": ""})["orchestrators"]["t3"]["installed"])
+        other = Path(tempfile.mkdtemp(prefix="onboard-empty-"))
+        self.addCleanup(other.rmdir)
+        self.cli = {"orca": "orca", "t3": "t3"}
+        with patch.dict(os.environ, {"ORCA_USER_DATA_PATH": str(self.home / "AppData" / "Roaming" / "orca")}):
+            found = onboard.detect(other, {"PATH": ""})["orchestrators"]
+        self.assertTrue(found["orca"]["installed"] and found["t3"]["installed"])   # a CLI on PATH counts
+        self.assertEqual(found["orca"]["codex_homes"], [])                            # the env var never leaks in
+
+    def test_setup_gives_orca_managed_codex_homes_the_rules_and_the_skill_and_keeps_their_own_files(self):
+        self.new_user()
+        home = self.orca_account(**{"AGENTS.md": "# my account rules\n", "skills/own/SKILL.md": "own\n"})
+        self.orca_account("acct-2")
+        code, output = self.run_setup()
+        self.assertEqual(code, 0)
+        self.assertIn("2 managed Codex account home(s)", output)
+        self.assertIn("T3 Code      found", output)
+        text = (home / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("# my account rules\n"))
+        self.assertIn(sg.MARKER_BEGIN, text)
+        self.assertTrue((home / "skills" / "agent-compass" / "SKILL.md").is_file())
+        self.assertEqual((home / "skills" / "own" / "SKILL.md").read_text(encoding="utf-8"), "own\n")
+        second = self.home / "AppData/Roaming/orca/codex-accounts/acct-2/home"
+        self.assertIn(sg.MARKER_BEGIN, (second / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertTrue((second / "skills" / "agent-compass").exists())
+
+    def test_orca_and_t3_without_managed_accounts_only_reuse_the_provider_homes(self):
+        self.new_user()
+        self.write("AppData/Roaming/orca/settings.json", "{}")
+        before = set(self.snapshot())
+        code, output = self.run_setup()
+        self.assertEqual(code, 0)
+        self.assertIn("Orca         found", output)
+        created = {k.replace("\\", "/") for k in set(self.snapshot()) - before}
+        self.assertFalse([k for k in created if k.startswith(("AppData", ".t3", ".orca"))])
+        self.assertTrue((self.home / ".claude" / "CLAUDE.md").is_file())
+        self.assertTrue((self.home / ".codex" / "AGENTS.md").is_file())
+
+    def test_uninstall_restores_the_new_users_orca_and_t3_files_byte_for_byte(self):
+        self.new_user()
+        self.orca_account(**{"AGENTS.md": "# my account rules\n"})
+        self.orca_account("acct-2")
+        before = self.snapshot()
+        self.run_setup()
+        self.assertNotEqual(self.snapshot(), before)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(onboard.main(["uninstall", "--home", str(self.home)]), 0)
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse((self.home / ".agent-compass" / "onboarding.json").exists())
+
+    def test_dry_run_touches_no_orca_home(self):
+        self.new_user()
+        self.orca_account()
+        before = self.snapshot()
+        code, _ = self.run_setup("--dry-run")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.snapshot(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

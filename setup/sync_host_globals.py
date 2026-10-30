@@ -391,6 +391,24 @@ def _secondary_claude_dirs() -> list[Path]:
     return list(found.values())
 
 
+def orca_user_data_dirs(home: Path | None = None) -> list[Path]:
+    """Orca's Electron userData directories under `home` (Windows roaming, macOS Application Support, Linux ~/.config).
+
+    ORCA_USER_DATA_PATH is deliberately not read: an inherited value would point a test or sandbox home at the real install.
+    """
+    home = home or HOME
+    found: dict[str, Path] = {}
+    for p in (home / "AppData" / "Roaming" / "orca", home / "Library" / "Application Support" / "orca", home / ".config" / "orca"):
+        if p.is_dir():
+            found.setdefault(str(p.resolve()), p)
+    return list(found.values())
+
+
+def orca_codex_homes(home: Path | None = None) -> list[Path]:
+    """Codex homes Orca manages per signed-in account. Orca mirrors only config.toml into them, so AGENTS.md and skills never arrive."""
+    return [h for ud in orca_user_data_dirs(home) for h in sorted((ud / "codex-accounts").glob("*/home")) if h.is_dir()]
+
+
 def _secondary_codex_dirs() -> list[Path]:
     found: dict[str, Path] = {}
     primary = (HOME / ".codex").resolve()
@@ -408,6 +426,9 @@ def _secondary_codex_dirs() -> list[Path]:
             p = Path(cfg_dir.strip()).expanduser()
             if p.is_dir() and p.resolve() != primary and not p.name.startswith((".codex-chatgpt-web", ".codex-pro-consult")):
                 found[str(p.resolve())] = p
+    for p in orca_codex_homes():
+        if p.resolve() != primary:
+            found[str(p.resolve())] = p
     return list(found.values())
 
 
@@ -550,6 +571,12 @@ def deduplicate_and_link_skills() -> None:
     if claude_skills.is_dir():
         for alt_dir in _secondary_claude_dirs():
             _link_skill(alt_dir / "skills", claude_skills, "")
+
+    # 3b. Orca's managed Codex account homes get the router skill only; their own skills directory is kept.
+    for codex_home in orca_codex_homes():
+        for name in SKILLS_FROM_REPO:
+            if (codex_skills / name).is_dir():
+                _link_skill(codex_home / "skills" / name, codex_skills / name, "")
 
     # 4. Populate ~/.pi/agent/skills with junctions to all shared skills (only when Pi is installed)
     if host_present("pi", dirs=(HOME / ".pi",)):
@@ -1025,13 +1052,20 @@ def _uninstall_links() -> None:
             report(f"[uninstall] {link}: junction restored to {entry['previous_target']}")
         else:
             report(f"[uninstall] {link}: junction removed")
+    for key in sorted(MANIFEST["junctions"]):
+        skills_dir = Path(key).parent
+        try:
+            if not DRY_RUN and skills_dir.name == "skills" and skills_dir.parent.name == "home"                     and skills_dir.parent.parent.parent.name == "codex-accounts"                     and skills_dir.is_dir() and not any(skills_dir.iterdir()):
+                skills_dir.rmdir()
+        except OSError:
+            pass
     for key, entry in sorted(MANIFEST["files"].items()):
         path = Path(key)
         if path.exists() or entry.get("backup"):
             report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
     for leftover in (HOME / ".claude" / "skills", HOME / ".codex" / "skills", HOME / ".gemini" / "skills",
                      HOME / ".gemini" / "config", HOME / ".pi" / "agent" / "skills", HOME / ".pi" / "agent" / "extensions",
-                     HOME / ".gemini", HOME / ".pi" / "agent", HOME / ".pi", HOME / ".config" / "opencode"):
+                     HOME / ".gemini", HOME / ".pi" / "agent", HOME / ".pi", HOME / ".config" / "opencode", HOME / ".config"):
         try:
             if not DRY_RUN and leftover.is_dir() and not is_reparse_point(leftover) and not any(leftover.iterdir()):
                 leftover.rmdir()

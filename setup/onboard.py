@@ -75,6 +75,17 @@ def detection_environ(home: Path, environ: dict | None = None) -> dict:
     return env
 
 
+def detect_orchestrators(home: Path, env: dict) -> dict:
+    """Which agent orchestrator apps (Orca, T3 Code) are present. Both run the signed-in CLIs above, so they need no account of their own."""
+    path = env.get("PATH", "")
+    orca_homes = sg.orca_codex_homes(home)
+    return {
+        "orca": {"installed": bool(shutil.which("orca", path=path) or sg.orca_user_data_dirs(home) or (home / ".orca").is_dir()),
+                 "codex_homes": [str(p) for p in orca_homes]},
+        "t3": {"installed": bool(shutil.which("t3", path=path) or (home / ".t3").is_dir())},
+    }
+
+
 def detect(home: Path, environ: dict | None = None) -> dict:
     """Report installed CLIs and signed-in accounts under `home` without any network request.
 
@@ -100,7 +111,8 @@ def detect(home: Path, environ: dict | None = None) -> dict:
               if name in inventory["accounts"]}
     paseo_cfg = Path(env["PASEO_HOME"]) / "config.json"
     paseo = {"installed": bool(shutil.which("paseo", path=env["PATH"])), "config": paseo_cfg.is_file()}
-    return {"accounts": rows, "paseo": paseo, "others": others, "inventory": inventory}
+    return {"accounts": rows, "paseo": paseo, "others": others, "orchestrators": detect_orchestrators(home, env),
+            "inventory": inventory}
 
 
 # --- accounts-override.json ------------------------------------------------------------------------------------------
@@ -303,6 +315,11 @@ def setup_main(argv: list[str] | None = None) -> int:
         _line(f"  {row['name']:<12} {state}" + (f"  plan={row['plan']}" if row.get("plan") and row["signed_in"] is not False else ""))
     paseo = detection["paseo"]
     _line(f"  {'paseo':<12} " + ("installed" if paseo["installed"] else "not found") + (", config present" if paseo["config"] else ""))
+    for name, label in (("orca", "Orca"), ("t3", "T3 Code")):
+        row = detection["orchestrators"][name]
+        extra = f", {len(row['codex_homes'])} managed Codex account home(s) get the rules and skill" if row.get("codex_homes") else ""
+        _line(f"  {label:<12} " + ("found" if row["installed"] else "not found") + (extra if row["installed"] else ""))
+    summary["orchestrators"] = detection["orchestrators"]
     usable = [r for r in detection["accounts"] if r["signed_in"] is not False]
     if not usable:
         _line("\nNo signed-in agent CLI was found. Sign in to at least one (for example `claude` or `codex`) and run this again;")

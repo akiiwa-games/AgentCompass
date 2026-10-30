@@ -17,7 +17,7 @@ import uuid
 import dispatch_flow
 import dispatch_registry as registry
 import provider_inventory
-from worker_context import require_parent_id, resolve_parent
+from worker_context import NATIVE_HOSTS, require_parent_id, resolve_parent
 
 # Launcher families a configured Paseo provider may use: the dispatch adapter's own table, so a ready Grok/ACP
 # definition is launched by Paseo instead of falling through to the CLI.
@@ -241,6 +241,27 @@ def _router_override_proxy_spec(provider):
             if section == 'litellm_proxies' or bkind in ('litellm', 'proxy', 'api-proxy') or (ep and key):
                 return spec
     return None
+
+
+def native_next(host, bundle, address):
+    """What the calling session does to start the routed worker with its own host's orchestrator."""
+    provider, model, effort = bundle.get('provider'), bundle.get('model'), bundle.get('effort')
+    if host == 'orca':
+        flags = f'--agent {provider} --worktree current' + (f' --model {model}' if model else '') + (f' --effort {effort}' if effort else '')
+        return ('Start the worker with Orca orchestration, once, using the executable you ran `skills get` with: '
+                f'`orca orchestration worker-start --spec "<contents of worker_prompt_file>" {flags} --json` (run `run-create` first if no '
+                f'Run is bound). Use no other sub-agent tool. The worker reports to {address} through its injected preamble; collect it with '
+                '`orca orchestration check --wait --types worker_done,escalation,question --json`. If Orca cannot run this '
+                'provider/model/effort, reroute instead of substituting.')
+    if host == 't3':
+        return ('Start the worker with the T3 Code MCP tool `delegate_task` (`orchestrator_capabilities` first, once per thread): '
+                f'task = the full text of worker_prompt_file, target.driverKind/model from route.bundle ({provider} / {model}), mode `async`. '
+                'T3 delivers the result to this parent thread; do not poll `task_status` or use another sub-agent tool. If T3 offers no '
+                'provider/model matching route.bundle, reroute instead of substituting.')
+    return ('Launch the native host worker with exactly route.bundle '
+            'and the contents of worker_prompt_file as --spec (not the filename). First verify that '
+            'the host can reproduce the routed provider/account/model/effort; otherwise reroute. Preserve '
+            'the live coordinator inbox, parent session ID and injected worker preamble; do not switch hosts.')
 
 
 def can_launch_via_paseo(provider):
@@ -551,12 +572,9 @@ def _run(args, judge):
         return consult(args, out, prompt_file)
     if provider == 'grok-bot':
         return grok_bot(args, out, prompt_file, task, bundle)
-    if parent_host == 'native':
+    if parent_host in NATIVE_HOSTS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
-                    next='Launch the native host worker with exactly route.bundle '
-                    'and the contents of worker_prompt_file as --spec (not the filename). First verify that '
-                    'the host can reproduce the routed provider/account/model/effort; otherwise reroute. Preserve '
-                    'the live coordinator inbox, parent session ID and injected worker preamble; do not switch hosts.'), 0
+                    next=native_next(parent_host, bundle, parent_address)), 0
     has_paseo_parent = bool(os.environ.get('PASEO_AGENT_ID', '').strip() or getattr(args, 'parent_id', None))
     if can_launch_via_paseo(provider) and has_paseo_parent and (
         os.environ.get('PASEO_AGENT_ID', '').strip() or dispatch_flow.paseo_reachable()

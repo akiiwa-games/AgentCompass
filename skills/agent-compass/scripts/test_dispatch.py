@@ -896,6 +896,18 @@ class RollTests(unittest.TestCase):
         self.assertFalse((self.root / 'worker-prompts').exists())
         self.assertEqual(registry.reservations(), [])
 
+    def test_roll_inside_orca_and_t3_hands_back_the_host_command_without_paseo(self):
+        decision = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle, decision={'action': 'start'})
+        cases = (({'ORCA_AGENT_SESSION_ID': 'orca-sess', 'ORCA_TERMINAL_HANDLE': 'term_1'}, {}, 'orca', 'orca_session_id:orca-sess', 'worker-start'),
+                 ({'CODEX_THREAD_ID': 'thread-7'}, {'parent_host': 't3'}, 't3', 'thread-7', 'delegate_task'))
+        for env, flags, host, address, command in cases:
+            with self.subTest(host=host), patch.object(flow, 'host_call', side_effect=AssertionError('must not use Paseo')):
+                (result, code), _ = self.roll(decision, parent='', env=env, reachable=True, **flags)
+            self.assertEqual((result['launched'], result['dispatch_mode'], code), (False, 'native', 0))
+            self.assertEqual((result['parent_host'], result['parent_address']), (host, address))
+            self.assertIn(command, result['next'])
+            self.assertIn(f'Parent host: `{host}`. Parent message address: `{address}`.', self.assert_worker_prompt(result))
+
     def test_explicit_parent_and_native_address_survive_native_handoff(self):
         decision = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle, decision={'action': 'start'})
         with patch.object(flow, 'host_call', side_effect=AssertionError('must not switch to Paseo')):

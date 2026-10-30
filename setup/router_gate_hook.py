@@ -34,6 +34,8 @@ DIRECT_SUBAGENT_TOOLS = frozenset({
     "invoke_subagent",
     "create_agent",
     "mcp__paseo__create_agent",
+    "delegate_task",  # T3 Code's orchestrator MCP server (`t3-code`)
+    "mcp__t3-code__delegate_task",
 })
 
 PASEO_TURN_TOOLS = frozenset({
@@ -97,6 +99,7 @@ LEADING_WRAPPERS_RE = re.compile(
 SHELL_SPAWN_PATTERNS = (
     ("paseo agent create", re.compile(r"\bpaseo(?:\.cmd|\.exe)?\s+(?:agent\s+(?:create|start|spawn|run)|create_agent|run)\b(?!.*--help)", re.I)),
     ("run_dot_task.py", re.compile(r"\b(?:run_dot_task\.py|dot-subagent(?:\.cmd)?(?![/\\]))\b(?!.*(?:--help|-h|--check-only|\bdoctor\b|\bstatus\b|--task-id\b))", re.I)),
+    ("orca worker launch", re.compile(r"(?:^|[/\\])orca(?:\.cmd|\.exe)?\s+(?:orchestration\s+worker-start|agent\s+launch)\b(?!.*--help)", re.I)),
     ("codex exec", re.compile(r"(?:^|[/\\])codex(?:\.cmd|\.exe)?\s+exec\b(?!.*--help)", re.I)),
 )
 

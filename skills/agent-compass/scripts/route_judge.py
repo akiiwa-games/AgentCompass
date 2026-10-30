@@ -2286,7 +2286,7 @@ def main():
     parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release'), default='prepare')
     parser.add_argument('--dispatch-id')
     parser.add_argument('--parent-id')
-    parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native'), help='roll: host owning the parent session (default: auto-detected from environment)')
+    parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3'), help='roll: host owning the parent session (default: auto-detected from environment)')
     parser.add_argument('--parent-address', help='roll: native host coordinator inbox address')
     parser.add_argument('--watch-seconds', type=float, default=3600)
     parser.add_argument('--poll-seconds', type=float, default=5)

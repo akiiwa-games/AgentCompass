@@ -247,6 +247,30 @@ class RouterGateHookTests(unittest.TestCase):
                 )
                 self.assertEqual(shell_res["decision"], "block", msg=cmd)
 
+    def test_orca_and_t3_worker_launches_are_gated_but_their_other_commands_are_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing-ledger.jsonl"
+
+            def decide(tool, tool_input):
+                return gate.evaluate_payload({"tool_name": tool, "tool_input": tool_input}, ledger_path=missing, now=T0).get("decision", "allow")
+
+            for cmd in (
+                'orca orchestration worker-start --spec "task" --worktree current --agent codex --json',
+                "orca.cmd agent launch --agent claude --prompt hi",
+                r"C:\Users\me\.orca\bin\orca.exe orchestration worker-start --task t1 --agent claude",
+            ):
+                self.assertEqual(decide("Bash", {"command": cmd}), "block", msg=cmd)
+            for cmd in (
+                "orca status --json",
+                "orca worktree list --json",
+                "orca orchestration check --wait --json",
+                "orca orchestration worker-start --help",
+            ):
+                self.assertNotEqual(decide("Bash", {"command": cmd}), "block", msg=cmd)
+            for tool in ("delegate_task", "mcp__t3-code__delegate_task"):
+                self.assertEqual(decide(tool, {"task": "do it"}), "block", msg=tool)
+            self.assertNotEqual(decide("mcp__t3-code__task_status", {"taskId": "t"}), "block")
+
     def test_recent_plan_is_found_behind_snapshot_sized_lines(self):
         """Plan lines carry a decision snapshot (up to ~24 KB); the tail read must still reach the route behind them."""
         with tempfile.TemporaryDirectory() as tmp:
