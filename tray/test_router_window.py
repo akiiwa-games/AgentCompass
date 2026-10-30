@@ -225,7 +225,7 @@ class DecisionBindingTests(unittest.TestCase):
         pair = router_data.decision_pair(PLAN)
         self.assertEqual([r["id"] for r in pair], ["opus", "sol"])
         series, raw = router_data.decision_series(pair)
-        self.assertEqual(series[0]["label"], "opus · 0.500")
+        self.assertEqual(series[0]["label"], f"Opus 5.5 · {router_data.display_names.effort_text('high')} · 0.500")
         self.assertEqual(set(series[0]["values"]), {key for key, _, _ in radar_chart.SCORE_AXES})
         self.assertEqual(raw[1]["economy"]["reset_bonus"], 0.1)
 
@@ -751,7 +751,13 @@ class LanguageTests(unittest.TestCase):
             self.assertIn('Quota costs', panel.radar_source.cget('text'))
             # A later catalog refresh must not overwrite the active decision.
             panel.models_loaded(panel.models)
-            self.assertEqual(panel.radar.series[0]['label'], 'opus · 0.500')
+            self.assertEqual(panel.radar.series[0]['label'], 'Opus 5.5 · High · 0.500')
+            # Short names in the candidates table and pickers; two identical Opus bundles keep their raw ids.
+            labels = [panel.breakdown.item(i, 'values')[0] for i in panel.breakdown.get_children()]
+            self.assertEqual(labels, ['opus', 'opus_x', 'Sol 6.1 · High', 'Flash 3.8 · High'])
+            self.assertIn('Sol 6.1 · High', panel.pick_a.cget('values'))
+            self.assertEqual(panel.breakdown_row_tip('2'), 'sol · a')
+            self.assertNotIn('ledger', panel.status.get())
             self.assertEqual(panel.radar.axes[0][1], "Divergence")
             self.assertEqual(panel.radar_title.cget("text"), "Capabilities & Quota")
             self.assertFalse(hasattr(panel, "mode_switch"))

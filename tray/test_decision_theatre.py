@@ -295,7 +295,7 @@ def test_kind_resolves_below_the_underline_and_holds_readable_with_the_title():
                 readable+=1
     assert readable/60 >= .5
     # The underline's centre is the node: the routes start exactly there.
-    assert renderer.origin==(renderer.title_at[0],renderer.title_at[1]+22*s)
+    assert renderer.origin==(renderer.title_at[0],renderer.title_at[1]+renderer.line_offsets[-1]+22*s)
 
 
 def test_gather_never_leaves_an_empty_stage_and_the_node_grows_from_arriving_ink():
@@ -323,3 +323,51 @@ def test_leading_speck_hands_over_to_its_route_head_at_matched_speed():
     assert len(steps)>40
     # Speed changes smoothly through the node: no jump when the speck becomes the route head.
     assert max(abs(b-a) for a,b in zip(steps,steps[1:])) < 1.5
+
+
+def width(text):
+    return 10*len(text)
+
+
+def test_title_that_fits_stays_one_line():
+    assert dt.wrap_title('A real task',width,200)==('A real task',)
+
+
+def test_long_title_wraps_into_two_balanced_lines_at_word_boundaries():
+    lines=dt.wrap_title('Refactor payment retries with integration tests',width,300)
+    assert lines==('Refactor payment retries','with integration tests')
+    assert ' '.join(lines)=='Refactor payment retries with integration tests'
+
+
+def test_overflowing_title_keeps_a_full_first_line_and_leaves_the_rest_for_the_ellipsis():
+    first,second=dt.wrap_title('one two three four five six seven eight nine ten',width,150)
+    assert first=='one two three' and width(first)<=150
+    assert second.startswith('four') and width(second)>150
+    # A single unbreakable word cannot wrap; its tile ellipsizes it on one line.
+    assert dt.wrap_title('x'*40,width,150)==('x'*40,)
+
+
+def test_cjk_breaks_between_characters_but_never_before_closing_punctuation():
+    lines=dt.wrap_title('重构支付服务的插件架构，跨多个模块',width,100)
+    assert len(lines)==2 and ''.join(lines)=='重构支付服务的插件架构，跨多个模块'
+    assert all(width(line)<=100 for line in lines)
+    assert not lines[1].startswith('，')
+
+
+def test_two_line_title_grows_upward_and_everything_follows_the_block():
+    one=dt.TheatreRenderer(dt.scene_from_result(result()),474,488,1.15)
+    long=result(); long['task']['objective']='Refactor payment retries with integration tests and rollback'
+    two=dt.TheatreRenderer(dt.scene_from_result(long),474,488,1.15)
+    assert one.title_lines==('A real task',) and one.line_offsets==(0.,)
+    assert len(two.title_lines)==2
+    # The underline, node, kind and routes keep their place; the block's last line sits where one line did.
+    assert two.origin==one.origin and two.kind_at==one.kind_at
+    assert two.title_at[1]+two.line_offsets[-1]==one.title_at[1]
+    calls=[]
+    two.blit=lambda image,value,*a,**k: calls.append((value,a[:2]))
+    two.frame(1.)
+    ys={value:xy[1] for value,xy in calls if value in two.title_lines}
+    assert set(ys)==set(two.title_lines) and ys[two.title_lines[0]]<ys[two.title_lines[1]]
+    # Ink specks are seeded from both lines.
+    seeds=[seed for seed,*_ in two.ink]
+    assert min(y for _,y in seeds)<two.title_at[1]<max(y for _,y in seeds)

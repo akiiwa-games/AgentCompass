@@ -22,6 +22,8 @@ import plugins
 import radar_chart
 import router_priority
 import i18n
+import display_names
+from display_names import MODEL_LABELS, model_label  # noqa: F401
 
 STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or Path.home() / ".route-manager").expanduser()
 
@@ -77,11 +79,6 @@ def card_order(names, inventory_rows: dict) -> list[str]:
         family = account_family(name, inventory_rows.get(name))
         return (rank.get(family, len(rank)), name != family, index)
     return [name for _, name in sorted(enumerate(names), key=key)]
-MODEL_LABELS = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-fable-5-1": "Fable 5.1",
-                "gpt-5.6-sol": "Sol 5.6", "grok-bot": "Grok Bot",
-                "gpt-6-astra": "Astra 6", "gpt-6.1-sol": "Sol 6.1", "gpt-6-pro": "GPT 6 Pro",
-                "gemini-4-argon-high": "Argon 4", "gemini-3.8-flash-high": "Flash 3.8", "grok-4.7": "Grok 4.7",
-                "dot": "Dot", "deepseek-v4.1-flash-free": "DeepSeek Flash"}
 PRESETS = (
     ("跨模块架构重构", "重构支付服务的插件架构与后台菜单，跨多个模块保持一致，需要全局严密的设计", 4.0, False, False),
     ("单模块缺陷修复", "修复 app/upload_queue.py 里上传队列停止时的竞态 bug 并补单测", 1.0, True, False),
@@ -122,18 +119,6 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def model_label(model: str) -> str:
-    if model in MODEL_LABELS:
-        return MODEL_LABELS[model]
-    claude = re.fullmatch(r"claude-(opus|sonnet|haiku|fable)-(\d+(?:-\d+)*)", model)
-    if claude:
-        return f"{claude[1].title()} {claude[2].replace('-', '.')}"
-    gpt = re.fullmatch(r"gpt-(\d+(?:\.\d+)*?)-(sol|astra|terra|luna|pro)", model)
-    if gpt:
-        return f"{gpt[2].title()} {gpt[1]}"
-    return model
-
-
 # ---------- decisions ----------
 
 def recent_ledger(limit: int = 30, path: Path | None = None) -> list[dict]:
@@ -154,6 +139,7 @@ def ledger_summary(row: dict) -> dict:
     if objective.startswith("#"):
         objective = objective.lstrip("# ")
     return {"at": local, "objective": objective[:48], "kind": row.get("kind") or "—", "choice": row.get("choice") or "—",
+            "kind_label": display_names.kind_label(row.get("kind")), "choice_label": display_names.choice_label(row),
             "margin": row.get("margin")}
 
 
@@ -264,7 +250,7 @@ def decision_pair(result: dict, first: str | None = None, second: str | None = N
 
 
 def decision_series(pair: list[dict]) -> tuple[list[dict], list[dict]]:
-    series = [{"label": f"{r['id']} · {r['score']:.3f}", "values": radar_chart.score_dimensions(r["components"])}
+    series = [{"label": f"{display_names.candidate_label(r)} · {r['score']:.3f}", "values": radar_chart.score_dimensions(r["components"])}
               for r in pair]
     raw = [radar_chart.score_raw(r["components"]) for r in pair]
     return series, raw
@@ -644,6 +630,7 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
         owner = labels.get("router.account") or bundle.get("account") or doc.get("provider") or ""
         bundle_text = (labels.get("router.bundle_id") or bundle.get("bundle_id") or bundle.get("id")
                        or f"{account_label(owner)} · {model_label(model or '—')}")
+        label = display_names.candidate_label({"model": bundle.get("model"), "effort": bundle.get("effort"), "id": bundle_text})
         title = (doc.get("title") or (row.get("request") or {}).get("title") or row.get("task_id") or "")[:60]
         if not agent:
             session = {}
@@ -659,7 +646,7 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
                 _WORKER_SESSION_CACHE[agent] = (stamp, mono_now, dict(session))
         else:
             session = allocator.session_state(agent)
-        result.append({"agent_id": agent, "title": title, "bundle": bundle_text, "model": model, "state": state_text,
+        result.append({"agent_id": agent, "title": title, "bundle": bundle_text, "label": label, "model": model, "state": state_text,
                        "started": doc.get("lastActivityAt") or doc.get("updatedAt") or row.get("started_at"),
                        "compacted_tokens": session.get("compacted_tokens"),
                        "context_tokens": session.get("context_tokens"),

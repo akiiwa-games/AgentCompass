@@ -26,6 +26,7 @@ import plugins
 import radar_chart
 import decision_theatre
 import decision_summary
+import display_names
 import ui_theme as theme
 import i18n
 
@@ -120,6 +121,11 @@ def verdict_summary(result: dict, pair: list[dict]) -> tuple[list[tuple[str, str
     elif reason:
         rows.append((_tr("额度"), clip(reason.split(";", 1)[0], 72)))
     return rows, reason
+
+
+def pair_ids(pair: list[dict]) -> str:
+    """Raw candidate ids of the verdict pair, kept for the tooltip and the plain-text mirror."""
+    return "ID  " + " · ".join(str(r.get("id")) for r in pair) if pair else ""
 
 
 def bundle_labels(bundles: list[dict]) -> list[str]:
@@ -900,12 +906,14 @@ class Panel:
         stack.pack_propagate(False)
         stack.pack(fill="both", expand=True)
         self.ledger_frame, self.ledger_table = self.tree(stack, (
-            ("at", _tr("时间"), 76, "w"), ("kind", _tr("类型"), 104, "w"), ("choice", _tr("胜出"), 100, "w"), ("task", _tr("任务"), 120, "w")), 8)
+            ("at", _tr("时间"), 72, "w"), ("kind", _tr("类型"), 108, "w"), ("choice", _tr("胜出"), 132, "w"), ("task", _tr("任务"), 120, "w")), 8)
         self.ledger_table.bind("<<TreeviewSelect>>", lambda e: self.replay_selected())
+        self.attach_row_tooltip(self.ledger_table, self.ledger_row_tip)
         self.breakdown_frame, self.breakdown = self.tree(stack, (
             ("id", _tr("候选"), 108, "w"), ("score", _tr("总分"), 48, "e"), ("fit", _tr("契合"), 44, "e"), ("ability", _tr("能力"), 44, "e"),
             ("opp", _tr("机会"), 50, "e"), ("net", _tr("加减"), 50, "e"), ("note", _tr("状态"), 44, "w")), 8)
         self.breakdown.bind("<<TreeviewSelect>>", lambda e: self.pick_from_breakdown())
+        self.attach_row_tooltip(self.breakdown, self.breakdown_row_tip)
         self.show_list("ledger")
         self.set_mode("score")
         self.prefill(lambda: self.data_module().model_table(), self.models_loaded)
@@ -968,7 +976,8 @@ class Panel:
             defaults = ["claude-opus-5-5", "gemini-4-argon-high"]
         else:
             rows = [r for r in self.data_module().candidate_rows(self.plan_result or {}) if not r["excluded"]]
-            labels = [r["id"] for r in rows]
+            labels = display_names.unique_labels(rows, self.data_module().account_label)
+            self.pick_ids = dict(zip(labels, (r["id"] for r in rows)))
             pair = self.data_module().decision_pair(self.plan_result or {})
             defaults = [r["id"] for r in pair]
         self.pick_a.configure(values=labels)
@@ -1018,8 +1027,10 @@ class Panel:
 
     def verdict_text(self):
         """The verdict as plain text (label: value per line), as the grid shows it for the router's own pair."""
-        rows, _ = verdict_summary(self.plan_result or {}, self.data_module().decision_pair(self.plan_result or {}))
-        return "\n".join(f"{label}  {value}" if label else value for label, value in rows)
+        pair = self.data_module().decision_pair(self.plan_result or {})
+        rows, _ = verdict_summary(self.plan_result or {}, pair)
+        lines = [f"{label}  {value}" if label else value for label, value in rows]
+        return "\n".join(lines + ([pair_ids(pair)] if pair else []))
 
     def show_verdict(self, rows, reason: str = ""):
         box = self.verdict_box
@@ -1030,6 +1041,7 @@ class Panel:
         if self.mode.get() == "score" and self.plan_result:
             pair = self.data_module().decision_pair(self.plan_result, self.picked(self.pick_a), self.picked(self.pick_b))
             if pair:
+                self.verdict.set(self.verdict.get() + "\n" + pair_ids(pair))
                 self.verdict_strip = decision_summary.SummaryCanvas(box, decision_summary.summary_model(self.plan_result,pair))
                 canvas = self.verdict_strip.canvas
                 canvas.grid(row=0,column=0,columnspan=2,sticky="ew")
@@ -1157,12 +1169,13 @@ class Panel:
         rows = data.candidate_rows(self.plan_result)
         self.breakdown_rows = rows
         self.breakdown.delete(*self.breakdown.get_children())
+        self.breakdown_labels = display_names.unique_labels(rows, data.account_label)
         for index, row in enumerate(rows):
             excluded = row["excluded"]
             winner = row["id"] == self.plan_result.get("choice")
             note = _tr("拦截") if excluded else _tr("胜出") if winner else _tr("可选")
             self.breakdown.insert("", "end", iid=str(index), tags=("muted",) if excluded else ("win",) if winner else (),
-                                  values=(row["id"], fmt(row["score"]), fmt(row["fit"], 2), fmt(row["ability"], 2),
+                                  values=(self.breakdown_labels[index], fmt(row["score"]), fmt(row["fit"], 2), fmt(row["ability"], 2),
                                           fmt(row["opportunity_cost"], 3), fmt(row["bonus"] - row["penalty"], 2, True),
                                           note))
         if self.mode.get() != "score":
@@ -1170,13 +1183,11 @@ class Panel:
         else:
             self.fill_pickers()
             self.render_radar()
-        message = _tr('评分完成：{0} 个候选，胜出 {1}').format(f'{len(rows)}', f"{self.plan_result.get('choice')}")
-        origin = self.plan_result.get("theatre_source")
-        if origin == "snapshot":
-            message += tr("（台账保存的当次排序与分项分数，未重算）", " (ranking and component scores as recorded in the ledger, not recomputed)")
-        elif origin == "recomputed":
-            message += tr("（旧记录无排序快照，已按当前额度重算，仅供参考）",
-                          " (older record without a stored ranking, recomputed with current quota for reference only)")
+        choice = self.plan_result.get("choice")
+        winner = next((label for label, row in zip(self.breakdown_labels, rows) if row["id"] == choice), choice)
+        message = _tr('评分完成：{0} 个候选，胜出 {1}').format(f'{len(rows)}', f"{winner}")
+        if self.plan_result.get("theatre_source") == "recomputed":
+            message += tr("（按当前额度重算）", " (recomputed with current quota)")
         scorer = self.plan_result.get("scorer") or {}
         if scorer:
             source = scorer.get("source")
@@ -1206,13 +1217,15 @@ class Panel:
         selected = self.breakdown.selection()
         if not selected or not selected[0].isdigit():
             return
-        row = self.breakdown_rows[int(selected[0])]
+        index = int(selected[0])
+        row = self.breakdown_rows[index]
         if row["excluded"]:
-            self.status.set(_tr('{0} 被拦截：{1}').format(f"{row['id']}", f"{'；'.join(row['excluded'])}"))
+            self.status.set(_tr('{0} 被拦截：{1}').format(f"{self.breakdown_labels[index]}", f"{'；'.join(row['excluded'])}"))
             return
         # Clicking an eligible row makes it the comparison series against the primary.
-        if self.mode.get() == "score" and row["id"] in self.pick_a.cget("values") and row["id"] != self.picked(self.pick_a):
-            self.pick_b.set(row["id"])
+        label = next((label for label, bundle in getattr(self, "pick_ids", {}).items() if bundle == row["id"]), None)
+        if self.mode.get() == "score" and label in self.pick_a.cget("values") and row["id"] != self.picked(self.pick_a):
+            self.pick_b.set(label)
             self.render_radar()
 
     def load_ledger(self):
@@ -1223,7 +1236,8 @@ class Panel:
         self.ledger_table.delete(*self.ledger_table.get_children())
         for index, row in enumerate(self.ledger_rows):
             s = self.data_module().ledger_summary(row)
-            self.ledger_table.insert("", "end", iid=str(index), values=(s["at"], s["kind"], s["choice"], s["objective"]))
+            self.ledger_table.insert("", "end", iid=str(index),
+                                     values=(s["at"], s["kind_label"], s["choice_label"], s["objective"]))
         # Open on the latest real decision so the radar is never empty on first sight.
         if self.ledger_rows and not self.plan_result and not self.auto_replayed:
             self.auto_replayed = True
@@ -1270,10 +1284,11 @@ class Panel:
         self.workers_card = workers
         ttk.Label(workers, text=_tr("在途与活跃会话"), style="CardH3.TLabel").pack(anchor="w", pady=(0, 6))
         frame, self.worker_table = self.tree(workers, (
-            ("agent", "Agent", 70, "w"), ("title", _tr("任务"), 200, "w"), ("bundle", "Bundle", 110, "w"),
+            ("agent", "Agent", 70, "w"), ("title", _tr("任务"), 200, "w"), ("bundle", _tr("模型"), 110, "w"),
             ("state", _tr("状态"), 66, "w"), ("compacted", _tr("已压缩"), 62, "e"), ("context", _tr("窗口"), 58, "e"),
             ("total", _tr("累计"), 62, "e"), ("bar", _tr("占 2M 上限"), 130, "w")), 4)
         frame.pack(fill="both", expand=True)
+        self.attach_row_tooltip(self.worker_table, self.worker_row_tip)
 
         for widget in (page, self.quota_holder, self.quota_body, self.quota_grid):
             widget.bind("<Configure>", self.sync_quota_geometry, add="+")
@@ -1452,6 +1467,7 @@ class Panel:
 
     def quota_loaded(self, value):
         cards, workers = value
+        self.worker_rows = workers
         self.quota_cards_loaded(cards)
         self.worker_table.delete(*self.worker_table.get_children())
         for index, worker in enumerate(workers):
@@ -1461,7 +1477,7 @@ class Panel:
             tag = (("danger",) if share >= 1 else ("warn",) if share >= 0.8
                    else ("muted",) if worker["state"] == _tr("近期待命") else ())
             self.worker_table.insert("", "end", iid=str(index), tags=tag, values=(
-                (worker["agent_id"] or "")[:8], worker["title"], worker["bundle"], worker["state"],
+                (worker["agent_id"] or "")[:8], worker["title"], worker.get("label") or worker["bundle"], worker["state"],
                 tokens_text(worker["compacted_tokens"]), tokens_text(worker["context_tokens"]),
                 tokens_text(worker["historical_tokens"]), bar if worker["telemetry"] != "unknown" else _tr("遥测不可用")))
         if not workers:
@@ -1469,6 +1485,13 @@ class Panel:
                                      tags=("muted",))
         running = sum(1 for w in workers if w["state"] != _tr("近期待命"))
         self.status.set(_tr('已读取 {0} 个账号、{1} 个在途 worker、{2} 个近期待命 · {3}').format(f'{len(cards)}', f'{running}', f'{len(workers) - running}', f"{time.strftime('%H:%M:%S')}"))
+
+    def worker_row_tip(self, iid):
+        rows = getattr(self, "worker_rows", ())
+        if not iid.isdigit() or int(iid) >= len(rows):
+            return ""
+        worker = rows[int(iid)]
+        return " · ".join(str(v) for v in (worker.get("agent_id"), worker.get("bundle")) if v)
 
     def build_quota_card(self, index, card, refreshable):
         """One account card with usage-float inner layout: header (dot + name + weakened ↻) + ultra-clean window rows."""
@@ -1802,7 +1825,43 @@ class Panel:
             menu.destroy()
         self.model_menu = None
 
-    def attach_tooltip(self, widget):
+    def attach_row_tooltip(self, table, text_for):
+        """Hover text per Treeview row (raw ids for auditing); text_for(iid) returns '' for none."""
+        current = {"iid": None}
+        show, hide = self.attach_tooltip(table, bind=False)
+
+        def move(event):
+            iid = table.identify_row(event.y)
+            if iid == current["iid"]:
+                return
+            hide()
+            current["iid"] = iid
+            table._tooltip_text = text_for(iid) if iid else ""
+            if table._tooltip_text:
+                show(event)
+
+        def leave(_event=None):
+            current["iid"] = None
+            hide()
+        table.bind("<Motion>", move, add="+")
+        table.bind("<Leave>", leave, add="+")
+        table.bind("<Button-1>", leave, add="+")
+
+    def ledger_row_tip(self, iid):
+        rows = getattr(self, "ledger_rows", ())
+        if not iid.isdigit() or int(iid) >= len(rows):
+            return ""
+        row = rows[int(iid)]
+        return f"{row.get('kind') or '—'} · {row.get('choice') or '—'}"
+
+    def breakdown_row_tip(self, iid):
+        rows = getattr(self, "breakdown_rows", ())
+        if not iid.isdigit() or int(iid) >= len(rows):
+            return ""
+        row = rows[int(iid)]
+        return " · ".join(str(v) for v in (row["id"], row.get("account")) if v)
+
+    def attach_tooltip(self, widget, bind=True):
         def hide(_event=None):
             tip = getattr(widget, "_tooltip_window", None)
             if tip is not None and tip.winfo_exists():
@@ -1815,6 +1874,8 @@ class Panel:
             tip.geometry(f"+{event.x_root + 12}+{event.y_root + 18}")
             self.ttk.Label(tip, text=getattr(widget, "_tooltip_text", ""), padding=6,
                            wraplength=theme.px(480), style="CardTiny.TLabel").pack()
+        if not bind:
+            return show, hide
         widget.bind("<Enter>", show)
         widget.bind("<Leave>", hide)
         widget.bind("<Button-1>", hide, add="+")

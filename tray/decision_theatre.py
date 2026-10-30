@@ -149,9 +149,8 @@ def next_delay_ms(started, now, frame_index):
 def effort_label(effort):
     if not effort:
         return ""
-    from decision_summary import EFFORTS
-    from i18n import translate
-    return "· " + translate(EFFORTS.get(effort, effort))
+    from display_names import effort_text
+    return "· " + effort_text(effort)
 
 
 class TimerResolution:
@@ -187,6 +186,32 @@ def short_title(title):
     if quoted:
         return quoted[1]
     return re.split(r'[，；。]',title,maxsplit=1)[0]
+
+
+CJK = re.compile(r"[⺀-鿿　-〿가-힯豈-﫿＀-￯]")
+NO_LINE_START = set("，。、；：！？）」』》〉】,.;:!?)]}…")
+
+
+def wrap_title(title, measure, limit):
+    """At most two balanced lines, split at word boundaries; CJK may break between characters.
+
+    One fitting line, or no usable break, returns the title alone (its tile ellipsizes it);
+    a second line that still overflows is left for its tile to ellipsize.
+    """
+    title = " ".join(str(title).split())
+    fits = lambda text: measure(text) <= limit
+    if fits(title):
+        return (title,)
+    breaks = [i for i in range(1, len(title))
+              if title[i] != " " and title[i] not in NO_LINE_START
+              and (title[i-1] == " " or (title[i-1] != " " and (CJK.match(title[i-1]) or CJK.match(title[i]))))]
+    pairs = [(title[:i].rstrip(), title[i:].strip()) for i in breaks]
+    both = [pair for pair in pairs if fits(pair[0]) and fits(pair[1])]
+    if both:
+        # Balanced: the wider line is as narrow as possible.
+        return min(both, key=lambda pair: (max(map(measure, pair)), -measure(pair[0])))
+    first = [pair for pair in pairs if fits(pair[0])]
+    return first[-1] if first else (title,)
 
 
 def sampled_polygon(values,cx,cy,radius,count=65):
@@ -389,7 +414,11 @@ class TheatreRenderer:
         self.rows = shown_candidates(scene)
         w, h, s = self.w, self.h, self.s
         self.title = short_title(scene.title)
-        self.title_at = (w*.5, h*.44)
+        self.title_lines = wrap_title(self.title, font(round(17*s*self.k)).getlength, w*.88*self.k)
+        # A second line grows the block upward, so the underline, node and routes keep their place.
+        self.line_gap = 23*s
+        self.line_offsets = tuple((i - (len(self.title_lines)-1)/2)*self.line_gap for i in range(len(self.title_lines)))
+        self.title_at = (w*.5, h*.44 - self.line_offsets[-1])
         # The underline's centre is the route origin; the kind sits below with a clear gap.
         self.origin = (w*.5, h*.44 + 22*s)
         self.kind_at = (w*.5, self.origin[1] + 19*s)
@@ -612,7 +641,8 @@ class TheatreRenderer:
         dy, scale = title_pose(WINDOWS["gather"][0])
         tx, ty = self.title_at
         title = [(tx + (x - tx)*scale, ty + dy*s + (y - ty)*scale)
-                 for x, y in self.glyph_points(self.title, 17, theme.INK, self.title_at)]
+                 for line, offset in zip(self.title_lines, self.line_offsets)
+                 for x, y in self.glyph_points(line, 17, theme.INK, (tx, ty + offset))]
         kind = [(x, y + 1.2*s) for x, y in self.glyph_points(self.scene.kind, 12, theme.MUTED, self.kind_at)]
 
         def pick(points, count, salt):
@@ -672,8 +702,10 @@ class TheatreRenderer:
             # The title recedes a little as the kind gains, then breaks into ink.
             alpha = appear * (1 - .28*kind_in) * (1 - ease(g/.45))
             dy, scale = title_pose(t)
-            self.blit(image, self.title, tx, ty + dy*s, 17, theme.INK, scale=scale, alpha=alpha,
-                      max_width=w*.88, cam=cam)
+            # The lines breathe as one block about its centre.
+            for line, offset in zip(self.title_lines, self.line_offsets):
+                self.blit(image, line, tx, ty + dy*s + offset*scale, 17, theme.INK, scale=scale, alpha=alpha,
+                          max_width=w*.88, cam=cam)
             if alpha > 0:
                 self.probe["title"] = (tx - cam, ty + dy*s, scale)
             # The underline condenses toward its own centre, the node's position.

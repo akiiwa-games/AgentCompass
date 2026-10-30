@@ -6,33 +6,7 @@ from i18n import translate as _tr
 import radar_chart
 import ui_theme as theme
 from decision_theatre import TheatreRenderer, Scene, finite
-
-WORK_KINDS = {
-    "direction_reasoning": "方向推演", "complex_build_plan": "复杂构建规划",
-    "debug_review": "调试评审", "text_in_text_out": "文本处理",
-    "exploration_analysis": "探索分析", "research_packet": "研究任务",
-    "bounded_bulk_work": "批量处理", "general_implementation": "通用实现",
-    "self_contained_code": "独立模块实现", "tool_execution": "工具执行",
-    "web_research": "网络调研", "visual_analysis": "视觉分析",
-    "frontend_implementation": "前端界面实现", "research": "开放式方案调研",
-}
-DIFFICULTIES = {"routine": "常规", "hard": "困难", "coupled": "高耦合", "extreme": "极难", "easy": "简单", "medium": "中等"}
-EFFORTS = {"low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最高", "ultra": "超高"}
-
-
-def kind_label(value):
-    return _tr(WORK_KINDS.get(value, value or "—"))
-
-
-def difficulty_label(value):
-    return _tr(DIFFICULTIES.get(value, value or "—"))
-
-
-def candidate_label(row):
-    import router_data
-    name = router_data.model_label(str(row.get("model") or row.get("id") or "—"))
-    effort = row.get("effort")
-    return name + (" · " + _tr(EFFORTS.get(effort,effort)) if effort else "")
+from display_names import WORK_KINDS, DIFFICULTIES, EFFORTS, kind_label, difficulty_label, candidate_label  # noqa: F401
 
 
 def task_label(result):

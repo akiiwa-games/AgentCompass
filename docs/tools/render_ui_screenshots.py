@@ -109,7 +109,7 @@ def open_page(args, state: Path, view: str = "radar"):
         panel.render_radar()  # the static radar a user gets by picking a candidate
     panel.theatre_enabled.set(True)  # the default; only the freeze above turned it off
     panel.objective.insert("1.0", demo.HEADLINE)
-    for column, width in (("at", 92), ("kind", 130), ("choice", 112), ("task", 96)):
+    for column, width in (("at", 88), ("kind", 112), ("choice", 134), ("task", 96)):
         panel.ledger_table.column(column, width=ui_theme.px(width))
     panel._suppress_next_select = True
     panel.ledger_table.selection_set("0")
