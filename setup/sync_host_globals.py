@@ -726,7 +726,7 @@ SKILLS_FROM_REPO = ["agent-compass"]
 def link_repo_skills_into_hub() -> None:
     """New-user bootstrap: expose this checkout's router skill as ~/.codex/skills/<name>, the hub the other hosts link to.
 
-    An existing path (real directory or another junction) is never replaced.
+    Refresh links still matching our manifest; preserve user-owned or retargeted paths.
     """
     hub = HOME / ".codex" / "skills"
     for name in SKILLS_FROM_REPO:
@@ -735,8 +735,11 @@ def link_repo_skills_into_hub() -> None:
         if not (source / "SKILL.md").is_file():
             continue
         if link.exists() or is_reparse_point(link):
-            report(f"[skills] {link} already exists; left as is")
-            continue
+            recorded = MANIFEST["junctions"].get(str(link), {}).get("target")
+            current = junction_target(link)
+            if not recorded or current is None or Path(current) != Path(recorded).resolve():
+                report(f"[skills] {link} is not a matching managed link; left as is")
+                continue
         create_junction(link, source)
         report(f"[skills] Linked {link} -> {source}")
 
@@ -1148,7 +1151,7 @@ def sync(*, docs: bool = True, skills: bool = True, hooks: bool | None = None, d
         unify_global_docs()
         update_paseo_config()
     if skills:
-        if link_repo_skills:
+        if link_repo_skills or str(HOME / ".codex/skills/agent-compass") in MANIFEST["junctions"]:
             link_repo_skills_into_hub()
         deduplicate_and_link_skills()
     if clean if clean is not None else existing:

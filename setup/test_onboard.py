@@ -252,6 +252,46 @@ class GeminiMaterializationTests(HomeCase):
             self.assertTrue(sg.materialized_skill_matches(dst, source))
 
 
+class SkillUpgradeTests(HomeCase):
+    def test_managed_skill_moves_to_new_install_and_uninstalls_cleanly(self):
+        old = self.write("v1/agent-compass/SKILL.md", "old").parent
+        new = self.write("v2/agent-compass/SKILL.md", "new").parent
+        link = self.home / ".codex/skills/agent-compass"
+        with patch.object(sg, "REPO_SKILLS", old.parent):
+            self.sync(docs=False, link_repo_skills=True)
+        with patch.object(sg, "REPO_SKILLS", new.parent):
+            self.sync(docs=False, dry_run=True)
+            self.assertEqual(link.resolve(), old)
+            self.sync(docs=False)
+            self.assertEqual(link.resolve(), new)
+            self.assertEqual((link / "SKILL.md").read_text(), "new")
+            self.sync(docs=False)
+            self.assertEqual(link.resolve(), new)
+        self.quiet(sg.uninstall)
+        self.assertFalse(link.exists())
+        self.assertEqual((old / "SKILL.md").read_text(), "old")
+        self.assertEqual((new / "SKILL.md").read_text(), "new")
+
+    def test_upgrade_preserves_user_directory_and_retargeted_link(self):
+        source = self.write("v2/agent-compass/SKILL.md", "new").parent
+        link = self.write(".codex/skills/agent-compass/SKILL.md", "custom").parent
+        with patch.object(sg, "REPO_SKILLS", source.parent):
+            self.sync(docs=False, link_repo_skills=True)
+        self.assertFalse(sg.is_reparse_point(link))
+        self.assertEqual((link / "SKILL.md").read_text(), "custom")
+        (link / "SKILL.md").unlink()
+        link.rmdir()
+        with patch.object(sg, "REPO_SKILLS", source.parent):
+            self.sync(docs=False, link_repo_skills=True)
+        custom = self.write("custom/agent-compass/SKILL.md", "mine").parent
+        sg.remove_dir_or_junction(link)
+        sg.make_link(link, custom)
+        with patch.object(sg, "REPO_SKILLS", source.parent):
+            self.sync(docs=False, link_repo_skills=True)
+        self.assertEqual(link.resolve(), custom)
+        self.assertEqual((link / "SKILL.md").read_text(), "mine")
+
+
 class UninstallTests(HomeCase):
     def snapshot(self):
         return {str(p.relative_to(self.home)): (p.read_bytes() if p.is_file() else None)

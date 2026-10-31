@@ -5,6 +5,12 @@ description: Choose owner, model and effort, outbound authorization, advisor use
 
 # AgentCompass
 
+## Execution ownership
+
+The main session executes serial work directly by default, including ordinary investigation, edits and verification. Duration, tool-call count and reading multiple files are not reasons to delegate. Delegate when independent work benefits from parallelism, isolation of a large context, a specialist capability or quota offloading. Continue related work with the existing worker while available and within its context limit. If routing itself is broken, diagnose and repair it directly. A delegated worker (`ROUTER_WORKER=1` or a `Parent session agent ID:` contract) executes its assignment without further delegation unless explicitly appointed coordinator.
+
+## Dispatch
+
 To delegate work to a subagent, worker or advisor, run one command; the router picks the model, launches the worker and returns what to do next:
 
 ```bash
@@ -13,7 +19,7 @@ python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py roll --task 
 
 Long or multi-line assignments: pipe them in with `--task -` (or `--brief <file>`); the worker always gets your text unchanged. Do not call `create_agent`, `Agent`, `spawn_agent`, `invoke_subagent` or a CLI yourself.
 
-Do small local work (about five minutes, three tool calls) yourself; a delegated worker never delegates again. Read `status` in the JSON and do exactly `next_action`: `launched` = start nothing else (`next_action` says how the result arrives), `pending` = run `next_argv`, never roll again, `self` / `native` / `blocked` / `error` = follow `next_action`. Full details are in `details`.
+Read `status` in the JSON and do exactly `next_action`: `launched` = collect the existing worker's result as instructed, `pending` = run `next_argv`, never roll again, `self` / `native` / `blocked` / `error` = follow `next_action`. Full details are in `details`.
 
 Optional, only when true: `--hours <n>`, `--local-only "<dependency>"`, `--file <path>`, `--fast`, and for a user-named model `--provider/--account/--model/--effort --basis "<user quote>"`.
 

@@ -23,6 +23,11 @@ ROUTER_HOOK_SCRIPT = (Path(__file__).resolve().with_name("router_gate_hook.py"))
 
 OVERLAY_FILES = {"shared": "shared.md", "codex": "codex.md", "daemon-append": "daemon-append.md"}
 
+# Keep the installed skill and generated host prompts on the same ownership policy.
+EXECUTION_POLICY = (REPO / "skills/agent-compass/SKILL.md").read_text(encoding="utf-8").split(
+    "## Execution ownership\n", 1
+)[1].split("\n## ", 1)[0].strip()
+
 LARGE_DATA_POLICY = """For large CSV, JSON, tables or logs, filter columns/rows and compute summaries in the tool invocation before returning output to this conversation. Keep complete research artifacts on disk and report their paths; do not silently truncate or discard source data or persisted user research.
 """
 
@@ -37,16 +42,15 @@ Cross-project rules for agents that can delegate work through the AgentCompass r
 
 ## 2. Do it yourself, or delegate through the router
 
-1. If you are already a delegated worker (the environment has `ROUTER_WORKER=1`, or the end of your brief carries a `Parent session agent ID:` contract), do the task yourself. Do not delegate again unless the brief appoints you coordinator.
-2. In a main session, do small, local work yourself: roughly five minutes and three tool calls or fewer, such as reading a couple of known files, a tiny edit, or running one known test.
-3. Delegate anything larger: multi-file exploration, read-edit-test loops, independent modules, work that can run in parallel, or work that suits another model or another account's quota.
-4. To delegate, run exactly one command with the whole assignment (never call Paseo `create_agent`, a host's `Agent`/`Task`, `spawn_agent` or similar directly): `python -X utf8 @@ROUTE_JUDGE@@ roll --task "<what the worker should do>"`. Long text goes in with `--task -` on stdin or `--brief <task.md>`; the worker gets it unchanged. `--hours` is optional.
-5. Read `status` and do exactly `next_action`: `launched` = the worker runs, start nothing else, and collect the result the way `next_action` says (notification, `next_argv`, or watching `worker_output`); `pending` = run `next_argv`, never roll again; `self` = do it yourself; `native` = start the host's own sub-agent with `route_bundle` and the full text of `worker_prompt_file`; `blocked`/`error` = follow `next_action` (onboarding: `python -X utf8 @@REPO@@/setup/onboard.py`). The full result is at `details`.
-6. Do not raise the effort yourself; use what the router returned. Name a model or effort only when the user named it in this request, and then pass `--provider/--account/--model/--effort` together with `--basis "<the user's words>"`.
-7. If an account becomes unavailable (expired, removed, out of quota), run the router again rather than substituting a similar-looking model.
-8. Reuse an existing worker for a follow-up only while its accumulated uncompressed context is small (under about 2M tokens, counting every earlier compaction, not just the current window). Beyond that, write a handoff brief and `roll` a fresh worker.
-9. Launch every worker with an explicit permission mode; never rely on a provider default (a worker waiting on a permission prompt looks "running" but does nothing). Use `selected_bundle.modeId` from the router; if absent: Codex `full-access`, Claude `bypassPermissions`, Antigravity `full-access`, OpenCode `build`. Narrow it for read-only roles. After launch, read the agent status once to confirm the mode took effect.
-10. If the optional router gate hook is installed, it blocks sub-agent launches (including a host's built-in Explore) that have no router record from the last 15 minutes. Run `roll` first, or remove the hook with `python -X utf8 setup/onboard.py uninstall`.
+@@EXECUTION_POLICY@@
+
+1. To delegate, run exactly one command with the whole assignment (never call Paseo `create_agent`, a host's `Agent`/`Task`, `spawn_agent` or similar directly): `python -X utf8 @@ROUTE_JUDGE@@ roll --task "<what the worker should do>"`. Long text goes in with `--task -` on stdin or `--brief <task.md>`; the worker gets it unchanged. `--hours` is optional.
+2. Read `status` and do exactly `next_action`: `launched` = the worker runs, start nothing else, and collect the result the way `next_action` says (notification, `next_argv`, or watching `worker_output`); `pending` = run `next_argv`, never roll again; `self` = do it yourself; `native` = start the host's own sub-agent with `route_bundle` and the full text of `worker_prompt_file`; `blocked`/`error` = follow `next_action` (onboarding: `python -X utf8 @@REPO@@/setup/onboard.py`). The full result is at `details`.
+3. Do not raise the effort yourself; use what the router returned. Name a model or effort only when the user named it in this request, and then pass `--provider/--account/--model/--effort` together with `--basis "<the user's words>"`.
+4. If an account becomes unavailable (expired, removed, out of quota), run the router again rather than substituting a similar-looking model.
+5. Reuse an existing worker for a follow-up only while its accumulated uncompressed context is small (under about 2M tokens, counting every earlier compaction, not just the current window). Beyond that, write a handoff brief and `roll` a fresh worker.
+6. Launch every worker with an explicit permission mode; never rely on a provider default (a worker waiting on a permission prompt looks "running" but does nothing). Use `selected_bundle.modeId` from the router; if absent: Codex `full-access`, Claude `bypassPermissions`, Antigravity `full-access`, OpenCode `build`. Narrow it for read-only roles. After launch, read the agent status once to confirm the mode took effect.
+7. If the optional router gate hook is installed, it blocks sub-agent launches (including a host's built-in Explore) that have no router record from the last 15 minutes. Run `roll` first, or remove the hook with `python -X utf8 setup/onboard.py uninstall`.
 
 ## 3. Parent address and messaging
 
@@ -58,13 +62,12 @@ Cross-project rules for agents that can delegate work through the AgentCompass r
 
 ## 4. Large files, tables and logs
 
-""" + LARGE_DATA_POLICY
+""".replace("@@EXECUTION_POLICY@@", EXECUTION_POLICY) + LARGE_DATA_POLICY
 
 DEFAULT_CODEX = DEFAULT_SHARED
 
 DEFAULT_DAEMON_APPEND = (
-    "Router discipline: if you are already a delegated worker (ROUTER_WORKER=1 or the brief ends with a Parent session agent ID), do the work yourself and do not delegate again. "
-    "In a main session, do small local work (about five minutes, three tool calls or fewer) yourself; delegate anything larger by running only "
+    "Router discipline: " + EXECUTION_POLICY + " When delegating, run only "
     "`python -X utf8 @@ROUTE_JUDGE@@ roll --task \"<assignment>\"` instead of calling create_agent / Agent / spawn_agent / invoke_subagent directly. "
     "Read the result's status and do exactly next_action: launched = the worker is running, start nothing else and collect the result as next_action says; pending = run next_argv, never roll again; native = start a native sub-agent; self = do the work yourself. "
     "A worker that needs a decision must message its real parent (Paseo: send_agent_prompt with background=true, notifyOnFinish=false) and end its turn, never use AskUserQuestion-style tools; "
@@ -85,6 +88,7 @@ def is_legacy_generated(text: str) -> bool:
         "# 全局执行纪律\n",
         "# Agent routing rules (AgentCompass)\n",
         "Router discipline: if you are already a delegated worker (",
+        "Router discipline: " + EXECUTION_POLICY,
     ))
 
 
