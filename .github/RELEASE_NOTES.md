@@ -1,13 +1,16 @@
-AgentCompass v0.3.1 adds an animated Decision Compass: the Windows tray now replays each routing decision from task to winner, and the router gains verified fast-mode launch contracts.
+AgentCompass v0.3.2 makes usage collection independent of Usage Float and improves dispatch, recovery and installation through the public `agentcompass` command.
 
-- Decision Compass decision theatre: an animated replay of task → work kind → candidate routes → ranking → top-two capability radar → winner with its effort. Ledger entries keep decision snapshots, so past decisions replay faithfully.
-- New radar rendering with unified capability axes and four editable model ratings, plus a verdict strip that summarises each decision in one line.
-- Model, bundle and work-kind names are short and consistent across the page (theatre, verdict strip, recent decisions, candidates, radar pickers, status line and Quota Monitor). Raw ids stay in tooltips.
-- Fast-mode launch contracts for Codex and Claude: fast keeps model and effort, normal launches pass the off value explicitly, and Claude fast mode needs an explicit paid opt-in.
-- Effort routing is reset-aware: observed and expected reset horizons feed dynamic urgency, and task depth is matched to model-specific ability and burn curves.
-- Host-specific defaults are gone: the Grok2API integration and its port default are retired, and the reference catalogue and fixtures are realigned with the neutral fleet.
-- The README hero is now a single animated Decision Compass replay rendered from the real window with synthetic data.
+- The router owns usage collection and caching. Usage Float is optional, and existing usage caches remain readable.
+- One public entry handles task text, stdin and brief files, with stage-specific help and complete recovery commands. Documentation and generated host rules use that entry.
+- Herdr support adds parent-bound dispatch, durable launch receipts, result collection and cleanup. Windows workers now wait for the actual provider process and preserve its exit status.
+- Cindy gains an installable plugin bridge with trusted session context, exact route and permission checks, and durable result collection. It requires the upstream experimental tasks API; compatibility with released Cindy builds is not claimed. An unknown create without a task ID requires inspecting the draft in Cindy rather than resending.
+- Unconfirmed Paseo launches return `pending` with a continuation for the same dispatch. Exhausted short quota windows block dispatch even when weekly quota remains; recovery, account aliases and model-specific limits are respected.
+- Setup hooks work with spaces and shell metacharacters in paths. Windows uninstall removes the managed environment variables and scheduled task.
+- Decision theatre diagnostics are included and remain opt-in. An unwritable diagnostic log no longer prevents the window from loading.
+- Distribution packages exclude development tests. Tests now exercise public commands, actual child processes, HTTP and shell boundaries, and installation and GUI operations in Windows Sandbox.
 
-The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.3.1/packaging/SIGNING.md).
+Validation included fresh-home dispatch, lost-response recovery, quota exhaustion and recovery, Windows installation/uninstallation, and a real Quota Monitor refresh click. External provider and host APIs used fixtures where noted; paid model calls and a released Cindy installation were not tested. Release publishing requires the installed-wheel sandbox checks to pass.
+
+The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.3.2/packaging/SIGNING.md).
 
 Status: alpha. Customize the reference fleet and model calibration for your own subscriptions.
