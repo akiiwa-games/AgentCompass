@@ -1090,6 +1090,7 @@ def main(argv=None) -> int:
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--only", nargs="*", help="Run only these steps (names of the step_* functions, without the prefix).")
     args = parser.parse_args(argv)
+    args.report = args.report.resolve()
     names = sc.registry_clean()
     if names:
         print("refusing to run: Windows user variables the router reads exist in HKCU\\Environment: " + ", ".join(names), file=sys.stderr)
@@ -1099,7 +1100,7 @@ def main(argv=None) -> int:
     run_dir = args.report / time.strftime("run-%Y%m%d-%H%M%S")
     run = sc.Run(run_dir)
     before = sc.real_state_snapshot()
-    base = Path(tempfile.mkdtemp(prefix="agentcompass-zero-"))
+    base = Path(tempfile.mkdtemp(prefix="agentcompass-zero-")).resolve()
     notes = {"sandbox": str(base)}
     try:
         if args.wheel:

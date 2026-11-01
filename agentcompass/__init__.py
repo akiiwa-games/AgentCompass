@@ -1,3 +1,3 @@
 """Installable AgentCompass router. The tray is optional and is not frozen into this package."""
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"

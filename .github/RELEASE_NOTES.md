@@ -1,4 +1,4 @@
-AgentCompass v0.3.2 makes usage collection independent of Usage Float and improves dispatch, recovery and installation through the public `agentcompass` command.
+AgentCompass v0.3.3 makes usage collection independent of Usage Float and improves dispatch, recovery and installation through the public `agentcompass` command. The v0.3.2 attempt was not published: its release checks exposed relative-path and Windows short-path errors in the test harness, corrected here without removing checks.
 
 - The router owns usage collection and caching. Usage Float is optional, and existing usage caches remain readable.
 - One public entry handles task text, stdin and brief files, with stage-specific help and complete recovery commands. Documentation and generated host rules use that entry.
@@ -11,6 +11,6 @@ AgentCompass v0.3.2 makes usage collection independent of Usage Float and improv
 
 Validation included fresh-home dispatch, lost-response recovery, quota exhaustion and recovery, Windows installation/uninstallation, and a real Quota Monitor refresh click. External provider and host APIs used fixtures where noted; paid model calls and a released Cindy installation were not tested. Release publishing requires the installed-wheel sandbox checks to pass.
 
-The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.3.2/packaging/SIGNING.md).
+The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.3.3/packaging/SIGNING.md).
 
 Status: alpha. Customize the reference fleet and model calibration for your own subscriptions.
