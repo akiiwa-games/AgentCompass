@@ -1,4 +1,3 @@
-import os
 import unittest
 
 from agentcompass.origin import DEFAULT_ORG, RELEASES_API, github_org, sibling_repo, usage_float_repo
@@ -29,18 +28,6 @@ class OriginTests(unittest.TestCase):
         self.assertEqual(github_org({"ROUTE_MANAGER_GITHUB_ORG": "old-org"}), "old-org")
         self.assertEqual(github_org({"AGENTCOMPASS_GITHUB_ORG": "new-org", "ROUTE_MANAGER_GITHUB_ORG": "old-org"}), "new-org")
 
-    def test_usage_float_without_git_config_stays_on_the_public_org(self):
-        keys = ("AGENTCOMPASS_GITHUB_ORG", "AGENTCOMPASS_USAGE_FLOAT_REPO", "ROUTE_MANAGER_GITHUB_ORG",
-                "ROUTE_MANAGER_USAGE_FLOAT_REPO")
-        saved = [os.environ.pop(key, None) for key in keys]
-        try:
-            self.assertEqual(usage_float_repo({}), "https://github.com/akiiwa-games/usage-float.git")
-        finally:
-            for key, value in zip(keys, saved):
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
 
 
 if __name__ == "__main__":

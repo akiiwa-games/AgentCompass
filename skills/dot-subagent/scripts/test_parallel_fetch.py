@@ -9,12 +9,19 @@ import parallel_fetch
 
 class Handler(http.server.BaseHTTPRequestHandler):
     flaky = {}
+    active = peak = 0
+    lock = threading.Lock()
 
     def log_message(self, *args):
         pass
 
     def do_GET(self):
-        time.sleep(0.2)                       # a slow connection: each request costs 0.2 s
+        with Handler.lock:
+            Handler.active += 1
+            Handler.peak = max(Handler.peak, Handler.active)
+        time.sleep(0.05)
+        with Handler.lock:
+            Handler.active -= 1
         if self.path == "/missing":
             self.send_error(404)
             return
@@ -43,17 +50,12 @@ class ParallelFetchTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
 
-    def test_results_are_keyed_by_url_and_threads_make_it_faster(self):
+    def test_downloads_overlap_and_each_url_keeps_its_own_bytes(self):
         urls = [f"{self.base}/f{i}" for i in range(16)]
-        start = time.time()
-        one = parallel_fetch.fetch_all(urls, threads=1)
-        serial = time.time() - start
-        start = time.time()
+        Handler.peak = 0
         many = parallel_fetch.fetch_all(urls, threads=8)
-        parallel = time.time() - start
-        self.assertEqual(one, many)
-        self.assertEqual(many[urls[3]], b"/f3")
-        self.assertLess(parallel, serial / 3)
+        self.assertEqual(many, {url: f'/f{i}'.encode() for i, url in enumerate(urls)})
+        self.assertGreater(Handler.peak, 1)
 
     def test_a_404_is_none_and_a_flaky_server_is_retried(self):
         original = parallel_fetch.time.sleep

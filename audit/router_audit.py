@@ -564,7 +564,7 @@ def build_findings(ctx: dict) -> list[dict]:
         if yes / len(delegates) >= GATE_YES_SHARE:
             add("warn", "gate", "delegate 闸门几乎恒为 delegate",
                 f"{yes}/{len(delegates)} 次判 delegate(阈值 {GATE_YES_SHARE:.0%});仅 {len(delegates) - yes} 次 self。",
-                "闸门没有过滤作用:调用方只在已决定委派时才调用它。选 worker 直接用 `route_judge.py plan`(无模型调用)。")
+                "闸门没有过滤作用:调用方只在已决定委派时才调用它。选 worker 直接用 `agentcompass plan`(无模型调用)。")
     kinds = collections.Counter(classify(r) for r in selects)
     planned = [r for r in selects if r.get("source") == "deterministic_allocator"]
     overrides = [r for r in selects if r.get("source") == "constraint_record" and r.get("origin") == "ledger"]

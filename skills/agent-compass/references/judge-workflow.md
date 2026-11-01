@@ -6,12 +6,12 @@ The router separates fast structured task classification (**System-One Scorer**)
 
 | Stage | Command | Model / Engine | When to Use |
 | :--- | :--- | :--- | :--- |
-| **`plan`** | `route_judge.py plan --input task.json` | System-One Scorer (`gemini-3.8-flash-low` via `agy`) + deterministic `allocator.plan` | **Standard path** before launching any subagent/worker. Automatically classifies and scores `task.objective`. |
-| **`score`** | `route_judge.py score --input task.json` | The configured scorer (default `gemini-3.8-flash-low` via `agy`; then `agy` when another scorer fails and `fallback_to_agy` is on; then deterministic `allocator.infer_task_profile`) | Standalone inspection and calibration testing of the System-One classifier. |
-| **`scorer`** | `route_judge.py scorer --action show\|set\|test` | Reads/writes `~/.agent-compass/scorer-config.json` (`ROUTER_SCORER_CONFIG`, type override `ROUTER_SCORER_TYPE`) | Choose the scorer: `agy_flash_low`, `jev` (TypeSafe `POST /v1/systemone`, key `jev_api_key` / `TYPESAFE_API_KEY` / `JEV_API_KEY`), `claude_haiku_low`, `codex_terra_low`, `openai_compatible`, `heuristic`. Keys are printed masked only; `--api-key -` reads the key from stdin. |
-| **`delegate`** | `route_judge.py delegate --input task.json` | Two low-effort judges (`claude-sonnet-5-5 low` + `gpt-6.1-sol low`) | Only when uncertain whether to do work locally vs. delegate. |
-| **`select`** | `route_judge.py select --input task.json` | `plan` first; calls low-effort judges only when `decision.needs_judgment` is `true` | Optional tie-breaker when top two bundles are within `tie_margin` (`0.02`). |
-| **`record`** | `route_judge.py record --constraint user_override ...` | Deterministic ledger + reservation | When the user explicitly names the target model or effort in the current turn. |
+| **`plan`** | `agentcompass plan --input task.json` | System-One Scorer (`gemini-3.8-flash-low` via `agy`) + deterministic `allocator.plan` | Diagnosis: ranks the bundles and shows why, without launching. To delegate, use `agentcompass roll --task "<text>"` (same classifier and allocator, then it launches). |
+| **`score`** | `agentcompass score --input task.json` | The configured scorer (default `gemini-3.8-flash-low` via `agy`; then `agy` when another scorer fails and `fallback_to_agy` is on; then deterministic `allocator.infer_task_profile`) | Standalone inspection and calibration testing of the System-One classifier. |
+| **`scorer`** | `agentcompass scorer --action show\|set\|test` | Reads/writes `~/.agent-compass/scorer-config.json` (`ROUTER_SCORER_CONFIG`, type override `ROUTER_SCORER_TYPE`) | Choose the scorer: `agy_flash_low`, `jev` (TypeSafe `POST /v1/systemone`, key `jev_api_key` / `TYPESAFE_API_KEY` / `JEV_API_KEY`), `claude_haiku_low`, `codex_terra_low`, `openai_compatible`, `heuristic`. Keys are printed masked only; `--api-key -` reads the key from stdin. |
+| **`delegate`** | `agentcompass delegate --input task.json` | Two low-effort judges (`claude-sonnet-5-5 low` + `gpt-6.1-sol low`) | Only when uncertain whether to do work locally vs. delegate. |
+| **`select`** | `agentcompass select --input task.json` | `plan` first; calls low-effort judges only when `decision.needs_judgment` is `true` | Optional tie-breaker when top two bundles are within `tie_margin` (`0.02`). |
+| **`record`** | `agentcompass record --constraint user_override ...` | Deterministic ledger + reservation | When the user explicitly names the target model or effort in the current turn. |
 
 ## 2. System-One Classifier Output Schema
 

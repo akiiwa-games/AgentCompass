@@ -19,6 +19,7 @@ import filecmp
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -34,7 +35,7 @@ MARKER_END = "<!-- agentcompass:end -->"
 
 PYTHON_EXE = Path(sys.executable).resolve().as_posix()
 ROUTER_HOOK_SCRIPT = Path(__file__).resolve().with_name("router_gate_hook.py").as_posix()
-ROUTER_HOOK_CMD = f"{PYTHON_EXE} -X utf8 {ROUTER_HOOK_SCRIPT}"
+ROUTER_HOOK_CMD = shlex.join([PYTHON_EXE, "-X", "utf8", ROUTER_HOOK_SCRIPT])
 
 ROUTER_GATE_MATCHER = (
     ".*request_user_input_async|.*request_user_input|.*AskUserQuestion|.*ask_user_question|"

@@ -17,7 +17,10 @@ class PriorityTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'router-overrides.json'
-        self.a, self.r = priority.modules()
+        # Exercise the checkout's core, not a developer's installed skill copy.
+        import allocator
+        import route_judge
+        self.a, self.r = allocator, route_judge
         isolated_router_state(self.addCleanup)
         self.now = datetime(2026, 10, 16, 11, tzinfo=timezone.utc)
         self.usage = {'accounts': {'codex': {'status': 'fresh', 'available': True,

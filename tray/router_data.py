@@ -46,7 +46,7 @@ FAMILY_ORDER = ("claude", "codex", "antigravity", "opencode", "dot", "chatgpt-we
 FAMILY_LABELS = {"claude": "Claude", "codex": "Codex", "antigravity": "Antigravity", "opencode": "OpenCode",
                  "dot": "Dot", "chatgpt-web": "ChatGPT Web", "pi": "Pi", "grok": "Grok", "grok-bot": "Grok Bot",
                  "api-proxy": "API Proxy", "llmproxy": "LLM Proxy", "omp": "Oh My Pi", "dsh": "DeepSeek Harness"}
-# Families whose quota the Usage Float collector reads.
+# Families whose quota the usage collector reads.
 USAGE_FAMILIES = ("claude", "codex", "pi", "antigravity", "grok")
 
 
@@ -530,9 +530,10 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
 
 def usage_providers(names, accounts: dict | None = None) -> list[str]:
     """Collector provider IDs for these accounts: a pooled account reads its source, by discovered family."""
+    allocator, _ = modules()   # installs the skill scripts path before provider_inventory is imported
     import provider_inventory
     if accounts is None:
-        accounts = modules()[0].load_accounts()
+        accounts = allocator.load_accounts()
     rows = ((accounts.get("_discovery") or {}).get("accounts") or {})
     sources = provider_inventory.quota_sources(accounts)
     result = []
@@ -545,16 +546,14 @@ def usage_providers(names, accounts: dict | None = None) -> list[str]:
 
 
 def collect_usage_now(providers: list[str]) -> None:
-    import sys
-    uf_root = str(plugins.plugin_root("usage-float"))
-    if uf_root not in sys.path:
-        sys.path.insert(0, uf_root)
-    import usage_float
-    usage_float.fetch_all(providers, force=True)
+    """Read these accounts now with the router's own collector (usage_core); Usage Float is not involved."""
+    modules()   # installs the skill scripts path
+    import usage_core
+    usage_core.fetch_all(providers, force=True)
 
 
 def refresh_usage(accounts: list[str] | None = None, timeout: float = 130) -> str:
-    """Ask Usage Float to re-read these accounts directly and update ~/.usage-float/usage-cache.json."""
+    """Re-read these accounts directly and update the usage cache (~/.agent-compass/usage-cache.json)."""
     if accounts is None:
         accounts = [c["account"] for c in account_cards() if c.get("refreshable")]
     providers = usage_providers(accounts)

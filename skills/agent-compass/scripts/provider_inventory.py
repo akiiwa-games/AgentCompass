@@ -19,6 +19,7 @@ import sqlite3
 import tempfile
 import tomllib
 from model_resolution import resolve_canonical_model
+import usage_cache
 
 MAX_BYTES = 5 * 1024 * 1024
 GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/runtime/bin/gbot.mjs'
@@ -505,7 +506,7 @@ def _discover(home=None, environ=None, now=None):
     definitions = agents.get('providers') or {}
     if not isinstance(definitions, dict):
         definitions = {}
-    cache, _ = read_json(Path(environ.get('ROUTER_USAGE_CACHE') or home / '.usage-float/usage-cache.json'))
+    cache = usage_cache.read(None, home, environ)[0] or {}
     cache_rows = cache.get('providers') if isinstance(cache.get('providers'), dict) else {}
     result = {'schema': 'agent-compass.providers.v2.local', 'generated_at': now.isoformat(),
               'accounts': {}, 'launchers': {}, 'saved': [], 'source_paths': {},

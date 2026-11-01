@@ -37,7 +37,7 @@ subscription share one quota owner. Unknown model families remain visible withou
 invented capability scores. Explicit host/model restrictions still apply.
 
 ```bash
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py providers
+agentcompass providers
 ```
 
 The credential-free inventory is published to
@@ -47,9 +47,13 @@ The credential-free inventory is published to
 
 ## Quota sources
 
-1. `~/.usage-float/usage-cache.json`: AgentCompass's existing backend owns collection;
-   the router reads cached observations. Freshness follows the account's active/idle
-   poll cadence plus grace. A changed credential binding invalidates old quota.
+1. `~/.agent-compass/usage-cache.json` (under `ROUTER_STATE_DIR` when set): the router's own collector
+   (`agentcompass usage`, run every 5 minutes by the tray) writes it; routing only reads it. The
+   Usage Float plugin is optional and not needed. A legacy `~/.usage-float/usage-cache.json` is also
+   read and the newer reading per provider wins; `ROUTER_USAGE_CACHE` / `--usage-cache` name one file
+   and read only that. Freshness follows the account's active/idle poll cadence plus grace, judged from
+   each row's `fetched_at`. A changed credential binding invalidates old quota. `agentcompass usage --show`
+   prints what routing reads.
 2. `~/.agent-compass/capacity.json` supplies observed consumption rates when fresh.
 
 Known plan changes reuse existing policy capacity estimates. Unknown plans discard

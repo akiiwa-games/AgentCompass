@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 import importlib.util
+import importlib
 try:
     import tkinter as tk
 except ImportError:
@@ -18,6 +19,13 @@ from unittest import mock
 DESKTOP_TESTS = os.environ.get("AGENTCOMPASS_DESKTOP_TESTS") == "1"
 desktop_test = unittest.skipUnless(
     DESKTOP_TESTS, "maps desktop windows; opt in with AGENTCOMPASS_DESKTOP_TESTS=1 on an isolated desktop")
+
+
+def import_theatre_without_user_diagnostics():
+    """Preload only the scene module under an empty import-time diagnostic home."""
+    with tempfile.TemporaryDirectory(prefix='theatre import ') as home:
+        with mock.patch.dict(os.environ, {'HOME': home, 'USERPROFILE': home}):
+            return importlib.import_module('decision_theatre')
 
 
 def require_windows(*modules):
@@ -112,6 +120,16 @@ def reset_tk_root(root, case=None):
     gc.collect()
 
 
+def close_tk_root(root):
+    reset_tk_root(root)
+    # Variable/trace cleanup may already have removed a Tcl command through
+    # the interpreter. Tkinter's Python list can still contain that name.
+    commands = set(root.tk.splitlist(root.tk.call('info', 'commands')))
+    if root._tclCommands:
+        root._tclCommands[:] = [name for name in root._tclCommands if name in commands]
+    root.destroy()
+
+
 def shared_tk_root(testcase=None):
     """Return the process-wide shared Tk root, initializing Tcl/Tk library paths and retries if needed."""
     require_tk(display=True)
@@ -142,7 +160,7 @@ def shared_tk_root(testcase=None):
         if not DESKTOP_TESTS:
             _keep_windows_hidden()
         tk._tray_shared_root = root
-        atexit.register(lambda: (reset_tk_root(root), root.destroy()))
+        atexit.register(close_tk_root, root)
     reset_tk_root(root)
     if testcase is not None:
         testcase.addCleanup(reset_tk_root, root, testcase)

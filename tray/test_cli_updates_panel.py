@@ -9,8 +9,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tk_test_support import require_tk
+from tk_test_support import require_tk, import_theatre_without_user_diagnostics
 tk = require_tk()
+import_theatre_without_user_diagnostics()
 import cli_updates
 import i18n
 import plugins

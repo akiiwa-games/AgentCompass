@@ -488,6 +488,48 @@ except ValueError as e:
         self.assertEqual(recovered[0]['state'], 'completed')
         self.assertEqual(registry.reservations(), [])
 
+    def test_roll_lost_create_then_unavailable_observation_is_pending_and_recovers_same_worker(self):
+        import roll
+        from types import SimpleNamespace
+        row=self.prepare()
+        calls=[]
+        reachable=False
+        finished=False
+        def host(request):
+            calls.append(request['operation'])
+            notice={'status':'delivered' if finished else 'watching'}
+            if request['operation']=='create':
+                return {'ok':False,'sent':True,'error':'create_answer_lost','completion_notification':notice}
+            if not reachable:
+                return {'ok':False,'error':'observe_temporarily_unavailable'}
+            return {'ok':True,'agent':self.snapshot(row,'idle' if finished else 'running',
+                **({'attentionReason':'finished'} if finished else {})), 'completion_notification':notice}
+        args=SimpleNamespace(title='fixture',workspace=None,wait=0)
+        decision={'decision_id':row['decision_id'],'selected_bundle':self.bundle}
+        with patch.object(flow,'host_call',side_effect=host), patch.object(registry,'prepare',return_value=row):
+            unknown,code=roll.paseo(args,{},decision,self.task,'fixture','parent-a',self.usage)
+            self.assertEqual(code,0)
+            self.assertEqual(registry.inspect(row['dispatch_id'])['state'],'launching')
+            self.assertIsNone(unknown['launched'])
+            compact=roll.compact(unknown,roll.status_of(unknown,code),'detail.json')
+            self.assertEqual(compact['status'],'pending')
+            self.assertEqual(compact['next_argv'][-6:],['--dispatch-id',row['dispatch_id'],
+                '--parent-id','parent-a','--watch-seconds','120'])
+            self.assertNotIn('completion arrives as a notification',compact['next_action'])
+            reachable=True
+            recovered,code=roll.paseo(args,{},decision,self.task,'fixture','parent-a',self.usage)
+            self.assertEqual(code,0)
+            self.assertTrue(recovered['launched'])
+            self.assertEqual(recovered['worker']['dispatch_id'],row['dispatch_id'])
+            self.assertEqual(recovered['worker']['agent_id'],'agent-fixture')
+            self.assertEqual(recovered['worker']['state'],'started')
+            self.assertEqual(calls.count('create'),1)
+            finished=True
+            completed,code=roll.paseo(args,{},decision,self.task,'fixture','parent-a',self.usage)
+            self.assertTrue(completed['launched'])
+            self.assertEqual(completed['worker']['state'],'completed')
+            self.assertEqual(completed['worker']['completion_notification']['status'],'delivered')
+            self.assertEqual(calls.count('create'),1)
     def test_initial_idle_is_not_finished_and_wrong_settings_not_acked(self):
         row = self.prepare()
         registry.claim(row['request'], now=self.now)
@@ -569,6 +611,11 @@ if(p.operation==='create') {
         self.assertEqual(registry.reservations(), [])
 
 
+def roll_module_for_tests():
+    import roll
+    return roll
+
+
 class RollTests(unittest.TestCase):
     """roll: brief in, routed launch out. Reuses the isolated registry; no live host, Dot or scorer."""
     setUp, snapshot = DispatchTests.setUp, DispatchTests.snapshot
@@ -580,7 +627,7 @@ class RollTests(unittest.TestCase):
         brief.write_bytes(self.brief.encode('utf-8'))
         args = argparse.Namespace(brief=brief, file=[], apply_to=None, local_only=None, hours=0.5, title=None,
             workspace=None, task_id='test-task', wait=0, parent_id=None, parent_host=None, parent_address=None, provider=None, model=None, effort=None,
-            basis=None, usage_cache=None, dry_run=False)
+            basis=None, usage_cache=None, dry_run=False, verbose='task' not in flags)    # tests of the full result ask for it; inline-task tests check the short one
         vars(args).update(flags)
         seen = {}
 
@@ -690,11 +737,20 @@ class RollTests(unittest.TestCase):
         brief.write_bytes(text.encode('utf-8'))
         self.assertEqual(roll_module.read_task_text(argparse.Namespace(brief=brief, task=None)), text)
 
-    def test_explicit_hours_and_brief_keep_the_full_result(self):
+    def test_verbose_keeps_the_full_result(self):
         decision = dict(stage='plan', choice='self', decision={'action': 'start'})
         (result, code), seen = self.roll(decision, hours=2)
         self.assertEqual((code, result['status'], result['dispatch_mode'], seen['task']['expected_hours']), (2, 'self', 'self', 2.0))
         self.assertNotIn('assumptions', result)
+
+    def test_a_brief_gets_the_same_short_result_as_inline_text(self):
+        decision = dict(stage='plan', choice='self', decision={'action': 'start'})
+        with patch.object(roll_module_for_tests(), 'RESULTS_DIR', self.root / 'results'):
+            (result, code), _ = self.roll(decision, verbose=False)
+        self.assertEqual((code, result['status']), (2, 'self'))
+        self.assertEqual(sorted(result), ['details', 'next_action', 'status'])
+        self.assertTrue(Path(result['details']).is_file())
+        self.assertEqual(json.loads(Path(result['details']).read_text(encoding='utf-8'))['dispatch_mode'], 'self')
 
     def test_status_never_reports_uncertain_delivery_as_not_launched(self):
         import roll as roll_module
@@ -719,6 +775,7 @@ class RollTests(unittest.TestCase):
         self.assertEqual((len(creates), seen, code), (1, {}, 0))  # one create, no second classification
         self.assertEqual((first['launched'], again['launched'], again['caller_action']), (True, None, 'run_next_argv'))
         self.assertEqual(again['worker']['continuation_argv'][4:9], ['launch', '--dispatch-id', again['worker']['dispatch_id'], '--parent-id', 'parent-a'])
+        self.assertFalse(any(part.endswith('.py') for part in again['worker']['continuation_argv']))
         self.assertEqual(again['status'], 'pending')
 
     def test_compact_states_say_exactly_what_the_caller_must_do(self):
@@ -1125,7 +1182,8 @@ class RollTests(unittest.TestCase):
         self.assertEqual(command[command.index('--file') + 1], str(source))
         self.assertIn('--no-wait', command)
         self.assertEqual(result['worker']['task_id'], 'dot-task-1')
-        self.assertEqual(result['continuation_argv'][4:7], ['status', '--task-id', 'dot-task-1'])
+        self.assertEqual(result['continuation_argv'][4:8], ['dot', 'status', '--task-id', 'dot-task-1'])
+        self.assertFalse(any(part.endswith('.py') for part in result['continuation_argv']))
 
     def test_grok_bot_external_route_preserves_parent_and_receipt(self):
         import run_grok_bot as runner
@@ -1154,6 +1212,8 @@ class RollTests(unittest.TestCase):
                 if not wait:
                     run.assert_not_called()
                 self.assertEqual(command[command.index('--prompt') + 1], result['worker_prompt_file'])
+                if not wait:
+                    self.assertEqual(command[4], 'chatgpt-web')
                 self.assert_worker_prompt(result, parent='parent-a')
 
     def test_named_model_without_user_quote_is_refused(self):

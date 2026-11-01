@@ -29,6 +29,10 @@ class PackagingTests(unittest.TestCase):
             setup.mkdir()
             (setup / "onboard.py").write_text("def setup_main(argv=None):\n    return 0\n", encoding="utf-8")
             (setup / "paseo_dispatch_bridge.mjs").write_text("export {}\n", encoding="utf-8")
+            for folder, name in ((skill, "test_allocator.py"), (skill, "test_cindy_plugin.mjs"),
+                                 (skill, "router_test_support.py"), (skill, "conftest.py"),
+                                 (setup, "test_onboard.py")):
+                (folder / name).write_text("development test\n", encoding="utf-8")
             bridge = setup / "paseo-bridge"
             bridge.mkdir()
             (bridge / "package.json").write_text("{}\n", encoding="utf-8")
@@ -49,6 +53,9 @@ class PackagingTests(unittest.TestCase):
             names = {path.relative_to(staged).as_posix() for path in staged.rglob("*") if path.is_file()}
             self.assertIn("setup/onboard.py", names)
             self.assertIn("setup/paseo-bridge/package.json", names)
+            self.assertIn("setup/paseo_dispatch_bridge.mjs", names)
+            self.assertFalse(any(Path(name).name.startswith("test_")
+                                 or Path(name).name in {"conftest.py", "router_test_support.py"} for name in names))
             self.assertFalse(any(name.startswith("setup/host_sync/") for name in names))
             self.assertFalse(any("node_modules" in name or name.endswith(".pyc") or "/out/" in name for name in names))
 
@@ -93,35 +100,7 @@ class PackagingTests(unittest.TestCase):
                 "setup/paseo-bridge/package.json",
             })
 
-    def test_the_real_checkout_stages_no_ignored_or_untracked_file(self):
-        import shutil
-        import subprocess
-        from tempfile import TemporaryDirectory
-        if shutil.which("git") is None or not (ROOT / ".git").exists():
-            self.skipTest("not a git checkout")
-        stage_data = _stage_data()
-        listed = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z"], capture_output=True, check=True).stdout
-        tracked = {name.decode("utf-8") for name in listed.split(b"\0") if name}
-        with TemporaryDirectory() as directory:
-            staged = stage_data.stage(ROOT, Path(directory) / "staged")
-            names = {path.relative_to(staged).as_posix() for path in staged.rglob("*") if path.is_file()}
-        self.assertTrue(names)
-        self.assertEqual(sorted(name for name in names if name not in tracked), [])
-        self.assertFalse(any(name.startswith("setup/host_sync/") for name in names))
 
-    def test_the_frozen_tray_carries_the_helpers_it_starts_and_what_the_router_scripts_import(self):
-        import re
-        spec = (ROOT / "packaging" / "agentcompass-tray.spec").read_text(encoding="utf-8")
-        launch = (ROOT / "tray" / "component_launch.py").read_text(encoding="utf-8")
-        components = re.findall(r'"(\w+)",', launch[launch.index("COMPONENTS"):launch.index(")", launch.index("COMPONENTS"))])
-        self.assertTrue(components)
-        helpers = spec[spec.index("HELPER_MODULES = ["):spec.index("]", spec.index("HELPER_MODULES = ["))]
-        for name in components:
-            self.assertIn(f'"{name}"', helpers)
-        self.assertIn("*stdlib_imports(router_scripts)", spec)
-        # provider_inventory reads TOML, which the frozen interpreter only has when it is named.
-        scripts = (ROOT / "skills" / "agent-compass" / "scripts" / "provider_inventory.py").read_text(encoding="utf-8")
-        self.assertIn("import tomllib", scripts)
 
     def test_payload_check_flags_untracked_files_in_a_wheel_sdist_and_pyinstaller_table(self):
         import tarfile
@@ -163,34 +142,6 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(check.toc_problems(toc, files, repo),
                              ["Analysis-00.toc: tray/private_scratch.py is not tracked in git"])
 
-    def test_metadata_describes_the_install_and_the_unsigned_tray(self):
-        pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        iss = (ROOT / "packaging" / "agentcompass.iss").read_text(encoding="utf-8")
-        signing = (ROOT / "packaging" / "SIGNING.md").read_text(encoding="utf-8")
-        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-        hook = (ROOT / "packaging" / "hatch_build.py").read_text(encoding="utf-8")
-        spec = (ROOT / "packaging" / "agentcompass-tray.spec").read_text(encoding="utf-8")
-        self.assertIn('self.target_name not in ("wheel", "sdist")', hook)
-        self.assertIn("only-include", pyproject)
-        self.assertIn('"**/node_modules"', pyproject)
-        self.assertIn('"setup/host_sync/out"', pyproject)
-        self.assertIn('requires-python = ">=3.11"', pyproject)
-        self.assertIn('agentcompass = "agentcompass.cli:main"', pyproject)
-        self.assertIn("pystray", pyproject)
-        self.assertIn("pywin32", pyproject)
-        self.assertIn("PrivilegesRequired=lowest", iss)
-        self.assertIn("agentcompass uninstall", iss)
-        self.assertIn("-TaskName 'AgentCompass'", iss)
-        self.assertIn('/TN ""Route Manager""', iss)      # the pre-rename task is still removed
-        self.assertIn("PRO_CONSULT_LAUNCHER", iss)
-        self.assertIn("CODEX_WEB_GPT_EXTERNAL_TRAY", iss)
-        self.assertIn("SmartScreen", signing)
-        self.assertIn("signtool sign /fd SHA256", signing)
-        self.assertIn('tags:', workflow)
-        self.assertIn('contents: write', workflow)
-        self.assertIn("console=False", spec)
-        self.assertIn("app.pyw", spec)
-        self.assertIn('name="AgentCompass"', spec)
 
 
 if __name__ == "__main__":

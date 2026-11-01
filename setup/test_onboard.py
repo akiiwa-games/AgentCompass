@@ -116,7 +116,8 @@ class RuleSourceTests(HomeCase):
         for needle in ("roll --task", "launched", "status", "next_action", "bypassPermissions", "Parent session agent ID",
                        "notifyOnFinish", "background process"):
             self.assertIn(needle.lower(), text.lower())
-        self.assertIn(host_rules.ROUTE_JUDGE, text)
+        self.assertIn(host_rules.agentcompass_command() + " roll --task", text)
+        self.assertNotIn("route_judge", text)
 
     def test_overlay_replaces_the_default_and_fills_placeholders(self):
         overlay = self.write(".agent-compass/host-rules/codex.md", "custom @@HOME_POSIX@@ @@ROUTER_HOOK_SCRIPT@@\n")
@@ -213,6 +214,18 @@ class SyncTests(HomeCase):
 
 
 class GeminiMaterializationTests(HomeCase):
+    def test_skill_search_paths_are_written_for_the_target_home(self):
+        (self.home / ".gemini").mkdir()
+        self.sync(docs=False)
+        path = self.home / ".gemini/config/skills.json"
+        config = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual([entry["path"] for entry in config["entries"]],
+                         [(self.home / name / "skills").as_posix()
+                          for name in (".codex", ".agents", ".claude")])
+        before = path.read_bytes()
+        self.sync(docs=False)
+        self.assertEqual(path.read_bytes(), before)
+
     def test_materialization_skips_matching_content_and_repairs_stale_files_and_links(self):
         source = self.home / "source"
         self.write("source/SKILL.md", "v1")
@@ -300,6 +313,16 @@ class UninstallTests(HomeCase):
         self.assertEqual((self.home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8"), "# mine\n")
 
 
+class EntryCommandTests(unittest.TestCase):
+    def test_hints_use_the_public_command(self):
+        for text in (onboard._undo_command(), onboard._try_command()):
+            self.assertIn("agentcompass", text)
+            self.assertNotIn("route_judge", text)
+            self.assertNotIn("onboard.py", text)
+        self.assertTrue(onboard._try_command().endswith(" providers"))
+        self.assertTrue(onboard._undo_command().endswith(" uninstall"))
+
+
 class DetectionTests(HomeCase):
     def detect(self, *tools):
         self.cli.update({tool: tool for tool in tools})       # `which` is mocked for the whole process
@@ -383,25 +406,36 @@ class OverrideTests(HomeCase):
 
 
 class UsagePluginTests(HomeCase):
-    def test_existing_checkout_is_used_and_collection_runs_once(self):
+    def test_existing_checkout_is_used_without_being_needed_for_collection(self):
         plugin = self.home / ".agent-compass" / "plugins" / "usage-float"
         (plugin / ".git").mkdir(parents=True)
         (plugin / "usage_float.py").write_text("", encoding="utf-8")
         self.cli["git"] = "git"
+        found = onboard.ensure_usage_float(self.home, run=lambda command, **kwargs: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+        self.assertEqual(found["action"], "updated")
+
+    def test_collection_runs_the_routers_own_collector_once_with_the_home_pinned(self):
         calls = []
 
         def fake_run(command, **kwargs):
-            calls.append(command)
-            if command[-1] == "once":
-                (self.home / ".usage-float").mkdir()
-                (self.home / ".usage-float" / "usage-cache.json").write_text("{}", encoding="utf-8")
+            calls.append((command, kwargs))
+            cache = self.home / ".agent-compass" / "usage-cache.json"
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text("{}", encoding="utf-8")
             return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
 
-        found = onboard.ensure_usage_float(self.home, run=fake_run)
-        self.assertEqual(found["action"], "updated")
-        collection = onboard.collect_usage_once(self.home, found, run=fake_run)
+        collection = onboard.collect_usage_once(self.home, run=fake_run)
         self.assertTrue(collection["ok"])
-        self.assertEqual(calls[-1][-1], "once")
+        command, kwargs = calls[0]
+        self.assertTrue(command[-2].endswith("usage_collector.py"))
+        self.assertEqual((command[1], command[-1]), ("-I", "--once"))
+        self.assertEqual(kwargs["env"]["ROUTER_STATE_DIR"], str(self.home / ".agent-compass"))
+        self.assertEqual(kwargs["env"]["USERPROFILE"], str(self.home))
+        self.assertNotIn("usage_float", " ".join(command))
+
+    def test_dry_run_collects_nothing(self):
+        collection = onboard.collect_usage_once(self.home, dry_run=True, run=lambda *a, **k: self.fail("must not run"))
+        self.assertFalse(collection["ran"])
 
     def test_missing_checkout_is_cloned_from_the_public_repository(self):
         self.cli["git"] = "git"

@@ -1,16 +1,28 @@
 # roll reference
 
-Full mechanics behind `roll --task`; the SKILL.md default path needs none of this unless a result says otherwise.
+Full mechanics behind `roll`; the SKILL.md default path needs none of this unless a result says otherwise.
 
-Never manually choose between Paseo `create_agent`, Claude `Agent`, Codex `spawn_agent`, Antigravity `invoke_subagent`, `run_dot_task.py`, or raw CLI. Pass the task inline with `--task "<text>"`, or write a Markdown brief and pass `--brief <task.md>`; `--hours <n>` is optional (without it the classifier estimates hours in the same call; the source and confidence are reported under `assumptions`):
+Herdr core (`hc`) and Cindy are hosts, not quota accounts. Herdr detects the actual `HC_TERMINAL_ID` and launches an owned child terminal. Cindy needs the scoped plugin bridge because its shell does not expose a supported parent mailbox. See [Herdr and Cindy setup, capabilities and return paths](herdr-cindy.md) before first use in either host.
+
+Never manually choose between Paseo `create_agent`, Claude `Agent`, Codex `spawn_agent`, Antigravity `invoke_subagent`, `run_dot_task.py`, or raw CLI. Pass the task inline, from stdin, or as a Markdown file; `--hours <n>` is optional (without it the classifier estimates hours in the same call; the source and confidence are reported under `assumptions`):
 
 ```bash
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py roll --task "<text>"
+agentcompass roll --task "<text>"          # inline
+agentcompass roll --task - < task.md       # stdin, any length
+agentcompass roll --brief task.md          # a file
 ```
+
+`--task` and `--brief` print the same short result: `status`, `next_action`, `worker`, `reason`, pointers (`next_argv`, `worker_output`, `worker_prompt_file`) and `details`, the path of the full result (also saved for every call). `--verbose` prints the full result instead. `agentcompass roll -h` lists only the options of this command; in a source checkout without an install the command is `python -X utf8 <checkout>/agentcompass roll ...` (same arguments).
+
+`next_argv` and `continuation_argv` are ready-to-run commands (an argv list, so a path with spaces needs no quoting) that go through the same public entry: `agentcompass launch ...` for a Paseo dispatch, `agentcompass dot status ...`, `agentcompass grok-bot status ...`, `agentcompass chatgpt-web --prompt ... --out ...`. Run them as given; never swap in a script path.
 
 `roll` automatically detects the caller's host session (`PASEO_AGENT_ID`, Orca's `ORCA_AGENT_SESSION_ID` / `ORCA_TERMINAL_HANDLE`, `ANTIGRAVITY_CONVERSATION_ID`, `CLAUDE_SESSION_ID` / `CLAUDECODE`, `CODEX_THREAD_ID`, `PI_SESSION_ID`, `OPENCODE_SESSION_ID`), classifies the brief, allocates and records the worker, and chooses the best dispatch surface (`paseo`, `dot`, `cli`, `chatgpt-web`, `native`, or `self`). Every dispatch requires a real addressable parent session ID, host, and message address; missing information stops dispatch before classification or launch (`--dry-run` diagnostics remain available).
 
-Inspect `launched`, `dispatch_mode`, and `caller_action` in `roll`'s JSON output:
+A Paseo single-use launch claim or a notifier marked `watching` does not confirm that a worker was created. Until a validated host observation binds the worker identity to the dispatch, roll returns `pending` with explicit `next_argv`. Run that command to observe the same dispatch; do not roll again or repeat create. After observation confirms the worker, the existing launch/completion notification behavior applies.
+
+Selection and launch preflight both check the chosen model's applicable windows on its actual bound quota source. A fresh exhausted five-hour window prevents an immediate dispatch even when weekly capacity remains and the short window has no pricing specification. Explicit `draws` and configured/observed model restrictions still determine scope; an unrecognized observation name alone does not prove a shared model quota. No capacity or burn rate is invented for an observation-only limit. Fresh recovery or an available alternative account can permit dispatch; missing/stale data retains the existing uncertainty policy rather than becoming a blanket denial.
+
+Do exactly what the short result's `next_action` says. The cases below describe the full result (`details`, or `--verbose`), where `launched`, `dispatch_mode` and `caller_action` give the same answer in detail:
 - **`launched: true` (`caller_action: "already_launched_do_not_respawn"`)**: `roll` has **already launched** the worker (`dispatch_mode: "paseo"`, `"cli"`, or `"dot"`). **Do NOT call `create_agent`, `Agent`, `spawn_agent`, or `invoke_subagent` again.** Follow `next`: Paseo registers a bounded local notification watcher (PID, deadline and durable state in `worker.completion_notification`) that sends the parent a finish/error/permission notice with a pointer to the worker's response, including for workers without messaging tools. If no active watcher is confirmed, use `worker.continuation_argv` / `get_agent_activity` to collect the result. CLI has no automatic callback: the caller must watch `worker.output` / `worker.stderr` and own the process until exit or cancellation. For Dot use `continuation_argv`.
 - **`launched: false` and `dispatch_mode: "self"` (`caller_action: "execute_self"`)**: Execute the task directly in your current session; do not spawn a subagent.
 - **`launched: false` and `dispatch_mode: "native"` (`caller_action: "launch_with_native_host_tool"`)**: Returned when `--parent-host native --parent-id <session-id> --parent-address <inbox-address>` is passed (or when neither Paseo nor a local CLI is available). Pass the **contents** of `worker_prompt_file` to the native host subagent tool using `route.bundle` and preserving the live preamble. Do not switch to Paseo or pass the filename as the prompt.

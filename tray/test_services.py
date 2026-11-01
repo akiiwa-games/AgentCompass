@@ -417,6 +417,54 @@ class EasyTierLoginTests(unittest.TestCase):
 
 
 
+class UsageCollectTickTests(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(services._usage_collect.update, proc=None, started=None)
+        services._usage_collect.update(proc=None, started=None)
+
+    def child(self, running):
+        proc = mock.Mock(pid=4343)
+        proc.poll.return_value = None if running else 0
+        return proc
+
+    def test_first_tick_starts_the_routers_own_collector_pass_at_low_priority(self):
+        with mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
+            self.assertTrue(services.usage_collect_tick())
+        args, _env, _cwd, log, flags = popen.call_args.args
+        self.assertEqual(args[1:], [str(services.USAGE_COLLECT_SCRIPT)])
+        self.assertEqual((log.name, flags), ("usage-collect.log", services.BELOW_NORMAL_PRIORITY_CLASS))
+        self.assertTrue(services.USAGE_COLLECT_SCRIPT.is_file())
+
+    def test_the_frozen_tray_runs_it_through_its_own_executable(self):
+        with mock.patch.object(services.component_launch, "frozen", return_value=True), \
+                mock.patch.object(services.sys, "executable", "C:/Apps/AgentCompass.exe"), \
+                mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
+            self.assertTrue(services.usage_collect_tick())
+        self.assertEqual(popen.call_args.args[0], ["C:/Apps/AgentCompass.exe", "--run-component", "usage_collect"])
+
+    def test_a_running_pass_is_not_doubled_and_the_next_waits_for_the_interval(self):
+        with mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
+            services.usage_collect_tick()
+            self.assertFalse(services.usage_collect_tick(force=True))
+        self.assertEqual(popen.call_count, 1)
+        with mock.patch.object(services, "hidden_popen", return_value=self.child(False)) as popen:
+            services._usage_collect.update(proc=None, started=None)
+            self.assertTrue(services.usage_collect_tick())
+            self.assertFalse(services.usage_collect_tick())
+            services._usage_collect["started"] -= services.USAGE_COLLECT_INTERVAL + 1
+            self.assertTrue(services.usage_collect_tick())
+        self.assertEqual(popen.call_count, 2)
+
+    def test_stop_kills_only_a_running_pass(self):
+        with mock.patch.object(services, "kill_pid") as kill:
+            services._usage_collect["proc"] = self.child(False)
+            services.stop_usage_collect()
+            kill.assert_not_called()
+            services._usage_collect["proc"] = self.child(True)
+            services.stop_usage_collect()
+            kill.assert_called_once_with(4343)
+
+
 class CapacityTickTests(unittest.TestCase):
     def setUp(self):
         self.addCleanup(services._capacity.update, proc=None, started=None)

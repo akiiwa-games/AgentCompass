@@ -18,7 +18,9 @@ from router_test_support import isolated_router_state
 
 class LedgerReplayTests(unittest.TestCase):
     def setUp(self):
-        self.allocator, self.router = priority.modules()
+        import allocator
+        import route_judge
+        self.allocator, self.router = allocator, route_judge
         isolated_router_state(self.addCleanup)
         self.now = datetime.now(timezone.utc)
         scorer = patch.dict(os.environ, {'ROUTER_DISABLE_LIVE_SCORER': '1'})

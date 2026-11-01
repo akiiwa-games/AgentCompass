@@ -83,3 +83,50 @@ class HostTests(unittest.TestCase):
             self.assertFalse(host.is_autostart_enabled())
             self.assertTrue(applied.wait(timeout=1.0))
             remove_mock.assert_called_once()
+
+
+class SharedCacheTests(unittest.TestCase):
+    """The hosted Usage Float writes the router's cache file, with the legacy copy carried over once (real files, isolated home)."""
+
+    def setUp(self):
+        import json
+        import os
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.json = json
+        self.native = SimpleNamespace(CACHE_PATH=None)
+        env = {"HOME": str(self.home), "USERPROFILE": str(self.home)}
+        patcher = mock.patch.dict(os.environ, env)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for name in ("ROUTER_STATE_DIR", "ROUTER_USAGE_CACHE", "ROUTE_MANAGER_ACTIVITY_FILE", "AGENTCOMPASS_STATE_DIR"):
+            os.environ.pop(name, None)
+        self.legacy = self.home / ".usage-float" / "usage-cache.json"
+        self.legacy.parent.mkdir(parents=True)
+        self.legacy.write_text(json.dumps({"providers": {"codex": {"fetched_at": "2026-01-01T00:00:00+00:00", "windows": [{"id": "5h"}]}}}),
+                               encoding="utf-8")
+
+    def test_the_hosted_plugin_is_pointed_at_the_router_cache_seeded_from_the_legacy_one(self):
+        import os
+        path = host.share_cache(self.native)
+        self.assertEqual(path, self.home / ".agent-compass" / "usage-cache.json")
+        self.assertEqual(self.native.CACHE_PATH, path)
+        self.assertEqual(self.json.loads(path.read_text(encoding="utf-8"))["providers"]["codex"]["windows"], [{"id": "5h"}])
+        self.assertTrue(self.legacy.is_file())
+        self.assertEqual(os.environ["ROUTE_MANAGER_ACTIVITY_FILE"], str(self.home / ".agent-compass" / "usage-activity.json"))
+
+    def test_a_named_cache_file_is_used_as_given_and_nothing_is_seeded(self):
+        import os
+        named = self.home / "named.json"
+        os.environ["ROUTER_USAGE_CACHE"] = str(named)
+        self.assertEqual(host.share_cache(self.native), named)
+        self.assertFalse((self.home / ".agent-compass" / "usage-cache.json").exists())
+
+    def test_without_the_routers_scripts_the_plugin_keeps_its_own_default(self):
+        with mock.patch.object(host.component_launch, "skill_scripts", return_value=None):
+            self.assertIsNone(host.share_cache(self.native))
+        self.assertIsNone(self.native.CACHE_PATH)

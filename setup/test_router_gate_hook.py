@@ -34,7 +34,7 @@ def setUpModule():
     home = Path(_state.name)
     _gate_paths = mock.patch.multiple(gate, HOME=home,
         DEFAULT_LEDGER=home / '.agent-compass/router-ledger.jsonl',
-        DEFAULT_USAGE_CACHE=home / '.usage-float/usage-cache.json',
+        DEFAULT_USAGE_CACHE=home / '.agent-compass/usage-cache.json',
         DEFAULT_PASEO_AGENTS=home / '.paseo/agents')
     _gate_paths.start()
     sys.path.insert(0, str(SKILL_ROOT / "scripts"))
@@ -93,13 +93,14 @@ class RouterGateHookTests(unittest.TestCase):
         agent_file = self.state / 'agents' / 'project' / (worker_id + '.json')
         for labels in ({'paseo.parent-agent-id': 'actual-parent'}, {'router.parent_id': 'actual-parent'}):
             agent_file.write_text(json.dumps({'labels': labels}), encoding='utf-8')
-            for payload in (
+            payloads = (
                 {'tool_name': 'functions.request_user_input_async', 'tool_input': {}},
                 {'tool_name': 'AskUserQuestion', 'tool_input': {}},
                 {'toolName': 'request_user_input_async', 'input': {}},
                 {'toolCall': {'name': 'request_user_input', 'args': {}}},
                 {'tool_name': 'exec', 'tool_input': 'await tools.request_user_input_async({questions: []})'},
-            ):
+            )
+            for payload in payloads if 'paseo.parent-agent-id' in labels else payloads[:1]:
                 with self.subTest(labels=labels, payload=payload):
                     with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': worker_id, 'ROUTER_WORKER': ''}):
                         denied = gate.evaluate_payload(payload)
@@ -142,20 +143,27 @@ class RouterGateHookTests(unittest.TestCase):
             args = {'agentId': worker_id, 'prompt': 'continue', 'background': True}
             if notify is not None:
                 args['notifyOnFinish'] = notify
-            for payload in (
-                {'tool_name': 'send_agent_prompt', 'tool_input': args},
-                {'tool_name': 'mcp__paseo__send_agent_prompt', 'tool_input': args},
-                {'toolName': 'send_agent_prompt', 'input': args},
-                {'toolCall': {'name': 'send_agent_prompt', 'args': args}},
-                {'tool_name': 'exec', 'tool_input': 'await tools.mcp__paseo__send_agent_prompt(' + json.dumps(args) + ')'},
-            ):
-                with self.subTest(case=label, payload=payload), \
-                        mock.patch.dict(os.environ, {'PASEO_AGENT_ID': caller}), \
-                        mock.patch.object(gate, 'load_dispatch_settings', return_value=({}, None)):
-                    result = gate.evaluate_payload(payload)
-                    self.assertEqual('reason' in result, blocked)
-                    if blocked:
-                        self.assertIn('notifyOnFinish: true or omit it', result['reason'])
+            with self.subTest(case=label), \
+                    mock.patch.dict(os.environ, {'PASEO_AGENT_ID': caller}), \
+                    mock.patch.object(gate, 'load_dispatch_settings', return_value=({}, None)):
+                result = gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input': args})
+                self.assertEqual('reason' in result, blocked)
+                if blocked:
+                    self.assertIn('notifyOnFinish: true or omit it', result['reason'])
+
+        # Formats carry the same semantics; do not multiply the ownership table
+        # by each transport representation.
+        agent_file.write_text(json.dumps({'labels': {'router.parent_id': 'parent'}}), encoding='utf-8')
+        args = {'agentId': worker_id, 'prompt': 'continue', 'notifyOnFinish': False}
+        for payload in (
+            {'tool_name': 'mcp__paseo__send_agent_prompt', 'tool_input': args},
+            {'toolName': 'send_agent_prompt', 'input': args},
+            {'toolCall': {'name': 'send_agent_prompt', 'args': args}},
+            {'tool_name': 'exec', 'tool_input': 'await tools.mcp__paseo__send_agent_prompt(' + json.dumps(args) + ')'},
+        ):
+            with self.subTest(format=payload), mock.patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent'}):
+                self.assertIn('notifyOnFinish', gate.evaluate_payload(payload)['reason'])
+
 
     def exhausted_cache(self, **changes):
         row = {"available": True, "stale": False, "fetched_at": T0.isoformat(),
@@ -679,7 +687,7 @@ class RouterGateHookTests(unittest.TestCase):
                 with self.subTest(cause=cause, blocked=payload):
                     result = gate.evaluate_payload(payload, ledger_path=ledger, now=T0)
                     self.assertIn(cause, result["reason"])
-                    self.assertIn("route_judge.py roll --brief", result["reason"])
+                    self.assertIn("roll --brief", result["reason"])
             for payload in passed:
                 with self.subTest(cause=cause, passed=payload):
                     self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0))
@@ -765,7 +773,7 @@ class RouterGateHookTests(unittest.TestCase):
                             if blocked:
                                 self.assertIn(cause, result['reason'])
                                 self.assertIn('cancel_agent', result['reason'])
-                                self.assertIn('route_judge.py roll --brief', result['reason'])
+                                self.assertIn('roll --brief', result['reason'])
 
     def test_cli_inspection_cancel_and_quoted_examples_are_not_continuations(self):
         wid = self.existing_agent()
@@ -935,7 +943,7 @@ class RouterGateHookTests(unittest.TestCase):
             res = gate.evaluate_payload(payload, now=T0)
             self.assertTrue(res.get(blocked_key), payload)
             self.assertIn("historical_context_tokens=2,700,000/2,000,000", res["reason"])
-            self.assertIn("route_judge.py roll --brief", res["reason"])
+            self.assertIn("roll --brief", res["reason"])
 
         # 3. Allow: mentioning worn worker UUID inside prompt text to a fresh worker is not blocked
         handoff_code = f'const prompt = "prev worker {wid}"; await paseo.send_agent_prompt({{agentId: "{fresh_wid}", prompt}})'
@@ -1059,6 +1067,50 @@ class BoundDispatchGateTests(unittest.TestCase):
                        'parent_agent_id': 'parent-fixture'}
             self.assertTrue(gate.evaluate_payload(payload, now=self.now)['block'])
         self.assertEqual(self.registry.inspect(self.row['dispatch_id'])['state'], 'prepared')
+
+
+class UsageRowTests(unittest.TestCase):
+    """The hook reads quota the way the router does: the newest reading across the router's cache and the legacy copy."""
+
+    def setUp(self):
+        self.state = Path(os.environ["ROUTER_STATE_DIR"])
+        self.canonical = self.state / "usage-cache.json"
+        self.legacy = gate.HOME / ".usage-float" / "usage-cache.json"
+        self.addCleanup(lambda: [path.unlink() for path in (self.canonical, self.legacy) if path.exists()])
+        os.environ.pop("ROUTER_USAGE_CACHE", None)
+
+    def write(self, path, used, fetched):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"providers": {"codex": {"fetched_at": fetched, "windows": [{"id": "5h", "used_pct": used}]}}}),
+                        encoding="utf-8")
+
+    def test_the_newer_reading_wins_whichever_file_holds_it(self):
+        self.write(self.canonical, 10, "2026-01-01T00:00:00+00:00")
+        self.write(self.legacy, 90, "2026-01-02T00:00:00+00:00")
+        self.assertEqual(gate.usage_row("codex")["windows"][0]["used_pct"], 90)
+        self.write(self.canonical, 10, "2026-01-03T00:00:00+00:00")
+        self.assertEqual(gate.usage_row("codex")["windows"][0]["used_pct"], 10)
+
+    def test_the_legacy_copy_alone_still_works_and_a_named_file_is_exclusive(self):
+        self.write(self.legacy, 90, "2026-01-02T00:00:00+00:00")
+        self.assertEqual(gate.usage_row("codex")["windows"][0]["used_pct"], 90)
+        named = self.state / "named.json"
+        self.write(named, 5, "2026-01-01T00:00:00+00:00")
+        self.addCleanup(named.unlink)
+        self.assertEqual(gate.usage_row("codex", named)["windows"][0]["used_pct"], 5)
+        self.assertIsNone(gate.usage_row("codex", self.state / "missing.json"))
+
+
+class DenyMessageEntryTests(unittest.TestCase):
+    """The hook tells a blocked agent to run the public command, not a script path."""
+
+    def test_deny_texts_name_the_public_command_only(self):
+        self.assertTrue(gate.ROUTER_CMD == "agentcompass" or gate.ROUTER_CMD.endswith("/agentcompass"))
+        texts = [gate.build_deny_reason("Agent", 900), gate.DISABLED_RECOVERY]
+        for text in texts:
+            self.assertIn(gate.ROUTER_CMD + " roll --brief", text)
+            self.assertNotIn("route_judge", text)
+            self.assertNotIn(".py", text)
 
 
 if __name__ == "__main__":

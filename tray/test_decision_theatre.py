@@ -1,12 +1,26 @@
 """Pure scene/render tests and a fake-clock lifecycle; no root/window is created."""
 import copy
 import math
+import importlib.util
+import os
+from pathlib import Path
+import sys
+import tempfile
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
-import decision_theatre as dt
+# Import our own module instance: a developer's optional import-time diagnostic
+# must not wrap scene methods or write traces during deterministic render tests.
+# os.path.expanduser uses USERPROFILE on Windows and HOME on Unix.
+with tempfile.TemporaryDirectory(prefix="theatre test home ") as _home:
+    with patch.dict(os.environ, {"HOME": _home, "USERPROFILE": _home}):
+        _spec = importlib.util.spec_from_file_location(
+            "_theatre_test_subject", Path(__file__).with_name("decision_theatre.py"))
+        dt = importlib.util.module_from_spec(_spec)
+        sys.modules[_spec.name] = dt
+        _spec.loader.exec_module(dt)
 
 
 def result():

@@ -1,7 +1,7 @@
 # Local provider discovery contract
 
 The router rereads local sign-ins, Paseo launcher bindings, Magpie and CC Switch
-before allocation and at the prepared dispatch's launch check. `route_judge.py providers` also refreshes the inventory at
+before allocation and at the prepared dispatch's launch check. `agentcompass providers` also refreshes the inventory at
 `~/.agent-compass/provider-inventory.json`. Discovery performs no network requests
 and does not read the VPS connection configuration.
 
@@ -94,14 +94,14 @@ Saving settings records only changes from the displayed admission state, not
 every displayed account: an untouched unready newcomer remains eligible for
 later admission, and concurrent admissions survive unrelated checkbox changes.
 
-`route_judge.py providers` and normal account loading refresh this registration.
+`agentcompass providers` and normal account loading refresh this registration.
 Account admission preserves each provider's capability and scoring policy;
 it does not invent model benchmarks or quota capacity.
 
 ## Grok and advertised model defaults (2026-10-27)
 
 `grok-bot` is a separate remote text runner and automatic routing candidate. It appears in
-`route_judge.py providers`; a configured exact Bot ID plus the pinned local CLI
+`agentcompass providers`; a configured exact Bot ID plus the pinned local CLI
 and Node makes its launcher available. This is setup availability, not proof of
 current login: upstream performs a live read-only check before send. Billing and
 underlying model identity remain unknown. Public service scores are conservative

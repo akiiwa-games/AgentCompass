@@ -15,8 +15,11 @@ import host_policy
 import override_store
 import dispatch_registry
 import dispatch_flow
+import entry
 import provider_inventory
 import roll
+import stage_help
+import usage_cache
 import sqlite3
 import hashlib
 import platform
@@ -169,11 +172,13 @@ def parse_session_limit_reset(text, hit_at):
 
 
 def _usage_home(source_path):
+    env_home = os.environ.get('ROUTER_PROVIDER_HOME')
     if not source_path:
-        env_home = os.environ.get('ROUTER_PROVIDER_HOME')
         return Path(env_home).expanduser() if env_home else None
-    p = Path(source_path).resolve()
-    return p.parent.parent if p.parent.name == '.usage-float' else p.parent
+    path = Path(source_path).resolve()
+    if path == usage_cache.canonical_path().resolve():   # the state dir may sit anywhere (ROUTER_STATE_DIR)
+        return Path(env_home).expanduser() if env_home else Path.home()
+    return usage_cache.home_of(path)
 
 
 def claude_session_limit(account, home_dir, now, inventory=None):
@@ -281,16 +286,15 @@ def window_state(window, now, observation_current=True):
         'remaining_pct_before_reset': (100 - used if used is not None
                                       and passed is False and observation_current else None),
         **({'rate_limited': True} if window.get('rate_limited') is True and passed is False else {}),
+        **({'models': window['models']} if isinstance(window.get('models'), list) and window['models']
+           and all(isinstance(model, str) and model for model in window['models']) else {}),
     }
 
 
 def cache_paths(explicit=None):
-    if explicit is not None:
-        return [Path(os.path.expandvars(str(explicit))).expanduser()]
-    configured = user_env(USAGE_CACHE_ENV)
-    paths = [Path(os.path.expandvars(configured)).expanduser()] if configured else []
-    paths.append(Path.home() / '.usage-float' / 'usage-cache.json')
-    return list(dict.fromkeys(paths))
+    """Files the usage reading may come from: one named file (--usage-cache or ROUTER_USAGE_CACHE), else the
+    collector's cache and the legacy Usage Float copy (see usage_cache.py)."""
+    return usage_cache.read_paths(explicit, environ={**os.environ, USAGE_CACHE_ENV: user_env(USAGE_CACHE_ENV) or ''})
 
 
 def poll_max_age(poll, now, default):
@@ -310,21 +314,19 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
     """Read the real collector cache; project an allowlist, never credentials or reset grants."""
     now = now or datetime.now(timezone.utc)
     attempts = []
-    providers = None
-    source = None
+    documents = []
     for candidate in cache_paths(path):
         try:
-            if candidate.stat().st_size > 5 * 1024 * 1024:
-                raise ValueError('Oversized cache')
-            document = json.loads(candidate.read_text(encoding='utf-8-sig'))
-            rows = document.get('providers') if isinstance(document, dict) else None
-            if not isinstance(rows, dict) or not rows:
-                raise ValueError('Missing providers')
-            providers, source = rows, str(candidate.resolve())
-            polls = document.get('poll') if isinstance(document.get('poll'), dict) else {}
-            break
+            documents.append((candidate, usage_cache.read_document(candidate)))
         except (OSError, ValueError, UnicodeError):
             attempts.append({'path': str(candidate), 'status': 'unreadable_or_invalid'})
+    providers = source = None
+    if documents:
+        # Per provider the newest fetched_at wins across the collector's cache and the legacy copy.
+        document, origin = usage_cache.merge(documents)
+        providers, polls = document['providers'], document['poll']
+        source = str(documents[0][0].resolve())
+        merged_from = sorted({str(Path(p).resolve()) for p in origin.values()} - {source})
     if providers is None:
         return {'status': 'unknown', 'read_ok': False, 'read_at': now.isoformat(),
                 'cache_path': None, 'attempts': attempts, 'accounts': {},
@@ -397,6 +399,7 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
     return {
         'status': 'cached_observations', 'read_ok': True, 'read_at': now.isoformat(),
         'cache_path': source, 'attempts': attempts, 'max_age_seconds': max_age_seconds,
+        **({'also_read_from': merged_from} if merged_from else {}),
         'accounts': result,
         'missing_accounts': [k for k, v in result.items() if v.get('reason') == 'account_missing'],
         'interpretation': 'Freshness uses each fetched_at, collector flags and reset time. '
@@ -1808,7 +1811,7 @@ def record_constraint(args, task=None):
         disabled_info = allocator.bundles(accounts)[disabled_match]
         raise ValueError(
             f"Bundle {disabled_match!r} ({args.account}/{args.model}) is disabled: {disabled_info.get('disabled')}. "
-            f"Do not dispatch {args.model} on {args.account}; run `route_judge.py plan` to select an enabled bundle."
+            f"Do not dispatch {args.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
         )
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
     if not allocator.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
@@ -1843,7 +1846,7 @@ def record_constraint(args, task=None):
                 raise ValueError(
                     f"Account {args.account!r} window {w.get('id')!r} is exhausted or below safety floor "
                     f"({w.get('used_pct')}% used, {rem}% remaining, resets at {w.get('resets_at')}). "
-                    f"Do not dispatch {args.account}; run `route_judge.py plan` to pick an account with remaining capacity."
+                    f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
                 )
     c_model = allocator.canonical(args.model, accounts)
     fast_requested = bool(getattr(args, 'fast', False))
@@ -2047,8 +2050,12 @@ def _manage_overrides_locked(args, now=None):
     return {'stage': 'override', 'path': str(path), 'removed': removed, 'active': allocator.load_overrides(now, path, usage=usage, accounts=accounts, prune=False)}
 
 
-ONBOARD_HINT = ('Run `python -X utf8 setup/onboard.py` (or `agentcompass setup`) to detect the CLIs you are signed in to '
-                'and start usage collection.')
+def router_command():
+    """The public entry as this install spells it (entry.py)."""
+    return entry.command()
+
+
+ONBOARD_HINT = (f'Run `{router_command()} setup` to detect the CLIs you are signed in to and start usage collection.')
 
 
 def readiness_gap(accounts, usage):
@@ -2235,7 +2242,7 @@ def plan_stage(document, args):
 
 
 def scorer_cli(args):
-    """route_judge.py scorer --action show|set|test. Keys are never printed, only masked."""
+    """`agentcompass scorer --action show|set|test`. Keys are never printed, only masked."""
     path = scorer_config_path()
     if args.action == 'set':
         if not args.scorer_type:
@@ -2254,16 +2261,18 @@ def scorer_cli(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=('roll', 'usage', 'providers', 'delegate', 'select', 'record', 'plan', 'override', 'dispatch', 'launch', 'score', 'scorer'))
-    parser.add_argument('--brief', type=Path, help='roll: the task brief (Markdown). It is classified and sent to the worker unchanged.')
+    parser = argparse.ArgumentParser(prog='agentcompass', description=__doc__, add_help=False)
+    parser.add_argument('stage', nargs='?', choices=tuple(stage_help.STAGES))
+    parser.add_argument('-h', '--help', action='store_true', help='Show the options of this stage.')
+    parser.add_argument('--help-all', action='store_true', help='Show every option the script accepts.')
+    parser.add_argument('--brief', type=Path, help='roll: a Markdown task file (use instead of --task). It is classified and sent to the worker unchanged.')
     parser.add_argument('--task', help='roll: the task as inline text, or - to read it from stdin (any length, kept whole); use instead of --brief. --hours is then optional.')
     parser.add_argument('--file', type=Path, action='append', default=[], help='roll: a file Dot needs (repeatable); ignored by local workers.')
     parser.add_argument('--apply-to', type=Path, help='roll: where returned Dot files land (default: cwd, only with --file).')
     parser.add_argument('--local-only', metavar='REASON', help='roll: keep the work on this machine, with the concrete local dependency.')
-    parser.add_argument('--hours', type=float, help='roll/plan: required expected active worker-hours (positive number).')
+    parser.add_argument('--hours', type=float, help='roll/plan: expected active worker-hours (positive number). Optional: when omitted, the classifier estimates it and says so under assumptions.')
     parser.add_argument('--fast', action='store_true', help='roll/plan/record: prefer fast mode when quota is plentiful or during a pre-reset sprint.')
-    parser.add_argument('--verbose', action='store_true', help='roll: print the full result instead of the compact --task one.')
+    parser.add_argument('--verbose', action='store_true', help='roll: print the full result instead of the short one (status, next_action, pointers). The full result is saved to disk either way.')
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
     parser.add_argument('--workspace', help='roll: Paseo workspaceId (default: the parent agent workspace).')
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
@@ -2286,12 +2295,13 @@ def main():
     parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release'), default='prepare')
     parser.add_argument('--dispatch-id')
     parser.add_argument('--parent-id')
-    parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3'), help='roll: host owning the parent session (default: auto-detected from environment)')
+    parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3', 'herdr', 'cindy'), help='roll: host owning the parent session (default: auto-detected from environment)')
     parser.add_argument('--parent-address', help='roll: native host coordinator inbox address')
     parser.add_argument('--watch-seconds', type=float, default=3600)
     parser.add_argument('--poll-seconds', type=float, default=5)
-    parser.add_argument('--usage-cache', type=Path, help='Override env/default usage-float cache.')
-    parser.add_argument('--accounts', nargs='+', help='Usage command: exact account keys to inspect.')
+    parser.add_argument('--usage-cache', type=Path, help='Read only this usage cache file (overrides ROUTER_USAGE_CACHE and the default locations).')
+    parser.add_argument('--show', action='store_true', help='usage: print the merged usage windows (this is what the stage does; the flag only tells `agentcompass usage` not to collect).')
+    parser.add_argument('--accounts', nargs='+', help='usage: exact account keys to inspect.')
     parser.add_argument('--judge', choices=('auto', 'sonnet', 'codex'), default='auto')
     parser.add_argument('--timeout', type=int, default=120, help='Bounded CLI timeout, in seconds.')
     parser.add_argument('--dry-run', action='store_true', help='delegate/select: print the reviewed payload without a model call. plan/record: compute the result but write no ledger row.')
@@ -2322,6 +2332,14 @@ def main():
     parser.add_argument('--list', action='store_true', help='override: show the active overrides.')
     parser.add_argument('--clear', help='override: remove the override with this id, or "all".')
     args = parser.parse_args()
+    if args.help_all:
+        if args.stage:
+            parser.prog = f'agentcompass {args.stage}'
+        parser.print_help()
+        return 0
+    if args.help or args.stage is None:
+        print(stage_help.stage_help(parser, args.stage) if args.stage else stage_help.overview())
+        return 0 if args.help else 2
     global LEDGER_WRITES
     LEDGER_WRITES = not (args.dry_run and args.stage in ('plan', 'record', 'roll'))
     try:

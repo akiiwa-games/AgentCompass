@@ -24,7 +24,7 @@ class RollNotificationTests(unittest.TestCase):
             (None, 'must collect'),
         ):
             with self.subTest(status=status):
-                receipt = {'state': 'started'}
+                receipt = {'state': 'started', 'agent_id': 'observed-worker', 'observed_at': '2026-11-01T00:00:00Z'}
                 if status:
                     receipt['completion_notification'] = {'status': status}
                 with patch.object(roll.dispatch_flow, 'reconcile'), \
@@ -34,6 +34,25 @@ class RollNotificationTests(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertIn(expected, result['next'])
                 self.assertEqual(result['worker'].get('completion_notification'), receipt.get('completion_notification'))
+
+    def test_claim_or_notifier_without_observed_worker_is_pending_with_public_continuation(self):
+        args=SimpleNamespace(title='test',workspace=None,wait=0)
+        decision={'decision_id':'decision','selected_bundle':{'provider':'codex'}}
+        for state in ('launching','expired'):
+            receipt={'state':state,'launched_at':'2026-11-01T00:00:00Z',
+                     'completion_notification':{'status':'watching'}}
+            with patch.object(roll.dispatch_flow,'reconcile'), \
+                 patch.object(roll.registry,'prepare',return_value={'dispatch_id':'same-dispatch'}), \
+                 patch.object(roll.dispatch_flow,'launch',return_value=receipt):
+                result,code=roll.paseo(args,{},decision,{},'fixture','parent',{})
+            self.assertIsNone(result['launched'])
+            self.assertEqual(code,0)
+            status=roll.status_of(result,code)
+            self.assertEqual(status,'pending')
+            compact=roll.compact(result,status,'receipt.json')
+            self.assertEqual(compact['next_argv'][-6:],['--dispatch-id','same-dispatch','--parent-id','parent','--watch-seconds','120'])
+            self.assertNotIn('scripts',' '.join(compact['next_argv']))
+            self.assertNotIn('Worker launched',compact['next_action'])
 
     def test_cli_background_reply_explicitly_belongs_to_caller(self):
         with tempfile.TemporaryDirectory() as folder:

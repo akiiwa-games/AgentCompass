@@ -49,7 +49,7 @@ def overrides_path():
 
 
 def load_overrides(now, path=None, usage=None, accounts=None, prune=True):
-    """Overrides the user asked for that have not yet run out (`until`) or landed their reset, written by `route_judge.py override`."""
+    """Overrides the user asked for that have not yet run out (`until`) or landed their reset, written by `agentcompass override`."""
     target = path or overrides_path()
     try:
         document = json.loads(target.read_text(encoding='utf-8-sig'))
@@ -1531,12 +1531,14 @@ def _explicit_draws(bundle):
     return found
 
 
-def bundle_pools(bundle, accounts):
+def bundle_pools(bundle, accounts, observed_windows=None):
     """Window ids this bundle draws, in declaration order (or account-window order for the tag fallback).
 
     An explicit `draws` on the passed bundle wins, including an empty list. Otherwise the catalog
     bundle's `draws` wins. Otherwise the historical windows.models tag match runs on the canonical model.
-    Only ids that exist on the account are returned.
+    Observed windows can establish a hard limit without a pricing specification.
+    In the fallback, only known window scopes or explicit model scopes are
+    inferred; unrecognized observation names do not imply a shared model pool.
     """
     bundle = bundle if isinstance(bundle, dict) else {}
     accounts = accounts if isinstance(accounts, dict) else {}
@@ -1551,6 +1553,9 @@ def bundle_pools(bundle, accounts):
                 account, spec = name, candidate
                 break
     windows = spec.get('windows') if isinstance(spec, dict) and isinstance(spec.get('windows'), dict) else {}
+    configured = windows
+    observed_windows = observed_windows or {}
+    windows = {**configured, **{wid: {} for wid in observed_windows if wid not in configured}}
     declared = _explicit_draws(bundle)
     if declared is None and isinstance(spec, dict) and bid:
         catalog = (spec.get('bundles') or {}).get(bid)
@@ -1559,35 +1564,42 @@ def bundle_pools(bundle, accounts):
     if declared is not None:
         return [wid for wid in declared if wid in windows]
     model = canonical(bundle.get('model') or '', accounts)
-    return [wid for wid, wspec in windows.items() if legacy_model_binds_window(wid, wspec, model)]
+    return [wid for wid, wspec in windows.items()
+            if (wid in configured or wid in ('five_hour', '5h', 'seven_day', 'usage', 'weekly_fable')
+                or wid in WINDOW_ALIASES or observed_windows.get(wid, {}).get('models'))
+            and legacy_model_binds_window(wid, wspec, model)
+            and legacy_model_binds_window(wid, observed_windows.get(wid, {}), model)]
 
 
 def applicable_windows(account_spec, model, usage_row, bundle=None, accounts=None):
     """(window id, spec, observed window) for windows that bind this model or bundle.
 
-    Without a bundle, the historical tag match runs on the model string as given.
-    With a bundle, `bundle_pools` is the only source.
+    With a bundle, explicit draws (including []) remain authoritative. Otherwise
+    historical model tags and known observed scopes determine applicability.
+    Observation-only hard limits have no invented capacity, burn rate or hours.
     """
     observed = {}
     for w in (usage_row or {}).get('windows', []):
         wid = w.get('id')
         if wid:
             observed.setdefault(canonical_window_id(account_spec, wid), w)
-    windows = (account_spec or {}).get('windows') or {}
+    configured = (account_spec or {}).get('windows') or {}
+    windows = {**configured, **{wid: {} for wid in observed if wid not in configured}}
     if bundle is None:
-        ids = [wid for wid, wspec in windows.items() if legacy_model_binds_window(wid, wspec, model or '')]
+        ids = bundle_pools({'account': '_billing', 'model': model or ''},
+                           {'accounts': {'_billing': account_spec}}, observed)
     else:
         if accounts is None:
             acct = bundle.get('account') if isinstance(bundle, dict) and isinstance(bundle.get('account'), str) else '_billing'
             accounts = {'accounts': {acct: account_spec}}
             if not isinstance(bundle, dict) or 'account' not in bundle:
                 bundle = {**(bundle or {}), 'account': acct}
-        ids = bundle_pools(bundle, accounts)
+        ids = bundle_pools(bundle, accounts, observed)
     return [(wid, windows[wid], observed.get(wid)) for wid in ids if wid in windows]
 
 
 def below_launch_floor(window, observed, usage_row, now):
-    """Existing launch protection, shared by unknown-burn ranking and dispatch."""
+    """Existing launch protection, shared by ranking and dispatch."""
     floor = window.get('launch_min_remaining_pct')
     reset = parse_time((observed or {}).get('resets_at'))
     if floor is not None and (observed or {}).get('rate_limited') is True and reset is not None and reset > now:
@@ -1877,8 +1889,6 @@ def evaluate_bundle(bundle, task, ctx):
                 result['notes'].append(f'{wid}: observed {state["remaining"]:.1f}% remaining'
                                        + (' (stale)' if acct_stale or state['stale'] else '')
                                        + '; consumption rate unknown')
-                if below_launch_floor(wspec, observed, acct_usage, now):
-                    exclude(f'{wid} is below its existing launch protection ({wspec["launch_min_remaining_pct"]}% remaining floor)')
                 continue
             step = hours * unit * context_scale
             chain = chain_hours * unit * context_scale

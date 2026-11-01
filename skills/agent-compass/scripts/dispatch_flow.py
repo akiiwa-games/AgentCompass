@@ -8,6 +8,7 @@ import sys
 import time
 
 import dispatch_registry as registry
+import entry
 from worker_context import require_parent_id
 
 def paseo_config():
@@ -143,8 +144,7 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         result['completion_notification'] = notification
     if row['state'] not in registry.TERMINAL:
         result['continuation'] = 'Run dispatch --dispatch-action reconcile or launch with this dispatch_id; it will observe, not create again.'
-        result['continuation_argv'] = [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('route_judge.py')),
-            'launch', '--dispatch-id', dispatch_id, '--parent-id', parent_id, '--watch-seconds', '120']
+        result['continuation_argv'] = entry.argv('launch', '--dispatch-id', dispatch_id, '--parent-id', parent_id, '--watch-seconds', '120')
     return result
 
 

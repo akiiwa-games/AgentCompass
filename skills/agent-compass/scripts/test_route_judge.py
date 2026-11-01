@@ -74,7 +74,8 @@ class RoutingTests(unittest.TestCase):
             with patch.object(router.Path, 'home', return_value=Path(directory)), \
                     patch.object(router, 'user_env', return_value=missing):
                 fallback = router.usage_snapshot(now=self.now)
-            self.assertEqual((fallback['read_ok'], fallback['attempts'][0]['path']), (True, missing))
+            # A named cache file is the only one read: it must not quietly fall back to another copy of the data.
+            self.assertEqual((fallback['read_ok'], [a['path'] for a in fallback['attempts']]), (False, [missing]))
             self.assertFalse(router.usage_snapshot(Path(missing), now=self.now)['read_ok'])
 
             # Stale & idle cadence
@@ -366,11 +367,12 @@ class ReadinessGapTests(unittest.TestCase):
                 else:
                     self.assertEqual((gap['code'], gap['fatal']), (code, fatal))
                 if fatal:
-                    self.assertIn('setup/onboard.py', gap['message'])
+                    self.assertIn(' setup` to detect the CLIs', gap['message'])
+                    self.assertNotIn('onboard.py', gap['message'])
                     self.assertEqual((planned['choice'], planned['error']), ('none', code))
                     self.assertNotIn('selected_bundle', planned)
                     self.assertEqual(planned['alerts'][0]['severity'], 'warn')
-                    self.assertIn('onboard.py', planned['decision']['reason'])
+                    self.assertIn(' setup`', planned['decision']['reason'])
                 else:
                     self.assertEqual(planned['choice'], 'sonnet55_high')
                     self.assertEqual(planned['selected_bundle'], {'account': 'a0'})

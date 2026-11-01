@@ -38,7 +38,7 @@ def stdlib_imports(folder):
 
 # Tray modules the executable runs as helpers: AgentCompass.exe --run-component <name> (tray/component_launch.py).
 HELPER_MODULES = [
-    "capacity_stats", "deploy", "easytier_setup", "web_launcher", "network_status", "owned_command", "owned_process", "router_window", "update_status", "usage_float_host",
+    "capacity_stats", "deploy", "easytier_setup", "web_launcher", "network_status", "owned_command", "owned_process", "router_window", "update_status", "usage_collect", "usage_float_host",
 ]
 
 a = Analysis(

@@ -856,3 +856,34 @@ def stop_capacity() -> None:
     proc = _capacity["proc"]
     if proc is not None and proc.poll() is None:
         kill_pid(proc.pid)
+
+
+# Usage collection: the router's own quota collector (skill script usage_collector.py), independent of Usage Float.
+USAGE_COLLECT_SCRIPT = ROOT / "tray" / "usage_collect.py"
+USAGE_COLLECT_INTERVAL = 300
+_usage_collect: dict = {"proc": None, "started": None}
+
+
+def usage_collect_tick(force: bool = False) -> bool:
+    """Start one collection pass in a low-priority child unless one is running or the last was under 5 minutes ago."""
+    proc = _usage_collect["proc"]
+    if proc is not None and proc.poll() is None:
+        return False
+    started = _usage_collect["started"]
+    if not force and started is not None and time.monotonic() - started < USAGE_COLLECT_INTERVAL:
+        return False
+    _usage_collect["started"] = time.monotonic()
+    _usage_collect["proc"] = hidden_popen(
+        component_launch.command(USAGE_COLLECT_SCRIPT, windowed=False),
+        os.environ.copy(),
+        ROOT,
+        STATE_DIR / "usage-collect.log",
+        BELOW_NORMAL_PRIORITY_CLASS,
+    )
+    return True
+
+
+def stop_usage_collect() -> None:
+    proc = _usage_collect["proc"]
+    if proc is not None and proc.poll() is None:
+        kill_pid(proc.pid)

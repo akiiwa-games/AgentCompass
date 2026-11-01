@@ -38,6 +38,7 @@ class DoctorTests(unittest.TestCase):
             home = Path(directory) / "home"
             home.mkdir()
             report = doctor.collect(home)
+            self.assertTrue(report['cache'].startswith('missing'), report['cache'])
             created = [path for path in home.rglob("*")]
             self.assertEqual(created, [])
             text = doctor.render(report)

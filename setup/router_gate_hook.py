@@ -1,4 +1,4 @@
-"""Native PreToolUse hook that enforces calling route_judge.py before spawning subagents.
+"""Native PreToolUse hook that enforces routing (`agentcompass roll`) before spawning subagents.
 
 Supports Claude Code, Codex CLI, Antigravity IDE/CLI, and Pi hook payloads on stdin.
 
@@ -21,7 +21,17 @@ from pathlib import Path
 HOME = Path.home()
 DEFAULT_LEDGER = HOME / ".agent-compass" / "router-ledger.jsonl"
 LEDGER_TAIL_BYTES = 1024 * 1024
-DEFAULT_USAGE_CACHE = HOME / ".usage-float" / "usage-cache.json"
+DEFAULT_USAGE_CACHE = HOME / ".agent-compass" / "usage-cache.json"
+LEGACY_USAGE_CACHE = HOME / ".usage-float" / "usage-cache.json"
+def router_command() -> str:
+    """What the deny messages tell the agent to run: the console script when installed, else this checkout's package directory."""
+    here = Path(__file__).resolve()
+    if "site-packages" in here.parts or not (here.parents[1] / "agentcompass" / "__main__.py").is_file():
+        return "agentcompass"
+    return f"python -X utf8 {(here.parents[1] / 'agentcompass').as_posix()}"
+
+
+ROUTER_CMD = router_command()
 DEFAULT_PASEO_AGENTS = HOME / ".paseo" / "agents"
 DEFAULT_WINDOW_SECONDS = 900  # 15 minutes
 QUOTA_MAX_AGE_SECONDS = 900
@@ -473,7 +483,7 @@ def check_worker_compaction_limit(
         f"（历次压缩前累计 {compacted_tok:,} + 当前窗口 {current_tok:,}，非压缩后当前窗口），继续追加 prompt 会导致上下文漂移与质量退化。"
         "禁止向该旧 worker 开启新 turn；父会话仍可向自己明确运行中的 worker 发控制消息以收尾交接。"
         "若已 idle 或状态未知，请收取已有输出，必要时调用 cancel_agent，再把当前进展与剩余工作写成交接任务书 <handoff.md>，"
-        "运行 route_judge.py roll --brief <handoff.md> --hours <n> 由新 worker 接手。"
+        f"运行 {ROUTER_CMD} roll --brief <handoff.md> 由新 worker 接手。"
     )
 
 
@@ -523,8 +533,8 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
 DISABLED_RECOVERY = (
     "禁止启动该账号/档位的 worker 或向 idle/状态未知的旧 worker 开启新 turn；"
     "父会话仍可向自己明确运行中的 worker 发控制消息以收尾。否则请收取已有输出，必要时调用 cancel_agent，"
-    "把进展或任务写进 <task.md>，运行 python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py "
-    "roll --brief <task.md> --hours <n> 改派当前启用的账号（确需使用该账号时，先在 AgentCompass "
+    f"把进展或任务写进 <task.md>，运行 {ROUTER_CMD} "
+    "roll --brief <task.md> 改派当前启用的账号（确需使用该账号时，先在 AgentCompass "
     "调度设置 -> 账号模型 中开启）。"
 )
 
@@ -575,6 +585,32 @@ def quota_window_seconds(wid: str) -> int:
     return 5 * 3600 if wid in ("five_hour", "5h") else 7 * 86400
 
 
+def usage_row(account: str, usage_cache_path: Path | None = None) -> dict | None:
+    """The account's newest usage reading across the collector's cache and the legacy Usage Float copy.
+
+    An explicit path, or ROUTER_USAGE_CACHE, names the only file read (usage_cache.py has the rules).
+    """
+    try:
+        cache = router_module("usage_cache")
+    except ImportError:
+        cache = None
+    if cache is not None:
+        providers = cache.read(usage_cache_path, HOME)[0]
+    else:
+        # The skill scripts are missing: read the two conventional files directly, newest-first is not decidable here.
+        providers = None
+        named = usage_cache_path or os.environ.get("ROUTER_USAGE_CACHE")
+        for path in ([Path(named)] if named else [DEFAULT_USAGE_CACHE, LEGACY_USAGE_CACHE]):
+            try:
+                providers = json.loads(path.read_text(encoding="utf-8-sig"))
+                break
+            except (OSError, ValueError):
+                continue
+    rows = providers.get("providers") if isinstance(providers, dict) else None
+    row = rows.get(account) if isinstance(rows, dict) else None
+    return row if isinstance(row, dict) else None
+
+
 def check_account_quota_exhausted(
     account: str | None,
     usage_cache_path: Path | None = None,
@@ -589,13 +625,8 @@ def check_account_quota_exhausted(
     """
     if not account:
         return None
-    cache = usage_cache_path or Path(os.environ.get("ROUTER_USAGE_CACHE", DEFAULT_USAGE_CACHE))
     now = now or dt.datetime.now(dt.timezone.utc)
-    try:
-        doc = json.loads(cache.read_text(encoding="utf-8-sig"))
-        row = ((doc.get("providers") or {}).get(account)) if isinstance(doc, dict) else None
-    except (OSError, ValueError):
-        row = None
+    row = usage_row(account, usage_cache_path)
     # Confirmed upstream exhaustion is durable even with no/stale usage cache.
     # This applies to new launches and resumed turns, never to read-only investigation.
     try:
@@ -648,14 +679,14 @@ def check_account_quota_exhausted(
                 f"[Router Gate] 拦截向已满额/低余量账号 {account} 派发或续跑任务："
                 f"{account} 当前 {wid} 已用 {used}%（仅剩 {rem}%，重置时间 {w.get('resets_at')}），"
                 f"窗口已触顶或进入保护线（>={max_used}%）。"
-                f"禁止继续创建或调用 {account} worker，请把进展或任务写进 <task.md>，运行 route_judge.py roll --brief <task.md> --hours <n> 改派其他可用账号（如 codex / claude / dot / pi）。"
+                f"禁止继续创建或调用 {account} worker，请把进展或任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 改派其他可用账号（如 codex / claude / dot / pi）。"
             )
         threshold = 95.0 if account.startswith("claude-") else 98.0
         if used >= threshold:
             return (
                 f"[Router Gate] 拦截向已满额账号 {account} 派发或续跑任务："
                 f"{account} 当前 {wid} 已用 {used}%（仅剩 {rem}%，重置时间 {w.get('resets_at')}）。"
-                f"禁止继续调用 {account}，请把进展或任务写进 <task.md>，运行 route_judge.py roll --brief <task.md> --hours <n> 改派其他可用账号。"
+                f"禁止继续调用 {account}，请把进展或任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 改派其他可用账号。"
             )
     return None
 
@@ -823,7 +854,7 @@ def build_deny_reason(trigger: str, window_seconds: int) -> str:
         f"[Router Gate] 拦截未路由的子 agent 启动 ({trigger})："
         f"最近 {minutes} 分钟内 ~/.agent-compass/router-ledger.jsonl 中无有效的 plan/select/record 记录。"
         "把任务书写进 <task.md>，一条命令完成分类、选路与启动：\n"
-        "  python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py roll --brief <task.md> --hours <n>\n"
+        f"  {ROUTER_CMD} roll --brief <task.md>\n"
         "（用户在本次请求中点名了 model/effort 时追加 --provider <p> --account <a> --model <m> --effort <e> "
         "--basis \"<用户原话>\"；宿主没有自动启动器时 roll 会返回 route.bundle，按它原生启动。）"
     )
@@ -944,7 +975,7 @@ def evaluate_payload(
         if (name in ('create_agent', 'mcp__paseo__create_agent') or trigger == 'shell:paseo agent create') and os.environ.get('ROUTER_PASEO_LEGACY_NO_LABELS') != '1':
             return format_response(False, harness_kind,
                 '[Router Gate] This Paseo host supports labels. Write the task brief to <task.md> and run '
-                'route_judge.py roll --brief <task.md> --hours <n>; it routes and launches in one step. Or pass the returned '
+                + ROUTER_CMD + ' roll --brief <task.md>; it routes and launches in one step. Or pass the returned '
                 'create_agent object with router.* labels (title/initialPrompt/workspaceId may be edited; '
                 'provider/settings/labels may not). An unbound legacy ledger is not launch authorization.')
         if rows is None:
@@ -960,7 +991,7 @@ def evaluate_payload(
         row, diagnostic = match_route(rows, requested, context, trigger)
         if row is None:
             reason = (f"[Router Gate] 启动参数与有效期内路由不匹配 ({trigger})：{diagnostic}。"
-                      "请按本次任务的 router provider/model/effort 启动，或重新运行 route_judge.py plan。"
+                      "请按本次任务的 router provider/model/effort 启动，或重新运行 roll。"
                       "台账匹配仅作兼容检查，不代表完整 dispatch 授权。")
             return format_response(False, harness_kind, reason)
     return format_response(True, harness_kind)

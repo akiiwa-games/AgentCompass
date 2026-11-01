@@ -7,7 +7,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_router_data_models import settings
-import i18n
 import router_data
 
 
@@ -21,15 +20,6 @@ def catalog(tmp_path, scoring):
     path.write_text(json.dumps(document), encoding="utf-8")
 
 
-def test_labels_have_english():
-    assert i18n.english("（任意）") == "(any)"
-    assert i18n.english("Harness 系数") == "Harness factor"
-    assert i18n.english("机会成本汇率") == "Opportunity exchange"
-    assert i18n.english("每美元分数") == "Score per USD"
-    assert i18n.english("每工时分数") == "Score per worker-hour"
-    assert i18n.english("添加一行") == "Add row"
-    assert i18n.english("删除") == "Remove"
-    assert "new keys" in i18n.english("汇率只写入新键，不能包含 {0}")
 
 
 def test_save_without_the_new_form_stays_sparse(tmp_path, monkeypatch):

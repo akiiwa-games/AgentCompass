@@ -11,7 +11,9 @@ def key():
     value = os.environ.get('VENICE_API_KEY')
     if value:
         return value
-    for path in (Path.home() / '.dsh/.env', Path(__file__).resolve().parents[1] / '.env'):
+    checkout = Path(__file__).resolve().parents[3]
+    # A source checkout may keep the key in its own .env; an installed copy has no such root.
+    for path in (Path.home() / '.dsh/.env', *((checkout / '.env',) if (checkout / 'pyproject.toml').is_file() else ())):
         if path.is_file():
             for line in path.read_text(encoding='utf-8-sig').splitlines():
                 if line.startswith('VENICE_API_KEY='):

@@ -1,11 +1,13 @@
 """Host the original Usage Float event loop; leave its Git working tree untouched."""
 from pathlib import Path
+import os
 import sys
 import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import component_launch
 import plugins
 
 sys.path.insert(0, str(plugins.plugin_root("usage-float")))
@@ -92,6 +94,27 @@ def set_autostart(enabled: bool) -> tuple[bool, str]:
     return True, "已更新 AgentCompass 开机启动"
 
 
+def share_cache(native) -> Path | None:
+    """Point the hosted Usage Float at the router's usage cache, so both read and write one file.
+
+    The router's collector owns ~/.agent-compass/usage-cache.json (ROUTER_USAGE_CACHE when set). Usage Float's own
+    default is the legacy ~/.usage-float copy; left alone, a hosted instance would keep writing a second cache.
+    The legacy cache seeds the shared one first, so its history carries over. Returns the path, or None when the
+    router's scripts are not installed (Usage Float then keeps its default).
+    """
+    scripts = component_launch.skill_scripts()
+    if scripts is None:
+        return None
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import usage_cache
+    usage_cache.seed_from_legacy()
+    native.CACHE_PATH = usage_cache.write_path()
+    # Usage Float publishes the activity file only next to its own default cache; keep that alive for the shared one.
+    os.environ.setdefault("ROUTE_MANAGER_ACTIVITY_FILE", str(usage_cache.state_dir() / "usage-activity.json"))
+    return native.CACHE_PATH
+
+
 def attach(root, scope):
     required = ("state", "refresh_async", "request_open_settings", "toggle_panel_mode",
                 "toggle_topmost", "do_quit", "set_wallpaper_active", "stack_text_above_plate")
@@ -149,6 +172,7 @@ def main():
     theme.identify_process()
     import usage_float as native
 
+    share_cache(native)
     # Warm the scheduled-task autostart cache off the UI thread so right-clicking
     # the HUD never blocks on PowerShell Get-ScheduledTask.
     refresh_autostart_async(force=True)

@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,6 +107,47 @@ class StageTests(unittest.TestCase):
         self.assertEqual((self.home / "private" / "pre-start.ps1").read_text(), "# host policy")
 
 
+    def test_the_supervisor_guards_single_instance_runs_the_hook_and_returns_the_core_exit_code(self):
+        if not setup.POWERSHELL.is_file():
+            self.skipTest("Windows PowerShell unavailable")
+        setup.stage_files(self.source, self.config, None)
+        hook = self.home / 'private/pre-start.ps1'
+        marker = self.home / 'hook-ran'
+        hook.write_text("Set-Content -LiteralPath '" + str(marker).replace("'", "''") + "' -Value yes")
+        # Execute the shipped script, replacing only OS process APIs. No vendor
+        # executable, task registration, network or real process inspection runs.
+        wrapper = self.home / 'fixture.ps1'
+        wrapper.write_text(r'''
+function Get-CimInstance { param($Filter, $ErrorAction) if ($env:FIXTURE_MODE -eq 'busy') { [pscustomobject]@{ProcessId=12345} } }
+function Start-Process {
+    param($FilePath, $ArgumentList, $WorkingDirectory, [switch]$NoNewWindow,
+          [switch]$Wait, [switch]$PassThru, $RedirectStandardOutput, $RedirectStandardError)
+    ConvertTo-Json -Compress -InputObject @($ArgumentList) | Add-Content -LiteralPath $env:FIXTURE_CALLS
+    $code = if ($ArgumentList -contains '--check-config') { if ($env:FIXTURE_MODE -eq 'bad-config') { 9 } else { 0 } } else { 17 }
+    [pscustomobject]@{Id=12345;ExitCode=$code} | Add-Member -MemberType ScriptMethod -Name Refresh -Value {} -PassThru
+}
+function Wait-Process { param($Id) }
+& (Join-Path $PSScriptRoot 'bin/easytier-supervisor.ps1')
+exit $LASTEXITCODE
+''', encoding='utf-8')
+        for mode, expected, count in (('busy', 5, 0), ('bad-config', 6, 1), ('run', 17, 2)):
+            with self.subTest(mode=mode):
+                marker.unlink(missing_ok=True)
+                calls = self.home / ('calls-' + mode)
+                env = {k: v for k, v in os.environ.items() if k.upper() in ('SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP')}
+                env.update(FIXTURE_MODE=mode, FIXTURE_CALLS=str(calls))
+                done = subprocess.run([str(setup.POWERSHELL), '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                                       '-File', str(wrapper)], env=env, capture_output=True, text=True, timeout=20)
+                self.assertEqual(done.returncode, expected, done.stderr + done.stdout)
+                rows = [json.loads(line) for line in calls.read_text(encoding='utf-8-sig').splitlines()] if calls.exists() else []
+                self.assertEqual(len(rows), count)
+                self.assertEqual(marker.exists(), mode != 'busy')
+                if mode == 'run':
+                    self.assertIn('127.0.0.1:15888', rows[-1])
+                    self.assertIn('127.0.0.1/32,::1/128', rows[-1])
+                    self.assertIn(str(self.home / 'private/node.toml'), rows[-1])
+
+
 class SwitchTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -180,14 +223,6 @@ class MiscTests(unittest.TestCase):
     def test_without_option_drops_the_flag_and_its_value(self):
         self.assertEqual(setup.without_option(["install", "--log", "x", "--switch"], "--log"), ["install", "--switch"])
 
-    def test_the_supervisor_guards_single_instance_runs_the_hook_and_returns_the_core_exit_code(self):
-        text = setup.SUPERVISOR_SOURCE.read_text(encoding="utf-8")
-        self.assertIn("exit 5", text)
-        self.assertIn("pre-start.ps1", text)
-        self.assertIn("exit $process.ExitCode", text)
-        self.assertIn("127.0.0.1:15888", text)
-        self.assertNotIn("0.0.0.0/0", text)
-        self.assertNotIn("network_secret", text)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from agentcompass import locations
 from agentcompass.ports import FEATURES, conflicts, listeners, load
 from agentcompass.tools import HINTS
 
-CLI_NAMES = ("claude", "codex", "agy", "grok", "npm", "git", "paseo", "python")
+CLI_NAMES = ("claude", "codex", "agy", "grok", "npm", "git", "paseo", "hc", "cindy", "python")
 _HOOK_MARKER = "router_gate_hook.py"
 
 
@@ -40,7 +40,6 @@ def pinned_environ(home: Path) -> dict[str, str]:
         LOCALAPPDATA=str(home / "AppData" / "Local"),
         ROUTER_PROVIDER_HOME=str(home),
         ROUTER_STATE_DIR=str(home / ".agent-compass"),
-        ROUTER_USAGE_CACHE=str(home / ".usage-float" / "usage-cache.json"),
         PASEO_HOME=str(home / ".paseo"),
     )
     return env
@@ -157,13 +156,19 @@ def _cache_line(home: Path, environ: dict | None) -> str:
         override = (environ.get("ROUTER_USAGE_CACHE") or "").strip()
     elif os.environ.get("ROUTER_USAGE_CACHE"):
         override = os.environ["ROUTER_USAGE_CACHE"].strip()
-    path = Path(override) if override else home / ".usage-float" / "usage-cache.json"
-    try:
-        stat = path.stat()
-    except OSError:
-        return f"missing ({path})"
-    age_min = max(0, int((time.time() - stat.st_mtime) // 60))
-    return f"{path} ({age_min} min old, {stat.st_size} bytes)"
+    state = ((environ or os.environ).get("ROUTER_STATE_DIR") or "").strip()
+    canonical = (Path(state) if state else home / ".agent-compass") / "usage-cache.json"
+    # An explicit file is the only one read; otherwise the collector's cache and the legacy Usage Float copy (usage_cache.py).
+    paths = [Path(override)] if override else [canonical, home / ".usage-float" / "usage-cache.json"]
+    found = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        age_min = max(0, int((time.time() - stat.st_mtime) // 60))
+        found.append(f"{path} ({age_min} min old, {stat.st_size} bytes)")
+    return "; ".join(found) if found else f"missing ({paths[0]})"
 
 
 def _plugin_lines(home: Path) -> list[str]:

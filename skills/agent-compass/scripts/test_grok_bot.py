@@ -507,7 +507,7 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
         command = [sys.executable, '-X', 'utf8', '-c', script, str(Path(roll.__file__).parent), str(fake_cli),
                    'roll', '--brief', str(brief), '--hours', '0.02', '--provider', 'grok-bot',
                    '--account', 'grok-bot', '--model', 'grok-bot', '--basis', 'Fixture explicit Bot request',
-                   '--usage-cache', str(usage), '--wait', '0']
+                   '--usage-cache', str(usage), '--wait', '0', '--verbose']
         dry = subprocess.run(command + ['--dry-run'], capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
         result = json.loads(dry.stdout)

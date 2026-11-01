@@ -29,6 +29,45 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # Gate contract: it blocks publishing, and only publishing. Failure it stops: a wheel whose installed commands (collector, router
+  # reads, roll/plan, doctor, the documented commands) only work because something else is importable or on the build machine.
+  # Decision: the wheel from the job above is installed into a fresh virtualenv with an isolated home and run; provider HTTP goes to a
+  # local fixture, nothing leaves the runner. Recovery: fix the cause named in the failed assertion and tag again. A broken
+  # sandbox or missing dependency fails the job too (a release is rare; an unchecked wheel costs more than a re-run). The job also
+  # builds the PyInstaller tray from an isolated copy and runs its `--run-component` entries against the same fixture; the Inno
+  # installer, startup entries and GUI windows are listed as not executed in the report, never as passed.
+  sandbox:
+    needs: wheel
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel
+          path: dist
+      - name: Install the tray extra and PyInstaller (the tray scenarios and the frozen-tray scenario need both)
+        run: python -m pip install --upgrade pip pyinstaller ".[tray]"
+      - name: Run the installed wheel through the user operations
+        shell: bash
+        run: python -X utf8 packaging/sandbox_check.py --wheel dist/*.whl --report sandbox-report
+      # Failure: a wheel that installs and passes the operations above but cannot dispatch from zero (no account, discovery, usage, classify,
+      # route, ledger, a real worker process, completion back to the parent, recovery from quota/crash/lost delivery). Action blocked: publishing.
+      # Decision: assertions over the public entry with fixture providers and hosts; Herdr's real hc runtime is not on the runner and is
+      # reported as not executed. Recovery: fix the named assertion and tag again.
+      - name: Dispatch from zero through the installed wheel
+        shell: bash
+        run: python -X utf8 packaging/zero_dispatch_check.py --wheel dist/*.whl --report zero-dispatch-report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sandbox-report
+          path: |
+            sandbox-report/*
+            zero-dispatch-report/*
+
   tray:
     runs-on: windows-latest
     steps:
@@ -55,7 +94,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [wheel, tray]
+    needs: [wheel, tray, sandbox]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

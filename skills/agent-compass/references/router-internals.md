@@ -5,9 +5,10 @@ Everything beyond the one-line `roll` path in SKILL.md: overview, when to self-e
 ## Overview & Quickstart
 
 - **Purpose**: task-level router for coding agents (Claude Code, Codex, Antigravity, Paseo). It scores a task's difficulty and kind, then allocates the best-fit model and effort across your subscribed accounts using live quota windows.
-- **Credential-free demo** (run from the repository root; synthetic quotas, no network, no ledger writes, no worker launched): `python -X utf8 skills/agent-compass/scripts/route_judge.py plan --input examples/task.json --dry-run --demo`
-- **Dispatch**: `python -X utf8 skills/agent-compass/scripts/route_judge.py roll --task "<one sentence>"` (`--brief task.md` for long briefs).
-- **Requirements & permissions**: Python 3.11+. Reads local quota telemetry (`~/.usage-float/usage-cache.json`, written by [usage-float](https://github.com/akiiwa-games/usage-float)) and local policy configuration; writes a local routing ledger under `~/.agent-compass/`; launches locally installed provider CLIs (or Paseo) only when `roll` dispatches a worker.
+- **Credential-free demo** (any directory; synthetic quotas, no network, no ledger writes, no worker launched): `agentcompass plan --demo --dry-run`
+- **Dispatch**: `agentcompass roll --task "<what the worker should do>"` (`--task -` reads stdin, `--brief task.md` reads a file).
+- **Command**: `agentcompass` is the only entry. Installed package: `agentcompass <command>`. Source checkout without an install: `python -X utf8 <checkout>/agentcompass <command>`, the same commands from any directory. `agentcompass -h` lists them, `agentcompass <command> -h` shows one. Do not run files under `scripts/` yourself.
+- **Requirements & permissions**: Python 3.11+. Reads local quota telemetry (`~/.agent-compass/usage-cache.json`, written by the router's own collector `agentcompass usage`; the [usage-float](https://github.com/akiiwa-games/usage-float) display plugin is optional) and local policy configuration; writes a local routing ledger under `~/.agent-compass/`; launches locally installed provider CLIs (or Paseo) only when `roll` dispatches a worker.
 
 > **System-Level Skill Loading Requirement (Host Rollout)**: `agent-compass` and its companion skills (`dot-subagent`, `chatgpt-pro-consult`, `gemini-web`) must be installed at the **system level** via `python -X utf8 setup/sync_host_globals.py` so every session loads them regardless of workspace:
 > - `~/.codex/skills/<name>`, `~/.claude/skills/<name>` (`~/.claude-*/skills`), and `~/.pi/agent/skills/<name>` via directory junctions;
@@ -33,7 +34,7 @@ Everything beyond the one-line `roll` path in SKILL.md: overview, when to self-e
 Write a `task.json` file (in a scratch/temp path) describing **only the factual task and runtime constraints**, then run `plan`:
 
 ```bash
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py plan --input <task.json>
+agentcompass plan --input <task.json>
 ```
 
 Standard `task.json`:
@@ -53,7 +54,7 @@ Standard `task.json`:
 
 **Classifier Authority Rule (No Manual Classification by Parent Agents)**:
 - **Do NOT manually fill `work_kind`, `difficulty`, or `profile` in `task.json`, and do NOT read classification examples or rubrics.**
-- `route_judge.py plan` automatically invokes the System-One classifier (inspect `route_judge.py scorer --action show` for the effective scorer and available choices; configure it with `scorer --action set` or AgentCompass settings) to determine the route category (`work_kind`), difficulty floor, and 10D `TaskProfile` (including `divergence` `1..3`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
+- `plan` (and `roll`) automatically invoke the System-One classifier (inspect `agentcompass scorer --action show` for the effective scorer and available choices; configure it with `scorer --action set` or AgentCompass settings) to determine the route category (`work_kind`), difficulty floor, and 10D `TaskProfile` (including `divergence` `1..3`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
 - When the caller leaves `needs.local_only` unset, a classifier profile with `local_only: true` is trusted: the router sets `needs.local_only: true`, copies the profile `reason` into `needs.local_only_reason`, and records `profile_local_only_applied`. This judgment is not rechecked by the caller-reason validator. Explicit caller values take precedence; `needs.local_only: false` in `plan` input keeps work Dot-eligible subject to route and modality constraints. `roll` has no separate negative flag.
 - Factual `task` fields the parent agent may provide:
   - `objective` (required): Concrete description of what the worker must accomplish and how it will be verified.
@@ -68,20 +69,14 @@ Standard `task.json`:
 Only when the user explicitly names the target model or effort in the current request:
 
 ```bash
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py record \
+agentcompass record \
   --input <task.json> --constraint user_override --basis "<exact user quote>" \
   --provider <provider> --account <account> --model <model> --effort <effort>
 ```
 
-### C. Close Out the Dispatch Lifecycle
+### C. Dispatch lifecycle
 
-```bash
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py dispatch-state \
-  --id <dispatch_id> --state started --worker-id <worker_id>
-
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py dispatch-state \
-  --id <dispatch_id> --state completed
-```
+`roll` prepares, launches and observes the dispatch; nothing is closed out by hand. To inspect or recover one, use `agentcompass dispatch --dispatch-action status|reconcile|release` ([dispatch lifecycle](dispatch-lifecycle.md)).
 
 ---
 
@@ -90,7 +85,7 @@ python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py dispatch-sta
 Provider availability is discovered automatically from native sign-ins, Paseo launchers,
 local CC Switch and local Magpie. Account disablement, removed profiles and confirmed
 credential rejection automatically pause new allocations; recovery takes effect on
-the next allocation. Run `route_judge.py providers` to refresh and inspect the inventory.
+the next allocation. Run `agentcompass providers` to refresh and inspect the inventory.
 New bound Claude/Codex launchers inherit the existing model policy; saved profiles
 without a launcher are listed without changing the user's active account. See
 [provider discovery and quota sources](provider-usage.md).
@@ -166,7 +161,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 ## 4. Reference Files (Internal Router Specs — Parent Agents Need Not Read)
 
 - [`accounts.json`](accounts.json) — Public model catalogue, conservative priors, route scopes, account slots and bundle definitions.
-- [`classifier-cases.json`](classifier-cases.json) — System-One classifier route definitions and calibration cases (loaded automatically by `route_judge.py`).
+- [`classifier-cases.json`](classifier-cases.json) — System-One classifier route definitions and calibration cases (loaded automatically by the router).
 - [`model-capabilities.md`](model-capabilities.md) — Generated catalogue view and prior limitations.
 - [`model-capabilities.json`](model-capabilities.json) — Generated policy/model view; runtime derives its policy from effective accounts.
 - [`dispatch-lifecycle.md`](dispatch-lifecycle.md) — Reservation state machine (`planned` -> `started` -> `completed`) and in-flight quota deduction.

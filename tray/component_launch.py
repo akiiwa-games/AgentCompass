@@ -25,8 +25,18 @@ COMPONENTS = (
     "owned_process",
     "router_window",
     "update_status",
+    "usage_collect",
     "usage_float_host",
 )
+
+
+def skill_scripts() -> Path | None:
+    """The router's scripts folder: the installed agent-compass skill, else this checkout. The router is never frozen."""
+    codex = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    for scripts in (codex / "skills/agent-compass/scripts", Path(__file__).resolve().parents[1] / "skills/agent-compass/scripts"):
+        if (scripts / "route_judge.py").is_file():
+            return scripts
+    return None
 
 
 def frozen() -> bool:

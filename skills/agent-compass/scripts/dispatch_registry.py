@@ -82,7 +82,7 @@ def rows(connection, table):
 def get(connection, table, key):
     row = connection.execute('SELECT data FROM ' + table + ' WHERE id=?', (key,)).fetchone()
     if row is None:
-        raise ValueError('Unknown ' + table.rstrip('s') + ' id')
+        raise ValueError('Unknown ' + {'dispatches': 'dispatch'}.get(table, table.rstrip('s')) + ' id')
     return json.loads(row[0])
 
 

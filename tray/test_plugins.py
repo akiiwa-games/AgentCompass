@@ -142,6 +142,7 @@ class LifecycleTests(unittest.TestCase):
 
 
     def test_plugin_root_resolves_user_data_directory_and_auto_clones_when_missing(self):
+        self.addCleanup(services.refresh_plugin_roots)      # ensure_plugin re-points services' module roots at the temporary directory
         with tempfile.TemporaryDirectory() as directory:
             plugins_dir = Path(directory) / "plugins"
             repo_root = Path(directory) / "repo"

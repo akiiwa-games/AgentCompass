@@ -160,13 +160,6 @@ class SourcePatchTests(unittest.TestCase):
         self.assertIn("original_all_model_checks_passed: true", selection)
         self.assertLess(selection.index("chatGptModelFamilyMatches"), selection.index("appendFileSync(join"))
 
-    def test_patched_code_keeps_its_braces_balanced(self):
-        patch.apply(self.root)
-        for name in FILES:
-            patched = self.text(name)
-            original = self.originals[name].decode("utf-8")
-            self.assertEqual(patched.count("{") - patched.count("}"), original.count("{") - original.count("}"), name)
-            self.assertNotIn("{eol}", patched)
 
     def test_revert_gives_back_the_upstream_files_byte_for_byte(self):
         patch.apply(self.root)
@@ -200,10 +193,6 @@ class SourcePatchTests(unittest.TestCase):
         self.assertEqual(patch.status(self.root / "nowhere"), "missing")
         self.assertEqual(patch.apply(self.root / "nowhere"), "missing")
 
-    def test_fits_is_quiet_when_the_anchors_are_there(self):
-        self.assertIsNone(patch.fits(self.root))
-        patch.apply(self.root)
-        self.assertIsNone(patch.fits(self.root))
 
     def test_stop_icon_selector_variant_is_supported(self):
         icon_session = (

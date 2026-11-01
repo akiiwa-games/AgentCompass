@@ -1,11 +1,11 @@
 """First-run onboarding for a new AgentCompass user.
 
-    python -X utf8 setup/onboard.py [setup] [--yes] [--dry-run] [--hooks | --no-hooks] ...
-    python -X utf8 setup/onboard.py uninstall [--dry-run]
+    agentcompass setup [--yes] [--dry-run] [--hooks | --no-hooks] ...
+    agentcompass uninstall [--dry-run]
 
 `setup` detects which agent CLIs are installed and signed in (claude, codex, agy, opencode, pi, grok, paseo), writes the
-accounts the router may use into ~/.agent-compass/accounts-override.json, optionally fetches the usage-float plugin and
-runs one usage collection, links the router skill, writes the global agent rules and (only on request) the router
+accounts the router may use into ~/.agent-compass/accounts-override.json, runs one usage collection with the router's own
+collector (optionally also fetches the Usage Float display plugin), links the router skill, writes the global agent rules and (only on request) the router
 gate hook. Everything it changes is backed up and recorded so `uninstall` can reverse it.
 
 Importable: `main(argv)`, `setup_main(argv)` and `uninstall_main(argv)` return process exit codes.
@@ -38,7 +38,7 @@ UNVERIFIABLE_FAMILIES = ("antigravity", "opencode", "grok")
 CLI_ACCOUNTS = ("claude", "codex", "pi", "antigravity", "opencode", "grok")
 HOOK_EXPLANATION = (
     "The router gate hook blocks every sub-agent launch (including Claude Code's built-in Explore agent) "
-    "unless `route_judge.py roll` recorded a routing decision in the last 15 minutes. It enforces routing, "
+    "unless `roll` recorded a routing decision in the last 15 minutes. It enforces routing, "
     "but it will block agents until you get used to running `roll` first. You can remove it at any time with "
     "`{undo}`."
 )
@@ -83,6 +83,8 @@ def detect_orchestrators(home: Path, env: dict) -> dict:
         "orca": {"installed": bool(shutil.which("orca", path=path) or sg.orca_user_data_dirs(home) or (home / ".orca").is_dir()),
                  "codex_homes": [str(p) for p in orca_homes]},
         "t3": {"installed": bool(shutil.which("t3", path=path) or (home / ".t3").is_dir())},
+        "herdr": {"installed": bool(shutil.which("hc", path=path)), "api": "herdr-core hc"},
+        "cindy": {"installed": bool(shutil.which("cindy", path=path)), "api": "requires scoped bridge"},
     }
 
 
@@ -225,19 +227,17 @@ def ensure_usage_float(home: Path, dry_run: bool = False, run=subprocess.run) ->
     return {"path": str(target), "action": "cloned", "detail": usage_float_repo_url()}
 
 
-def collect_usage_once(home: Path, plugin: dict, dry_run: bool = False, run=subprocess.run) -> dict:
-    cache = home / ".usage-float" / "usage-cache.json"
-    if plugin["action"] in ("skipped", "failed", "would-clone"):
-        return {"ran": False, "cache": str(cache), "ok": cache.is_file(), "detail": "usage-float is not available"}
-    script = Path(plugin["path"]) / "usage_float.py"
+def collect_usage_once(home: Path, dry_run: bool = False, run=subprocess.run) -> dict:
+    """One collection with the router's own collector (skills/agent-compass/scripts/usage_collector.py), no plugin needed."""
+    cache = home / ".agent-compass" / "usage-cache.json"
+    script = REPO / "skills" / "agent-compass" / "scripts" / "usage_collector.py"
+    if not script.is_file():
+        return {"ran": False, "cache": str(cache), "ok": cache.is_file(), "detail": f"{script} is missing"}
     if dry_run:
-        return {"ran": False, "cache": str(cache), "ok": cache.is_file(), "detail": f"would run: {sys.executable} {script} once"}
-    env = {**os.environ, "USERPROFILE": str(home), "HOME": str(home), "PYTHONUTF8": "1"}
-    for key in ("PASEO_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"):
-        if home.resolve() != Path.home().resolve():
-            env.pop(key, None)
+        return {"ran": False, "cache": str(cache), "ok": cache.is_file(), "detail": f"would run: {sys.executable} {script} --once"}
+    env = {**detection_environ(home), "PYTHONUTF8": "1"}
     try:
-        res = run([sys.executable, "-X", "utf8", str(script), "once"], cwd=str(script.parent), env=env,
+        res = run([sys.executable, "-I", "-X", "utf8", str(script), "--once"], cwd=str(script.parent), env=env,
                   capture_output=True, text=True, timeout=240)
         detail = (res.stdout.strip() or res.stderr.strip())[:400]
     except (OSError, subprocess.SubprocessError) as exc:
@@ -269,12 +269,19 @@ def _packaged() -> bool:
     return "site-packages" in Path(__file__).resolve().parts
 
 
+def _router_command() -> str:
+    """How to call the router from here: the console script when installed, else this checkout's package directory."""
+    if _packaged():
+        return "agentcompass"
+    return f"python -X utf8 {(Path(__file__).resolve().parents[1] / 'agentcompass').as_posix()}"
+
+
 def _undo_command() -> str:
-    return "agentcompass uninstall" if _packaged() else "python -X utf8 setup/onboard.py uninstall"
+    return f"{_router_command()} uninstall"
 
 
 def _try_command() -> str:
-    return "agentcompass providers" if _packaged() else "python -X utf8 skills/agent-compass/scripts/route_judge.py providers"
+    return f"{_router_command()} providers"
 
 
 def _line(text: str = "") -> None:
@@ -282,14 +289,16 @@ def _line(text: str = "") -> None:
 
 
 def setup_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="onboard.py setup", description="Detect accounts and set AgentCompass up safely.")
+    parser = argparse.ArgumentParser(prog="agentcompass setup", description="Detect accounts and set AgentCompass up safely.")
     parser.add_argument("--yes", "-y", action="store_true", help="Non-interactive: accept the safe defaults (no hook unless --hooks).")
     parser.add_argument("--dry-run", action="store_true", help="Report what would change; write nothing.")
     parser.add_argument("--hooks", dest="hooks", action="store_true", default=None, help="Install the router gate hook.")
     parser.add_argument("--no-hooks", dest="hooks", action="store_false", help="Never install the router gate hook.")
     parser.add_argument("--no-docs", action="store_true", help="Do not write global agent rules or the Paseo prompt.")
     parser.add_argument("--no-skills", action="store_true", help="Do not link the router skills into the harnesses.")
-    parser.add_argument("--no-usage", action="store_true", help="Do not fetch usage-float or run a usage collection.")
+    parser.add_argument("--no-usage", action="store_true", help="Do not run a usage collection (and do not fetch the Usage Float plugin).")
+    parser.add_argument("--usage-float", dest="usage_float", action="store_true",
+                        help="Also fetch the optional Usage Float desktop display plugin (not needed for routing).")
     parser.add_argument("--disable", action="append", default=[], metavar="ACCOUNT",
                         help="Keep this detected account out of routing (repeatable).")
     parser.add_argument("--home", help="Operate on another home directory (testing).")
@@ -315,7 +324,7 @@ def setup_main(argv: list[str] | None = None) -> int:
         _line(f"  {row['name']:<12} {state}" + (f"  plan={row['plan']}" if row.get("plan") and row["signed_in"] is not False else ""))
     paseo = detection["paseo"]
     _line(f"  {'paseo':<12} " + ("installed" if paseo["installed"] else "not found") + (", config present" if paseo["config"] else ""))
-    for name, label in (("orca", "Orca"), ("t3", "T3 Code")):
+    for name, label in (("orca", "Orca"), ("t3", "T3 Code"), ("herdr", "Herdr core"), ("cindy", "Cindy")):
         row = detection["orchestrators"][name]
         extra = f", {len(row['codex_homes'])} managed Codex account home(s) get the rules and skill" if row.get("codex_homes") else ""
         _line(f"  {label:<12} " + ("found" if row["installed"] else "not found") + (extra if row["installed"] else ""))
@@ -338,17 +347,20 @@ def setup_main(argv: list[str] | None = None) -> int:
         _line(f"Kept out of routing: {', '.join(sorted(disabled))}")
     _line(f"  {'would write' if dry else 'wrote'} {override['path']}")
 
-    # 3. usage-float plugin and one collection
+    # 3. One usage collection with the router's own collector; the Usage Float display plugin only when asked for.
     if args.no_usage:
         summary["usage"] = {"skipped": True}
-    elif asker.ask("\nFetch the usage-float plugin and run one usage collection now?", True):
-        plugin = ensure_usage_float(home, dry)
-        collection = collect_usage_once(home, plugin, dry)
-        summary["usage"] = {"plugin": plugin, "collection": collection}
-        _line(f"  usage-float: {plugin['action']} ({plugin['path']})" + (f" - {plugin['detail']}" if plugin.get("detail") else ""))
-        _line(f"  usage collection: {'ok' if collection['ok'] else 'no data yet'} ({collection['cache']})")
     else:
-        summary["usage"] = {"declined": True}
+        if asker.ask("\nRun one usage collection now?", True):
+            collection = collect_usage_once(home, dry)
+            summary["usage"] = {"collection": collection}
+            _line(f"  usage collection: {'ok' if collection['ok'] else 'no data yet'} ({collection['cache']})")
+        else:
+            summary["usage"] = {"declined": True}
+        if args.usage_float or asker.ask("Also fetch the optional Usage Float desktop display plugin?", False):
+            plugin = ensure_usage_float(home, dry)
+            summary["usage"]["plugin"] = plugin
+            _line(f"  usage-float: {plugin['action']} ({plugin['path']})" + (f" - {plugin['detail']}" if plugin.get("detail") else ""))
 
     # 4. Global rules, skills, hooks
     hooks = args.hooks
@@ -384,7 +396,7 @@ def setup_main(argv: list[str] | None = None) -> int:
 
 
 def uninstall_main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="onboard.py uninstall", description="Undo what `setup` changed.")
+    parser = argparse.ArgumentParser(prog="agentcompass uninstall", description="Undo what `setup` changed.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--yes", "-y", action="store_true")
     parser.add_argument("--home", help="Operate on another home directory (testing).")

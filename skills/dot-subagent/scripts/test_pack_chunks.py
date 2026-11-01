@@ -36,6 +36,10 @@ class PackTests(unittest.TestCase):
             out = self.base / f"out_{codec}"
             manifest = pack_chunks.pack(self.source, out, chunk_bytes=3000, codec=codec)
             payload = simulate_dot(out)
+            for packet in out.glob("part_*.md"):
+                body = packet.read_text(encoding="utf-8").split("BEGIN_B64\n", 1)[1].rsplit("END_B64", 1)[0]
+                self.assertTrue(all(len(line) <= 76 for line in body.splitlines()))
+                self.assertTrue(re.fullmatch(r"[A-Za-z0-9+/=\n]*", body))
             self.assertEqual(hashlib.sha256(payload).hexdigest(), manifest["payload_sha256"], codec)
             self.assertEqual(len(payload), manifest["payload_bytes"], codec)
             if codec == "zlib":
@@ -92,14 +96,6 @@ class PackTests(unittest.TestCase):
         self.assertFalse(results["part 1"])
         self.assertEqual(pack_chunks.main(["check", str(out), str(replies)]), 1)
 
-    def test_the_packets_survive_the_unpack_files_style_of_text_handling(self):
-        out = self.base / "out"
-        pack_chunks.pack(self.source, out, chunk_bytes=36000, codec="zlib")
-        for packet in out.glob("part_*.md"):
-            text = packet.read_text(encoding="utf-8")
-            body = text.split("BEGIN_B64\n", 1)[1].rsplit("END_B64", 1)[0]
-            self.assertTrue(all(len(line) <= 76 for line in body.splitlines()))
-            self.assertTrue(re.fullmatch(r"[A-Za-z0-9+/=\n]*", body))
 
 
 if __name__ == "__main__":

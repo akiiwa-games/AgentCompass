@@ -14,7 +14,7 @@ import demo_plan
 import route_judge
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = Path(route_judge.__file__).resolve()
+ENTRY = ROOT / 'agentcompass'
 EXAMPLE = ROOT / 'examples' / 'task.json'
 
 
@@ -23,13 +23,13 @@ class DemoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             env = {k: v for k, v in os.environ.items() if k.upper() in ('SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP')}
             env.update(HOME=directory, USERPROFILE=directory, PATH='')
-            command = [sys.executable, '-X', 'utf8', str(SCRIPT), 'plan', '--input', str(EXAMPLE), '--dry-run', '--demo']
-            table = subprocess.run(command, env=env, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            command = [sys.executable, '-X', 'utf8', str(ENTRY), 'plan', '--dry-run', '--demo']
+            table = subprocess.run(command, cwd=directory, env=env, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(table.returncode, 0, table.stderr + table.stdout)
             self.assertIn('Rank', table.stdout)
             self.assertIn('winner', table.stdout)
             self.assertIn('DEMO', table.stdout)
-            full = subprocess.run(command + ['--format', 'json'], env=env, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            full = subprocess.run(command + ['--format', 'json'], cwd=directory, env=env, capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(full.returncode, 0, full.stderr + full.stdout)
             result = json.loads(full.stdout)
             self.assertGreater(len([c for c in result['ranking'] if not c['excluded']]), 2)
@@ -55,7 +55,7 @@ class DemoTests(unittest.TestCase):
     def test_demo_is_only_a_read_only_plan(self):
         for flags in (['plan'], ['roll', '--dry-run'], ['launch'], ['record', '--dry-run']):
             with self.subTest(flags=flags):
-                result = subprocess.run([sys.executable, str(SCRIPT), *flags, '--demo'], capture_output=True,
+                result = subprocess.run([sys.executable, '-I', str(ENTRY), *flags, '--demo'], capture_output=True,
                                         text=True, encoding='utf-8', timeout=30)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn('--demo requires plan --dry-run', result.stdout)

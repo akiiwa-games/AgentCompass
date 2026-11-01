@@ -1,6 +1,6 @@
 # Dispatch Lifecycle & Reservation Ledger
 
-Every `route_judge.py plan` or `record` call registers a reservation row in `~/.agent-compass/dispatch-registry.sqlite3` and appends an audit entry to `~/.agent-compass/router-ledger.jsonl`.
+Every `agentcompass plan`, `roll` or `record` call registers a reservation row in `~/.agent-compass/dispatch-registry.sqlite3` and appends an audit entry to `~/.agent-compass/router-ledger.jsonl`.
 
 ## 1. State Machine
 
@@ -12,11 +12,11 @@ planned ──► started ──► heartbeat ──► completed
 
 | State | Active Reservation? | Lease TTL | Transition Command |
 | :--- | :---: | :---: | :--- |
-| `planned` | Yes | `3 min` (`180s`) | Created by `route_judge.py plan`; expires automatically if never started. |
-| `started` | Yes | `15 min` (`900s`) | `dispatch-state --id <id> --state started --worker-id <id>` |
-| `heartbeat` | Yes | `15 min` (`900s`) | `dispatch-state --id <id> --state heartbeat` |
-| `completed` | No | Released | `dispatch-state --id <id> --state completed` |
-| `failed` / `cancelled` / `timed_out` | No | Released | `dispatch-state --id <id> --state failed --note "<reason>"` |
+| `planned` | Yes | `3 min` (`180s`) | Created by `plan` / `roll` / `record`; expires automatically if never started. |
+| `started` | Yes | `15 min` (`900s`) | `roll`, once the worker is created and observed on the host. |
+| `heartbeat` | Yes | `15 min` (`900s`) | The host observation that `roll` and `reconcile` perform. |
+| `completed` | No | Released | `reconcile`, when the host reports the worker finished. |
+| `failed` / `cancelled` / `timed_out` | No | Released | `reconcile`, or `release` with a reason (section 3). |
 
 ## 2. In-Flight Quota Deduction
 
@@ -26,12 +26,15 @@ When `allocator.plan()` evaluates an account window from the effective account f
 
 ## 3. CLI Commands
 
-```bash
-# Mark a planned dispatch as started once the child agent is launched
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py dispatch-state \
-  --id <dispatch_id> --state started --worker-id <agent_or_task_id>
+`roll` prepares, launches and observes the dispatch itself; nothing needs to be marked by hand. These commands exist for inspection and recovery:
 
-# Close the dispatch when the child finishes
-python -X utf8 ~/.codex/skills/agent-compass/scripts/route_judge.py dispatch-state \
-  --id <dispatch_id> --state completed
+```bash
+# Where is this dispatch?
+agentcompass dispatch --dispatch-action status --dispatch-id <dispatch_id>
+
+# Re-observe the host and update every open dispatch (or one, with --dispatch-id)
+agentcompass dispatch --dispatch-action reconcile
+
+# Cancel a dispatch you will not use; its reservation is released
+agentcompass dispatch --dispatch-action release --dispatch-id <dispatch_id> --parent-id <your_session_id> --basis "<why>"
 ```

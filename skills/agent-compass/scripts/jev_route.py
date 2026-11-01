@@ -1,6 +1,6 @@
 """Compatibility entrypoint forwarding to route_judge.main.
 
-Use `route_judge.py scorer --action show` for the effective scorer and available
+Use `agentcompass scorer --action show` for the effective scorer and available
 options. This alias defines no classifier, judge or worker routing policy.
 """
 

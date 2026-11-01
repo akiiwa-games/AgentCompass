@@ -11,9 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 
 import allocator
-from tk_test_support import desktop_test, require_tk
+from tk_test_support import desktop_test, require_tk, import_theatre_without_user_diagnostics
 require_tk()
-import decision_theatre
+decision_theatre = import_theatre_without_user_diagnostics()
 import radar_chart
 import router_data
 

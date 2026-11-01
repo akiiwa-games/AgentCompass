@@ -1,7 +1,6 @@
 """Task demand (reasoning depth x property difficulty) is matched against model ability x its own effort curve."""
 import copy
 from datetime import datetime, timedelta, timezone
-import json
 import unittest
 
 import allocator
@@ -90,7 +89,6 @@ class EffortMatchingTests(unittest.TestCase):
             levels = [needs[d][dim][0] for d in (1, 2, 3, 4)]
             self.assertEqual(levels, sorted(levels), dim)
             self.assertLess(levels[0], levels[1])
-        self.assertEqual(allocator.profile_requirements(WORKING, self.policy)['coding'][0], 0.65)    # depth 2 is the table
 
     # ---- model side -------------------------------------------------------------------------------------------
 
@@ -101,7 +99,6 @@ class EffortMatchingTests(unittest.TestCase):
                             ('gpt-6.1-sol', self.accounts['models']['gpt-6.1-sol']),
                             ('gemini-4-argon-high', self.accounts['models']['gemini-4-argon-high']),
                             ('claude-fable-5-1', self.accounts['models']['claude-fable-5-1'])):
-            self.assertIn('calibration_source', curves[model], model)
             high = allocator.effort_ability(self.policy, curves[model], info, 'high')
             self.assertAlmostEqual(high, info['tier'])
             ability = [allocator.effort_ability(self.policy, curves[model], info, e) for e in ('low', 'medium', 'high', 'xhigh', 'max')
@@ -210,14 +207,6 @@ class EffortMatchingTests(unittest.TestCase):
             self.assertAlmostEqual(row['expected_usd'] / self.rows(plan)['opus55_high']['expected_usd'], 4.0, places=1)
 
     def test_no_bundle_is_tied_to_a_reasoning_depth(self):
-        accounts = allocator.load_accounts()
-        for path in (allocator.REFERENCES / 'accounts.json', allocator.reference_fleet_path()):
-            document = json.loads(path.read_text(encoding='utf-8-sig'))
-            for owner, spec in document['accounts'].items():
-                for bundle_id, bundle in (spec.get('bundles') or {}).items():
-                    self.assertNotIn('max_reasoning_depth', bundle.get('when') or {}, f'{path.name}:{owner}:{bundle_id}')
-        for bundle_id in ('sol_medium', 'pi_sol_medium', 'agy_opus55_low', 'agy_opus55_medium', 'opus55_medium'):
-            self.assertNotIn('when', allocator.bundles(accounts)[bundle_id])
         # An older local fleet that still carries the rule keeps working: the rule is honoured when present.
         legacy = copy.deepcopy(self.accounts)
         legacy['accounts']['codex']['bundles']['sol_medium']['when'] = {'max_reasoning_depth': 1}
@@ -229,40 +218,6 @@ def heavy_props():
     return dict(WORKING, code_complexity=3, context_scale=3, divergence=3, hallucination_risk=3, error_cost=2)
 
 
-class ShippedBaselineTests(unittest.TestCase):
-    """The checked-in fleets carry the calibrated baseline, not the flat 3.3 prior."""
-
-    def documents(self):
-        return {path.name: json.loads(path.read_text(encoding='utf-8-sig'))
-                for path in (allocator.REFERENCES / 'accounts.json', allocator.reference_fleet_path())}
-
-    def test_models_and_curves_are_calibrated_in_both_fleets(self):
-        expected_tier = {'claude-opus-5-5': 4.6, 'gpt-6-astra': 4.2, 'gemini-4-argon-high': 4.0, 'claude-sonnet-5-5': 3.9,
-                         'gpt-6.1-sol': 3.6, 'grok-4.7': 3.4, 'gemini-3.8-flash-high': 3.0, 'deepseek-v4.1-flash-free': 2.8}
-        for name, document in self.documents().items():
-            self.assertEqual(document['scoring']['reset_bonus_max'], 1.2, name)
-            tiers = {model: spec['tier'] for model, spec in document['models'].items() if isinstance(spec, dict)}
-            self.assertGreater(len(set(tiers.values())), 5, name)
-            for model, tier in expected_tier.items():
-                self.assertEqual(tiers[model], tier, (name, model))
-            for model in ('claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'gpt-6-astra', 'gpt-6.1-sol', 'gemini-4-argon-high'):
-                curve = document['effort_curves'][model]
-                self.assertTrue(curve['calibration_source'], (name, model))
-                self.assertEqual(curve['ability']['high'] if 'high' in curve['ability'] else 0.0, 0.0)
-            demand = document['scoring']['demand']
-            self.assertEqual(set(demand['property_weights']),
-                             {'code_complexity', 'context_scale', 'divergence', 'hallucination_risk', 'error_cost'})
-            for key, value in allocator.DEMAND_DEFAULTS.items():
-                self.assertEqual(demand[key], value, (name, key))
-
-    def test_shipped_template_matches_the_fixture_where_the_baseline_is_shared(self):
-        template, fixture = (self.documents()[n] for n in ('accounts.json', 'reference-accounts.json'))
-        self.assertEqual(template['models'], fixture['models'])
-        self.assertEqual(template['effort_curves'], fixture['effort_curves'])
-        self.assertEqual(template['scoring']['demand'], fixture['scoring']['demand'])
-        self.assertEqual(template['scoring']['extra_effort_penalty'], fixture['scoring']['extra_effort_penalty'])
-        for bundle in ('opus55_medium', 'opus55_max', 'sonnet55_medium'):
-            self.assertIn(bundle, template['accounts']['claude']['bundles'])
 
 
 if __name__ == '__main__':

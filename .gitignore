@@ -5,6 +5,7 @@
 !/.gitattributes
 !/README.md
 !LICENSE
+!/THIRD_PARTY_NOTICES.md
 !/examples/
 !examples/**
 !/llms.txt
@@ -64,6 +65,8 @@
 !/packaging/
 /packaging/*
 !/packaging/*.py
+!/packaging/zero_fake_paseo_bridge.mjs
+!/packaging/zero_cindy_host.mjs
 !/packaging/*.ps1
 !/packaging/*.iss
 !/packaging/*.spec

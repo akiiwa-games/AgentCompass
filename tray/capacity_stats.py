@@ -2,7 +2,7 @@
 
 Runs as a short-lived process the tray starts every few minutes (`--once`). Each run reads only the bytes
 appended to the Codex and Claude session logs since the last run, folds them into per-hour buckets of active
-worker time, samples the usage-float cache, and rewrites two files in ~/.agent-compass:
+worker time, samples the usage cache, and rewrites two files in ~/.agent-compass:
 
   capacity.json     what the router's allocator reads: each window's latest used percent with its rise over the
                     last 3 and 24 hours (the demand forecast), and the workers running right now
@@ -13,7 +13,7 @@ There is no fit of percent against tokens any more; the router prices work at
 list price against community-measured window capacity.
 
 Codex rollouts carry the account's own rate-limit percentage on every call, so Codex history needs no other
-source. Claude logs have no percentage; its windows come from the usage-float samples taken while this runs.
+source. Claude logs have no percentage; its windows come from the usage-cache samples taken while this runs.
 Pi sessions signed in to ChatGPT (provider openai-codex) spend the Codex account's allowance, so their calls are
 counted as Codex worker time; Pi calls to other providers are skipped.
 Antigravity (Gemini Flash and the third-party pool) keeps one SQLite database per conversation; every step has
@@ -51,7 +51,7 @@ OBSERVE_SHORT_HOURS = 3
 OBSERVE_LONG_HOURS = 24
 LOCK_SECONDS = 30 * 60
 SAME_RESET_SECONDS = 120        # reset times from different fetches differ by sub-second jitter
-WINDOW_BY_MINUTES = {10080: "usage"}   # Codex rate-limit window length -> usage-float window id
+WINDOW_BY_MINUTES = {10080: "usage"}   # Codex rate-limit window length -> usage cache window id
 AGY_MODEL = re.compile(rb"(gemini-\d[\d.]*-(?:flash|pro|argon)[\w\-]*|claude-[a-z]+-[\w\-]*\d[\w\-]*|gpt-[\w.\-]*\d[\w.\-]*)")
 AGY_EFFORT = re.compile(r"-(low|medium|high|xhigh|max)$")
 STEP_TIME_RANGE = (1_700_000_000, 2_100_000_000)   # epoch seconds a step timestamp can take (late 2023 to 2036)
@@ -64,7 +64,8 @@ STATS_FILE = Path(os.environ.get("ROUTER_USAGE_STATS", STATE_DIR / "usage-stats.
 LOCK_FILE = STATE_DIR / "capacity.lock"
 SOURCES_FILE = STATE_DIR / "capacity-sources.json"
 KINDS = ("codex", "claude", "antigravity", "pi", "opencode")
-USAGE_CACHE = Path(os.environ.get("ROUTER_USAGE_CACHE", HOME / ".usage-float" / "usage-cache.json"))
+# One named cache file, or None for the collector's cache plus the legacy Usage Float copy (usage_cache.py).
+USAGE_CACHE = Path(os.environ["ROUTER_USAGE_CACHE"]) if os.environ.get("ROUTER_USAGE_CACHE") else None
 
 # API list prices in USD per million tokens: (input, cache write 5 min, cache write 1 h, cache read, output), checked
 # 2026-10-12 on platform.claude.com/docs/en/about-claude/pricing and developers.openai.com/api/docs/pricing (standard
@@ -536,12 +537,24 @@ def scan_all(state: dict, now: float, days: int) -> dict:
     return {"files": len(touched), "scanned": scanned}
 
 
+def usage_cache_module():
+    """usage_cache.py from the installed agent-compass skill, else from this checkout; None when neither exists."""
+    codex = Path(os.environ.get("CODEX_HOME") or HOME / ".codex")
+    for scripts in (codex / "skills/agent-compass/scripts", Path(__file__).resolve().parents[1] / "skills/agent-compass/scripts"):
+        if (scripts / "usage_cache.py").is_file():
+            if str(scripts) not in sys.path:
+                sys.path.insert(0, str(scripts))
+            import usage_cache
+            return usage_cache
+    return None
+
+
 def sample_usage_cache(state: dict) -> None:
-    """Record each account's window readings from the usage-float cache whenever its fetched_at moves on."""
-    try:
-        providers = json.loads(USAGE_CACHE.read_text(encoding="utf-8-sig")).get("providers") or {}
-    except (OSError, ValueError, AttributeError):
+    """Record each account's window readings from the usage cache whenever its fetched_at moves on."""
+    cache = usage_cache_module()
+    if cache is None:
         return
+    providers = cache.providers(HOME) if USAGE_CACHE is None else (cache.read(USAGE_CACHE)[0] or {}).get("providers") or {}
     for account, row in providers.items():
         fetched = parse_ts((row or {}).get("fetched_at"))
         if fetched is None:
@@ -571,7 +584,7 @@ def load_state() -> dict:
         state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         if state.get("schema") == SCHEMA:
             if state.get("price_version") != PRICE_VERSION:
-                # Calls scanned before prices existed carry none: read the logs again. The usage-float samples are
+                # Calls scanned before prices existed carry none: read the logs again. The usage-cache samples are
                 # kept, because they are Claude's only window history and cannot be read back.
                 state.update(files={}, price_version=PRICE_VERSION)
             return state
@@ -598,7 +611,7 @@ def atomic_write(path: Path, document: dict) -> None:
 # ------------------------------------------------------------------ measurement
 
 def account_series(state: dict, account: str) -> dict[str, list[list[float]]]:
-    """Readings per window from the logs and the usage-float cache, merged in time order."""
+    """Readings per window from the logs and the usage cache, merged in time order."""
     parts: dict[str, list] = collections.defaultdict(list)
     for entry in state["files"].values():
         if entry["account"] == account:
@@ -654,7 +667,7 @@ def measure(state: dict, now: float, days: int = LOOKBACK_DAYS) -> dict:
                 "used_pct": latest[1], "resets_at": iso(latest[2]), "confirmed_at": iso(latest[3]),
                 "pct_per_hour_3h": rate_in(series, now, OBSERVE_SHORT_HOURS),
                 "pct_per_hour_24h": rate_in(series, now, OBSERVE_LONG_HOURS)}
-    # Usage Float owns live activity. These log scans still measure costs and
+    # The usage collector owns live activity. These log scans still measure costs and
     # worker-hours, but must not maintain a second definition of running/idle.
     activity_path = Path((os.environ.get('AGENTCOMPASS_ACTIVITY_FILE') or os.environ.get('ROUTE_MANAGER_ACTIVITY_FILE')) or STATE_DIR / 'usage-activity.json')
     document['activity_status'] = 'unknown'

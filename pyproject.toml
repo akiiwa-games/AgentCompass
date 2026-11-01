@@ -46,6 +46,7 @@ only-include = [
   "packaging/hatch_build.py",
   "README.md",
   "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
   "pyproject.toml",
 ]
 exclude = [

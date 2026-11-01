@@ -15,6 +15,7 @@ import time
 import uuid
 
 import dispatch_flow
+import entry
 import dispatch_registry as registry
 import provider_inventory
 from worker_context import NATIVE_HOSTS, require_parent_id, resolve_parent
@@ -117,6 +118,15 @@ def prepare_worker_prompt(text, parent, host='paseo', address=None):
     recipient = (f'Parent session agent ID: `{parent}`.\n'
                  f'Parent host: `{host}`. Parent message address: `{address or parent}`.')
     prompt = text + '\n\n---\n\n' + WORKER_COMMUNICATION.read_text(encoding='utf-8') + '\n' + recipient + '\n'
+    if host == 'herdr':
+        prompt += ('\nHerdr core return channel: send questions and [Worker final report] with the argument vector '
+                   f'`hc send {parent} <message>`; check the send result. Finish this turn after reporting. '
+                   'Your final reply alone is not a parent message. Do not use Paseo or user-dialog tools.\n')
+    if host == 'cindy':
+        prompt += ('\nCindy plugin task return channel: this task has no worker-to-parent mailbox. '
+                   'Return [Worker final report] or BLOCKED / needs_input as your final assistant reply. '
+                   'The parent collects that exact result through the AgentCompass plugin status tool. '
+                   'Do not use Paseo, askpass routes, user-dialog tools or invent a callback.\n')
     WORKER_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
     path = WORKER_PROMPTS_DIR / f'{uuid.uuid4()}.md'
     path.write_bytes(prompt.encode('utf-8'))  # no newline translation of the caller's text
@@ -141,19 +151,20 @@ def dot(args, out, prompt_file):
         result['next'] = ('Worker is ALREADY launched on Dot by roll. Do NOT call create_agent, Agent, '
                           'spawn_agent, or invoke_subagent; use continuation_argv or read worker.reply.')
     if found and (args.wait <= 0 or proc.returncode == 3):
-        result['continuation_argv'] = python(DOT_RUNNER, 'status', '--task-id', found.group(1), '--wait', '120', *apply_to)
+        result['continuation_argv'] = entry.argv('dot', 'status', '--task-id', found.group(1), '--wait', '120', *apply_to)
     return result, 0 if proc.returncode in (0, 3) else 1
 
 
 def consult(args, out, prompt_file):
     base = args.brief if args.brief is not None else prompt_file
     target = base.with_name(f'{base.stem}-consult-{time.strftime("%Y%m%d-%H%M%S")}')
-    command = python(CONSULT_BRIDGE, '--prompt', str(prompt_file), '--out', str(target))
+    given = ['--prompt', str(prompt_file), '--out', str(target)]
+    command = entry.argv('chatgpt-web', *given)
     if args.wait <= 0:
         # A browser consultation blocks for up to 30 minutes; hand over the one command instead of backgrounding it.
         return dict(out, launched=False, dispatch_mode='chatgpt-web', caller_action='run_next_argv', next_argv=command,
                     next='Run next_argv (blocks until the answer is in <out>/response.md), or roll again with --wait 1800.'), 0
-    proc = subprocess.run(command + ['--timeout', str(int(args.wait))], capture_output=True, text=True,
+    proc = subprocess.run(python(CONSULT_BRIDGE, *given, '--timeout', str(int(args.wait))), capture_output=True, text=True,
                           encoding='utf-8', errors='replace', timeout=args.wait + 120)
     answer = target / 'response.md'
     return dict(out, launched=True, dispatch_mode='chatgpt-web', caller_action='already_launched_do_not_respawn',
@@ -186,7 +197,7 @@ def grok_bot(args, out, prompt_file, task, bundle):
                   caller_action='completed' if completed else 'already_launched_do_not_respawn' if delivery == 'accepted' else
                   'check_delivery_do_not_resend' if delivery == 'unknown' else 'check_error')
     if receipt['state'] not in ('completed', 'failed'):
-        result['continuation_argv'] = python(Path(runner.__file__), 'status', '--task-id', receipt['task_id'], '--wait', '30')
+        result['continuation_argv'] = entry.argv('grok-bot', 'status', '--task-id', receipt['task_id'], '--wait', '30')
         result['next'] = 'Read continuation_argv; never repeat an uncertain send. Relay needs_input to the parent; resolve cards in the official app.'
     return result, 1 if receipt['state'] == 'failed' else 0
 
@@ -206,6 +217,23 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     ):
         return cli(args, out, decision['selected_bundle'], text, judge)
     failed = receipt.get('state') == 'failed'
+    # launched_at records the single-use claim, before create is sent. Only a
+    # validated host observation binds agent_id/observed_at to this dispatch.
+    confirmed = bool(receipt.get('agent_id') and receipt.get('observed_at'))
+    ended_before_send = (receipt.get('state') in ('canceled', 'expired') and not receipt.get('launched_at'))
+    uncertain = not failed and not confirmed and not ended_before_send
+    if uncertain:
+        receipt = dict(receipt)
+        receipt.setdefault('continuation_argv', entry.argv(
+            'launch', '--dispatch-id', row['dispatch_id'], '--parent-id', parent, '--watch-seconds', '120'))
+        return dict(out, launched=None, dispatch_mode='paseo', caller_action='check_delivery_do_not_resend',
+                    next='Paseo delivery is unconfirmed. Run worker.continuation_argv to observe this same dispatch; '
+                         'do not roll again or issue another create request.',
+                    worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 0
+    if ended_before_send:
+        return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error',
+                    next=f"Dispatch {receipt['state']} before a launch was sent; inspect its receipt before scheduling new work.",
+                    worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 2
     notification = receipt.get('completion_notification') or {}
     notice = ('A completion notification will be sent to the parent on finish/error/permission; '
               'the bounded watcher PID, deadline and durable receipt are in worker.completion_notification. '
@@ -434,6 +462,8 @@ def status_of(result, code):
 def launched_next(result, worker, argv):
     """The one accurate sentence for a started worker: who tells the caller it finished depends on the launch surface."""
     mode, exit_code = result.get('dispatch_mode'), worker.get('exit')
+    if mode == 'herdr' and worker.get('state') in ('completed', 'failed', 'needs_input', 'cleaned'):
+        return f"Herdr operation is {worker['state']}; run next_argv to inspect the existing receipt. Nothing new was launched."
     if mode == 'cli':
         if exit_code is None:
             return (f"Worker is running as PID {worker.get('pid')} and nothing calls back: watch worker_output until it exits, "
@@ -479,11 +509,11 @@ def compact(result, status, detail_path):
 
 
 def run(args, judge):
-    """`--brief`: the full result plus `status`. `--task` (unless --verbose): the compact result; the full one is on disk."""
+    """Compact result (status, next action, pointers) for `--task` and `--brief` alike; `--verbose` prints the full result, which is on disk either way."""
     result, code = _run(args, judge)
     status = status_of(result, code)
     result = dict(result, status=status)
-    if getattr(args, 'brief', None) is not None or getattr(args, 'verbose', False):
+    if getattr(args, 'verbose', False):
         return result, code
     if status == 'dry_run':
         return compact(result, status, None), code
@@ -513,8 +543,7 @@ def _run(args, judge):
         # The same task already dispatched by this parent: hand back that worker, without classifying or launching again.
         for row in registry.pending():
             if (row['parent_id'], row['task_id']) == (parent, task['task_id']):
-                argv = python(Path(dispatch_flow.__file__).with_name('route_judge.py'), 'launch', '--dispatch-id',
-                              row['dispatch_id'], '--parent-id', parent, '--watch-seconds', '120')
+                argv = entry.argv('launch', '--dispatch-id', row['dispatch_id'], '--parent-id', parent, '--watch-seconds', '120')
                 return dict(stage='roll', parent_id=parent, launched=None, dispatch_mode='paseo',
                             caller_action='run_next_argv', worker=dict(dispatch_flow.public(row), continuation_argv=argv),
                             next='This task already has a dispatch (state ' + row['state'] + '): run next_argv to observe it; '
@@ -554,7 +583,7 @@ def _run(args, judge):
                     next='Execute this task directly in the current session; do not spawn a subagent.'), 2
     if decision.get('choice') in (None, 'none') or not bundle:
         return dict(out, launched=False, dispatch_mode='none', caller_action='execute_self_or_ask_user',
-                    next='No worker fits this brief; do it yourself or ask the user.'), 2
+                    next=decision.get('next') or 'No worker fits this brief; do it yourself or ask the user.'), 2
     if decision.get('host_policy_violation'):
         violation = decision['host_policy_violation']
         return dict(out, launched=False, dispatch_mode='none', caller_action='check_host_policy',
@@ -567,12 +596,18 @@ def _run(args, judge):
                     next='The router needs a user decision; show route.reason to the user.'), 2
     text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address)
     out['worker_prompt_file'] = str(prompt_file)
+    if parent_host == 'cindy':
+        import host_cindy
+        return host_cindy.prepare(out, bundle, prompt_file)
     if provider == 'dot':
         return dot(args, out, prompt_file)
     if provider == 'chatgpt-web':
         return consult(args, out, prompt_file)
     if provider == 'grok-bot':
         return grok_bot(args, out, prompt_file, task, bundle)
+    if parent_host == 'herdr':
+        import host_herdr
+        return host_herdr.launch(out, bundle, prompt_file, task['task_id'], judge)
     if parent_host in NATIVE_HOSTS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=native_next(parent_host, bundle, parent_address)), 0

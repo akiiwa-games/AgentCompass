@@ -1,30 +1,45 @@
 """Console script for the AgentCompass router.
 
-``setup`` and ``uninstall`` call ``setup/onboard.py``. ``plan`` and ``roll`` run
-``route_judge.py`` with ``python -I`` so the skill scripts stay real files on disk.
+``setup`` and ``uninstall`` call ``setup/onboard.py``. The routing stages (roll, plan, providers, record, ...) run
+``route_judge.py`` with ``python -I`` so the skill scripts stay real files on disk; ``usage`` runs the collector.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 
 from agentcompass import __version__
 from agentcompass import locations
 
-HELP = """\
-usage: agentcompass <command> [arguments]
+STAGES = ("roll", "plan", "providers", "score", "scorer", "delegate", "select", "record", "override", "dispatch", "launch")
 
-commands:
-  setup       first-run onboarding (setup/onboard.py setup_main)
-  uninstall   undo what setup changed (setup/onboard.py uninstall_main)
-  doctor      read-only report of Python, CLIs, accounts, cache, plugins, ports, and hooks
-  plan        pass the remaining arguments to route_judge.py plan
-  roll        pass the remaining arguments to route_judge.py roll
-  providers   pass the remaining arguments to route_judge.py providers
+RUNNERS = {"dot": ("dot-subagent", "run_dot_task.py"), "grok-bot": ("agent-compass", "run_grok_bot.py"),
+           "herdr": ("agent-compass", "host_herdr.py"),
+           "cindy": ("agent-compass", "host_cindy.py"),
+           "chatgpt-web": ("chatgpt-pro-consult", "consult_bridge.py")}
 
-The router is not frozen into an executable. Skills stay real directories.
+HELP = """usage: agentcompass <command> [arguments]
+
+delegate work:
+  roll        hand a task to the router: agentcompass roll --task "<what the worker should do>"   (--task - reads stdin, --brief <file> reads a file)
+  plan        rank the bundles for a task file without launching: plan --input <task.json> [--dry-run]  (offline demo: plan --demo --dry-run)
+  providers   refresh and print which accounts and CLIs this machine can launch
+  usage       collect provider usage once into the router's cache (no Usage Float needed); `usage --show` prints what routing reads
+  record      record a route the user forced (user-named model or effort)
+  override    add, list or clear a temporary routing boost
+
+install and health:
+  setup       first-run onboarding (--dry-run previews)
+  uninstall   undo what setup changed
+  doctor      read-only report of Python, CLIs, accounts, cache, plugins, ports and hooks
+
+other stages: score, scorer, delegate, select, dispatch, launch
+follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
+Cindy bridge: cindy build-plugin --output <new-directory>  (install through Cindy, then use its roll tool)
+Options of one command: agentcompass <command> -h   (every option: --help-all)
 """
 
 
@@ -59,6 +74,40 @@ def route_judge_command(stage: str, args: list[str]) -> list[str]:
     return [sys.executable, "-I", "-X", "utf8", str(script), stage, *args]
 
 
+USAGE_HELP = """usage: agentcompass usage [--show [--accounts KEY ...] [--usage-cache FILE]]
+
+Without --show: collect provider usage once into the router's cache (~/.agent-compass/usage-cache.json, or under
+ROUTER_STATE_DIR) for the accounts this machine's host policy allows, and print a receipt. Needs no Usage Float and no tray.
+
+--show              print what routing reads from the cache (read only, nothing is collected)
+--accounts KEY ...  with --show: only these accounts
+--usage-cache FILE  with --show: read only this file (also: ROUTER_USAGE_CACHE)
+"""
+
+
+def usage_command(args: list[str]) -> int:
+    """Run the headless usage collector once. It is the core's own collector; the Usage Float plugin is not involved."""
+    script = locations.skill_root() / "agent-compass" / "scripts" / "usage_collector.py"
+    if not script.is_file():
+        sys.stderr.write(f"usage_collector.py was not found ({script})\n")
+        return 2
+    if _has_option(args, "-h") or _has_option(args, "--help"):
+        sys.stdout.write(USAGE_HELP)
+        return 0
+    rest = [arg for arg in args if arg != "--once"]
+    return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), "--once", *rest])
+
+
+def runner_command(name: str, args: list[str]) -> int:
+    """Follow-up of an external runner (Dot, Grok Bot, ChatGPT web) that roll handed back; the caller never sees the script."""
+    folder, script = RUNNERS[name]
+    path = locations.skill_root() / folder / "scripts" / script
+    if not path.is_file():
+        sys.stderr.write(f"{name} is not part of this install ({path})\n")
+        return 2
+    return subprocess.call([sys.executable, "-I", "-X", "utf8", str(path), *args])
+
+
 def passthrough(stage: str, args: list[str]) -> int:
     try:
         command = route_judge_command(stage, args)
@@ -71,8 +120,8 @@ def passthrough(stage: str, args: list[str]) -> int:
 PLAN_NEEDS_TASK = """\
 plan needs a task. Pass one of:
   agentcompass plan --input <task.json> [--dry-run]
-  agentcompass roll --brief <task.md>
   agentcompass plan --demo --dry-run
+To hand a task to a worker, use roll instead: agentcompass roll --task "<text>"
 """
 
 
@@ -81,8 +130,8 @@ def _has_option(args: list[str], name: str) -> bool:
 
 
 def packaged_wording(message: str) -> str:
-    """A packaged install has no setup/onboard.py to run."""
-    return message.replace("`python -X utf8 setup/onboard.py` (or `agentcompass setup`)", "`agentcompass setup`")
+    """The skill script spells the checkout's own command; the console script is simply `agentcompass`."""
+    return re.sub(r"`python -X utf8 [^`]*? setup`", "`agentcompass setup`", message)
 
 
 def readiness_notice() -> str | None:
@@ -124,7 +173,7 @@ def readiness_notice() -> str | None:
 
 def plan_passthrough(args: list[str]) -> int:
     """Explain a missing task before route_judge turns it into a bare ValueError."""
-    if _has_option(args, "-h") or _has_option(args, "--help"):
+    if any(_has_option(args, name) for name in ("-h", "--help", "--help-all")):
         return passthrough("plan", args)
     if not _has_option(args, "--input") and not _has_option(args, "--demo"):
         sys.stdout.write(PLAN_NEEDS_TASK)
@@ -152,7 +201,11 @@ def main(argv: list[str] | None = None) -> int:
             return call_onboard(command, rest)
         if command == "plan":
             return plan_passthrough(rest)
-        if command in ("roll", "providers"):
+        if command == "usage" and "--show" not in rest:
+            return usage_command(rest)
+        if command in RUNNERS:
+            return runner_command(command, rest)
+        if command in STAGES or command == "usage":
             return passthrough(command, rest)
     except SystemExit as exc:
         code = exc.code

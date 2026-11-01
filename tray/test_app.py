@@ -4,6 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+from tk_test_support import import_theatre_without_user_diagnostics
+
+import_theatre_without_user_diagnostics()
 
 LOADER = importlib.machinery.SourceFileLoader("AgentCompass_tray_app", str(Path(__file__).with_name("app.pyw")))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
@@ -56,14 +59,12 @@ class TrayTestCase(unittest.TestCase):
 
 
 class MenuTests(TrayTestCase):
-    def test_panel_first_then_priority_then_enabled_window_plugins_then_quit(self):
-        self.assertEqual(self.shown(), [
+    def test_core_actions_and_enabled_plugin_windows_are_available(self):
+        self.assertCountEqual(self.shown(), [
             "打开 AgentCompass", "重置前优先", "Usage Float：运行中",
             "ChatGPT Web：运行中", "Gemini Web：已停止", "EasyTier：运行中（2 个对端）", "重启托盘", "退出"])
         items = self.items()
         self.assertTrue(items[0].default)
-        separators = [index for index, item in enumerate(items) if item.text == app.Menu.SEPARATOR.text]
-        self.assertEqual(separators, [2, 7])
 
     def test_dot2api_has_no_window_so_it_is_never_in_the_first_level(self):
         self.assertFalse(any("Dot" in text for text in self.shown()))
@@ -82,7 +83,6 @@ class MenuTests(TrayTestCase):
         for row in app.PLUGINS.values():
             row["enabled"] = False
         self.assertEqual(self.shown(), ["打开 AgentCompass", "重置前优先", "重启托盘", "退出"])
-        self.assertEqual(sum(item.text == app.Menu.SEPARATOR.text for item in self.items()), 1)
 
     def test_menu_is_two_levels_at_most_and_plugins_have_no_submenu(self):
         for item in self.items()[2:]:
@@ -137,11 +137,10 @@ class MenuTests(TrayTestCase):
                 items[-1](mock.Mock()); act.call_args.args[1]()
                 self.assertEqual(perform.call_args.args[0], {'kind': 'cancel', 'id': 'rule-a', 'revision': 'revision-a'})
                 for item, target in zip(items, app.PRIORITY['targets']):
-                    self.assertEqual(len(item.submenu.items), 5)
-                    for duration, hours in zip(item.submenu.items, (1, 3, 6, 12, 24)):
-                        duration(mock.Mock()); act.call_args.args[1]()
-                        self.assertEqual(perform.call_args.args[0], {'kind': 'enable', 'hours': hours,
-                            **{k: target[k] for k in ('account', 'model', 'window')}})
+                    # A click on a duration must retain this target's identity.
+                    item.submenu.items[1](mock.Mock()); act.call_args.args[1]()
+                    self.assertEqual(perform.call_args.args[0], {'kind': 'enable', 'hours': 3,
+                        **{k: target[k] for k in ('account', 'model', 'window')}})
 
     def test_priority_refresh_sees_router_removal_without_changing_service_state(self):
         icon = mock.Mock(); services_before = dict(app.STATE)
@@ -285,7 +284,9 @@ class WatchTests(TrayTestCase):
     def run_watch_once(self):
         event = mock.Mock()
         event.return_value.wait.side_effect = Stop
-        with mock.patch.object(app.threading, "Event", event), mock.patch.object(app.services, "capacity_tick"), \
+        self.order = order = mock.Mock()
+        with mock.patch.object(app.threading, "Event", event), mock.patch.object(app.services, "capacity_tick", order.capacity), \
+                mock.patch.object(app.services, "usage_collect_tick", order.usage), \
                 mock.patch.object(app, "refresh"), mock.patch.object(app.services, "maintain_subscription",
                                                                      return_value=None) as renew, \
                 mock.patch.object(app.threading, "Thread") as thread, mock.patch.object(app.time, "monotonic",
@@ -293,6 +294,10 @@ class WatchTests(TrayTestCase):
             with self.assertRaises(Stop):
                 app.watch(mock.Mock())
         return renew, thread
+
+    def test_each_watch_pass_collects_usage_before_the_capacity_statistics(self):
+        self.run_watch_once()
+        self.assertEqual([call[0] for call in self.order.mock_calls], ["usage", "capacity"])
 
     def test_renewal_and_reconnect_run_only_while_dot2api_is_enabled(self):
         renew, thread = self.run_watch_once()

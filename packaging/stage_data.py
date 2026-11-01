@@ -51,13 +51,17 @@ def tracked_files(root: Path, subdir: str) -> set[Path] | None:
 
 
 def _candidates(src: Path) -> list[Path]:
-    """Source files below ``src``: the tracked ones in a checkout, every file in an sdist."""
+    """Runtime sources: tracked in a checkout, carried sources in an sdist; no development tests."""
     src = Path(src)
     root = src.parent
     tracked = tracked_files(root, src.name)
     if tracked is None:
-        return [path for path in sorted(src.rglob("*")) if path.is_file()]
-    return [root / name for name in sorted(tracked) if (root / name).is_file()]
+        candidates = sorted(src.rglob("*"))
+    else:
+        candidates = [root / name for name in sorted(tracked)]
+    return [path for path in candidates if path.is_file()
+            and not path.name.startswith("test_")
+            and path.name not in {"conftest.py", "router_test_support.py"}]
 
 
 def copy_skills(src: Path, dest: Path) -> None:

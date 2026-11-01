@@ -91,12 +91,21 @@ class CliUpdateCase(unittest.TestCase):
         script.write_text(FAKE_NPM)
         (self.bin / "npm.cmd").write_text(f'@"{sys.executable}" "{script}" %*\r\n')
         (self.state / "latest.txt").write_text("0.2.0")
-        self.environ = {**os.environ, "PATH": os.pathsep.join([str(self.prefix), str(self.bin), os.environ["SystemRoot"] + "\\System32"]),
-                        "FAKE_NPM_STATE": str(self.state), "LOCALAPPDATA": str(self.root / "local")}
-        self.environ.pop("PASEO_HOME", None)    # the host's own Paseo config must not leak into the fixture
-        patcher = mock.patch.dict(os.environ, {"ROUTER_STATE_DIR": str(self.root / "state")})
+        self.environ = {key: value for key, value in os.environ.items()
+                        if key.upper() in ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP")}
+        self.environ.update(PATH=os.pathsep.join([str(self.prefix), str(self.bin), os.environ["SystemRoot"] + "\\System32"]),
+                            FAKE_NPM_STATE=str(self.state), LOCALAPPDATA=str(self.root / "local"),
+                            HOME=str(self.home), USERPROFILE=str(self.home))
+        # The updater shares the router's real file lock. Supply that dependency
+        # explicitly; never rely on a developer's home-installed skill.
+        codex_home = Path(__file__).resolve().parents[1]
+        patcher = mock.patch.dict(os.environ, {"ROUTER_STATE_DIR": str(self.root / "state"),
+                                             "CODEX_HOME": str(codex_home)})
         patcher.start()
         self.addCleanup(patcher.stop)
+        # External process inventory is part of the fixture, not the developer's
+        # live sessions. The process-matching test supplies its own rows below.
+        self.enterContext(mock.patch("psutil.process_iter", return_value=[]))
         for table in (cli_updates._busy, cli_updates._latest):
             table.clear()
         self.addCleanup(self.reap)
