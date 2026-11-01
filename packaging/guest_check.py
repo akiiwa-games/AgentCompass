@@ -663,7 +663,21 @@ def g_gui_tray():
     section("packaged tray, run from the staged folder")
     check("the staged frozen tray exists", exe.is_file(), exe)
     if exe.is_file():
-        gui_session(exe, "frozen")
+        state = HOME / ".agent-compass"
+        state.mkdir(parents=True, exist_ok=True)
+        flag, trace = state / "theatre-trace.on", state / "theatre-trace.log"
+        flag.touch()
+        try:
+            gui_session(exe, "frozen")
+            text = trace.read_text(encoding="utf-8") if trace.is_file() else ""
+            # Dashboard.close withdraws the window and exits; it does not destroy each canvas.
+            # gui_session separately verifies that closing ends the window process.
+            check("opt-in frozen diagnostics recorded real rendering and stop transitions",
+                  all(event in text for event in ("play#", "draw#", "stop#")) and "EXC" not in text)
+            if trace.is_file():
+                shutil.copy2(trace, OUT / "frozen-theatre-trace.log")
+        finally:
+            flag.unlink(missing_ok=True)
 
 
 def schtasks_xml(name):

@@ -1,4 +1,4 @@
-"""Pure scene/render tests and a fake-clock lifecycle; no root/window is created."""
+"""Scene/render contracts, lifecycle, and opt-in diagnostics on a hidden real Tk canvas."""
 import copy
 import math
 import importlib.util
@@ -30,6 +30,47 @@ def result():
     return dict(task=dict(objective='# A real task\nprivate body',work_kind='research'),choice='a',
                 ranking=[candidate('excluded','blocked',99,['offline']),candidate('b','beta',.6),
                          candidate('a','alpha',.9),candidate('a2','alpha',.8)])
+
+
+@pytest.mark.parametrize('diagnostics', ['off', 'on', 'unwritable'])
+def test_optional_trace_preserves_render_skip_errors_and_close(tmp_path, monkeypatch, diagnostics):
+    from tk_test_support import shared_tk_root, reset_tk_root
+    state = tmp_path / '.agent-compass'
+    state.mkdir()
+    log = state / 'theatre-trace.log'
+    if diagnostics != 'off':
+        (state / 'theatre-trace.on').touch()
+    if diagnostics == 'unwritable':
+        log.mkdir()  # A real inaccessible log destination, not a mocked successful logger.
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))
+    spec = importlib.util.spec_from_file_location('_theatre_trace_subject', Path(dt.__file__))
+    subject = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, subject)
+    spec.loader.exec_module(subject)
+    root = shared_tk_root()
+    theatre = subject.DecisionTheatre(root)
+    try:
+        theatre.play(result(), animate=False)
+        theatre.draw()
+        assert theatre.photo is not None and theatre.scene.winner.id == 'a'
+        assert theatre.skip() == 'break'
+        assert not theatre.running and not theatre.pending and theatre.after_id is None
+        failure = RuntimeError('renderer failure remains visible')
+        with patch.object(theatre.renderer, 'frame', side_effect=failure):
+            with pytest.raises(RuntimeError) as caught:
+                theatre.draw()
+        assert caught.value is failure
+        theatre.canvas.destroy()
+        assert theatre.dead and theatre.photo is None and theatre.after_id is None
+        if diagnostics == 'on':
+            text = log.read_text(encoding='utf-8')
+            assert 'play#' in text and 'draw#' in text and 'destroy#' in text
+            assert 'EXC' in text and 'renderer failure remains visible' in text
+        elif diagnostics == 'off':
+            assert not log.exists()
+    finally:
+        reset_tk_root(root)
 
 
 def test_scene_preserves_real_choice_scores_and_deduplicates_models():

@@ -1059,3 +1059,41 @@ class DecisionTheatre:
         self.stop()
         self.draw()
         return "break"
+
+
+# Opt-in first-open diagnostics: create ~/.agent-compass/theatre-trace.on before launch.
+def _install_trace():
+    import os, traceback
+    flag = os.path.expanduser("~/.agent-compass/theatre-trace.on")
+    if not os.path.exists(flag):
+        return
+    out = os.path.expanduser("~/.agent-compass/theatre-trace.log")
+    t0 = time.perf_counter()
+    counts = {}
+
+    def note(text):
+        try:
+            with open(out, "a", encoding="utf-8") as f:
+                f.write(f"{time.perf_counter()-t0:8.3f} {text}\n")
+        except OSError:
+            pass  # Optional diagnostics must not prevent the window from opening.
+    note(f"--- pid {os.getpid()} {time.strftime('%H:%M:%S')}")
+    for name in ("play", "start", "stop", "skip", "mapped", "configure", "tick", "draw", "escape", "destroy"):
+        orig = getattr(DecisionTheatre, name)
+
+        def wrap(self, *a, _o=orig, _n=name, **k):
+            counts[_n] = counts.get(_n, 0) + 1
+            if _n not in ("tick", "draw") or counts[_n] <= 4 or counts[_n] % 50 == 0:
+                c = self.canvas
+                caller = " < ".join(f"{f.name}:{f.lineno}" for f in traceback.extract_stack()[-5:-1])
+                note(f"{_n}#{counts[_n]} mapped={c.winfo_ismapped()} vis={c.winfo_viewable()} size={c.winfo_width()}x{c.winfo_height()} "
+                     f"running={self.running} pending={self.pending} elapsed={self.elapsed:.2f} ev={getattr(a[0],'type','') if a else ''} [{caller}]")
+            try:
+                return _o(self, *a, **k)
+            except Exception:
+                note("EXC " + traceback.format_exc())
+                raise
+        setattr(DecisionTheatre, name, wrap)
+
+
+_install_trace()
