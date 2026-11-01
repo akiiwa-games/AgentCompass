@@ -5,6 +5,12 @@ description: Choose owner, model and effort, outbound authorization, advisor use
 
 # AgentCompass
 
+## Execution ownership
+
+The main session executes serial work directly by default, including ordinary investigation, edits and verification. Duration, tool-call count and reading multiple files are not reasons to delegate. Delegate when independent work benefits from parallelism, isolation of a large context, a specialist capability or quota offloading. Continue related work with the existing worker while available and within its context limit. If routing itself is broken, diagnose and repair it directly. A delegated worker (`ROUTER_WORKER=1` or a `Parent session agent ID:` contract) executes its assignment without further delegation unless explicitly appointed coordinator.
+
+## Dispatch
+
 To delegate work to a subagent, worker or advisor, run one command; the router picks the model, launches the worker and returns what to do next:
 
 ```bash
@@ -15,7 +21,7 @@ Long or multi-line assignments: `--task -` reads stdin, `--brief <file>` reads a
 
 `agentcompass` is the only entry and works from any directory; do not run files under `scripts/`. Installed package (`uv tool install` / `pip install`): type it as shown. Source checkout without an install: `python -X utf8 <checkout>/agentcompass roll ...` (the same arguments; your global agent rules spell the absolute path). `agentcompass -h` lists the commands, `agentcompass <command> -h` shows the options of one.
 
-Decide by task shape, not duration: single-thread work (one deliverable, each step depends on the last, the user may redirect) stays with you even if it takes 10 to 30 minutes; delegate parallel independent work, context-heavy work where only the conclusion matters, clearly long-horizon work, or work that needs another model or account's quota. A delegated worker never delegates again. Read `status` in the result and do exactly `next_action`: `launched` = start nothing else (`next_action` says how the result arrives), `pending` = run `next_argv`, never roll again, `self` / `native` / `blocked` / `error` = follow `next_action`. The full result is at `details` (or print it with `--verbose`).
+Read `status` in the result and do exactly `next_action`: `launched` = start nothing else (`next_action` says how the result arrives), `pending` = run `next_argv`, never roll again, `self` / `native` / `blocked` / `error` = follow `next_action`. The full result is at `details` (or print it with `--verbose`).
 
 Optional, only when true (`agentcompass roll -h`): `--hours <n>`, `--local-only "<dependency>"`, `--file <path>`, `--fast`, and for a user-named model `--provider/--account/--model/--effort --basis "<user quote>"`.
 

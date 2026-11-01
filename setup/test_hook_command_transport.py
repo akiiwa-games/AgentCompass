@@ -30,6 +30,10 @@ class HookCommandTransportTests(unittest.TestCase):
             source.mkdir()
             for name in ('sync_host_globals.py','router_gate_hook.py','host_rules.py'):
                 shutil.copy2(setup/name,source/name)
+            # The generator reads the shared execution policy from the shipped skill.
+            skill=root/'skills/agent-compass'
+            skill.mkdir(parents=True)
+            shutil.copy2(setup.parent/'skills/agent-compass/SKILL.md',skill/'SKILL.md')
             home=root/'test home'
             (home/'.claude').mkdir(parents=True)
             env={key:value for key,value in os.environ.items() if key in ('SYSTEMROOT','WINDIR','TEMP','TMP','PATHEXT')}
