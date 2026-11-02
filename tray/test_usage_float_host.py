@@ -1,3 +1,7 @@
+import json
+import os
+from pathlib import Path
+import tempfile
 import threading
 import time
 import unittest
@@ -83,6 +87,101 @@ class HostTests(unittest.TestCase):
             self.assertFalse(host.is_autostart_enabled())
             self.assertTrue(applied.wait(timeout=1.0))
             remove_mock.assert_called_once()
+
+
+class ControlRecoveryTests(unittest.TestCase):
+    class Root:
+        def __init__(self):
+            self.callbacks = []
+            self.alive = True
+
+        def winfo_exists(self):
+            return self.alive
+
+        def after(self, delay, callback):
+            self.callbacks.append(callback)
+
+        def tick(self):
+            self.callbacks.pop(0)()
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        patcher = mock.patch.object(host.local_controls, "DIRECTORY", Path(temporary.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.root = self.Root()
+        self.scope = HostTests().scope()
+
+    def attach(self):
+        server = host.attach(self.root, self.scope)
+        self.addCleanup(server.close)
+        return server
+
+    @unittest.skipUnless(os.name == "nt", "Windows readers deny file replacement")
+    def test_windows_reader_conflict_preserves_snapshot_and_commands_recover(self):
+        server = self.attach()
+        path = server.directory / "menu.json"
+        original = path.read_bytes()
+        self.scope["state"]["refreshing"] = True
+        with path.open("rb"), self.assertLogs(host.__name__, level="ERROR") as logs:
+            self.root.tick()
+            self.root.tick()
+        self.assertEqual(len(logs.records), 1)
+        self.assertIsInstance(logs.records[0].exc_info[1], PermissionError)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(len(self.root.callbacks), 1)
+
+        request = server.directory / "recover.request.json"
+        host.local_controls.write_json(request, {
+            "instance": server.instance, "action": "refresh", "expires": time.time() + 10,
+        })
+        self.root.tick()
+        snapshot = host.local_controls.read_snapshot("usage-float")
+        refresh = next(item for item in snapshot["items"] if item.get("id") == "refresh")
+        self.assertFalse(refresh["enabled"])
+        self.scope["refresh_async"].assert_called_once_with(force=True)
+        self.assertTrue(json.loads((server.directory / "recover.response.json").read_text())["ok"])
+        self.assertEqual(len(self.root.callbacks), 1)
+
+    def test_first_publish_failure_retries_without_aborting_ui_start(self):
+        with mock.patch.object(host.local_controls, "write_json", side_effect=PermissionError("busy")), \
+                self.assertLogs(host.__name__, level="ERROR"):
+            server = self.attach()
+        self.assertFalse((server.directory / "menu.json").exists())
+        self.root.tick()
+        self.assertEqual(host.local_controls.read_snapshot("usage-float")["instance"], server.instance)
+
+    def test_request_poll_failure_retries_and_logs_again_after_recovery(self):
+        server = self.attach()
+        for _ in range(2):
+            with mock.patch.object(server, "poll", side_effect=OSError("busy")), \
+                    self.assertLogs(host.__name__, level="ERROR") as logs:
+                self.root.tick()
+                self.root.tick()
+            self.assertEqual(len(logs.records), 1)
+            self.assertIsNotNone(host.local_controls.read_snapshot("usage-float"))
+            self.root.tick()
+            self.assertEqual(len(self.root.callbacks), 1)
+
+    def test_quit_cleans_snapshot_and_does_not_schedule_more_callbacks(self):
+        server = self.attach()
+        self.scope["do_quit"].side_effect = lambda: setattr(self.root, "alive", False)
+        host.local_controls.write_json(server.directory / "quit.request.json", {
+            "instance": server.instance, "action": "quit", "expires": time.time() + 10,
+        })
+        self.root.tick()
+        self.assertFalse((server.directory / "menu.json").exists())
+        self.assertEqual(self.root.callbacks, [])
+
+    def test_destroyed_tk_interpreter_stops_retries(self):
+        from tkinter import TclError
+        server = self.attach()
+        with mock.patch.object(self.root, "winfo_exists", side_effect=TclError("destroyed")), \
+                self.assertLogs(host.__name__, level="ERROR"):
+            self.root.tick()
+        self.assertFalse((server.directory / "menu.json").exists())
+        self.assertEqual(self.root.callbacks, [])
 
 
 class SharedCacheTests(unittest.TestCase):

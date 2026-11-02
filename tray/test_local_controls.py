@@ -94,6 +94,13 @@ class ControlsTests(unittest.TestCase):
             server.publish([], {})
         write.assert_not_called()
 
+    def test_missing_snapshot_is_restored_even_when_menu_is_unchanged(self):
+        server = self.server()
+        server.publish([], {})
+        (server.directory / "menu.json").unlink()
+        server.publish([], {})
+        self.assertEqual(controls.read_snapshot("usage-float")["instance"], server.instance)
+
 
 class ComponentLifecycleTests(unittest.TestCase):
     def test_component_action_during_update_does_not_launch_or_send_commands(self):

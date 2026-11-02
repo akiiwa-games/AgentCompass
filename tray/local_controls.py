@@ -85,9 +85,10 @@ class ControlServer:
     def publish(self, items: list[dict], actions: dict) -> None:
         self.actions = actions
         key = json.dumps(items, ensure_ascii=False, sort_keys=True)
-        if key == self.key:
+        path = self.directory / "menu.json"
+        if key == self.key and path.is_file():
             return
-        write_json(self.directory / "menu.json", {"pid": os.getpid(), "started": self.started,
+        write_json(path, {"pid": os.getpid(), "started": self.started,
                    "instance": self.instance, "items": items})
         self.key = key
 

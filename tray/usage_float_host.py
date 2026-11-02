@@ -1,5 +1,6 @@
 """Host the original Usage Float event loop; leave its Git working tree untouched."""
 from pathlib import Path
+import logging
 import os
 import sys
 import threading
@@ -116,6 +117,8 @@ def share_cache(native) -> Path | None:
 
 
 def attach(root, scope):
+    from tkinter import TclError
+
     required = ("state", "refresh_async", "request_open_settings", "toggle_panel_mode",
                 "toggle_topmost", "do_quit", "set_wallpaper_active", "stack_text_above_plate")
     missing = [name for name in required if name not in scope]
@@ -151,17 +154,34 @@ def attach(root, scope):
             "wallpaper": lambda: scope["set_wallpaper_active"](not state.get("wallpaper_active")),
             "topmost": scope["toggle_topmost"], "quit": scope["do_quit"]})
 
+    error_reported = False
+
     def poll():
-        server.poll()
+        nonlocal error_reported
         try:
+            server.poll()
             if root.winfo_exists():
                 publish()
-                root.after(200, poll)
         except Exception:
-            server.close()
+            # A Windows reader can briefly prevent replacing menu.json. Keep the
+            # existing snapshot and retry on the UI loop instead of disconnecting
+            # a healthy window. Log once per failure streak, including traceback.
+            if not error_reported:
+                logging.getLogger(__name__).exception("Usage Float control update failed; retrying")
+                error_reported = True
+        else:
+            error_reported = False
+        finally:
+            try:
+                if root.winfo_exists():
+                    root.after(200, poll)
+                else:
+                    server.close()
+            except TclError:
+                # The quit action can destroy Tk while this callback is running.
+                server.close()
 
-    publish()
-    root.after(200, poll)
+    poll()
     return server
 
 
