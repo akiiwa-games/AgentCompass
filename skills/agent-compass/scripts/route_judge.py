@@ -1,6 +1,7 @@
 """Read local subscription usage and obtain bounded low-effort routing judgments."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 from datetime import datetime, timedelta, timezone
 import json
@@ -8,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import threading
 
 # Also support the path-loaded allocator and python -I entrypoints.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -680,6 +682,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
         'needs_user_decision': decision.get('needs_user_decision') or None,
         'router_choice': result.get('router_choice'), 'agrees': result.get('agrees'),
         **({'classifier_skipped': result['classifier_skipped']} if 'classifier_skipped' in result else {}),
+        **({'keep_whole': kept['reason'], 'task_count': kept.get('task_count')}
+           if (kept := next((a for a in alerts if a.get('code') == 'kept_whole'), None)) else {}),
         'objective': objective[:200] if isinstance(objective, str) else None,
         'reason': (result.get('reason') or result.get('error') or '')[:600] or None,
         'payload_bytes': len(json.dumps(payload, ensure_ascii=False).encode()) if payload else None,
@@ -1222,6 +1226,11 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
         questions[name] = {'type': 'score', 'instructions': instructions, 'criteria': list(criteria)}
     for name, instructions in JEV_NOUL_QUESTIONS.items():
         questions[name] = {'type': 'noul', 'instructions': instructions}
+    allocator = load_allocator()
+    questions['multi_task'] = {'type': 'noul', 'instructions': allocator.MULTI_TASK_QUESTION}
+    questions['task_count'] = {'type': 'choice', 'instructions': allocator.TASK_COUNT_QUESTION,
+                               'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
+                                            '>3': 'More than three separate tasks.'}}
     return {'model': model or JEV_DEFAULT_MODEL,
             'state': {'task': scorer_task_fields(task), 'rubric_notes': load_classifier_cases().get('dimension_rubric') or {}},
             'questions': questions}
@@ -1266,6 +1275,15 @@ def parse_jev_response(response, allocator):
     profile['reason'] = (f"Jev ({response.get('model') or JEV_DEFAULT_MODEL}) classified as {profile['work_kind']} "
                          f"(D{profile['reasoning_depth']} C{profile['code_complexity']} S{profile['context_scale']} "
                          f"V{profile['divergence']})")
+    # Optional like the effort band: a Jev answer without them leaves the brief unsplit.
+    multi = answers.get('multi_task')
+    multi = multi.get('noul') if isinstance(multi, dict) else multi
+    if isinstance(multi, (int, float)) and not isinstance(multi, bool) and math.isfinite(multi):
+        profile['multi_task'] = float(multi) >= 0.5
+    count = answers.get('task_count')
+    count = count.get('choice') if isinstance(count, dict) else count
+    if count in allocator.TASK_COUNTS:
+        profile['task_count'] = count
     return allocator.validate_profile(profile)
 
 
@@ -1404,7 +1422,8 @@ def run_scorer(scorer_type, task, allocator, capabilities, timeout, config):
 SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, KeyError, IndexError)
 
 
-SCORE_CACHE_VERSION = 3  # 3: Jev also answers the effort band and urgency; the classifier sees the whole task text
+SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
+SCORE_CACHE_VERSION = 6  # 6: the classifier also answers multi_task and task_count
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 
@@ -1454,7 +1473,12 @@ def score_cache_get(key):
 
 
 def score_cache_put(key, profile, meta):
-    """Best-effort: read-modify-write then atomic replace; a lost race only drops one entry."""
+    """Best-effort: read-modify-write then atomic replace; a lost race between processes only drops one entry."""
+    with SCORE_CACHE_LOCK:
+        _score_cache_put(key, profile, meta)
+
+
+def _score_cache_put(key, profile, meta):
     try:
         entries = _score_cache_read()
         now = time.time()
@@ -1526,6 +1550,21 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         if attempts[0].get('detail'):
             meta['fallback_detail'] = attempts[0]['detail']
     return allocator.infer_task_profile(task, capabilities), meta
+
+
+def prefetch_scores(tasks, timeout=SCORER_TIMEOUT_SECONDS):
+    """Classify several tasks at the same time so a batch roll waits for one scorer round, not one per brief. Results
+    land in the score cache that each roll then reads; a failure here is left for that roll to meet and report."""
+    allocator = load_allocator()
+    capabilities = allocator.load_capabilities()
+
+    def one(task):
+        try:
+            score_task(task, allocator, capabilities, timeout)
+        except Exception:       # noqa: BLE001 - the roll that follows classifies again and reports the real error
+            pass
+    with ThreadPoolExecutor(max_workers=max(1, min(len(tasks), 6))) as pool:
+        list(pool.map(one, tasks))
 
 
 SCORER_TEST_OBJECTIVE = ('In tray/deploy.py change the default retry count constant from 3 to 5 and update the one unit '
@@ -2100,6 +2139,30 @@ def apply_readiness_gap(planned, accounts, usage):
         planned['next'] = ONBOARD_HINT
 
 
+SPLIT_NEXT = ('The classifier reads this brief as {n} separate tasks (task_count); nothing was allocated or launched. You '
+              'are the coordinator: split it yourself, do the tasks coupled to this conversation yourself, write one '
+              'brief per independent task and roll them together (--brief a.md --brief b.md), and start a task that '
+              'needs another\'s result after that result returns. If it truly is one assignment, roll it again with '
+              '--keep-whole "<why>".')
+
+
+def split_result(task, count, scorer, started):
+    """No allocation for a brief that bundles separate tasks: the parent splits it. Logged under stage `split`, which
+    authorizes no launch."""
+    result = {'stage': 'split', 'choice': 'split', 'task_count': count, 'task_profile': task.get('profile'),
+              'scorer': scorer, 'reason': (task.get('profile') or {}).get('reason') or None,
+              'next': SPLIT_NEXT.format(n=count)}
+    objective = task.get('objective')
+    append_ledger({'v': 1, 'at': datetime.now(timezone.utc).isoformat(), 'stage': 'split', 'choice': 'split',
+                   **({'task_id': task['task_id']} if task.get('task_id') else {}),
+                   **({'parent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {}),
+                   'kind': task.get('work_kind'), 'task_count': count,
+                   **({'scorer': scorer.get('source')} if isinstance(scorer, dict) else {}),
+                   'objective': objective[:200] if isinstance(objective, str) else None,
+                   'duration_ms': int((time.monotonic() - started) * 1000)})
+    return result
+
+
 def plan_stage(document, args):
     """Classify, allocate and record one task; shared by the plan and roll stages."""
     task = document.get('task')
@@ -2177,6 +2240,16 @@ def plan_stage(document, args):
                 task['expected_hours'] = profile['expected_hours']
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
                                   'confidence': profile.get('hours_confidence', 'unknown')}
+    task_profile = task.get('profile') or {}
+    if task_profile.get('multi_task') is True:
+        count = task_profile.get('task_count') or '>1'
+        keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
+        if not keep_whole:
+            return split_result(task, count, scorer, started), 2
+        extra_alerts.append({'code': 'kept_whole', 'severity': 'info', 'account': None, 'reason': keep_whole[:300],
+                             'task_count': count,
+                             'message': f'The classifier found {count} separate tasks; the caller kept them as one '
+                                        'assignment: ' + keep_whole[:300]})
     kind = allocator.task_kind(task, capabilities, policy)
     if needs.get('local_only') and not profile_local_only_applied and not valid_local_only_reason(needs, kind, task):
         needs['local_only'] = False
@@ -2265,11 +2338,12 @@ def main():
     parser.add_argument('stage', nargs='?', choices=tuple(stage_help.STAGES))
     parser.add_argument('-h', '--help', action='store_true', help='Show the options of this stage.')
     parser.add_argument('--help-all', action='store_true', help='Show every option the script accepts.')
-    parser.add_argument('--brief', type=Path, help='roll: a Markdown task file (use instead of --task). It is classified and sent to the worker unchanged.')
+    parser.add_argument('--brief', type=Path, action='append', help='roll: a Markdown task file (use instead of --task). It is classified and sent to the worker unchanged. Repeat it to roll several one-line briefs: they are classified at the same time, then routed and launched one after another.')
     parser.add_argument('--task', help='roll: the task as inline text, or - to read it from stdin (any length, kept whole); use instead of --brief. --hours is then optional.')
     parser.add_argument('--file', type=Path, action='append', default=[], help='roll: a file Dot needs (repeatable); ignored by local workers.')
     parser.add_argument('--apply-to', type=Path, help='roll: where returned Dot files land (default: cwd, only with --file).')
     parser.add_argument('--local-only', metavar='REASON', help='roll: keep the work on this machine, with the concrete local dependency.')
+    parser.add_argument('--keep-whole', metavar='REASON', help='roll/plan: send a brief the classifier split into several lines of work to one worker anyway, with the concrete reason.')
     parser.add_argument('--hours', type=float, help='roll/plan: expected active worker-hours (positive number). Optional: when omitted, the classifier estimates it and says so under assumptions.')
     parser.add_argument('--fast', action='store_true', help='roll/plan/record: prefer fast mode when quota is plentiful or during a pre-reset sprint.')
     parser.add_argument('--verbose', action='store_true', help='roll: print the full result instead of the short one (status, next_action, pointers). The full result is saved to disk either way.')
@@ -2373,11 +2447,16 @@ def main():
             print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
             return 0
         if args.stage == 'roll':
-            if (args.brief is None) == (args.task is None):
+            briefs = args.brief or []
+            if bool(briefs) == (args.task is not None):
                 raise ValueError('roll requires exactly one of --task "<text>" (or --task - for stdin) or --brief <task.md>.')
             if not 0 <= args.wait <= 7200:
                 raise ValueError('--wait must be 0..7200 seconds.')
-            result, code = roll.run(args, sys.modules[__name__])
+            if len(briefs) > 1:
+                result, code = roll.run_batch(args, sys.modules[__name__])
+            else:
+                args.brief = briefs[0] if briefs else None
+                result, code = roll.run(args, sys.modules[__name__])
         elif args.stage in ('dispatch', 'launch'):
             if args.dry_run:
                 raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')

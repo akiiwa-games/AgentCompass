@@ -47,20 +47,45 @@ class RoutingTests(unittest.TestCase):
         return {'provider': provider, 'account': account, 'model': 'runtime-verified-model',
                 'effort': 'high', 'quality_fit': 'Supports the required code review', **extra}
 
-    def run_plan(self, directory, task, down=None, unavailable=(), records=()):
+    def run_plan(self, directory, task, down=None, unavailable=(), records=(), extra=()):
         source = Path(directory) / 'in.json'
         task_with_hours = {'expected_hours': 0.5, **task}
         source.write_text(json.dumps({'task': task_with_hours, 'unavailable': list(unavailable)}), encoding='utf-8')
         cache = self.write_cache(directory, {})
         out = io.StringIO()
         with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--input', str(source),
-                                        '--usage-cache', str(cache)]), \
+                                        '--usage-cache', str(cache), *extra]), \
                 patch.object(router, 'dot_unreachable', return_value=down) as probe, \
                 patch.object(router, 'read_ledger', return_value=list(records)), \
                 patch.object(router, 'LEDGER_WRITES', True), \
                 contextlib.redirect_stdout(out):
             router.main()
         return json.loads(out.getvalue()), probe
+
+    def test_a_multi_task_brief_returns_to_the_parent_unless_kept_whole(self):
+        profile = dict(GUI_PROFILE, needs_gui=False, needs_visual=False, local_only=False, multi_task=True, task_count='3')
+        task = {'objective': 'Phase 1: collect references, compare engines, design the loop', 'auto_score': True,
+                'profile': profile}
+        with tempfile.TemporaryDirectory() as directory:
+            split, _ = self.run_plan(directory, task)
+            whole, _ = self.run_plan(directory, task, extra=('--keep-whole', 'appointed coordinator of the whole phase'))
+            single, _ = self.run_plan(directory, dict(task, profile=dict(profile, multi_task=False, task_count='1')))
+        self.assertEqual((split['choice'], split['task_count']), ('split', '3'))
+        self.assertIn('--keep-whole', split['next'])
+        self.assertNotIn('selected_bundle', split)
+        self.assertNotEqual(whole['choice'], 'split')
+        self.assertIn('kept_whole', [a['code'] for a in whole['alerts']])
+        self.assertNotEqual(single['choice'], 'split')
+
+    def test_multi_task_fields_are_optional_and_checked(self):
+        allocator = router.load_allocator()
+        self.assertEqual({k: v for k, v in allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count='>3')).items()
+                          if k in ('multi_task', 'task_count')}, {'multi_task': True, 'task_count': '>3'})
+        odd = allocator.validate_profile(dict(GUI_PROFILE, multi_task='yes', task_count='5'))
+        self.assertFalse({'multi_task', 'task_count'} & set(odd))
+        marks = allocator.infer_task_profile({'objective': '### 交付物 1' + chr(10) + 'a' + chr(10) + '### 交付物 2' + chr(10) + 'b' + chr(10) + '### 交付物 3'},
+                                             allocator.load_capabilities())
+        self.assertEqual((marks['multi_task'], marks['task_count']), (True, '3'))
 
     def test_usage_snapshot_discovery_freshness_projection_and_window_math(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -458,6 +483,31 @@ class ScoreCacheTests(unittest.TestCase):
         self.score('Other task', stdout='garbage')
         self.assertEqual(self.calls, 5)
 
+    def test_prefetch_classifies_tasks_concurrently_and_every_result_reaches_the_cache(self):
+        import threading
+        running, peak, lock = [0], [0], threading.Lock()
+
+        def run(command, cwd, prompt=None, timeout=120, account=None):
+            with lock:
+                running[0] += 1
+                peak[0] = max(peak[0], running[0])
+            time.sleep(0.05)
+            with lock:
+                running[0] -= 1
+                self.calls += 1
+            return 0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''
+        tasks = [{'objective': f'Fix bug {n}'} for n in range(4)]
+        with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run), \
+                patch.object(router, 'load_scorer_config', return_value={}), \
+                patch.object(router, 'load_allocator', return_value=self.allocator), \
+                patch.object(self.allocator, 'load_capabilities', return_value=self.capabilities):
+            router.prefetch_scores(tasks)
+        self.assertEqual(self.calls, 4)
+        self.assertGreater(peak[0], 1)
+        for n in range(4):
+            self.assertTrue(self.score(f'Fix bug {n}')[1].get('cached'))
+        self.assertEqual(self.calls, 4)
+
     def test_cache_holds_only_the_classification_never_routing_state_or_keys(self):
         self.score(config={'scorer_type': 'jev', 'jev_api_key': 'secret-key-123', 'fallback_to_agy': True})
         self.score()
@@ -831,6 +881,17 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual((view['jev']['api_key'], view['jev']['key_source']), ('test…0000', 'file'))
         self.assertNotIn(SECRET, json.dumps(view))
 
+    def test_jev_reads_the_whole_brief_and_answers_multi_task_and_task_count(self):
+        objective = 'Two things: (1) fix the parser crash; (2) translate the README into Japanese.'
+        request = router.build_jev_request({'objective': objective}, self.capabilities)
+        self.assertEqual(request['state']['task'], {'objective': objective})
+        questions = request['questions']
+        self.assertEqual((questions['multi_task']['type'], questions['task_count']['type']), ('noul', 'choice'))
+        self.assertEqual(list(questions['task_count']['criteria']), ['1', '2', '3', '>3'])
+        answers = {**JEV_RESPONSE['answers'], 'multi_task': {'noul': 0.91}, 'task_count': {'choice': '2'}}
+        profile = router.parse_jev_response({'answers': answers}, self.allocator)
+        self.assertEqual((profile['multi_task'], profile['task_count']), (True, '2'))
+
     def test_jev_request_matches_typesafe_systemone_contract(self):
         request = router.build_jev_request(self.task, self.capabilities)
         self.assertEqual((request['model'], set(request['state'])), ('jev-latest', {'task', 'rubric_notes'}))
@@ -839,7 +900,7 @@ class SelectableScorerTests(unittest.TestCase):
         questions = request['questions']
         self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'context_scale',
                                           'divergence', 'hallucination_risk', 'error_cost', 'needs_visual', 'needs_gui', 'local_only',
-                                          'effort_band', 'urgency'})
+                                          'effort_band', 'urgency', 'multi_task', 'task_count'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))

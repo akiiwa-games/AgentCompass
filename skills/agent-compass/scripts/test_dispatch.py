@@ -793,6 +793,45 @@ class RollTests(unittest.TestCase):
         failed = roll_module.compact({'route': route, 'launched': False, 'error': 'upstream said no'}, 'error', 'd')
         self.assertEqual(failed['cause'], 'upstream said no')
 
+    def test_several_briefs_are_classified_together_then_routed_one_after_another(self):
+        import argparse
+        import roll
+        briefs = []
+        for n in (1, 2):
+            path = self.root / f'line{n}.md'
+            path.write_text(f'# Line {n}')
+            briefs.append(path)
+        order, prefetched = [], []
+
+        def plan_stage(document, _):
+            order.append(document['task']['objective'])
+            return dict(stage='plan', choice='self', selected_bundle={}, decision={'action': 'self'}), 0
+        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
+                                   'prefetch_scores': staticmethod(lambda tasks, timeout: prefetched.append(
+                                       [t['objective'] for t in tasks]))})
+        args = argparse.Namespace(brief=briefs, task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
+                                  hours=None, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                                  parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                                  effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                                  score_timeout=30)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), patch.object(roll, 'RESULTS_DIR', self.root / 'r'):
+            result, code = roll.run_batch(args, judge)
+            self.assertEqual(prefetched, [['# Line 1', '# Line 2']])
+            self.assertEqual(order, ['# Line 1', '# Line 2'])
+            self.assertEqual((result['status'], [r['status'] for r in result['results']], code), ('batch', ['self', 'self'], 2))
+            with self.assertRaisesRegex(ValueError, '--hours'):
+                roll.run_batch(argparse.Namespace(**{**vars(args), 'hours': 2.0}), judge)
+            with self.assertRaisesRegex(ValueError, 'twice'):
+                roll.run_batch(argparse.Namespace(**{**vars(args), 'brief': [briefs[0], briefs[0]]}), judge)
+
+    def test_a_multi_task_brief_is_handed_back_to_the_parent_unlaunched(self):
+        decision = dict(stage='split', choice='split', task_count='3', reason='three deliverables', next='split it')
+        with patch.object(flow, 'host_call', side_effect=AssertionError('a split brief must not launch anything')):
+            (res, code), _ = self.roll(decision, verbose=False)
+        self.assertEqual((res['status'], code), ('split', 2))
+        self.assertEqual((res['task_count'], res['next_action'], res['reason']), ('3', 'split it', 'three deliverables'))
+        self.assertNotIn('worker', res)
+
     def test_ready_grok_acp_launcher_launches_through_paseo_not_the_cli_fallback(self):
         import roll as roll_module
         (self.root / '.paseo' / 'config.json').write_text(json.dumps({'agents': {'providers': {

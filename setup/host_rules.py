@@ -14,6 +14,8 @@ An overlay is used verbatim except for placeholders that depend on where this ch
     @@ROUTE_JUDGE@@         legacy; `python -X utf8 @@ROUTE_JUDGE@@` is rewritten to @@AGENTCOMPASS@@, a bare path stays the script path
     @@ROUTER_HOOK_SCRIPT@@  absolute path of setup/router_gate_hook.py in this checkout
     @@HOME_POSIX@@          the user's home directory with forward slashes
+    @@SHARED@@              codex.md / daemon-append.md only: the whole shared rule text (overlay, else the default),
+                            so the common rules live in one file and the others hold only what differs
 """
 from __future__ import annotations
 
@@ -56,8 +58,8 @@ Cross-project rules for agents that can delegate work through the AgentCompass r
 
 @@EXECUTION_POLICY@@
 
-1. To delegate, run exactly one command with the whole assignment (never call Paseo `create_agent`, a host's `Agent`/`Task`, `spawn_agent` or similar directly): `@@AGENTCOMPASS@@ roll --task "<what the worker should do>"`. Long text goes in with `--task -` on stdin or `--brief <task.md>`; the worker gets it unchanged. `--hours` is optional.
-2. Read `status` and do exactly `next_action`: `launched` = the worker runs, start nothing else, and collect the result the way `next_action` says (notification, `next_argv`, or watching `worker_output`); `pending` = run `next_argv`, never roll again; `self` = do it yourself; `native` = start the host's own sub-agent with `route_bundle` and the full text of `worker_prompt_file`; `blocked`/`error` = follow `next_action` (onboarding: `@@AGENTCOMPASS@@ setup`). The full result is at `details`.
+1. To delegate, run exactly one command per task with that task's whole assignment (never call Paseo `create_agent`, a host's `Agent`/`Task`, `spawn_agent` or similar directly): `@@AGENTCOMPASS@@ roll --task "<what the worker should do>"`. Long text goes in with `--task -` on stdin or `--brief <task.md>`; the worker gets it unchanged. Several one-line briefs: `--brief a.md --brief b.md` in one call. `--hours` is optional.
+2. Read `status` and do exactly `next_action`: `launched` = the worker runs, start nothing else, and collect the result the way `next_action` says (notification, `next_argv`, or watching `worker_output`); `pending` = run `next_argv`, never roll again; `split` = the brief bundles several separate tasks (`task_count`): split it yourself, roll one brief per independent task and do the coupled ones yourself, or roll again with `--keep-whole "<reason>"` only when it truly is one assignment; `self` = do it yourself; `native` = start the host's own sub-agent with `route_bundle` and the full text of `worker_prompt_file`; `blocked`/`error` = follow `next_action` (onboarding: `@@AGENTCOMPASS@@ setup`). The full result is at `details`.
 3. Do not raise the effort yourself; use what the router returned. Name a model or effort only when the user named it in this request, and then pass `--provider/--account/--model/--effort` together with `--basis "<the user's words>"`.
 4. If an account becomes unavailable (expired, removed, out of quota), run the router again rather than substituting a similar-looking model.
 5. Reuse an existing worker for a follow-up only while its accumulated uncompressed context is small (under about 2M tokens, counting every earlier compaction, not just the current window). Beyond that, write a handoff brief and `roll` a fresh worker.
@@ -81,7 +83,7 @@ DEFAULT_CODEX = DEFAULT_SHARED
 DEFAULT_DAEMON_APPEND = (
     "Router discipline: " + EXECUTION_POLICY + " When delegating, run only "
     "`@@AGENTCOMPASS@@ roll --task \"<assignment>\"` instead of calling create_agent / Agent / spawn_agent / invoke_subagent directly. "
-    "Read the result's status and do exactly next_action: launched = the worker is running, start nothing else and collect the result as next_action says; pending = run next_argv, never roll again; native = start a native sub-agent; self = do the work yourself. "
+    "Read the result's status and do exactly next_action: launched = the worker is running, start nothing else and collect the result as next_action says; pending = run next_argv, never roll again; split = the brief bundles separate tasks, split it yourself and roll one brief per task; native = start a native sub-agent; self = do the work yourself. "
     "A worker that needs a decision must message its real parent (Paseo: send_agent_prompt with background=true, notifyOnFinish=false) and end its turn, never use AskUserQuestion-style tools; "
     "a parent that continues its own worker must keep notifyOnFinish true."
 )
@@ -101,6 +103,7 @@ def is_legacy_generated(text: str) -> bool:
         "# Agent routing rules (AgentCompass)\n",
         "Router discipline: if you are already a delegated worker (",
         "Router discipline: " + EXECUTION_POLICY,
+        "Router discipline: The main session executes serial work directly by default",
     ))
 
 
@@ -123,6 +126,9 @@ def load(kind: str, home: Path) -> tuple[str, str]:
     except OSError:
         raw = None
     if raw is not None and raw.strip():
+        if kind != "shared" and "@@SHARED@@" in raw:
+            shared = load("shared", home)[0]
+            raw = raw.replace("@@SHARED@@", shared.strip("\n"))
         return render(raw, home), "overlay"
     default = {"shared": DEFAULT_SHARED, "codex": DEFAULT_CODEX, "daemon-append": DEFAULT_DAEMON_APPEND}[kind]
     return render(default, home), "default"

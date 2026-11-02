@@ -3,6 +3,7 @@
 The classifier reads the original brief; the worker receives it unchanged plus the communication contract.
 Classification, allocation, the ledger record, dispatch preparation and launch happen here.
 """
+import argparse
 import hashlib
 import json
 import os
@@ -450,8 +451,8 @@ def status_of(result, code):
         return 'launched'
     if result.get('launched') is None or action in ('check_delivery_do_not_resend', 'run_next_argv'):
         return 'pending'
-    if mode == 'self':
-        return 'self'
+    if mode in ('self', 'split'):
+        return mode
     if mode == 'native':
         return 'native'
     if mode == 'dry_run':
@@ -502,10 +503,43 @@ def compact(result, status, detail_path):
         out['worker_output'], out['worker_stderr'] = worker.get('output'), worker.get('stderr')
     if status == 'native':
         out['route_bundle'], out['worker_prompt_file'] = bundle, result.get('worker_prompt_file')
+    if status == 'split':
+        out['task_count'] = result.get('task_count')
     if result.get('assumptions'):
         out['assumptions'] = result['assumptions']
     out['details'] = detail_path
     return {k: v for k, v in out.items() if v is not None}
+
+
+# Flags that describe one brief; a batch takes only the shared ones and each brief is rolled as written.
+BATCH_ONLY_ALONE = ('task_id', 'title', 'hours', 'local_only', 'keep_whole', 'file', 'apply_to', 'provider', 'account',
+                    'model', 'effort', 'basis', 'wait')
+
+
+def run_batch(args, judge):
+    """Several one-line briefs: classified at the same time, then routed and launched one after another so each
+    allocation sees the reservations of the ones before it."""
+    briefs = list(args.brief)
+    if len({str(Path(b).resolve()) for b in briefs}) != len(briefs):
+        raise ValueError('The same --brief was given twice.')
+    alone = [f"--{name.replace('_', '-')}" for name in BATCH_ONLY_ALONE if getattr(args, name, None) not in (None, False, [], 0)]
+    if alone:
+        raise ValueError('Several --brief files take only shared flags; roll a brief on its own for ' + ', '.join(alone) + '.')
+    each = [argparse.Namespace(**{**vars(args), 'brief': Path(b)}) for b in briefs]
+    if not args.dry_run:
+        judge.prefetch_scores([build_task(one, read_task_text(one), None) for one in each], args.score_timeout)
+    results, codes = [], []
+    for one in each:
+        try:
+            result, code = run(one, judge)
+        except (OSError, ValueError, RuntimeError) as exc:
+            result, code = {'status': 'error', 'cause': str(exc)[:300],
+                            'next_action': 'Fix the cause, then roll this brief again on its own.'}, 1
+        results.append({'brief': str(one.brief), **result})
+        codes.append(code)
+    code = 0 if not any(codes) else (1 if 1 in codes else 2)
+    return {'status': 'batch', 'results': results,
+            'next_action': 'Handle each result on its own: its status and next_action say what to do for that brief.'}, code
 
 
 def run(args, judge):
@@ -558,6 +592,10 @@ def _run(args, judge):
             decision, _ = judge.plan_stage({'task': task}, args)
     out = {'stage': 'roll', 'route': summary(decision), 'parent_id': parent,
            'parent_host': parent_host, 'parent_address': parent_address}
+    if decision.get('choice') == 'split':
+        out['route']['reason'] = decision.get('reason')
+        return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
+                    task_count=decision['task_count'], next=decision['next']), 2
     if getattr(args, 'hours', None) is None:
         est = decision.get('hours_estimate') or {}
         origin = ('the classifier estimate' if est.get('source') == 'classifier_estimate'

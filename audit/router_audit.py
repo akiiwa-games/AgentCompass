@@ -156,7 +156,9 @@ def from_ledger(path: Path):
                          "payload_bytes": r.get("payload_bytes"), "duration_ms": r.get("duration_ms"),
                          "chain": r.get("chain"), "action": r.get("action"), "margin": r.get("margin"),
                          "hours": r.get("hours"), "agrees": r.get("agrees"), "router_choice": r.get("router_choice"),
-                         "needs_user_decision": r.get("needs_user_decision"), "reason_category": r.get("reason_category")})
+                         "needs_user_decision": r.get("needs_user_decision"), "reason_category": r.get("reason_category"),
+                         "objective": r.get("objective") or "", "task_count": r.get("task_count"),
+                         "keep_whole": r.get("keep_whole")})
     return rows
 
 
@@ -701,7 +703,7 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     for f in ctx["findings"]:
         lines += [f"- **[{labels[f['level']]}] {f['title']}** — {f['evidence']}  ", f"  → {f['action']}"]
     lines += ["", "## 2. 分配汇总(按本地日)", "",
-              "| 日期 | delegate | self | select | plan | 钉死 | Pro 顾问 | open(真权衡) | judge 构成 |", "|---|---|---|---|---|---|---|---|---|"]
+              "| 日期 | delegate | self | 拆分 | select | plan | 钉死 | Pro 顾问 | open(真权衡) | judge 构成 |", "|---|---|---|---|---|---|---|---|---|---|"]
     by_day = collections.defaultdict(list)
     for r in rows:
         by_day[local(r["at"]).date().isoformat()].append(r)
@@ -711,12 +713,21 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
         kinds = collections.Counter(classify(r) for r in sel)
         judges = collections.Counter((r.get("judge") or "").replace("claude-", "").replace("gpt-6.1-", "") or "-" for r in items if r.get("judge"))
         lines.append(f"| {day} | {sum(1 for r in items if r['stage'] == 'delegate' and r.get('choice') == 'delegate')} | "
-                     f"{sum(1 for r in items if r['stage'] == 'delegate' and r.get('choice') == 'self')} | {len(sel)} | {kinds.get('planned', 0)} | "
+                     f"{sum(1 for r in items if r['stage'] == 'delegate' and r.get('choice') == 'self')} | "
+                     f"{sum(1 for r in items if r['stage'] == 'split')} | {len(sel)} | {kinds.get('planned', 0)} | "
                      f"{sum(v for k, v in kinds.items() if k.startswith('fixed'))} | {kinds.get('specialist:pro', 0)} | "
                      f"{kinds.get('open', 0)} | {', '.join(f'{k}×{v}' for k, v in judges.most_common()) or '-'} |")
+    cutoff = now - dt.timedelta(days=detail_days)
+    splits = [r for r in rows if r["at"] >= cutoff and (r["stage"] == "split" or r.get("keep_whole"))]
+    if splits:
+        # Kept-whole reasons are where the parent disagreed with the classifier's split: read them to recalibrate.
+        lines += ["", f"### 拆分与整派(最近 {detail_days} 天)", "", "| 时间 | 结果 | 任务数 | 任务 / 整派理由 |", "|---|---|---|---|"]
+        for r in sorted(splits, key=lambda r: r["at"]):
+            text = r["keep_whole"] if r.get("keep_whole") else r["objective"]
+            lines.append(f"| {local(r['at']):%m-%d %H:%M} | {'整派' if r.get('keep_whole') else '拆分'} | "
+                         f"{r.get('task_count') or '-'} | {' '.join(str(text).split())[:120].replace('|', '/')} |")
     lines += ["", f"## 3. 逐次分配(最近 {detail_days} 天;delegate→select 成对)", "",
               "| 时间 | 类型 | 分配 | 分类 | judge | 账户用量(调用时) | 理由 |", "|---|---|---|---|---|---|---|"]
-    cutoff = now - dt.timedelta(days=detail_days)
     for d, s in pair_decisions(rows):
         anchor = (s or d)["at"]
         if anchor < cutoff:

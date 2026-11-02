@@ -936,6 +936,17 @@ DIVERGENT_WORDS = ('brainstorm', 'creative', 'novel', 'innovat', 'propose', 'for
 HOURS_RANGE = (0.05, 24.0)
 CONFIDENCE_LEVELS = ('low', 'medium', 'high')
 URGENCY_LEVELS = ('unknown', 'low', 'normal', 'high')
+# Whether the brief bundles separate tasks. One question for every scorer (LLM schema field, Jev noul/choice); the
+# parent, not the router, then works out what the tasks are.
+TASK_COUNTS = ('1', '2', '3', '>3')
+MULTI_TASK_QUESTION = (
+    'True when the brief bundles more than one separate task: deliverables that different workers could produce at the '
+    'same time without waiting for each other\'s result (e.g. collect reference images, compare game engines, design '
+    'the gameplay loop). False for one task, however many steps: investigate-fix-test-release, implement plus its '
+    'tests, a review plus its report, the remaining steps of a handoff, a brief that already assigns one share of a '
+    'larger task, or a sequence where each part needs the previous part\'s output.')
+TASK_COUNT_QUESTION = 'How many separate tasks, in the sense of multi_task, the brief holds: 1 when multi_task is false.'
+MULTI_TASK_MARK_RE = re.compile(r'^#{1,6}[ \t]*(?:交付物|deliverable|task)\s*\d', re.I | re.M)
 TASK_PROFILE_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -991,8 +1002,11 @@ TASK_PROFILE_SCHEMA = {
             'unknown unless the text itself states a deadline, an incident or "asap"; then high/normal/low. Never infer urgency '
             'from topic or tone. Shown in the result so the caller can see it; it never changes the owner, the effort or fast mode.')},
         'reason': {'type': 'string', 'description': 'One concise sentence about the task itself that justifies the scores.'},
+        'multi_task': {'type': 'boolean', 'description': MULTI_TASK_QUESTION},
+        'task_count': {'type': 'string', 'enum': list(TASK_COUNTS), 'description': TASK_COUNT_QUESTION},
     },
-    'required': list(PROFILE_INTEGERS) + list(PROFILE_FLAGS) + ['expected_hours', 'hours_confidence', 'urgency', 'interaction_style', 'reason'],
+    'required': list(PROFILE_INTEGERS) + list(PROFILE_FLAGS) + ['expected_hours', 'hours_confidence', 'urgency', 'interaction_style',
+                                                                 'reason', 'multi_task', 'task_count'],
 }
 # kind -> (code_complexity, context_scale, hallucination_risk, error_cost, interaction_style) for the heuristic profile
 KIND_TRAITS = {
@@ -1114,6 +1128,10 @@ def validate_profile(raw):
     profile['interaction_style'] = raw['interaction_style']
     reason = raw.get('reason')
     profile['reason'] = reason.strip()[:300] if isinstance(reason, str) else ''
+    if isinstance(raw.get('multi_task'), bool):
+        profile['multi_task'] = raw['multi_task']
+    if raw.get('task_count') in TASK_COUNTS:
+        profile['task_count'] = raw['task_count']
     return profile
 
 
@@ -1206,7 +1224,14 @@ def infer_task_profile(task, capabilities):
         'reasoning_depth': depth, 'code_complexity': code, 'context_scale': context, 'divergence': divergence,
         'hallucination_risk': risk, 'error_cost': cost,
         'needs_visual': bool(needs.get('visual') or implies.get('visual') or gui), 'needs_gui': gui,
-        'local_only': local_only, 'interaction_style': style, 'reason': reason})
+        'local_only': local_only, 'interaction_style': style, 'reason': reason,
+        # Offline the only evidence of separate tasks is headings that number them (交付物 1, Deliverable 2, Task 3).
+        **multi_task_marks(objective)})
+
+
+def multi_task_marks(objective):
+    count = len(MULTI_TASK_MARK_RE.findall(objective or ''))
+    return {'multi_task': count > 1, 'task_count': TASK_COUNTS[min(max(count, 1), 4) - 1]}
 
 
 def profile_difficulty(profile, policy):

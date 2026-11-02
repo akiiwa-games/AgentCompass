@@ -83,7 +83,7 @@
       const prepared=await node(msg,'prepare',{task:msg.args.task});
       operation=prepared.operation;
       record=prepared;
-      if (record.router.status==='self') return record.router;
+      if (['self','split'].includes(record.router.status)) return record.router;
       if (record.state!=='prepared') return await collect(msg,operation,record);
       const route=selectRoute(record.bundle,await cindy.tasks.models(),record.mappings);
       if (!record.prompt || record.prompt.length>32768) throw Error('Full task plus return contract exceeds Cindy send limit (32768 characters); nothing launched.');

@@ -38,6 +38,19 @@ class HostRulesTests(unittest.TestCase):
         command = host_rules.agentcompass_command()
         self.assertEqual((source, text), ('overlay', f'run `{command} roll --task "x"` or `{command} plan`\n'))
 
+    def test_codex_and_daemon_overlays_include_the_shared_rules_instead_of_copying_them(self):
+        directory = host_rules.overlay_dir(self.home)
+        directory.mkdir(parents=True)
+        (directory / 'shared.md').write_bytes(b'# Rules\n\nrun `@@AGENTCOMPASS@@ roll`\n')
+        (directory / 'codex.md').write_bytes(b'@@SHARED@@\n\n## Codex only\n')
+        (directory / 'daemon-append.md').write_bytes(b'short pointer\n')
+        command = host_rules.agentcompass_command()
+        self.assertEqual(host_rules.load('codex', self.home),
+                         (f'# Rules\n\nrun `{command} roll`\n\n## Codex only\n', 'overlay'))
+        self.assertEqual(host_rules.load('daemon-append', self.home), ('short pointer\n', 'overlay'))
+        (directory / 'shared.md').unlink()
+        self.assertTrue(host_rules.load('codex', self.home)[0].startswith(host_rules.load('shared', self.home)[0].strip('\n')))
+
 
 if __name__ == '__main__':
     unittest.main()

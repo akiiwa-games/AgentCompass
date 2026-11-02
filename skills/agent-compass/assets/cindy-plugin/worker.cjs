@@ -63,7 +63,7 @@ async function route(task, ctx, dir) {
       fs.writeFileSync(path.join(dir,'router.stderr.txt'),Buffer.concat(stderr));
       try {
         const result=JSON.parse(text);
-        if (code && result.status!=='self') throw Error(result.error || result.next || 'Router blocked');
+        if (code && !['self','split'].includes(result.status)) throw Error(result.error || result.next || 'Router blocked');
         resolve(result);
       } catch(error) { reject(Error('Router returned no usable route; inspect '+dir+': '+error.message)); }
     });

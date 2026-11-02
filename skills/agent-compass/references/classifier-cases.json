@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "updated_at": "2026-10-27",
+  "version": 4,
+  "updated_at": "2026-11-02",
   "purpose": "System-One task classifier rubric and calibration cases. Read only by the router scorer (route_judge.py), never by parent agents.",
   "route_definitions": {
     "computer_use": "Operate a desktop or browser GUI via screenshots, mouse, and keyboard (e.g. click buttons, inspect live UI windows).",
@@ -26,7 +26,8 @@
     "runbook_execution": "Following documented build/deploy/release runbooks, operational health checks or automated test/benchmark suites without designing new code: work_kind tool_execution, reasoning_depth 1, code_complexity 0, context_scale 1; error_cost 3 when touching production.",
     "diagnosis": "Unknown root cause with multiple candidate hypotheses to test (latency/CPU/memory regression, intermittent failure, rendering glitch): divergence 2; code_complexity 0 for read-only diagnosis, 2 for diagnosing and fixing a module with tests.",
     "research_packet": "Running a defined quantitative experiment, benchmark suite, simulation, statistical evaluation or backtest pipeline and reporting metrics: work_kind research_packet, reasoning_depth 2, code_complexity 1, context_scale 2, divergence 1, hallucination_risk 3. Mere execution of documented commands without interpreting experimental results is tool_execution.",
-    "orchestration": "Multi-stage coordinator or lead-session handoff dispatching workers and verifying cross-task deliverables: reasoning_depth 3, context_scale 3, divergence 1; code_complexity 0 for coordination/review alone, 2 when also implementing integration code."
+    "orchestration": "Multi-stage coordinator or lead-session handoff dispatching workers and verifying cross-task deliverables: reasoning_depth 3, context_scale 3, divergence 1; code_complexity 0 for coordination/review alone, 2 when also implementing integration code.",
+    "multi_task": "Read the whole brief. multi_task is true only for separate deliverables that could be produced at the same time by different workers; steps toward one output, a handoff's remaining steps or a sequence where each part needs the previous output are one task. task_count counts those separate tasks (1 when false)."
   },
   "calibration_cases": [
     {
@@ -46,7 +47,9 @@
         "needs_gui": true,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Single mechanical action in a live local GUI."
+        "reason": "Single mechanical action in a live local GUI.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -66,7 +69,9 @@
         "needs_gui": false,
         "local_only": false,
         "interaction_style": "engineering",
-        "reason": "Visual inspection of supplied images without operating a GUI."
+        "reason": "Visual inspection of supplied images without operating a GUI.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -86,7 +91,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Bounded UI implementation with visual acceptance and state handling."
+        "reason": "Bounded UI implementation with visual acceptance and state handling.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -106,7 +113,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "One mechanical game UI styling change; boilerplate paths add no scope."
+        "reason": "One mechanical game UI styling change; boilerplate paths add no scope.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -126,7 +135,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "One backend module plus its tests; role, report and receipt paths are boilerplate."
+        "reason": "One backend module plus its tests; role, report and receipt paths are boilerplate.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -146,7 +157,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Known cause, convergent single-module concurrency repair."
+        "reason": "Known cause, convergent single-module concurrency repair.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -166,7 +179,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "exploration",
-        "reason": "Unknown root cause with competing hypotheses; read-only diagnosis writes no production code."
+        "reason": "Unknown root cause with competing hypotheses; read-only diagnosis writes no production code.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -186,7 +201,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Localized independent security diff audit; input documents do not increase scope."
+        "reason": "Localized independent security diff audit; input documents do not increase scope.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -206,7 +223,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Uniform mechanical batch transformation despite many files."
+        "reason": "Uniform mechanical batch transformation despite many files.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -226,7 +245,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Documented production runbook: costly execution, no new algorithm or architecture."
+        "reason": "Documented production runbook: costly execution, no new algorithm or architecture.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -246,7 +267,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "exploration",
-        "reason": "Defined quantitative benchmark with statistical interpretation."
+        "reason": "Defined quantitative benchmark with statistical interpretation.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -266,7 +289,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "exploration",
-        "reason": "Repository architecture exploration, without implementation or unknown defect diagnosis."
+        "reason": "Repository architecture exploration, without implementation or unknown defect diagnosis.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -286,7 +311,9 @@
         "needs_gui": false,
         "local_only": false,
         "interaction_style": "exploration",
-        "reason": "Public web documentation synthesis and source verification."
+        "reason": "Public web documentation synthesis and source verification.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -306,7 +333,9 @@
         "needs_gui": false,
         "local_only": false,
         "interaction_style": "engineering",
-        "reason": "Standalone algorithm and tests fit entirely in the packet."
+        "reason": "Standalone algorithm and tests fit entirely in the packet.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -326,7 +355,9 @@
         "needs_gui": false,
         "local_only": false,
         "interaction_style": "text_only",
-        "reason": "Self-contained technical text translation, not deployment execution."
+        "reason": "Self-contained technical text translation, not deployment execution.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -346,7 +377,9 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Cross-system migration specification with explicit design choices and staged acceptance."
+        "reason": "Cross-system migration specification with explicit design choices and staged acceptance.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -366,7 +399,9 @@
         "needs_gui": false,
         "local_only": false,
         "interaction_style": "advisory",
-        "reason": "Frontier mathematical and architectural critique requiring divergent reasoning."
+        "reason": "Frontier mathematical and architectural critique requiring divergent reasoning.",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -386,7 +421,53 @@
         "needs_gui": false,
         "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Coordinating staged workers and cross-task verification is the functional scope; boilerplate paths are not."
+        "reason": "Coordinating staged workers and cross-task verification is the functional scope; boilerplate paths are not.",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "mixed_phase_brief",
+      "task": {
+        "objective": "Phase 1 of a 2D game: (1) collect museum reference images into references/; (2) write an art style guide from those references; (3) compare Godot, Unity 2D and PixiJS and recommend one; (4) design the core loop and 8 monsters."
+      },
+      "expected_profile": {
+        "work_kind": "research_packet",
+        "reasoning_depth": 3,
+        "code_complexity": 0,
+        "context_scale": 2,
+        "divergence": 3,
+        "hallucination_risk": 3,
+        "error_cost": 1,
+        "needs_visual": true,
+        "needs_gui": false,
+        "local_only": false,
+        "interaction_style": "exploration",
+        "reason": "Three separate tasks: references with the style guide built on them, an engine comparison, and game design.",
+        "multi_task": true,
+        "task_count": "3"
+      }
+    },
+    {
+      "id": "handoff_remaining_steps",
+      "task": {
+        "objective": "Take over the stream hang fix:\n1. reproduce it\n2. fix the flush in server/stream.ts\n3. add a regression test\n4. push and sync the remote"
+      },
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 2,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "interaction_style": "engineering",
+        "reason": "One bug fix carried from reproduction to release in the local checkout.",
+        "multi_task": false,
+        "task_count": "1"
       }
     }
   ]
