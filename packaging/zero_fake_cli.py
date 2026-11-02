@@ -56,7 +56,8 @@ def main() -> int:
         # names only: a real credential must never end up in a fixture log
         "host_session_vars_present": sorted(k for k in os.environ if k.startswith(("CLAUDE", "CODEX_", "PASEO_AGENT"))),
     }
-    write(STATE / "workers" / f"{os.getpid()}.json", record)
+    # Windows reuses PIDs within one run; a PID-only name let a new worker overwrite an earlier record, so the count never grew
+    write(STATE / "workers" / f"{os.getpid()}-{time.time_ns()}.json", record)
 
     def agent(status, **extra):
         if agent_id:
