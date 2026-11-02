@@ -1375,8 +1375,95 @@ def _parse_grok_billing_payload(data: bytes, now_secs: int) -> tuple[float, str 
     return float(parsed_percent), resets_at
 
 
+GROK_CLI_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
+
+
+def read_grok_cli_login() -> dict[str, Any] | None:
+    """The Grok CLI's own OIDC login, read only while it is unexpired.
+
+    Never refresh or rewrite ~/.grok/auth.json here: a refresh token is single-use,
+    so refreshing alongside the CLI could sign it out. The CLI refreshes on its own use.
+    """
+    try:
+        doc = json.loads((GROK_HOME / "auth.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    for scope, entry in doc.items():
+        if str(scope).startswith("https://auth.x.ai::") and isinstance(entry, dict)                 and isinstance(entry.get("key"), str) and entry["key"]:
+            try:
+                expires = datetime.fromisoformat(str(entry.get("expires_at") or "").replace("Z", "+00:00"))
+            except ValueError:
+                return entry
+            return entry if expires.tzinfo is None or expires > datetime.now(timezone.utc) else None
+    return None
+
+
+def parse_grok_cli_billing(payload: Any) -> tuple[float, str | None]:
+    """Return (used_percent, resets_at_iso) from the CLI billing JSON. Raises ValueError."""
+    config = payload.get("config") if isinstance(payload, dict) else None
+    if not isinstance(config, dict):
+        raise ValueError("missing Grok billing config")
+    period = config.get("currentPeriod") if isinstance(config.get("currentPeriod"), dict) else {}
+    percent = config.get("creditUsagePercent")
+    if percent is None:
+        if period.get("end"):
+            percent = 0.0  # proto3 omits a zero float; trust it only on the current-period shape
+        else:
+            limit = (config.get("monthlyLimit") or {}).get("val")
+            used = (config.get("used") or {}).get("val", 0)
+            if not isinstance(limit, (int, float)) or limit <= 0 or not isinstance(used, (int, float)):
+                raise ValueError("unknown Grok allowance")
+            percent = 100.0 * used / limit
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)) or percent != percent or percent < 0:
+        raise ValueError("invalid Grok usage percent")
+    reset = period.get("end") or config.get("billingPeriodEnd")
+    try:
+        resets_at = datetime.fromisoformat(str(reset).replace("Z", "+00:00")).isoformat() if reset else None
+    except ValueError:
+        resets_at = None
+    return min(100.0, float(percent)), resets_at
+
+
+def fetch_grok_cli_billing() -> tuple[float, str | None] | None:
+    """Usage from the Grok CLI's billing endpoint, or None so the caller falls back."""
+    login = read_grok_cli_login()
+    if login is None:
+        return None
+    req = urllib.request.Request(
+        GROK_CLI_BILLING_URL,
+        headers={
+            "Authorization": f"Bearer {login['key']}",
+            "X-XAI-Token-Auth": "xai-grok-cli",
+            "x-userid": str(login.get("user_id") or ""),
+            "Accept": "application/json",
+            "User-Agent": "usage-float",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if resp.status != 200:
+                return None
+            return parse_grok_cli_billing(json.loads(resp.read()))
+    except Exception:
+        return None
+
+
 def fetch_grok_usage() -> ProviderUsage:
-    """SuperGrok credit window via grok.com gRPC-web (same as CC Switch)."""
+    """SuperGrok credit window: the Grok CLI billing endpoint, else grok.com gRPC-web (same as CC Switch)."""
+    cli = fetch_grok_cli_billing()
+    if cli is not None:
+        pct, resets_at = cli
+        result = ProviderUsage(
+            provider_id="grok",
+            display_name="grok",
+            windows=[UsageWindow(id="credits", label=_tr("额度", 'Quota'), used_pct=pct, resets_at=resets_at)],
+            available=True,
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+        )
+        cache_put_provider(result)
+        return result
     token = read_grok_token()
     if not token:
         return ProviderUsage(
