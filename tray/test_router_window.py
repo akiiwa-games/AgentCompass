@@ -989,8 +989,8 @@ class WindowHelperTests(unittest.TestCase):
             self.assertEqual(panel.quota_cards[0]["name"].cget("text"), "Claude")
             w0_name, w0_share, w0_bar, w0_detail = panel.quota_cards[0]["windows"][0]
             w1_name, w1_share, w1_bar, w1_detail = panel.quota_cards[0]["windows"][1]
-            self.assertEqual((w0_name.cget("text"), w0_detail.cget("text"), w0_share.cget("text")), ("7d", "2d 1h", "80%"))
-            self.assertEqual((w1_name.cget("text"), w1_detail.cget("text"), w1_share.cget("text")), ("5h", "3h 10m", "30%"))
+            self.assertEqual((w0_name.cget("text"), w0_detail.cget("text"), w0_share.cget("text")), ("7d", "2d 1h", "20%"))
+            self.assertEqual((w1_name.cget("text"), w1_detail.cget("text"), w1_share.cget("text")), ("5h", "3h 10m", "70%"))
             self.assertEqual(panel.quota_cards[2]["windows"][0][0].cget("text"), "credits")
             # Segmented bar splits 100% into used (20%), reserved (12.5%), and free remaining (67.5%).
             self.assertEqual(w0_bar.segments, {"used_pct": 20.0, "reserved_pct": 12.5, "remaining_pct": 67.5})

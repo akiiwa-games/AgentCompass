@@ -262,7 +262,7 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
 
 
 class QuotaBar:
-    """Segmented progress bar: 已用 (used_pct) | 在途占用 (reserved_pct, hatched) | 剩余 (free_remaining_pct)."""
+    """Usage-float presentation: used quota fills from the left."""
 
     def __init__(self, tk_mod, parent, height: int = 6):
         self.tk = tk_mod
@@ -301,10 +301,10 @@ class QuotaBar:
         self.colour = colour
         self.stale = stale
         rem = 0.0 if remaining_pct is None else max(0.0, min(100.0, float(remaining_pct)))
-        used = max(0.0, 100.0 - rem)
+        used = 0.0 if remaining_pct is None else max(0.0, 100.0 - rem)
         eff_res = min(rem, self.reserved_pct)
         free_rem = max(0.0, rem - eff_res)
-        self.value = rem
+        self.value = used
         self.segments = {
             "used_pct": round(used, 2),
             "reserved_pct": round(eff_res, 2),
@@ -317,40 +317,13 @@ class QuotaBar:
         c.delete("all")
         w = max(c.winfo_width(), 120)
         h = max(c.winfo_height(), theme.px(6))
-        palettes = {
-            "Green": (theme.GREEN, "#D1FAE5", theme.GREEN),
-            "Amber": (theme.AMBER, "#FDE68A", theme.AMBER),
-            "Red": (theme.RED, "#FECACA", theme.RED),
-        }
-        rem_fill, res_bg, res_stripe = ("#94A3B8", "#E2E8F0", "#64748B") if self.stale else palettes.get(
-            self.colour, palettes["Green"])
-        used_pct = self.segments["used_pct"]
-        res_pct = self.segments["reserved_pct"]
-        free_pct = self.segments["remaining_pct"]
-        x_used = int(round(w * used_pct / 100.0))
-        w_res = int(round(w * res_pct / 100.0))
-        if res_pct > 0 and w_res < 4:
-            w_res = min(4, max(0, w - x_used))
-        x_res_end = min(w, x_used + w_res)
-        # 1. Used segment (muted slate track)
+        fill = ("#94A3B8" if self.stale else
+                {"Green": theme.GREEN, "Amber": theme.AMBER, "Red": theme.RED}.get(self.colour, theme.GREEN))
+        c.create_rectangle(0, 0, w, h, fill=TRACK, width=0, tags=("usage_track",))
+        x_used = int(round(w * self.value / 100.0))
         if x_used > 0:
-            c.create_rectangle(0, 0, x_used, h, fill="#CBD5E1", width=0, tags=("seg_used",))
-        # 2. In-flight reserved segment (light tint + diagonal hatch stripes)
-        if x_res_end > x_used:
-            c.create_rectangle(x_used, 0, x_res_end, h, fill=res_bg, width=0, tags=("seg_reserved",))
-            step = max(4, theme.px(5))
-            x = x_used - h
-            while x < x_res_end + h:
-                x0 = max(x_used, x)
-                y0 = h - (x0 - x)
-                x1 = min(x_res_end, x + h)
-                y1 = h - (x1 - x)
-                if x1 > x0:
-                    c.create_line(x0, y0, x1, y1, fill=res_stripe, width=1, tags=("seg_reserved_hatch",))
-                x += step
-        # 3. Remaining free segment
-        if free_pct > 0 and w > x_res_end:
-            c.create_rectangle(x_res_end, 0, w, h, fill=rem_fill, width=0, tags=("seg_remaining",))
+            c.create_rectangle(0, 0, x_used, h, fill=fill, width=0, tags=("seg_used",))
+
 
 
 def quota_card_placements(cards: list[dict], cols: int) -> list[tuple[int, int, int]]:
@@ -1615,16 +1588,17 @@ class Panel:
             is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh")
             w_name.configure(text=short_window_name(window))
             w_detail.configure(text=short_countdown(window.get("reset_in")))
-            colour = "Green" if remaining is None or remaining >= 40 else "Amber" if remaining >= 15 else "Red"
+            used = None if remaining is None else 100.0 - max(0.0, min(100.0, float(remaining)))
+            colour = "Red" if used is not None and used >= 90 else "Amber" if used is not None and used >= 70 else "Green"
             fg = ("#64748B" if is_stale
                   else theme.GREEN if colour == "Green"
                   else theme.AMBER if colour == "Amber"
                   else theme.RED)
-            w_share.configure(text="—" if remaining is None else f"{remaining:.0f}%", fg=fg)
+            w_share.configure(text="—" if used is None else f"{used:.0f}%", fg=fg)
             if hasattr(bar, "set_segments"):
                 bar.set_segments(remaining, reserved, colour=colour, stale=is_stale)
             else:
-                bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=remaining or 0)
+                bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=used or 0)
 
     # ---------- page 3: model settings ----------
 
