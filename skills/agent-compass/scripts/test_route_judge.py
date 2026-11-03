@@ -14,8 +14,17 @@ import route_judge as router
 from router_test_support import isolated_router_state, temporary_root
 
 
+_real_scorer_accounts = router.scorer_accounts
+
+
 def setUpModule():
     isolated_router_state(unittest.addModuleCleanup)
+    # Scorer contract tests run every family's CLI as if its own account were signed in; ScorerAccountTests
+    # covers the per-host choice and the silent skip.
+    accounts = patch.object(router, 'scorer_accounts',
+                            side_effect=lambda scorer_type, **_: [router.SCORER_FAMILIES.get(scorer_type)])
+    accounts.start()
+    unittest.addModuleCleanup(accounts.stop)
 
 
 def reference_capabilities(allocator):
@@ -959,15 +968,14 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual((calls['post'][0]['url'], calls['post'][0]['key'], calls['run']),
                          ('https://api.typesafe.ai/v1/systemone', SECRET, []))
         self.assertNotIn('chain', json.dumps(calls['post'][0]['body']))
-        # Missing key: lightweight cascade (claude_haiku_low -> codex_terra_low -> agy_flash_low) takes over by default
+        # Missing key: jev is absent on this host, so the next scorer in order answers and nothing counts as a failure
         _, meta, calls = self.score({'scorer_type': 'jev', 'fallback_to_agy': True})
-        self.assertEqual((meta['source'], meta['scorer_type'], meta['configured_scorer'], meta['fallback_reason'], calls['post']),
-                         ('system_one', 'claude_haiku_low', 'jev', 'ScorerError', []))
-        self.assertIn('TypeSafe API key', meta['attempts'][0]['detail'])
+        self.assertEqual((meta['source'], meta['scorer_type'], calls['post']), ('system_one', 'claude_haiku_low', []))
+        self.assertNotIn('attempts', meta)
         # fallback_to_agy off, or all scorers failing: returns scorer_unavailable (None profile) so parent session chooses
         profile, meta, calls = self.score({'scorer_type': 'jev', 'fallback_to_agy': False})
         self.assertEqual((profile, meta['source'], meta['configured_scorer'], calls['run']), (None, 'scorer_unavailable', 'jev', []))
-        self.assertIn('TypeSafe API key', meta['fallback_detail'])
+        self.assertNotIn('attempts', meta)
         profile, meta, _ = self.score({'scorer_type': 'jev', 'jev_api_key': SECRET},
                                       post=router.ScorerError('Scorer API answered HTTP 401.'), run=lambda c, d: (1, '', ''))
         self.assertEqual((profile, meta['source'], [a['scorer_type'] for a in meta['attempts']]),
@@ -1083,6 +1091,89 @@ class SelectableScorerTests(unittest.TestCase):
         with patch.object(router, 'post_json', return_value=JEV_RESPONSE):
             code, tested, _ = cli('--action', 'test')
         self.assertEqual((code, tested['ok'], tested['task_profile']), (0, True, JEV_PROFILE))
+
+
+class ScorerAccountTests(unittest.TestCase):
+    """The cascade keeps its order but runs each CLI scorer on an account this host has; absent ones are skipped."""
+
+    INVENTORY = {'accounts': {
+        'claude': {'family': 'claude', 'status': 'disabled', 'home': 'C:/u/.claude'},
+        'claude-2': {'family': 'claude', 'status': 'ready', 'home': 'C:/u/.claude-2', 'billing': 'subscription'},
+        'llmproxy': {'family': 'codex', 'status': 'ready', 'billing': 'metered'},
+        'antigravity': {'family': 'antigravity', 'status': 'ready'},
+    }}
+
+    def setUp(self):
+        self.allocator = router.load_allocator()
+        self.capabilities = reference_capabilities(self.allocator)
+        env = patch.dict(router.os.environ, {'ROUTER_SCORER_CONFIG': str(temporary_root(self.addCleanup) / 'scorer.json'),
+                                             'ROUTER_SCORER_TYPE': '', 'ROUTER_DISABLE_LIVE_SCORER': '',
+                                             'ROUTER_SCORE_CACHE': 'off'})
+        env.start()
+        self.addCleanup(env.stop)
+        self.task = {'objective': 'Click Save in the local app and take a screenshot', 'work_kind': 'tool_execution'}
+        real = patch.object(router, 'scorer_accounts', side_effect=_real_scorer_accounts)
+        real.start()
+        self.addCleanup(real.stop)
+
+    def test_lists_every_ready_allowed_subscription_account_of_the_family(self):
+        rows = self.INVENTORY
+        # LITTLESPRING: ~/.claude signed out, ~/.claude-2 signed in.
+        self.assertEqual(router.scorer_accounts('claude_haiku_low', rows, None), ['claude-2'])
+        both = {'accounts': {**rows['accounts'], 'claude': {**rows['accounts']['claude'], 'status': 'ready'}}}
+        self.assertEqual(router.scorer_accounts('claude_haiku_low', both, None), ['claude', 'claude-2'])
+        self.assertEqual(router.scorer_accounts('agy_flash_low', rows, None), ['antigravity'])
+        self.assertEqual(router.scorer_accounts('codex_terra_low', rows, None), [])     # a metered proxy is not one
+        self.assertEqual(router.scorer_accounts('claude_haiku_low', both, {'allowed_accounts': ['claude-2']}), ['claude-2'])
+        self.assertEqual(router.scorer_accounts('jev', rows, None), [None])
+
+    def test_absent_scorers_are_skipped_in_order_without_errors(self):
+        used = []
+
+        def fake_run(command, cwd, prompt=None, timeout=120, account=None):
+            used.append((command[0], account))
+            if command[0] == 'agy.exe':
+                return 0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''
+            return 0, json.dumps({'structured_output': GUI_PROFILE}), ''
+
+        with patch.object(router.provider_inventory, 'current', return_value=self.INVENTORY), \
+                patch.object(router.host_policy, 'load_policy', return_value=None), \
+                patch.object(router, 'run_process', side_effect=fake_run), \
+                patch.object(router, 'scorer_prefix', return_value=['agy.exe']), \
+                patch.object(router, 'cli_prefix', return_value=['cli.exe']):
+            _, meta = router.score_task(self.task, self.allocator, self.capabilities, scorer_config={})
+        self.assertEqual(used, [('cli.exe', 'claude-2')])
+        self.assertEqual((meta['source'], meta['scorer_type'], meta['account']), ('system_one', 'claude_haiku_low', 'claude-2'))
+        self.assertNotIn('attempts', meta)
+        # Both Claude accounts signed in and the first fails: the next Claude account answers before Codex is tried.
+        both = {'accounts': {**self.INVENTORY['accounts'],
+                             'claude': {**self.INVENTORY['accounts']['claude'], 'status': 'ready'}}}
+        used.clear()
+        homes = iter([(1, '', ''), (0, json.dumps({'structured_output': GUI_PROFILE}), '')])
+        with patch.object(router.provider_inventory, 'current', return_value=both),                 patch.object(router.host_policy, 'load_policy', return_value=None),                 patch.object(router, 'run_process', side_effect=lambda c, d, p=None, t=120, account=None:
+                             (used.append((c[0], account)), next(homes))[1]),                 patch.object(router, 'cli_prefix', return_value=['cli.exe']):
+            _, meta = router.score_task(self.task, self.allocator, self.capabilities, scorer_config={})
+        self.assertEqual(used, [('cli.exe', 'claude'), ('cli.exe', 'claude-2')])
+        self.assertEqual((meta['account'], [(a['scorer_type'], a['account']) for a in meta['attempts']]),
+                         ('claude-2', [('claude_haiku_low', 'claude')]))
+        no_claude = {'accounts': {k: v for k, v in self.INVENTORY['accounts'].items() if not k.startswith('claude')}}
+        used.clear()
+        with patch.object(router.provider_inventory, 'current', return_value=no_claude), \
+                patch.object(router.host_policy, 'load_policy', return_value=None), \
+                patch.object(router, 'run_process', side_effect=fake_run), \
+                patch.object(router, 'scorer_prefix', return_value=['agy.exe']), \
+                patch.object(router, 'cli_prefix', return_value=['cli.exe']):
+            _, meta = router.score_task(self.task, self.allocator, self.capabilities, scorer_config={})
+        self.assertEqual([c for c, _ in used], ['agy.exe'])        # claude and codex absent: agy, no error recorded
+        self.assertEqual(meta['scorer_type'], 'agy_flash_low')
+        self.assertNotIn('attempts', meta)
+
+    def test_subscription_env_points_codex_and_claude_clis_at_the_chosen_home(self):
+        rows = {'accounts': {'codex-2': {'family': 'codex', 'home': 'C:/u/.codex-2'},
+                             'claude-2': {'family': 'claude', 'home': 'C:/u/.claude-2'}}}
+        with patch.object(router.provider_inventory, 'current', return_value=rows):
+            self.assertEqual(router.subscription_env('codex-2')['CODEX_HOME'], 'C:/u/.codex-2')
+            self.assertEqual(router.subscription_env('claude-2')['CLAUDE_CONFIG_DIR'], 'C:/u/.claude-2')
 
 
 @unittest.skipUnless(router.os.environ.get('ROUTER_LIVE_AGY') == '1', 'set ROUTER_LIVE_AGY=1 to call the real agy CLI')

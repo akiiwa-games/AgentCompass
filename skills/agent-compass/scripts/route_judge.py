@@ -898,6 +898,8 @@ def subscription_env(account=None):
         env['CLAUDE_CONFIG_DIR'] = cfg
         env['CLAUDE_SECURESTORAGE_CONFIG_DIR'] = cfg
         env.pop('CLAUDE_CODE_OAUTH_TOKEN', None)
+    elif discovered.get('family') == 'codex' and discovered.get('home'):
+        env['CODEX_HOME'] = str(discovered['home'])
     return env
 
 
@@ -949,7 +951,7 @@ def scorer_prefix():
         raise RuntimeError('Live scorer disabled by environment.')
     command = shutil.which(SCORER['provider'])
     if not command:
-        raise RuntimeError('Antigravity CLI (agy) is not installed.')
+        raise ScorerUnavailable('Antigravity CLI (agy) is not installed.')
     return [command]
 
 
@@ -1046,6 +1048,30 @@ class ScorerError(RuntimeError):
 
 class ScorerInputError(ScorerError):
     """The scorer could not take the whole task text. Never answered by cutting the text or by keyword guessing."""
+
+
+class ScorerUnavailable(Exception):
+    """This host has no usable account, client or key for the scorer; the cascade skips it without an error."""
+
+
+# Subscription family each CLI scorer runs on; the account is chosen per host from discovery, never assumed.
+SCORER_FAMILIES = {'claude_haiku_low': 'claude', 'codex_terra_low': 'codex', 'agy_flash_low': 'antigravity'}
+
+
+def scorer_accounts(scorer_type, inventory=None, policy=None):
+    """Every ready, host-allowed subscription account of the scorer's family, the family's own account first (`claude`,
+    then `claude-2`, ...); [] when this host has none. API scorers have no account: [None]. Metered proxies of the
+    family are not scorer accounts. agy has no per-account home to switch, so it gets one attempt."""
+    family = SCORER_FAMILIES.get(scorer_type)
+    if family is None:
+        return [None]
+    rows = (inventory if inventory is not None else provider_inventory.current()).get('accounts') or {}
+    usable = sorted((name for name, row in rows.items()
+                     if isinstance(row, dict) and row.get('family') == family and row.get('status') == 'ready'
+                     and row.get('billing', 'subscription') == 'subscription'
+                     and (family == 'antigravity' or row.get('home')) and host_policy.account_allowed(policy, name)),
+                    key=lambda name: (name != family, name))
+    return usable[:1] if family == 'antigravity' else usable
 
 
 SCORER_CONFIG_KEYS = ('scorer_type', 'jev_api_key', 'jev_base_url', 'jev_model', 'api_key', 'base_url', 'model',
@@ -1366,8 +1392,9 @@ def codex_scorer_command(prefix, model, directory):
                      '--output-last-message', str(directory / 'answer.json'), '--json', '-']
 
 
-def run_scorer(scorer_type, task, allocator, capabilities, timeout, config):
-    """(validated profile, provider, model) from one scorer backend, or an exception."""
+def run_scorer(scorer_type, task, allocator, capabilities, timeout, config, account=None):
+    """(validated profile, provider, model) from one scorer backend on `account`, ScorerUnavailable when this host
+    lacks its client or key, or another exception when it was tried and failed."""
     spec = SCORER_TYPES[scorer_type]
     if scorer_type == 'agy_flash_low':
         prefix = scorer_prefix()
@@ -1399,8 +1426,8 @@ def run_scorer(scorer_type, task, allocator, capabilities, timeout, config):
     if scorer_type in SCORER_API_FIELDS:
         key, _, base, model = scorer_api_settings(scorer_type, config)
         if not key:
-            raise ScorerError('TypeSafe API key not configured (scorer-config.json jev_api_key or TYPESAFE_API_KEY).'
-                              if scorer_type == 'jev' else 'Custom scorer API key not configured.')
+            raise ScorerUnavailable('TypeSafe API key not configured (scorer-config.json jev_api_key or TYPESAFE_API_KEY).'
+                                    if scorer_type == 'jev' else 'Custom scorer API key not configured.')
         if not (base and model):
             raise ScorerError('Custom scorer needs base_url and model.')
         base = check_base_url(base)
@@ -1411,13 +1438,16 @@ def run_scorer(scorer_type, task, allocator, capabilities, timeout, config):
         request = build_openai_request(task, scorer_schema(allocator, capabilities), model)
         response = post_json(openai_chat_url(base), request, key, timeout)
         return allocator.validate_profile(parse_openai_response(response)), spec['provider'], model
+    try:
+        prefix = cli_prefix(spec['provider'])
+    except RuntimeError:
+        raise ScorerUnavailable(f"{spec['provider']} CLI is not installed.") from None
     schema = scorer_schema(allocator, capabilities)
-    prefix = cli_prefix(spec['provider'])
     with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
         directory = Path(temporary)
         if spec['provider'] == 'claude':
             code, out, _ = run_process(claude_scorer_command(prefix, spec['model'], schema), directory,
-                                       scorer_prompt(task), timeout)
+                                       scorer_prompt(task), timeout, account=account)
             if code != 0:
                 raise ScorerError('Claude scorer CLI failed.')
             answer = parse_claude_scorer_output(out)
@@ -1425,7 +1455,7 @@ def run_scorer(scorer_type, task, allocator, capabilities, timeout, config):
             # Codex structured output is strict: every property required and no extra ones.
             (directory / 'schema.json').write_text(json.dumps({**schema, 'additionalProperties': False}), encoding='utf-8')
             code, _, _ = run_process(codex_scorer_command(prefix, spec['model'], directory), directory,
-                                     scorer_prompt(task), timeout)
+                                     scorer_prompt(task), timeout, account=account)
             if code != 0:
                 raise ScorerError('Codex scorer CLI failed.')
             answer = json.loads((directory / 'answer.json').read_text(encoding='utf-8-sig'))
@@ -1540,6 +1570,7 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
     reason, attempts = 'model_call_skipped', []
+    policy = host_policy.load_policy() if use_model else None
     if use_model:
         cache_key = score_cache_key(task, allocator, capabilities, order, config)
         cached = score_cache_get(cache_key)
@@ -1547,25 +1578,31 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
             return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
         input_error = None
         for scorer_type in order:
-            started = time.monotonic()
-            try:
-                profile, provider, model = run_scorer(scorer_type, task, allocator, capabilities, timeout, config)
-            except SCORER_ERRORS as exc:
-                # Never echo CLI output or response bodies; the type (and our own fixed text) tells the cause.
-                attempt = {'scorer_type': scorer_type, 'error_type': type(exc).__name__}
-                if isinstance(exc, ScorerError):
-                    attempt['detail'] = str(exc)
-                attempts.append(attempt)
-                if isinstance(exc, ScorerInputError):
-                    input_error = input_error or exc
-                continue
-            meta = {'source': 'system_one', 'scorer_type': scorer_type, 'provider': provider, 'model': model,
-                    'duration_ms': int((time.monotonic() - started) * 1000)}
-            if attempts:
-                meta.update(configured_scorer=configured, fallback_reason=attempts[0]['error_type'], attempts=attempts)
-            elif scorer_type == configured:
-                score_cache_put(cache_key, profile, meta)
-            return profile, meta
+            # Every usable account of the family in turn; none (no account, client or key) skips it without an error.
+            for account in scorer_accounts(scorer_type, policy=policy):
+                started = time.monotonic()
+                try:
+                    profile, provider, model = run_scorer(scorer_type, task, allocator, capabilities, timeout, config, account)
+                except ScorerUnavailable:
+                    break
+                except SCORER_ERRORS as exc:
+                    # Never echo CLI output or response bodies; the type (and our own fixed text) tells the cause.
+                    attempt = {'scorer_type': scorer_type, 'error_type': type(exc).__name__,
+                               **({'account': account} if account else {})}
+                    if isinstance(exc, ScorerError):
+                        attempt['detail'] = str(exc)
+                    attempts.append(attempt)
+                    if isinstance(exc, ScorerInputError):
+                        input_error = input_error or exc
+                    continue
+                meta = {'source': 'system_one', 'scorer_type': scorer_type, 'provider': provider, 'model': model,
+                        **({'account': account} if account else {}),
+                        'duration_ms': int((time.monotonic() - started) * 1000)}
+                if attempts:
+                    meta.update(configured_scorer=configured, fallback_reason=attempts[0]['error_type'], attempts=attempts)
+                else:       # the first scorer this host can run answered; earlier ones were absent here, not failing
+                    score_cache_put(cache_key, profile, meta)
+                return profile, meta
         if input_error is not None:
             # No scorer could take the whole text: stop here rather than route on a cut or keyword-guessed profile.
             raise input_error
