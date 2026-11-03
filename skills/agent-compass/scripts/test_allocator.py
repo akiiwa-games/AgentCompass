@@ -1356,6 +1356,17 @@ class AllocatorTests(unittest.TestCase):
             reasons = long_rows[f'agy_opus55_{effort}']['excluded']
             self.assertTrue(any('3p-5h' in reason for reason in reasons), reasons)
 
+    def test_antigravity_3p_windows_price_from_the_pool_prior_without_a_fleet_capacity(self):
+        # A host on the shipped template (no capacity_usd) had no 3p rate, so a 1.2%-left 3p-weekly let a 3h Opus run.
+        accounts = allocator.load_accounts()
+        spec = copy.deepcopy(accounts['accounts']['antigravity'])
+        spec.pop('capacity_usd', None)
+        spec.pop('burn_pct_per_worker_hour', None)
+        info = allocator.model_spec(accounts, 'claude-opus-5-5')
+        for wid in ('3p-weekly', '3p-5h', 'gemini-weekly'):
+            rate = allocator.unit_rate(spec, wid, 'claude-opus-5-5', 'high', accounts['scoring'], info=info, now=self.now)
+            self.assertAlmostEqual(rate, 100 * info['usd_per_hour'] / allocator.AGY_WINDOW_CAPACITY_USD[wid], places=6)
+
 
 class OverrideContractTests(unittest.TestCase):
     """Contract tests for temporary priority overrides, reset confirmation, receipts, and atomic store."""

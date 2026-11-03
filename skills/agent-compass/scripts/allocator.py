@@ -635,6 +635,10 @@ def burn_scale(policy, curves, effort):
     return effort_value(policy, curves, 'burn', effort, reference) / reference
 
 
+# Routing-scale prior for Google AI Ultra 20x (not billed USD); mirrors plan-templates.json antigravity.ultra20.
+AGY_WINDOW_CAPACITY_USD = {'gemini-weekly': 625.0, 'gemini-5h': 182.0, '3p-weekly': 88.0, '3p-5h': 17.6}
+
+
 def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None):
     """Percent of the window this bundle spends on work that takes one worker-hour at High, or None when the account
     has no rate. With a `capacity_usd` for the window and a `usd_per_hour` for the model, that is the hour's list-price
@@ -644,7 +648,7 @@ def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None
     reference = effort_value(policy, curves, 'burn', 'high', 1.0)
     scale = burn_scale(policy, curves, effort)
     capacity, usd = capacity_usd(spec, wid, now or datetime.now(timezone.utc)), (info or {}).get('usd_per_hour')
-    if capacity is None and wid in ('gemini-weekly', 'gemini-5h') and usd is not None:
+    if capacity is None and wid in AGY_WINDOW_CAPACITY_USD and usd is not None:
         capacity = window_capacity_usd(spec, wid, now)
     if capacity and usd:
         return 100 * usd / capacity * scale
@@ -699,8 +703,7 @@ def window_capacity_usd(spec, wid, now=None):
     explicit = capacity_usd(spec, wid, now or datetime.now(timezone.utc))
     if explicit is not None:
         return explicit
-    # Routing-scale prior for Google AI Ultra 20x (not billed USD); mirrors plan-templates.json antigravity.ultra20.
-    derived = {'gemini-weekly': 625.0, 'gemini-5h': 182.0, '3p-weekly': 88.0, '3p-5h': 17.6}.get(wid)
+    derived = AGY_WINDOW_CAPACITY_USD.get(wid)
     if derived is not None:
         return derived
     rate = (spec.get('burn_pct_per_worker_hour') or {}).get(wid)

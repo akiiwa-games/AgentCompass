@@ -608,6 +608,30 @@ class DiscoveryTests(unittest.TestCase):
                 True,
             )
 
+    def test_pi_on_the_codex_subscription_adds_no_twin_of_a_codex_pi_bundle(self):
+        # LITTLESPRING 2026-11-03: Pi signed in as the Codex account re-derived every pi-harness model under `pi`,
+        # enabled, next to Codex's own (curated, partly disabled) rows; launch then hit the disabled twin.
+        self.native_codex('codex', 'shared-acct')
+        self.write('.pi/agent/auth.json', {'openai-codex': {
+            'type': 'oauth', 'access': 'SECRET-shared-acct', 'refresh': 'r', 'accountId': 'shared-acct'}})
+        snapshot = self.discover()
+        self.assertEqual(snapshot['accounts']['pi'].get('quota_account'), 'codex')
+        # Pi's catalog, as the tray's model-catalog.json lists it on that host.
+        snapshot['accounts']['pi']['models'] = ['openai-codex/gpt-6.1-sol', 'openai-codex/gpt-6-luna']
+        fleet = allocator.load_accounts(allocator.reference_fleet_path())
+        # The shipped template's bundle-less `pi` account, which derives its bundles per model.
+        fleet['accounts']['pi'] = {'plan': 'Pi', 'billing': 'subscription', 'verified': False,
+                                   'windows': {'usage': {'hours': 168}}}
+        accounts = inventory.apply(fleet, snapshot)
+        self.assertNotIn('auto:pi:pi:gpt-6.1-sol@high', allocator.bundles(accounts))
+        seen = {}
+        for bid, b in allocator.bundles(accounts).items():
+            if b['account'] == 'codex':
+                key = (allocator.bundle_harness(b, 'codex', bid), allocator.canonical(b['model'], accounts), b.get('effort'))
+                self.assertNotIn(key, seen, f'{bid} duplicates {seen.get(key)}')
+                seen[key] = bid
+        self.assertTrue(any(k[0] == 'pi' for k in seen))
+
     def test_pi_and_litellm_proxy_auto_enrolled_into_router(self):
         self.write('.pi/agent/auth.json', {
             'openai-codex': {

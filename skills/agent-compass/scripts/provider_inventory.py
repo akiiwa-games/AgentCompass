@@ -1196,11 +1196,19 @@ def apply(accounts, inventory=None):
                 else:
                     bundle['discovery_unavailable'] = 'model not advertised by the configured provider'
     _apply_auto_bundles(accounts, inventory, live)
+    from allocator import bundle_harness
     for name, row in inventory['accounts'].items():
         owner = row.get('quota_account')
         if owner and owner != name and name in specs and owner in specs:
+            # A second account on the owner's subscription (Pi signed in as the Codex account) re-derives what the
+            # owner already launches through the same launcher; the owner's rows and its enable/disable curation stand.
+            def launch_key(bid, bundle, account):
+                model = resolve_canonical_model(bundle.get('model'), known_models, aliases) or bundle.get('model')
+                return bundle.get('provider', account), bundle_harness(bundle, account, bid), model, bundle.get('effort')
+            offered = {launch_key(bid, b, owner) for bid, b in specs[owner].get('bundles', {}).items()}
             for bid, bundle in specs[name].get('bundles', {}).items():
-                specs[owner]['bundles'][bid] = {**bundle, 'provider': bundle.get('provider', name)}
+                if launch_key(bid, bundle, name) not in offered:
+                    specs[owner]['bundles'][bid] = {**bundle, 'provider': bundle.get('provider', name)}
             specs[name]['bundles'] = {}
             specs[name]['quota_account'] = owner
     apply_shared_quota(accounts)
