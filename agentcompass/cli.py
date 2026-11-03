@@ -18,7 +18,6 @@ STAGES = ("roll", "plan", "providers", "score", "scorer", "delegate", "select", 
 
 RUNNERS = {"dot": ("dot-subagent", "run_dot_task.py"), "grok-bot": ("agent-compass", "run_grok_bot.py"),
            "herdr": ("agent-compass", "host_herdr.py"),
-           "cindy": ("agent-compass", "host_cindy.py"),
            "chatgpt-web": ("chatgpt-pro-consult", "consult_bridge.py")}
 
 HELP = """usage: agentcompass <command> [arguments]
@@ -38,7 +37,6 @@ install and health:
 
 other stages: score, scorer, delegate, select, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
-Cindy bridge: cindy build-plugin --output <new-directory>  (install through Cindy, then use its roll tool)
 Options of one command: agentcompass <command> -h   (every option: --help-all)
 """
 

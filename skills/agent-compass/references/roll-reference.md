@@ -2,7 +2,7 @@
 
 Full mechanics behind `roll`; the SKILL.md default path needs none of this unless a result says otherwise.
 
-Herdr core (`hc`) and Cindy are hosts, not quota accounts. Herdr detects the actual `HC_TERMINAL_ID` and launches an owned child terminal. Cindy needs the scoped plugin bridge because its shell does not expose a supported parent mailbox. See [Herdr and Cindy setup, capabilities and return paths](herdr-cindy.md) before first use in either host.
+Herdr core (`hc`) is a host, not a quota account. It detects the actual `HC_TERMINAL_ID` and launches an owned child terminal. See [Herdr setup, capabilities and return paths](herdr.md) before first use. Cindy's shell exposes no supported parent mailbox, so raw roll there is refused; its plugin lives in the separate `cindy-agentcompass-plugin` repository.
 
 Never manually choose between Paseo `create_agent`, Claude `Agent`, Codex `spawn_agent`, Antigravity `invoke_subagent`, `run_dot_task.py`, or raw CLI. Pass the task inline, from stdin, or as a Markdown file; `--hours <n>` is optional (without it the classifier estimates hours in the same call; the source and confidence are reported under `assumptions`):
 

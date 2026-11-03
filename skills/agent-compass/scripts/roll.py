@@ -91,6 +91,11 @@ def build_task(args, text, parent):
         task['expected_hours'] = float(hours)
     if parent:
         task['parent_agent_id'] = parent
+    if getattr(args, 'brief', None) is not None:
+        try:
+            task['brief_path'] = str(Path(args.brief).resolve())
+        except OSError:
+            task['brief_path'] = str(args.brief)
     if args.local_only:
         task['needs'] = {'local_only': True, 'local_only_reason': args.local_only}
     if getattr(args, 'file', None) or getattr(args, 'apply_to', None):
@@ -98,6 +103,85 @@ def build_task(args, text, parent):
     if getattr(args, 'fast', False):
         task.setdefault('needs', {})['fast'] = True
     return task
+
+
+_MATCH_STOP_WORDS = frozenset({
+    'brief', 'task', 'md', 'txt', 'rev', 'revision', 'round', 'v1', 'v2', 'v3',
+    'followup', 'follow', 'up', 'part', 'the', 'and', 'for', 'in', 'to', 'of',
+    'with', 'on', 'by', 'from', 'new', 'update', 'fix', 'fixes',
+})
+
+
+def _match_tokens(*texts):
+    tokens = set()
+    for raw in texts:
+        if not isinstance(raw, str) or not raw:
+            continue
+        s = raw.lower()
+        for m in re.finditer(r'(?:step|worker|line|track|phase|stage|batch)[\s_-]*([0-9a-z]+)', s):
+            prefix = re.match(r'[a-z]+', m.group(0)).group(0)
+            ident = re.sub(r'(?:rev|v\d+|round\d+)$', '', m.group(1)).strip('_-')
+            if ident:
+                tokens.add(f'{prefix}:{ident}')
+        for tok in re.findall(r'[a-z0-9]{2,}|[\u4e00-\u9fff]{2,}', s):
+            if tok not in _MATCH_STOP_WORDS and not tok.isdigit():
+                tokens.add(tok)
+    return tokens
+
+
+def match_reusable_worker(args, task, text, parent, workers=None):
+    """Select the best idle Paseo worker of `parent` for continuation or rotation."""
+    if not parent or getattr(args, 'new_worker', False):
+        return None
+    excluded = set(getattr(args, '_exclude_agents', None) or ())
+    workers = [w for w in (registry.reusable_workers(parent) if workers is None else workers)
+               if w.get('agent_id') not in excluded]
+    explicit_id = (getattr(args, 'resume', None) or '').strip()
+    if explicit_id:
+        matched = next((w for w in workers if w['agent_id'] == explicit_id), None)
+        if matched is None:
+            raise ValueError(f'Worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}.')
+        return matched
+    if not workers:
+        return None
+    task_id = task.get('task_id')
+    brief_path = task.get('brief_path')
+    title = getattr(args, 'title', None) or title_of(text)
+    stem = Path(brief_path).stem if brief_path else ''
+    query_tokens = _match_tokens(stem, title)
+    query_tags = {t for t in query_tokens if ':' in t}
+    eligible = []
+    for w in workers:
+        if (task_id and task_id in w.get('task_ids', ())) or (brief_path and brief_path in w.get('brief_paths', ())):
+            eligible.append(((not w.get('worn', False), 3, 1.0, w.get('updated_at') or ''), w))
+            continue
+        w_stems = [Path(p).stem for p in w.get('brief_paths', ()) if p]
+        w_tokens = _match_tokens(*w_stems, *w.get('titles', ()))
+        w_tags = {t for t in w_tokens if ':' in t}
+        if query_tags and w_tags:
+            if not (query_tags & w_tags):
+                continue
+            overlap = len(query_tokens & w_tokens) / max(1, len(query_tokens | w_tokens))
+            eligible.append(((not w.get('worn', False), 2, 1.0 + overlap, w.get('updated_at') or ''), w))
+            continue
+        overlap = len(query_tokens & w_tokens) / max(1, len(query_tokens | w_tokens)) if (query_tokens and w_tokens) else 0.0
+        tier = 2 if overlap > 0 else 1
+        eligible.append(((not w.get('worn', False), tier, overlap, w.get('updated_at') or ''), w))
+    if not eligible:
+        return None
+    return max(eligible, key=lambda item: item[0])[1]
+
+
+def _bundle_matches_worker(bundle, worker):
+    if not isinstance(bundle, dict) or not isinstance(worker, dict) or worker.get('worn'):
+        return False
+    w_bundle = worker.get('bundle') or {}
+    if bool(bundle.get('fast')) != bool(w_bundle.get('fast')):
+        return False
+    b_id = bundle.get('bundle_id') or bundle.get('id')
+    if b_id and worker.get('bundle_id') == b_id and not str(b_id).startswith('user_override_'):
+        return True
+    return all(bundle.get(k) and bundle.get(k) == w_bundle.get(k) for k in ('provider', 'account', 'model', 'effort'))
 
 
 def summary(decision):
@@ -113,25 +197,51 @@ def python(script, *argv):
     return [sys.executable, '-X', 'utf8', str(script), *argv]
 
 
+_INJECTED_FOOTER_RE = re.compile(
+    r'\n+---\n+(?:# Worker(?:-to-parent communication contract| 通信与汇报契约)\b[\s\S]*|'
+    r'Parent session agent ID: `[^`\n]+`\.\s*(?:Parent host:[^\n]*\n?)?)\Z'
+)
+
+
+def strip_injected_contract(text):
+    """Strip any previously injected worker communication contract/footer so re-rolling or pre-pasted briefs do not duplicate it."""
+    if not isinstance(text, str):
+        return ''
+    cleaned = _INJECTED_FOOTER_RE.sub('', text)
+    cleaned = re.sub(
+        r'(?:\r?\n)+(?:---\r?\n+)?Parent session agent ID: `[^`\n]+`\.(?:\r?\nParent host: `[^`\n]+`\. Parent message address: `[^`\n]+`\.)?\s*\Z',
+        '',
+        cleaned,
+    )
+    return cleaned
+
+
+def recipient_footer(parent, host='paseo', address=None):
+    parent = require_parent_id(parent)
+    return (f'Parent session agent ID: `{parent}`.\n'
+            f'Parent host: `{host}`. Parent message address: `{address or parent}`.')
+
+
 def prepare_worker_prompt(text, parent, host='paseo', address=None):
     """One contract for every launch surface; retain the source brief and a durable native-fallback prompt."""
-    parent = require_parent_id(parent)
-    recipient = (f'Parent session agent ID: `{parent}`.\n'
-                 f'Parent host: `{host}`. Parent message address: `{address or parent}`.')
-    prompt = text + '\n\n---\n\n' + WORKER_COMMUNICATION.read_text(encoding='utf-8') + '\n' + recipient + '\n'
+    base = strip_injected_contract(text)
+    recipient = recipient_footer(parent, host, address)
+    prompt = base + '\n\n---\n\n' + WORKER_COMMUNICATION.read_text(encoding='utf-8') + '\n' + recipient + '\n'
     if host == 'herdr':
         prompt += ('\nHerdr core return channel: send questions and [Worker final report] with the argument vector '
                    f'`hc send {parent} <message>`; check the send result. Finish this turn after reporting. '
                    'Your final reply alone is not a parent message. Do not use Paseo or user-dialog tools.\n')
-    if host == 'cindy':
-        prompt += ('\nCindy plugin task return channel: this task has no worker-to-parent mailbox. '
-                   'Return [Worker final report] or BLOCKED / needs_input as your final assistant reply. '
-                   'The parent collects that exact result through the AgentCompass plugin status tool. '
-                   'Do not use Paseo, askpass routes, user-dialog tools or invent a callback.\n')
     WORKER_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
     path = WORKER_PROMPTS_DIR / f'{uuid.uuid4()}.md'
     path.write_bytes(prompt.encode('utf-8'))  # no newline translation of the caller's text
     return prompt, path
+
+
+def prepare_resume_prompt(text, parent, host='paseo', address=None):
+    """Resumed turns already received worker-communication.md in turn 1; send only the brief and parent address footer."""
+    base = strip_injected_contract(text)
+    recipient = recipient_footer(parent, host, address)
+    return base + '\n\n---\n\n' + recipient + '\n'
 
 
 def dot(args, out, prompt_file):
@@ -204,11 +314,28 @@ def grok_bot(args, out, prompt_file, task, bundle):
 
 
 def paseo(args, out, decision, task, text, parent, usage, judge=None):
-    launch = {'title': args.title or title_of(text), 'initialPrompt': text}
+    dispatch_flow.reconcile()
+    resume_agent_id = None
+    if not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
+        selected_bundle = decision.get('selected_bundle') or {}
+        excluded = set(getattr(args, '_exclude_agents', None) or ())
+        compatible = [w for w in registry.reusable_workers(parent)
+                      if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w)]
+        chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
+                           if isinstance(task.get('chain'), dict) else None)
+        if chain_worker_id and any(w['agent_id'] == chain_worker_id for w in compatible):
+            resume_agent_id = chain_worker_id
+        elif compatible and not getattr(args, 'resume', None):
+            matched = match_reusable_worker(args, task, text, parent, workers=compatible)
+            if matched:
+                resume_agent_id = matched['agent_id']
+    prompt_for_launch = (prepare_resume_prompt(text, parent, out.get('parent_host') or 'paseo', out.get('parent_address'))
+                         if resume_agent_id else text)
+    launch = {'title': args.title or title_of(text), 'initialPrompt': prompt_for_launch}
     if args.workspace:
         launch['workspaceId'] = args.workspace
-    dispatch_flow.reconcile()
-    row = registry.prepare(decision['decision_id'], task, launch, usage)
+    row = registry.prepare(decision['decision_id'], task, launch, usage,
+                           resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None)
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=args.wait)
     if (
         receipt.get('state') == 'failed'
@@ -492,7 +619,12 @@ def compact(result, status, detail_path):
         nxt = ('Launch one native worker with exactly route_bundle (its modeId is the permission mode) and the full contents of '
                'worker_prompt_file as its prompt; if the host cannot reproduce that provider/account/model/effort, tell the '
                'user instead of substituting.')
-    out = {'status': status, 'worker': {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort') if bundle.get(k)} or None,
+    worker_summary = {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort') if bundle.get(k)}
+    if worker_summary and worker.get('agent_id'):
+        worker_summary['agent_id'] = worker['agent_id']
+    if worker_summary and worker.get('resumed'):
+        worker_summary['resumed'] = True
+    out = {'status': status, 'worker': worker_summary or None,
            'reason': ((result.get('route') or {}).get('reason') or '')[:160] or None, 'next_action': nxt}
     cause = result.get('error') or worker.get('error') or worker.get('read_error')
     if cause and status in ('error', 'blocked', 'pending', 'scorer_unavailable'):
@@ -513,7 +645,7 @@ def compact(result, status, detail_path):
 
 # Flags that describe one brief; a batch takes only the shared ones and each brief is rolled as written.
 BATCH_ONLY_ALONE = ('task_id', 'title', 'hours', 'local_only', 'keep_whole', 'file', 'apply_to', 'provider', 'account',
-                    'model', 'effort', 'basis', 'wait')
+                    'model', 'effort', 'basis', 'wait', 'resume')
 
 
 def run_batch(args, judge):
@@ -529,12 +661,17 @@ def run_batch(args, judge):
     if not args.dry_run:
         judge.prefetch_scores([build_task(one, read_task_text(one), None) for one in each], args.score_timeout)
     results, codes = [], []
+    batch_used_agents = set()
     for one in each:
+        one._exclude_agents = set(batch_used_agents)
         try:
             result, code = run(one, judge)
         except (OSError, ValueError, RuntimeError) as exc:
             result, code = {'status': 'error', 'cause': str(exc)[:300],
                             'next_action': 'Fix the cause, then roll this brief again on its own.'}, 1
+        used_id = (result.get('worker') or {}).get('agent_id') if isinstance(result, dict) else None
+        if isinstance(used_id, str) and used_id:
+            batch_used_agents.add(used_id)
         results.append({'brief': str(one.brief), **result})
         codes.append(code)
     code = 0 if not any(codes) else (1 if 1 in codes else 2)
@@ -574,14 +711,37 @@ def _run(args, judge):
     task = build_task(args, text, parent)
     task.update(parent_host=parent_host, parent_address=parent_address)
     if parent and not args.dry_run:
+        pending_rows = [r for r in registry.pending() if r.get('parent_id') == parent]
+        if pending_rows:
+            launchers = (provider_inventory.current().get('launchers') or {})
+            can_reconcile = any(
+                (r.get('task_id') == task['task_id'])
+                or (launchers.get((r.get('bundle') or {}).get('provider')) or {}).get('status') != 'disabled'
+                for r in pending_rows
+            )
+            if can_reconcile:
+                for r in pending_rows:
+                    dispatch_flow.reconcile(r['dispatch_id'])
+                pending_rows = [r for r in registry.pending() if r.get('parent_id') == parent]
         # The same task already dispatched by this parent: hand back that worker, without classifying or launching again.
-        for row in registry.pending():
+        for row in pending_rows:
             if (row['parent_id'], row['task_id']) == (parent, task['task_id']):
                 argv = entry.argv('launch', '--dispatch-id', row['dispatch_id'], '--parent-id', parent, '--watch-seconds', '120')
                 return dict(stage='roll', parent_id=parent, launched=None, dispatch_mode='paseo',
                             caller_action='run_next_argv', worker=dict(dispatch_flow.public(row), continuation_argv=argv),
                             next='This task already has a dispatch (state ' + row['state'] + '): run next_argv to observe it; '
                                  'it will not create a second worker.'), 0
+        matched_worker = match_reusable_worker(args, task, text, parent)
+        if matched_worker and matched_worker.get('bundle_id'):
+            task['chain'] = {
+                'id': matched_worker['chain_id'],
+                'coupling': 'high' if getattr(args, 'resume', None) else 'medium',
+                'worker': {
+                    'agent_id': matched_worker['agent_id'],
+                    'bundle': matched_worker['bundle_id'],
+                    **matched_worker['session_state'],
+                },
+            }
     with provider_inventory.snapshot():
         if args.provider or args.model or args.effort:
             if not args.basis:
@@ -634,9 +794,6 @@ def _run(args, judge):
                     next='The router needs a user decision; show route.reason to the user.'), 2
     text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address)
     out['worker_prompt_file'] = str(prompt_file)
-    if parent_host == 'cindy':
-        import host_cindy
-        return host_cindy.prepare(out, bundle, prompt_file)
     if provider == 'dot':
         return dot(args, out, prompt_file)
     if provider == 'chatgpt-web':

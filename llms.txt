@@ -40,6 +40,8 @@
 
 ## Companion Modules & Plugins
 
+- [cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin): Cindy host plugin that delegates routing decisions to `agentcompass roll` while Cindy's own `cindy.tasks` API manages task execution and message collection.
+- [magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router): Magpie local gateway plugin running AgentCompass 10D task profiling and Model DNA `<model>:<effort>` routing per turn.
 - [usage-float/README.md](https://github.com/akiiwa-games/usage-float#readme): Optional borderless Windows subscription quota HUD (the router collects usage itself with `agentcompass usage`), Claude/Codex rate-limit reset credit redeemer (`cedar_ember`, `juniper_tide`), and `mpv` live wallpaper switcher.
 - [gemini-web/README.md](https://github.com/akiiwa-games/gemini-web#readme): Persistent Chrome CDP bridge (`127.0.0.1:17849`) for Gemini Web, Google AI Studio, Flow, and Gemini Omni 1.1 Flash video generation.
 - [tray/](tray/): Windows 11 system tray supervisor, 5-axis radar decision console (`router_window.py`), and local gateway manager (`dot2api`, `muse2api`, `easytier`).

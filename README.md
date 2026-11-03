@@ -75,7 +75,7 @@ You pay for frontier subscriptions whose quota windows reset on a fixed clock, y
 
 | Area | What you get |
 |---|---|
-| **Hosts** | Claude Code, Codex CLI, Google Antigravity (`agy`), Paseo, Pi, OpenCode, **Orca**, **T3 Code**, and **Herdr core** (`hc`, real terminal parent/child dispatch). **Cindy** has an installable scoped plugin bridge for builds exposing its experimental public tasks API; released-version compatibility is not yet established. [Host setup and limits](skills/agent-compass/references/herdr-cindy.md). |
+| **Hosts** | Claude Code, Codex CLI, Google Antigravity (`agy`), Paseo, Pi, OpenCode, **Orca**, **T3 Code**, and **Herdr core** (`hc`, real terminal parent/child dispatch). [Host setup and limits](skills/agent-compass/references/herdr.md). Hosts and gateways that manage their own task/message or request lifecycle use dedicated plugins: **[cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin)** (Cindy tasks) and **[magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router)** (Magpie gateway per-turn routing). |
 | **Plan templates** | [`plan-templates.json`](skills/agent-compass/references/plan-templates.json) ships calibrated capacity and burn rates: Claude `Pro` / `Max 5x` / `Max 20x`, ChatGPT / Codex `Plus` / `Team` / `Pro 100` / `Pro`, Google AI `Pro` / `Ultra 5x` / `Ultra 20x`. Aliases resolve, missing fields are filled without overriding your values, and a configured plan seeds capacity when no probe result exists. |
 | **Install** | `agentcompass setup / doctor / plan / roll / providers / uninstall` via `uv tool install`, or the per-user Windows tray installer. |
 | **Smarter gate** | Blocks unrouted spawns, rotates workers at 2M historical context, and blocks launches on disabled accounts or tiers. A parent can still steer, wrap up or hand off its own **running** worker; completion notifications are guaranteed so workers without a messaging tool (e.g. `agy`) never lose their result. |
@@ -288,6 +288,9 @@ Safety properties of the sync (`agentcompass setup` runs the same code):
 4. **Pi (`~/.pi/agent/skills/<name>`) & OpenCode**: Populated with skill junctions and global `AGENTS.md` rules (`~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md`).
 5. **Orca & T3 Code (orchestrator apps)**: Both run the real Claude Code / Codex CLIs on your own `~/.claude` and `~/.codex`, so those rules and skills already reach their agents. Orca additionally keeps a private Codex home per signed-in account (`<Orca userData>/codex-accounts/<id>/home`) and mirrors only `config.toml` into it, so `setup` writes the rules block and links the `agent-compass` skill there too. `roll` recognises an Orca session (`ORCA_AGENT_SESSION_ID` / `ORCA_TERMINAL_HANDLE`) and a T3 thread (`T3_MCP_URL` + `T3_MCP_BEARER_TOKEN`, or `--parent-host t3`) and returns the host's own launch command (`orca orchestration worker-start ...` / the T3 `delegate_task` MCP tool) instead of starting a CLI worker that could not report back. The gate hook blocks both launch paths without a router record.
 6. **Paseo Daemon (`~/.paseo/config.json`)**: `daemon.appendSystemPrompt` must be updated via `setup/sync_host_globals.py` so Paseo-spawned sessions inherit the routing and worker communication contract.
+7. **Cindy & Magpie (host-managed task / gateway plugins)**: When a host or local gateway manages its own message lifecycle or HTTP request proxying, integration lives in a dedicated plugin repository rather than raw shell dispatch:
+   - **[cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin)**: Cindy manages its own task creation, runs and message history (`cindy.tasks.create` / `send` / `getRun` / `readMessages`) and does not expose an addressable parent mailbox to child shells (raw shell `roll` in Cindy is refused). The Cindy plugin calls `agentcompass roll --parent-host native` purely for routing decisions and prompt packaging, then dispatches the task and collects `[Worker final report]` replies through Cindy's own task API.
+   - **[magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router)**: [Magpie](https://github.com/yetone/magpie) manages its own local HTTP gateway and account pools. The Magpie plugin runs AgentCompass's 10D task profiling + 7D/3D Model DNA routing at the gateway request layer (`magpie.hooks` → `magpie.middleware` and `/v1/systemone` decision provider) to select `<model>:<effort>` per turn.
 
 ### Deployment & Updates
 
@@ -325,6 +328,8 @@ python -m unittest discover -s audit -p "test_*.py"
 
 ## Related Projects
 
+- [cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin) — Cindy host plugin that uses AgentCompass for routing decisions while Cindy manages task execution and message collection.
+- [magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router) — Magpie gateway plugin for per-turn 10D intent and Model DNA `<model>:<effort>` routing.
 - [usage-float](https://github.com/akiiwa-games/usage-float) — standalone Windows subscription quota HUD (optional display plugin).
 - [lark-mbti-jev](https://github.com/akiiwa-games/lark-mbti-jev) — local Feishu/Lark MBTI and anime persona overlay powered by Jev.
 

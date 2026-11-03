@@ -207,6 +207,17 @@ class SourcePatchTests(unittest.TestCase):
         self.assertEqual(patch.revert(self.root), "original")
         self.assertEqual(self.text(patch.SESSION), icon_session)
 
+    def test_composer_ui_stop_variants_file_is_supported(self):
+        composer = 'export const CHATGPT_STOP_BUTTON_SELECTOR = Object.values(CHATGPT_STOP_VARIANTS).join(", ");\n'
+        self.put(patch.SESSION, "export const CHATGPT_NEW_CHAT_URL = 'https://chatgpt.com/';\n")
+        self.put(patch.COMPOSER, composer)
+        self.assertIsNone(patch.fits(self.root))
+        self.assertEqual(patch.apply(self.root), "patched")
+        self.assertIn('[aria-label="Stop"]', self.text(patch.COMPOSER))
+        self.assertIn('[aria-label="停止"]', self.text(patch.COMPOSER))
+        self.assertEqual(patch.revert(self.root), "original")
+        self.assertEqual(self.text(patch.COMPOSER), composer)
+
 
 if __name__ == "__main__":
     unittest.main()

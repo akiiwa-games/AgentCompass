@@ -34,11 +34,13 @@ CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 MAIN = "launcher/electron/main.cjs"
 SESSION = "src/chatgpt-session.ts"
+COMPOSER = "src/chatgpt-ui/composer.ts"
 WORKER = "src/adapters/chatgpt-web/browser-worker.ts"
 SELECTION = "src/adapters/chatgpt-web/model-selection.ts"
 
 STOP_BUTTON = "form[data-chatgpt-composer] button[type=\"button\"][aria-label=\"Stop\"]"
 STOP_ICON_BUTTON = "path[d=\"${CHATGPT_STOP_ICON_PATH}\"])`"
+STOP_VARIANTS_SELECTOR = "export const CHATGPT_STOP_BUTTON_SELECTOR = Object.values(CHATGPT_STOP_VARIANTS).join(\", \");"
 CONVERSATION_URL = "/^https:\\/\\/chatgpt\\.com\\/c\\/[A-Za-z0-9-]+\\/?$/"
 
 # (anchor, replacement) per file. An anchor is part of one line, so the file's own line endings do not matter;
@@ -120,8 +122,16 @@ ALTERNATIVE_EDITS: dict[str, list[tuple[str, str]]] = {
         (f"{STOP_ICON_BUTTON};",
          f"{STOP_ICON_BUTTON.replace('{', '{{').replace('}', '}}')} + ', {STOP_BUTTON}, form[data-chatgpt-composer] button[type=\"button\"][aria-label=\"停止\"]'; // "
          + MARK + "chinese-stop"),
+        (STOP_VARIANTS_SELECTOR,
+         f"{STOP_VARIANTS_SELECTOR[:-1]} + ', {STOP_BUTTON}, form[data-chatgpt-composer] button[type=\"button\"][aria-label=\"停止\"]'; // "
+         + MARK + "chinese-stop"),
     ],
 }
+
+
+def target_edits(root: Path) -> dict[str, list[tuple[str, str]]]:
+    stop_file = COMPOSER if (root / COMPOSER).is_file() else SESSION
+    return {stop_file if name == SESSION else name: edits for name, edits in EDITS.items()}
 
 
 def read(path: Path) -> str:
@@ -165,7 +175,7 @@ def patch_source(source: str, edits: list[tuple[str, str]]) -> str:
 def status(root: Path = SOURCE) -> str:
     """patched, original, partial (some files only), or missing (no source tree)."""
     states = []
-    for name in EDITS:
+    for name in target_edits(root):
         path = root / name
         if not path.is_file():
             return "missing"
@@ -176,7 +186,7 @@ def status(root: Path = SOURCE) -> str:
 def fits(root: Path = SOURCE) -> str | None:
     """None when every patch applies to this tree, else why it does not (an upstream change moved an anchor)."""
     try:
-        for name, edits in EDITS.items():
+        for name, edits in target_edits(root).items():
             patch_source(read(root / name), edits)
     except (OSError, ValueError) as error:
         return f"{name}: {error}"
@@ -185,9 +195,10 @@ def fits(root: Path = SOURCE) -> str | None:
 
 def apply(root: Path = SOURCE) -> str:
     """Patch the tree. Nothing is written unless every file patches."""
+    targets = target_edits(root)
     current = status(root)
     if current == "patched":
-        for name in EDITS:
+        for name in targets:
             text = read(root / name)
             if current_marks(text) != text:
                 write(root / name, current_marks(text))
@@ -196,7 +207,7 @@ def apply(root: Path = SOURCE) -> str:
     if current == "partial":
         raise RuntimeError("some files are patched and some are not; run revert first")
     patched = {}
-    for name, edits in EDITS.items():
+    for name, edits in targets.items():
         try:
             patched[name] = patch_source(read(root / name), edits)
         except ValueError as error:
@@ -209,7 +220,7 @@ def apply(root: Path = SOURCE) -> str:
 def revert(root: Path = SOURCE) -> str:
     """Remove our exact edits without discarding unrelated changes in the same file."""
     restored = {}
-    for name, edits in EDITS.items():
+    for name, edits in (*EDITS.items(), (COMPOSER, EDITS[SESSION])):
         path = root / name
         if not path.is_file() or not marked(read(path)):
             continue

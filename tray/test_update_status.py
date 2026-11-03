@@ -55,6 +55,29 @@ class UpdateProgressTests(unittest.TestCase):
             self.assertIn("正在更新", updates.update_all(progress=record))
         record.assert_not_called()
 
+    def test_cli_update_all_records_structured_progress_in_shared_update_status(self):
+        import cli_updates
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory)
+            target = cli_updates.Target(
+                "codex", "Codex CLI", cli_updates.Install(cli_updates.BY_ID["codex"], state_path / "codex.cmd", "npm"), ["codex"]
+            )
+            def fake_update(ident, *args, outcome):
+                outcome.update(status="current", message="Codex CLI 已是最新（0.2.0）")
+                return "Codex CLI 已是最新（0.2.0）"
+
+            with mock.patch.object(cli_updates, "state_dir", return_value=state_path), \
+                    mock.patch.object(cli_updates, "targets", return_value=[target]), \
+                    mock.patch.object(cli_updates, "target_running", return_value=0), \
+                    mock.patch.object(cli_updates, "update", side_effect=fake_update):
+                result = cli_updates.update_all()
+            status = update_status.read_status(state_path)
+            self.assertFalse(status["running"])
+            self.assertEqual(status["targets"], ["Codex CLI"])
+            self.assertIn("已是最新", status["results"]["Codex CLI"])
+            self.assertIn("CLI：", result["summary"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -179,7 +179,7 @@ def issue(result, task, now=None, path=None, allocation_task=None):
            'dispatchable': not (result.get('decision') or {}).get('needs_user_decision', False)
                            and not result.get('host_policy_violation')
                            and bool(resolved)
-                           and (result.get('decision') or {}).get('action') not in ('defer', 'resume')}
+                           and (result.get('decision') or {}).get('action') != 'defer'}
     with transaction(path) as connection:
         connection.execute('INSERT INTO decisions VALUES (?,?)', (row['decision_id'], json.dumps(row, ensure_ascii=False)))
     return {k: row[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound', 'valid_until')}
@@ -265,7 +265,99 @@ def reservations(now=None, path=None, read_only=False):
         return active_records(connection, now)
 
 
-def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None):
+def paseo_agent_record(agent_id, paseo_home=None):
+    """Read local Paseo agent JSON for agent_id if present on disk; None when absent."""
+    if not isinstance(agent_id, str) or not agent_id.strip():
+        return None
+    agents_dir = os.environ.get('ROUTER_PASEO_AGENTS_DIR')
+    base = Path(agents_dir) if agents_dir else Path(paseo_home or os.environ.get('PASEO_HOME') or Path.home() / '.paseo') / 'agents'
+    if not base.is_dir():
+        return None
+    for candidate in base.glob(f'*/{agent_id}.json'):
+        try:
+            doc = json.loads(candidate.read_text(encoding='utf-8', errors='replace'))
+            if isinstance(doc, dict):
+                return doc
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
+    """Completed, idle Paseo workers owned by parent_id, newest first, with compaction/context state."""
+    if not isinstance(parent_id, str) or not parent_id.strip() or not Path(path or db_path()).exists():
+        return []
+    import allocator
+    now = now or utcnow()
+    with transaction(path) as connection:
+        expire(connection, now)
+        all_rows = rows(connection, 'dispatches')
+    by_agent = {}
+    for row in all_rows:
+        if row.get('parent_id') != parent_id:
+            continue
+        agent_id = row.get('agent_id')
+        if isinstance(agent_id, str) and agent_id.strip():
+            by_agent.setdefault(agent_id.strip(), []).append(row)
+    if not by_agent:
+        return []
+    p_home = Path(paseo_home or os.environ.get('PASEO_HOME') or Path.home() / '.paseo')
+    home_dir = p_home.parent if p_home.name == '.paseo' else Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
+    try:
+        max_tokens = int((allocator.load_accounts().get('scoring') or {}).get('rotate_after_carried_tokens', 2_000_000))
+    except Exception:
+        max_tokens = 2_000_000
+    candidates = []
+    for agent_id, history in by_agent.items():
+        history.sort(key=lambda r: (r.get('created_at') or '', r.get('updated_at') or ''))
+        if any(r['state'] in ACTIVE or (r['state'] == 'expired' and r.get('launched_at') and parse(r['hard_until']) > now)
+               for r in history):
+            continue
+        latest = history[-1]
+        if latest.get('state') != 'completed':
+            continue
+        doc = paseo_agent_record(agent_id, paseo_home=paseo_home)
+        if isinstance(doc, dict):
+            labels = doc.get('labels') if isinstance(doc.get('labels'), dict) else {}
+            owner = labels.get('router.parent_id') or labels.get('paseo.parent-agent-id')
+            if owner and owner != parent_id:
+                continue
+            status = doc.get('status') or doc.get('lastStatus')
+            if (doc.get('archivedAt') or status in ('running', 'initializing', 'error')
+                    or doc.get('attentionReason') in ('error', 'permission')
+                    or doc.get('providerUnavailable') or doc.get('pendingPermissions')):
+                continue
+        state = allocator.session_state(agent_id, home=home_dir)
+        carried = allocator.worker_historical_tokens(state)
+        worn = bool(isinstance(carried, (int, float)) and carried >= max_tokens)
+        bundle = dict(latest.get('bundle') or {})
+        bundle_id = bundle.get('bundle_id') or bundle.get('id')
+        chain_id = next((r.get('chain_id') for r in reversed(history) if r.get('chain_id')), None) or (
+            history[0].get('task_id') or f'worker-{agent_id[:8]}')
+        task_ids = list(dict.fromkeys(r.get('task_id') for r in reversed(history) if r.get('task_id')))
+        brief_paths = list(dict.fromkeys(r.get('brief_path') for r in reversed(history) if r.get('brief_path')))
+        titles = list(dict.fromkeys((r.get('request') or {}).get('title') or '' for r in reversed(history)
+                                    if (r.get('request') or {}).get('title')))
+        candidates.append({
+            'agent_id': agent_id,
+            'bundle': bundle,
+            'bundle_id': bundle_id,
+            'chain_id': chain_id,
+            'task_id': latest.get('task_id'),
+            'task_ids': task_ids,
+            'brief_path': latest.get('brief_path'),
+            'brief_paths': brief_paths,
+            'title': titles[0] if titles else '',
+            'titles': titles,
+            'updated_at': latest.get('updated_at') or latest.get('created_at') or '',
+            'session_state': state,
+            'worn': worn,
+        })
+    candidates.sort(key=lambda c: c['updated_at'], reverse=True)
+    return candidates
+
+
+def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None):
     require_parent_id(task.get('parent_agent_id'))
     import allocator
     now = now or utcnow()
@@ -288,10 +380,13 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             return row
         if parse(decision['valid_until']) <= now or not decision['dispatchable']:
             raise ValueError('Decision expired, deferred or requires a new route; run plan/select/record again')
+        busy_agents = set()
         for old in rows(connection, 'dispatches'):
             unresolved = old['state'] in ACTIVE or (old['state'] == 'expired' and old.get('launched_at'))
             if unresolved and (old['parent_id'], old['task_id']) == (decision['parent_id'], decision['task_id']):
                 raise ValueError('This parent/task already has an active dispatch; reconcile it first')
+            if unresolved and old.get('agent_id'):
+                busy_agents.add(old['agent_id'])
         bundle = decision['bundle']
         check_launch_quota(bundle, accounts, usage, now)
         if decision.get('effort_override'):
@@ -321,19 +416,46 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             exclusions.append('fast mode quota is no longer sufficient')
         if exclusions or candidate.get('available_in_hours'):
             raise ValueError('Capacity/availability changed; replan: ' + '; '.join(exclusions or ['reset not yet observed']))
+        if resume_agent_id is None and candidate.get('action') == 'resume':
+            chain_worker = ((alloc_task.get('chain') or {}).get('worker')
+                            if isinstance(alloc_task.get('chain'), dict) else None) or {}
+            if isinstance(chain_worker.get('agent_id'), str) and chain_worker['agent_id'].strip():
+                resume_agent_id = chain_worker['agent_id'].strip()
+        if resume_agent_id in busy_agents:
+            resume_agent_id = None
         dispatch_id = str(uuid.uuid4())
         labels = {'router.decision_id': decision_id, 'router.dispatch_id': dispatch_id,
                   'router.parent_id': decision['parent_id'], 'router.task_id': decision['task_id'],
                   'router.account': bundle['account'], 'router.bundle_id': bundle['bundle_id'],
                   'router.request_hash': request_hash}
         request['labels'].update(labels)
+        chain_id = (task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else None
         row = {'dispatch_id': dispatch_id, 'decision_id': decision_id,
                'parent_id': decision['parent_id'], 'task_id': decision['task_id'], 'task_hash': decision['task_hash'],
                'request_hash': request_hash, 'request': request, 'bundle': bundle,
                'expected_usd': candidate['expected_usd'], 'usage': usage.get('accounts', {}),
                'created_at': stamp(now), 'lease_until': stamp(now + timedelta(seconds=PREPARE_LEASE)),
-               'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)), 'agent_id': None}
+               'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
+               'operation': 'resume' if resume_agent_id else 'create',
+               'agent_id': resume_agent_id,
+               'fallback_prompt': fallback_prompt if resume_agent_id else None,
+               **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
+               **({'chain_id': chain_id} if chain_id else {})}
         event(row, 'prepared', now)
+        save(connection, row)
+        return row
+
+
+def fallback_to_create(dispatch_id, now=None, path=None):
+    """Switch a claimed resume dispatch to a fresh create when the previous worker cannot be resumed."""
+    now = now or utcnow()
+    with transaction(path) as connection:
+        row = get(connection, 'dispatches', dispatch_id)
+        if isinstance(row.get('fallback_prompt'), str) and row['fallback_prompt'].strip():
+            row['request']['initialPrompt'] = row['fallback_prompt']
+        row['operation'] = 'create'
+        row['agent_id'] = None
+        row['updated_at'] = stamp(now)
         save(connection, row)
         return row
 

@@ -15,7 +15,7 @@ from agentcompass import locations
 from agentcompass.ports import FEATURES, conflicts, listeners, load
 from agentcompass.tools import HINTS
 
-CLI_NAMES = ("claude", "codex", "agy", "grok", "npm", "git", "paseo", "hc", "cindy", "python")
+CLI_NAMES = ("claude", "codex", "agy", "grok", "npm", "git", "paseo", "hc", "python")
 _HOOK_MARKER = "router_gate_hook.py"
 
 

@@ -33,11 +33,12 @@ LOCK = threading.Lock()
 _progress = threading.local()
 
 
-def report(kind: str, message: str, component: str | None = None) -> None:
+def report(kind: str, message: str, component: str | None = None, **extra) -> None:
     callback = getattr(_progress, "callback", None)
     if callback:
         callback({"kind": kind, "message": message,
-                  "component": component if component is not None else getattr(_progress, "component", "")})
+                  "component": component if component is not None else getattr(_progress, "component", ""),
+                  **extra})
 
 
 def run(args: list[str], cwd: Path, env: dict[str, str] | None = None, timeout: float = 600) -> str:
@@ -84,16 +85,22 @@ def changed(root: Path) -> list[str]:
 
 def install_dependencies() -> None:
     bun = str(runtime_paths.bun_path())
-    for directory in (services.CHATGPT_ROOT, services.CHATGPT_LAUNCHER):
+    root = services.CHATGPT_ROOT.resolve()
+    launcher = services.CHATGPT_LAUNCHER.resolve()
+    for directory in (root, launcher):
         run([bun, "install", "--frozen-lockfile"], directory, env=services.chatgpt_env())
+    if not services.chatgpt_exe().is_file() and (launcher / "node_modules" / "electron" / "install.js").is_file():
+        run([bun, "run", "node_modules/electron/install.js"], launcher, env=services.chatgpt_env())
 
 
 def build() -> None:
     """Dependencies, the launcher window, and the browser helper (which carries the patched source)."""
     bun = str(runtime_paths.bun_path())
+    root = services.CHATGPT_ROOT.resolve()
+    launcher = services.CHATGPT_LAUNCHER.resolve()
     install_dependencies()
-    run([bun, "run", "build:renderer"], services.CHATGPT_LAUNCHER, env=services.chatgpt_env())
-    run([bun, "run", "scripts/build-browser-helper.ts"], services.CHATGPT_ROOT, env=services.chatgpt_env())
+    run([bun, "run", "build:renderer"], launcher, env=services.chatgpt_env())
+    run([bun, "run", "scripts/build-browser-helper.ts"], root, env=services.chatgpt_env())
 
 
 def patch_and_build() -> None:
@@ -296,14 +303,16 @@ def update_all(progress=None) -> str:
         return _tr("正在更新，请稍候")
     try:
         _progress.callback = progress
-        report("start", _tr("开始检查并更新已启用插件组件"), "")
-        results = []
         config = plugins.load()
-        for label, update, plugin_id in (("Dot2API", update_dot2api, "dot2api"),
-                                         ("ChatGPT Web", update_chatgpt_web, "chatgpt-web"),
-                                         ("Usage Float", update_usage_float, "usage-float"),
-                                         ("Gemini Web", update_gemini_web, "gemini-web"),
-                                         ("Muse2API", lambda: update_gateway("muse2api"), "muse2api")):
+        items = (("Dot2API", update_dot2api, "dot2api"),
+                 ("ChatGPT Web", update_chatgpt_web, "chatgpt-web"),
+                 ("Usage Float", update_usage_float, "usage-float"),
+                 ("Gemini Web", update_gemini_web, "gemini-web"),
+                 ("Muse2API", lambda: update_gateway("muse2api"), "muse2api"))
+        targets = [label for label, _, pid in items if plugins.enabled(pid, config) or plugins.BY_ID[pid].enabled_by_default]
+        report("start", _tr("开始检查并更新已启用插件组件"), "", title=_tr("外部集成"), targets=targets)
+        results = []
+        for label, update, plugin_id in items:
             _progress.component = label
             if plugin_id and not plugins.enabled(plugin_id, config):
                 if not plugins.BY_ID[plugin_id].enabled_by_default:

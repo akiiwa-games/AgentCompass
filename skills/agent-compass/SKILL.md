@@ -25,6 +25,6 @@ Read `status` in the result and do exactly `next_action`: `launched` = start not
 
 Optional, only when true (`agentcompass roll -h`): `--hours <n>`, `--local-only "<dependency>"`, `--keep-whole "<reason>"`, `--file <path>`, `--fast`, and for a user-named model `--provider/--account/--model/--effort --basis "<user quote>"`.
 
-Herdr core auto-detects its actual terminal. In Cindy, use the AgentCompass plugin's `roll` tool with only `task`; raw shell context cannot identify its parent. Read [Herdr/Cindy first-time setup and support limits](references/herdr-cindy.md) for installation, exact account bindings and completion collection.
+Herdr core auto-detects its actual terminal. Read [Herdr first-time setup and support limits](references/herdr.md) for installation and completion collection. Raw shell roll in Cindy is refused; the Cindy plugin is a separate repository (`cindy-agentcompass-plugin`).
 
 More: [roll reference](references/roll-reference.md) (result variants, Dot/Grok/CLI/native) · [router internals](references/router-internals.md) (when to delegate, plan and record, scoring, launch contract, reference index).

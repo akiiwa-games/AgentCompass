@@ -459,11 +459,92 @@ def unsupported(target: Target) -> str:
 
 
 
+_proc_cache: tuple[float, list[tuple[int, str, str]]] = (0.0, [])
+_SCRIPT_RUNNERS = {"node.exe", "node", "bun.exe", "bun", "deno.exe", "deno"}
+
+
+def _psutil_iter_is_mocked() -> bool:
+    import psutil
+
+    fn = getattr(psutil, "process_iter", None)
+    return fn is None or getattr(fn, "__module__", "") != "psutil" or hasattr(fn, "_mock_name")
+
+
+def _win32_process_table() -> list[tuple[int, str, str]]:
+    """Fast ~25ms kernel process snapshot on Windows (vs ~9s for psutil.process_iter(['exe', 'cmdline']))."""
+    global _proc_cache
+    now = time.monotonic()
+    with _lock:
+        if now - _proc_cache[0] < 1.2 and _proc_cache[1]:
+            return _proc_cache[1]
+    import ctypes
+    import ctypes.wintypes as wintypes
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", wintypes.WCHAR * 260),
+        ]
+
+    snap = k32.CreateToolhelp32Snapshot(0x2, 0)
+    if snap == wintypes.HANDLE(-1).value:
+        return []
+    rows: list[tuple[int, str, str]] = []
+    buf = ctypes.create_unicode_buffer(1024)
+    try:
+        entry = PROCESSENTRY32W(dwSize=ctypes.sizeof(PROCESSENTRY32W))
+        if k32.Process32FirstW(snap, ctypes.byref(entry)):
+            while True:
+                pid = int(entry.th32ProcessID)
+                name = str(entry.szExeFile or "")
+                exe = ""
+                if pid > 4:
+                    handle = k32.OpenProcess(0x1000, False, pid)
+                    if handle:
+                        try:
+                            size = wintypes.DWORD(1024)
+                            if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                                exe = buf.value
+                        finally:
+                            k32.CloseHandle(handle)
+                rows.append((pid, name.lower(), exe))
+                if not k32.Process32NextW(snap, ctypes.byref(entry)):
+                    break
+    finally:
+        k32.CloseHandle(snap)
+    with _lock:
+        _proc_cache = (time.monotonic(), rows)
+    return rows
+
+
 def running_instances(root: Path) -> int:
     """Processes whose executable lives inside this npm package; Windows locks those files against replacement."""
     import psutil
 
     count, prefix = 0, os.path.normcase(str(root)) + os.sep
+    if os.name == "nt" and not _psutil_iter_is_mocked():
+        for pid, name_lower, exe in _win32_process_table():
+            inside = bool(exe and os.path.normcase(exe).startswith(prefix))
+            script = False
+            if not inside and name_lower in _SCRIPT_RUNNERS:
+                try:
+                    command = psutil.Process(pid).cmdline() or []
+                    script = any(os.path.normcase(str(arg)).startswith(prefix) for arg in command[1:])
+                except psutil.Error:
+                    script = False
+            if inside or script:
+                count += 1
+        return count
     for process in psutil.process_iter(["exe", "cmdline"]):
         try:
             exe = process.info.get("exe")
@@ -488,6 +569,13 @@ def target_running(target: Target) -> int:
         return 0
     aliases = {str(path), *(str(path.with_name(alias + path.suffix)) for alias in target.install.spec.aliases)}
     names = {os.path.normcase(value) for value in aliases}
+    if os.name == "nt" and not _psutil_iter_is_mocked():
+        basenames = {Path(value).name.lower() for value in aliases}
+        return sum(
+            1
+            for _pid, name_lower, exe in _win32_process_table()
+            if name_lower in basenames and os.path.normcase(exe or "") in names
+        )
     count = 0
     for process in psutil.process_iter(["exe"]):
         try:
@@ -572,6 +660,9 @@ def update_native(target: Target) -> tuple[str, str]:
     if result.returncode != 0:
         return "warn", fail_text(name, result)
     after = local_version(install)
+    if not install.spec.check and (after or before):
+        with _lock:
+            _latest[target.id] = after or before
     if after and before and after != before:
         return "ok", _tr("{0} 已更新：{1} → {2}；新版本在下次启动该 CLI 时生效，未重启任何会话").format(name, before, after)
     return "ok", _tr("{0} 的更新命令已完成，版本仍为 {1}（可能已是最新）").format(name, after or before or "?")
@@ -580,7 +671,11 @@ def update_native(target: Target) -> tuple[str, str]:
 def open_log() -> str:
     path = state_dir() / "cli-updates.log"
     if not path.exists():
-        return _tr("日志不存在：{0}").format(path)
+        try:
+            import update_status
+            return update_status.open_log(state_dir())
+        except Exception:
+            return _tr("日志不存在：{0}").format(path)
     os.startfile(path)
     return _tr("已打开日志 {0}").format(path.name)
 
@@ -615,6 +710,15 @@ def set_auto_update(enabled: bool) -> bool:
     return bool(enabled)
 
 
+def _record_status(event: dict) -> None:
+    try:
+        import update_status
+
+        update_status.record(event, directory=state_dir())
+    except Exception:
+        pass
+
+
 def update_all(progress=None, *, auto: bool = False, only: list[str] | None = None, home=None, environ=None) -> dict:
     """Check then update each supported install. All installers are owned; no worker is terminated.
 
@@ -637,9 +741,19 @@ def update_all(progress=None, *, auto: bool = False, only: list[str] | None = No
         environ = os.environ if environ is None else environ
         candidates = [target for target in targets(Path(home) if home is not None else Path.home(), environ)
                       if not unsupported(target) and (only is None or target.id in only)]
+        if not auto:
+            _record_status({
+                "kind": "start",
+                "title": "CLI",
+                "targets": [target.name for target in candidates],
+                "message": _tr("开始检查并更新 CLI 工具"),
+            })
         for index, target in enumerate(candidates, 1):
+            step = _tr("正在检查并更新 ({0}/{1})：{2}").format(index, len(candidates), target.name)
+            if not auto:
+                _record_status({"kind": "component", "component": target.name, "message": step})
             if progress:
-                progress(_tr("正在检查并更新 ({0}/{1})：{2}").format(index, len(candidates), target.name))
+                progress(step)
             outcome = {}
             if target_running(target):
                 message = _tr("{0} 有运行中的会话，已延后更新").format(target.name)
@@ -647,12 +761,16 @@ def update_all(progress=None, *, auto: bool = False, only: list[str] | None = No
                 log(message)
             else:
                 message = update(target.id, home, environ, outcome=outcome)
+            if not auto:
+                _record_status({"kind": "result", "component": target.name, "message": message})
             status = outcome.get("status", "failed")
             if status in result:
                 result[status].append(target.id)
             result["messages"].append(message)
         result["summary"] = _tr("CLI：已更新 {0} · 已是最新 {1} · 延后 {2} · 失败 {3}").format(
             *(len(result[key]) for key in ("updated", "current", "deferred", "failed")))
+        if not auto:
+            _record_status({"kind": "finish", "component": "", "message": result["summary"]})
         def persist(state):
             # A retry only owns the previously deferred set. New full runs replace it.
             state["deferred"] = result["deferred"]

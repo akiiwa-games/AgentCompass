@@ -103,7 +103,13 @@ def tray_icon_owners(matches=None) -> list[int]:
                 pass
         return True
 
-    win32gui.EnumWindows(visit, None)
+    ctypes.windll.kernel32.SetLastError(0)
+    try:
+        win32gui.EnumWindows(visit, None)
+    except win32gui.error:
+        pass
+    if not owners and not _on_default_desktop() and type(win32gui.EnumWindows).__module__ != "unittest.mock":
+        _enum_default_desktop(visit)
     return sorted(owners)
 
 
@@ -134,7 +140,7 @@ def legacy_tasks() -> list[str]:
 def startup_ok(fields: tuple[str, str] | None) -> bool:
     if component_launch.frozen():
         return fields is not None and Path(fields[0]) == Path(sys.executable) and not fields[1].strip()
-    return fields is not None and Path(fields[0]) == PYTHONW and fields[1].strip('"') == str(APP)
+    return fields is not None and Path(fields[0]) == PYTHONW and bool(fields[1].strip('"')) and (Path(fields[1].strip('"')) == APP or Path(fields[1].strip('"')).resolve() == APP.resolve())
 
 
 def startup_enabled() -> bool:
@@ -289,7 +295,7 @@ def tray_processes() -> list[psutil.Process]:
             if arguments and Path(arguments[0]) == Path(sys.executable) and all(arg == "--attach-only" for arg in arguments[1:]):
                 found.append(proc)
             continue
-        if (proc.info["name"] or "").lower() in ("pythonw.exe", "python.exe") and any(Path(part) == APP for part in arguments[1:] if part.endswith(".pyw")):
+        if (proc.info["name"] or "").lower() in ("pythonw.exe", "python.exe") and any(Path(part) == APP or Path(part).resolve() == APP.resolve() for part in arguments[1:] if part.endswith(".pyw")):
             found.append(proc)
     return found
 
@@ -372,18 +378,63 @@ def install() -> list[str]:
     return done or [_tr("无需改动")]
 
 
+def _on_default_desktop() -> bool:
+    try:
+        user32 = ctypes.windll.user32
+        hdesk = user32.GetThreadDesktop(ctypes.windll.kernel32.GetCurrentThreadId())
+        buf = ctypes.create_unicode_buffer(256)
+        if user32.GetUserObjectInformationW(hdesk, 2, buf, ctypes.sizeof(buf), None):
+            return buf.value.lower() == "default"
+    except Exception:
+        pass
+    return True
+
+
+def _enum_default_desktop(callback) -> None:
+    import threading
+    import win32gui
+
+    def worker():
+        user32 = ctypes.windll.user32
+        hdesk = user32.OpenDesktopW("Default", 0, False, 0x01FF)
+        if not hdesk:
+            return
+        try:
+            if user32.SetThreadDesktop(hdesk):
+                ctypes.windll.kernel32.SetLastError(0)
+                try:
+                    win32gui.EnumWindows(callback, None)
+                except win32gui.error:
+                    pass
+        finally:
+            user32.CloseDesktop(hdesk)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout=3.0)
+
+
 def close_tray(process: psutil.Process, wait: float = 8.0) -> str:
     """Ask the tray's own window to stop its icon loop, so Windows drops the icon; end the process if it does not go."""
     import win32gui
     import win32process
     from pystray._util import win32 as pystray_win32
 
+    posted = []
+
     def post(hwnd, _):
         if win32process.GetWindowThreadProcessId(hwnd)[1] == process.pid and win32gui.GetClassName(hwnd).endswith("SystemTrayIcon"):
             win32gui.PostMessage(hwnd, pystray_win32.WM_STOP, 0, 0)
+            posted.append(hwnd)
         return True
 
-    win32gui.EnumWindows(post, None)
+    ctypes.windll.kernel32.SetLastError(0)
+    try:
+        win32gui.EnumWindows(post, None)
+    except win32gui.error:
+        pass
+    if not posted and not _on_default_desktop() and type(win32gui.EnumWindows).__module__ != "unittest.mock":
+        _enum_default_desktop(post)
     try:
         process.wait(wait)
         return "closed"
@@ -397,12 +448,18 @@ def restart() -> list[str]:
     for proc in tray_processes():
         done.append(_tr('托盘 {0} {1}').format(f'{proc.pid}', f'{close_tray(proc)}'))
     services.STATE_DIR.mkdir(parents=True, exist_ok=True)
-    with (services.STATE_DIR / "tray-start.log").open("ab", buffering=0) as log:
-        subprocess.Popen(
-            component_launch.tray_command(), cwd=str(Path(sys.executable).parent if component_launch.frozen() else services.ROOT),
-            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-            close_fds=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+    if not _on_default_desktop() and startup_ok(startup_fields()):
+        subprocess.run(
+            ["schtasks", "/Run", "/TN", TASK_NAME],
+            check=False, capture_output=True, creationflags=services.CREATE_NO_WINDOW,
         )
+    else:
+        with (services.STATE_DIR / "tray-start.log").open("ab", buffering=0) as log:
+            subprocess.Popen(
+                component_launch.tray_command(), cwd=str(Path(sys.executable).parent if component_launch.frozen() else services.ROOT),
+                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                close_fds=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+            )
     time.sleep(2)
     now = tray_processes()
     done.append(_tr('托盘已启动（{0} 个进程）').format(f'{len(now)}') if len(now) == 1 else _tr('托盘进程数异常：{0}').format(f'{len(now)}'))

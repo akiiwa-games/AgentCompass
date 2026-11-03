@@ -432,6 +432,29 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(panel.busy_jobs, 0)
         self.assertEqual(panel.cli_status.get(), RESULT['summary'])
 
+    def test_unified_toolbar_controls_and_partial_unchecked_summary(self):
+        import update_status
+
+        panel = self.open()
+        self.assertEqual(panel.cli_update_button.cget('text'), '检查更新')
+        self.assertEqual(panel.cli_progress_button.cget('text'), '更新进度')
+        self.assertEqual(panel.cli_log_button.cget('text'), '更新日志')
+        self.assertEqual(panel.model_refresh_button.cget('text'), '刷新模型')
+        panel.cli_loaded([
+            {'id': 'codex', 'path': 'codex.cmd', 'source': 'npm', 'version': '0.165', 'status': 'current', 'can_update': True, 'providers': ['codex']},
+            {'id': 'claude', 'path': 'claude.exe', 'source': 'native', 'version': '2.1.0', 'status': 'unchecked', 'can_update': True, 'providers': ['claude']},
+        ])
+        self.assertEqual(panel.cli_status.get(), 'CLI：2 已安装 · 0 可更新')
+        panel.show('plugins')
+        self.assertEqual(panel.plugins_update_button.cget('text'), '检查更新')
+        self.assertEqual(panel.plugins_progress_button.cget('text'), '更新进度')
+        self.assertEqual(panel.plugins_log_button.cget('text'), '更新日志')
+        with mock.patch.object(update_status, 'open_window') as open_win, \
+                mock.patch.object(cli_updates, 'update_all', return_value=RESULT):
+            panel.show('policy')
+            panel.update_all_cli()
+            open_win.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

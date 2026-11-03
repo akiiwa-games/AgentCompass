@@ -40,7 +40,7 @@ def host_call(payload):
         result = subprocess.run(['node', str(bridge)], input=json.dumps(payload), capture_output=True,
                                 text=True, encoding='utf-8', timeout=25)
     except subprocess.TimeoutExpired:
-        return {'ok': False, 'sent': payload['operation'] == 'create', 'error': 'host_timeout'}
+        return {'ok': False, 'sent': payload['operation'] in ('create', 'resume'), 'error': 'host_timeout'}
     except OSError:
         return {'ok': False, 'sent': False, 'error': 'bridge_unavailable'}
     try:
@@ -49,13 +49,16 @@ def host_call(payload):
             raise ValueError()
         return response
     except ValueError:
-        return {'ok': False, 'sent': payload['operation'] == 'create', 'error': 'invalid_host_response'}
+        return {'ok': False, 'sent': payload['operation'] in ('create', 'resume'), 'error': 'invalid_host_response'}
 
 
 def public(row):
     keys = ('dispatch_id', 'decision_id', 'task_id', 'parent_id', 'agent_id', 'state', 'expected_usd',
             'created_at', 'launched_at', 'started_at', 'observed_at', 'lease_until', 'hard_until', 'released_at')
-    return {k: row[k] for k in keys if k in row}
+    out = {k: row[k] for k in keys if k in row}
+    if row.get('operation') == 'resume':
+        out['resumed'] = True
+    return out
 
 
 def require_actual_parent(parent_id):
@@ -106,8 +109,18 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         raise ValueError('Dispatch belongs to another parent')
     if row['state'] == 'prepared':
         row = registry.claim(row['request'], parent_id, now=registry.utcnow(), path=path)
-        response = host({'operation': 'create', 'dispatch_id': dispatch_id,
-                         'parent_id': parent_id, 'request': row['request']})
+        if row.get('operation') == 'resume' and row.get('agent_id'):
+            response = host({'operation': 'resume', 'dispatch_id': dispatch_id,
+                             'parent_id': parent_id, 'agent_id': row['agent_id'], 'request': row['request']})
+            if response.get('sent') is False and response.get('error') not in (
+                'addressable_parent_required', 'parent_agent_not_found', 'notification_start_failed'
+            ):
+                row = registry.fallback_to_create(dispatch_id, now=registry.utcnow(), path=path)
+                response = host({'operation': 'create', 'dispatch_id': dispatch_id,
+                                 'parent_id': parent_id, 'request': row['request']})
+        else:
+            response = host({'operation': 'create', 'dispatch_id': dispatch_id,
+                             'parent_id': parent_id, 'request': row['request']})
         queried_host = True
         notification = response.get('completion_notification')
         if response.get('ok') and response.get('agent'):

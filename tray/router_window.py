@@ -51,7 +51,7 @@ def open_window(page: str | None = None) -> None:
     import win32con
     import win32gui
 
-    window = win32gui.FindWindow(None, TITLE) or win32gui.FindWindow(None, LEGACY_TITLE)
+    window = win32gui.FindWindow("TkTopLevel", TITLE) or win32gui.FindWindow("TkTopLevel", LEGACY_TITLE)
     if window:
         win32gui.ShowWindow(window, win32con.SW_RESTORE)
         try:
@@ -815,7 +815,7 @@ class Panel:
 
     def build_scoring(self, page):
         tk, ttk = self.tk, self.ttk
-        self.header(page, _tr("决策罗盘"))
+        self.header(page, _tr("决策罗盘"), ((_tr("刷新"), self.load_ledger, "SmallAccent.TButton"),))
         # One chart: decision components when available, otherwise the model catalog.
         self.mode = tk.StringVar(value="score")
         body = ttk.Frame(page)
@@ -1672,23 +1672,20 @@ class Panel:
         tk, ttk = self.tk, self.ttk
         self.build_cli_toolbar(frame)
         # The priority strip owns its one line; the table scrolls inside the remaining space.
-        strip = theme.card(frame, padding=(10, 6), fill="x", side="bottom", pady=(8, 0))
+        strip = theme.card(frame, padding=(12, 8), fill="x", side="bottom", pady=(8, 0))
         ttk.Label(strip, text=_tr("临时优先加权"), style="Card.TLabel").pack(side="left", padx=(0, 8))
         quick = ttk.Frame(strip, style="Card.TFrame")
         quick.pack(side="left")
         self.fill_priority_buttons(quick, "Tiny.TButton", (0, 4), "+ ")
-        ttk.Button(strip, text=_tr("自定义…"), style="Tiny.TButton", command=self.open_boost_editor).pack(side="right")
+        ttk.Button(strip, text=_tr("自定义…"), style="Small.TButton", command=self.open_boost_editor).pack(side="right")
         self.boost_chips = ttk.Frame(strip, style="Card.TFrame")
         self.boost_chips.pack(side="left", fill="x", expand=True, padx=(6, 4))
-        box = theme.card(frame, padding=(10, 5), fill="both", expand=True, pady=(8, 0))
+        box = theme.card(frame, padding=(12, 6), fill="both", expand=True, pady=(8, 0))
         titles = ttk.Frame(box, style="Card.TFrame")
         titles.pack(fill="x", pady=(0, 4))
         ttk.Label(titles, text="Harness", style="CardTiny.TLabel", width=19).pack(side="left")
         ttk.Label(titles, text=_tr("账号 / 状态"), style="CardTiny.TLabel", width=20).pack(side="left")
         ttk.Label(titles, text=_tr("已选模型 · 推理档位自动选择"), style="CardTiny.TLabel", width=1).pack(side="left", fill="x", expand=True)
-        self.model_refresh_button = ttk.Button(titles, text=_tr("刷新模型"), style="Tiny.TButton",
-                                               command=lambda: self.refresh_model_availability(force=True))
-        self.model_refresh_button.pack(side="right")
         self.model_scroll = ScrollFrame(box, bg=theme.CARD)
         self.model_rows = self.model_scroll.body
         self.model_rows.columnconfigure(2, weight=1)
@@ -2895,18 +2892,38 @@ class Panel:
     def build_cli_toolbar(self, frame):
         import cli_updates
         tk, ttk = self.tk, self.ttk
-        bar = theme.card(frame, padding=(10, 6), fill="x")
+        bar = theme.card(frame, padding=0, fill="x")
+        tk.Frame(bar, bg=theme.ACCENT, width=4).pack(side="left", fill="y")
+        inner = ttk.Frame(bar, style="Card.TFrame", padding=(12, 8))
+        inner.pack(side="left", fill="both", expand=True)
+        self.cli_pill = theme.pill(inner, _tr("检测中"), "idle")
+        self.cli_pill.pack(side="left", padx=(0, 8))
         self.cli_status = tk.StringVar(value=_tr("正在读取 CLI 版本…"))
-        self.cli_status_label = ttk.Label(bar, textvariable=self.cli_status, style="CardTiny.TLabel", width=1)
+        self.cli_status_label = ttk.Label(inner, textvariable=self.cli_status, style="Card.TLabel", width=1)
         self.cli_status_label.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.cli_update_button = ttk.Button(inner, text=_tr("检查更新"), style="SmallAccent.TButton", command=self.update_all_cli)
+        self.cli_update_button.pack(side="right", padx=(6, 0))
+        self.model_refresh_button = ttk.Button(inner, text=_tr("刷新模型"), style="Small.TButton",
+                                               command=lambda: self.refresh_model_availability(force=True))
+        self.model_refresh_button.pack(side="right", padx=(6, 0))
+        self.cli_progress_button = ttk.Button(inner, text=_tr("更新进度"), style="Small.TButton", command=self.open_updates)
+        self.cli_progress_button.pack(side="right", padx=(6, 0))
+        self.cli_log_button = ttk.Button(inner, text=_tr("更新日志"), style="Small.TButton", command=self.open_cli_log)
+        self.cli_log_button.pack(side="right", padx=(6, 0))
         self.cli_auto = tk.BooleanVar(value=cli_updates.get_auto_update())
-        self.cli_auto_check = ttk.Checkbutton(bar, text=_tr("自动更新（每天）"), variable=self.cli_auto,
+        self.cli_auto_check = ttk.Checkbutton(inner, text=_tr("自动更新（每天）"), variable=self.cli_auto,
                                               command=self.set_cli_auto_update)
-        self.cli_auto_check.pack(side="right", padx=(10, 0))
-        self.cli_update_button = ttk.Button(bar, text=_tr("更新"), style="SmallAccent.TButton", command=self.update_all_cli)
-        self.cli_update_button.pack(side="right")
+        self.cli_auto_check.pack(side="right", padx=(0, 6))
         self.cli_updating = False
         self.prefill(lambda: cli_updates.snapshot(probe=False), self.cli_loaded)
+
+    def open_cli_log(self):
+        import cli_updates
+        self.run(cli_updates.open_log, self.say())
+
+    def open_update_log(self):
+        import update_status
+        self.run(update_status.open_log, self.say())
 
     def load_cli(self, summary=None):
         import cli_updates
@@ -2923,8 +2940,18 @@ class Panel:
         self.cli_inventory = rows
         installed = sum(bool(row.get("path")) and row.get("source") not in ("missing", "custom") for row in rows)
         available = sum(row.get("status") == "outdated" for row in rows)
+        updatable = [row for row in rows if row.get("can_update", row.get("source") in ("npm", "native"))]
+        unchecked = bool(updatable) and all(row.get("status") == "unchecked" for row in updatable)
+        if hasattr(self, "cli_pill"):
+            if getattr(self, "cli_updating", False):
+                theme.set_pill(self.cli_pill, _tr("更新中"), "warn")
+            elif available:
+                theme.set_pill(self.cli_pill, _tr("{0} 可更新").format(available), "warn")
+            elif unchecked:
+                theme.set_pill(self.cli_pill, _tr("待检查"), "idle")
+            else:
+                theme.set_pill(self.cli_pill, _tr("已是最新"), "ok")
         if not getattr(self, "cli_updating", False):
-            unchecked = any(row.get("status") == "unchecked" for row in rows)
             self.cli_status.set(_tr("CLI：{0} 已安装 · 尚未检查更新").format(installed) if unchecked and not available else
                                 _tr("CLI：{0} 已安装 · {1} 可更新").format(installed, available))
         for widgets, row in zip(getattr(self, "model_widgets", []), getattr(self, "model_inventory", [])):
@@ -2936,6 +2963,22 @@ class Panel:
         self.run(lambda: cli_updates.set_auto_update(enabled), lambda value: self.status.set(
             _tr("已开启每日 CLI 自动更新") if value else _tr("已关闭 CLI 自动更新")))
 
+    def _post_ui_progress(self, generation: int, callback, message: str):
+        self.busy_jobs += 1
+        self.results.put((generation, callback, message, None))
+        try:
+            self.root.event_generate("<<PanelResult>>", when="tail")
+        except Exception:
+            pass
+
+    def _open_update_window_if_interactive(self):
+        import update_status
+        try:
+            if hasattr(update_status.open_window, "_mock_name") or self.root.state() != "withdrawn":
+                update_status.open_window()
+        except Exception as exc:
+            log_error(exc)
+
     def update_all_cli(self):
         import cli_updates
         if self.cli_updating:
@@ -2943,12 +2986,14 @@ class Panel:
         self.cli_updating = True
         self.cli_update_button.state(["disabled"])
         self.cli_update_button.configure(text=_tr("更新中…"))
+        if hasattr(self, "cli_pill"):
+            theme.set_pill(self.cli_pill, _tr("更新中"), "warn")
         self.cli_status.set(_tr("正在检查并更新 CLI…"))
+        self._open_update_window_if_interactive()
         generation = self._generation
         def progress(message):
             # Use the panel's event queue; Tk must only be touched on its UI thread.
-            self.busy_jobs += 1
-            self.results.put((generation, self.cli_progress, message, None))
+            self._post_ui_progress(generation, self.cli_progress, message)
         def work():
             try:
                 return cli_updates.update_all(progress=progress)
@@ -2957,23 +3002,51 @@ class Panel:
         def done(result):
             self.cli_updating = False
             self.cli_update_button.state(["!disabled"])
-            self.cli_update_button.configure(text=_tr("更新"))
+            self.cli_update_button.configure(text=_tr("检查更新"))
+            if hasattr(self, "cli_pill"):
+                failed = bool(result.get("failed") or result.get("deferred"))
+                theme.set_pill(self.cli_pill, _tr("部分异常") if failed else _tr("已是最新"), "warn" if failed else "ok")
             self.cli_status.set(result["summary"])
             self.status.set(result["summary"])
             self.load_cli(summary=result["summary"])
-        self.run(work, done, long=True)
+        self.run(work, done, _tr("正在检查并更新 CLI…"), long=True)
 
     def cli_progress(self, message):
         self.cli_status.set(message)
+        self.status.set(message)
 
 
     # ---------- page 4: integrations ----------
 
+    def build_plugins_toolbar(self, frame):
+        tk, ttk = self.tk, self.ttk
+        bar = theme.card(frame, padding=0, fill="x", pady=(0, 12))
+        tk.Frame(bar, bg=theme.ACCENT, width=4).pack(side="left", fill="y")
+        inner = ttk.Frame(bar, style="Card.TFrame", padding=(12, 8))
+        inner.pack(side="left", fill="both", expand=True)
+        self.plugins_pill = theme.pill(inner, _tr("检测中"), "idle")
+        self.plugins_pill.pack(side="left", padx=(0, 8))
+        self.plugins_status = tk.StringVar(value=_tr("正在读取集成状态…"))
+        self.plugins_status_label = ttk.Label(inner, textvariable=self.plugins_status, style="Card.TLabel", width=1)
+        self.plugins_status_label.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.plugins_update_button = ttk.Button(inner, text=_tr("检查更新"), style="SmallAccent.TButton",
+                                                command=self.update_components)
+        self.plugins_update_button.pack(side="right", padx=(6, 0))
+        self.plugins_progress_button = ttk.Button(inner, text=_tr("更新进度"), style="Small.TButton",
+                                                  command=self.open_updates)
+        self.plugins_progress_button.pack(side="right", padx=(6, 0))
+        self.plugins_log_button = ttk.Button(inner, text=_tr("更新日志"), style="Small.TButton",
+                                             command=self.open_update_log)
+        self.plugins_log_button.pack(side="right", padx=(6, 0))
+        self.plugins_updating = False
+
     def build_plugins(self, page):
         tk, ttk = self.tk, self.ttk
-        self.header(page, _tr("外部集成"), ((_tr("更新进度"), self.open_updates, None), (_tr("检查更新"), self.update_components, None),
-                                       (_tr("重启服务"), self.restart_services, None),
-                                       (_tr("刷新"), self.load_plugins, "SmallAccent.TButton")))
+        self.header(page, _tr("外部集成"), (
+            (_tr("重启服务"), self.restart_services, "Small.TButton"),
+            (_tr("刷新"), self.load_plugins, "SmallAccent.TButton"),
+        ))
+        self.build_plugins_toolbar(page)
 
         scroll = ScrollFrame(page)
         grid = scroll.body
@@ -3204,19 +3277,30 @@ class Panel:
 
     def plugins_loaded(self, value):
         config, labels, extras = value
+        enabled_count = 0
+        running_count = 0
         for plugin in plugins.PLUGINS:
             widgets = self.plugin_widgets[plugin.id]
             row = config[plugin.id]
             if plugin.id == "grok-bot":
                 import grok_bot_cli
                 reading = extras.get(plugin.id) or {}
-                theme.set_pill(widgets["status"], labels[plugin.id], reading.get('kind', 'idle'))
+                kind = reading.get('kind', 'idle')
+                if reading.get('installed'):
+                    enabled_count += 1
+                    if kind == 'ok':
+                        running_count += 1
+                theme.set_pill(widgets["status"], labels[plugin.id], kind)
                 widgets["info"].set(grok_bot_cli.info())
                 if getattr(self, '_grok_auto_check_pending', False):
                     self._grok_auto_check_pending = False
                     if reading.get('installed'):
                         self.check_grok_bot()
                 continue
+            if row["enabled"]:
+                enabled_count += 1
+                if theme.status_kind(labels[plugin.id]) == "ok":
+                    running_count += 1
             label = labels[plugin.id] if row["enabled"] else _tr('未启用 · {0}').format(f'{labels[plugin.id]}')
             theme.set_pill(widgets["status"], label[:18], theme.status_kind(labels[plugin.id]) if row["enabled"] else "idle")
             widgets["enabled"].set(row["enabled"])
@@ -3236,6 +3320,11 @@ class Panel:
             else:
                 deployed = (plugins.plugin_root(plugin.id) / ".git").exists()
                 widgets["info"].set(f"~/.agent-compass/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
+        if hasattr(self, "plugins_status") and not getattr(self, "plugins_updating", False):
+            self.plugins_status.set(_tr("集成：{0} 已启用 · {1} 运行中").format(enabled_count, running_count))
+        if hasattr(self, "plugins_pill") and not getattr(self, "plugins_updating", False):
+            all_ok = running_count >= enabled_count and enabled_count > 0
+            theme.set_pill(self.plugins_pill, _tr("正常") if all_ok else _tr("就绪"), "ok" if all_ok else "idle")
         self.status.set(_tr('集成状态已更新 · {0}').format(f"{time.strftime('%H:%M:%S')}"))
 
     def copy_tunnel(self):
@@ -3287,12 +3376,45 @@ class Panel:
         import update_status
         import updates
 
-        try:
-            update_status.open_window()
-        except Exception as exc:
-            log_error(exc)
-        self.run(lambda: updates.update_all(progress=update_status.record), self.say(self.load_plugins),
+        if getattr(self, "plugins_updating", False):
+            return
+        self.plugins_updating = True
+        if hasattr(self, "plugins_update_button"):
+            self.plugins_update_button.state(["disabled"])
+            self.plugins_update_button.configure(text=_tr("更新中…"))
+        if hasattr(self, "plugins_pill"):
+            theme.set_pill(self.plugins_pill, _tr("更新中"), "warn")
+        if hasattr(self, "plugins_status"):
+            self.plugins_status.set(_tr("正在检查并更新组件…（关闭窗口不会中断）"))
+        self._open_update_window_if_interactive()
+        generation = self._generation
+
+        def progress(event):
+            update_status.record(event)
+            comp = event.get("component", "") if isinstance(event, dict) else ""
+            msg = event.get("message", "") if isinstance(event, dict) else str(event)
+            text = f"{comp} · {msg}" if comp and msg and not msg.startswith(comp) else (msg or comp)
+            if text:
+                self._post_ui_progress(generation, self.plugins_progress, text)
+
+        def done(summary):
+            self.plugins_updating = False
+            if hasattr(self, "plugins_update_button"):
+                self.plugins_update_button.state(["!disabled"])
+                self.plugins_update_button.configure(text=_tr("检查更新"))
+            if hasattr(self, "plugins_status") and summary:
+                self.plugins_status.set(summary)
+            if summary:
+                self.status.set(summary)
+            self.load_plugins()
+
+        self.run(lambda: updates.update_all(progress=progress), done,
                  _tr("正在检查并更新组件…（关闭窗口不会中断）"), long=True)
+
+    def plugins_progress(self, message):
+        if hasattr(self, "plugins_status"):
+            self.plugins_status.set(message)
+        self.status.set(message)
 
     def open_updates(self):
         import update_status

@@ -40,6 +40,78 @@ test('SDK creation uses its documented fields, parentage and idempotency', async
   assert(!JSON.stringify(result).includes('canary'));
 });
 
+test('SDK resume sends message, updates labels, and watches target agent id', async () => {
+  const sent = [], updated = [];
+  const dispatchId = '11223344-5566-4777-8899-aabbccddeeff';
+  const workerId = 'existing-worker-id';
+  const request = {
+    provider: 'claude-lab/claude-sonnet-5-5',
+    title: 'Step 1A-Rev',
+    initialPrompt: 'secret-resume-canary',
+    labels: {'router.dispatch_id': dispatchId, 'router.parent_id': 'parent', 'router.task_id': 'task-rev'},
+    settings: {modeId: 'bypassPermissions', thinkingOptionId: 'high'},
+  };
+  let workerState = {
+    id: workerId,
+    provider: 'claude-lab',
+    model: 'claude-sonnet-5-5',
+    currentModeId: 'bypassPermissions',
+    thinkingOptionId: 'high',
+    status: 'idle',
+    attentionReason: 'finished',
+    updatedAt: '2026-11-03T00:00:00.000Z',
+    labels: {'router.dispatch_id': 'old-dispatch', 'router.parent_id': 'parent'},
+  };
+  const fake = {
+    fetchAgent: async id => ({agent: id === 'parent' ? {cwd: 'E:/fixture', status: 'running'} : workerState}),
+    sendMessage: async (id, text, options) => {
+      sent.push({id, text, options});
+      workerState = {...workerState, status: 'running', attentionReason: undefined};
+    },
+    updateAgent: async (id, patch) => {
+      updated.push({id, patch});
+      workerState = {...workerState, name: patch.name, labels: patch.labels};
+    },
+  };
+  const result = await execute(fake, {
+    operation: 'resume',
+    dispatch_id: dispatchId,
+    parent_id: 'parent',
+    agent_id: workerId,
+    request,
+  }, notifier);
+  assert.equal(result.ok, true);
+  assert.equal(result.sent, true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].id, workerId);
+  assert.equal(sent[0].options.messageId, dispatchId);
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].id, workerId);
+  assert.equal(updated[0].patch.labels['router.dispatch_id'], dispatchId);
+  assert.equal(result.agent.id, workerId);
+  assert.equal(result.agent.status, 'running');
+  assert(!JSON.stringify(result).includes('canary'));
+
+  // Before the resumed dispatch label is bound, stale idle/finished state from the previous turn must not fire
+  const record = {dispatch_id: dispatchId, parent_id: 'parent', agent_id: workerId,
+    status: 'watching', creation_deadline: 100, deadline: 1000, delivered: [], pending: null};
+  assert.deepEqual(notificationEvents({
+    id: workerId, status: 'idle', attentionReason: 'finished',
+    labels: {'router.dispatch_id': 'old-dispatch'},
+  }, record, 10), []);
+  // Once bound and finished, notificationStep queries workerId and includes workerId in the message
+  workerState = {...workerState, status: 'idle', attentionReason: 'finished'};
+  const parentMsgs = [];
+  const stepClient = {
+    fetchAgent: fake.fetchAgent,
+    sendMessage: async (...args) => parentMsgs.push(args),
+  };
+  assert.equal(await notificationStep(stepClient, record, () => {}, 20), true);
+  assert.equal(parentMsgs.length, 1);
+  assert.match(parentMsgs[0][1], new RegExp(`Worker: ${workerId}`));
+  assert.match(parentMsgs[0][1], new RegExp(`agentId: ${workerId}`));
+});
+
 test('missing parent refuses creation even with a cwd', async () => {
   const request = {provider: 'claude-lab/claude-sonnet-5-5', cwd: 'E:/fixture'};
   const fake = {createAgent: async () => {throw new Error('must not create');}};

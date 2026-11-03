@@ -159,6 +159,8 @@ def act(icon: pystray.Icon, work) -> None:
                     message = _tr('{0}；隧道 {1}').format(f'{message}', f'{url}')
             if work is updates.update_all:
                 log_info(f"update_all: {message}")
+            else:
+                log_info(f"action: {message}")
         except Exception as exc:
             log_error(exc)
             message = _tr("操作失败，详见日志")

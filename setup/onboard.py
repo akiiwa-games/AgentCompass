@@ -84,7 +84,6 @@ def detect_orchestrators(home: Path, env: dict) -> dict:
                  "codex_homes": [str(p) for p in orca_homes]},
         "t3": {"installed": bool(shutil.which("t3", path=path) or (home / ".t3").is_dir())},
         "herdr": {"installed": bool(shutil.which("hc", path=path)), "api": "herdr-core hc"},
-        "cindy": {"installed": bool(shutil.which("cindy", path=path)), "api": "requires scoped bridge"},
     }
 
 
@@ -324,7 +323,7 @@ def setup_main(argv: list[str] | None = None) -> int:
         _line(f"  {row['name']:<12} {state}" + (f"  plan={row['plan']}" if row.get("plan") and row["signed_in"] is not False else ""))
     paseo = detection["paseo"]
     _line(f"  {'paseo':<12} " + ("installed" if paseo["installed"] else "not found") + (", config present" if paseo["config"] else ""))
-    for name, label in (("orca", "Orca"), ("t3", "T3 Code"), ("herdr", "Herdr core"), ("cindy", "Cindy")):
+    for name, label in (("orca", "Orca"), ("t3", "T3 Code"), ("herdr", "Herdr core")):
         row = detection["orchestrators"][name]
         extra = f", {len(row['codex_homes'])} managed Codex account home(s) get the rules and skill" if row.get("codex_homes") else ""
         _line(f"  {label:<12} " + ("found" if row["installed"] else "not found") + (extra if row["installed"] else ""))

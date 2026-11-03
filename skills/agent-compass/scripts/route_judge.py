@@ -2412,6 +2412,8 @@ def main():
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
     parser.add_argument('--workspace', help='roll: Paseo workspaceId (default: the parent agent workspace).')
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
+    parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session.')
+    parser.add_argument('--new-worker', action='store_true', help='roll: start a fresh worker instead of resuming an idle worker from a previous turn.')
     parser.add_argument('--wait', type=float, default=0, help='roll: seconds to wait for the worker (default 0: launch and return).')
     parser.add_argument('--score', action='store_true',
                         help='plan: profile the task first with the System-One scorer (default on plan when objective is present).')
@@ -2431,7 +2433,7 @@ def main():
     parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release'), default='prepare')
     parser.add_argument('--dispatch-id')
     parser.add_argument('--parent-id')
-    parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3', 'herdr', 'cindy'), help='roll: host owning the parent session (default: auto-detected from environment)')
+    parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3', 'herdr'), help='roll: host owning the parent session (default: auto-detected from environment)')
     parser.add_argument('--parent-address', help='roll: native host coordinator inbox address')
     parser.add_argument('--watch-seconds', type=float, default=3600)
     parser.add_argument('--poll-seconds', type=float, default=5)

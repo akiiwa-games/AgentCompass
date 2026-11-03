@@ -50,8 +50,9 @@ export async function ensureNotification(input) {
   const existing = readRecord(file);
   if (existing && existing.parent_id !== input.parent_id) throw new Error('notification_parent_mismatch');
   if (existing && (DONE.has(existing.status) || alive(existing.pid))) return notificationReceipt(file);
-  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch',
-    input.dispatch_id, input.parent_id], {detached: true, windowsHide: true,
+  const args = [fileURLToPath(import.meta.url), '--watch', input.dispatch_id, input.parent_id];
+  if (input.agent_id && input.agent_id !== input.dispatch_id) args.push(input.agent_id);
+  const child = spawn(process.execPath, args, {detached: true, windowsHide: true,
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: process.env});
   try {
     await new Promise((resolve, reject) => {
@@ -83,6 +84,10 @@ export async function ensureNotification(input) {
 export function notificationEvents(agent, record, now) {
   if (!agent) return record.seen || now >= record.creation_deadline
     ? [{key: 'terminal', reason: record.seen ? 'worker unavailable' : 'creation outcome unavailable'}] : [];
+  if (record.agent_id && record.agent_id !== record.dispatch_id
+      && agent.labels?.['router.dispatch_id'] !== record.dispatch_id)
+    return now >= record.creation_deadline
+      ? [{key: 'terminal', reason: 'creation outcome unavailable'}] : [];
   if (agent.status === 'running') record.started = true;
   record.seen = true;
   if (agent.status === 'error' || agent.attentionReason === 'error' || agent.providerUnavailable)
@@ -105,7 +110,8 @@ export async function notificationStep(client, record, persist, now = Date.now()
     record.status = 'parent_unavailable'; persist(); return true;
   }
   if (!record.pending) {
-    const agent = (await client.fetchAgent(record.dispatch_id))?.agent;
+    const targetId = record.agent_id ?? record.dispatch_id;
+    const agent = (await client.fetchAgent(targetId))?.agent;
     const events = now >= record.deadline
       ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
       : notificationEvents(agent, record, now);
@@ -114,9 +120,9 @@ export async function notificationStep(client, record, persist, now = Date.now()
       record.pending = {...event, messageId: createHash('sha256')
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
       text: `[AgentCompass worker notification]\nDispatch: ${record.dispatch_id}\n` +
-        `Worker: ${record.dispatch_id}\nState: ${event.reason}\n` +
+        `Worker: ${targetId}\nState: ${event.reason}\n` +
         `Read the worker's final response and details with get_agent_activity ` +
-        `(agentId: ${record.dispatch_id}); use get_agent_status for pending permissions.`};
+        `(agentId: ${targetId}); use get_agent_status for pending permissions.`};
     }
     persist();
   }
@@ -131,7 +137,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
   return terminal;
 }
 
-async function watch(dispatchId, parentId) {
+async function watch(dispatchId, parentId, agentId = dispatchId) {
   const file = notificationFile(dispatchId), lock = `${file}.lock`;
   fs.mkdirSync(path.dirname(file), {recursive: true});
   let lockFd;
@@ -158,8 +164,10 @@ async function watch(dispatchId, parentId) {
   let client;
   try {
     const record = readRecord(file) ?? {dispatch_id: dispatchId, parent_id: parentId,
+      ...(agentId && agentId !== dispatchId ? {agent_id: agentId} : {}),
       deadline: Date.now() + WATCH_LIMIT_MS, creation_deadline: Date.now() + CREATE_LIMIT_MS,
       status: 'watching', delivered: [], pending: null};
+    if (agentId && agentId !== dispatchId && !record.agent_id) record.agent_id = agentId;
     if (record.parent_id !== parentId) throw new Error('notification_parent_mismatch');
     if (DONE.has(record.status)) {process.send?.({ready: true}); return;}
     record.pid = process.pid;
@@ -247,6 +255,68 @@ export async function execute(client, input, notify = ensureNotification) {
       return {ok: false, sent: true, error: 'create_outcome_uncertain_reconcile_by_label', completion_notification};
     }
   }
+  if (input.operation === 'resume') {
+    const r = input.request;
+    if (typeof input.parent_id !== 'string' || !input.parent_id.trim() || input.parent_id === 'top-level')
+      return {ok: false, sent: false, error: 'addressable_parent_required'};
+    if (typeof input.agent_id !== 'string' || !input.agent_id.trim())
+      return {ok: false, sent: false, error: 'resume_agent_required'};
+    const parent = await client.fetchAgent(input.parent_id);
+    if (!parent?.agent) return {ok: false, sent: false, error: 'parent_agent_not_found'};
+    const existing = (await client.fetchAgent(input.agent_id))?.agent;
+    if (!existing || existing.archivedAt)
+      return {ok: false, sent: false, error: 'worker_not_found'};
+    const labels = existing.labels ?? {};
+    const owner = labels['router.parent_id'] ?? labels['paseo.parent-agent-id'];
+    if (!owner || owner !== input.parent_id)
+      return {ok: false, sent: false, error: 'worker_parent_mismatch'};
+    const slash = r.provider.indexOf('/');
+    const provider = r.provider.slice(0, slash), model = r.provider.slice(slash + 1);
+    if (existing.provider !== provider || existing.model !== model)
+      return {ok: false, sent: false, error: 'worker_model_mismatch'};
+    const effort = existing.effectiveThinkingOptionId ?? existing.thinkingOptionId;
+    if ((r.settings?.modeId && existing.currentModeId && existing.currentModeId !== r.settings.modeId)
+        || (r.settings?.thinkingOptionId && effort && effort !== r.settings.thinkingOptionId))
+      return {ok: false, sent: false, error: 'worker_settings_mismatch'};
+    const alreadyBound = labels['router.dispatch_id'] === input.dispatch_id;
+    if (!alreadyBound && (existing.status === 'running' || existing.status === 'initializing'
+        || existing.status === 'error' || existing.attentionReason === 'error'
+        || existing.providerUnavailable || existing.pendingPermissions?.length))
+      return {ok: false, sent: false, error: 'worker_not_idle'};
+    let completion_notification;
+    try { completion_notification = await notify({...input, agent_id: input.agent_id}); }
+    catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
+    if (alreadyBound)
+      return {ok: true, sent: true, agent: project(existing), completion_notification};
+    let sent = false;
+    try {
+      await client.sendMessage(input.agent_id, r.initialPrompt, {messageId: input.dispatch_id});
+      sent = true;
+      const mergedLabels = {...labels, ...(r.labels ?? {}), 'paseo.parent-agent-id': input.parent_id};
+      await client.updateAgent(input.agent_id, {name: r.title, labels: mergedLabels});
+      const fetched = (await client.fetchAgent(input.agent_id))?.agent;
+      const nowIso = new Date().toISOString();
+      const fresh = fetched
+        ? {...fetched, status: fetched.status === 'idle' ? 'running' : fetched.status,
+           attentionReason: fetched.status === 'idle' ? undefined : fetched.attentionReason,
+           updatedAt: fetched.updatedAt && fetched.updatedAt >= nowIso ? fetched.updatedAt : nowIso,
+           labels: {...(fetched.labels ?? {}), ...mergedLabels}}
+        : {...existing, status: 'running', attentionReason: undefined, updatedAt: nowIso, labels: mergedLabels};
+      return {ok: true, sent: true, agent: project(fresh), completion_notification};
+    } catch {
+      if (!sent) {
+        const file = notificationFile(input.dispatch_id);
+        const record = readRecord(file);
+        if (record?.parent_id === input.parent_id) {
+          fs.writeFileSync(`${file}.creation-failed`, 'host_resume_failed', {mode: 0o600});
+          saveRecord(file, {...record, status: 'creation_failed'});
+        }
+        return {ok: false, sent: false, error: 'host_resume_failed',
+          completion_notification: {...completion_notification, status: 'creation_failed'}};
+      }
+      return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification};
+    }
+  }
   if (input.operation !== 'observe') throw new Error('unsupported_operation');
   let agent = input.agent_id ? (await client.fetchAgent(input.agent_id))?.agent : null;
   if (!agent) {
@@ -295,7 +365,7 @@ async function createClient() {
 }
 
 async function main() {
-  if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4]);
+  if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4], process.argv[5]);
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
   const client = await createClient();
   let connected = false;
@@ -304,7 +374,8 @@ async function main() {
     connected = true;
     console.log(JSON.stringify(await execute(client, input)));
   } catch {
-    console.log(JSON.stringify({ok: false, sent: connected && input.operation === 'create',
+    console.log(JSON.stringify({ok: false,
+      sent: connected && (input.operation === 'create' || input.operation === 'resume'),
       error: connected ? 'host_request_failed' : 'host_connection_failed'}));
   } finally { await client.close(); }
 }

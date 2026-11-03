@@ -1302,6 +1302,203 @@ class RollTests(unittest.TestCase):
                          {'modeId': 'full-access', 'thinkingOptionId': 'high', 'features': {'service_tier': 'priority'}})
         self.assertAlmostEqual(fast_row['expected_usd'], normal_row['expected_usd'] * 2.0, delta=0.02)
 
+    def test_followup_brief_resumes_completed_worker_and_new_worker_flag_forces_create(self):
+        operations = []
+        active_labels = {}
+
+        def host(request):
+            op = request['operation']
+            operations.append((op, request.get('agent_id'), request.get('dispatch_id')))
+            if op in ('create', 'resume'):
+                active_labels.clear()
+                active_labels.update(request['request']['labels'])
+                return {'ok': True, 'agent': self.snapshot(
+                    {'request': request['request']}, status='running', id='agent-fixture')}
+            return {'ok': True, 'agent': self.snapshot(
+                {'request': {'labels': dict(active_labels)}},
+                status='idle', attentionReason='finished', id='agent-fixture')}
+
+        def real_plan_stage(document, _):
+            task = dict(document['task'])
+            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('difficulty', 'hard')
+            planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
+            res = dict(planned, stage='plan', _allocation_task=task)
+            res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
+            return res, 0
+
+        import argparse
+        import roll
+        b1 = self.root / 'step1.md'
+        b2 = self.root / 'step1-rev.md'
+        b3 = self.root / 'step1-fresh.md'
+        b1.write_text('# Step 1: Initial implementation\n', encoding='utf-8')
+        b2.write_text('# Step 1-Rev: Address review comments\n', encoding='utf-8')
+        b3.write_text('# Step 1-Fresh: Independent task\n', encoding='utf-8')
+        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
+                                   'usage_snapshot': staticmethod(lambda _: self.usage),
+                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
+                                   'cli_prefix': staticmethod(lambda name: [name])})
+        base_args = dict(task=None, file=[], apply_to=None, local_only='local daemon test', keep_whole=None,
+                         hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=True, fast=False,
+                         resume=None, new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(flow, 'host_call', host):
+            res1, code1 = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
+            self.assertEqual((code1, res1['launched'], res1['worker']['state']), (0, True, 'completed'))
+            self.assertEqual([op for op, _, _ in operations], ['create', 'observe'])
+
+            operations.clear()
+            res2, code2 = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+            self.assertEqual((code2, res2['launched'], res2['worker']['state']), (0, True, 'completed'))
+            self.assertEqual(operations[0][:2], ('resume', 'agent-fixture'))
+            self.assertTrue(res2['worker'].get('resumed'))
+            self.assertEqual(res2['worker']['agent_id'], 'agent-fixture')
+            # Resumed turns carry a slim initialPrompt (brief + parent address footer, no repeated contract)
+            contract_text = roll.WORKER_COMMUNICATION.read_text(encoding='utf-8').strip()
+            resume_req = registry.inspect(operations[0][2])['request']
+            self.assertIn('# Step 1-Rev: Address review comments', resume_req.get('initialPrompt', ''))
+            self.assertIn('Parent session agent ID: `parent-a`.', resume_req.get('initialPrompt', ''))
+            self.assertNotIn(contract_text, resume_req.get('initialPrompt', ''))
+            # Calling prepare_worker_prompt twice on already-injected text does not duplicate the contract
+            once, _ = roll.prepare_worker_prompt('Do work', 'parent-a')
+            twice, _ = roll.prepare_worker_prompt(once, 'parent-a')
+            self.assertEqual(once, twice)
+            self.assertEqual(twice.count('Parent session agent ID: `parent-a`.'), 1)
+
+            # --new-worker forces a fresh create even when an idle worker is available
+            operations.clear()
+            res3, code3 = roll.run(argparse.Namespace(brief=b3, **{**base_args, 'new_worker': True}), judge)
+            self.assertEqual((code3, res3['launched']), (0, True))
+            self.assertEqual(operations[0][0], 'create')
+            self.assertFalse(res3['worker'].get('resumed', False))
+
+    def test_followup_brief_rotates_worn_worker_at_two_million_tokens(self):
+        operations = []
+        active_labels = {}
+
+        def host(request):
+            op = request['operation']
+            operations.append((op, request.get('agent_id')))
+            if op in ('create', 'resume'):
+                active_labels.clear()
+                active_labels.update(request['request']['labels'])
+                return {'ok': True, 'agent': self.snapshot(
+                    {'request': request['request']}, status='running', id='agent-worn')}
+            return {'ok': True, 'agent': self.snapshot(
+                {'request': {'labels': dict(active_labels)}},
+                status='idle', attentionReason='finished', id='agent-worn')}
+
+        def real_plan_stage(document, _):
+            task = dict(document['task'])
+            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('difficulty', 'hard')
+            planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
+            res = dict(planned, stage='plan', _allocation_task=task)
+            res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
+            return res, 0
+
+        import argparse
+        import roll
+        b1 = self.root / 'turn1.md'
+        b2 = self.root / 'turn2.md'
+        b1.write_text('# Turn 1: Heavy exploration\n', encoding='utf-8')
+        b2.write_text('# Turn 2: Continue exploration\n', encoding='utf-8')
+        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
+                                   'usage_snapshot': staticmethod(lambda _: self.usage),
+                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
+                                   'cli_prefix': staticmethod(lambda name: [name])})
+        base_args = dict(task=None, file=[], apply_to=None, local_only='local daemon test', keep_whole=None,
+                         hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=True, fast=False,
+                         resume=None, new_worker=False)
+        worn_state = {'compactions': 3, 'compacted_tokens': 1_800_000,
+                      'context_tokens': 300_000, 'historical_context_tokens': 2_100_000}
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(flow, 'host_call', host):
+            roll.run(argparse.Namespace(brief=b1, **base_args), judge)
+            operations.clear()
+            with patch.object(allocator, 'session_state', return_value=worn_state):
+                res2, code2 = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+            self.assertEqual((code2, res2['launched']), (0, True))
+            self.assertEqual(operations[0][0], 'create')
+            self.assertFalse(res2['worker'].get('resumed', False))
+
+    def test_batch_revision_briefs_resume_matching_workers_without_collision(self):
+        operations = []
+        agent_labels = {}
+        created_count = 0
+
+        def host(request):
+            nonlocal created_count
+            op = request['operation']
+            if op == 'create':
+                created_count += 1
+                aid = f'worker-1{"a" if created_count == 1 else "b"}'
+                agent_labels[aid] = dict(request['request']['labels'])
+                operations.append(('create', aid, request['request']['title']))
+                return {'ok': True, 'agent': self.snapshot({'request': request['request']}, status='running', id=aid)}
+            if op == 'resume':
+                aid = request['agent_id']
+                agent_labels[aid] = dict(request['request']['labels'])
+                operations.append(('resume', aid, request['request']['title']))
+                return {'ok': True, 'agent': self.snapshot({'request': request['request']}, status='running', id=aid)}
+            aid = request.get('agent_id')
+            return {'ok': True, 'agent': self.snapshot(
+                {'request': {'labels': dict(agent_labels[aid])}},
+                status='idle', attentionReason='finished', id=aid)}
+
+        def real_plan_stage(document, _):
+            task = dict(document['task'])
+            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('difficulty', 'hard')
+            planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
+            res = dict(planned, stage='plan', _allocation_task=task)
+            res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
+            return res, 0
+
+        import argparse
+        import roll
+        b1a = self.root / 'brief-step1a.md'
+        b1b = self.root / 'brief-step1b.md'
+        b1a_rev = self.root / 'brief-step1a-rev.md'
+        b1b_rev = self.root / 'brief-step1b-rev.md'
+        b1a.write_text('# Step 1A: Refactor auth module\n', encoding='utf-8')
+        b1b.write_text('# Step 1B: Refactor storage module\n', encoding='utf-8')
+        b1a_rev.write_text('# Step 1A-Rev: Fix auth review findings\n', encoding='utf-8')
+        b1b_rev.write_text('# Step 1B-Rev: Fix storage review findings\n', encoding='utf-8')
+        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
+                                   'prefetch_scores': staticmethod(lambda tasks, timeout: None),
+                                   'usage_snapshot': staticmethod(lambda _: self.usage),
+                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
+                                   'cli_prefix': staticmethod(lambda name: [name])})
+        batch_args = dict(task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
+                          hours=None, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                          parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                          effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                          score_timeout=30, resume=None, new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(flow, 'host_call', host):
+            r1, c1 = roll.run_batch(argparse.Namespace(brief=[b1a, b1b], **batch_args), judge)
+            self.assertEqual(c1, 0)
+            self.assertEqual([(op, aid) for op, aid, _ in operations], [('create', 'worker-1a'), ('create', 'worker-1b')])
+
+            operations.clear()
+            # Roll revision briefs in reverse order to prove matching by step tag rather than mere recency
+            r2, c2 = roll.run_batch(argparse.Namespace(brief=[b1a_rev, b1b_rev], **batch_args), judge)
+            self.assertEqual(c2, 0)
+            self.assertEqual([(op, aid) for op, aid, _ in operations], [('resume', 'worker-1a'), ('resume', 'worker-1b')])
+            self.assertTrue(all(item['worker'].get('resumed') for item in r2['results']))
+
 
 if __name__ == '__main__':
     unittest.main()

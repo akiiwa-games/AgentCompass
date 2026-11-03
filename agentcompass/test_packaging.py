@@ -29,7 +29,7 @@ class PackagingTests(unittest.TestCase):
             setup.mkdir()
             (setup / "onboard.py").write_text("def setup_main(argv=None):\n    return 0\n", encoding="utf-8")
             (setup / "paseo_dispatch_bridge.mjs").write_text("export {}\n", encoding="utf-8")
-            for folder, name in ((skill, "test_allocator.py"), (skill, "test_cindy_plugin.mjs"),
+            for folder, name in ((skill, "test_allocator.py"), (skill, "test_host_bridge.mjs"),
                                  (skill, "router_test_support.py"), (skill, "conftest.py"),
                                  (setup, "test_onboard.py")):
                 (folder / name).write_text("development test\n", encoding="utf-8")

@@ -1,6 +1,5 @@
 """Parent addressing shared by routing and dispatch preflight."""
 import os
-import json
 from pathlib import Path
 import time
 
@@ -67,7 +66,7 @@ def require_parent_id(value):
     return value.strip()
 
 
-HOSTS = ('paseo', 'native', 'orca', 't3', 'herdr', 'cindy')
+HOSTS = ('paseo', 'native', 'orca', 't3', 'herdr')
 NATIVE_HOSTS = ('native', 'orca', 't3')
 # Orca's own mailbox spelling (src/shared/orca-session-address-prefix.ts, structured-worker-handle.ts).
 ORCA_SESSION_ADDRESS_PREFIX = 'orca_session_id:'
@@ -108,22 +107,6 @@ def in_cindy():
         'CINDY_PI_SUBAGENT_RUN_ROOT'))
 
 
-def cindy_context():
-    """The packaged plugin passes trusted host context, never the askpass capability."""
-    path = os.environ.get('ROUTER_CINDY_CONTEXT', '').strip()
-    if not path:
-        return None
-    value = json.loads(Path(path).read_text(encoding='utf-8'))
-    if value.get('source') != 'cindy-plugin-session-context' or value.get('version') != 1:
-        raise ValueError('Invalid Cindy bridge context.')
-    parent = require_parent_id(value.get('session_id'))
-    if value.get('workdir_is_local') is not True or not value.get('workdir'):
-        raise ValueError('Cindy bridge requires a host-verified local workdir.')
-    if value.get('workdir_is_read_only') is not False:
-        raise ValueError('Cindy parent workdir is read-only or its permission is unknown; no worker launched.')
-    return parent
-
-
 def resolve_parent(args):
     raw_paseo = os.environ.get('PASEO_AGENT_ID')
     if raw_paseo is not None and raw_paseo.strip():
@@ -135,25 +118,20 @@ def resolve_parent(args):
     if actual and (host not in ('paseo', 'auto') or (explicit and explicit.strip() != actual)):
         raise ValueError('Parent differs from actual PASEO_AGENT_ID.')
     hc = os.environ.get('HC_TERMINAL_ID', '').strip() if not actual and host in (None, 'auto', 'herdr') else ''
-    cindy = cindy_context() if not actual and not hc and host in (None, 'auto', 'cindy') else None
-    if not actual and not hc and not cindy and (host == 'cindy' or (host in (None, 'auto') and in_cindy())):
+    if not actual and not hc and host in (None, 'auto') and in_cindy():
         raise ValueError('Cindy shell context has no supported addressable parent mailbox. '
                          'Its askpass route is not a session ID, and Pi strips its session ID from bash. '
-                         'Use the AgentCompass Cindy bridge; never pass a provider thread or askpass token to Paseo.')
+                         'Use the separate cindy-agentcompass-plugin; never pass a provider thread or askpass token to Paseo.')
     if hc and explicit and explicit.strip() != hc:
         raise ValueError('Parent differs from actual HC_TERMINAL_ID.')
-    if cindy and explicit and explicit.strip() != cindy:
-        raise ValueError('Parent differs from Cindy host session_context.')
     orca = None if (actual or hc or explicit or host not in (None, 'auto', 'orca')) else detect_orca_session()
-    detected = '' if (actual or explicit) else (hc or cindy or (orca[0] if orca else detect_host_session()))
+    detected = '' if (actual or explicit) else (hc or (orca[0] if orca else detect_host_session()))
     parent = require_parent_id(actual or explicit or detected)
     address = getattr(args, 'parent_address', None)
     if host in (None, 'auto'):
         env_host = os.environ.get('ROUTER_PARENT_HOST', '').strip().lower()
         if hc:
             host = 'herdr'
-        elif cindy:
-            host = 'cindy'
         elif env_host in HOSTS:
             host = env_host
         elif orca:
@@ -165,13 +143,11 @@ def resolve_parent(args):
         else:
             host = 'paseo'
     elif host not in HOSTS:
-        raise ValueError('Pass --parent-host paseo|native|orca|t3|herdr|cindy so the worker can address the parent on the correct host.')
+        raise ValueError('Pass --parent-host paseo|native|orca|t3|herdr so the worker can address the parent on the correct host.')
     if host == 'paseo' and address and address != parent:
         raise ValueError('Paseo parent message address must equal the actual parent session ID.')
     if host == 'herdr' and address and address != parent:
         raise ValueError('Herdr parent address must equal its actual terminal address.')
-    if host == 'cindy' and address and address != parent:
-        raise ValueError('Cindy bridge parent address must equal the host-verified session ID.')
     if host == 'native' and (not isinstance(address, str) or not address.strip()):
         raise ValueError('Native host requires --parent-address <inbox-address> as well as --parent-id <session-id>.')
     if host == 'orca' and not (isinstance(address, str) and address.strip()):
