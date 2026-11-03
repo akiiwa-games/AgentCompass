@@ -57,18 +57,18 @@ SCORER_TIMEOUT_SECONDS = 25
 # API keys live only in that file or the environment, never in the repository.
 SCORER_CONFIG_ENV = 'ROUTER_SCORER_CONFIG'
 SCORER_TYPE_ENV = 'ROUTER_SCORER_TYPE'
-DEFAULT_SCORER_TYPE = 'agy_flash_low'
+DEFAULT_SCORER_TYPE = 'claude_haiku_low'
+DEFAULT_SCORER_ORDER = ('jev', 'claude_haiku_low', 'codex_terra_low', 'agy_flash_low')
 JEV_DEFAULT_BASE_URL = 'https://api.typesafe.ai'
 JEV_DEFAULT_MODEL = 'jev-latest'
 JEV_KEY_ENVS = ('TYPESAFE_API_KEY', 'JEV_API_KEY')
 CUSTOM_KEY_ENV = 'ROUTER_SCORER_API_KEY'
 SCORER_TYPES = {
-    'agy_flash_low': {'provider': 'agy', 'model': 'gemini-3.8-flash-low', 'label': 'Antigravity · Gemini 3.8 Flash Low'},
     'jev': {'provider': 'typesafe', 'model': JEV_DEFAULT_MODEL, 'label': 'TypeSafe · Jev (System One API)'},
     'claude_haiku_low': {'provider': 'claude', 'model': 'claude-haiku-5-5', 'label': 'Claude · Haiku 5.5 Low'},
     'codex_terra_low': {'provider': 'codex', 'model': 'gpt-6.1-terra', 'label': 'Codex · GPT-6.1 Terra Low'},
+    'agy_flash_low': {'provider': 'agy', 'model': 'gemini-3.8-flash-low', 'label': 'Antigravity · Gemini 3.8 Flash Low'},
     'openai_compatible': {'provider': 'openai_compatible', 'model': None, 'label': 'OpenAI-compatible API'},
-    'heuristic': {'provider': 'heuristic', 'model': 'heuristic', 'label': 'Offline heuristic (no model call)'},
 }
 CLASSIFIER_CASES_PATH = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
 SCORER_PROMPT = (
@@ -78,11 +78,21 @@ SCORER_PROMPT = (
     'Choose the canonical `work_kind` route and rate each dimension at the lowest level that honestly covers the work. '
     'Briefs are long Markdown documents: ignore their length, section headers, communication rules and boilerplate '
     'paths (role docs, AGENTS.md, skill/README docs, reports to read, receipt/output paths, a module\'s unit-test file) '
-    'when scoring `reasoning_depth` and `context_scale`; score the functional work only. ANY read-only code/release/diff '
-    'review, independent audit, or diagnosis that writes no production code MUST have `code_complexity` 0 (even when '
-    'reviewing complex code) and `hallucination_risk` 3. Follow the '
-    '`dimension_rubric` and match the closest calibration case. '
-    '`reason` is one sentence about the task, not about this output; when `local_only` is true, name the local dependency.\n')
+    'when scoring `reasoning_depth`, `context_scale`, and `local_only`; score the functional work only.\n'
+    'CRITICAL RULES:\n'
+    '1. `local_only`: Set `true` ONLY when the worker must read/edit/test existing un-inlined files in the local git repo, '
+    'interact with local processes/daemons/SQLite/GUI, or use local credentials/intranet. Set `false` for open-web/public '
+    'research (`web_research`), self-contained code/algorithms whose spec is inlined in the brief (`self_contained_code`), '
+    'or self-contained writing/ideation/critique (`text_in_text_out`, `direction_reasoning`, `complex_build_plan`)—EVEN IF '
+    'the brief is a multi-section Markdown document or names a local path where the finished report/file will be saved.\n'
+    '2. `code_complexity`: ANY read-only code/release/diff review, independent audit, or diagnosis that writes no production '
+    'code MUST have `code_complexity` 0 (even when reviewing complex code) and `hallucination_risk` 3.\n'
+    '3. `context_scale`: 1 = one functional module/script (+ its paired unit test and brief/output boilerplate) or a '
+    'self-contained research/text/algorithm task; 2 = 2..5 coupled functional modules interacting; 3 = repo/system-wide.\n'
+    '4. `divergence`: 1 = convergent spec/fix/review/checklist; 2 = multi-hypothesis root-cause diagnosis or bounded option '
+    'comparison; 3 = open-ended creative ideation, cultural/gameplay motif proposals, or first-principles paradigm design.\n'
+    'Follow `dimension_rubric` and match the closest calibration case. '
+    '`reason` is one sentence about the task, not about this output; when `local_only` is true, name the concrete local dependency.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
 LOW_REMAINING_PCT = 10        # an auto-judge account at or below this is tried only after healthier ones
@@ -673,7 +683,10 @@ def finalize(result, payload, requested, started, task=None, records=None):
         'difficulty': diff_val,
         **({'difficulty_source': (decision.get('task') or {})['difficulty_source']}
            if (decision.get('task') or {}).get('difficulty_source') else {}),
-        **({'scorer': result['scorer'].get('source')} if isinstance(result.get('scorer'), dict) else {}),
+        **({'scorer': result['scorer'].get('source'),
+            **({'scorer_type': result['scorer']['scorer_type']} if result['scorer'].get('scorer_type') else {}),
+            **({'scorer_ms': result['scorer']['duration_ms']} if result['scorer'].get('duration_ms') is not None else {})}
+           if isinstance(result.get('scorer'), dict) else {}),
         **({'profile': {k: v for k, v in decision['task']['profile'].items() if k != 'reason'}}
            if isinstance((decision.get('task') or {}).get('profile'), dict) else {}),
         'local_only': bool(needs_row.get('local_only')) or None,
@@ -685,7 +698,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **({'keep_whole': kept['reason'], 'task_count': kept.get('task_count')}
            if (kept := next((a for a in alerts if a.get('code') == 'kept_whole'), None)) else {}),
         'objective': objective[:200] if isinstance(objective, str) else None,
-        'reason': (result.get('reason') or result.get('error') or '')[:600] or None,
+        'reason': (result.get('reason') or decision.get('reason') or result.get('error') or '')[:600] or None,
         'payload_bytes': len(json.dumps(payload, ensure_ascii=False).encode()) if payload else None,
         'duration_ms': int((time.monotonic() - started) * 1000),
         'usage': usage_digest(usage), 'alerts': [a['code'] for a in alerts],
@@ -1498,23 +1511,36 @@ def _score_cache_put(key, profile, meta):
         pass
 
 
+def scorer_attempt_order(config):
+    """Priority cascade of System-One scorers: lightest/fastest first (`jev` when keyed -> `claude_haiku_low` ->
+    `codex_terra_low` -> `agy_flash_low`). An explicitly configured scorer leads; when `fallback_to_agy` is enabled
+    (the default), remaining lightweight scorers in `DEFAULT_SCORER_ORDER` follow."""
+    explicit = config.get('scorer_type') if config.get('scorer_type') in SCORER_TYPES else None
+    has_jev_key = bool(scorer_api_settings('jev', config)[0])
+    primary = explicit or ('jev' if has_jev_key else DEFAULT_SCORER_TYPE)
+    order = [primary]
+    if config.get('fallback_to_agy', True) is not False:
+        if primary == DEFAULT_SCORER_TYPE and has_jev_key and 'jev' not in order:
+            order.insert(0, 'jev')
+        for candidate in DEFAULT_SCORER_ORDER:
+            if candidate == 'jev' and not has_jev_key:
+                continue
+            if candidate not in order:
+                order.append(candidate)
+    return primary, order
+
+
 def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, use_model=True, scorer_config=None):
-    """(task profile, scorer metadata). A profile the caller wrote wins; then the configured System-One scorer
-    (load_scorer_config: agy Gemini 3.8 Flash low by default, or TypeSafe Jev, Claude, Codex, a custom API); then agy
-    when a non-agy scorer failed and fallback_to_agy is on; then the deterministic allocator.infer_task_profile.
-    A timed-out CLI is stopped with its process tree (run_process)."""
+    """(task profile or None, scorer metadata). A profile the caller wrote wins; then the System-One scorer cascade
+    (`jev` -> `claude_haiku_low` -> `codex_terra_low` -> `agy_flash_low`). When all System-One scorers time out or
+    fail, returns `(None, meta)` with `source: 'scorer_unavailable'` so the parent session chooses autonomously;
+    never falls back to mechanical keyword guessing."""
     if isinstance(task.get('profile'), dict):
         return allocator.validate_profile(task['profile']), {'source': 'caller_profile', 'model': None}
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
-    configured = config.get('scorer_type') if config.get('scorer_type') in SCORER_TYPES else DEFAULT_SCORER_TYPE
-    if configured == 'heuristic':
-        return allocator.infer_task_profile(task, capabilities), {
-            'source': 'heuristic_configured', 'scorer_type': 'heuristic', 'provider': 'heuristic', 'model': 'heuristic'}
+    configured, order = scorer_attempt_order(config)
     reason, attempts = 'model_call_skipped', []
     if use_model:
-        order = [configured]
-        if configured != DEFAULT_SCORER_TYPE and config.get('fallback_to_agy', True) is not False:
-            order.append(DEFAULT_SCORER_TYPE)
         cache_key = score_cache_key(task, allocator, capabilities, order, config)
         cached = score_cache_get(cache_key)
         if cached:
@@ -1543,13 +1569,13 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         if input_error is not None:
             # No scorer could take the whole text: stop here rather than route on a cut or keyword-guessed profile.
             raise input_error
-        reason = attempts[0]['error_type']
-    meta = {'source': 'heuristic_fallback', 'model': None, 'configured_scorer': configured, 'fallback_reason': reason}
+        reason = attempts[0]['error_type'] if attempts else 'scorer_unavailable'
+    meta = {'source': 'scorer_unavailable', 'model': None, 'configured_scorer': configured, 'fallback_reason': reason}
     if attempts:
         meta['attempts'] = attempts
         if attempts[0].get('detail'):
             meta['fallback_detail'] = attempts[0]['detail']
-    return allocator.infer_task_profile(task, capabilities), meta
+    return None, meta
 
 
 def prefetch_scores(tasks, timeout=SCORER_TIMEOUT_SECONDS):
@@ -1593,11 +1619,10 @@ def scorer_test(config, objective=None, timeout=SCORER_TIMEOUT_SECONDS):
     task = {'objective': (objective or '').strip() or SCORER_TEST_OBJECTIVE}
     started = time.monotonic()
     profile, meta = score_task(task, allocator, capabilities, timeout, scorer_config=config)
-    ok = (meta['source'] == 'system_one' and meta.get('scorer_type') == config['scorer_type']) \
-        or meta['source'] == 'heuristic_configured'
+    ok = profile is not None and meta['source'] == 'system_one' and meta.get('scorer_type') == config['scorer_type']
     return {'stage': 'scorer', 'action': 'test', 'ok': ok, 'scorer_type': config['scorer_type'],
             'latency_ms': int((time.monotonic() - started) * 1000), 'task_profile': profile, 'scorer': meta,
-            'derived_kind': allocator.profile_kind(profile, allocator.load_accounts()['scoring'])}
+            'derived_kind': allocator.profile_kind(profile, allocator.load_accounts()['scoring']) if profile else None}
 
 
 def resolve_judge(kind, usage, availability=None):
@@ -2163,6 +2188,38 @@ def split_result(task, count, scorer, started):
     return result
 
 
+SCORER_UNAVAILABLE_NEXT = (
+    'All System-One classifiers timed out or failed; mechanical keyword fallback has been removed. '
+    'As the parent session, choose autonomously: either execute the task directly in this session (self), '
+    'or dispatch with an explicit parent choice (`--provider <p> --account <a> --model <m> --effort <e> '
+    '--basis "scorer_unavailable: parent autonomous choice"`).'
+)
+
+
+def scorer_unavailable_result(task, scorer, started):
+    """When all System-One classifiers fail or time out, do not guess mechanically; return control to the parent session."""
+    why = (scorer or {}).get('fallback_detail') or (scorer or {}).get('fallback_reason') or 'scorer_unavailable'
+    reason = f'System-One classifier unavailable ({why}); mechanical fallback is disabled so the parent session chooses autonomously.'
+    objective = task.get('objective')
+    result = {
+        'stage': 'plan', 'choice': 'none', 'error': 'scorer_unavailable',
+        'caller_action': 'parent_autonomous_choice',
+        'scorer': scorer, 'task_profile': None, 'reason': reason,
+        'decision': {'action': 'parent_choice', 'reason': reason, 'needs_user_decision': False},
+        'next': SCORER_UNAVAILABLE_NEXT,
+    }
+    append_ledger({
+        'v': 1, 'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan', 'choice': 'none',
+        'error': 'scorer_unavailable', 'reason': reason,
+        **({'task_id': task['task_id']} if task.get('task_id') else {}),
+        **({'parent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {}),
+        'scorer': (scorer or {}).get('source'),
+        'objective': objective[:200] if isinstance(objective, str) else None,
+        'duration_ms': int((time.monotonic() - started) * 1000),
+    })
+    return result
+
+
 def plan_stage(document, args):
     """Classify, allocate and record one task; shared by the plan and roll stages."""
     task = document.get('task')
@@ -2198,12 +2255,17 @@ def plan_stage(document, args):
     extra_alerts, scorer = [], None
     profile_local_only_applied = False
     hours_estimate = None
+    live_disabled = os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1'
+    has_caller_spec = bool(task.get('work_kind') and task.get('difficulty'))
     should_score = not args.no_score and (
         args.score or task.get('auto_score')
-        or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict))
+        or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)
+            and not (live_disabled and has_caller_spec))
     )
     if should_score:
         profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
+        if profile is None:
+            return scorer_unavailable_result(task, scorer, started), 2
         classified_kind = allocator.profile_kind(profile, policy)
         derived = allocator.profile_difficulty(profile, policy)
         order = list(policy['ability_floor'])
@@ -2438,6 +2500,11 @@ def main():
             capabilities = allocator.load_capabilities()
             policy = allocator.load_accounts()['scoring']
             profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
+            if profile is None:
+                result = {'stage': 'score', 'source': scorer['source'], 'task_profile': None, 'scorer': scorer,
+                          'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
+                print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+                return 2
             derived = allocator.profile_difficulty(profile, policy)
             result = {'stage': 'score', 'source': scorer['source'], 'task_profile': profile, 'scorer': scorer,
                       'derived': {'kind': allocator.task_kind({**task, 'profile': profile}, capabilities, policy),

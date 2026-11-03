@@ -1193,8 +1193,7 @@ class Panel:
         if scorer:
             source = scorer.get("source")
             message += (_tr('（小模型 {0} · {1}ms）').format(f"{scorer.get('model')}", f"{scorer.get('duration_ms')}") if source == "system_one"
-                        else _tr("（离线规则直判）") if source == "heuristic_configured"
-                        else _tr('（小模型失败已回退规则：{0}）').format(f"{scorer.get('fallback_detail') or scorer.get('fallback_reason')}"))
+                        else _tr('（小模型不可用：{0}，请主会话自主选择）').format(f"{scorer.get('fallback_detail') or scorer.get('fallback_reason')}"))
         self.status.set(message)
         self.replay_theatre()
 

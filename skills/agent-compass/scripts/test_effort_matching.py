@@ -21,7 +21,7 @@ def quota(codex=(80, 100), claude=(80, 100), reset_codex=None):
         'claude': [('five_hour', 90, 3), ('seven_day', claude[0], claude[1]), ('weekly_fable', 100, 100)],
         'claude-lab': [('five_hour', 90, 3), ('seven_day', claude[0], claude[1]), ('weekly_fable', 100, 100)],
         'codex': [('usage', codex[0], reset_codex or codex[1])],
-        'antigravity': [('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 80, 100)],
+        'antigravity': [('gemini-5h', 90, 3), ('gemini-weekly', claude[0], claude[1]), ('3p-5h', 90, 3), ('3p-weekly', claude[0], claude[1])],
     })
 
 

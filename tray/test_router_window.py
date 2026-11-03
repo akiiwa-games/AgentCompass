@@ -1043,13 +1043,13 @@ class ScorerConfigTests(unittest.TestCase):
 
     def test_types_match_route_judge(self):
         self.assertEqual([row[0] for row in router_data.SCORER_TYPES], list(self.router.SCORER_TYPES))
-        self.assertEqual(router_data.SCORER_TYPES[0][0], "agy_flash_low")
+        self.assertEqual([row[0] for row in router_data.SCORER_TYPES[:4]], ["jev", "claude_haiku_low", "codex_terra_low", "agy_flash_low"])
         self.assertEqual({row[0] for row in router_data.SCORER_TYPES if row[2]}, {"jev", "openai_compatible"})
 
     def test_read_and_save_keep_masked_keys(self):
         config = router_data.read_scorer_config()
         self.assertEqual((config["scorer_type"], config["fields"]["jev"]["base_url"], config["fields"]["jev"]["model"],
-                          config["fields"]["jev"]["key_hint"]), ("agy_flash_low", "https://api.typesafe.ai", "jev-latest", "尚未配置 API Key"))
+                          config["fields"]["jev"]["key_hint"]), ("claude_haiku_low", "https://api.typesafe.ai", "jev-latest", "尚未配置 API Key"))
         self.assertIn("Jev", router_data.save_scorer_config("jev", SECRET, "https://api.typesafe.ai", "jev-latest"))
         stored = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual(stored, {"scorer_type": "jev", "jev_api_key": SECRET})
@@ -1066,14 +1066,16 @@ class ScorerConfigTests(unittest.TestCase):
         stored = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual((stored["jev_api_key"], "jev_base_url" in stored), ("ts-new-key-99998888", False))
         router_data.save_scorer_config("openai_compatible", "sk-custom-1234567890", "https://llm.example.com/v1", "qwen3-4b")
-        router_data.save_scorer_config("heuristic")
+        router_data.save_scorer_config("claude_haiku_low")
         stored = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual((stored["scorer_type"], stored["jev_api_key"], stored["api_key"], stored["model"]),
-                         ("heuristic", "ts-new-key-99998888", "sk-custom-1234567890", "qwen3-4b"))
+                         ("claude_haiku_low", "ts-new-key-99998888", "sk-custom-1234567890", "qwen3-4b"))
         router_data.save_scorer_config("jev", "", "", "")
         self.assertNotIn("jev_api_key", json.loads(self.path.read_text(encoding="utf-8")))
         with self.assertRaises(ValueError):
             router_data.save_scorer_config("openai_compatible", "k", "", "")
+        with self.assertRaises(ValueError):
+            router_data.save_scorer_config("heuristic")
         with self.assertRaises(ValueError):
             router_data.save_scorer_config("nope")
         with mock.patch.object(self.router, "user_env", side_effect=lambda n: "env-key-123456789" if n == "TYPESAFE_API_KEY" else None):
@@ -1099,22 +1101,21 @@ class ScorerConfigTests(unittest.TestCase):
             message = router_data.test_scorer_config()
         self.assertTrue(message.startswith("测试失败（Jev"), message)
         self.assertIn("TypeSafe API key not configured", message)
-        self.assertRegex(router_data.test_scorer_config("heuristic"), r"^测试成功（规则直判")
 
     def test_simulate_can_profile_with_the_live_scorer(self):
-        router_data.save_scorer_config("heuristic")
         with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"task": task}):
             fast = router_data.simulate("修复解析器的 bug", 1.0)
-            live = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
         self.assertNotIn("scorer", fast)
-        self.assertEqual(live["scorer"]["source"], "heuristic_configured")
-        self.assertEqual(live["task"]["profile"], fast["task"]["profile"])
         profile = dict(fast["task"]["profile"], work_kind="debug_review", reasoning_depth=3)
         with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"task": task}), \
                 mock.patch.object(self.router, "score_task", return_value=(profile, {"source": "system_one", "model": "m"})):
             live = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
         self.assertEqual((live["task"]["work_kind"], live["task"]["difficulty"], live["scorer"]["model"]),
                          ("debug_review", "coupled", "m"))
+        with mock.patch.object(router_data, "plan_task", side_effect=AssertionError("should not plan when scorer unavailable")), \
+                mock.patch.object(self.router, "score_task", return_value=(None, {"source": "scorer_unavailable", "fallback_detail": "timed out"})):
+            unavail = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
+        self.assertEqual((unavail["choice"], unavail["error"]), ("none", "scorer_unavailable"))
 
 
 class ResetEditorTests(unittest.TestCase):

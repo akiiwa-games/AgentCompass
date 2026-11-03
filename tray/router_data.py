@@ -201,6 +201,8 @@ def simulate(objective: str, hours: float, local_only: bool = False, needs_visua
     task = build_task(objective, hours, local_only, needs_visual)
     task.pop("profile", None)
     profile, scorer = router.score_task(task, allocator, capabilities)
+    if profile is None:
+        return {"stage": "plan", "choice": "none", "error": "scorer_unavailable", "ranking": [], "task": task, "scorer": scorer}
     task["profile"] = profile
     if scorer.get("source") == "system_one":
         task["work_kind"] = allocator.profile_kind(profile, policy)
@@ -1631,17 +1633,16 @@ def toggle_account_host(account: str) -> str:
 
 # (type id, display label, needs an API key, takes base_url/model, hint); ids match route_judge.SCORER_TYPES.
 SCORER_TYPES = (
-    ("agy_flash_low", "Antigravity · Gemini 3.8 Flash Low（默认）", False, False, "本机 agy CLI，无需 Key"),
     ("jev", "TypeSafe · Jev (System One API)", True, True, "TypeSafe API Key；也可设环境变量 TYPESAFE_API_KEY / JEV_API_KEY"),
-    ("claude_haiku_low", "Claude · Haiku 5.5 Low", False, False, "本机 claude CLI 订阅，无需 Key"),
+    ("claude_haiku_low", "Claude · Haiku 5.5 Low（默认）", False, False, "本机 claude CLI 订阅，无需 Key"),
     ("codex_terra_low", "Codex · GPT-6.1 Terra Low", False, False, "本机 codex CLI 订阅，无需 Key"),
+    ("agy_flash_low", "Antigravity · Gemini 3.8 Flash Low", False, False, "本机 agy CLI，无需 Key"),
     ("openai_compatible", "自定义 OpenAI 兼容接口", True, True, "填写接口地址、模型名与 API Key（/v1/chat/completions）"),
-    ("heuristic", "离线规则直判（无模型调用）", False, False, "不调用任何模型，按规则直接推断"),
 )
 SCORER_TYPES = LocalizedSequence(SCORER_TYPES)
 SCORER_LABELS = {row[0]: row[1] for row in SCORER_TYPES.rows}
-SCORER_SHORT = {"agy_flash_low": "Gemini Flash", "jev": "Jev", "claude_haiku_low": "Haiku",
-                "codex_terra_low": "Terra", "openai_compatible": "自定义接口", "heuristic": "规则直判"}
+SCORER_SHORT = {"jev": "Jev", "claude_haiku_low": "Haiku", "codex_terra_low": "Terra",
+                "agy_flash_low": "Gemini Flash", "openai_compatible": "自定义接口"}
 SCORER_API_DEFAULTS = {"jev": ("https://api.typesafe.ai", "jev-latest"), "openai_compatible": ("", "")}
 
 

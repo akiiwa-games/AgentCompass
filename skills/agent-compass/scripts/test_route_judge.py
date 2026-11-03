@@ -453,8 +453,9 @@ class ScoreCacheTests(unittest.TestCase):
         def run(command, cwd, prompt=None, timeout=120, account=None):
             self.calls += 1
             return 0, stdout or json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''
+        cfg = config if config is not None else {'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run):
-            return router.score_task({'objective': objective}, self.allocator, self.capabilities, scorer_config=config or {})
+            return router.score_task({'objective': objective}, self.allocator, self.capabilities, scorer_config=cfg)
 
     def test_repeat_is_served_from_cache_and_changed_task_or_scorer_is_not(self):
         first, meta = self.score()
@@ -463,7 +464,7 @@ class ScoreCacheTests(unittest.TestCase):
         self.score('Fix the lexer bug')
         self.assertEqual(self.calls, 2)
         self.score(config={'scorer_type': 'jev', 'jev_api_key': 'k1', 'fallback_to_agy': True})
-        self.assertEqual(self.calls, 3)  # different scorer identity (the jev call fails, agy answers)
+        self.assertEqual(self.calls, 3)  # different scorer identity (the jev call fails, cascade answers)
 
     def test_corrupt_stale_and_fallback_results_never_serve_from_cache(self):
         self.score()
@@ -478,8 +479,9 @@ class ScoreCacheTests(unittest.TestCase):
         self.score()
         self.assertEqual(self.calls, 3)
         path.unlink()
-        _, meta = self.score('Other task', stdout='garbage')
-        self.assertEqual(meta['source'], 'heuristic_fallback')
+        prof, meta = self.score('Other task', stdout='garbage')
+        self.assertIsNone(prof)
+        self.assertEqual(meta['source'], 'scorer_unavailable')
         self.score('Other task', stdout='garbage')
         self.assertEqual(self.calls, 5)
 
@@ -498,7 +500,7 @@ class ScoreCacheTests(unittest.TestCase):
             return 0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''
         tasks = [{'objective': f'Fix bug {n}'} for n in range(4)]
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run), \
-                patch.object(router, 'load_scorer_config', return_value={}), \
+                patch.object(router, 'load_scorer_config', return_value={'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}), \
                 patch.object(router, 'load_allocator', return_value=self.allocator), \
                 patch.object(self.allocator, 'load_capabilities', return_value=self.capabilities):
             router.prefetch_scores(tasks)
@@ -570,9 +572,10 @@ class FullTaskTextTests(unittest.TestCase):
             with self.assertRaises(router.ScorerInputError) as caught:
                 router.score_task({'objective': self.text}, self.allocator, self.capabilities, scorer_config=self.config)
             self.assertIn('nothing was cut or guessed', str(caught.exception))
-            # a short task with the same failing CLI still degrades to the heuristic, as before
-            _, meta = router.score_task({'objective': 'short task'}, self.allocator, self.capabilities, scorer_config=self.config)
-        self.assertEqual(meta['source'], 'heuristic_fallback')
+            # a short task with the same failing CLI returns scorer_unavailable so the parent session chooses autonomously
+            prof, meta = router.score_task({'objective': 'short task'}, self.allocator, self.capabilities, scorer_config=self.config)
+        self.assertIsNone(prof)
+        self.assertEqual(meta['source'], 'scorer_unavailable')
 
     def test_api_scorer_refusing_the_size_falls_back_to_agy_stdin_not_to_heuristic(self):
         ok = {'conversation_id': 'c', 'status': 'SUCCESS', 'structured_output': GUI_PROFILE}
@@ -611,7 +614,10 @@ class SystemOneScorerTests(unittest.TestCase):
     def score(self, task, stdout=None, code=0, use_model=True):
         calls, run = self.fake_agy(stdout if stdout is not None else self.envelope(GUI_PROFILE), code)
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run):
-            profile, meta = router.score_task(task, self.allocator, self.capabilities, use_model=use_model)
+            profile, meta = router.score_task(
+                task, self.allocator, self.capabilities, use_model=use_model,
+                scorer_config={'scorer_type': 'agy_flash_low', 'fallback_to_agy': False},
+            )
         return profile, meta, calls
 
     def run_cli(self, directory, stage, task, *flags, stdout=None, dot=None):
@@ -624,6 +630,7 @@ class SystemOneScorerTests(unittest.TestCase):
         out = io.StringIO()
         with patch.object(sys, 'argv', ['route_judge.py', stage, '--input', str(source), '--usage-cache', str(cache), *flags]), \
                 patch.dict(router.os.environ, {'ROUTER_LEDGER': str(Path(directory) / 'ledger.jsonl')}), \
+                patch.object(router, 'load_scorer_config', return_value={'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}), \
                 patch.object(router, 'scorer_prefix', return_value=['agy.exe']), \
                 patch.object(router, 'run_process', side_effect=run), \
                 patch.object(router, 'dot_unreachable', return_value=dot), \
@@ -658,16 +665,15 @@ class SystemOneScorerTests(unittest.TestCase):
         p2, m2, _ = self.score({'objective': 'x'}, self.envelope(None, response))
         self.assertEqual((p2, m2['source']), (GUI_PROFILE, 'system_one'))
 
-        # Fallback on errors or skipped model call
+        # No mechanical fallback on errors or skipped model call: returns scorer_unavailable so parent session chooses
         bug_task = {'objective': 'Fix a parser bug', 'work_kind': 'debug_review'}
-        expected = self.allocator.infer_task_profile(bug_task, self.capabilities)
         for reason, stdout in (('ValueError', self.envelope(dict(GUI_PROFILE, reasoning_depth=7))),
                                ('RuntimeError', self.envelope(GUI_PROFILE, status='ERROR')),
                                ('JSONDecodeError', 'not json')):
             prof, meta, _ = self.score(bug_task, stdout)
-            self.assertEqual((prof, meta['source'], meta['fallback_reason']), (expected, 'heuristic_fallback', reason))
-        _, meta, calls = self.score(bug_task, use_model=False)
-        self.assertEqual((meta['fallback_reason'], calls), ('model_call_skipped', []))
+            self.assertEqual((prof, meta['source'], meta['fallback_reason']), (None, 'scorer_unavailable', reason))
+        prof_skipped, meta, calls = self.score(bug_task, use_model=False)
+        self.assertEqual((prof_skipped, meta['source'], meta['fallback_reason'], calls), (None, 'scorer_unavailable', 'model_call_skipped', []))
 
     def test_score_and_plan_with_score_cli_contracts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -739,9 +745,12 @@ class SystemOneScorerTests(unittest.TestCase):
     def test_profile_local_only_is_trusted_and_caller_values_win(self):
         profile = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False,
                        needs_gui=False, code_complexity=2, reasoning_depth=2)
+        with tempfile.TemporaryDirectory() as directory:
+            unavail_code, unavail_res, _ = self.run_cli(directory, 'plan', {'objective': 'Explore local logs'}, stdout='not json')
+            self.assertEqual((unavail_code, unavail_res['choice'], unavail_res['error'], unavail_res['caller_action']),
+                             (2, 'none', 'scorer_unavailable', 'parent_autonomous_choice'))
         # Short/edit-only reasons intentionally fail the caller validator but remain trusted classifier output.
         cases = [
-            ({}, None, True, None),  # Deterministic fallback carries its own local dependency reason.
             ({}, 'Uses the local pytest environment.', True, 'Uses the local pytest environment.'),
             ({'local_only': None}, 'local', True, 'local'),
             ({}, 'in-place edit', True, 'in-place edit'),
@@ -752,14 +761,12 @@ class SystemOneScorerTests(unittest.TestCase):
         ]
         for needs, reason, expected_local, expected_reason in cases:
             with self.subTest(needs=needs, reason=reason), tempfile.TemporaryDirectory() as directory:
-                task = {'objective': 'Explore local logs' if reason is None else 'Write CSV parser', 'needs': needs}
+                task = {'objective': 'Write CSV parser', 'needs': needs}
                 code, result, _ = self.run_cli(directory, 'plan', task,
-                                              stdout='not json' if reason is None else self.envelope(dict(profile, reason=reason)))
+                                              stdout=self.envelope(dict(profile, reason=reason)))
                 self.assertEqual(code, 0)
-                self.assertEqual(result['scorer']['source'], 'heuristic_fallback' if reason is None else 'system_one')
+                self.assertEqual(result['scorer']['source'], 'system_one')
                 self.assertEqual(result['decision']['task']['difficulty_source'], 'profile')
-                if reason is None:
-                    expected_reason = result['task_profile']['reason']
                 if expected_local:
                     self.assertNotIn(result['choice'], ('dot_text', 'none'))
                 else:
@@ -843,7 +850,7 @@ class SelectableScorerTests(unittest.TestCase):
         return profile, meta, calls
 
     def test_config_load_save_env_override_and_masking(self):
-        self.assertEqual(router.load_scorer_config(), {'scorer_type': 'agy_flash_low', 'fallback_to_agy': True})
+        self.assertEqual(router.load_scorer_config(), {'scorer_type': 'claude_haiku_low', 'fallback_to_agy': True})
         doc = router.save_scorer_config('jev', api_key=f'  {SECRET} ')
         self.assertEqual(doc, {'scorer_type': 'jev', 'jev_api_key': SECRET})
         self.assertEqual(json.loads(self.path.read_text(encoding='utf-8'))['jev_api_key'], SECRET)
@@ -865,16 +872,17 @@ class SelectableScorerTests(unittest.TestCase):
         for bad in (lambda: router.save_scorer_config('gpt-9'),
                     lambda: router.save_scorer_config('openai_compatible', base_url='', model=''),
                     lambda: router.save_scorer_config('jev', base_url='http://api.typesafe.ai'),
-                    lambda: router.save_scorer_config('heuristic', api_key='x')):
+                    lambda: router.save_scorer_config('heuristic')):
             with self.assertRaises(ValueError):
                 bad()
         with patch.dict(router.os.environ, {'ROUTER_SCORER_TYPE': 'heuristic'}):
-            self.assertEqual(router.load_scorer_config()['scorer_type'], 'heuristic')
+            config = router.load_scorer_config()
+            self.assertEqual((config['scorer_type'], 'heuristic' in config['config_error']), ('claude_haiku_low', True))
         with patch.dict(router.os.environ, {'ROUTER_SCORER_TYPE': 'nope'}):
             config = router.load_scorer_config()
-            self.assertEqual((config['scorer_type'], 'nope' in config['config_error']), ('agy_flash_low', True))
+            self.assertEqual((config['scorer_type'], 'nope' in config['config_error']), ('claude_haiku_low', True))
         self.path.write_text('not json', encoding='utf-8')
-        self.assertEqual(router.load_scorer_config()['scorer_type'], 'agy_flash_low')
+        self.assertEqual(router.load_scorer_config()['scorer_type'], 'claude_haiku_low')
         self.assertEqual((router.mask_secret(SECRET), router.mask_secret('short'), router.mask_secret(None)),
                          ('test…0000', '••••', ''))
         view = router.scorer_status({'scorer_type': 'jev', 'jev_api_key': SECRET})
@@ -953,25 +961,24 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual((calls['post'][0]['url'], calls['post'][0]['key'], calls['run']),
                          ('https://api.typesafe.ai/v1/systemone', SECRET, []))
         self.assertNotIn('chain', json.dumps(calls['post'][0]['body']))
-        # Missing key: agy takes over by default, and the reason says why
+        # Missing key: lightweight cascade (claude_haiku_low -> codex_terra_low -> agy_flash_low) takes over by default
         _, meta, calls = self.score({'scorer_type': 'jev', 'fallback_to_agy': True})
         self.assertEqual((meta['source'], meta['scorer_type'], meta['configured_scorer'], meta['fallback_reason'], calls['post']),
-                         ('system_one', 'agy_flash_low', 'jev', 'ScorerError', []))
+                         ('system_one', 'claude_haiku_low', 'jev', 'ScorerError', []))
         self.assertIn('TypeSafe API key', meta['attempts'][0]['detail'])
-        # fallback_to_agy off, or agy also failing: the deterministic profile
-        expected = self.allocator.infer_task_profile(self.task, self.capabilities)
+        # fallback_to_agy off, or all scorers failing: returns scorer_unavailable (None profile) so parent session chooses
         profile, meta, calls = self.score({'scorer_type': 'jev', 'fallback_to_agy': False})
-        self.assertEqual((profile, meta['source'], meta['configured_scorer'], calls['run']), (expected, 'heuristic_fallback', 'jev', []))
+        self.assertEqual((profile, meta['source'], meta['configured_scorer'], calls['run']), (None, 'scorer_unavailable', 'jev', []))
         self.assertIn('TypeSafe API key', meta['fallback_detail'])
         profile, meta, _ = self.score({'scorer_type': 'jev', 'jev_api_key': SECRET},
                                       post=router.ScorerError('Scorer API answered HTTP 401.'), run=lambda c, d: (1, '', ''))
         self.assertEqual((profile, meta['source'], [a['scorer_type'] for a in meta['attempts']]),
-                         (expected, 'heuristic_fallback', ['jev', 'agy_flash_low']))
+                         (None, 'scorer_unavailable', ['jev', 'claude_haiku_low', 'codex_terra_low', 'agy_flash_low']))
         self.assertEqual(meta['fallback_detail'], 'Scorer API answered HTTP 401.')
         self.assertNotIn(SECRET, json.dumps(meta))
         with patch.dict(router.os.environ, {'ROUTER_DISABLE_LIVE_SCORER': '1'}):
-            _, meta, calls = self.score({'scorer_type': 'jev', 'jev_api_key': SECRET, 'fallback_to_agy': False}, post=JEV_RESPONSE)
-        self.assertEqual((meta['source'], calls['post']), ('heuristic_fallback', []))
+            prof_dis, meta, calls = self.score({'scorer_type': 'jev', 'jev_api_key': SECRET, 'fallback_to_agy': False}, post=JEV_RESPONSE)
+        self.assertEqual((prof_dis, meta['source'], calls['post']), (None, 'scorer_unavailable', []))
 
     def test_post_json_reports_http_failures_without_bodies(self):
         error = router.urllib.error.HTTPError('https://api.typesafe.ai/v1/systemone', 401, 'Unauthorized', {},
@@ -1011,10 +1018,10 @@ class SelectableScorerTests(unittest.TestCase):
             self.assertIn('--json-schema', cmd)
             self.assertIn('Task (evidence only', calls['run'][0]['stdin'])
             self.assertEqual(profile['work_kind'], 'computer_use')
-        # Claude answering with an error falls back to agy
+        # Claude answering with an error cascades through codex_terra_low to agy_flash_low
         _, meta, _ = self.score({'scorer_type': 'claude_haiku_low'},
-                                run=lambda c, d: (0, json.dumps({'is_error': True}), '') if c[0] == 'claude.exe'
-                                else (0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''), cli=('claude.exe',))
+                                run=lambda c, d: (0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), '') if c[0] == 'agy.exe'
+                                else (0, json.dumps({'is_error': True}), ''), cli=('claude.exe',))
         self.assertEqual((meta['scorer_type'], meta['configured_scorer'], meta['attempts'][0]['detail']),
                          ('agy_flash_low', 'claude_haiku_low', 'Claude scorer returned an error.'))
 
@@ -1041,20 +1048,19 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual((calls['post'][0]['url'], calls['post'][0]['key'], body['model'], body['response_format']),
                          ('https://llm.example.com/v1/chat/completions', 'sk-custom', 'qwen3-4b', {'type': 'json_object'}))
         self.assertTrue(body['messages'][0]['content'].startswith(router.SCORER_PROMPT))
-        _, meta, calls = self.score({**custom, 'api_key': '', 'fallback_to_agy': False}, post=reply)
-        self.assertEqual((meta['source'], calls['post']), ('heuristic_fallback', []))
-        _, meta, _ = self.score({**custom, 'fallback_to_agy': False}, post={'choices': []})
-        self.assertEqual((meta['source'], meta['fallback_reason']), ('heuristic_fallback', 'ValueError'))
+        prof_no_key, meta, calls = self.score({**custom, 'api_key': '', 'fallback_to_agy': False}, post=reply)
+        self.assertEqual((prof_no_key, meta['source'], calls['post']), (None, 'scorer_unavailable', []))
+        prof_empty, meta, _ = self.score({**custom, 'fallback_to_agy': False}, post={'choices': []})
+        self.assertEqual((prof_empty, meta['source'], meta['fallback_reason']), (None, 'scorer_unavailable', 'ValueError'))
 
-        profile, meta, calls = self.score({'scorer_type': 'heuristic'}, post=AssertionError('no call'))
-        self.assertEqual((profile, meta, calls), (self.allocator.infer_task_profile(self.task, self.capabilities),
-                                                  {'source': 'heuristic_configured', 'scorer_type': 'heuristic',
-                                                   'provider': 'heuristic', 'model': 'heuristic'}, {'post': [], 'run': []}))
+        # Priority cascade order: jev (when key present) -> claude_haiku_low -> codex_terra_low -> agy_flash_low
+        self.assertEqual(router.scorer_attempt_order({'scorer_type': 'claude_haiku_low', 'fallback_to_agy': True}),
+                         ('claude_haiku_low', ['claude_haiku_low', 'codex_terra_low', 'agy_flash_low']))
+        self.assertEqual(router.scorer_attempt_order({'scorer_type': 'claude_haiku_low', 'jev_api_key': SECRET, 'fallback_to_agy': True}),
+                         ('claude_haiku_low', ['jev', 'claude_haiku_low', 'codex_terra_low', 'agy_flash_low']))
 
     def test_score_task_reads_the_configured_scorer_and_scorer_cli(self):
-        router.save_scorer_config('heuristic')
-        profile, meta = router.score_task(self.task, self.allocator, self.capabilities)
-        self.assertEqual(meta['source'], 'heuristic_configured')
+        router.save_scorer_config('claude_haiku_low')
 
         def cli(*argv, stdin=None):
             out = io.StringIO()
@@ -1063,21 +1069,19 @@ class SelectableScorerTests(unittest.TestCase):
                 code = router.main()
             return code, json.loads(out.getvalue()), out.getvalue()
         code, shown, _ = cli()
-        self.assertEqual((code, shown['action'], shown['scorer_type'], shown['config_path']), (0, 'show', 'heuristic', str(self.path)))
+        self.assertEqual((code, shown['action'], shown['scorer_type'], shown['config_path']), (0, 'show', 'claude_haiku_low', str(self.path)))
         code, saved, text = cli('--action', 'set', '--type', 'jev', '--api-key', '-', stdin=SECRET + '\n')
         self.assertEqual((code, saved['scorer_type'], saved['jev']['api_key'], saved['jev']['key_source']), (0, 'jev', 'test…0000', 'file'))
         self.assertNotIn(SECRET, text)
         self.assertEqual(json.loads(self.path.read_text(encoding='utf-8'))['jev_api_key'], SECRET)
         code, failed, _ = cli('--action', 'set')
         self.assertEqual((code, failed['detail']), (1, 'scorer set requires --type.'))
-        code, tested, _ = cli('--action', 'test', '--type', 'heuristic', '--objective', 'Fix a parser bug')
-        self.assertEqual((code, tested['ok'], tested['scorer']['source']), (0, True, 'heuristic_configured'))
-        self.assertIn('latency_ms', tested)
         with patch.object(router, 'post_json', side_effect=router.ScorerError('Scorer API answered HTTP 401.')), \
+                patch.object(router, 'cli_prefix', side_effect=RuntimeError('cli missing')), \
                 patch.object(router, 'scorer_prefix', side_effect=RuntimeError('agy missing')):
             code, tested, _ = cli('--action', 'test')
         self.assertEqual((code, tested['ok'], tested['scorer']['source'], tested['scorer']['fallback_detail']),
-                         (1, False, 'heuristic_fallback', 'Scorer API answered HTTP 401.'))
+                         (1, False, 'scorer_unavailable', 'Scorer API answered HTTP 401.'))
         with patch.object(router, 'post_json', return_value=JEV_RESPONSE):
             code, tested, _ = cli('--action', 'test')
         self.assertEqual((code, tested['ok'], tested['task_profile']), (0, True, JEV_PROFILE))

@@ -1,328 +1,129 @@
 {
-  "version": 4,
-  "updated_at": "2026-11-02",
-  "purpose": "System-One task classifier rubric and calibration cases. Read only by the router scorer (route_judge.py), never by parent agents.",
+  "version": "2026-11-03",
   "route_definitions": {
-    "computer_use": "Operate a desktop or browser GUI via screenshots, mouse, and keyboard (e.g. click buttons, inspect live UI windows).",
-    "visual_analysis": "Inspect images, screenshots, charts, or design frames without writing application code.",
-    "frontend_implementation": "Build, style, or modify web/desktop UI components, layouts, CSS, or frontend state.",
-    "tool_execution": "Run existing CLI commands, scripts, checklists, deployments, or read-only operational probes without designing new code.",
-    "bounded_bulk_work": "Mechanical, repetitive edits or batch processing across many files/items with a uniform rule.",
-    "debug_review": "Diagnose a bug, regression, test failure, or perform code/security review with concrete verification.",
-    "general_implementation": "Write or refactor backend, library, or full-stack production code and tests in a repository.",
-    "self_contained_code": "Write standalone code, algorithms, or unit-tested modules that do not depend on local machine state or secrets.",
-    "exploration_analysis": "Explore a repository, trace architecture, or analyze logs and datasets to answer an investigative question.",
-    "research_packet": "Execute a quantitative experiment, backtest, data pipeline, or statistical analysis packet and report metrics.",
-    "web_research": "Search and synthesize public documentation, papers, benchmarks, or web sources.",
-    "text_in_text_out": "Draft, translate, summarize, or rewrite self-contained text or documentation from provided inputs.",
-    "dot_execution": "Self-contained remote sandbox computation or file transformation explicitly suited for an isolated container.",
-    "complex_build_plan": "Design a multi-phase system architecture or implementation specification before coding begins.",
-    "direction_reasoning": "High-stakes strategic, mathematical, or architectural tradeoff reasoning (advisor consultation)."
+    "computer_use": "Operate a live desktop, browser, or application GUI via screenshots, mouse clicks, keyboard input, or window automation.",
+    "visual_analysis": "Read-only inspection or comparison of images, screenshots, UI mockups, or design frames without writing UI code or clicking a live GUI.",
+    "frontend_implementation": "Implement or style UI components, layouts, CSS, React/Vue/Tkinter views, or visual interactions in code.",
+    "general_implementation": "Implement, modify, or refactor backend, CLI, service, or library code in a repository.",
+    "debug_review": "Diagnose a bug, race condition, crash, or regression; fix an isolated defect; OR perform a read-only code/diff/release/security review or independent audit.",
+    "exploration_analysis": "Read-only codebase exploration, dependency mapping, log/telemetry forensics, or architectural tracing.",
+    "research_packet": "Execute a quantitative experiment, backtest, statistical evaluation, or benchmark script and report metrics.",
+    "web_research": "Survey public documentation, vendor specs, open-web articles, historical/cultural motifs, or academic literature and synthesize findings (even if the output is saved to a local Markdown path).",
+    "text_in_text_out": "Draft, translate, polish, or restructure self-contained text, narrative dialogue, documentation, or copy when the needed source material is already in the brief.",
+    "self_contained_code": "Write or verify a standalone algorithm, data structure, or script whose specification/inputs are self-contained in the brief without needing un-inlined local repository modules.",
+    "bounded_bulk_work": "Apply a uniform, mechanical transformation or checklist across many files or items.",
+    "tool_execution": "Run an explicit operational runbook, build/release pipeline, or CLI command sequence.",
+    "complex_build_plan": "Author a multi-phase engineering specification, system migration plan, or architectural blueprint before implementation.",
+    "direction_reasoning": "High-depth mathematical proof/derivation, formal critique, or first-principles strategic/architectural paradigm design."
   },
   "dimension_rubric": {
-    "scope_rule": "Score functional work, not brief length or formatting. Multi-section Markdown, authorization quotes, communication rules and file lists do not raise any dimension.",
-    "boilerplate_paths": "Role/rule docs (AGENTS.md, CLAUDE.md, docs/roles/*.md, skill/README/runbook docs), prior reports/reviews read as input, receipt/output/log/scratch paths and a target module's paired unit-test file never inflate context_scale or reasoning_depth.",
-    "read_only_review": "Independent code review, security/invariant audit or diff verification: work_kind debug_review, code_complexity 0, hallucination_risk 3, divergence 1, reasoning_depth 2 (3 only for deep cross-module concurrency or architectural-invariant audits). Context is 1 for a localized diff, 2 for several coupled modules.",
-    "runbook_execution": "Following documented build/deploy/release runbooks, operational health checks or automated test/benchmark suites without designing new code: work_kind tool_execution, reasoning_depth 1, code_complexity 0, context_scale 1; error_cost 3 when touching production.",
-    "diagnosis": "Unknown root cause with multiple candidate hypotheses to test (latency/CPU/memory regression, intermittent failure, rendering glitch): divergence 2; code_complexity 0 for read-only diagnosis, 2 for diagnosing and fixing a module with tests.",
-    "research_packet": "Running a defined quantitative experiment, benchmark suite, simulation, statistical evaluation or backtest pipeline and reporting metrics: work_kind research_packet, reasoning_depth 2, code_complexity 1, context_scale 2, divergence 1, hallucination_risk 3. Mere execution of documented commands without interpreting experimental results is tool_execution.",
-    "orchestration": "Multi-stage coordinator or lead-session handoff dispatching workers and verifying cross-task deliverables: reasoning_depth 3, context_scale 3, divergence 1; code_complexity 0 for coordination/review alone, 2 when also implementing integration code.",
-    "multi_task": "Read the whole brief. multi_task is true only for separate deliverables that could be produced at the same time by different workers; steps toward one output, a handoff's remaining steps or a sequence where each part needs the previous output are one task. task_count counts those separate tasks (1 when false)."
+    "anti_inflation_rule": "Score ONLY the functional work the worker must perform, never the length or Markdown structure of the brief. Coordinator headers (`Parent session agent ID`, `工作目录: E:/...`), role docs, `AGENTS.md`/`SKILL.md` references, communication rules, and output/receipt file paths (`docs/.../report.md`, `output.json`) are dispatch boilerplate—ignore them completely when scoring `local_only`, `context_scale`, `reasoning_depth`, and `code_complexity`.",
+    "local_only_positive_vs_negative": "CRITICAL CONTRAST RULE for `local_only` (do NOT default to true just because a brief is in Markdown or names a workspace/output file path):\n- Set `local_only: true` ONLY when the worker MUST access resources that exist only on THIS machine and are NOT inlined in the brief: (a) reading, searching (`rg`/`git diff`), editing, or running `pytest`/`unittest`/build against existing un-inlined source files in a local git checkout; (b) interacting with local processes, daemons (Paseo, SQLite `dispatch.sqlite3`, localhost ports), hardware, or a live desktop/browser GUI; (c) using local credentials, intranet endpoints, or signed-in CLI sessions (`lark-cli`, Tide, internal GitLab).\n- Set `local_only: false` whenever a remote sandbox with its own CPU, Python/Node runtime, and public internet can complete the work from the brief alone: (a) `web_research` (public web/vendor/cultural/motif research, EVEN IF the brief specifies a local path like `docs/research/xxx.md` where the finished report will be saved); (b) `self_contained_code` (writing a standalone script/algorithm whose spec or input snippet is inlined in the brief, EVEN IF a target filename is named); (c) `text_in_text_out`, `direction_reasoning`, or `complex_build_plan` when all required background context is already included in the brief text.",
+    "read_only_review": "Any read-only code review, PR/diff inspection, release-readiness audit, or diagnostic report that writes NO production code MUST have `code_complexity: 0` (even when reviewing complex systems code), `work_kind: \"debug_review\"` (or `exploration_analysis`), and `hallucination_risk: 3`.",
+    "context_scale": "Count coupled functional modules the worker must reason across, NOT the number of file paths mentioned in the prompt:\n- `1` (Single unit): Modifying/reviewing ONE primary functional module/script (plus its paired unit test file and any role/brief/output paths), OR any self-contained research/text/algorithm task, OR running a uniform command/checklist.\n- `2` (Multi-module): Modifying or tracing interactions across 2 to 5 distinct coupled functional modules or datasets.\n- `3` (System-wide): Whole-repository architecture, cross-subsystem refactoring (>5 modules), or multi-stage orchestrator lifecycle.",
+    "divergence": "Measure how open-ended the solution space is:\n- `1` (Convergent): Known target, concrete feature spec, deterministic runbook, factual diff review, or fixing an already-isolated bug.\n- `2` (Multi-hypothesis): Diagnosing an unknown root cause with 2+ competing hypotheses (intermittent bug, race condition, memory/CPU anomaly) or comparing bounded technical alternatives.\n- `3` (Divergent / Creative): Open-ended creative ideation, cultural/motif research with gameplay/narrative/product scheme proposals, inventing a new architecture or scoring paradigm from first principles, or open-ended brainstorming with no single predetermined answer.",
+    "reasoning_depth": "Rate the cognitive depth required by the core problem:\n- `1` (Routine): Executing an explicit command/checklist/runbook, trivial constant/config tweak, mechanical bulk replacement, or simple smoke check (even inside a long Markdown brief).\n- `2` (Standard/Hard): Standard single- or multi-module feature implementation, bug diagnosis & fix, read-only PR/module review, or structured research synthesis.\n- `3` (Coupled/Deep): Cross-module architectural refactoring with strict invariants, deep concurrency/state root-cause forensics across subsystems, or first-principles system architecture design.\n- `4` (Frontier): Formal mathematical proof/derivation, algorithmic lower-bound analysis, or frontier theoretical critique.",
+    "multi_task_vs_single_task": "Set `multi_task: true` ONLY when the brief bundles 2+ independent deliverables that could be assigned to separate workers in parallel (e.g., fixing a backend bug AND translating unrelated docs). A single deliverable with sequential steps (`diagnose -> fix -> test -> report`) or a single research report covering multiple sub-questions is ONE task (`multi_task: false, task_count: \"1\"`)."
   },
   "calibration_cases": [
     {
-      "id": "desktop_click",
-      "task": {
-        "objective": "Click the Save button in the local editor Settings dialog and confirm the saved value."
-      },
+      "id": "gui_click_save",
+      "task": "Open the local settings window, click Save, and take a verification screenshot.",
       "expected_profile": {
         "work_kind": "computer_use",
+        "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
         "context_scale": 1,
         "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "Single mechanical action in a live local GUI.",
+        "expected_hours": 0.2,
+        "hours_confidence": "high",
+        "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "reason": "Routine GUI action on the local desktop screen."
       }
     },
     {
       "id": "visual_design_diff",
-      "task": {
-        "objective": "Compare the supplied dashboard screenshot against the design frame. Report alignment, typography and color differences; write no application code."
-      },
+      "task": "Inspect the supplied screenshot `artifacts/login_actual.png` against `artifacts/login_mockup.png` and list every spacing, typography, and alignment discrepancy. Do not edit code.",
       "expected_profile": {
         "work_kind": "visual_analysis",
+        "interaction_style": "exploration",
         "reasoning_depth": 2,
         "code_complexity": 0,
         "context_scale": 1,
         "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
+        "hallucination_risk": 3,
+        "error_cost": 1,
         "needs_visual": true,
+        "needs_gui": false,
+        "local_only": true,
+        "expected_hours": 0.4,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "reason": "Read-only visual comparison of local image files with no code edits."
+      }
+    },
+    {
+      "id": "markdown_web_research_with_output_path",
+      "task": "# 任务：1970年代流行文化与时代器物调研及玩法母题提案\n\n- 工作目录：`E:/P4/ CatchCatch`\n- 产出落盘：`docs/research/motif-notes/1970s_流行文化与时代器物调研.md`\n\n## 背景与目标\n我们的叙事解谜项目需要围绕 1970 年代欧美与东亚流行文化、日常器物（卡带机、拨盘电话、显像管电视、街头报刊亭等）开展公开资料调研，并在此基础上发散提出 5 个可转化为解谜交互机关的创意玩法母题。\n\n## 交付要求\n1. 梳理 1970 年代标志性器物与文化符号的真实历史细节；\n2. 提出 5 个高辨识度的解谜交互母题方案，说明核心机制与叙事反差。",
+      "expected_profile": {
+        "work_kind": "web_research",
+        "interaction_style": "exploration",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 3,
+        "hallucination_risk": 3,
+        "error_cost": 1,
+        "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
-        "interaction_style": "engineering",
-        "reason": "Visual inspection of supplied images without operating a GUI.",
+        "expected_hours": 1.0,
+        "hours_confidence": "high",
+        "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "react_ui",
-      "task": {
-        "objective": "Build a responsive React account-settings page from the accepted design, with editable profile fields, validation and loading/error states in the existing frontend. Verify at mobile and desktop widths."
-      },
-      "expected_profile": {
-        "work_kind": "frontend_implementation",
-        "reasoning_depth": 2,
-        "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
-        "needs_visual": true,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "Bounded UI implementation with visual acceptance and state handling.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "game_ui",
-      "task": {
-        "objective": "# Game UI task\n\nRead AGENTS.md, CLAUDE.md and docs/roles/ui.md.\n\n## Scope\nIn ui/InventoryPanel.cs change the item-count label color to the specified token. Preserve the existing layout. Update its paired unit test.\n\n## Verification\nRun the existing component test.\n\n## Output\nscratch/inventory/receipt.md with the result."
-      },
-      "expected_profile": {
-        "work_kind": "frontend_implementation",
-        "reasoning_depth": 1,
-        "code_complexity": 1,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 1,
-        "needs_visual": true,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "One mechanical game UI styling change; boilerplate paths add no scope.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "backend_service",
-      "task": {
-        "objective": "# Implement API pagination\n\nRead AGENTS.md, docs/roles/backend.md and the previous review.\n\n## Target\nservices/catalog/pagination.py and its paired tests/test_pagination.py.\n\n## Work\nImplement the specified cursor encoding and stable next-page boundaries, including empty and invalid cursors. No API redesign.\n\n## Verification\nRun the module tests. Save artifacts/pagination/receipt.json and message the parent."
-      },
-      "expected_profile": {
-        "work_kind": "general_implementation",
-        "reasoning_depth": 2,
-        "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "One backend module plus its tests; role, report and receipt paths are boilerplate.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "concurrency_fix",
-      "task": {
-        "objective": "Fix a known lock-order inversion in the connection pool: acquire the pool lock before the session lock on both paths. Add a regression test in the paired test file."
-      },
-      "expected_profile": {
-        "work_kind": "debug_review",
-        "reasoning_depth": 2,
-        "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "Known cause, convergent single-module concurrency repair.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "memory_diagnosis",
-      "task": {
-        "objective": "# Read-only memory investigation\n\nRead AGENTS.md and deploy/README.md. RSS grew from 200 MB to 900 MB after the last release.\n\n## Hypotheses\nTest retained event listeners, an unbounded response cache and delayed task cleanup using existing heap snapshots and read-only profiling.\n\n## Output\nEvidence for each hypothesis and a proposed fix in scratch/memory/report.md. Change no code."
-      },
-      "expected_profile": {
-        "work_kind": "debug_review",
-        "reasoning_depth": 2,
-        "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 2,
-        "hallucination_risk": 3,
-        "error_cost": 1,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "exploration",
-        "reason": "Unknown root cause with competing hypotheses; read-only diagnosis writes no production code.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "security_diff_review",
-      "task": {
-        "objective": "# Independent security review\n\nRead docs/roles/reviewer.md, AGENTS.md, the implementation brief and prior author receipt.\n\n## Scope\nReview the diff in auth/permissions.py and its paired test file for privilege escalation and missing tenant checks. Read-only; do not implement or deploy.\n\n## Output\nBLOCK/SHOULD/NOTE findings and verdict in scratch/security/review.md."
-      },
-      "expected_profile": {
-        "work_kind": "debug_review",
-        "reasoning_depth": 2,
-        "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 2,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "Localized independent security diff audit; input documents do not increase scope.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "i18n_bulk",
-      "task": {
-        "objective": "Apply the supplied i18n key mapping uniformly across 120 locale files. Preserve placeholders and ordering. Run the existing locale validator; no semantic rewrites."
-      },
-      "expected_profile": {
-        "work_kind": "bounded_bulk_work",
-        "reasoning_depth": 1,
-        "code_complexity": 1,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 1,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "Uniform mechanical batch transformation despite many files.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "release_runbook",
-      "task": {
-        "objective": "# Production release execution\n\nRead CLAUDE.md, docs/roles/release.md and deploy/README.md. Approval is already recorded.\n\n## Steps\nFollow the documented CI build, deploy and rollback-health-check commands exactly for the image service. Run the existing smoke suite. Design no code.\n\n## Output\nlogs/release.txt and scratch/release/receipt.md; message the coordinator."
-      },
-      "expected_profile": {
-        "work_kind": "tool_execution",
-        "reasoning_depth": 1,
-        "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 3,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "Documented production runbook: costly execution, no new algorithm or architecture.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "ml_experiment",
-      "task": {
-        "objective": "Run the defined retrieval benchmark comparing the baseline and reranker on the held-out corpus. Use the existing evaluation pipeline, calculate precision/recall, bootstrap confidence intervals and latency, and report reproducible metrics."
-      },
-      "expected_profile": {
-        "work_kind": "research_packet",
-        "reasoning_depth": 2,
-        "code_complexity": 1,
-        "context_scale": 2,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 1,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "exploration",
-        "reason": "Defined quantitative benchmark with statistical interpretation.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "repo_exploration",
-      "task": {
-        "objective": "Explore the repository and map how a request passes through routing, authorization and storage. Trace module dependencies with file references; report findings without changing code."
-      },
-      "expected_profile": {
-        "work_kind": "exploration_analysis",
-        "reasoning_depth": 2,
-        "code_complexity": 0,
-        "context_scale": 2,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
-        "interaction_style": "exploration",
-        "reason": "Repository architecture exploration, without implementation or unknown defect diagnosis.",
-        "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "reason": "Open-domain cultural research and divergent gameplay motif ideation; does not depend on local repo code or runtime despite naming an output Markdown path."
       }
     },
     {
       "id": "public_vendor_survey",
-      "task": {
-        "objective": "Search public documentation for three message-queue vendors. Compare delivery guarantees, retention limits and client support with source links and dates."
-      },
+      "task": "Search official vendor documentation and public benchmarks to compare WebGPU compute shader subgroup support across Chrome, Edge, and Safari in 2026, and write a structured compatibility table.",
       "expected_profile": {
         "work_kind": "web_research",
+        "interaction_style": "text_only",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 2,
+        "context_scale": 1,
         "divergence": 1,
         "hallucination_risk": 3,
         "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
-        "interaction_style": "exploration",
-        "reason": "Public web documentation synthesis and source verification.",
+        "expected_hours": 0.8,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "reason": "Public web documentation survey with high factual accuracy requirement and no local machine dependency."
       }
     },
     {
-      "id": "standalone_algorithm",
-      "task": {
-        "objective": "Write a self-contained interval-merging algorithm from the supplied interface, with property-based tests. Return the source and tests; no repository, local secrets or services are needed."
-      },
+      "id": "markdown_inlined_spec_self_contained_code",
+      "task": "# Task: Implement standalone weighted interval merger (`tools/interval_merger.py`)\n\n## Specification (Self-Contained)\nWrite a pure Python 3.11 module `interval_merger.py` with no third-party dependencies that implements:\n`merge_weighted_intervals(intervals: list[tuple[int, int, float]], min_gap: int = 0) -> list[tuple[int, int, float]]`\nRules:\n- Intervals are half-open `[start, end)` with `start < end` and positive float weight.\n- Overlapping or adjacent intervals within `min_gap` merge into `[min_start, max_end)` with length-weighted average weight.\n- Include a `unittest` suite covering empty input, nested intervals, negative coordinates, and `min_gap > 0`.",
       "expected_profile": {
         "work_kind": "self_contained_code",
+        "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
         "context_scale": 1,
@@ -332,142 +133,196 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
-        "interaction_style": "engineering",
-        "reason": "Standalone algorithm and tests fit entirely in the packet.",
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "reason": "Self-contained algorithm implementation whose full specification is inlined in the brief and requires no local repo checkout."
       }
     },
     {
-      "id": "technical_doc_translation",
-      "task": {
-        "objective": "Translate the supplied technical deployment guide into Chinese, preserving command snippets and terminology. Return the translated text without executing the commands."
-      },
+      "id": "markdown_creative_dialogue_text_only",
+      "task": "# 任务：第二章嫌疑人私信与备忘录文案编写\n\n- 交付路径：`docs/narrative/ch2_suspect_dm.md`\n\n## 角色设定（已内联）\n- 林夏（24岁，独立摄影师，表面客气但极度防备，说话简短带反问）\n- 陈默（29岁，旧书店店主，习惯用账目和旧物打比方）\n\n## 任务要求\n根据上述内联人设，编写林夏与陈默在案发当晚的 12 条熟人私信往来及 2 则手机备忘录，制造口供时间线上的微妙矛盾。",
       "expected_profile": {
         "work_kind": "text_in_text_out",
+        "interaction_style": "text_only",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 3,
+        "hallucination_risk": 2,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "expected_hours": 0.6,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "reason": "Self-contained creative dialogue writing with all character context inlined in the brief."
+      }
+    },
+    {
+      "id": "single_module_fix_with_reference_paths",
+      "task": "# Task: Fix stop race in `app/upload_queue.py`\n\n- Read rules: `AGENTS.md`, `docs/architecture.md`\n- Target module: `app/upload_queue.py`\n- Unit tests: `tests/test_upload_queue.py`\n- Output receipt: `.agent-compass/receipts/upload_fix.json`\n\n## Problem\nWhen `UploadQueue.stop()` is called while a worker thread is retrying a failed chunk, the thread ignores the stop event until all retries finish. Fix the retry loop in `app/upload_queue.py` to wake immediately on `_stop_event` and add a regression test in `tests/test_upload_queue.py`. Run `pytest tests/test_upload_queue.py` locally to verify.",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "reason": "Single-module bug fix and pytest verification in the local repository (`app/upload_queue.py`); boilerplate docs and paired unit test keep context_scale at 1."
+      }
+    },
+    {
+      "id": "security_diff_review",
+      "task": "# Task: Independent security & invariant review of commit `a81f3c2` (read-only)\n\nInspect `git show a81f3c2` across `skills/agent-compass/scripts/router_gate_hook.py` and `skills/agent-compass/scripts/dispatch_flow.py`. Verify whether a subagent launch can bypass the 15-minute ledger check or spoof `parent_id`. Do NOT modify any repository files; return a structured audit report with exact line citations.",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "exploration",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 2,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "expected_hours": 0.6,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "reason": "Read-only security and invariant review of a local git commit across two coupled modules (`code_complexity: 0`, `hallucination_risk: 3`)."
+      }
+    },
+    {
+      "id": "memory_diagnosis",
+      "task": "Investigate intermittent high CPU and memory growth in the local tray process over 6 hours of uptime. Inspect `tray/router_window.py`, `tray/router_data.py`, and `~/.agent-compass/tray-error.log`, test competing hypotheses (polling timer leak vs Tkinter canvas item accumulation vs subprocess handle leak), and isolate the root cause.",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "exploration",
+        "reasoning_depth": 3,
+        "code_complexity": 0,
+        "context_scale": 2,
+        "divergence": 2,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "expected_hours": 1.5,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "reason": "Multi-hypothesis root-cause investigation of local process memory/CPU growth across coupled tray modules."
+      }
+    },
+    {
+      "id": "coupled_cross_module_refactor",
+      "task": "Refactor the quota reservation and ledger reconciliation pipeline across `allocator.py`, `route_judge.py`, `dispatch_flow.py`, and `dispatch_registry.py` so in-flight Paseo dispatches and CLI workers share a single atomic SQLite reservation lifecycle, and update all contract tests.",
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "interaction_style": "engineering",
+        "reasoning_depth": 3,
+        "code_complexity": 3,
+        "context_scale": 3,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 3,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "expected_hours": 2.5,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "reason": "Coupled cross-module architectural refactoring across four core local repository modules."
+      }
+    },
+    {
+      "id": "first_principles_architecture_critique",
+      "task": "# Task: First-principles critique and redesign of multi-agent scoring utility\n\nGiven the following self-contained mathematical specification of our current linear additive router score `S = w_f * F + w_a * min(1, (A - floor)/span) - lambda * C_opp + B_reset`, prove why additive `B_reset` violates scale invariance across task durations and derive a dimensionally consistent utility formulation with formal boundary guarantees.",
+      "expected_profile": {
+        "work_kind": "direction_reasoning",
+        "interaction_style": "advisory",
+        "reasoning_depth": 4,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 3,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "expected_hours": 1.5,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "reason": "Self-contained frontier mathematical critique and first-principles utility formulation."
+      }
+    },
+    {
+      "id": "release_runbook",
+      "task": "Execute the local release verification checklist: run `python -X utf8 skills/agent-compass/scripts/test_allocator.py`, `python -X utf8 skills/agent-compass/scripts/test_route_judge.py`, and `git status --short`, and report the exact pass/fail counts.",
+      "expected_profile": {
+        "work_kind": "tool_execution",
+        "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
         "context_scale": 1,
         "divergence": 1,
-        "hallucination_risk": 2,
+        "hallucination_risk": 1,
         "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
-        "local_only": false,
-        "interaction_style": "text_only",
-        "reason": "Self-contained technical text translation, not deployment execution.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "system_migration_plan",
-      "task": {
-        "objective": "Write a multi-phase migration specification for splitting a monolithic billing service into API, ledger and event-consumer services. Define interfaces, compatibility stages, invariants, rollback and acceptance checks before coding."
-      },
-      "expected_profile": {
-        "work_kind": "complex_build_plan",
-        "reasoning_depth": 3,
-        "code_complexity": 0,
-        "context_scale": 3,
-        "divergence": 2,
-        "hallucination_risk": 3,
-        "error_cost": 2,
-        "needs_visual": false,
-        "needs_gui": false,
         "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "Cross-system migration specification with explicit design choices and staged acceptance.",
+        "expected_hours": 0.2,
+        "hours_confidence": "high",
+        "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "reason": "Routine execution of explicit local test commands in the repository."
       }
     },
     {
-      "id": "frontier_critique",
-      "task": {
-        "objective": "Prove or refute the proposed optimal-stopping model for distributed admission control under nonstationary demand. Critique its mathematical assumptions and architectural tradeoffs, and derive alternatives."
-      },
-      "expected_profile": {
-        "work_kind": "direction_reasoning",
-        "reasoning_depth": 4,
-        "code_complexity": 0,
-        "context_scale": 2,
-        "divergence": 3,
-        "hallucination_risk": 3,
-        "error_cost": 2,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": false,
-        "interaction_style": "advisory",
-        "reason": "Frontier mathematical and architectural critique requiring divergent reasoning.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "orchestrator_handoff",
-      "task": {
-        "objective": "# Coordinator handoff\n\nRead AGENTS.md, docs/roles/lead.md and prior reports as input.\n\n## Ownership\nTake over the editor migration lead session: dispatch workers for storage, sync and UI stages, verify their cross-task deliverables and integration evidence, and close acceptance decisions. Coordinate and review only; implement no code.\n\n## Output\nscratch/migration/decisions.md and a final parent report."
-      },
+      "id": "mixed_independent_tasks_split",
+      "task": "Please complete these two tasks: (1) Fix the SQLite lock timeout in `skills/agent-compass/scripts/dispatch_registry.py` and run its unit tests; (2) Search public documentation to compare 2026 TTS pricing across ElevenLabs, OpenAI, and Volcengine and save a summary table.",
       "expected_profile": {
         "work_kind": "general_implementation",
-        "reasoning_depth": 3,
-        "code_complexity": 0,
-        "context_scale": 3,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 2,
-        "needs_visual": false,
-        "needs_gui": false,
-        "local_only": true,
         "interaction_style": "engineering",
-        "reason": "Coordinating staged workers and cross-task verification is the functional scope; boilerplate paths are not.",
-        "multi_task": false,
-        "task_count": "1"
-      }
-    },
-    {
-      "id": "mixed_phase_brief",
-      "task": {
-        "objective": "Phase 1 of a 2D game: (1) collect museum reference images into references/; (2) write an art style guide from those references; (3) compare Godot, Unity 2D and PixiJS and recommend one; (4) design the core loop and 8 monsters."
-      },
-      "expected_profile": {
-        "work_kind": "research_packet",
-        "reasoning_depth": 3,
-        "code_complexity": 0,
-        "context_scale": 2,
-        "divergence": 3,
-        "hallucination_risk": 3,
-        "error_cost": 1,
-        "needs_visual": true,
-        "needs_gui": false,
-        "local_only": false,
-        "interaction_style": "exploration",
-        "reason": "Three separate tasks: references with the style guide built on them, an engine comparison, and game design.",
-        "multi_task": true,
-        "task_count": "3"
-      }
-    },
-    {
-      "id": "handoff_remaining_steps",
-      "task": {
-        "objective": "Take over the stream hang fix:\n1. reproduce it\n2. fix the flush in server/stream.ts\n3. add a regression test\n4. push and sync the remote"
-      },
-      "expected_profile": {
-        "work_kind": "debug_review",
         "reasoning_depth": 2,
         "code_complexity": 2,
         "context_scale": 1,
-        "divergence": 2,
+        "divergence": 1,
         "hallucination_risk": 2,
         "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "interaction_style": "engineering",
-        "reason": "One bug fix carried from reproduction to release in the local checkout.",
-        "multi_task": false,
-        "task_count": "1"
+        "expected_hours": 1.0,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": true,
+        "task_count": "2",
+        "reason": "Bundles two independent deliverables (a local SQLite code fix and a public web pricing survey) that should be split and routed separately."
       }
     }
   ]

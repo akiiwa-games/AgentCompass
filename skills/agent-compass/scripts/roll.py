@@ -451,7 +451,7 @@ def status_of(result, code):
         return 'launched'
     if result.get('launched') is None or action in ('check_delivery_do_not_resend', 'run_next_argv'):
         return 'pending'
-    if mode in ('self', 'split'):
+    if mode in ('self', 'split', 'scorer_unavailable'):
         return mode
     if mode == 'native':
         return 'native'
@@ -495,7 +495,7 @@ def compact(result, status, detail_path):
     out = {'status': status, 'worker': {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort') if bundle.get(k)} or None,
            'reason': ((result.get('route') or {}).get('reason') or '')[:160] or None, 'next_action': nxt}
     cause = result.get('error') or worker.get('error') or worker.get('read_error')
-    if cause and status in ('error', 'blocked', 'pending'):
+    if cause and status in ('error', 'blocked', 'pending', 'scorer_unavailable'):
         out['cause'] = str(cause)[:300]
     if argv and (status == 'pending' or (status == 'launched' and 'next_argv' in (nxt or ''))):
         out['next_argv'] = argv
@@ -596,17 +596,17 @@ def _run(args, judge):
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
                     task_count=decision['task_count'], next=decision['next']), 2
+    if decision.get('error') == 'scorer_unavailable':
+        out['route']['reason'] = decision.get('reason')
+        return dict(out, launched=False, dispatch_mode='scorer_unavailable',
+                    caller_action='parent_autonomous_choice', error=decision.get('reason'),
+                    scorer=decision.get('scorer'), next=decision.get('next')), 2
     if getattr(args, 'hours', None) is None:
         est = decision.get('hours_estimate') or {}
         origin = ('the classifier estimate' if est.get('source') == 'classifier_estimate'
                   else 'the policy default for the classified difficulty (no usable classifier estimate)')
         out['assumptions'] = [f"--hours not given: budgeted {est.get('hours')}h from {origin}, confidence {est.get('confidence')}; "
                               'an estimate, not a measurement. Pass --hours for a large or unusually small task.']
-    scorer = decision.get('scorer') or {}
-    if scorer and scorer.get('source') != 'system_one':
-        out.setdefault('assumptions', []).append(
-            f"The classifier model was not used ({scorer.get('source')}: {scorer.get('fallback_detail') or scorer.get('fallback_reason')}); "
-            'the profile is a keyword estimate from the whole text.')
     if (decision.get('task_profile') or {}).get('urgency') == 'high':
         out.setdefault('assumptions', []).append(
             'The task text states high urgency. This is reported only: fast mode needs --fast or an explicit request in the text, '

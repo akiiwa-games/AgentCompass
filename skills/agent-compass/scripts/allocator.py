@@ -973,8 +973,8 @@ TASK_PROFILE_SCHEMA = {
         'divergence': {'type': 'integer', 'minimum': 1, 'maximum': 3, 'description': (
             '1 = convergent: a known target, spec, checklist, review scope or a fix whose cause is already identified; '
             '2 = multi-hypothesis: the cause of a bug, regression or performance problem is unknown and several candidate '
-            'explanations must be tested, or several given design options must be compared; 3 = open-ended: formulate a new '
-            'scheme, creative research hypotheses, strategy or architecture direction.')},
+            'explanations must be tested, or several given design options must be compared; 3 = open-ended/creative: formulate a '
+            'new scheme, cultural/gameplay motif proposals, creative narrative/design ideation, or first-principles architecture redesign.')},
         'hallucination_risk': {'type': 'integer', 'minimum': 1, 'maximum': 3, 'description': (
             '1 = a compiler, unit test or script deterministically verifies the result; 2 = mixed engineering plus judgment; '
             '3 = a fabricated claim or missed defect would not be caught by a test runner: read-only code review/audit, '
@@ -985,8 +985,10 @@ TASK_PROFILE_SCHEMA = {
         'needs_visual': {'type': 'boolean', 'description': 'True when the work must look at images, screenshots or other visual input.'},
         'needs_gui': {'type': 'boolean', 'description': 'True when the work must operate a desktop or browser GUI through screenshots, mouse and keyboard.'},
         'local_only': {'type': 'boolean', 'description': (
-            'True when the work depends on this machine: local processes, SSH, large local files, its screen, or the '
-            'local git checkout and test suite.')},
+            'True ONLY when the worker must access un-inlined resources on this machine: reading/editing/testing existing '
+            'un-inlined files in the local git checkout, interacting with local processes/daemons/SQLite/GUI, or using local '
+            'credentials/intranet. False for open-web/public research, self-contained code/algorithms with inlined specs, or '
+            'self-contained text/design ideation—EVEN IF the brief is Markdown or names a local output path where the report lands.')},
         'interaction_style': {'type': 'string', 'enum': list(INTERACTION_STYLES), 'description': (
             'engineering = write or change software; exploration = explore a codebase, run experiments or backtests, '
             'analyze logs or data; text_only = pure text in and out or public web lookup; advisory = direction '
@@ -1241,7 +1243,11 @@ def profile_difficulty(profile, policy):
 
 def named_route(profile):
     """A classifier route other than the unmatched bucket. None when the profile did not name one."""
-    named = profile.get('work_kind') if isinstance(profile, dict) else None
+    if not isinstance(profile, dict):
+        return None
+    named = profile.get('work_kind')
+    if named == 'general_implementation' and profile.get('code_complexity') == 0:
+        return None
     if named in KIND_TRAITS and named != 'other_or_mixed':
         return named
     return None
@@ -2013,7 +2019,8 @@ def evaluate_bundle(bundle, task, ctx):
                 max_ex_opp = float(policy.get('fast_max_extra_opportunity_cost', 0.015))
                 plentiful_ref = float(policy.get('fast_plentiful_usable_pct', 45.0))
                 sprint_thresh = float(policy.get('fast_sprint_sunk_threshold', 0.25))
-                is_sprint = bool(in_horizon and f_shortage <= max_sh
+                is_sprint = bool(in_horizon and (task['difficulty'] != 'routine' or task.get('wants_fast'))
+                                 and f_shortage <= max_sh
                                  and f_sunk >= (0.05 if task.get('wants_fast') else sprint_thresh))
                 is_plentiful = bool(task.get('wants_fast') and f_usable >= plentiful_ref
                                     and f_shortage <= max_sh and extra_opp <= max_ex_opp)
@@ -2087,7 +2094,8 @@ def evaluate_bundle(bundle, task, ctx):
         result['components']['route_fit'] = round(fit, 3)
         result['components']['vector_fit'] = round(vfit, 3)
         if s_weights and isinstance(s_cfg, dict):
-            sfit = subjective_fit(s_weights, subjective_vector(info))
+            subj_scale = min(1.0, effective / high_ability) if high_ability > 0 else 1.0
+            sfit = subjective_fit(s_weights, {k: v * subj_scale for k, v in subjective_vector(info).items()})
             result['components']['subjective_fit'] = round(sfit, 3)
             w_s = float(s_cfg.get('weight', 0.65))
             w_v = float(s_cfg.get('vector_weight', 0.2))
@@ -2098,15 +2106,17 @@ def evaluate_bundle(bundle, task, ctx):
             fit = (1 - weight) * fit + weight * vfit
     cfg = demand_config(policy)
     sunk_weight = (binding or {}).get('reset_sunk_weight', 0.0)
+    sprint_sunk = 0.0 if task['difficulty'] == 'routine' else sunk_weight
     effort_scale = burn_scale(policy, curves, bundle.get('effort'))
-    # Near a reset with surplus quota the extra burn of a higher effort is quota that would lapse, so it is not charged.
-    effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0) * (1.0 - sunk_weight), 4)
+    # Near a reset with surplus quota the extra burn of a higher effort is quota that would lapse, so it is not charged
+    # on non-routine work; routine (depth 1) work keeps its effort and overqualification discipline.
+    effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0) * (1.0 - sprint_sunk), 4)
     if effort_penalty:
         result['components']['effort_penalty'] = effort_penalty
     effort_gain = max(0.0, effective - high_ability)
     saturation = float((policy.get('profile') or {}).get('saturation_span', 0.3))
-    if sunk_weight > 0 and effort_gain > 0:
-        sprint_quality = round(float(cfg['sprint_effort_weight']) * sunk_weight * clamp(effort_gain / saturation, 0, 1), 4)
+    if sprint_sunk > 0 and effort_gain > 0:
+        sprint_quality = round(float(cfg['sprint_effort_weight']) * sprint_sunk * clamp(effort_gain / saturation, 0, 1), 4)
         if sprint_quality:
             result['components']['sprint_quality'] = sprint_quality
     # Effort buys ability credit only up to what the task asks of it: above High, up to the required ability. A task
@@ -2143,9 +2153,13 @@ def evaluate_bundle(bundle, task, ctx):
         price = min(1.0, price) if (gui and gui_capable) else min(config.get('overqualification_price_cap', 3.0), price)
         if ((gui and gui_capable) or kind == 'frontend_implementation') and (task['profile'] or {}).get('reasoning_depth', 1) >= 2:
             price = 0.0
-        overqualified = round(config.get('overqualification_weight', 0.08) * excess * price * (1.0 - sunk_weight), 4)
+        overqualified = round(config.get('overqualification_weight', 0.08) * excess * price * (1.0 - sprint_sunk), 4)
         if overqualified:
             result['components']['overqualification'] = overqualified
+    if task['difficulty'] != 'routine' and effective < high_ability:
+        # On non-routine work (depth >= 2), stepping below High (medium/low) sacrifices thinking depth even when a high
+        # base tier still clears the floor; High therefore leads under normal quota and steps down only under scarcity.
+        ability_score = clamp(ability_score - 0.2 * (high_ability - effective) / policy.get('ability_span', 0.6), 0, 1)
     result['components'].update({
         'fit': round(fit, 3),
         'ability': round(ability_score, 3),
