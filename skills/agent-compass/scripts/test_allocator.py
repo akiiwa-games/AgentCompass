@@ -117,8 +117,7 @@ class AllocatorTests(unittest.TestCase):
 
     def profile(self, **fields):
         base = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'hallucination_risk': 2, 'error_cost': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering',
-                'reason': 'test profile'}
+                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering'}
         return dict(base, **fields)
 
     def unsubscribed(self, account):
@@ -1164,14 +1163,13 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(self.rows(inside)['sol_high']['excluded'], [])
 
     def test_readonly_review_research_exploration_gui_routing_and_duration_multipliers(self):
-        # 1) Read-only review tasks normalize code_complexity=0 and route to rigorous review models instead of Sol
+        # 1) Read-only review tasks classified as debug_review with code_complexity=0 route to rigorous review models instead of Sol
         ro_review = {
-            'work_kind': 'general_implementation',
             'objective': '# Task: Independent code and release review (read-only)\nInspect the diff and write a review report; no repo code edits.',
             'needs': {'local_only': True},
-            'profile': self.profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2,
+            'profile': self.profile(work_kind='debug_review', reasoning_depth=2, code_complexity=0,
                                     context_scale=1, divergence=1, hallucination_risk=3, error_cost=2,
-                                    local_only=True, interaction_style='engineering'),
+                                    local_only=True, interaction_style='exploration'),
         }
         ro_plan = self.plan(ro_review, self.healthy_quota())
         self.assertEqual(ro_plan['decision']['task']['kind'], 'debug_review')
@@ -1190,7 +1188,7 @@ class AllocatorTests(unittest.TestCase):
             'objective': 'Operate the desktop window, click Save, and propose a verification check',
             'needs': {'local_only': True, 'visual': True},
             'profile': self.profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=1,
-                                    context_scale=1, divergence=3, hallucination_risk=2, error_cost=2,
+                                    context_scale=1, divergence=1, hallucination_risk=2, error_cost=2,
                                     needs_visual=True, needs_gui=True, local_only=True, interaction_style='engineering'),
         }
         gui_plan = self.plan(gui_mis_kind, self.healthy_quota())

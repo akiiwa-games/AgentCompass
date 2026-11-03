@@ -73,26 +73,26 @@ SCORER_TYPES = {
 CLASSIFIER_CASES_PATH = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
 SCORER_PROMPT = (
     'You are a System-One task classifier. Do NOT call any tools, do NOT run commands, do NOT read files. '
-    'Evaluate the task description and return ONLY the structured JSON output.\n'
+    'Evaluate the task description and return ONLY the structured JSON options.\n'
     'Score what the task itself demands, not who should do it: never name, choose or rank a model, agent or provider. '
     'Choose the canonical `work_kind` route and rate each dimension at the lowest level that honestly covers the work. '
     'Briefs are long Markdown documents: ignore their length, section headers, communication rules and boilerplate '
     'paths (role docs, AGENTS.md, skill/README docs, reports to read, receipt/output paths, a module\'s unit-test file) '
-    'when scoring `reasoning_depth`, `context_scale`, and `local_only`; score the functional work only.\n'
+    'when scoring `reasoning_depth` and `context_scale`; score the functional work only.\n'
     'CRITICAL RULES:\n'
-    '1. `local_only`: Set `true` ONLY when the worker must read/edit/test existing un-inlined files in the local git repo, '
-    'interact with local processes/daemons/SQLite/GUI, or use local credentials/intranet. Set `false` for open-web/public '
-    'research (`web_research`), self-contained code/algorithms whose spec is inlined in the brief (`self_contained_code`), '
-    'or self-contained writing/ideation/critique (`text_in_text_out`, `direction_reasoning`, `complex_build_plan`)—EVEN IF '
-    'the brief is a multi-section Markdown document or names a local path where the finished report/file will be saved.\n'
+    '1. `local_only`: Set `true` when the task explicitly depends on existing files, directories, or repositories on '
+    'this machine (reading, copying, searching, editing, building, or testing un-inlined local files) or on local '
+    'processes/GUI/environment. Set `false` when all required inputs are inlined in the prompt or fetched from the public '
+    'web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, `complex_build_plan`)—a '
+    'coordinator workspace header or a local target path where the caller will save the returned text/code does not make '
+    'a self-contained task `local_only`.\n'
     '2. `code_complexity`: ANY read-only code/release/diff review, independent audit, or diagnosis that writes no production '
     'code MUST have `code_complexity` 0 (even when reviewing complex code) and `hallucination_risk` 3.\n'
     '3. `context_scale`: 1 = one functional module/script (+ its paired unit test and brief/output boilerplate) or a '
     'self-contained research/text/algorithm task; 2 = 2..5 coupled functional modules interacting; 3 = repo/system-wide.\n'
     '4. `divergence`: 1 = convergent spec/fix/review/checklist; 2 = multi-hypothesis root-cause diagnosis or bounded option '
     'comparison; 3 = open-ended creative ideation, cultural/gameplay motif proposals, or first-principles paradigm design.\n'
-    'Follow `dimension_rubric` and match the closest calibration case. '
-    '`reason` is one sentence about the task, not about this output; when `local_only` is true, name the concrete local dependency.\n')
+    'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
 LOW_REMAINING_PCT = 10        # an auto-judge account at or below this is tried only after healthier ones
@@ -1213,7 +1213,8 @@ JEV_URGENCY_CRITERIA = {
 JEV_NOUL_QUESTIONS = {
     'needs_visual': 'Does this task require inspecting images, screenshots, visual design frames, or operating a GUI?',
     'needs_gui': 'Does this task require operating a live desktop or browser GUI via mouse/keyboard/computer-use?',
-    'local_only': "Does this task depend on this machine's local repository, local CLI/daemons/tests, local secrets, or live logged-in sessions?",
+    'local_only': ("Does this task explicitly depend on existing files, directories, or repositories on this machine "
+                   '(reading, copying, editing, or testing un-inlined local files) or on local processes/GUI/environment?'),
 }
 
 
@@ -1285,9 +1286,6 @@ def parse_jev_response(response, allocator):
                 profile['expected_hours'] = table[choice][0]
             else:
                 profile['urgency'] = choice
-    profile['reason'] = (f"Jev ({response.get('model') or JEV_DEFAULT_MODEL}) classified as {profile['work_kind']} "
-                         f"(D{profile['reasoning_depth']} C{profile['code_complexity']} S{profile['context_scale']} "
-                         f"V{profile['divergence']})")
     # Optional like the effort band: a Jev answer without them leaves the brief unsplit.
     multi = answers.get('multi_task')
     multi = multi.get('noul') if isinstance(multi, dict) else multi
@@ -1436,7 +1434,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 6  # 6: the classifier also answers multi_task and task_count
+SCORE_CACHE_VERSION = 7  # 7: structured-only classifier output (no free-text reason) and local_only rubric
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 
@@ -2291,7 +2289,7 @@ def plan_stage(document, args):
             # Trust the classifier; explicit caller needs still take precedence.
             profile_local_only_applied = True
             needs['local_only'] = True
-            needs['local_only_reason'] = profile['reason'] or 'Task profile requires execution on this machine.'
+            needs['local_only_reason'] = profile.get('reason') or 'Task profile requires execution on this machine.'
             task = {**task, 'needs': needs}
             extra_alerts.append({
                 'code': 'profile_local_only_applied', 'severity': 'info', 'account': None,

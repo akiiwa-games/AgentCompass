@@ -17,8 +17,8 @@
     "direction_reasoning": "High-depth mathematical proof/derivation, formal critique, or first-principles strategic/architectural paradigm design."
   },
   "dimension_rubric": {
-    "anti_inflation_rule": "Score ONLY the functional work the worker must perform, never the length or Markdown structure of the brief. Coordinator headers (`Parent session agent ID`, `工作目录: E:/...`), role docs, `AGENTS.md`/`SKILL.md` references, communication rules, and output/receipt file paths (`docs/.../report.md`, `output.json`) are dispatch boilerplate—ignore them completely when scoring `local_only`, `context_scale`, `reasoning_depth`, and `code_complexity`.",
-    "local_only_positive_vs_negative": "CRITICAL CONTRAST RULE for `local_only` (do NOT default to true just because a brief is in Markdown or names a workspace/output file path):\n- Set `local_only: true` ONLY when the worker MUST access resources that exist only on THIS machine and are NOT inlined in the brief: (a) reading, searching (`rg`/`git diff`), editing, or running `pytest`/`unittest`/build against existing un-inlined source files in a local git checkout; (b) interacting with local processes, daemons (Paseo, SQLite `dispatch.sqlite3`, localhost ports), hardware, or a live desktop/browser GUI; (c) using local credentials, intranet endpoints, or signed-in CLI sessions (`lark-cli`, Tide, internal GitLab).\n- Set `local_only: false` whenever a remote sandbox with its own CPU, Python/Node runtime, and public internet can complete the work from the brief alone: (a) `web_research` (public web/vendor/cultural/motif research, EVEN IF the brief specifies a local path like `docs/research/xxx.md` where the finished report will be saved); (b) `self_contained_code` (writing a standalone script/algorithm whose spec or input snippet is inlined in the brief, EVEN IF a target filename is named); (c) `text_in_text_out`, `direction_reasoning`, or `complex_build_plan` when all required background context is already included in the brief text.",
+    "anti_inflation_rule": "Score ONLY the functional work the worker must perform, never the length or Markdown structure of the brief. Coordinator headers (`Parent session agent ID`, `工作目录: E:/...`), role docs, `AGENTS.md`/`SKILL.md` references, communication rules, and output/receipt file paths (`docs/.../report.md`, `output.json`) are dispatch boilerplate—ignore them when scoring `context_scale`, `reasoning_depth`, and `code_complexity`.",
+    "local_only_positive_vs_negative": "CRITICAL CONTRAST RULE for `local_only`:\n- Set `local_only: true` when the task explicitly depends on existing files, directories, or repositories on THIS machine (reading, copying, searching, editing, building, or running tests against un-inlined local files/directories) or on local processes/daemons/GUI/environment.\n- Set `local_only: false` whenever all required inputs are self-contained in the brief or fetched from the public internet: (a) `web_research` (public web/vendor/cultural/motif research, even if the brief specifies a local path like `docs/research/xxx.md` where the finished report will be saved); (b) `self_contained_code` (writing a standalone script/algorithm whose spec or input snippet is inlined in the brief, even if a target filename is named); (c) `text_in_text_out`, `direction_reasoning`, or `complex_build_plan` when all required background context is already included in the brief text.",
     "read_only_review": "Any read-only code review, PR/diff inspection, release-readiness audit, or diagnostic report that writes NO production code MUST have `code_complexity: 0` (even when reviewing complex systems code), `work_kind: \"debug_review\"` (or `exploration_analysis`), and `hallucination_risk: 3`.",
     "context_scale": "Count coupled functional modules the worker must reason across, NOT the number of file paths mentioned in the prompt:\n- `1` (Single unit): Modifying/reviewing ONE primary functional module/script (plus its paired unit test file and any role/brief/output paths), OR any self-contained research/text/algorithm task, OR running a uniform command/checklist.\n- `2` (Multi-module): Modifying or tracing interactions across 2 to 5 distinct coupled functional modules or datasets.\n- `3` (System-wide): Whole-repository architecture, cross-subsystem refactoring (>5 modules), or multi-stage orchestrator lifecycle.",
     "divergence": "Measure how open-ended the solution space is:\n- `1` (Convergent): Known target, concrete feature spec, deterministic runbook, factual diff review, or fixing an already-isolated bug.\n- `2` (Multi-hypothesis): Diagnosing an unknown root cause with 2+ competing hypotheses (intermittent bug, race condition, memory/CPU anomaly) or comparing bounded technical alternatives.\n- `3` (Divergent / Creative): Open-ended creative ideation, cultural/motif research with gameplay/narrative/product scheme proposals, inventing a new architecture or scoring paradigm from first principles, or open-ended brainstorming with no single predetermined answer.",
@@ -45,8 +45,7 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Routine GUI action on the local desktop screen."
+        "task_count": "1"
       }
     },
     {
@@ -68,8 +67,7 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Read-only visual comparison of local image files with no code edits."
+        "task_count": "1"
       }
     },
     {
@@ -91,8 +89,7 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Open-domain cultural research and divergent gameplay motif ideation; does not depend on local repo code or runtime despite naming an output Markdown path."
+        "task_count": "1"
       }
     },
     {
@@ -114,8 +111,7 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Public web documentation survey with high factual accuracy requirement and no local machine dependency."
+        "task_count": "1"
       }
     },
     {
@@ -137,8 +133,7 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Self-contained algorithm implementation whose full specification is inlined in the brief and requires no local repo checkout."
+        "task_count": "1"
       }
     },
     {
@@ -160,8 +155,7 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Self-contained creative dialogue writing with all character context inlined in the brief."
+        "task_count": "1"
       }
     },
     {
@@ -183,8 +177,29 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Single-module bug fix and pytest verification in the local repository (`app/upload_queue.py`); boilerplate docs and paired unit test keep context_scale at 1."
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "upstream_pr_copying_local_plugin_files",
+      "task": "# 任务：向 makecindy/cindy-official-plugins 提交 AgentCompass 插件的上游 PR\n\n1. 克隆上游仓库 `https://github.com/makecindy/cindy-official-plugins.git` 到临时目录并切新分支；\n2. 将本机已开发验证完成的插件目录 `E:\\PROJECTS\\cindy-agentcompass-plugin\\plugin\\`（含 `plugin.json`、`index.ts`、`README.md`、`skills/agent-compass/SKILL.md`）复制到 `plugins/agent-compass/` 并注册到 `provisioning.json`；\n3. 运行上游测试门禁并提交 PR。",
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 1,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
       }
     },
     {
@@ -206,8 +221,7 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Read-only security and invariant review of a local git commit across two coupled modules (`code_complexity: 0`, `hallucination_risk: 3`)."
+        "task_count": "1"
       }
     },
     {
@@ -229,8 +243,7 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Multi-hypothesis root-cause investigation of local process memory/CPU growth across coupled tray modules."
+        "task_count": "1"
       }
     },
     {
@@ -252,8 +265,7 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Coupled cross-module architectural refactoring across four core local repository modules."
+        "task_count": "1"
       }
     },
     {
@@ -275,8 +287,7 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Self-contained frontier mathematical critique and first-principles utility formulation."
+        "task_count": "1"
       }
     },
     {
@@ -298,8 +309,7 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1",
-        "reason": "Routine execution of explicit local test commands in the repository."
+        "task_count": "1"
       }
     },
     {
@@ -321,8 +331,7 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": true,
-        "task_count": "2",
-        "reason": "Bundles two independent deliverables (a local SQLite code fix and a public web pricing survey) that should be split and routed separately."
+        "task_count": "2"
       }
     }
   ]

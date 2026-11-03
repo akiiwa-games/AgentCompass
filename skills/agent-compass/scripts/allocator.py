@@ -985,10 +985,11 @@ TASK_PROFILE_SCHEMA = {
         'needs_visual': {'type': 'boolean', 'description': 'True when the work must look at images, screenshots or other visual input.'},
         'needs_gui': {'type': 'boolean', 'description': 'True when the work must operate a desktop or browser GUI through screenshots, mouse and keyboard.'},
         'local_only': {'type': 'boolean', 'description': (
-            'True ONLY when the worker must access un-inlined resources on this machine: reading/editing/testing existing '
-            'un-inlined files in the local git checkout, interacting with local processes/daemons/SQLite/GUI, or using local '
-            'credentials/intranet. False for open-web/public research, self-contained code/algorithms with inlined specs, or '
-            'self-contained text/design ideation—EVEN IF the brief is Markdown or names a local output path where the report lands.')},
+            'True when the task explicitly depends on existing files, directories, or repositories on this machine '
+            '(reading, copying, searching, editing, building, or testing un-inlined local files) or on local processes/GUI/'
+            'environment. False when all required inputs are inlined in the prompt or fetched from the public web '
+            '(web_research, self_contained_code, text_in_text_out, direction_reasoning, complex_build_plan)—even if the '
+            'brief has a workspace header or names a local target path where the finished output will be saved.')},
         'interaction_style': {'type': 'string', 'enum': list(INTERACTION_STYLES), 'description': (
             'engineering = write or change software; exploration = explore a codebase, run experiments or backtests, '
             'analyze logs or data; text_only = pure text in and out or public web lookup; advisory = direction '
@@ -1003,12 +1004,11 @@ TASK_PROFILE_SCHEMA = {
         'urgency': {'type': 'string', 'enum': list(URGENCY_LEVELS), 'description': (
             'unknown unless the text itself states a deadline, an incident or "asap"; then high/normal/low. Never infer urgency '
             'from topic or tone. Shown in the result so the caller can see it; it never changes the owner, the effort or fast mode.')},
-        'reason': {'type': 'string', 'description': 'One concise sentence about the task itself that justifies the scores.'},
         'multi_task': {'type': 'boolean', 'description': MULTI_TASK_QUESTION},
         'task_count': {'type': 'string', 'enum': list(TASK_COUNTS), 'description': TASK_COUNT_QUESTION},
     },
     'required': list(PROFILE_INTEGERS) + list(PROFILE_FLAGS) + ['expected_hours', 'hours_confidence', 'urgency', 'interaction_style',
-                                                                 'reason', 'multi_task', 'task_count'],
+                                                                 'multi_task', 'task_count'],
 }
 # kind -> (code_complexity, context_scale, hallucination_risk, error_cost, interaction_style) for the heuristic profile
 KIND_TRAITS = {
@@ -1129,7 +1129,8 @@ def validate_profile(raw):
         raise ValueError('task.profile.interaction_style must be one of ' + ', '.join(INTERACTION_STYLES))
     profile['interaction_style'] = raw['interaction_style']
     reason = raw.get('reason')
-    profile['reason'] = reason.strip()[:300] if isinstance(reason, str) else ''
+    if isinstance(reason, str) and reason.strip():
+        profile['reason'] = reason.strip()[:300]
     if isinstance(raw.get('multi_task'), bool):
         profile['multi_task'] = raw['multi_task']
     if raw.get('task_count') in TASK_COUNTS:
@@ -1246,8 +1247,6 @@ def named_route(profile):
     if not isinstance(profile, dict):
         return None
     named = profile.get('work_kind')
-    if named == 'general_implementation' and profile.get('code_complexity') == 0:
-        return None
     if named in KIND_TRAITS and named != 'other_or_mixed':
         return named
     return None
@@ -2446,12 +2445,6 @@ def normalize_task(raw, policy, capabilities, accounts):
     task = dict(raw or {})
     profile = validate_profile(task['profile']) if task.get('profile') is not None else None
     kind = task_kind(task, capabilities, policy)
-    if profile and is_readonly_review_task(task.get('objective'), profile):
-        profile = dict(profile, code_complexity=0)
-        if profile.get('work_kind') == 'general_implementation':
-            profile['work_kind'] = 'debug_review'
-        if kind == 'general_implementation':
-            kind = 'debug_review'
     derived = profile_difficulty(profile, policy) if profile else None
     difficulty = task.get('difficulty') or derived or default_difficulty(kind)
     source = 'caller' if task.get('difficulty') else 'profile' if derived else 'route_default'
@@ -2471,9 +2464,8 @@ def normalize_task(raw, policy, capabilities, accounts):
     needs.update(resolve_modality_needs(needs, profile, implies))
     critical = bool(needs.get('critical'))
     depth = profile['reasoning_depth'] if profile else None
-    raw_div = (profile.get('divergence') if profile else None) or infer_divergence(
+    div = (profile.get('divergence') if profile else None) or infer_divergence(
         task.get('objective'), kind, profile['interaction_style'] if profile else None)
-    div = 1 if ((kind == 'computer_use' or (profile and profile.get('needs_gui'))) and raw_div >= 3) else raw_div
     mechanical_runbook = bool(profile and depth == 1 and profile['code_complexity'] == 0 and div == 1)
     unlocked = ((difficulty in policy.get('effort_unlock_difficulties', ('coupled', 'frontier'))
                  or (critical and not mechanical_runbook)

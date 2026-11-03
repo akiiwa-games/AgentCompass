@@ -362,8 +362,7 @@ class RoutingTests(unittest.TestCase):
 
 
 GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'interaction_style': 'engineering',
-               'reason': 'Click one button and take a screenshot.'}
+               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'interaction_style': 'engineering'}
 
 
 class ReadinessGapTests(unittest.TestCase):
@@ -807,8 +806,7 @@ JEV_RESPONSE = {
 }
 JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'reasoning_depth': 2, 'code_complexity': 0,
                'context_scale': 2, 'divergence': 1, 'hallucination_risk': 3, 'error_cost': 2,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True,
-               'reason': 'Jev (jev-2026-10-01) classified as computer_use (D2 C0 S2 V1)'}
+               'needs_visual': True, 'needs_gui': True, 'local_only': True}
 SECRET = 'test-key-0000000000000000'
 
 
@@ -935,7 +933,7 @@ class SelectableScorerTests(unittest.TestCase):
         p2 = router.parse_jev_response({'answers': answers}, self.allocator)
         self.assertEqual((p2['reasoning_depth'], p2['code_complexity'], p2['needs_gui'], p2['needs_visual'], p2['local_only'], p2['work_kind']),
                          (4, 3, False, False, True, 'debug_review'))
-        self.assertIn('Jev (jev-latest)', p2['reason'])
+        self.assertNotIn('reason', p2)
         for broken in ({'answers': {**answers, 'work_kind': {'choice': 'make_coffee'}}},
                        {'answers': {**answers, 'interaction_style': {'choice': 'vibes'}}},
                        {'answers': {k: v for k, v in answers.items() if k != 'error_cost'}},
