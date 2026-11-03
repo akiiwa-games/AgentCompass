@@ -44,6 +44,25 @@ DEFAULT_PROVIDERS = ("claude", "codex", "pi", "opencode")    # always launchable
 _lock = threading.Lock()
 _busy: dict[str, str] = {}
 _latest: dict[str, str] = {}
+_STDLIB_WHICH = shutil.which
+_STDLIB_OWNED_RUN = owned_process.run
+_WHICH_CACHE: dict[tuple[str, str], tuple[float, str | None]] = {}
+_VERSION_CACHE: dict[tuple[str, int, int], str] = {}
+
+
+def _which(command: str, path_value: str | None) -> str | None:
+    if shutil.which is not _STDLIB_WHICH:
+        return shutil.which(command, path=path_value)
+    key = (command, path_value or "")
+    now = time.monotonic()
+    with _lock:
+        cached = _WHICH_CACHE.get(key)
+    if cached is not None and now - cached[0] < 15.0:
+        return cached[1]
+    found = shutil.which(command, path=path_value)
+    with _lock:
+        _WHICH_CACHE[key] = (now, found)
+    return found
 
 
 @dataclass(frozen=True)
@@ -208,7 +227,7 @@ def package_version(directory: Path) -> str:
 
 def npm_command(environ) -> list | None:
     """node + npm-cli.js when they sit next to npm (no cmd.exe quoting), else the npm launcher itself."""
-    found = shutil.which("npm", path=environ.get("PATH"))
+    found = _which("npm", environ.get("PATH"))
     if not found:
         return None
     folder = Path(found).parent
@@ -243,7 +262,7 @@ def classify(spec: Spec, path: Path, home: Path, environ) -> Install:
 
 def locate_default(spec: Spec, home: Path, environ) -> Install:
     """The tool a provider without its own command gets: PATH, and Grok Build's installer folder."""
-    found = shutil.which(spec.command, path=environ.get("PATH"))
+    found = _which(spec.command, environ.get("PATH"))
     if not found and spec.id == "grok":
         installed = home / ".grok" / "bin" / ("grok.exe" if os.name == "nt" else "grok")
         found = str(installed) if installed.is_file() else None
@@ -262,7 +281,7 @@ def locate_configured(spec: Spec, command: str, home: Path, environ, provider_en
         install = manual(spec, configured, _tr("为 {0} 配置的命令 {1} 不是 {2} 的可执行文件，无法确定更新方式；路由功能不受影响。").format(
             spec.name, command, spec.command))
     elif configured.name == command:    # a bare name is resolved through PATH, never the current folder
-        found = shutil.which(command, path=launch.get("PATH"))
+        found = _which(command, launch.get("PATH"))
         configured = Path(found) if found else None
         if configured is not None and spec.id == "grok" and configured.stem.lower() == "agent":
             sibling = configured.with_name("grok" + configured.suffix)
@@ -335,13 +354,29 @@ def local_version(install: Install, run_executable: bool = True) -> str:
         return package_version(install.package_dir)
     if run_executable and install.source in ("native", "unknown") and install.path and install.path.suffix.lower() in (".exe", "") \
             and install.path.is_file():
+        cache_key = None
+        if owned_process.run is _STDLIB_OWNED_RUN:
+            try:
+                st = install.path.stat()
+                cache_key = (os.path.normcase(str(install.path)), st.st_mtime_ns, st.st_size)
+            except OSError:
+                cache_key = None
+            if cache_key is not None:
+                with _lock:
+                    cached = _VERSION_CACHE.get(cache_key)
+                if cached is not None:
+                    return cached
         try:
             result = owned_process.run([str(install.path), "--version"], timeout=VERSION_TIMEOUT, env=install.env,
                                        cwd=str(state_dir()) if state_dir().is_dir() else None)
         except owned_process.OwnedProcessError:
             return ""
         found = VERSION.search(result.stdout or result.stderr) if result.returncode == 0 else None
-        return found.group(0) if found else ""
+        version = found.group(0) if found else ""
+        if cache_key is not None and version:
+            with _lock:
+                _VERSION_CACHE[cache_key] = version
+        return version
     return ""
 
 

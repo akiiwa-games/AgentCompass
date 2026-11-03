@@ -322,7 +322,7 @@ def poll_max_age(poll, now, default):
     return max(default, seconds + POLL_GRACE_SECONDS)
 
 
-def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_SECONDS, quota_sources=None):
+def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_SECONDS, quota_sources=None, inventory=None):
     """Read the real collector cache; project an allowlist, never credentials or reset grants."""
     now = now or datetime.now(timezone.utc)
     attempts = []
@@ -350,7 +350,9 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
     sources = quota_sources
     requested |= {sources[name] for name in requested if name in sources}
     home_dir = _usage_home(source)
-    inventory = provider_inventory.discover(home=home_dir)
+    if inventory is None:
+        default_home = Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
+        inventory = provider_inventory.discover(home=None if home_dir == default_home else home_dir)
     result = {}
     for account in sorted(requested):
         source_account = sources.get(account, account)

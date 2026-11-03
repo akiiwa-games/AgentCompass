@@ -82,6 +82,10 @@ def sync_discovered(accounts, enable=False):
             except (AttributeError, TypeError, ValueError):
                 continue
         ready.append(name)
+    if 'known_accounts' in policy:
+        seen_fast = set(policy['known_accounts']) | set(policy['allowed_accounts'])
+        if not any(name not in seen_fast for name in ready):
+            return {'mode': 'enabled', 'added': []}
     path = policy_path()[0]
     with override_store.locked(path):
         policy = load_policy()

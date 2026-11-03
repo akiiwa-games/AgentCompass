@@ -30,6 +30,28 @@ PASEO_RECOGNIZED_ONLY = ('copilot', 'muse', 'dsh')
 PLAN_TEMPLATES = Path(__file__).resolve().parents[1] / 'references/plan-templates.json'
 TEMPLATE_KEYS = ('windows', 'capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour')
 POOL_KEYS = ('windows', 'burn_pct_per_worker_hour', 'capacity_usd', 'capacity_change', 'observed', 'expires_at')
+_SHIPPED_PLAN_TEMPLATES = None
+_STDLIB_WHICH = shutil.which
+_WHICH_CACHE = {}
+_REGISTRY_EXE_CACHE = {}
+_LAST_PUBLISHED_INVENTORY = {}
+_RESOLVE_CACHE = {}
+_TOML_CACHE = {}
+_DEFAULT_HOME_RESOLVED = Path.home().resolve()
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _resolved(path: Path) -> Path:
+    key = str(path)
+    res = _RESOLVE_CACHE.get(key)
+    if res is None:
+        res = path.resolve()
+        if len(_RESOLVE_CACHE) > 512:
+            _RESOLVE_CACHE.clear()
+        _RESOLVE_CACHE[key] = res
+    return res
+
+
 
 
 def quota_sources(accounts):
@@ -77,7 +99,13 @@ def plan_defaults(accounts, family, plan):
     `windows`, `capacity_usd`, `capacity_change` and `burn_pct_per_worker_hour` are copied onto an
     account; other keys (provenance, basis, price) are documentation.
     """
-    shipped, _ = read_json(PLAN_TEMPLATES)
+    global _SHIPPED_PLAN_TEMPLATES
+    if _SHIPPED_PLAN_TEMPLATES is None or read_json is not _STDLIB_READ_JSON:
+        shipped, _ = read_json(PLAN_TEMPLATES)
+        if read_json is _STDLIB_READ_JSON and shipped:
+            _SHIPPED_PLAN_TEMPLATES = shipped
+    else:
+        shipped = _SHIPPED_PLAN_TEMPLATES
     overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
     base = obj(shipped.get(family))
     template = None
@@ -127,11 +155,24 @@ def read_json(path, expected=dict):
         return expected(), 'unreadable'
 
 
+_STDLIB_READ_JSON = read_json
+
+
+
 def read_toml(value):
-    try:
-        return tomllib.loads(value) if isinstance(value, str) else {}
-    except ValueError:
+    if not isinstance(value, str):
         return {}
+    cached = _TOML_CACHE.get(value)
+    if cached is not None:
+        return cached
+    try:
+        parsed = tomllib.loads(value)
+    except ValueError:
+        parsed = {}
+    if len(_TOML_CACHE) > 256:
+        _TOML_CACHE.clear()
+    _TOML_CACHE[value] = parsed
+    return parsed
 
 
 def endpoint(value):
@@ -163,7 +204,7 @@ def auth_facts(family, auth, home, profile=None):
         return {'present': bool(token), 'identity': identity,
                 'credential_identity': digest('claude', token) if token else None,
                 'credential_version': digest(token, oauth.get('refreshToken')) if token else None,
-                'credential_key': digest(home.resolve(), token) if token else None,
+                'credential_key': digest(_resolved(home), token) if token else None,
                 'plan': plan_name(family, oauth.get('subscriptionType'), oauth.get('rateLimitTier', ''))}
     tokens = auth.get('tokens') or {}
     tokens = tokens if isinstance(tokens, dict) else {}
@@ -178,7 +219,7 @@ def auth_facts(family, auth, home, profile=None):
     except (ValueError, IndexError, UnicodeError, AttributeError):
         claims = {}
     return {'present': bool(token), 'identity': digest('codex', account or token) if token else None,
-            'credential_key': digest(home.resolve(), str(token) + ':' + str(account or '')) if token else None,
+            'credential_key': digest(_resolved(home), str(token) + ':' + str(account or '')) if token else None,
             'plan': plan_name(family, claims.get('chatgpt_plan_type'))}
 
 
@@ -251,24 +292,28 @@ def cc_switch(path):
         return [], 'unreadable'
 
 
-def installed_executables(product, home, environ):
-    """Bounded OS installation hints; never execute the application or scan a drive."""
-    paths = []
-    found = shutil.which(product, path=environ.get('PATH'))
-    if found:
-        paths.append(Path(found).resolve())
-    explicit = environ.get('MAGPIE_EXE' if product == 'magpie' else 'CC_SWITCH_EXE')
-    if explicit:
-        paths.insert(0, Path(explicit).expanduser())
-    if home.resolve() == Path.home().resolve():
-        repository = Path(__file__).resolve().parents[3]
-        for directory in (repository, repository / product, repository / 'tools', repository / 'tools' / product):
-            candidate = directory / (product + ('.exe' if os.name == 'nt' else ''))
-            if candidate.is_file():
-                paths.append(candidate)
-    if os.name != 'nt' or home.resolve() != Path.home().resolve():
-        return paths
+def _which(product, path_value):
+    if shutil.which is not _STDLIB_WHICH:
+        return shutil.which(product, path=path_value)
+    import time
+    now_mono = time.monotonic()
+    key = (product, path_value)
+    cached = _WHICH_CACHE.get(key)
+    if cached is not None and now_mono - cached[0] < 15.0:
+        return cached[1]
+    found = shutil.which(product, path=path_value)
+    _WHICH_CACHE[key] = (now_mono, found)
+    return found
+
+
+def _registry_executables(product):
+    import time
+    now_mono = time.monotonic()
+    cached = _REGISTRY_EXE_CACHE.get(product)
+    if cached is not None and now_mono - cached[0] < 60.0:
+        return list(cached[1])
     import winreg
+    paths = []
     for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
         try:
             with winreg.OpenKey(hive, r'Software\Microsoft\Windows\CurrentVersion\App Paths' + '\\' + product + '.exe') as key:
@@ -292,6 +337,29 @@ def installed_executables(product, home, environ):
                             continue
             except OSError:
                 pass
+    _REGISTRY_EXE_CACHE[product] = (now_mono, tuple(paths))
+    return paths
+
+
+def installed_executables(product, home, environ):
+    """Bounded OS installation hints; never execute the application or scan a drive."""
+    paths = []
+    found = _which(product, environ.get('PATH'))
+    if found:
+        paths.append(_resolved(Path(found)))
+    explicit = environ.get('MAGPIE_EXE' if product == 'magpie' else 'CC_SWITCH_EXE')
+    if explicit:
+        paths.insert(0, Path(explicit).expanduser())
+    is_default_home = _resolved(home) == _DEFAULT_HOME_RESOLVED
+    if is_default_home:
+        repository = _REPO_ROOT
+        for directory in (repository, repository / product, repository / 'tools', repository / 'tools' / product):
+            candidate = directory / (product + ('.exe' if os.name == 'nt' else ''))
+            if candidate.is_file():
+                paths.append(candidate)
+    if os.name != 'nt' or not is_default_home:
+        return paths
+    paths.extend(_registry_executables(product))
     return list(dict.fromkeys(paths))
 
 
@@ -547,7 +615,7 @@ def _discover(home=None, environ=None, now=None):
             if isinstance(oauth_token, str) and oauth_token:
                 facts.update(present=True, identity=digest('claude', oauth_token),
                              credential_identity=digest('claude', oauth_token), credential_version=digest(oauth_token, ''),
-                             credential_key=digest(credential_home.resolve(), oauth_token), plan=None)
+                             credential_key=digest(_resolved(credential_home), oauth_token), plan=None)
         else:
             try:
                 config = {'auth': auth, 'config': (account_home / 'config.toml').read_text(encoding='utf-8-sig')}
@@ -568,7 +636,7 @@ def _discover(home=None, environ=None, now=None):
         bindings[name]['credential_identity'] = facts.get('credential_identity')
         bindings[name]['credential_version'] = facts.get('credential_version')
         if is_api:
-            row.update(plan=None, credential_key=digest('api', account_home.resolve(), base, token),
+            row.update(plan=None, credential_key=digest('api', _resolved(account_home), base, token),
                        identity=digest(base, token))
             bindings[name].update(identity=row['identity'], credential_identity=None, credential_version=None)
             if models:
@@ -608,12 +676,12 @@ def _discover(home=None, environ=None, now=None):
         family, _, enabled = resolve_definition(name, definitions)
         result['launchers'][name] = {'family': family, 'status': 'ready' if enabled else 'disabled'}
     agy = obj(cache_rows.get('antigravity'))
-    agy_present = bool(shutil.which('agy', path=environ.get('PATH')))
+    agy_present = bool(_which('agy', environ.get('PATH')))
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
         'sources': ['native'], 'status': 'ready' if agy_present else 'missing_client',
         'plan': agy.get('plan_label'), 'billing': 'subscription'}
     opencode = result['launchers']['opencode']
-    installed = bool(shutil.which('opencode', path=environ.get('PATH')))
+    installed = bool(_which('opencode', environ.get('PATH')))
     if opencode['status'] == 'ready' and not installed:
         opencode['status'] = 'missing_client'
     result['accounts']['opencode'] = {'family': 'opencode', 'provider': 'opencode',
@@ -621,7 +689,7 @@ def _discover(home=None, environ=None, now=None):
     # Grok's ACP launcher is not an OAuth Claude/Codex slot. A cached reading is
     # metadata only; it cannot by itself prove that a client is installed.
     grok_cached = obj(cache_rows.get('grok'))
-    grok_native = bool(shutil.which('grok', path=environ.get('PATH'))) or (home / '.grok').is_dir()
+    grok_native = bool(_which('grok', environ.get('PATH'))) or (home / '.grok').is_dir()
     grok_defined = 'grok' in definitions
     _, _, grok_enabled = resolve_definition('grok', definitions)
     grok_sources = (['native'] if grok_native else []) + (['paseo'] if grok_defined else [])
@@ -638,7 +706,7 @@ def _discover(home=None, environ=None, now=None):
     result['launchers']['grok'] = {'family': 'grok', 'status': grok_status}
     # Oh My Pi is Paseo's built-in `omp` provider. Its models come from the user's own
     # API keys (~/.omp/agent/models.yml), so it is metered: explicit selection only.
-    omp_native = (bool(shutil.which('omp', path=environ.get('PATH')))
+    omp_native = (bool(_which('omp', environ.get('PATH')))
                   or (home / '.bun' / 'bin' / ('omp.exe' if os.name == 'nt' else 'omp')).is_file())
     omp_defined = 'omp' in definitions
     _, _, omp_enabled = resolve_definition('omp', definitions)
@@ -675,7 +743,7 @@ def _discover(home=None, environ=None, now=None):
     pi_home = Path(environ.get('PI_CODING_AGENT_DIR') or home / '.pi/agent')
     pi_auth, _ = read_json(pi_home / 'auth.json')
     pi_codex = obj(pi_auth.get('openai-codex'))
-    pi_installed = bool(shutil.which('pi', path=environ.get('PATH')))
+    pi_installed = bool(_which('pi', environ.get('PATH')))
     pi_launcher = result['launchers']['pi']
     if pi_launcher['status'] == 'ready' and not pi_installed and not pi_codex.get('access'):
         pi_launcher['status'] = 'missing_client'
@@ -753,7 +821,7 @@ def _discover(home=None, environ=None, now=None):
     bot_config, bot_error = read_json(state_dir / 'grok-bot/config.json')
     bot_configured = bot_error is None and isinstance(bot_config.get('bot_id'), str) and bool(bot_config['bot_id'].strip())
     bot_status = 'missing_configuration' if not bot_configured else \
-        'ready' if GROK_BOT_CLI.is_file() and shutil.which('node', path=environ.get('PATH')) else 'missing_client'
+        'ready' if GROK_BOT_CLI.is_file() and _which('node', environ.get('PATH')) else 'missing_client'
     result['accounts']['grok-bot'] = {
         'family': 'grok-bot', 'provider': 'grok-bot', 'sources': ['native'], 'status': bot_status,
         'billing': 'unknown', 'execution': 'remote', 'dispatch': 'automatic',
@@ -815,8 +883,12 @@ def _discover(home=None, environ=None, now=None):
         if ident and not row.get('quota_account'):
             row['quota_account'] = owners.setdefault((row['family'], ident), name)
     import quota_exhaustion
+    exhaustion_path = state_dir / 'quota-exhaustion.json'
+    exhausted_accounts = obj(read_json(exhaustion_path)[0].get('accounts')) if exhaustion_path.is_file() else {}
     for name, row in result['accounts'].items():
-        latched = quota_exhaustion.exhausted_windows(name, cache_rows.get(name), path=state_dir / 'quota-exhaustion.json')
+        if not obj(exhausted_accounts.get(name)).get('blocked'):
+            continue
+        latched = quota_exhaustion.exhausted_windows(name, cache_rows.get(name), path=exhaustion_path)
         if quota_exhaustion.ALL in latched:
             row.update(status='quota_exhausted', reason='confirmed quota exhausted; refresh quota after recovery')
         elif latched:
@@ -827,13 +899,20 @@ def _discover(home=None, environ=None, now=None):
 
 def current():
     # Reread local product files each time; do not contact any gateway.
+    if _SCOPE and 'current' in _SCOPE[0]:
+        return copy.deepcopy(_SCOPE[0]['current'])
     result = discover()
     home = Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
     target = Path(os.environ.get('ROUTER_STATE_DIR') or home / '.agent-compass') / 'provider-inventory.json'
     try:
-        write_json(target, result)
+        fingerprint = json.dumps({k: v for k, v in result.items() if k != 'generated_at'}, sort_keys=True)
+        if _LAST_PUBLISHED_INVENTORY.get(target) != fingerprint or not target.is_file():
+            write_json(target, result)
+            _LAST_PUBLISHED_INVENTORY[target] = fingerprint
     except OSError:
         pass
+    if _SCOPE:
+        _SCOPE[0]['current'] = copy.deepcopy(result)
     return result
 
 

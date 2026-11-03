@@ -735,9 +735,6 @@ class Panel:
         if key == self.current:
             return
         already_built = key in self.built
-        if key not in self.built:
-            self.built.add(key)
-            getattr(self, f"build_{key}")(self.pages[key])  # built while unmapped: it appears complete
         previous, self.current = self.current, key
         if previous == "scoring" and hasattr(self, "theatre"):
             self.theatre.stop()
@@ -745,6 +742,9 @@ class Panel:
             active = name == key
             self.paint_nav(name, theme.ACCENT if active else theme.INK, "#FFFFFF" if active else "#CBD5E1", active)
         with freeze_redraw(self.content):
+            if not already_built:
+                self.built.add(key)
+                getattr(self, f"build_{key}")(self.pages[key])  # built while unmapped: it appears complete
             if previous is not None:
                 self.pages[previous].pack_forget()
             self.pages[key].pack(fill="both", expand=True)
@@ -1425,6 +1425,7 @@ class Panel:
         self.run(lambda: self.data_module().refresh_usage(accounts), self.say(lambda: done(None)), _tr("正在请求刷新额度…"))
 
     def quota_cards_loaded(self, cards):
+        self._rendered_quota_cards = cards
         shape = tuple((card["account"], tuple(w["id"] for w in card["windows"])) for card in cards)
         metered_cards = [card for card in cards if card["windows"]]
         unmetered_cards = [card for card in cards if not card["windows"]]
@@ -1460,7 +1461,8 @@ class Panel:
     def quota_loaded(self, value):
         cards, workers = value
         self.worker_rows = workers
-        self.quota_cards_loaded(cards)
+        if cards is not getattr(self, "_rendered_quota_cards", None):
+            self.quota_cards_loaded(cards)
         self.worker_table.delete(*self.worker_table.get_children())
         for index, worker in enumerate(workers):
             share = (worker["historical_tokens"] or 0) / worker["limit"] if worker["limit"] else 0
@@ -1625,16 +1627,17 @@ class Panel:
             return
         self.setting_switch.set(key)
         revisit = key in self.settings_built
-        if not revisit:
-            self.settings_built.add(key)
-            getattr(self, f"build_setting_{key}")(self.setting_frames[key])
         with freeze_redraw(self.policy_stack):
+            if not revisit:
+                self.settings_built.add(key)
+                getattr(self, f"build_setting_{key}")(self.setting_frames[key])
             if self.current_setting is not None:
                 self.setting_frames[self.current_setting].pack_forget()
             self.current_setting = key
             self.setting_frames[key].pack(fill="both", expand=True)
         if revisit and key == "models":
-            self.load_models()
+            if time.monotonic() - getattr(self, "_models_loaded_at", 0.0) >= 5.0:
+                self.load_models()
 
     open_setting = show_setting
 
@@ -1666,11 +1669,13 @@ class Panel:
         self.model_shape = None
         self.model_widgets = []
         self._catalog_refreshing = False
+        self._models_prefilled = False
         self.prefill(lambda: self.data_module().harness_model_rows(), self.models_rows_loaded)
-        self.load_models()
+        self.load_models(skip_rows=self._models_prefilled)
 
-    def load_models(self):
-        self.run(lambda: self.data_module().harness_model_rows(), self.models_rows_loaded)
+    def load_models(self, skip_rows: bool = False):
+        if not skip_rows:
+            self.run(lambda: self.data_module().harness_model_rows(), self.models_rows_loaded)
         self.load_cli()
         self.load_boost()
         self.refresh_model_availability()
@@ -1695,6 +1700,8 @@ class Panel:
         self.run(work, done, long=True)
 
     def models_rows_loaded(self, rows):
+        self._models_prefilled = True
+        self._models_loaded_at = time.monotonic()
         shape = tuple((row["account"], row["harness"]) for row in rows)
         if shape != getattr(self, "model_shape", None):
             with freeze_redraw(self.model_rows):
@@ -1755,6 +1762,9 @@ class Panel:
         widgets = {"on": on, "check": check, "version": version, "pill": pill, "chips": selection,
                    "dropdown": dropdown, "overflow": overflow, "cwd": cwd, "row": row, "selected_models": [], "chip_labels": []}
         def resize(event):
+            if event.width <= 1 or event.width == widgets.get("_last_chip_width"):
+                return
+            widgets["_last_chip_width"] = event.width
             pending = getattr(selection, "_chip_after", None)
             if pending:
                 selection.after_cancel(pending)
@@ -1792,7 +1802,10 @@ class Panel:
         holder = widgets["chips"]
         holder._chip_after = None
         labels, edit, overflow = widgets["chip_labels"], widgets["dropdown"], widgets["overflow"]
-        width = holder.winfo_width() if holder.winfo_width() > 1 else theme.px(420)
+        live_w = holder.winfo_width()
+        if live_w > 1:
+            widgets["_last_chip_width"] = live_w
+        width = live_w if live_w > 1 else theme.px(420)
         sizes = [label.winfo_reqwidth() for label in labels]
         overflow.configure(text=f"+{len(labels)}")
         count, positions, rows = selected_chip_layout(sizes, width, edit.winfo_reqwidth(), overflow.winfo_reqwidth(), theme.px(5))
@@ -2159,7 +2172,8 @@ class Panel:
         self.build_setting_tuning(scroll.body)
         self.build_setting_value(scroll.body)
         self.build_setting_dna(scroll.body)
-        self.load_strategy()
+        if not getattr(self, "_value_ready", False):
+            self.load_strategy()
 
     def load_strategy(self):
         self.load_tuning()
@@ -2368,14 +2382,15 @@ class Panel:
             self._factor_choices = payload[2]
         default = factors.get("default", 1.0)
         self.harness_default.set(f"{float(default):g}")
-        for holder in list(self.harness_rule_rows):
-            self.remove_harness_rule(holder)
-        for rule in factors.get("rules") or []:
-            self.add_harness_rule(rule)
+        with freeze_redraw(self.harness_table):
+            for holder in list(self.harness_rule_rows):
+                self.remove_harness_rule(holder, _batch=True)
+            for rule in factors.get("rules") or []:
+                self.add_harness_rule(rule, _batch=True)
+            self._place_harness_rows()
         for key, var in self.exchange_vars.items():
             value = exchange.get(key)
             var.set("" if value is None else f"{float(value):g}")
-        self._apply_choice_lists()
         self._paint_default_factor()
         self._value_ready = True
         self._refresh_strategy_scroll()
@@ -2458,7 +2473,7 @@ class Panel:
             current[key] = text if key == "factor" else blank(text)
         return current
 
-    def add_harness_rule(self, rule=None):
+    def add_harness_rule(self, rule=None, _batch: bool = False):
         rule = rule or {}
         tk, ttk = self.tk, self.ttk
         holder = {"basis": rule.get("basis") or "", "widgets": {}}
@@ -2481,9 +2496,10 @@ class Panel:
             holder[key].trace_add("write", lambda *_args, holder=holder: self._paint_row_factor(holder))
         holder["snapshot"] = self._row_current(holder)
         self.harness_rule_rows.append(holder)
-        self._place_harness_rows()
         self._paint_row_factor(holder)
-        self._refresh_strategy_scroll()
+        if not _batch:
+            self._place_harness_rows()
+            self._refresh_strategy_scroll()
         return holder
 
     def _place_harness_rows(self):
@@ -2493,7 +2509,7 @@ class Panel:
                 holder["widgets"][key].grid(row=index, column=column, sticky="ew", padx=(0, 6), pady=1)
             holder["delete"].grid(row=index, column=len(keys), sticky="w", pady=1)
 
-    def remove_harness_rule(self, holder):
+    def remove_harness_rule(self, holder, _batch: bool = False):
         if holder in self.harness_rule_rows:
             self.harness_rule_rows.remove(holder)
         widgets = list(holder.get("widgets", {}).values())
@@ -2503,8 +2519,9 @@ class Panel:
         for widget in widgets:
             if widget is not None and widget.winfo_exists():
                 widget.destroy()
-        self._place_harness_rows()
-        self._refresh_strategy_scroll()
+        if not _batch:
+            self._place_harness_rows()
+            self._refresh_strategy_scroll()
 
     def _refresh_strategy_scroll(self):
         scroll = getattr(self, "strategy_scroll", None)
@@ -2704,8 +2721,9 @@ class Panel:
         ttk.Button(box, text=_tr("查看 CLI 日志"), style="Small.TButton",
                    command=lambda: self.run(cli_updates.open_log, self.say())).grid(row=6, column=1, sticky="e", padx=8)
         self.build_scorer_card(frame)
+        self._system_prefilled = False
         self.prefill(self._read_system_fast, self._system_fast_loaded)
-        self.load_system()
+        self.load_system(skip_fast=self._system_prefilled)
 
     def build_scorer_card(self, frame):
         tk, ttk = self.tk, self.ttk
@@ -2825,14 +2843,18 @@ class Panel:
         return self.data_module().dot_details(), self._read_scorer_safe()
 
     def _system_fast_loaded(self, value):
+        self._system_prefilled = True
         dot, scorer = value
         self.dot_repo_var.set(dot.get("transfer_repo") or "")
         self.scorer_loaded(scorer)
 
-    def load_system(self):
+    def load_system(self, skip_fast: bool = False):
         import deploy
 
-        self.run(lambda: (deploy.startup_enabled(), *self._read_system_fast()), self.system_loaded)
+        if skip_fast:
+            self.run(deploy.startup_enabled, lambda on: self.autostart_var.set(bool(on)))
+        else:
+            self.run(lambda: (deploy.startup_enabled(), *self._read_system_fast()), self.system_loaded)
 
     def system_loaded(self, value):
         startup_on, dot, scorer = value
