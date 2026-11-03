@@ -1950,6 +1950,12 @@ def evaluate_bundle(bundle, task, ctx):
                     continue        # the work starts after the reset, when the short window is full again
                 continue            # running a standard short window dry only delays work until its reset; the weekly window prices the loss
             if unit is None:
+                # Unknown burn rate does not make a fresh near-empty window usable: any work needs at least the margin.
+                if not (acct_stale or state['stale']) and state['remaining'] < policy['safety_margin_pct']:
+                    exclude(f'{wid} has {state["remaining"]:.1f}% left, under the {policy["safety_margin_pct"]}% margin, '
+                            f'and it resets in {state["reset_hours"] / 24:.1f} days')
+                    result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+                    continue
                 result['notes'].append(f'{wid}: observed {state["remaining"]:.1f}% remaining'
                                        + (' (stale)' if acct_stale or state['stale'] else '')
                                        + '; consumption rate unknown')

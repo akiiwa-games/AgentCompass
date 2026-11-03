@@ -115,7 +115,11 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
                                       allocator.model_spec(accounts, model))
     siblings = [b for b in allocator.bundles(accounts).values()
                 if allocator.canonical(b.get('model'), accounts) == model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
-    exact = next((b for b in siblings if b.get('effort') == bundle.get('effort')), None)
+    # Auto-discovered twins can share provider/account/model/effort; keep the ranked id, never a disabled twin.
+    same = [b for b in siblings if b.get('effort') == bundle.get('effort')]
+    wanted = bundle.get('bundle_id') or bundle.get('id')
+    exact = (next((b for b in same if b.get('id') == wanted), None)
+             or next((b for b in same if not b.get('disabled')), None) or next(iter(same), None))
     if exact:
         return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
     if not explicit_override:
