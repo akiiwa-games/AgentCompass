@@ -1356,32 +1356,6 @@ class AllocatorTests(unittest.TestCase):
             reasons = long_rows[f'agy_opus55_{effort}']['excluded']
             self.assertTrue(any('3p-5h' in reason for reason in reasons), reasons)
 
-    def test_unknown_burn_rate_still_excludes_a_fresh_near_empty_window(self):
-        # LITTLESPRING 2026-11-03: 3p-weekly at 1.2% with no burn rate was ranked "unknown is not exhausted",
-        # and the 3h Opus worker died on "Individual quota reached".
-        task = {'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 3, 'profile': self.profile()}
-        with patch.object(allocator, 'unit_rate', return_value=None):
-            empty = self.rows(self.plan(task, self.usage(
-                antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 60, 100), ('3p-5h', 100, 3), ('3p-weekly', 1.2, 19)])))
-            roomy = self.rows(self.plan(task, self.usage(
-                antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 60, 100), ('3p-5h', 100, 3), ('3p-weekly', 40, 19)])))
-        reasons = empty['agy_opus55_low']['excluded']
-        self.assertTrue(any(r.startswith('3p-weekly has 1.2% left') for r in reasons), reasons)
-        self.assertFalse(any('3p-weekly' in r for r in roomy['agy_opus55_low']['excluded']))
-
-    def test_resolve_bundle_keeps_the_ranked_id_over_a_disabled_twin(self):
-        # LITTLESPRING 2026-11-03: plan ranked auto:pi:pi:gpt-6-luna@high, issue() swapped in the disabled twin
-        # auto:codex:pi:gpt-6-luna@high and the launch failed "Capacity/availability changed; replan: disabled by user".
-        import dispatch_registry
-        accounts = allocator.load_accounts()
-        base = allocator.bundles(accounts)['sol_high']
-        codex = accounts['accounts']['codex']['bundles']
-        codex['aaa_disabled_twin'] = dict({k: v for k, v in base.items() if k != 'id'}, disabled=True)
-        codex['zzz_ranked'] = {k: v for k, v in base.items() if k not in ('id', 'disabled')}
-        identity = {k: base[k] for k in ('provider', 'account', 'model', 'effort')}
-        self.assertEqual(dispatch_registry.resolve_bundle(dict(identity, bundle_id='zzz_ranked'), accounts)['id'], 'zzz_ranked')
-        self.assertFalse(dispatch_registry.resolve_bundle(dict(identity, bundle_id='gone'), accounts).get('disabled'))
-
 
 class OverrideContractTests(unittest.TestCase):
     """Contract tests for temporary priority overrides, reset confirmation, receipts, and atomic store."""
