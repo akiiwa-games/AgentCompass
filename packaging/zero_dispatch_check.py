@@ -721,13 +721,14 @@ def step_quota_and_recovery(z: Zero):
         shutil.rmtree(alias_home, ignore_errors=True)
         refresh(10.0, 10.0)
 
-    op = run.operation("classifier failure", "a failing or nonsense classifier falls back to the keyword estimate, says so, and still routes")
+    op = run.operation("classifier failure", "a failing or nonsense classifier refuses mechanical fallback and returns control to the parent session")
     for marker in ("SCORER-FAIL", "SCORER-GARBAGE"):
         z.ctx["mark"] = time.time() - 1
+        before_workers = len(z.workers())
         result = z.call(op, "roll", "--task", z.task("ok", marker) + marker + "\n", "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "30")
         doc = parse(result.stdout) or {}
-        op.check(f"[{marker}] it still routes and the answer says the classifier model was not used",
-                 doc.get("status") in ("launched", "native", "pending") and any("classifier model was not used" in a for a in doc.get("assumptions", [])),
+        op.check(f"[{marker}] it refuses mechanical fallback (status scorer_unavailable) and launches no worker",
+                 doc.get("status") == "scorer_unavailable" and len(z.workers()) == before_workers and "parent" in (doc.get("next_action") or "").lower(),
                  json.dumps(doc)[:500] + result.stderr[-200:])
 
 

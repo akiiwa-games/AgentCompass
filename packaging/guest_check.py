@@ -53,7 +53,7 @@ def check(name, condition, detail=""):
 
 def base_env(**extra):
     env = dict(os.environ)
-    env.update({"PYTHONUTF8": "1", "ROUTER_SCORE_CACHE": "off", "ROUTER_SCORER_TYPE": "heuristic", "FIXTURE_STATE": str(STATE), "FIXTURE_BIN": str(BIN)})
+    env.update({"PYTHONUTF8": "1", "ROUTER_SCORE_CACHE": "off", "FIXTURE_SCORER": "1", "FIXTURE_STATE": str(STATE), "FIXTURE_BIN": str(BIN)})
     env.update({k: v for k, v in extra.items() if v is not None})
     for key in [k for k, v in extra.items() if v is None]:
         env.pop(key, None)

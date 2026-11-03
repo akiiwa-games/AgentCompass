@@ -184,6 +184,14 @@ class Fixture:
                 if host == "litellm" and path.endswith("/embeddings"):
                     return self._reply(200, {"data": []}, {"x-litellm-key-spend": str(fixture.proxy_spend),
                                                            "x-litellm-key-max-budget": "10"})
+                if self.path.endswith("/chat/completions"):
+                    profile = {"work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
+                               "context_scale": 1, "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
+                               "needs_visual": False, "needs_gui": False, "local_only": True, "expected_hours": 0.5,
+                               "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",
+                               "multi_task": False, "task_count": "1",
+                               "reason": "sandbox fixture classification of a local util.py edit"}
+                    return self._reply(200, {"choices": [{"message": {"content": json.dumps(profile)}}]})
                 return self._reply(404, {"error": "unknown fixture path"})
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -489,7 +497,11 @@ def scenario_entry_and_docs(ctx, box: Sandbox):
     (elsewhere / "task.md").write_text(TASK_TEXT + "\n", encoding="utf-8")
     (elsewhere / "task.json").write_text(json.dumps({"task": {"objective": TASK_TEXT, "expected_hours": 0.5, "needs": {"local_only": True}}}),
                                          encoding="utf-8")
-    offline = {"ROUTER_SCORER_TYPE": "heuristic"}          # the classifier stand-in: no model call
+    scorer_cfg = box.state / "scorer-config.json"
+    box.state.mkdir(parents=True, exist_ok=True)
+    scorer_cfg.write_text(json.dumps({"scorer_type": "openai_compatible", "base_url": f"{box.fixture.url}/v1",
+                                      "model": "sandbox-fixture-classifier", "api_key": "sandbox-scorer-key"}), encoding="utf-8")
+    offline = {"ROUTER_SCORER_CONFIG": str(scorer_cfg)}          # the classifier stand-in: local fixture HTTP server
     installed = [box.agentcompass]
     checkout = [box.python, "-I", "-X", "utf8", repo / "agentcompass"]
     modes = {"installed package": installed, "source checkout": checkout}

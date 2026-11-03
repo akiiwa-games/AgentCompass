@@ -93,6 +93,41 @@ function create(input) {
   return { ok: true, sent: true, agent: project(agent), completion_notification: receipt(agent) };
 }
 
+function resume(input) {
+  const parents = readJson(path.join(STATE, 'parents.json'), []);
+  if (typeof input.parent_id !== 'string' || !input.parent_id.trim() || input.parent_id === 'top-level')
+    return { ok: false, sent: false, error: 'addressable_parent_required' };
+  if (!parents.includes(input.parent_id)) return { ok: false, sent: false, error: 'parent_agent_not_found' };
+  const fault = takeFault('resume');
+  if (fault === 'reject') return { ok: false, sent: false, error: 'host_resume_failed' };
+  const existing = observeAgent(input.agent_id);
+  if (!existing) return { ok: false, sent: false, error: 'resume_agent_not_found' };
+  const request = input.request;
+  const slash = request.provider.indexOf('/');
+  const provider = request.provider.slice(0, slash), model = request.provider.slice(slash + 1);
+  const now = new Date().toISOString();
+  existing.status = 'running';
+  existing.updatedAt = now;
+  delete existing.attentionReason;
+  existing.labels = { ...(existing.labels || {}), ...(request.labels || {}) };
+  const family = fs.existsSync(path.join(BIN, `${provider}.exe`)) ? provider : 'codex';
+  const promptFile = path.join(STATE, 'agents', `${input.dispatch_id}.prompt.md`);
+  fs.mkdirSync(path.dirname(promptFile), { recursive: true });
+  fs.writeFileSync(promptFile, request.initialPrompt);
+  const out = fs.openSync(path.join(STATE, 'agents', `${input.dispatch_id}.out.txt`), 'w');
+  const err = fs.openSync(path.join(STATE, 'agents', `${input.dispatch_id}.err.txt`), 'w');
+  writeJson(agentFile(existing.id), existing);
+  const child = spawn(path.join(BIN, `${family}.exe`), ['exec', '-m', model, '-'], {
+    detached: true, windowsHide: true, stdio: [fs.openSync(promptFile, 'r'), out, err],
+    env: { ...process.env, FIXTURE_AGENT_ID: existing.id, ROUTER_PARENT_AGENT_ID: input.parent_id,
+      ROUTER_PARENT_ADDRESS: input.parent_id, ROUTER_PARENT_HOST: 'paseo', ROUTER_WORKER: '1' },
+  });
+  existing.pid = child.pid;
+  child.unref();
+  writeJson(agentFile(existing.id), existing);
+  return { ok: true, sent: true, agent: project(existing), completion_notification: receipt(existing) };
+}
+
 function observe(input) {
   if (takeFault('observe') === 'unavailable') return { ok: false, error: 'bridge_unavailable' };
   let agent = input.agent_id ? observeAgent(input.agent_id) : null;
@@ -117,9 +152,9 @@ process.stdin.on('end', () => {
   fs.appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), operation: input.operation, dispatch_id: input.dispatch_id, parent_id: input.parent_id }) + '\n');
   let result;
   try {
-    result = input.operation === 'create' ? create(input) : input.operation === 'observe' ? observe(input) : { ok: false, error: 'unsupported_operation' };
+    result = input.operation === 'create' ? create(input) : input.operation === 'resume' ? resume(input) : input.operation === 'observe' ? observe(input) : { ok: false, sent: false, error: 'unsupported_operation' };
   } catch (error) {
-    result = { ok: false, sent: input.operation === 'create', error: String(error.message || error) };
+    result = { ok: false, sent: input.operation === 'create' || input.operation === 'resume', error: String(error.message || error) };
   }
   fs.appendFileSync(path.join(STATE, 'bridge-responses.jsonl'), JSON.stringify({ at: new Date().toISOString(), operation: input.operation, dispatch_id: input.dispatch_id,
     answer: { ok: result.ok, sent: result.sent, error: result.error, missing: result.missing, agent: result.agent ? { id: result.agent.id, status: result.agent.status, attentionReason: result.agent.attentionReason } : null } }) + String.fromCharCode(10));

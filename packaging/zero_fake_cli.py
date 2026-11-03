@@ -36,6 +36,20 @@ def write(path: Path, document: dict) -> None:
 
 
 def main() -> int:
+    if "--json-schema" in sys.argv or "--output-schema" in sys.argv:
+        if os.environ.get("FIXTURE_SCORER") == "1":
+            profile = {
+                "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
+                "context_scale": 1, "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
+                "needs_visual": False, "needs_gui": False, "local_only": False, "expected_hours": 0.5,
+                "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",
+                "multi_task": False, "task_count": "1",
+                "reason": "fixture scorer classification",
+            }
+            print(json.dumps({"structured_output": profile}))
+            return 0
+        sys.stderr.write("fixture CLI invoked as read-only scorer; use ScorerServer in zero_dispatch_check\n")
+        return 1
     name = EXE.stem.lower()
     prompt = ""
     if not sys.stdin.isatty():

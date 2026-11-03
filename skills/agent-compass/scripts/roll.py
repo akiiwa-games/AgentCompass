@@ -146,6 +146,8 @@ def match_reusable_worker(args, task, text, parent, workers=None):
         return None
     task_id = task.get('task_id')
     brief_path = task.get('brief_path')
+    if not brief_path and not getattr(args, 'task_id', None):
+        return None
     title = getattr(args, 'title', None) or title_of(text)
     stem = Path(brief_path).stem if brief_path else ''
     query_tokens = _match_tokens(stem, title)

@@ -2257,7 +2257,8 @@ def plan_stage(document, args):
     hours_estimate = None
     live_disabled = os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1'
     has_caller_spec = bool(task.get('work_kind') and task.get('difficulty'))
-    should_score = not args.no_score and (
+    fatal_gap = bool((readiness_gap(loaded_accounts, usage) or {}).get('fatal'))
+    should_score = not args.no_score and not fatal_gap and (
         args.score or task.get('auto_score')
         or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)
             and not (live_disabled and has_caller_spec))
