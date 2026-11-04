@@ -1026,6 +1026,26 @@ class AllocatorTests(unittest.TestCase):
                 self.assertGreater(row['capacity']['scarcity_cost'], 0)
                 self.assertGreater(self.rows(healthy)[owner]['score'], row['score'])
 
+    def test_pool_window_forecasts_demand_against_the_whole_pool(self):
+        # Two pooled accounts at a mean of 38.5% used hold 123% of one account's allowance out of 200%.
+        # Other work has already drawn 77% this period, so it is expected to keep drawing; a single-account
+        # scale (100 - 123 < 0) would forecast no demand and price the pool as free.
+        policy = allocator.load_accounts()['scoring']
+        now = datetime(2026, 11, 4, 8, tzinfo=timezone.utc)
+        observed = {'id': 'seven_day', 'used_pct': 38.5, 'accounts': 2, 'remaining_pct_before_reset': 123.0,
+                    'resets_at': '2026-11-09T11:00:00+00:00'}
+        state = allocator.window_state('seven_day', {'hours': 168}, observed, {}, now, 6)
+        self.assertEqual(state['full'], 200.0)
+        self.assertAlmostEqual(state['target_remaining'], 200.0 * state['end_hours'] / 168)
+        mean, _, rate, source = allocator.demand_forecast({}, 'seven_day', state, policy)
+        self.assertEqual(source, 'period average')
+        self.assertAlmostEqual(rate, 77.0 / (168 - state['reset_hours']))
+        self.assertGreater(mean, 0)
+        single = allocator.window_state('seven_day', {'hours': 168}, dict(observed, accounts=1, remaining_pct_before_reset=61.5),
+                                        {}, now, 6)
+        self.assertEqual(single['full'], 100.0)
+        self.assertAlmostEqual(allocator.demand_forecast({}, 'seven_day', single, policy)[2], 38.5 / (168 - single['reset_hours']))
+
     def test_weekly_demand_pace_floor_and_scarcity_boundary(self):
         policy = allocator.load_accounts()['scoring']
         spec = {'observed': {'w': {'pct_per_hour_24h': 0.0}}}

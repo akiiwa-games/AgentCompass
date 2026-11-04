@@ -680,11 +680,11 @@ def demand_forecast(spec, wid, state, policy):
         # Expected reset shortens future demand, not the elapsed observation period.
         elapsed = state['hours'] - state.get('natural_reset_hours', state['reset_hours'])
         if (not isinstance(rate, (int, float)) or rate < 0) and elapsed >= policy['demand_min_elapsed_hours'] and 'remaining' in state:
-            rate, source = max(0.0, 100 - state['remaining']) / elapsed, 'period average'
+            rate, source = max(0.0, state.get('full', 100.0) - state['remaining']) / elapsed, 'period average'
         if not isinstance(rate, (int, float)) or rate < 0:
-            rate, source = 100 / state['hours'], 'straight-line schedule'
+            rate, source = state.get('full', 100.0) / state['hours'], 'straight-line schedule'
         if source == 'observed' and state.get('remaining', 100) < state.get('target_remaining', 0):
-            rate = max(rate, float(policy.get('demand_pace_floor_ratio', 0.5)) * 100.0 / state['hours'])
+            rate = max(rate, float(policy.get('demand_pace_floor_ratio', 0.5)) * state.get('full', 100.0) / state['hours'])
     mean = rate * max(0.0, state['end_hours'])
     # the floor shrinks with the time left, so quota about to lapse costs nothing
     floor = policy['demand_sd_floor_pct'] * min(1.0, max(0.0, state['end_hours']) / 24)
@@ -1811,6 +1811,12 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
     return found
 
 
+def pool_size(observed):
+    """How many accounts a window reading pools (a Magpie pool reports `accounts: N`); 1 for a single account."""
+    count = (observed or {}).get('accounts')
+    return count if isinstance(count, int) and not isinstance(count, bool) and count > 1 else 1
+
+
 def window_state(wid, spec, observed, account_spec, now, short_hours, account_stale=False, expected_reset_at=None):
     """Remaining capacity, time to the end of the allowance and how sure we are."""
     hours = spec.get('hours')
@@ -1818,6 +1824,8 @@ def window_state(wid, spec, observed, account_spec, now, short_hours, account_st
     row = {'id': wid, 'hours': hours, 'short': hours is not None and hours < short_hours, 'known': False, 'stale': bool(account_stale)}
     if observed is None or hours is None:
         return row
+    # Percentages are of one account's allowance; a pool of N accounts holds N x 100 when full.
+    row['full'] = full = 100.0 * pool_size(observed)
     remaining = observed.get('remaining_pct_before_reset')
     if remaining is None:
         remaining = observed.get('observed_remaining_pct')
@@ -1842,7 +1850,7 @@ def window_state(wid, spec, observed, account_spec, now, short_hours, account_st
     if expiry_hours is not None:
         end_hours = min(end_hours, expiry_hours)
     row.update({'known': True, 'remaining': remaining, 'reset_hours': seconds / 3600, 'end_hours': end_hours,
-                'expiry_hours': expiry_hours, 'target_remaining': 100 * min(1.0, end_hours / hours),
+                'expiry_hours': expiry_hours, 'target_remaining': full * min(1.0, end_hours / hours),
                 'reset_at': observed.get('resets_at')})
     return row
 
@@ -1859,8 +1867,9 @@ def after_reset(state, hours):
     if left is not None and left <= 0:
         return None
     end = state['hours'] if left is None else min(state['hours'], left)
-    return dict(state, remaining=100.0, reset_hours=wait + state['hours'], end_hours=end,
-                target_remaining=100 * min(1.0, end / state['hours']), deferred_hours=wait,
+    full = state.get('full', 100.0)
+    return dict(state, remaining=full, reset_hours=wait + state['hours'], end_hours=end,
+                target_remaining=full * min(1.0, end / state['hours']), deferred_hours=wait,
                 expiry_hours=left)
 
 
