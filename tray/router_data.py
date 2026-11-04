@@ -147,7 +147,7 @@ def _accounts_fingerprint(allocator) -> tuple | None:
         return None
     paseo_home = Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo")
     files = (
-        refs / "accounts.json",
+        _public_accounts(allocator, refs),
         STATE_DIR / "accounts-override.json",
         STATE_DIR / "host-policy.json",
         STATE_DIR / "plugins.json",
@@ -342,7 +342,7 @@ def decision_series(pair: list[dict]) -> tuple[list[dict], list[dict]]:
 
 def model_table() -> dict:
     allocator, _ = modules()
-    accounts = allocator.load_accounts(allocator.REFERENCES / "accounts.json")
+    accounts = allocator.load_accounts(_public_accounts(allocator, allocator.REFERENCES))
     models = {name: {**info, "usd_per_hour": allocator.model_usd_per_hour(name, info),
                      "default_subjective": dict(info.get("subjective") or {})}
               for name, info in allocator.models_table(accounts).items()}
@@ -946,9 +946,16 @@ def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | N
         return _tr('已保存本机准入：{0} 个账号').format(f'{len(allowed)}')
 
 
+def _public_accounts(allocator, refs: Path) -> Path:
+    """The public accounts.json routing reads: the fetched copy when it is newer than the shipped one."""
+    shipped = refs / "accounts.json"
+    channel = getattr(allocator, "public_data", None)
+    return channel.effective(shipped) if hasattr(channel, "effective") else shipped
+
+
 def _accounts_path() -> Path:
     allocator, _ = modules()
-    return allocator.REFERENCES / "accounts.json"
+    return _public_accounts(allocator, allocator.REFERENCES)
 
 
 def _user_accounts_path(create: bool = False) -> Path:

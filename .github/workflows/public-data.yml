@@ -1,0 +1,28 @@
+name: public-data
+
+# Installs fetch skills/agent-compass/references from main and reject any file whose sha256 differs from
+# references/public-data.json, so a stale manifest on main silently stops every update. Fail the push instead.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "skills/agent-compass/references/**"
+      - "skills/agent-compass/scripts/public_data.py"
+  pull_request:
+    paths:
+      - "skills/agent-compass/references/**"
+      - "skills/agent-compass/scripts/public_data.py"
+
+permissions:
+  contents: read
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check that references/public-data.json matches the shipped reference data
+        run: python -X utf8 skills/agent-compass/scripts/public_data.py manifest --check

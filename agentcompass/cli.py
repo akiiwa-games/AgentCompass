@@ -33,7 +33,8 @@ delegate work:
 install and health:
   setup       first-run onboarding (--dry-run previews)
   uninstall   undo what setup changed
-  doctor      read-only report of Python, CLIs, accounts, cache, plugins, ports and hooks
+  doctor      read-only report of Python, CLIs, accounts, cache, reference data, plugins, ports and hooks
+  data        which public reference data routing reads (shipped or fetched); `data --refresh` checks for newer data now
 
 other stages: score, scorer, delegate, select, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
@@ -94,6 +95,15 @@ def usage_command(args: list[str]) -> int:
         return 0
     rest = [arg for arg in args if arg != "--once"]
     return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), "--once", *rest])
+
+
+def data_command(args: list[str]) -> int:
+    """Show or refresh the public reference data channel (skills/agent-compass/scripts/public_data.py)."""
+    script = locations.skill_root() / "agent-compass" / "scripts" / "public_data.py"
+    if not script.is_file():
+        sys.stderr.write(f"public_data.py was not found ({script})\n")
+        return 2
+    return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), *args])
 
 
 def runner_command(name: str, args: list[str]) -> int:
@@ -199,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
             return call_onboard(command, rest)
         if command == "plan":
             return plan_passthrough(rest)
+        if command == "data":
+            return data_command(rest)
         if command == "usage" and "--show" not in rest:
             return usage_command(rest)
         if command in RUNNERS:

@@ -22,6 +22,7 @@ import host_policy
 import override_store
 import antigravity_telemetry
 import provider_inventory
+import public_data
 import accounts_override
 import cwd_policy
 from model_resolution import generic_model_spec, resolve_canonical_model
@@ -504,8 +505,9 @@ def local_fleet_path(environ=None):
 
 
 def fleet_document_path(environ=None):
+    """accounts.local.json when saved, else the public accounts.json (the fetched copy when newer than the shipped one)."""
     local = local_fleet_path(environ)
-    return local if local is not None else REFERENCES / 'accounts.json'
+    return local if local is not None else public_data.effective(REFERENCES / 'accounts.json', environ)
 
 
 def configured_quota_sources(environ=None):

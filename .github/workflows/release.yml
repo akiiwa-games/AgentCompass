@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Check that references/public-data.json matches the shipped reference data
+        run: python -X utf8 skills/agent-compass/scripts/public_data.py manifest --check
       - name: Build the wheel
         run: |
           python -m pip install --upgrade build hatchling

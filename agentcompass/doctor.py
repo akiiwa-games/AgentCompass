@@ -89,6 +89,22 @@ def account_rows(home: Path, environ: dict | None) -> list | str:
     return rows
 
 
+def public_data_line(environ: dict | None) -> str:
+    """Which public reference data routing reads, and when it was last fetched. Read only."""
+    try:
+        script = locations.skill_root() / "agent-compass" / "scripts" / "public_data.py"
+        if not script.is_file():
+            return "unavailable (public_data.py is not in this install)"
+        spec = importlib.util.spec_from_file_location("agentcompass_public_data", script)
+        if spec is None or spec.loader is None:
+            return "unavailable (public_data.py could not be loaded)"
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.summary_line(module.status(environ))
+    except Exception as error:
+        return f"unavailable ({error.__class__.__name__}: {error})"
+
+
 def _tool_lines(checkout: Path | None) -> list[str]:
     if checkout is not None and (checkout / "tray" / "runtime_paths.py").is_file():
         tray = str(checkout / "tray")
@@ -219,6 +235,7 @@ def collect(home: Path | None = None) -> dict:
         "tools": _tool_lines(checkout),
         "accounts": account_rows(home, environ),
         "cache": _cache_line(home, environ),
+        "public_data": public_data_line(environ),
         "plugins": _plugin_lines(home),
         "ports": port_state,
         "listeners": listeners(list(port_state["ports"].values())),
@@ -252,6 +269,7 @@ def render(report: dict) -> str:
                 f"  {row.get('name')}: {row.get('status')} family={row.get('family')}{plan} home={row.get('home')}"
             )
     lines.append(f"Usage cache: {report.get('cache', '')}")
+    lines.append(f"Reference data: {report.get('public_data', '')}")
     lines.append("Plugins:")
     lines.extend(report.get("plugins") or ["  none"])
     lines.append("Ports:")

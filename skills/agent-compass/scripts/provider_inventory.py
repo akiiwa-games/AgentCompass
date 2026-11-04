@@ -19,6 +19,7 @@ import sqlite3
 import tempfile
 import tomllib
 from model_resolution import resolve_canonical_model
+import public_data
 import usage_cache
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -100,12 +101,13 @@ def plan_defaults(accounts, family, plan):
     account; other keys (provenance, basis, price) are documentation.
     """
     global _SHIPPED_PLAN_TEMPLATES
-    if _SHIPPED_PLAN_TEMPLATES is None or read_json is not _STDLIB_READ_JSON:
-        shipped, _ = read_json(PLAN_TEMPLATES)
+    source = public_data.effective(PLAN_TEMPLATES)  # the fetched public copy when it is newer than the shipped one
+    if _SHIPPED_PLAN_TEMPLATES is None or _SHIPPED_PLAN_TEMPLATES[0] != source or read_json is not _STDLIB_READ_JSON:
+        shipped, _ = read_json(source)
         if read_json is _STDLIB_READ_JSON and shipped:
-            _SHIPPED_PLAN_TEMPLATES = shipped
+            _SHIPPED_PLAN_TEMPLATES = (source, shipped)
     else:
-        shipped = _SHIPPED_PLAN_TEMPLATES
+        shipped = _SHIPPED_PLAN_TEMPLATES[1]
     overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
     base = obj(shipped.get(family))
     template = None

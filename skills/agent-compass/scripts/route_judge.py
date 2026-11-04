@@ -19,6 +19,7 @@ import dispatch_registry
 import dispatch_flow
 import entry
 import provider_inventory
+import public_data
 import roll
 import stage_help
 import usage_cache
@@ -993,7 +994,7 @@ def scorer_schema(allocator, capabilities):
 
 def load_classifier_cases():
     try:
-        doc = json.loads(CLASSIFIER_CASES_PATH.read_text(encoding='utf-8-sig'))
+        doc = json.loads(public_data.effective(CLASSIFIER_CASES_PATH).read_text(encoding='utf-8-sig'))
         return {k: doc[k] for k in ('route_definitions', 'dimension_rubric', 'calibration_cases') if k in doc}
     except (OSError, ValueError):
         return {}
@@ -2518,6 +2519,9 @@ def main():
         return 0 if args.help else 2
     global LEDGER_WRITES
     LEDGER_WRITES = not (args.dry_run and args.stage in ('plan', 'record', 'roll'))
+    if args.stage in ('roll', 'plan', 'providers', 'select') and not args.demo:
+        # This run keeps the reference set it starts with; a due refresh runs beside it and applies to the next run.
+        public_data.refresh_in_background()
     try:
         if args.demo and (args.stage != 'plan' or not args.dry_run):
             raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
@@ -2571,7 +2575,8 @@ def main():
             code = 1 if result.get('state') == 'failed' else 0
         elif args.stage == 'providers':
             accounts = load_allocator().load_accounts()
-            result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync')}
+            result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync'),
+                      'public_data': public_data.status()}
             code = 0
         elif args.stage == 'usage':
             result = usage_snapshot(args.usage_cache, args.accounts)

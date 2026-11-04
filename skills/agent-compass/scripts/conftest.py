@@ -18,3 +18,9 @@ def unittest_module_cleanups():
 def disabled_score_cache(monkeypatch):
     """Tests never touch the machine's real score cache and count scorer calls; cache tests opt back in."""
     monkeypatch.setenv('ROUTER_SCORE_CACHE', 'off')
+
+
+@pytest.fixture(autouse=True)
+def offline_public_data(monkeypatch):
+    """Tests read the shipped references and never fetch public data; test_public_data opts back in."""
+    monkeypatch.setenv('AGENTCOMPASS_PUBLIC_DATA', 'off')

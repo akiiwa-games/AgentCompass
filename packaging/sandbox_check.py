@@ -327,6 +327,7 @@ class Sandbox:
                "CODEX_HOME": str(self.codex), "ROUTER_PROVIDER_HOME": str(self.home),
                "ROUTER_STATE_DIR": str(self.state), "PASEO_HOME": str(self.home / ".paseo"),
                "PYTHONUTF8": "1", "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(NETGUARD),
+               "AGENTCOMPASS_PUBLIC_DATA": "off",  # the public reference data channel would reach GitHub
                "AC_SANDBOX_PROXY": self.fixture.url, "AC_SANDBOX_HOSTS": ",".join(ALLOWED_HOSTS),
                "AC_SANDBOX_NETLOG": str(self.netlog),
                "AC_SANDBOX_PORTS": ",".join(str(p) for p in sorted({self.fixture.server.server_address[1], *self.ports}))}
