@@ -152,6 +152,20 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(snapshot['accounts']['grok']['status'], 'missing_client')
         self.assertEqual(snapshot['saved'][0]['bound_to'], [])
 
+    def test_antigravity_tier_read_from_google_sets_the_plan_and_proves_sign_in(self):
+        snapshot = self.discover()
+        self.assertFalse(inventory.sign_in_proven(snapshot['accounts']['antigravity']))
+        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Pro', 'tier_id': 'g1-pro-tier'})
+        row = self.discover()['accounts']['antigravity']
+        self.assertEqual(row['plan'], 'Google AI Pro')
+        self.assertIn('account-tier', row['sources'])
+        self.assertTrue(inventory.sign_in_proven(row))
+        spec = self.apply(self.discover())['accounts']['antigravity']
+        self.assertEqual(spec['capacity_usd']['gemini-weekly'], 31)  # Pro, not the Ultra 20x default
+        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Ultra', 'tier_id': 'g1-ultra-tier'})
+        spec = self.apply(self.discover())['accounts']['antigravity']
+        self.assertEqual(spec['capacity_usd']['gemini-weekly'], 625)
+
     def test_grok_no_usage_is_eligible_without_unlimited_bonus_and_launchable(self):
         self.paseo({'grok': {'extends': 'acp', 'enabled': True}})
         snapshot = self.discover()

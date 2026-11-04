@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 import tempfile
 import tomllib
+import antigravity_plan
 from model_resolution import resolve_canonical_model
 import public_data
 import usage_cache
@@ -681,10 +682,12 @@ def _discover(home=None, environ=None, now=None):
     agy_present = bool(_which('agy', environ.get('PATH')))
     # agy answers /usage only for a signed-in account, so a quota reading is the sign-in proof.
     agy_read = bool(array(agy.get('windows'))) and not agy.get('error')
+    # /usage carries no tier; the tier comes from Google with agy's own sign-in (antigravity_plan), which is also a sign-in proof.
+    agy_tier = antigravity_plan.cached_plan(state_dir)
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
-        'sources': ['native'] + (['usage-cache'] if agy_read else []),
+        'sources': ['native'] + (['usage-cache'] if agy_read else []) + (['account-tier'] if agy_tier else []),
         'status': 'ready' if agy_present else 'missing_client',
-        'plan': agy.get('plan_label'), 'billing': 'subscription'}
+        'plan': agy.get('plan_label') or agy_tier, 'billing': 'subscription'}
     opencode = result['launchers']['opencode']
     installed = bool(_which('opencode', environ.get('PATH')))
     if opencode['status'] == 'ready' and not installed:
@@ -1042,7 +1045,7 @@ def sign_in_proven(row):
     sources = row.get('sources') or []
     if isinstance(sources, str):
         sources = [sources]
-    return 'usage-cache' in sources or bool(row.get('identity') or row.get('credential_key'))
+    return bool({'usage-cache', 'account-tier'} & set(sources)) or bool(row.get('identity') or row.get('credential_key'))
 
 
 def launch_verified(row, previous):

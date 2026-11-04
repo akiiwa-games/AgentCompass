@@ -24,3 +24,4 @@ def disabled_score_cache(monkeypatch):
 def offline_public_data(monkeypatch):
     """Tests read the shipped references and never fetch public data; test_public_data opts back in."""
     monkeypatch.setenv('AGENTCOMPASS_PUBLIC_DATA', 'off')
+    monkeypatch.setenv('AGENTCOMPASS_ANTIGRAVITY_PLAN', 'off')

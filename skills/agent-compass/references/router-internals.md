@@ -166,6 +166,10 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 - [`public-data.json`](public-data.json) — Manifest of the public reference data (sha256 per file, data schema, publish time); see Public reference data below.
 - [`scripts/route_judge.py`](../scripts/route_judge.py) · [`scripts/allocator.py`](../scripts/allocator.py) · [`scripts/host_policy.py`](../scripts/host_policy.py) · [`scripts/check_router_contract.py`](../scripts/check_router_contract.py)
 
+### Antigravity plan tier
+
+`agy -p /usage` reports only bucket fractions, so the tier that sizes them is read from Google the way agy learns it: `scripts/antigravity_plan.py` takes agy's own sign-in from the OS keyring (service `gemini`, user `antigravity`), calls cloudcode `loadCodeAssist` and keeps `paidTier` (for example `g1-ultra-tier`, "Google AI Ultra") in `~/.agent-compass/antigravity-plan.json`. Discovery reads only that file, sets the account `plan` (which picks the plan template) and counts the read as a sign-in proof. `roll`, `plan`, `providers` and `select` refresh it in the background every 12 hours (30 minutes after a failure); an expired agy token or failed request keeps the last good tier, and with no tier yet the `antigravity.default` template (Ultra 20x) applies. Off switch: `AGENTCOMPASS_ANTIGRAVITY_PLAN=off`. Google reports Ultra without a 5x/20x split, so Ultra routes on the Ultra 20x prior unless the account document names `Google AI Ultra (5x)`.
+
 ## 5. Public Reference Data (Updates Between Releases)
 
 Prices, new models, plan capacities and classifier calibration change faster than releases. Every install (git checkout, pip wheel, tray installer) ships `accounts.json`, `plan-templates.json` and `classifier-cases.json` with [`public-data.json`](public-data.json), and keeps them current from the repository's `main` branch ([`scripts/public_data.py`](../scripts/public_data.py)):

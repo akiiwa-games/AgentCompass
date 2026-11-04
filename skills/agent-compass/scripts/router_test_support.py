@@ -31,7 +31,8 @@ def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
                ROUTER_LEDGER=str(root / 'ledger.jsonl'), ROUTER_USAGE_CACHE=str(root / 'usage.json'),
                ROUTER_CAPACITY=str(root / 'capacity.json'), ROUTER_OVERRIDES=str(root / 'overrides.json'),
                ROUTER_ACCOUNTS_OVERRIDE=str(root / 'accounts-override.json'),
-               ROUTER_SCORER_CONFIG=str(root / 'scorer-config.json'), AGENTCOMPASS_PUBLIC_DATA='off')
+               ROUTER_SCORER_CONFIG=str(root / 'scorer-config.json'), AGENTCOMPASS_PUBLIC_DATA='off',
+               AGENTCOMPASS_ANTIGRAVITY_PLAN='off')
     # Point tests at the checked-in fixture so they do not depend on the current public data.
     reference = Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json'
     if reference.is_file():

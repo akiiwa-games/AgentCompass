@@ -19,6 +19,7 @@ import dispatch_registry
 import dispatch_flow
 import entry
 import provider_inventory
+import antigravity_plan
 import public_data
 import roll
 import stage_help
@@ -2531,6 +2532,7 @@ def main():
     if args.stage in ('roll', 'plan', 'providers', 'select') and not args.demo:
         # This run keeps the reference set it starts with; a due refresh runs beside it and applies to the next run.
         public_data.refresh_in_background()
+        antigravity_plan.refresh_in_background(public_data.state_dir())
     try:
         if args.demo and (args.stage != 'plan' or not args.dry_run):
             raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
