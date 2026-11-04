@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import component_launch
 import plugins
 import radar_chart
+import ability_floor_chart
 import decision_theatre
 import decision_summary
 import display_names
@@ -2196,6 +2197,7 @@ class Panel:
         scroll = ScrollFrame(frame)
         self.strategy_scroll = scroll
         self.build_setting_tuning(scroll.body)
+        self.build_setting_ability_floors(scroll.body)
         self.build_setting_value(scroll.body)
         self.build_setting_dna(scroll.body)
         if not getattr(self, "_value_ready", False):
@@ -2203,6 +2205,7 @@ class Panel:
 
     def load_strategy(self):
         self.load_tuning()
+        self.load_ability_floors()
         self.load_value()
         self.load_dna()
 
@@ -2216,18 +2219,24 @@ class Panel:
             return
         factors = self.collect_harness_factors() if ready else None
         exchange = self.collect_opportunity_exchange() if ready else None
+        floors, route_floors = self.collect_ability_floors()
         def work():
             kwargs = {}
             if factors is not None:
                 kwargs["harness_factors"] = factors
             if exchange is not None:
                 kwargs["opportunity_exchange"] = exchange
+            if floors is not None:
+                kwargs["ability_floors"] = floors
+            if route_floors is not None:
+                kwargs["route_ability_floors"] = route_floors
             return self.data_module().save_strategy(values, model, draft, **kwargs)
         def done(message):
             self.status.set(message)
             if model and model in self.models:
                 self.models[model]["subjective"] = draft
             self.render_dna_preview()
+            self.load_ability_floors()
             self._remember_value_snapshots()
         self.run(work, done)
 
@@ -2343,7 +2352,225 @@ class Panel:
 
     def reload_strategy_figures(self):
         self.load_tuning()
+        self.load_ability_floors()
         self.load_value()
+
+    def build_setting_ability_floors(self, frame):
+        tk, ttk = self.tk, self.ttk
+        from router_data import ABILITY_FLOOR_KEYS, ABILITY_FLOOR_LABELS
+
+        box = theme.card(frame, padding=10, fill="x", pady=(8, 0))
+        self.ability_floor_card = box
+
+        head = ttk.Frame(box, style="Card.TFrame")
+        head.pack(fill="x")
+        title_col = ttk.Frame(head, style="Card.TFrame")
+        title_col.pack(side="left", fill="x", expand=True)
+        ttk.Label(title_col, text=_tr("能力门槛与模型分布"), style="CardH3.TLabel").pack(anchor="w")
+        ttk.Label(
+            title_col,
+            text=_tr("展示各模型在不同思考档位下的有效能力区间，以及四个难度门槛、路由专属门槛与关键任务余量。"),
+            style="CardTiny.TLabel",
+            wraplength=theme.px(560),
+        ).pack(anchor="w", pady=(2, 0))
+
+        actions = ttk.Frame(head, style="Card.TFrame")
+        actions.pack(side="right", anchor="ne")
+        ttk.Button(
+            actions,
+            text=_tr("恢复默认门槛"),
+            style="Small.TButton",
+            command=self.restore_ability_floors,
+        ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            actions,
+            text=_tr("保存门槛"),
+            style="SmallAccent.TButton",
+            command=self.save_ability_floors,
+        ).pack(side="right")
+
+        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=7)
+
+        controls = ttk.Frame(box, style="Card.TFrame")
+        controls.pack(fill="x", pady=(0, 4))
+        self.ability_floor_vars = {}
+        self.ability_floor_entries = {}
+        self.route_floor_vars = {}
+        self.route_floor_entries = {}
+        self._syncing_floors = False
+
+        for idx, key in enumerate(ABILITY_FLOOR_KEYS):
+            lbl = _tr(ABILITY_FLOOR_LABELS.get(key, key))
+            cell = ttk.Frame(controls, style="Card.TFrame")
+            cell.pack(side="left", padx=(0, 14))
+            ttk.Label(cell, text=lbl, style="Card.TLabel").pack(side="left", padx=(0, 4))
+            var = tk.StringVar(value="")
+            spin = ttk.Spinbox(
+                cell,
+                from_=1.0,
+                to=5.5,
+                increment=0.05,
+                textvariable=var,
+                width=6,
+                font=(self.mono, 9),
+                command=lambda k=key: self.on_floor_entry_change(k),
+            )
+            spin.pack(side="left")
+            spin.bind("<Return>", lambda _e, k=key: self.on_floor_entry_commit(k))
+            spin.bind("<FocusOut>", lambda _e, k=key: self.on_floor_entry_change(k))
+            var.trace_add("write", lambda *_a, k=key: self.on_floor_entry_change(k))
+            self.ability_floor_vars[key] = var
+            self.ability_floor_entries[key] = spin
+            if idx < len(ABILITY_FLOOR_KEYS) - 1:
+                ttk.Label(cell, text="≤", style="CardTiny.TLabel").pack(side="left", padx=(8, 0))
+
+        self.route_floor_bar = ttk.Frame(controls, style="Card.TFrame")
+        self.route_floor_bar.pack(side="right")
+
+        self.floor_preview_var = tk.StringVar(value=_tr("拖动门槛线或调整数值可实时预览准入模型变化"))
+        self.floor_preview_label = ttk.Label(
+            box,
+            textvariable=self.floor_preview_var,
+            style="CardTiny.TLabel",
+            wraplength=theme.px(820),
+        )
+        self.floor_preview_label.pack(anchor="w", pady=(2, 4))
+
+        self.ability_floor_chart = ability_floor_chart.AbilityFloorChartCanvas(
+            box,
+            data_loader=lambda: self.data_module().ability_floor_chart_data(),
+            on_floor_drag=self._on_floor_chart_drag,
+            on_floor_commit=self._on_floor_chart_commit,
+            width=theme.px(860),
+            height=theme.px(440),
+        )
+        self.ability_floor_chart.pack(fill="x", expand=True)
+        self.prefill(lambda: self.data_module().ability_floor_chart_data(), self.ability_floors_loaded)
+
+    def load_ability_floors(self):
+        self.run(lambda: self.data_module().ability_floor_chart_data(), self.ability_floors_loaded)
+
+    def _ensure_route_floor_widgets(self, route_floors: dict):
+        tk, ttk = self.tk, self.ttk
+        from router_data import ABILITY_FLOOR_LABELS
+        for rk in sorted(route_floors):
+            if rk in self.route_floor_vars:
+                continue
+            r_name, diff = rk.split(".", 1) if "." in rk else (rk, "hard")
+            r_label = f"{display_names.kind_label(r_name)}·{_tr(ABILITY_FLOOR_LABELS.get(diff, diff))}"
+            cell = ttk.Frame(self.route_floor_bar, style="Card.TFrame")
+            cell.pack(side="left", padx=(8, 0))
+            ttk.Label(cell, text=r_label, style="CardTiny.TLabel").pack(side="left", padx=(0, 4))
+            var = tk.StringVar(value="")
+            spin = ttk.Spinbox(
+                cell,
+                from_=1.0,
+                to=5.5,
+                increment=0.05,
+                textvariable=var,
+                width=6,
+                font=(self.mono, 9),
+                command=lambda k=rk: self.on_floor_entry_change(k),
+            )
+            spin.pack(side="left")
+            spin.bind("<Return>", lambda _e, k=rk: self.on_floor_entry_commit(k))
+            spin.bind("<FocusOut>", lambda _e, k=rk: self.on_floor_entry_change(k))
+            var.trace_add("write", lambda *_a, k=rk: self.on_floor_entry_change(k))
+            self.route_floor_vars[rk] = var
+            self.route_floor_entries[rk] = spin
+
+    def ability_floors_loaded(self, chart_data: dict):
+        if not isinstance(chart_data, dict):
+            return
+        floors = chart_data.get("floors") or {}
+        route_floors = chart_data.get("route_floors") or {}
+        self._ensure_route_floor_widgets(route_floors)
+        self._syncing_floors = True
+        try:
+            for k, var in self.ability_floor_vars.items():
+                if k in floors:
+                    var.set(f"{float(floors[k]):.2f}")
+                entry = self.ability_floor_entries.get(k)
+                if entry is not None and entry.winfo_exists():
+                    entry.configure(style="TSpinbox")
+            for rk, var in self.route_floor_vars.items():
+                if rk in route_floors:
+                    var.set(f"{float(route_floors[rk]):.2f}")
+                entry = self.route_floor_entries.get(rk)
+                if entry is not None and entry.winfo_exists():
+                    entry.configure(style="TSpinbox")
+        finally:
+            self._syncing_floors = False
+        self.floor_preview_var.set(_tr("拖动门槛线或调整数值可实时预览准入模型变化"))
+        if hasattr(self, "ability_floor_chart"):
+            self.ability_floor_chart.set_data(chart_data, preview_diff=None)
+        self._refresh_strategy_scroll()
+
+    def collect_ability_floors(self) -> tuple[dict | None, dict | None]:
+        if not hasattr(self, "ability_floor_vars") or not self.ability_floor_vars:
+            return None, None
+        floors = {k: var.get().strip() for k, var in self.ability_floor_vars.items() if var.get().strip()}
+        routes = {rk: var.get().strip() for rk, var in getattr(self, "route_floor_vars", {}).items() if var.get().strip()}
+        return (floors or None), (routes or None)
+
+    def on_floor_entry_change(self, _changed_key: str | None = None):
+        if getattr(self, "_syncing_floors", False):
+            return
+        floors_raw, routes_raw = self.collect_ability_floors()
+        if not floors_raw:
+            return
+        data = self.data_module()
+        try:
+            clean_floors, clean_routes = data.validate_ability_floors(floors_raw, routes_raw)
+        except ValueError as exc:
+            self.floor_preview_var.set(str(exc))
+            return
+        preview = data.preview_ability_floor_change(
+            floors_override=clean_floors,
+            route_floors_override=clean_routes,
+        )
+        self.floor_preview_var.set(preview["summary"])
+        if hasattr(self, "ability_floor_chart"):
+            self.ability_floor_chart.set_data(preview["candidate"], preview_diff=preview)
+
+    def on_floor_entry_commit(self, _changed_key: str | None = None):
+        self.on_floor_entry_change(_changed_key)
+        self.save_ability_floors()
+
+    def _on_floor_chart_drag(self, draft_floors: dict, draft_routes: dict, preview_diff: dict | None):
+        self._syncing_floors = True
+        try:
+            for k, val in draft_floors.items():
+                if k in self.ability_floor_vars:
+                    self.ability_floor_vars[k].set(f"{float(val):.2f}")
+            for rk, val in draft_routes.items():
+                if rk in self.route_floor_vars:
+                    self.route_floor_vars[rk].set(f"{float(val):.2f}")
+        finally:
+            self._syncing_floors = False
+        if preview_diff and "summary" in preview_diff:
+            self.floor_preview_var.set(preview_diff["summary"])
+
+    def _on_floor_chart_commit(self, draft_floors: dict, draft_routes: dict):
+        self.run(
+            lambda: self.data_module().save_ability_floors(draft_floors, draft_routes),
+            self.say(self.load_ability_floors),
+        )
+
+    def save_ability_floors(self):
+        floors, routes = self.collect_ability_floors()
+        if not floors:
+            return
+        self.run(
+            lambda: self.data_module().save_ability_floors(floors, routes),
+            self.say(self.load_ability_floors),
+        )
+
+    def restore_ability_floors(self):
+        self.run(
+            lambda: self.data_module().restore_ability_floor_defaults(),
+            self.say(self.load_ability_floors),
+        )
 
     def build_setting_value(self, frame):
         tk, ttk = self.tk, self.ttk

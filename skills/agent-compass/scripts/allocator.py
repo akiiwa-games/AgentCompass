@@ -519,6 +519,13 @@ def load_accounts(path=None):
             user_doc = accounts_override.migrate(user_doc, accounts)
             if isinstance(user_doc.get('scoring'), dict):
                 accounts['scoring'] = accounts_override.merge(accounts['scoring'], user_doc['scoring'])
+            route_floors = (accounts.get('scoring') or {}).get('route_ability_floor')
+            if isinstance(route_floors, dict) and isinstance(accounts.get('capability_policy'), dict):
+                routes = accounts['capability_policy'].setdefault('routes', {})
+                for r_name, r_floors in route_floors.items():
+                    if isinstance(r_floors, dict) and isinstance(routes.get(r_name), dict):
+                        routes[r_name]['ability_floor'] = accounts_override.merge(
+                            routes[r_name].get('ability_floor') or {}, r_floors)
             for m_name, m_spec in (user_doc.get('models') or {}).items():
                 if isinstance(m_spec, dict) and isinstance(accounts.get('models', {}).get(m_name), dict):
                     if isinstance(m_spec.get('subjective'), dict):

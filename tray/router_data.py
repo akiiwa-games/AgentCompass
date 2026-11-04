@@ -1659,7 +1659,8 @@ def validate_opportunity_exchange(value: dict) -> dict:
 
 
 def save_strategy(values: dict, model: str | None, ratings: dict, harness_factors: dict | None = None,
-                  opportunity_exchange: dict | None = None) -> str:
+                  opportunity_exchange: dict | None = None, ability_floors: dict | None = None,
+                  route_ability_floors: dict | None = None) -> str:
     """Validate the whole form before committing scoring and model ratings together.
 
     harness_factors and opportunity_exchange are written only when the form supplies them.
@@ -1669,12 +1670,24 @@ def save_strategy(values: dict, model: str | None, ratings: dict, harness_factor
     clean = validate_tuning(values)
     factors = None if harness_factors is None else validate_harness_factors(harness_factors)
     exchange = None if opportunity_exchange is None else validate_opportunity_exchange(opportunity_exchange)
+    floors_clean = None
+    routes_clean = None
+    if ability_floors is not None or route_ability_floors is not None:
+        current_f = read_ability_floors()
+        merged_f = dict(current_f["floors"])
+        if ability_floors:
+            merged_f.update(ability_floors)
+        merged_r = dict(current_f["route_floors"])
+        if route_ability_floors:
+            merged_r.update(_flatten_route_floors(route_ability_floors))
+        floors_clean, routes_clean = validate_ability_floors(merged_f, merged_r)
     if model is not None and model not in model_table():
         raise ValueError(_tr('未知模型 {0}').format(model))
     subjective = {key: round(max(0.0, min(1.0, float(ratings[key]))), 2)
                   for key in ("divergence", "global_rigor", "module_precision")} if model else {}
     if model and "capability" in ratings:
         subjective["capability"] = round(radar_chart.clamp(float(ratings["capability"])), 2)
+    defaults_f = default_ability_floors() if floors_clean is not None else None
     def change(document):
         scoring = document.setdefault("scoring", {})
         for key, value in clean.items():
@@ -1697,10 +1710,700 @@ def save_strategy(values: dict, model: str | None, ratings: dict, harness_factor
                 block.pop(legacy, None)
             block.update(exchange)
             scoring["opportunity_exchange"] = block
+        if floors_clean is not None and defaults_f is not None:
+            _apply_floor_overrides_to_doc(document, floors_clean, routes_clean or {}, defaults_f)
         if model:
             document.setdefault("models", {}).setdefault(model, {}).setdefault("subjective", {}).update(subjective)
     _edit_preferences(change)
     return _tr("已保存策略与模型画像")
+
+
+# ---------- Ability floors & chart data ----------
+
+ABILITY_FLOOR_KEYS = ("routine", "hard", "coupled", "frontier")
+ABILITY_FLOOR_LABELS = {
+    "routine": "常规",
+    "hard": "较难",
+    "coupled": "耦合",
+    "frontier": "前沿",
+}
+ABILITY_FLOOR_LIMITS = (1.0, 5.5)
+EFFORT_DISPLAY_ORDER = ("minimal", "low", "medium", "standard", "default", "high", "extended", "xhigh", "max", "ultra")
+
+
+def _flatten_route_floors(route_floors: dict | None) -> dict[str, float]:
+    if not isinstance(route_floors, dict):
+        return {}
+    flat: dict[str, float] = {}
+    for key, val in route_floors.items():
+        if isinstance(val, dict):
+            for diff, sub_val in val.items():
+                flat[f"{key}.{diff}"] = sub_val
+        else:
+            flat[str(key)] = val
+    return flat
+
+
+def _is_fleet_document(doc: dict) -> bool:
+    return isinstance(doc, dict) and isinstance(doc.get("accounts"), dict) and (
+        isinstance(doc.get("capability_policy"), dict) or "ability_floor" in (doc.get("scoring") or {})
+        and len(doc.get("models") or {}) > 3
+    )
+
+
+def default_ability_floors(path: Path | None = None) -> dict:
+    """Public baseline ability floors, route-specific floors, critical headroom and score origins."""
+    baseline_path = _accounts_path()
+    if path is not None and path.is_file():
+        probe = _read_json(path)
+        if _is_fleet_document(probe):
+            baseline_path = path
+    doc = _read_json(baseline_path)
+    scoring = doc.get("scoring") or {}
+    raw_floors = scoring.get("ability_floor") or {}
+    floors = {k: round(float(raw_floors.get(k, 0.0)), 2) for k in ABILITY_FLOOR_KEYS}
+    route_floors: dict[str, float] = {}
+    routes = ((doc.get("capability_policy") or {}).get("routes") or {})
+    for r_name, r_spec in routes.items():
+        if not isinstance(r_spec, dict):
+            continue
+        own = r_spec.get("ability_floor")
+        if isinstance(own, dict):
+            for diff, val in own.items():
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    route_floors[f"{r_name}.{diff}"] = round(float(val), 2)
+    origins_raw = scoring.get("ability_score_origin") or {}
+    origins = {k: round(float(origins_raw[k]), 2) for k in ABILITY_FLOOR_KEYS
+               if isinstance(origins_raw.get(k), (int, float))}
+    crit_base = float(scoring.get("critical_headroom", 0.3) or 0.3)
+    crit_by_diff = scoring.get("critical_headroom_by_difficulty") or {}
+    critical_headrooms = {
+        k: round(float(crit_by_diff.get(k, crit_base)), 2) for k in ABILITY_FLOOR_KEYS
+    }
+    return {
+        "floors": floors,
+        "route_floors": route_floors,
+        "origins": origins,
+        "critical_headroom": round(crit_base, 2),
+        "critical_headrooms": critical_headrooms,
+        "critical_gates": {k: round(floors[k] + critical_headrooms[k], 2) for k in ABILITY_FLOOR_KEYS},
+    }
+
+
+def _override_file_for(path: Path | None) -> Path:
+    if path is not None:
+        if path.is_file() and _is_fleet_document(_read_json(path)):
+            return STATE_DIR / "accounts-override.json"
+        return path
+    return STATE_DIR / "accounts-override.json"
+
+
+def read_ability_floors(path: Path | None = None, accounts: dict | None = None) -> dict:
+    """Effective ability floors, route-specific floors and critical gates from the router's own loaders."""
+    allocator, _ = modules()
+    defaults = default_ability_floors(path)
+    override_file = _override_file_for(path)
+    if accounts is None:
+        if path is not None and path.is_file() and _is_fleet_document(_read_json(path)):
+            base_doc = allocator.load_accounts(path)
+            if override_file.is_file():
+                user_doc = _read_json(override_file)
+                if isinstance(user_doc.get("scoring"), dict):
+                    base_doc["scoring"] = allocator.accounts_override.merge(
+                        base_doc.get("scoring") or {}, user_doc["scoring"])
+                r_ov = (base_doc.get("scoring") or {}).get("route_ability_floor")
+                if isinstance(r_ov, dict) and isinstance(base_doc.get("capability_policy"), dict):
+                    routes_tbl = base_doc["capability_policy"].setdefault("routes", {})
+                    for r_name, r_floors in r_ov.items():
+                        if isinstance(r_floors, dict) and isinstance(routes_tbl.get(r_name), dict):
+                            routes_tbl[r_name]["ability_floor"] = allocator.accounts_override.merge(
+                                routes_tbl[r_name].get("ability_floor") or {}, r_floors)
+            accounts = base_doc
+        elif path is not None and override_file == path:
+            base_doc = allocator.load_accounts(_accounts_path())
+            if override_file.is_file():
+                user_doc = _read_json(override_file)
+                if isinstance(user_doc.get("scoring"), dict):
+                    base_doc["scoring"] = allocator.accounts_override.merge(
+                        base_doc.get("scoring") or {}, user_doc["scoring"])
+                r_ov = (base_doc.get("scoring") or {}).get("route_ability_floor")
+                if isinstance(r_ov, dict) and isinstance(base_doc.get("capability_policy"), dict):
+                    routes_tbl = base_doc["capability_policy"].setdefault("routes", {})
+                    for r_name, r_floors in r_ov.items():
+                        if isinstance(r_floors, dict) and isinstance(routes_tbl.get(r_name), dict):
+                            routes_tbl[r_name]["ability_floor"] = allocator.accounts_override.merge(
+                                routes_tbl[r_name].get("ability_floor") or {}, r_floors)
+            accounts = base_doc
+        else:
+            accounts = _cached_accounts(allocator)
+    capabilities = _load_capabilities(allocator, accounts)
+    policy = accounts.get("scoring") or {}
+    floors = {k: round(float(allocator.ability_floor(policy, None, k)), 2) for k in ABILITY_FLOOR_KEYS}
+    routes = capabilities.get("routes") or {}
+    route_floors: dict[str, float] = {}
+    for rk in defaults["route_floors"]:
+        r_name, diff = rk.split(".", 1)
+        r_spec = routes.get(r_name) or {}
+        route_floors[rk] = round(float(allocator.ability_floor(policy, r_spec, diff)), 2)
+    for r_name, r_spec in routes.items():
+        own = (r_spec or {}).get("ability_floor") or {}
+        if isinstance(own, dict):
+            for diff in own:
+                rk = f"{r_name}.{diff}"
+                if rk not in route_floors and diff in ABILITY_FLOOR_KEYS:
+                    route_floors[rk] = round(float(allocator.ability_floor(policy, r_spec, diff)), 2)
+    critical_headrooms = {
+        k: round(float(allocator.critical_headroom(policy, k)), 2) for k in ABILITY_FLOOR_KEYS
+    }
+    critical_gates = {
+        k: round(floors[k] + critical_headrooms[k], 2) for k in ABILITY_FLOOR_KEYS
+    }
+    origins_raw = policy.get("ability_score_origin") or {}
+    origins = {k: round(float(origins_raw[k]), 2) for k in ABILITY_FLOOR_KEYS
+               if isinstance(origins_raw.get(k), (int, float))}
+    user_doc = _read_json(override_file) if override_file.is_file() else {}
+    user_scoring = (user_doc.get("scoring") or {}) if isinstance(user_doc, dict) else {}
+    has_overrides = bool(user_scoring.get("ability_floor") or user_scoring.get("route_ability_floor")) or (
+        floors != defaults["floors"] or route_floors != defaults["route_floors"]
+    )
+    return {
+        "floors": floors,
+        "route_floors": route_floors,
+        "defaults": defaults["floors"],
+        "default_route_floors": defaults["route_floors"],
+        "origins": origins,
+        "critical_headroom": round(float(policy.get("critical_headroom", 0.3) or 0.3), 2),
+        "critical_headrooms": critical_headrooms,
+        "critical_gates": critical_gates,
+        "has_overrides": has_overrides,
+    }
+
+
+def validate_ability_floors(floors: dict, route_floors: dict | None = None) -> tuple[dict[str, float], dict[str, float]]:
+    """Validate floor bounds and ordering: routine <= hard <= coupled <= frontier."""
+    if not isinstance(floors, dict):
+        raise ValueError(_tr("能力门槛需为数字"))
+    unknown = set(floors) - set(ABILITY_FLOOR_KEYS)
+    if unknown:
+        raise ValueError(_tr("未知参数 {0}").format(", ".join(sorted(unknown))))
+    low, high = ABILITY_FLOOR_LIMITS
+    clean: dict[str, float] = {}
+    for key in ABILITY_FLOOR_KEYS:
+        if key not in floors:
+            raise ValueError(_tr("能力门槛缺少 {0}").format(_tr(ABILITY_FLOOR_LABELS.get(key, key))))
+        label = _tr(ABILITY_FLOOR_LABELS.get(key, key))
+        number = _finite_number(floors[key], label)
+        if not low <= number <= high:
+            raise ValueError(_tr("{0} 需在 {1} ~ {2} 之间").format(label, f"{low:g}", f"{high:g}"))
+        clean[key] = round(number, 2)
+    for left, right in zip(ABILITY_FLOOR_KEYS, ABILITY_FLOOR_KEYS[1:]):
+        if clean[left] > clean[right] + 1e-9:
+            raise ValueError(_tr("能力门槛需满足：常规 ≤ 较难 ≤ 耦合 ≤ 前沿"))
+    clean_routes: dict[str, float] = {}
+    if route_floors is not None:
+        flat_routes = _flatten_route_floors(route_floors)
+        for rk, val in flat_routes.items():
+            if "." not in rk:
+                raise ValueError(_tr("未知参数 {0}").format(rk))
+            r_name, diff = rk.split(".", 1)
+            if not r_name or diff not in ABILITY_FLOOR_KEYS:
+                raise ValueError(_tr("未知参数 {0}").format(rk))
+            r_label = f"{display_names.kind_label(r_name)} · {_tr(ABILITY_FLOOR_LABELS.get(diff, diff))}"
+            num = _finite_number(val, r_label)
+            if not low <= num <= high:
+                raise ValueError(_tr("{0} 需在 {1} ~ {2} 之间").format(r_label, f"{low:g}", f"{high:g}"))
+            clean_routes[rk] = round(num, 2)
+    return clean, clean_routes
+
+
+def clamp_ability_floor_drag(key: str, value: float, current_floors: dict[str, float],
+                             current_route_floors: dict[str, float] | None = None) -> float:
+    """Clamp a dragged floor value to ABILITY_FLOOR_LIMITS and adjacent difficulty floors."""
+    low, high = ABILITY_FLOOR_LIMITS
+    val = max(low, min(high, float(value)))
+    if key in ABILITY_FLOOR_KEYS:
+        idx = ABILITY_FLOOR_KEYS.index(key)
+        if idx > 0:
+            prev_key = ABILITY_FLOOR_KEYS[idx - 1]
+            val = max(val, float(current_floors.get(prev_key, low)))
+        if idx < len(ABILITY_FLOOR_KEYS) - 1:
+            next_key = ABILITY_FLOOR_KEYS[idx + 1]
+            val = min(val, float(current_floors.get(next_key, high)))
+    return round(val, 2)
+
+
+def _apply_floor_overrides_to_doc(document: dict, clean_floors: dict[str, float],
+                                  clean_routes: dict[str, float], defaults: dict) -> int:
+    """Write only changed numbers (relative to public defaults) into document['scoring']; never write reasons."""
+    scoring = document.setdefault("scoring", {})
+    default_main = defaults["floors"]
+    default_routes = defaults["route_floors"]
+    changed_count = 0
+
+    floor_delta = {
+        k: round(float(v), 2)
+        for k, v in clean_floors.items()
+        if round(float(v), 2) != round(float(default_main.get(k, 0.0)), 2)
+    }
+    if floor_delta:
+        scoring["ability_floor"] = floor_delta
+        changed_count += len(floor_delta)
+    else:
+        scoring.pop("ability_floor", None)
+
+    route_delta: dict[str, dict[str, float]] = {}
+    for rk, rv in clean_routes.items():
+        if round(float(rv), 2) != round(float(default_routes.get(rk, 0.0)), 2):
+            r_name, diff = rk.split(".", 1)
+            route_delta.setdefault(r_name, {})[diff] = round(float(rv), 2)
+            changed_count += 1
+    if route_delta:
+        scoring["route_ability_floor"] = route_delta
+    else:
+        scoring.pop("route_ability_floor", None)
+
+    if not scoring:
+        document.pop("scoring", None)
+    return changed_count
+
+
+def save_ability_floors(floors: dict, route_floors: dict | None = None, path: Path | None = None) -> str:
+    """Save ability floors to accounts-override.json, writing only numbers that differ from public defaults."""
+    current = read_ability_floors(path)
+    merged_floors = dict(current["floors"])
+    if isinstance(floors, dict):
+        for k, v in floors.items():
+            if k in ABILITY_FLOOR_KEYS:
+                merged_floors[k] = v
+            elif "." in str(k):
+                route_floors = dict(_flatten_route_floors(route_floors))
+                route_floors[str(k)] = v
+    merged_routes = dict(current["route_floors"])
+    if route_floors is not None:
+        merged_routes.update(_flatten_route_floors(route_floors))
+    clean_floors, clean_routes = validate_ability_floors(merged_floors, merged_routes)
+    changed_keys = [k for k in ABILITY_FLOOR_KEYS if current["floors"].get(k) != clean_floors[k]]
+    changed_routes = [rk for rk, rv in clean_routes.items() if current["route_floors"].get(rk) != rv]
+    total_changed = len(changed_keys) + len(changed_routes)
+    defaults = default_ability_floors(path)
+    override_file = _override_file_for(path)
+
+    def change(document):
+        _apply_floor_overrides_to_doc(document, clean_floors, clean_routes, defaults)
+
+    if path is None or override_file == STATE_DIR / "accounts-override.json":
+        if total_changed == 0:
+            return _tr("参数未变化")
+        _edit_preferences(change)
+        return _tr("已保存 {0} 项能力门槛").format(total_changed)
+
+    import override_store
+    with override_store.locked(override_file):
+        if override_file.is_file():
+            doc = _read_json(override_file)
+            if not isinstance(doc, dict):
+                doc = {"schema_version": 2}
+        else:
+            doc = {"schema_version": 2}
+        if total_changed == 0 and "scoring" not in doc:
+            return _tr("参数未变化")
+        change(doc)
+        _backup(override_file, "accounts-json")
+        _atomic_json(override_file, doc)
+    return _tr("参数未变化") if total_changed == 0 else _tr("已保存 {0} 项能力门槛").format(total_changed)
+
+
+def restore_ability_floor_defaults(path: Path | None = None) -> str:
+    """Remove local ability_floor and route_ability_floor override keys so public defaults apply again."""
+    override_file = _override_file_for(path)
+    if not override_file.is_file():
+        return _tr("参数未变化")
+    doc = _read_json(override_file)
+    scoring = (doc.get("scoring") or {}) if isinstance(doc, dict) else {}
+    had_floors = "ability_floor" in scoring or "route_ability_floor" in scoring
+    if not had_floors:
+        return _tr("参数未变化")
+
+    def clean(document):
+        sc = document.get("scoring")
+        if isinstance(sc, dict):
+            sc.pop("ability_floor", None)
+            sc.pop("route_ability_floor", None)
+            if not sc:
+                document.pop("scoring", None)
+
+    if path is None or override_file == STATE_DIR / "accounts-override.json":
+        _edit_preferences(clean)
+    else:
+        import override_store
+        with override_store.locked(override_file):
+            document = _read_json(override_file)
+            if isinstance(document, dict):
+                clean(document)
+                _backup(override_file, "accounts-json")
+                _atomic_json(override_file, document)
+    return _tr("已恢复默认能力门槛")
+
+
+def _effort_sort_key(effort: str) -> tuple[int, str]:
+    e = str(effort or "high").lower()
+    if e in EFFORT_DISPLAY_ORDER:
+        return (EFFORT_DISPLAY_ORDER.index(e), e)
+    return (len(EFFORT_DISPLAY_ORDER), e)
+
+
+def ability_floor_chart_data(accounts: dict | None = None, floors_override: dict | None = None,
+                             route_floors_override: dict | None = None, include_superseded: bool = False,
+                             include_manual_billing: bool = False, path: Path | None = None) -> dict:
+    """Compute model positions, effort ranges, floors, route floors, critical gates and eligibility from allocator."""
+    allocator, _ = modules()
+    if accounts is None:
+        if path is not None and path.is_file() and _is_fleet_document(_read_json(path)):
+            accounts = allocator.load_accounts(path)
+        else:
+            accounts = _cached_accounts(allocator)
+    floor_state = read_ability_floors(path=path, accounts=accounts)
+    floors = dict(floor_state["floors"])
+    if floors_override:
+        for k, v in floors_override.items():
+            if k in ABILITY_FLOOR_KEYS and isinstance(v, (int, float)):
+                floors[k] = round(float(v), 2)
+    route_floors = dict(floor_state["route_floors"])
+    if route_floors_override:
+        for rk, rv in _flatten_route_floors(route_floors_override).items():
+            if isinstance(rv, (int, float)):
+                route_floors[rk] = round(float(rv), 2)
+    critical_headrooms = floor_state["critical_headrooms"]
+    critical_gates = {
+        k: round(floors[k] + critical_headrooms[k], 2) for k in ABILITY_FLOOR_KEYS
+    }
+
+    policy = accounts.get("scoring") or {}
+    curves_table = accounts.get("effort_curves") or {}
+    superseded = accounts.get("superseded") or {}
+    inventory_accounts = ((accounts.get("_discovery") or {}).get("accounts") or {})
+    try:
+        host_pol = allocator.host_policy.load_policy()
+    except Exception:
+        host_pol = None
+
+    all_bundles = allocator.bundles(accounts)
+    bundle_positions: dict[str, dict] = {}
+    groups_map: dict[tuple[str, str], dict] = {}
+
+    for bid, bspec in all_bundles.items():
+        account = bspec.get("account") or ""
+        provider = bspec.get("provider") or account
+        if provider == "pi" and account != "pi":
+            continue
+        if bspec.get("discovery_unavailable"):
+            continue
+        raw_model = bspec.get("model") or bid
+        model = allocator.canonical(raw_model, accounts)
+        info = allocator.model_spec(accounts, model)
+        curves = curves_table.get(model)
+        scored_effort = allocator.scoring_effort(bspec, info) if hasattr(allocator, "scoring_effort") else (
+            bspec.get("effort") or (info or {}).get("fixed_effort")
+        )
+        effort = scored_effort or "high"
+        is_fixed_effort = bool(not bspec.get("effort") and (info or {}).get("fixed_effort"))
+        raw_ability = float(allocator.effort_ability(policy, curves, info, scored_effort))
+        ability = round(raw_ability, 2)
+        host_ok = True if host_pol is None else bool(allocator.host_policy.account_allowed(host_pol, account))
+        b_enabled = not bool(bspec.get("disabled")) and host_ok
+        b_clears = {d: round(raw_ability, 6) >= round(floors[d], 6) for d in ABILITY_FLOOR_KEYS}
+        b_route_clears = {rk: round(raw_ability, 6) >= round(rv, 6) for rk, rv in route_floors.items()}
+        b_crit_clears = {d: round(raw_ability, 6) >= round(critical_gates[d], 6) for d in ABILITY_FLOOR_KEYS}
+
+        bundle_positions[bid] = {
+            "id": bid,
+            "account": account,
+            "provider": provider,
+            "harness": bspec.get("harness"),
+            "model": model,
+            "model_label": model_label(model),
+            "effort": effort,
+            "fixed_effort": (info or {}).get("fixed_effort") if is_fixed_effort else None,
+            "ability": ability,
+            "raw_ability": raw_ability,
+            "enabled": b_enabled,
+            "disabled": not b_enabled,
+            "clears": b_clears,
+            "route_clears": b_route_clears,
+            "critical_clears": b_crit_clears,
+        }
+
+        if not include_manual_billing and allocator.accounts_override.manual_only_billing(account, accounts):
+            continue
+        if not include_superseded and bspec.get("auto"):
+            if bspec.get("disabled"):
+                continue
+            if (raw_model in superseded or model in superseded):
+                continue
+            if bspec.get("availability") in ("stale", "expired"):
+                continue
+
+        g_key = (account, model)
+        group = groups_map.get(g_key)
+        if group is None:
+            acct_spec = (accounts.get("accounts") or {}).get(account) or {}
+            acct_lbl = acct_spec.get("label") or account_label(account, account_family(account, inventory_accounts.get(account)))
+            basis = str(info.get("basis") or bspec.get("score_basis") or "").strip()
+            estimated = bool(info.get("score_estimated")) or (bspec.get("score_source", "calibrated") != "calibrated")
+            high_ab = round(float(allocator.effort_ability(policy, curves, info, "high")), 2)
+            group = {
+                "key": f"{account}:{model}",
+                "account": account,
+                "account_label": acct_lbl,
+                "providers": [],
+                "harnesses": [],
+                "model": model,
+                "model_label": model_label(model),
+                "tier": round(float(info.get("tier", 0.0) or 0.0), 2),
+                "high_ability": high_ab,
+                "fixed_effort": (info or {}).get("fixed_effort") if is_fixed_effort else None,
+                "basis": basis,
+                "estimated": estimated,
+                "score_source": "estimated" if estimated else str(bspec.get("score_source") or "calibrated"),
+                "host_enabled": host_ok,
+                "efforts_map": {},
+                "bundle_ids": [],
+            }
+            groups_map[g_key] = group
+        else:
+            if not is_fixed_effort:
+                group["fixed_effort"] = None
+            if bool(info.get("score_estimated")) or (bspec.get("score_source", "calibrated") != "calibrated"):
+                group["estimated"] = True
+                group["score_source"] = "estimated"
+            if not group["basis"] and bspec.get("score_basis"):
+                group["basis"] = str(bspec.get("score_basis")).strip()
+
+        if provider not in group["providers"]:
+            group["providers"].append(provider)
+        harness = bspec.get("harness") or provider
+        if harness not in group["harnesses"]:
+            group["harnesses"].append(harness)
+        group["bundle_ids"].append(bid)
+
+        eff_entry = group["efforts_map"].get(effort)
+        if eff_entry is None:
+            group["efforts_map"][effort] = {
+                "effort": effort,
+                "fixed": is_fixed_effort,
+                "ability": ability,
+                "raw_ability": raw_ability,
+                "enabled": b_enabled,
+                "bundle_ids": [bid],
+            }
+        else:
+            eff_entry["enabled"] = eff_entry["enabled"] or b_enabled
+            eff_entry["fixed"] = eff_entry.get("fixed", False) and is_fixed_effort
+            eff_entry["bundle_ids"].append(bid)
+
+    model_counts: dict[str, int] = {}
+    for (_acct, mdl) in groups_map:
+        model_counts[mdl] = model_counts.get(mdl, 0) + 1
+
+    models_list: list[dict] = []
+    for (account, model), group in groups_map.items():
+        efforts = sorted(group.pop("efforts_map").values(), key=lambda item: (_effort_sort_key(item["effort"]), item["ability"]))
+        enabled_efforts = [e for e in efforts if e["enabled"]]
+        any_enabled = bool(enabled_efforts) and group["host_enabled"]
+        all_enabled = all(e["enabled"] for e in efforts) and group["host_enabled"]
+        min_ab = min(e["ability"] for e in efforts)
+        max_ab = max(e["ability"] for e in efforts)
+        ref_efforts = enabled_efforts if enabled_efforts else efforts
+        ref_max_raw = max(e["raw_ability"] for e in ref_efforts)
+        ref_max_ab = max(e["ability"] for e in ref_efforts)
+        clears = {d: round(ref_max_raw, 6) >= round(floors[d], 6) for d in ABILITY_FLOOR_KEYS}
+        eligible_clears = {d: any_enabled and clears[d] for d in ABILITY_FLOOR_KEYS}
+        route_clears = {rk: round(ref_max_raw, 6) >= round(rv, 6) for rk, rv in route_floors.items()}
+        eligible_route_clears = {rk: any_enabled and route_clears[rk] for rk in route_floors}
+        critical_clears = {d: round(ref_max_raw, 6) >= round(critical_gates[d], 6) for d in ABILITY_FLOOR_KEYS}
+        shared_model = model_counts.get(model, 0) > 1
+        display_label = f"{group['account_label']} · {group['model_label']}"
+        short_label = display_label if shared_model else f"{group['model_label']} ({group['account_label']})"
+
+        group.update({
+            "display_label": display_label,
+            "short_label": short_label,
+            "shared_model": shared_model,
+            "efforts": efforts,
+            "enabled": any_enabled,
+            "all_enabled": all_enabled,
+            "unchecked": not any_enabled,
+            "min_ability": min_ab,
+            "max_ability": max_ab,
+            "effective_max_ability": ref_max_ab,
+            "clears": clears,
+            "eligible_clears": eligible_clears,
+            "clears_list": [d for d in ABILITY_FLOOR_KEYS if clears[d]],
+            "route_clears": route_clears,
+            "eligible_route_clears": eligible_route_clears,
+            "critical_clears": critical_clears,
+        })
+        models_list.append(group)
+
+    models_list.sort(key=lambda m: (
+        round(m["max_ability"], 2),
+        round(m["min_ability"], 2),
+        1 if m["enabled"] else 0,
+        -FAMILY_ORDER.index(account_family(m["account"])) if account_family(m["account"]) in FAMILY_ORDER else -99,
+        m["display_label"],
+    ), reverse=True)
+
+    eligibility_by_difficulty = {
+        d: [m["key"] for m in models_list if m["eligible_clears"][d]]
+        for d in ABILITY_FLOOR_KEYS
+    }
+    eligibility_by_route = {
+        rk: [m["key"] for m in models_list if m["eligible_route_clears"][rk]]
+        for rk in route_floors
+    }
+
+    return {
+        "floors": floors,
+        "route_floors": route_floors,
+        "defaults": floor_state["defaults"],
+        "default_route_floors": floor_state["default_route_floors"],
+        "origins": floor_state["origins"],
+        "critical_headroom": floor_state["critical_headroom"],
+        "critical_headrooms": critical_headrooms,
+        "critical_gates": critical_gates,
+        "has_overrides": floor_state["has_overrides"],
+        "models": models_list,
+        "bundles": bundle_positions,
+        "eligibility": eligibility_by_difficulty,
+        "route_eligibility": eligibility_by_route,
+    }
+
+
+def preview_ability_floor_change(floors_override: dict | None = None, route_floors_override: dict | None = None,
+                                 accounts: dict | None = None, path: Path | None = None) -> dict:
+    """Compare candidate floor values against saved effective floors and report models/bundles gained or lost."""
+    baseline = ability_floor_chart_data(accounts=accounts, path=path)
+    candidate = ability_floor_chart_data(
+        accounts=accounts,
+        floors_override=floors_override,
+        route_floors_override=route_floors_override,
+        path=path,
+    )
+    base_models = {m["key"]: m for m in baseline["models"]}
+    cand_models = {m["key"]: m for m in candidate["models"]}
+    base_bundles = baseline["bundles"]
+    cand_bundles = candidate["bundles"]
+
+    changes: dict[str, dict] = {}
+    summary_parts: list[str] = []
+
+    for d in ABILITY_FLOOR_KEYS:
+        old_val = baseline["floors"][d]
+        new_val = candidate["floors"][d]
+        gained_models = [
+            cand_models[k]["display_label"]
+            for k in cand_models
+            if not base_models[k]["eligible_clears"][d] and cand_models[k]["eligible_clears"][d]
+        ]
+        lost_models = [
+            cand_models[k]["display_label"]
+            for k in cand_models
+            if base_models[k]["eligible_clears"][d] and not cand_models[k]["eligible_clears"][d]
+        ]
+        gained_bundles = [
+            bid for bid in cand_bundles
+            if cand_bundles[bid]["enabled"] and not base_bundles[bid]["clears"][d] and cand_bundles[bid]["clears"][d]
+        ]
+        lost_bundles = [
+            bid for bid in cand_bundles
+            if cand_bundles[bid]["enabled"] and base_bundles[bid]["clears"][d] and not cand_bundles[bid]["clears"][d]
+        ]
+        eligible_count = sum(1 for m in candidate["models"] if m["eligible_clears"][d])
+        changed = round(old_val, 2) != round(new_val, 2)
+        changes[d] = {
+            "key": d,
+            "label": _tr(ABILITY_FLOOR_LABELS.get(d, d)),
+            "old": old_val,
+            "new": new_val,
+            "changed": changed,
+            "gained_models": gained_models,
+            "lost_models": lost_models,
+            "gained_bundles": gained_bundles,
+            "lost_bundles": lost_bundles,
+            "eligible_count": eligible_count,
+        }
+        if changed:
+            d_label = _tr(ABILITY_FLOOR_LABELS.get(d, d))
+            details = []
+            if gained_models:
+                details.append(_tr("新增准入：{0}").format("、".join(gained_models[:4]) + ("…" if len(gained_models) > 4 else "")))
+            if lost_models:
+                details.append(_tr("失去准入：{0}").format("、".join(lost_models[:4]) + ("…" if len(lost_models) > 4 else "")))
+            if not details:
+                details.append(_tr("准入模型无变化（{0} 个达标）").format(eligible_count))
+            summary_parts.append(f"{d_label} {old_val:.2f} → {new_val:.2f}（{'；'.join(details)}）")
+
+    route_changes: dict[str, dict] = {}
+    for rk, new_val in candidate["route_floors"].items():
+        old_val = baseline["route_floors"].get(rk, new_val)
+        r_name, diff = rk.split(".", 1)
+        r_label = f"{display_names.kind_label(r_name)} · {_tr(ABILITY_FLOOR_LABELS.get(diff, diff))}"
+        gained_models = [
+            cand_models[k]["display_label"]
+            for k in cand_models
+            if not base_models[k]["eligible_route_clears"].get(rk, False)
+            and cand_models[k]["eligible_route_clears"].get(rk, False)
+        ]
+        lost_models = [
+            cand_models[k]["display_label"]
+            for k in cand_models
+            if base_models[k]["eligible_route_clears"].get(rk, False)
+            and not cand_models[k]["eligible_route_clears"].get(rk, False)
+        ]
+        gained_bundles = [
+            bid for bid in cand_bundles
+            if cand_bundles[bid]["enabled"]
+            and not base_bundles[bid]["route_clears"].get(rk, False)
+            and cand_bundles[bid]["route_clears"].get(rk, False)
+        ]
+        lost_bundles = [
+            bid for bid in cand_bundles
+            if cand_bundles[bid]["enabled"]
+            and base_bundles[bid]["route_clears"].get(rk, False)
+            and not cand_bundles[bid]["route_clears"].get(rk, False)
+        ]
+        eligible_count = sum(1 for m in candidate["models"] if m["eligible_route_clears"].get(rk, False))
+        changed = round(old_val, 2) != round(new_val, 2)
+        route_changes[rk] = {
+            "key": rk,
+            "label": r_label,
+            "old": old_val,
+            "new": new_val,
+            "changed": changed,
+            "gained_models": gained_models,
+            "lost_models": lost_models,
+            "gained_bundles": gained_bundles,
+            "lost_bundles": lost_bundles,
+            "eligible_count": eligible_count,
+        }
+        if changed:
+            details = []
+            if gained_models:
+                details.append(_tr("新增准入：{0}").format("、".join(gained_models[:4]) + ("…" if len(gained_models) > 4 else "")))
+            if lost_models:
+                details.append(_tr("失去准入：{0}").format("、".join(lost_models[:4]) + ("…" if len(lost_models) > 4 else "")))
+            if not details:
+                details.append(_tr("准入模型无变化（{0} 个达标）").format(eligible_count))
+            summary_parts.append(f"{r_label} {old_val:.2f} → {new_val:.2f}（{'；'.join(details)}）")
+
+    summary = "  |  ".join(summary_parts) if summary_parts else _tr("拖动门槛线或调整数值可实时预览准入模型变化")
+    return {
+        "has_changes": bool(summary_parts),
+        "summary": summary,
+        "difficulties": changes,
+        "routes": route_changes,
+        "candidate": candidate,
+    }
 
 
 def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str:
