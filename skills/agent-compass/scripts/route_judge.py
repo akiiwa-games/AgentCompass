@@ -24,6 +24,7 @@ import public_data
 import roll
 import stage_help
 import usage_cache
+import window_scope
 import sqlite3
 import hashlib
 import platform
@@ -429,7 +430,7 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
         'interpretation': 'Freshness uses each fetched_at, collector flags and reset time. '
             'Historical usage is readable but not current capacity. A reset is not subscription expiry. '
             'Unknown or stale telemetry is not zero, unlimited quota or subscription unavailability. '
-            'Provider percentages are not equal tokens. Claude weekly_fable applies to Fable only.',
+            'Provider percentages are not equal tokens. A window binds only the models its declared scope names.',
     }
 
 
@@ -502,16 +503,29 @@ def metered_names():
     return configured | set(DEFAULT_METERED_ACCOUNTS)
 
 
-def applicable_windows(row, model=''):
-    """Current windows that bind this model: Fable/Opus-only allowances bind only their own model."""
-    model = (model or '').lower()
-    return [w for w in row.get('windows') or [] if w.get('remaining_pct_before_reset') is not None
-            and ('fable' not in (w.get('id') or '') or 'fable' in model)
-            and ('opus' not in (w.get('id') or '') or 'opus' in model)]
+def window_spec(account_spec, window_id):
+    """The account spec's windows.<id> for a reading's window id (provider aliases resolved), or {}."""
+    windows = (account_spec or {}).get('windows') if isinstance(account_spec, dict) else None
+    if not isinstance(windows, dict) or not window_id:
+        return {}
+    allocator = sys.modules.get('allocator') or load_allocator()
+    spec = windows.get(allocator.canonical_window_id(account_spec, window_id))
+    return spec if isinstance(spec, dict) else {}
 
 
-def tightest_window(row, model=''):
-    return min(applicable_windows(row, model), key=lambda w: w['remaining_pct_before_reset'], default=None)
+def binding_windows(row, model='', account_spec=None):
+    """The reading's windows that bind this model, by their data-declared scope (window_scope)."""
+    return [w for w in row.get('windows') or []
+            if window_scope.binds(model, w, window_spec(account_spec, w.get('id')))]
+
+
+def applicable_windows(row, model='', account_spec=None):
+    """Current windows that bind this model: binding_windows with a remaining percentage before reset."""
+    return [w for w in binding_windows(row, model, account_spec) if w.get('remaining_pct_before_reset') is not None]
+
+
+def tightest_window(row, model='', account_spec=None):
+    return min(applicable_windows(row, model, account_spec), key=lambda w: w['remaining_pct_before_reset'], default=None)
 
 
 def burn_projection(account, window, records, now, current_fetched=None):
@@ -541,10 +555,11 @@ def burn_projection(account, window, records, now, current_fetched=None):
             'hours_to_exhaustion': round((100 - points[last]) / rate, 2)}
 
 
-def capacity_alerts(usage, carrying, records, now, model=''):
+def capacity_alerts(usage, carrying, records, now, model='', account_specs=None):
     """Deterministic warnings for the account(s) that will carry work. They never block dispatch."""
     alerts = []
     accounts = usage.get('accounts') or {}
+    account_specs = account_specs if isinstance(account_specs, dict) else {}
     for name in carrying:
         row = accounts.get(name)
         if not isinstance(row, dict) or row.get('reason') == 'account_missing':
@@ -555,7 +570,7 @@ def capacity_alerts(usage, carrying, records, now, model=''):
             alerts.append({'code': 'stale_flag_conflict', 'severity': 'warn', 'account': name,
                            'message': f'{name}: collector reports stale=false but the observation is '
                                       f'{row["observation_age_seconds"] / 86400:.1f} days old.'})
-        window = tightest_window(row, model)
+        window = tightest_window(row, model, account_specs.get(name))
         if window is None:
             if not row.get('flag_conflict'):
                 alerts.append({'code': 'telemetry_not_current', 'severity': 'info', 'account': name,
@@ -627,17 +642,18 @@ def finalize(result, payload, requested, started, task=None, records=None):
     alerts = list(result.get('alerts') or [])
     bundle = result.get('selected_bundle') or {}
     if bundle.get('account'):
-        alerts += capacity_alerts(usage, [bundle['account']], records, now, bundle.get('model', ''))
         try:
             spec = load_allocator().load_accounts().get('accounts', {}).get(bundle['account']) or {}
         except (OSError, ValueError):
             spec = {}
+        alerts += capacity_alerts(usage, [bundle['account']], records, now, bundle.get('model', ''),
+                                  {bundle['account']: spec})
         cadence = account_cadence_alert(records, now, bundle['account'], spec)
         alerts += [cadence] if cadence else []
     judge = result.get('judge')
     if judge and requested != 'auto':
         row = (usage.get('accounts') or {}).get(judge['account'], {})
-        window = tightest_window(row, judge['model'])
+        window = tightest_window(row, judge['model'], judge_account_spec(judge['account']))
         if window and window['remaining_pct_before_reset'] <= LOW_REMAINING_PCT:
             alerts.append({'code': 'pinned_judge_account_low', 'severity': 'warn', 'account': judge['account'],
                            'message': f'--judge {requested} is pinned but {judge["account"]} has '
@@ -822,7 +838,7 @@ def build_request(stage, document, cache=None, now=None):
                     pools = allocator.bundle_pools(probe, loaded_accounts or {'accounts': acc_defs})
                 except Exception:
                     pools = []
-            for w in applicable_windows(row, cand.get('model') or ''):
+            for w in applicable_windows(row, cand.get('model') or '', acc_spec):
                 if w.get('reset_time_passed') is True:
                     continue
                 rem = w.get('remaining_pct_before_reset')
@@ -1704,8 +1720,7 @@ def resolve_judge(kind, usage, availability=None):
         if not host_policy.judge_allowed(availability, 'sonnet', acc):
             return (2, True, float('inf'))
         row = accounts.get(acc) or {}
-        windows = [w for w in row.get('windows', []) if w['id'] not in
-                   ('weekly_fable', 'seven_day_fable', 'weekly_opus', 'seven_day_opus')]
+        windows = binding_windows(row, base['model'], acc_defs.get(acc))
         known = [w for w in windows if w.get('remaining_pct_before_reset') is not None]
         if any(w['remaining_pct_before_reset'] == 0 for w in known):
             return (2, True, float('inf'))
@@ -1731,6 +1746,13 @@ def resolve_judge(kind, usage, availability=None):
             **({'quota_unavailable': True} if _health(best)[0] == 2 else {})}
 
 
+def judge_account_spec(account):
+    try:
+        return (load_allocator().load_accounts().get('accounts') or {}).get(account) or {}
+    except Exception:
+        return {}
+
+
 def judge_order(usage, requested):
     availability = host_policy.load_policy()
     if requested != 'auto':
@@ -1746,8 +1768,7 @@ def judge_order(usage, requested):
         if not host_policy.judge_allowed(availability, kind, spec['account']):
             continue
         row = usage.get('accounts', {}).get(spec['account'], {})
-        windows = [w for w in row.get('windows', []) if w['id'] not in
-                   ('weekly_fable', 'seven_day_fable', 'weekly_opus', 'seven_day_opus')]
+        windows = binding_windows(row, spec['model'], judge_account_spec(spec['account']))
         known = [w for w in windows if w.get('remaining_pct_before_reset') is not None]
         if any(w['remaining_pct_before_reset'] == 0 for w in known):
             continue
@@ -1949,7 +1970,7 @@ def record_constraint(args, task=None):
     dispatch_registry.check_launch_quota(quota_bundle, accounts, usage, now)
     if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until'):
         pools = allocator.bundle_pools(quota_bundle, accounts)
-        for w in applicable_windows(acc_usage, args.model):
+        for w in applicable_windows(acc_usage, args.model, acc_spec):
             if w.get('reset_time_passed') is True:
                 continue
             rem = w.get('remaining_pct_before_reset')

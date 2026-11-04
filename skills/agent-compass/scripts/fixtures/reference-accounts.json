@@ -2055,14 +2055,14 @@
         },
         "3p-5h": {
           "hours": 5,
-          "models": [
-            "3p"
+          "models_except": [
+            "gemini"
           ]
         },
         "3p-weekly": {
           "hours": 168,
-          "models": [
-            "3p"
+          "models_except": [
+            "gemini"
           ]
         }
       },

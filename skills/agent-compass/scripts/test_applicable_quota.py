@@ -68,10 +68,11 @@ class ApplicableQuotaTests(unittest.TestCase):
         cases=[
             ({'id':'five_hour'},None,True),
             ({'id':'five_hour','models':['claude']},None,False),
-            ({'id':'weekly_fable'},None,False),
+            ({'id':'weekly_fable'},None,True),
+            ({'id':'weekly_fable','models':['fable']},None,False),
             ({'id':'extra','models':['gpt']},None,True),
             ({'id':'extra','models':['claude']},None,False),
-            ({'id':'unknown_scope'},None,False),
+            ({'id':'unknown_scope'},None,True),
             ({'id':'five_hour'},[],False),
             ({'id':'five_hour'},['usage'],False),
             ({'id':'five_hour'},['five_hour'],True),

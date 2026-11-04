@@ -67,8 +67,8 @@
       "windows": {
         "gemini-5h": {"hours": 5, "models": ["gemini"]},
         "gemini-weekly": {"hours": 168, "models": ["gemini"]},
-        "3p-5h": {"hours": 5, "models": ["3p"]},
-        "3p-weekly": {"hours": 168, "models": ["3p"]}
+        "3p-5h": {"hours": 5, "models_except": ["gemini"]},
+        "3p-weekly": {"hours": 168, "models_except": ["gemini"]}
       },
       "capacity_usd": {"gemini-weekly": 625, "gemini-5h": 182, "3p-weekly": 88, "3p-5h": 17.6},
       "burn_pct_per_worker_hour": {"gemini-weekly": 0.08, "gemini-5h": 0.27, "3p-weekly": 0.57, "3p-5h": 2.84}
@@ -80,8 +80,8 @@
       "windows": {
         "gemini-5h": {"hours": 5, "models": ["gemini"]},
         "gemini-weekly": {"hours": 168, "models": ["gemini"]},
-        "3p-5h": {"hours": 5, "models": ["3p"]},
-        "3p-weekly": {"hours": 168, "models": ["3p"]}
+        "3p-5h": {"hours": 5, "models_except": ["gemini"]},
+        "3p-weekly": {"hours": 168, "models_except": ["gemini"]}
       },
       "capacity_usd": {"gemini-weekly": 156, "gemini-5h": 45.5, "3p-weekly": 22, "3p-5h": 4.4},
       "burn_pct_per_worker_hour": {"gemini-weekly": 0.32, "gemini-5h": 1.08, "3p-weekly": 2.27, "3p-5h": 11.4}
@@ -93,8 +93,8 @@
       "windows": {
         "gemini-5h": {"hours": 5, "models": ["gemini"]},
         "gemini-weekly": {"hours": 168, "models": ["gemini"]},
-        "3p-5h": {"hours": 5, "models": ["3p"]},
-        "3p-weekly": {"hours": 168, "models": ["3p"]}
+        "3p-5h": {"hours": 5, "models_except": ["gemini"]},
+        "3p-weekly": {"hours": 168, "models_except": ["gemini"]}
       },
       "capacity_usd": {"gemini-weekly": 31, "gemini-5h": 9.1, "3p-weekly": 4.4, "3p-5h": 0.9},
       "burn_pct_per_worker_hour": {"gemini-weekly": 1.6, "gemini-5h": 5.4, "3p-weekly": 11.4, "3p-5h": 56.8}

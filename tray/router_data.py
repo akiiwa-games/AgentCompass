@@ -582,7 +582,7 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
                 usd = 0.0
                 if callable(bundle_pools_fn):
                     try:
-                        pools = bundle_pools_fn(spec, bundle, accounts)
+                        pools = bundle_pools_fn(dict(bundle, account=account), accounts)
                     except Exception:
                         usd = allocator.inflight_reserved_usd(
                             account, spec, c_wid, wspec, {}, cap_usd, [rec], accounts, scoring, now)

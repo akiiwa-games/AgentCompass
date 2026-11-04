@@ -18,6 +18,7 @@ import sys
 # Also support the path-loaded allocator and python -I entrypoints.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fast_modes
+import window_scope
 import host_policy
 import override_store
 import antigravity_telemetry
@@ -1549,17 +1550,6 @@ def bundle_applies(bundle, task):
     return True
 
 
-def legacy_model_binds_window(wid, wspec, model):
-    """Historical windows.models tag match. `model` is used as given, not canonicalized."""
-    model = model or ''
-    tags = wspec.get('models') if isinstance(wspec, dict) else None
-    if tags and not any(tag in model for tag in tags) and tag_group(model) not in tags:
-        return False
-    if 'fable' in wid and 'fable' not in model:
-        return False
-    return True
-
-
 def _explicit_draws(bundle):
     """The bundle's draws list when the key is present, else None. An empty list is explicit."""
     if not isinstance(bundle, dict) or 'draws' not in bundle:
@@ -1575,13 +1565,12 @@ def _explicit_draws(bundle):
 
 
 def bundle_pools(bundle, accounts, observed_windows=None):
-    """Window ids this bundle draws, in declaration order (or account-window order for the tag fallback).
+    """Window ids this bundle draws, in declaration order (configured windows, then observed-only ones).
 
     An explicit `draws` on the passed bundle wins, including an empty list. Otherwise the catalog
-    bundle's `draws` wins. Otherwise the historical windows.models tag match runs on the canonical model.
-    Observed windows can establish a hard limit without a pricing specification.
-    In the fallback, only known window scopes or explicit model scopes are
-    inferred; unrecognized observation names do not imply a shared model pool.
+    bundle's `draws` wins. Otherwise each window's data-declared scope decides (window_scope.binds on the
+    canonical model): the configured spec's `models`/`models_except` and the reading's own `models`.
+    A window no source scopes binds every model, observed-only windows included.
     """
     bundle = bundle if isinstance(bundle, dict) else {}
     accounts = accounts if isinstance(accounts, dict) else {}
@@ -1595,8 +1584,7 @@ def bundle_pools(bundle, accounts, observed_windows=None):
             if isinstance(candidate, dict) and bid and bid in (candidate.get('bundles') or {}):
                 account, spec = name, candidate
                 break
-    windows = spec.get('windows') if isinstance(spec, dict) and isinstance(spec.get('windows'), dict) else {}
-    configured = windows
+    configured = spec.get('windows') if isinstance(spec, dict) and isinstance(spec.get('windows'), dict) else {}
     observed_windows = observed_windows or {}
     windows = {**configured, **{wid: {} for wid in observed_windows if wid not in configured}}
     declared = _explicit_draws(bundle)
@@ -1607,11 +1595,7 @@ def bundle_pools(bundle, accounts, observed_windows=None):
     if declared is not None:
         return [wid for wid in declared if wid in windows]
     model = canonical(bundle.get('model') or '', accounts)
-    return [wid for wid, wspec in windows.items()
-            if (wid in configured or wid in ('five_hour', '5h', 'seven_day', 'usage', 'weekly_fable')
-                or wid in WINDOW_ALIASES or observed_windows.get(wid, {}).get('models'))
-            and legacy_model_binds_window(wid, wspec, model)
-            and legacy_model_binds_window(wid, observed_windows.get(wid, {}), model)]
+    return [wid for wid, wspec in windows.items() if window_scope.binds(model, wspec, observed_windows.get(wid))]
 
 
 def applicable_windows(account_spec, model, usage_row, bundle=None, accounts=None):
@@ -1658,10 +1642,110 @@ def below_launch_floor(window, observed, usage_row, now):
                 and isinstance(remaining, (int, float)) and remaining <= floor)
 
 
-def tag_group(model):
-    if model.startswith('gemini'):
-        return 'gemini'
-    return '3p'
+def latched_windows(accounts, account):
+    """Windows a confirmed quota failure latched for this account (provider_inventory reads quota_exhaustion)."""
+    return set((((accounts.get('_discovery') or {}).get('accounts') or {}).get(account) or {}).get('exhausted_windows') or ())
+
+
+def cycle_observation(window, observed, usage_row, now):
+    """The window's reading, or None when a reading that is not current cannot describe the current cycle.
+
+    Usage only grows inside a cycle, so an old reading still bounds what is left until its reset. No reading
+    describes the cycle after its own reset has passed. A reading that is not current cannot either when the
+    account was unavailable, the reading has no time or is from the future, or it was taken more than the
+    window's `hours` before its reset (an earlier cycle). A provider rate-limit observation is always kept.
+    """
+    if observed is None or observed.get('rate_limited') is True:
+        return observed
+    if observed.get('reset_time_passed') is True:
+        return None
+    if usage_row.get('status') in (None, 'fresh'):
+        return observed     # current, or a caller that does not classify freshness (route_judge.usage_snapshot does)
+    fetched = parse_time(usage_row.get('fetched_at'))
+    if usage_row.get('available') is False or fetched is None or (fetched - now).total_seconds() > 60:
+        return None
+    reset, hours = parse_time(observed.get('resets_at')), window.get('hours')
+    if reset is not None and isinstance(hours, (int, float)) and fetched < reset - timedelta(hours=hours):
+        return None
+    return observed
+
+
+def used_up_in_cycle(observed, now):
+    """A reading from this cycle (cycle_observation) at 0% left holds until its reset, however old it is."""
+    left = (observed or {}).get('observed_remaining_pct')
+    reset = parse_time((observed or {}).get('resets_at'))
+    return reset is not None and reset > now and isinstance(left, (int, float)) and left <= 0
+
+
+def window_refusal(wid, window, observed, usage_row, now, latched=()):
+    """Why a drawn window refuses any launch now, whatever the task's size; None when it does not."""
+    if wid in latched:
+        return f'{wid}: quota confirmed exhausted; refresh quota or replan'
+    if below_launch_floor(window, observed, usage_row, now):
+        return f'{wid}: confirmed exhausted or below launch floor; refresh quota or replan'
+    return None
+
+
+def short_window_limits(spec, wid, policy, now):
+    """(small, floor %, safety margin %) of a short window; a small window keeps the larger reserve."""
+    cap = capacity_usd(spec, wid, now)
+    small = cap is not None and cap < policy.get('small_short_capacity_usd', 50)
+    return (small,
+            policy.get('small_short_window_floor_pct', 25) if small else policy.get('short_window_floor_pct', 10),
+            policy.get('small_short_safety_margin_pct', 12) if small else policy.get('safety_margin_pct', 5))
+
+
+def launch_blockers(bundle, accounts, usage, now, latched=None):
+    """[(window id, reason)] for windows this bundle draws that stop a launch now, whatever the task's size.
+
+    These are the task-independent outcomes of evaluate_bundle for "start now": its exclusions (window_refusal:
+    the confirmed-exhaustion latch and the launch floor; a short window with an active reset but no reading) and
+    the windows it excludes or defers to their reset, which no task size escapes (a short window at or under its
+    floor; a priced window at or under the safety margin; a window this cycle's reading shows used up). In-flight
+    reservations, which only lower what is left further, are not counted. `usage` is route_judge.usage_snapshot after
+    provider_inventory.merge_usage; windows the model does not draw (window_scope) never appear.
+    """
+    accounts = accounts if isinstance(accounts, dict) else {}
+    spec = (accounts.get('accounts') or {}).get(bundle.get('account'))
+    if not isinstance(spec, dict):
+        # An account the configuration does not describe still has its readings: every window binds.
+        spec = {}
+        accounts = {**accounts, 'accounts': {**(accounts.get('accounts') or {}), bundle['account']: spec}}
+    if spec.get('unmetered'):
+        return []
+    policy = accounts.get('scoring') or {}
+    row = ((usage or {}).get('accounts') or {}).get(bundle['account']) or {}
+    stale = row.get('status') == 'stale' or row.get('stale') is True
+    latched = latched_windows(accounts, bundle['account']) if latched is None else set(latched)
+    model = canonical(bundle.get('model') or '', accounts)
+    found = []
+    for wid, wspec, observed in applicable_windows(spec, model, row, bundle, accounts):
+        observed = cycle_observation(wspec, observed, row, now)
+        reason = window_refusal(wid, wspec, observed, row, now, latched) or (
+            f"{wid}: used up until its reset at {observed['resets_at']}; start after its reset"
+            if used_up_in_cycle(observed, now) else None)
+        state = None if reason else window_state(wid, wspec, observed, spec, now, policy.get('short_window_hours', 24),
+                                                 account_stale=stale)
+        if state is None:
+            pass
+        elif not state['short']:
+            # Priced work needs remaining - need >= safety margin; no task size passes at or under the margin.
+            margin = policy.get('safety_margin_pct', 5)
+            if state['known'] and state['remaining'] <= margin and unit_rate(
+                    spec, wid, model, bundle.get('effort'), policy, (accounts.get('effort_curves') or {}).get(model, {}),
+                    model_spec(accounts, model), now):
+                reason = (f"{wid} has {state['remaining']:.1f}% left, within the {margin:g}% safety margin, "
+                          f"for {state['reset_hours']:.1f}h")
+        elif not state['known']:
+            reset = parse_time((observed or {}).get('resets_at'))
+            if reset is not None and reset > now and (observed or {}).get('reset_time_passed') is not True:
+                reason = f'{wid} has an active reset in {(reset - now).total_seconds() / 3600:.1f}h with unknown remaining percentage'
+        elif state['remaining'] <= (floor := short_window_limits(spec, wid, policy, now)[1]):
+            reason = (f"{wid} is empty ({state['remaining']:.0f}% left, floor {floor:g}%) "
+                      f"for {state['reset_hours']:.1f}h; start after its reset")
+        if reason:
+            found.append((wid, reason))
+    return found
 
 
 def window_state(wid, spec, observed, account_spec, now, short_hours, account_stale=False, expected_reset_at=None):
@@ -1876,13 +1960,12 @@ def evaluate_bundle(bundle, task, ctx):
     if not spec.get('unmetered'):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
-        latched = set((((accounts.get('_discovery') or {}).get('accounts') or {}).get(bundle['account']) or {})
-                      .get('exhausted_windows') or ())
+        latched = latched_windows(accounts, bundle['account'])
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
-            if wid in latched:
-                exclude(f'{wid}: quota confirmed exhausted; refresh quota or replan')
-            elif below_launch_floor(wspec, observed, acct_usage, now):
-                exclude(f'{wid}: confirmed exhausted or below launch floor; refresh quota or replan')
+            observed = cycle_observation(wspec, observed, acct_usage, now)
+            refusal = window_refusal(wid, wspec, observed, acct_usage, now, latched)
+            if refusal:
+                exclude(refusal)
             expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                  account_stale=acct_stale, expected_reset_at=expected)
@@ -1890,9 +1973,7 @@ def evaluate_bundle(bundle, task, ctx):
             if not state['known']:
                 if state['short']:
                     step = None if unit is None else hours * unit * context_scale
-                    cap = capacity_usd(spec, wid, now)
-                    small_short = cap is not None and cap < policy.get('small_short_capacity_usd', 50)
-                    margin_pct = policy.get('small_short_safety_margin_pct', 12) if small_short else policy['safety_margin_pct']
+                    margin_pct = short_window_limits(spec, wid, policy, now)[2]
                     if step is not None and 100.0 - step < margin_pct:
                         exclude(f'{wid} full capacity (100%) is short of the ~{step:.1f}% the work needs plus {margin_pct}% margin')
                     elif (observed and (reset_dt := parse_time(observed.get('resets_at'))) is not None
@@ -1911,11 +1992,7 @@ def evaluate_bundle(bundle, task, ctx):
                 result['notes'].append(f'{wid}: -${reserved_usd:.2f} (-{reserved_pct:.1f}%) reserved by in-flight {bundle["account"]} dispatch')
             if state['short']:
                 step = None if unit is None else hours * unit * context_scale
-                cap = capacity_usd(spec, wid, now)
-                small_short_ref = policy.get('small_short_capacity_usd', 50)
-                small_short = cap is not None and cap < small_short_ref
-                floor_pct = policy.get('small_short_window_floor_pct', 25) if small_short else policy['short_window_floor_pct']
-                margin_pct = policy.get('small_short_safety_margin_pct', 12) if small_short else policy['safety_margin_pct']
+                small_short, floor_pct, margin_pct = short_window_limits(spec, wid, policy, now)
                 empty = state['remaining'] <= floor_pct
                 if empty or (step is not None and state['remaining'] - step < margin_pct):
                     wait = state['reset_hours']
@@ -1983,6 +2060,7 @@ def evaluate_bundle(bundle, task, ctx):
             acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
             fast_ok, fast_opp, fast_binding = True, 0.0, None
             for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
+                observed = cycle_observation(wspec, observed, acct_usage, now)
                 expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
                 st = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                   account_stale=acct_stale, expected_reset_at=expected)
@@ -1998,10 +2076,7 @@ def evaluate_bundle(bundle, task, ctx):
                           'remaining': max(0.0, st['remaining'] - res_pct), 'reserved_usd': round(res_usd, 2)}
                 if st['short']:
                     f_step = None if unit is None else hours * unit * context_scale * fast_mult
-                    cap = capacity_usd(spec, wid, now)
-                    small_short = cap is not None and cap < policy.get('small_short_capacity_usd', 50)
-                    fl_pct = policy.get('small_short_window_floor_pct', 25) if small_short else policy['short_window_floor_pct']
-                    mg_pct = policy.get('small_short_safety_margin_pct', 12) if small_short else policy['safety_margin_pct']
+                    _, fl_pct, mg_pct = short_window_limits(spec, wid, policy, now)
                     if st['remaining'] <= fl_pct or (f_step is not None and st['remaining'] - f_step < mg_pct):
                         fast_ok = False
                         break

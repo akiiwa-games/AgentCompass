@@ -488,6 +488,8 @@ class UsageWindow:
     resets_at: str | None = None
     # A pool of N same-plan subscriptions: used_pct is their mean, so the window holds N accounts' worth.
     accounts: int = 1
+    # Models this allowance is scoped to, as the provider names them; None binds every model (window_scope.py).
+    models: list[str] | None = None
 
 
 @dataclass
@@ -565,6 +567,7 @@ def _provider_to_dict(p: ProviderUsage) -> dict[str, Any]:
                 "used_pct": w.used_pct,
                 "resets_at": w.resets_at,
                 **({"accounts": w.accounts} if w.accounts > 1 else {}),
+                **({"models": list(w.models)} if w.models else {}),
             }
             for w in p.windows
         ],
@@ -586,6 +589,12 @@ def _provider_to_dict(p: ProviderUsage) -> dict[str, Any]:
     return out
 
 
+def window_models(window) -> list[str] | None:
+    models = window.get("models") if isinstance(window, dict) else None
+    named = [m for m in models if isinstance(m, str) and m.strip()] if isinstance(models, list) else []
+    return named or None
+
+
 def pool_accounts(window) -> int:
     count = window.get("accounts") if isinstance(window, dict) else None
     return count if isinstance(count, int) and not isinstance(count, bool) and count > 1 else 1
@@ -599,6 +608,7 @@ def _provider_from_dict(d: dict[str, Any]) -> ProviderUsage:
             used_pct=float(w["used_pct"]) if w.get("used_pct") is not None else None,
             resets_at=w.get("resets_at"),
             accounts=pool_accounts(w),
+            models=window_models(w),
         )
         for w in (d.get("windows") or [])
         if isinstance(w, dict)
@@ -1017,6 +1027,7 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
                 label=f"{model_key} 7d",
                 used_pct=pct_f,
                 resets_at=entry.get("resets_at"),
+                models=[model],
             )
         )
 

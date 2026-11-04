@@ -401,9 +401,11 @@ class RouterGateHookTests(unittest.TestCase):
             paseo_dir = Path(tmp) / "paseo_agents"
             proj_dir = paseo_dir / "E-PROJECTS-demo"
             proj_dir.mkdir(parents=True)
-            for account_name, choice_name, agent_uuid in (
-                ("claude-lab", "lab_sonnet55_high", "11111111-1111-4111-8111-111111111111"),
-                ("claude-magpie", "sonnet55_high_claude_magpie", "22222222-2222-4222-8222-222222222222"),
+            # claude-lab's five_hour declares a 25% launch floor; claude-magpie is not configured, so only a
+            # used-up window refuses it (no account name implies a floor).
+            for account_name, choice_name, agent_uuid, used in (
+                ("claude-lab", "lab_sonnet55_high", "11111111-1111-4111-8111-111111111111", 85.0),
+                ("claude-magpie", "sonnet55_high_claude_magpie", "22222222-2222-4222-8222-222222222222", 100.0),
             ):
                 cache.write_text(
                     json.dumps(
@@ -416,7 +418,7 @@ class RouterGateHookTests(unittest.TestCase):
                                     "windows": [
                                         {
                                             "id": "five_hour",
-                                            "used_pct": 85.0,
+                                            "used_pct": used,
                                             "resets_at": (T0 + dt.timedelta(hours=2)).isoformat(),
                                         }
                                     ],
@@ -441,7 +443,7 @@ class RouterGateHookTests(unittest.TestCase):
                         }
                     ],
                 )
-                # 1. Blocks new secondary Claude create_agent / CLI when five_hour >= 75% used even if ledger matches
+                # 1. Blocks new secondary Claude create_agent / CLI when five_hour is below its floor even if ledger matches
                 res_create = gate.evaluate_payload(
                     {"tool_name": "mcp__paseo__create_agent", "tool_input": {"provider": account_name, "prompt": "work"}},
                     ledger_path=claude_ledger,
@@ -462,7 +464,7 @@ class RouterGateHookTests(unittest.TestCase):
                 self.assertEqual(res_cli["decision"], "block")
                 self.assertIn(account_name, res_cli["reason"])
 
-                # 2. Blocks run_turn / send_message to existing secondary Claude Paseo agent when five_hour >= 75% used
+                # 2. Blocks run_turn / send_message to an existing secondary Claude Paseo agent the same way
                 res_turn = gate.evaluate_payload(
                     {
                         "toolName": "codemode",
@@ -804,6 +806,105 @@ class RouterGateHookTests(unittest.TestCase):
                 result = gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input': {
                     'agentId': wid, 'prompt': 'wrap up', 'notifyOnFinish': notify}}, now=T0)
                 self.assertIn(cause, result['reason'])
+
+    def quota_cache(self, rows):
+        path = self.state / "usage.json"
+        path.write_text(json.dumps({"providers": {name: {"available": True, "stale": False, "fetched_at": T0.isoformat(),
+                                                         **row} for name, row in rows.items()}}), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def window(wid, used, hours=2.0, **extra):
+        return {"id": wid, "used_pct": used, "resets_at": (T0 + dt.timedelta(hours=hours)).isoformat(), **extra}
+
+    def owned_worker(self, account, bundle_id, provider, status="running"):
+        directory = self.state / "agents" / "project"
+        directory.mkdir(parents=True, exist_ok=True)
+        agent_id = "33333333-3333-4333-8333-333333333333"
+        (directory / (agent_id + ".json")).write_text(json.dumps({
+            "provider": provider, "lastStatus": status, "labels": {
+                "router.parent_id": "parent", "paseo.parent-agent-id": "parent",
+                "router.account": account, "router.bundle_id": bundle_id}}), encoding="utf-8")
+        return agent_id
+
+    def test_antigravity_third_party_exhaustion_blocks_only_models_that_draw_it(self):
+        # The 2026-11-04 reading: 3p-weekly used up, the Gemini pools have room.
+        self.quota_cache({"antigravity": {"windows": [
+            self.window("gemini-weekly", 28.4, 67), self.window("gemini-5h", 7.3, 4),
+            self.window("3p-weekly", 99.26, 7), self.window("3p-5h", 0, 5)]}})
+        for bundle_id, blocked in (("argon_high", False), ("flash_high", False),
+                                   ("agy_opus55_low", True), ("agy_sonnet55_high", True)):
+            agent_id = self.owned_worker("antigravity", bundle_id, "antigravity-resilient")
+            for caller, status in (("parent", "running"), ("parent", "idle"), ("other", "running")):
+                self.owned_worker("antigravity", bundle_id, "antigravity-resilient", status)
+                with self.subTest(bundle=bundle_id, caller=caller, status=status),                         mock.patch.dict(os.environ, {"PASEO_AGENT_ID": caller}):
+                    result = gate.evaluate_payload({"tool_name": "send_agent_prompt", "tool_input": {
+                        "agentId": agent_id, "prompt": "wrap up"}}, now=T0)
+                    self.assertEqual("reason" in result, blocked, result)
+                    if blocked:
+                        self.assertIn("3p-weekly", result["reason"])
+            ledger = self.write_ledger(str(self.state), [self.route("antigravity-resilient", "gemini-4-argon-high")])
+            launch = {"tool_name": "create_agent", "tool_input": {
+                "provider": "antigravity-resilient/gemini-4-argon-high", "settings": {"modeId": "full-access"},
+                "labels": {"router.account": "antigravity", "router.bundle_id": bundle_id}}}
+            with self.subTest(launch=bundle_id),                     mock.patch.object(gate.router_module("dispatch_registry"), "claim", return_value=None):
+                self.assertEqual("reason" in gate.evaluate_payload(launch, ledger_path=ledger, now=T0), blocked)
+
+    def test_used_up_five_hour_window_blocks_every_account_alike(self):
+        five = self.window("five_hour", 100)
+        week = self.window("seven_day", 20, 100)
+        for account, model in (("claude", "claude-opus-5-5"), ("claude-2", "claude-opus-5-5"),
+                               ("claude-lab", "claude-sonnet-5-5"), ("codex", "gpt-6.1-sol")):
+            cache = self.quota_cache({account: {"windows": [five, week]}})
+            with self.subTest(account=account):
+                self.assertIn("five_hour", gate.check_account_quota_exhausted(account, cache, T0, model=model))
+                for fresh_row in ({"windows": [self.window("five_hour", 30), week]},
+                                  {"windows": [{"id": "five_hour", "used_pct": 0, "resets_at": None}, week]}):
+                    cache = self.quota_cache({account: fresh_row})   # partly used, or unstarted (no reset yet)
+                    self.assertIsNone(gate.check_account_quota_exhausted(account, cache, T0, model=model))
+
+    def test_scoped_week_blocks_only_its_own_model(self):
+        cache = self.quota_cache({"claude": {"windows": [
+            self.window("weekly_fable", 100, 40), self.window("seven_day", 30, 40), self.window("five_hour", 10)]}})
+        self.assertIn("weekly_fable", gate.check_account_quota_exhausted("claude", cache, T0, model="claude-fable-5-1"))
+        self.assertIsNone(gate.check_account_quota_exhausted("claude", cache, T0, model="claude-opus-5-5"))
+        # A scope the provider reports on the reading needs no configuration or code (a new Sonnet-only week).
+        cache = self.quota_cache({"claude": {"windows": [
+            self.window("weekly_sonnet", 100, 40, models=["Sonnet"]), self.window("seven_day", 30, 40)]}})
+        self.assertIn("weekly_sonnet", gate.check_account_quota_exhausted("claude", cache, T0, model="claude-sonnet-5-5"))
+        self.assertIsNone(gate.check_account_quota_exhausted("claude", cache, T0, model="claude-opus-5-5"))
+        # Without any declared scope the window binds every model.
+        cache = self.quota_cache({"claude": {"windows": [self.window("weekly_mystery", 100, 40)]}})
+        self.assertIsNotNone(gate.check_account_quota_exhausted("claude", cache, T0, model="claude-opus-5-5"))
+
+    def test_magpie_pool_counts_every_account_it_holds(self):
+        # claude-lab's five_hour keeps a 25% launch floor: 20% of one account is under it, 2 x 20% is not.
+        for used, accounts, blocked in ((60, 2, False), (80, 2, False), (80, 1, True)):
+            cache = self.quota_cache({"claude-lab": {"windows": [
+                self.window("five_hour", used, accounts=accounts), self.window("seven_day", 30, 100, accounts=accounts)]}})
+            with self.subTest(used=used, accounts=accounts):
+                self.assertEqual(gate.check_account_quota_exhausted(
+                    "claude-lab", cache, T0, model="claude-sonnet-5-5") is not None, blocked)
+
+    def test_stale_reading_holds_inside_its_cycle_only(self):
+        week = self.window("seven_day", 100, 24)
+        for fetched, blocked in ((T0 - dt.timedelta(days=2), True), (T0 - dt.timedelta(days=8), False)):
+            cache = self.quota_cache({"codex": {"fetched_at": fetched.isoformat(), "windows": [
+                dict(week, id="usage")]}})
+            with self.subTest(fetched=fetched):
+                self.assertEqual(gate.check_account_quota_exhausted(
+                    "codex", cache, T0, model="gpt-6.1-sol") is not None, blocked)
+
+    def test_without_router_modules_only_the_latch_is_checked(self):
+        cache = self.quota_cache({"claude": {"windows": [self.window("five_hour", 100)]}})
+        real = gate.router_module
+
+        def missing(name):
+            if name == "quota_exhaustion":
+                return real(name)
+            raise ImportError(name)
+        with mock.patch.object(gate, "router_module", side_effect=missing):
+            self.assertIsNone(gate.check_account_quota_exhausted("claude", cache, T0, model="claude-opus-5-5"))
 
     def test_interleaved_decisions_match_older_route_in_both_orders(self):
         a = self.route(parent_agent_id="parent-a", task_id="task-a")

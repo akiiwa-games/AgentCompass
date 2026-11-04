@@ -162,10 +162,10 @@ def proxy_harness(family, model):
 
 
 def _draws(spec, model, accounts):
-    from allocator import legacy_model_binds_window
+    import window_scope
     windows = spec.get('windows') if isinstance(spec.get('windows'), dict) else {}
     canonical = resolve_canonical_model(model, accounts.get('models') or {}, accounts.get('aliases') or {}) or model
-    return [wid for wid, w in windows.items() if legacy_model_binds_window(wid, w, canonical)]
+    return [wid for wid, w in windows.items() if window_scope.binds(canonical, w)]
 
 
 def _availability(entry, raw, now, seen_at):

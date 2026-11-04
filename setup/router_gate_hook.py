@@ -34,7 +34,6 @@ def router_command() -> str:
 ROUTER_CMD = router_command()
 DEFAULT_PASEO_AGENTS = HOME / ".paseo" / "agents"
 DEFAULT_WINDOW_SECONDS = 900  # 15 minutes
-QUOTA_MAX_AGE_SECONDS = 900
 
 DIRECT_SUBAGENT_TOOLS = frozenset({
     "Agent",
@@ -551,7 +550,7 @@ def check_target_disabled(
     elif ((accounts or {}).get("accounts") or {}).get(account, {}).get("verified") is False:
         cause = f"账号 {account} 已标记 verified: false（accounts-override.json / accounts.json）"
     elif candidates and all(c.get("disabled") for c in candidates):
-        cause = "档位 " + ", ".join(f"{c['bundle_id']}（{c['disabled']}）" for c in candidates) + " 已停用"
+        cause = "档位 " + ", ".join(c["bundle_id"] for c in candidates) + " 已在模型管理中停用"
     else:
         return None
     return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
@@ -579,10 +578,6 @@ def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] |
         return sorted({wid for bundle in candidates for wid in pools(dict(bundle, id=bundle["bundle_id"]), accounts)})
     except Exception:
         return None
-
-
-def quota_window_seconds(wid: str) -> int:
-    return 5 * 3600 if wid in ("five_hour", "5h") else 7 * 86400
 
 
 def usage_row(account: str, usage_cache_path: Path | None = None) -> dict | None:
@@ -617,11 +612,18 @@ def check_account_quota_exhausted(
     now: dt.datetime | None = None,
     accounts: dict | None = None,
     windows: list[str] | None = None,
+    bundles: list[dict] | None = None,
+    model: str | None = None,
 ) -> str | None:
-    """Return a block reason if account's active quota window is exhausted in usage-cache.json.
+    """Block reason when a window the launch draws refuses it, decided by the router itself.
 
-    `windows` are the quota windows the launch draws; a per-window exhaustion latch blocks only
-    launches drawing a latched window (an account-wide latch blocks every launch).
+    `bundles` are the target's resolved bundles; without them the launch is probed as `model` on `account`
+    (an unknown model draws every window). Which windows bind and when they refuse come from
+    allocator.launch_blockers on route_judge.usage_snapshot, the same rules and reading routing uses:
+    the launch floor, a window used up inside its cycle, an empty short window, a scope from data only.
+    `windows` are the quota windows the launch draws, for the confirmed-exhaustion latch (an account-wide
+    latch blocks every launch). When the router modules cannot be loaded only that latch is checked and
+    the gate otherwise allows: it never invents quota rules of its own.
     """
     if not account:
         return None
@@ -635,60 +637,27 @@ def check_account_quota_exhausted(
         exhaustion = None
     if exhaustion is not None and exhaustion.blocked(account, row, windows=windows):
         return '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear the exhaustion record.'
-    if not isinstance(row, dict) or row.get("available") is False:
+    try:
+        allocator = router_module("allocator")
+        judge = router_module("route_judge")
+        inventory = router_module("provider_inventory")
+        accounts = accounts if accounts is not None else allocator.load_accounts()
+        usage = judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
+        usage = inventory.merge_usage(usage, accounts, now, names={account})
+        probes = [dict(b, id=b.get("bundle_id") or b.get("id")) for b in bundles or ()] or [
+            {"account": account, "model": model or ""}]
+        found = [(probe, refusal) for probe in probes
+                 for refusal in allocator.launch_blockers(probe, accounts, usage, now)]
+    except Exception:
         return None
-    fetched_at = parse_ts(row.get("fetched_at"))
-    if fetched_at is None or (fetched_at - now).total_seconds() > 60:
+    if not found:
         return None
-    acc_spec = ((accounts or {}).get("accounts") or {}).get(account) or {}
-    raw_windows = acc_spec.get("windows")
-    if isinstance(raw_windows, dict):
-        win_specs = {str(k): v for k, v in raw_windows.items() if isinstance(v, dict)}
-    else:
-        win_specs = {
-            str(ws.get("id") or ""): ws
-            for ws in (raw_windows or [])
-            if isinstance(ws, dict) and ws.get("id")
-        }
-    for w in row.get("windows") or []:
-        if not isinstance(w, dict):
-            continue
-        wid = str(w.get("id") or "")
-        if wid in ("weekly_fable", "seven_day_fable", "weekly_opus", "seven_day_opus"):
-            continue
-        resets_at = parse_ts(w.get("resets_at"))
-        if resets_at is None or resets_at <= now:
-            continue
-        used = w.get("used_pct")
-        if not isinstance(used, (int, float)) or isinstance(used, bool):
-            continue
-        # Usage only grows until resets_at: a stale or old reading taken inside the
-        # current cycle still holds; only a reading from a previous cycle is void.
-        cycle_start = resets_at - dt.timedelta(seconds=quota_window_seconds(wid))
-        if fetched_at < cycle_start and (now - fetched_at).total_seconds() > QUOTA_MAX_AGE_SECONDS:
-            continue
-        rem = round(100.0 - float(used), 1)
-        c_wid = "five_hour" if wid in ("five_hour", "5h", "usage-300m") else ("usage" if wid == "seven_day" and "usage" in win_specs else wid)
-        w_spec = win_specs.get(wid) or win_specs.get(c_wid) or {}
-        min_rem = w_spec.get("launch_min_remaining_pct")
-        if min_rem is None and account.startswith("claude-") and c_wid == "five_hour":
-            min_rem = 25.0
-        if isinstance(min_rem, (int, float)) and used >= round(100.0 - float(min_rem), 4):
-            max_used = int(round(100.0 - float(min_rem)))
-            return (
-                f"[Router Gate] 拦截向已满额/低余量账号 {account} 派发或续跑任务："
-                f"{account} 当前 {wid} 已用 {used}%（仅剩 {rem}%，重置时间 {w.get('resets_at')}），"
-                f"窗口已触顶或进入保护线（>={max_used}%）。"
-                f"禁止继续创建或调用 {account} worker，请把进展或任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 改派其他可用账号（如 codex / claude / dot / pi）。"
-            )
-        threshold = 95.0 if account.startswith("claude-") else 98.0
-        if used >= threshold:
-            return (
-                f"[Router Gate] 拦截向已满额账号 {account} 派发或续跑任务："
-                f"{account} 当前 {wid} 已用 {used}%（仅剩 {rem}%，重置时间 {w.get('resets_at')}）。"
-                f"禁止继续调用 {account}，请把进展或任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 改派其他可用账号。"
-            )
-    return None
+    probe, (wid, why) = found[0]
+    what = probe.get("id") or probe.get("model") or "?"
+    return (
+        f"[Router Gate] 拦截向额度不足的窗口派发或续跑任务：{account} 的 {what} 所用窗口 {wid} 不可用（{why}）。"
+        f"路由同样不会选它；请把进展或任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 改派其他可用账号/档位。"
+    )
 
 
 def is_dot_route(row: dict | None) -> bool:
@@ -952,7 +921,8 @@ def evaluate_payload(
             reason = ((None if controlling else check_target_disabled(target, account, candidates, accounts, policy)) or
                       check_account_quota_exhausted(account or target.get("provider"),
                                                     usage_cache_path=usage_cache_path, now=now, accounts=accounts,
-                                                    windows=target_windows(candidates, accounts)))
+                                                    windows=target_windows(candidates, accounts),
+                                                    bundles=candidates, model=target.get("model")))
             if reason:
                 return format_response(False, harness_kind, reason)
         if not trigger:

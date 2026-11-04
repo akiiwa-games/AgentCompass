@@ -26,7 +26,10 @@ import threading
 import urllib.request
 import uuid
 
-SCHEMA_VERSION = 1              # the newest data schema this code reads; bump with any breaking data change
+SCHEMA_VERSION = 2              # the newest data schema this code reads; bump with any breaking data change
+# The oldest one: schema 1 scoped Antigravity's third-party windows with a `models: ["3p"]` pseudo-tag that only
+# retired code understood (schema 2 declares `models_except`; window_scope.py), so a schema-1 set is not read.
+MIN_SCHEMA_VERSION = 2
 FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json')
 MANIFEST = 'public-data.json'
 CONFIG_FILE = 'public-data-config.json'
@@ -133,8 +136,8 @@ def check_set(directory, manifest):
     if not isinstance(manifest, dict):
         return 'no_manifest', 'no public-data.json'
     schema = manifest.get('schema_version')
-    if not isinstance(schema, int) or not 1 <= schema <= SCHEMA_VERSION:
-        return 'schema', f'data schema {schema!r}; this install reads 1..{SCHEMA_VERSION}'
+    if not isinstance(schema, int) or not MIN_SCHEMA_VERSION <= schema <= SCHEMA_VERSION:
+        return 'schema', f'data schema {schema!r}; this install reads {MIN_SCHEMA_VERSION}..{SCHEMA_VERSION}'
     if _parse(manifest.get('published_at')) is None:
         return 'incomplete', 'manifest has no published_at'
     files = manifest.get('files') if isinstance(manifest.get('files'), dict) else {}
@@ -296,7 +299,7 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
                      note=(f'published data uses schema {schema}; this install reads up to {SCHEMA_VERSION}. '
                            'It is ignored until AgentCompass is updated.'))
         return {'status': 'schema_too_new', 'remote_schema_version': schema, 'schema_version': SCHEMA_VERSION}
-    if not isinstance(schema, int) or schema < 1 or _parse(manifest.get('published_at')) is None:
+    if not isinstance(schema, int) or schema < MIN_SCHEMA_VERSION or _parse(manifest.get('published_at')) is None:
         raise ValueError('published manifest has no usable schema_version or published_at')
     version = set_version(manifest)
     target = cache / 'sets' / version
