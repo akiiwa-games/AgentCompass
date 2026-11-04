@@ -2010,11 +2010,11 @@ def evaluate_bundle(bundle, task, ctx):
     available_at = None
     if spec.get('unlimited'):
         result['notes'].append('unlimited usage')
-        # The free-usage preference goes to a model the data shows sufficient for this task: a measured score
-        # (not `score_estimated`) whose ability meets the required ability. An estimated row, a family/generic
-        # default or an ability shortfall earns none, so free capacity cannot lift an unproven model.
-        if not info.get('score_estimated') and ability >= target:
-            result['components']['free_usage'] = policy['unlimited_bonus']
+    # Free capacity is priced as zero opportunity cost below. The extra free-usage preference is declared per account
+    # in public data (`free_usage_bonus`), and only for a measured model row (not `score_estimated`) whose ability meets
+    # the required ability; other free accounts compete on their zero opportunity cost alone.
+    if spec.get('free_usage_bonus') and not info.get('score_estimated') and ability >= target:
+        result['components']['free_usage'] = policy['unlimited_bonus']
     boost = sum(float(o.get('boost') or 0) for o in ctx.get('overrides', ())
                 if o['account'] == bundle['account'] and (not o.get('model') or canonical(o['model'], accounts) == model)
                 and (expected_reset_time(o) is None or expected_reset_time(o) <= now))

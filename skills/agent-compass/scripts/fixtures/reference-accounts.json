@@ -567,13 +567,13 @@
       "basis": "ChatGPT Pro web bridge advisor; ceiling anchor across reasoning (1.00) and anti_hallucination (0.95)."
     },
     "claude-haiku-5-5": {
-      "tier": 3.2,
+      "tier": 2.93,
       "cost": 1,
       "visual": 0.48,
       "usd_per_hour": 0.8,
       "capabilities": {
         "reasoning": 0.58,
-        "coding": 0.65,
+        "coding": 0.49,
         "exploration": 0.62,
         "anti_hallucination": 0.62,
         "visual": 0.48,
@@ -584,18 +584,17 @@
         "global_rigor": 0.53,
         "module_precision": 0.67
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Haiku 5.5 (High) 1589 [1579,1599]; Agent 2026-11-02 Claude Haiku 5.5 (High) score 0.007 [-0.004,0.017]; Text hard prompts (style control) 2026-10-28 Claude Haiku 5.5 (High) 1452 [1443,1462]. tier 2.93 = mean of the per-board fits {'webdev': 3.04, 'agent': 2.83}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "gpt-6.1-terra": {
       "fast_capable": true,
-      "tier": 3.7,
+      "tier": 3.51,
       "cost": 3,
       "visual": 0.72,
       "usd_per_hour": 3.0,
       "capabilities": {
         "reasoning": 0.73,
-        "coding": 0.83,
+        "coding": 0.65,
         "exploration": 0.71,
         "anti_hallucination": 0.75,
         "visual": 0.72,
@@ -606,19 +605,18 @@
         "global_rigor": 0.65,
         "module_precision": 0.88
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models and opencode cache openai/gpt-6.1-terra. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "LMArena: WebDev 2026-10-28 GPT-6.1 Terra (Max) 1673 [1657,1688]; Agent 2026-11-02 GPT-6.1 Terra (Max) score 0.102 [0.090,0.113]. tier 3.51 = mean of the per-board fits {'webdev': 3.46, 'agent': 3.56}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
       "context_window": 500000
     },
     "gpt-6-sol": {
       "fast_capable": true,
-      "tier": 3.5,
+      "tier": 3.48,
       "cost": 3,
       "visual": 0.68,
       "usd_per_hour": 2.6,
       "capabilities": {
         "reasoning": 0.69,
-        "coding": 0.82,
+        "coding": 0.66,
         "exploration": 0.6,
         "anti_hallucination": 0.72,
         "visual": 0.68,
@@ -629,19 +627,18 @@
         "global_rigor": 0.25,
         "module_precision": 0.92
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "LMArena: WebDev 2026-10-28 GPT-6 Sol (Max) 1678 [1669,1688]; Agent 2026-11-02 GPT-6 Sol (Max) score 0.069 [0.054,0.085]; Vision 2026-10-19 GPT-6 Sol (Max) 1240 [1229,1251]; Text hard prompts (style control) 2026-10-28 GPT-6 Sol (Max) 1484 [1477,1491]. tier 3.48 = mean of the per-board fits {'webdev': 3.47, 'agent': 3.49}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
       "context_window": 272000
     },
     "gpt-6-luna": {
       "fast_capable": true,
-      "tier": 3.2,
+      "tier": 2.96,
       "cost": 1,
       "visual": 0.55,
       "usd_per_hour": 0.8,
       "capabilities": {
         "reasoning": 0.58,
-        "coding": 0.65,
+        "coding": 0.47,
         "exploration": 0.57,
         "anti_hallucination": 0.62,
         "visual": 0.55,
@@ -652,18 +649,17 @@
         "global_rigor": 0.45,
         "module_precision": 0.68
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "LMArena: WebDev 2026-10-28 GPT-6 Luna (Max) 1579 [1574,1585]; Agent 2026-11-02 GPT-6 Luna (Max) score 0.019 [0.015,0.023]; Vision 2026-10-19 GPT-6 Luna (Max) 1216 [1205,1227]; Text hard prompts (style control) 2026-10-28 GPT-6 Luna (Max) 1464 [1459,1468]. tier 2.96 = mean of the per-board fits {'webdev': 2.97, 'agent': 2.94}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
       "context_window": 272000
     },
     "gpt-5.6-sol": {
-      "tier": 3.4,
+      "tier": 3.34,
       "cost": 2,
       "visual": 0.65,
       "usd_per_hour": 2.4,
       "capabilities": {
         "reasoning": 0.67,
-        "coding": 0.79,
+        "coding": 0.54,
         "exploration": 0.58,
         "anti_hallucination": 0.7,
         "visual": 0.65,
@@ -674,18 +670,17 @@
         "global_rigor": 0.25,
         "module_precision": 0.88
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "LMArena: WebDev 2026-10-28 GPT-5.6 Sol (xHigh, Codex Harness) 1616 [1610,1622]; Agent 2026-11-02 GPT-5.6 Sol (xHigh) score 0.046 [0.035,0.056]; Vision 2026-10-19 GPT-5.6 Sol (xHigh) 1281 [1273,1288]; Text hard prompts (style control) 2026-10-28 GPT-5.6 Sol (xHigh) 1511 [1506,1516]. tier 3.34 = mean of the per-board fits {'webdev': 3.24, 'agent': 3.44}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
       "context_window": 272000
     },
     "gpt-5.6-terra": {
-      "tier": 3.5,
+      "tier": 2.59,
       "cost": 2,
       "visual": 0.67,
       "usd_per_hour": 2.7,
       "capabilities": {
         "reasoning": 0.69,
-        "coding": 0.78,
+        "coding": 0.36,
         "exploration": 0.66,
         "anti_hallucination": 0.71,
         "visual": 0.67,
@@ -696,18 +691,17 @@
         "global_rigor": 0.6,
         "module_precision": 0.83
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "LMArena: WebDev 2026-10-28 GPT-5.6 Terra (xHigh, Codex Harness) 1520 [1514,1526]; Agent 2026-11-02 GPT-5.6 Terra (xHigh) score -0.015 [-0.023,-0.007]; Vision 2026-10-19 GPT-5.6 Terra (xHigh) 1271 [1264,1278]; Text hard prompts (style control) 2026-10-28 GPT-5.6 Terra (xHigh) 1490 [1485,1494]. tier 2.59 = mean of the per-board fits {'webdev': 2.55, 'agent': 2.63}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
       "context_window": 272000
     },
     "gpt-5.6-luna": {
-      "tier": 3.1,
+      "tier": 2.55,
       "cost": 1,
       "visual": 0.5,
       "usd_per_hour": 0.7,
       "capabilities": {
         "reasoning": 0.55,
-        "coding": 0.62,
+        "coding": 0.35,
         "exploration": 0.54,
         "anti_hallucination": 0.59,
         "visual": 0.5,
@@ -718,8 +712,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.65
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
+      "basis": "LMArena: WebDev 2026-10-28 GPT-5.6 Luna (xHigh, Codex Harness) 1519 [1512,1525]; Vision 2026-10-19 GPT-5.6 Luna (xHigh) 1257 [1250,1265]; Text hard prompts (style control) 2026-10-28 GPT-5.6 Luna (xHigh) 1475 [1470,1480]. tier 2.55 = mean of the per-board fits {'webdev': 2.55}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
       "context_window": 272000
     },
     "grok-4.7-build-fast": {
@@ -744,13 +737,13 @@
       "basis": "Provisional routing prior, ID/modalities verified in ~/.grok/models_cache.json. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "deepseek-v4-pro": {
-      "tier": 3.9,
+      "tier": 2.86,
       "cost": 2,
       "visual": false,
       "usd_per_hour": 1.2,
       "capabilities": {
         "reasoning": 0.78,
-        "coding": 0.82,
+        "coding": 0.47,
         "exploration": 0.72,
         "anti_hallucination": 0.75,
         "visual": 0,
@@ -761,17 +754,16 @@
         "global_rigor": 0.74,
         "module_precision": 0.84
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache deepseek/deepseek-v4-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 DeepSeek-V4-Pro (High, 20260813) 1582 [1572,1591]; Agent 2026-11-02 DeepSeek-V4-Pro (High, 20260813) score -0.003 [-0.020,0.014]; Text hard prompts (style control) 2026-10-28 DeepSeek-V4-Pro (High, 20260813) 1483 [1475,1491]. tier 2.86 = mean of the per-board fits {'webdev': 2.99, 'agent': 2.74}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "glm-5.3": {
-      "tier": 3.7,
+      "tier": 3.08,
       "cost": 2,
       "visual": 0.6,
       "usd_per_hour": 1.0,
       "capabilities": {
         "reasoning": 0.72,
-        "coding": 0.78,
+        "coding": 0.55,
         "exploration": 0.74,
         "anti_hallucination": 0.72,
         "visual": 0.6,
@@ -782,17 +774,16 @@
         "global_rigor": 0.72,
         "module_precision": 0.8
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache zhipuai/glm-5.3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 GLM-5.3 (Max) 1623 [1616,1630]; Agent 2026-11-02 GLM-5.3 (Max) score 0.012 [0.004,0.020]; Text hard prompts (style control) 2026-10-28 GLM-5.3 (Max) 1505 [1499,1511]. tier 3.08 = mean of the per-board fits {'webdev': 3.29, 'agent': 2.87}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "glm-5.3-flash-free": {
-      "tier": 2.9,
+      "tier": 2.85,
       "cost": 0,
       "visual": 0.4,
       "usd_per_hour": 0,
       "capabilities": {
         "reasoning": 0.5,
-        "coding": 0.54,
+        "coding": 0.52,
         "exploration": 0.52,
         "anti_hallucination": 0.52,
         "visual": 0.4,
@@ -803,8 +794,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 GLM-5.3-Flash 1607 [1600,1613]; Agent 2026-11-02 GLM-5.3-Flash score -0.025 [-0.032,-0.018]; Vision 2026-10-19 GLM-5.3-Flash 1294 [1288,1300]; Text hard prompts (style control) 2026-10-28 GLM-5.3-Flash 1502 [1496,1507]. tier 2.85 = mean of the per-board fits {'webdev': 3.17, 'agent': 2.54}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "qwen3-coder-next": {
       "tier": 3.7,
@@ -828,13 +818,13 @@
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache openrouter/qwen/qwen3-coder-next. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "qwen3.8-max": {
-      "tier": 3.9,
+      "tier": 3.14,
       "cost": 2,
       "visual": 0.65,
       "usd_per_hour": 1.5,
       "capabilities": {
         "reasoning": 0.78,
-        "coding": 0.8,
+        "coding": 0.65,
         "exploration": 0.75,
         "anti_hallucination": 0.74,
         "visual": 0.65,
@@ -845,17 +835,16 @@
         "global_rigor": 0.75,
         "module_precision": 0.8
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache alibaba/qwen3.8-max. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 Qwen3.8-Max (0902) 1676 [1669,1683]; Agent 2026-11-02 Qwen3.8-Max score 0.004 [-0.002,0.011]; Vision 2026-10-19 Qwen3.8-Max 1313 [1305,1320]; Text hard prompts (style control) 2026-10-28 Qwen3.8-Max 1504 [1498,1509]. tier 3.14 = mean of the per-board fits {'webdev': 3.47, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "kimi-k3.1-pro": {
-      "tier": 4.0,
+      "tier": 3.47,
       "cost": 2,
       "visual": 0.68,
       "usd_per_hour": 1.8,
       "capabilities": {
         "reasoning": 0.79,
-        "coding": 0.82,
+        "coding": 0.69,
         "exploration": 0.83,
         "anti_hallucination": 0.74,
         "visual": 0.68,
@@ -866,17 +855,16 @@
         "global_rigor": 0.76,
         "module_precision": 0.81
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3.1-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 Kimi K3.1 Pro (Max) 1695 [1682,1708]; Agent 2026-11-02 Kimi K3.1 Pro (Max) score 0.047 [0.034,0.060]. tier 3.47 = mean of the per-board fits {'webdev': 3.5, 'agent': 3.44}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "kimi-k3": {
-      "tier": 3.8,
+      "tier": 3.14,
       "cost": 2,
       "visual": 0.62,
       "usd_per_hour": 1.2,
       "capabilities": {
         "reasoning": 0.74,
-        "coding": 0.79,
+        "coding": 0.61,
         "exploration": 0.8,
         "anti_hallucination": 0.7,
         "visual": 0.62,
@@ -887,17 +875,16 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 Kimi K3 (Max) 1656 [1651,1662]; Agent 2026-11-02 Kimi K3 (Max) score 0.009 [0.003,0.014]; Text hard prompts (style control) 2026-10-28 Kimi K3 (Max) 1517 [1512,1522]. tier 3.14 = mean of the per-board fits {'webdev': 3.43, 'agent': 2.84}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "minimax-m3": {
-      "tier": 3.8,
+      "tier": 2.05,
       "cost": 2,
       "visual": 0.6,
       "usd_per_hour": 1.0,
       "capabilities": {
         "reasoning": 0.73,
-        "coding": 0.81,
+        "coding": 0.29,
         "exploration": 0.75,
         "anti_hallucination": 0.7,
         "visual": 0.6,
@@ -908,17 +895,16 @@
         "global_rigor": 0.7,
         "module_precision": 0.82
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 MiniMax-M3 1483 [1478,1489]; Agent 2026-11-02 MiniMax-M3 score -0.104 [-0.116,-0.092]; Vision 2026-10-19 MiniMax-M3 1251 [1245,1257]; Text hard prompts (style control) 2026-10-28 MiniMax-M3 1462 [1457,1466]. tier 2.05 = mean of the per-board fits {'webdev': 2.29, 'agent': 1.81}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "minimax-m3.1-flash": {
-      "tier": 3.5,
+      "tier": 2.73,
       "cost": 1,
       "visual": 0.55,
       "usd_per_hour": 0.6,
       "capabilities": {
         "reasoning": 0.66,
-        "coding": 0.74,
+        "coding": 0.47,
         "exploration": 0.68,
         "anti_hallucination": 0.65,
         "visual": 0.55,
@@ -929,8 +915,7 @@
         "global_rigor": 0.62,
         "module_precision": 0.76
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3.1-Flash. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 MiniMax-M3.1-Flash 1582 [1571,1594]; Agent 2026-11-02 MiniMax-M3.1-Flash score -0.032 [-0.048,-0.017]. tier 2.73 = mean of the per-board fits {'webdev': 2.99, 'agent': 2.47}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "doubao-seed-2-1-pro-260628": {
       "tier": 3.7,
@@ -954,13 +939,13 @@
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache volcengine/doubao-seed-2-1-pro-260628. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mimo-v2.6-pro": {
-      "tier": 3.7,
+      "tier": 3.15,
       "cost": 2,
       "visual": 0.6,
       "usd_per_hour": 0.8,
       "capabilities": {
         "reasoning": 0.72,
-        "coding": 0.79,
+        "coding": 0.56,
         "exploration": 0.7,
         "anti_hallucination": 0.69,
         "visual": 0.6,
@@ -971,17 +956,16 @@
         "global_rigor": 0.67,
         "module_precision": 0.8
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache xiaomi/mimo-v2.6-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 MiMo-V2.6-Pro 1625 [1617,1634]; Agent 2026-11-02 MiMo-V2.6-Pro score 0.024 [0.015,0.033]; Vision 2026-10-19 MiMo-V2.6-Pro 1263 [1248,1278]; Text hard prompts (style control) 2026-10-28 MiMo-V2.6-Pro 1504 [1493,1516]. tier 3.15 = mean of the per-board fits {'webdev': 3.31, 'agent': 2.99}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "mimo-v2.6-flash-free": {
-      "tier": 2.9,
+      "tier": 3.1,
       "cost": 0,
       "visual": 0.4,
       "usd_per_hour": 0,
       "capabilities": {
         "reasoning": 0.51,
-        "coding": 0.55,
+        "coding": 0.58,
         "exploration": 0.51,
         "anti_hallucination": 0.5,
         "visual": 0.4,
@@ -992,11 +976,10 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 MiMo-V2.6-Flash 1637 [1629,1646]; Agent 2026-11-02 MiMo-V2.6-Flash score 0.004 [-0.006,0.015]; Vision 2026-10-19 MiMo-V2.6-Flash 1256 [1245,1267]; Text hard prompts (style control) 2026-10-28 MiMo-V2.6-Flash 1475 [1468,1482]. tier 3.1 = mean of the per-board fits {'webdev': 3.4, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "nemotron-3-ultra-free": {
-      "tier": 3.4,
+      "tier": 1.34,
       "cost": 0,
       "visual": false,
       "usd_per_hour": 0,
@@ -1013,17 +996,16 @@
         "global_rigor": 0.62,
         "module_precision": 0.71
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: Agent 2026-11-02 Nemotron 3 Ultra score -0.156 [-0.188,-0.124]; Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3-Ultra-550B-A55B (NVFP4) 1444 [1436,1452]. tier 1.34 = mean of the per-board fits {'agent': 1.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "nemotron-3.5-super-vl-free": {
-      "tier": 3.3,
+      "tier": 1.5,
       "cost": 0,
       "visual": 0.65,
       "usd_per_hour": 0,
       "capabilities": {
         "reasoning": 0.62,
-        "coding": 0.65,
+        "coding": 0.13,
         "exploration": 0.63,
         "anti_hallucination": 0.62,
         "visual": 0.65,
@@ -1034,8 +1016,7 @@
         "global_rigor": 0.59,
         "module_precision": 0.66
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1399 [1386,1412]; Agent 2026-11-02 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) score -0.159 [-0.169,-0.149]; Vision 2026-10-19 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1205 [1192,1218]; Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1431 [1419,1442]. tier 1.5 = mean of the per-board fits {'webdev': 1.7, 'agent': 1.31}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "nemotron-3.5-lightning-free": {
       "tier": 2.9,
@@ -1059,13 +1040,13 @@
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mistral-large-4": {
-      "tier": 3.8,
+      "tier": 2.45,
       "cost": 2,
       "visual": 0.65,
       "usd_per_hour": 1.2,
       "capabilities": {
         "reasoning": 0.74,
-        "coding": 0.78,
+        "coding": 0.4,
         "exploration": 0.73,
         "anti_hallucination": 0.71,
         "visual": 0.65,
@@ -1076,17 +1057,16 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache mistral/mistral-large-4. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 Mistral Large 4 1544 [1534,1555]; Agent 2026-11-02 Mistral Large 4 score -0.064 [-0.085,-0.043]; Vision 2026-10-19 Mistral Large 4 1272 [1253,1291]; Text hard prompts (style control) 2026-10-28 Mistral Large 4 1453 [1446,1461]. tier 2.45 = mean of the per-board fits {'webdev': 2.72, 'agent': 2.18}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "muse-wonder-1.0": {
-      "tier": 3.9,
+      "tier": 3.21,
       "cost": 2,
       "visual": 0.72,
       "usd_per_hour": 1.5,
       "capabilities": {
         "reasoning": 0.77,
-        "coding": 0.77,
+        "coding": 0.61,
         "exploration": 0.79,
         "anti_hallucination": 0.73,
         "visual": 0.72,
@@ -1097,17 +1077,16 @@
         "global_rigor": 0.73,
         "module_precision": 0.77
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode cache meta/muse-wonder-1.0. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 Muse Wonder (Max) 1652 [1641,1663]; Agent 2026-11-02 Muse Wonder (Max) score 0.025 [0.011,0.039]; Text hard prompts (style control) 2026-10-28 Muse Wonder (Max) 1524 [1515,1533]. tier 3.21 = mean of the per-board fits {'webdev': 3.43, 'agent': 3.0}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "beam-free": {
-      "tier": 3.0,
+      "tier": 2.15,
       "cost": 0,
       "visual": false,
       "usd_per_hour": 0,
       "capabilities": {
         "reasoning": 0.53,
-        "coding": 0.56,
+        "coding": 0.2,
         "exploration": 0.53,
         "anti_hallucination": 0.5,
         "visual": 0,
@@ -1118,8 +1097,7 @@
         "global_rigor": 0.45,
         "module_precision": 0.58
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
+      "basis": "LMArena: WebDev 2026-10-28 Beam 1.0 501B A23B 1436 [1423,1449]; Agent 2026-11-02 Beam 1.0 501B A23B score -0.047 [-0.073,-0.021]; Text hard prompts (style control) 2026-10-28 Beam 1.0 501B A23B 1461 [1449,1473]. tier 2.15 = mean of the per-board fits {'webdev': 1.96, 'agent': 2.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "flint-40b-free": {
       "tier": 2.8,
@@ -1143,13 +1121,13 @@
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "claude-haiku-4-5": {
-      "tier": 3.2,
+      "tier": 1.21,
       "cost": 1,
       "visual": 0.45,
       "usd_per_hour": 0.8,
       "capabilities": {
         "reasoning": 0.55,
-        "coding": 0.61,
+        "coding": 0.0,
         "exploration": 0.59,
         "anti_hallucination": 0.57,
         "visual": 0.45,
@@ -1160,17 +1138,16 @@
         "global_rigor": 0.5,
         "module_precision": 0.64
       },
-      "score_estimated": true,
-      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Haiku 4.5 (20251001) 1330 [1325,1335]; Text hard prompts (style control) 2026-10-28 Claude Haiku 4.5 (20251001) 1442 [1439,1445]. tier 1.21 = mean of the per-board fits {'webdev': 1.21}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "claude-opus-4-6": {
-      "tier": 4.4,
+      "tier": 2.74,
       "cost": 4,
       "visual": 0.95,
       "usd_per_hour": 7.5,
       "capabilities": {
         "reasoning": 0.85,
-        "coding": 0.87,
+        "coding": 0.41,
         "exploration": 0.84,
         "anti_hallucination": 0.88,
         "visual": 0.95,
@@ -1181,17 +1158,16 @@
         "global_rigor": 0.93,
         "module_precision": 0.88
       },
-      "score_estimated": true,
-      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.6 (High) 1546 [1541,1552]; Vision 2026-10-19 Claude Opus 4.6 (High) 1316 [1309,1322]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.6 (High) 1531 [1527,1535]. tier 2.74 = mean of the per-board fits {'webdev': 2.74}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "claude-sonnet-4-6": {
-      "tier": 3.8,
+      "tier": 2.57,
       "cost": 3,
       "visual": 0.6,
       "usd_per_hour": 3.5,
       "capabilities": {
         "reasoning": 0.71,
-        "coding": 0.79,
+        "coding": 0.36,
         "exploration": 0.83,
         "anti_hallucination": 0.7,
         "visual": 0.6,
@@ -1202,21 +1178,20 @@
         "global_rigor": 0.73,
         "module_precision": 0.76
       },
-      "score_estimated": true,
-      "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Sonnet 4.6 1523 [1517,1528]; Vision 2026-10-19 Claude Sonnet 4.6 1283 [1277,1289]; Text hard prompts (style control) 2026-10-28 Claude Sonnet 4.6 1503 [1499,1507]. tier 2.57 = mean of the per-board fits {'webdev': 2.57}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     },
     "usd_basis": "Synthetic hourly cost calibration, pooled over efforts from a 14-day sample: Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Cache reads and writes are priced separately. Fable uses Opus times the 2.5x list-price ratio. These retained test inputs are independent of plan labels and are not live price quotes.",
     "capabilities_basis": "6D vectors: benchmark-calibrated core rows retain their existing basis; newly discovered frontier rows use explicitly provisional routing priors, not measured benchmark scores. Visual/GUI zero for text-only catalog entries. Full catalog evidence and compatibility policy: model-capabilities.md.",
     "basis": "Absolute tiers (at High effort) are provisional: derived from the ordering already in model-capabilities.md (Grok behind the leaders, Flash as volume sink). Calibrated ability order: Opus > Astra > Argon > Sonnet > Sol > Grok > Flash; Dot is Astra-powered (OpenAI documents Dot as Astra-powered), so it has Astra's tier, meets every difficulty floor and has unlimited usage. Dot is not limited to text; it has its own computer and can receive code, public data and handed-over tables and return files, so it is a candidate for every route unless the parent marks the work `needs.local_only` (`excluded_when: local_only`) or it needs vision; visual ability order is Opus 5.5 > Astra > Argon > Sol > Sonnet > Flash (the numeric `visual` values 1.0/0.8/0.75/0.7/0.6/0.3 encode that order; false means no vision). Argon shares the Antigravity Gemini pool with Flash but burns roughly 8x as much quota per hour (`burn_pct_per_worker_hour`). Fable is on hold. Correct the rest here; nothing else encodes a global ranking.",
     "order_basis": "Zero-to-frontier-ceiling normalization over AA v4.3.2, Bug Hunt Bench (n=2..5 runs), Terminal-Bench 2.0/4.0, Mercor BrowseComp, MMMU-Pro, OSWorld/GUI harness grounding, and Calibration sample (14d) usage-stats.json.",
     "glm-5.2": {
-      "tier": 3.5,
+      "tier": 3.0,
       "cost": 2,
       "visual": false,
       "usd_per_hour": 1.0,
       "capabilities": {
         "reasoning": 0.68,
-        "coding": 0.74,
+        "coding": 0.52,
         "exploration": 0.7,
         "anti_hallucination": 0.68,
         "visual": 0.0,
@@ -1227,8 +1202,7 @@
         "global_rigor": 0.68,
         "module_precision": 0.74
       },
-      "score_estimated": true,
-      "basis": "Provisional routing prior shrunk from glm-5.3. ID verified in Venice /models as zai-org-glm-5-2 (text-only per Venice model_spec, reasoning efforts none/high/max). Scores and hourly cost are estimates, not benchmarks or live quotes."
+      "basis": "LMArena: WebDev 2026-10-28 GLM-5.2 (Max) 1606 [1600,1612]; Agent 2026-11-02 GLM-5.2 (Max) score 0.007 [-0.000,0.015]; Text hard prompts (style control) 2026-10-28 GLM-5.2 (Max) 1496 [1491,1501]. tier 3.0 = mean of the per-board fits {'webdev': 3.16, 'agent': 2.83}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
     }
   },
   "dispatch_efforts": {
@@ -2247,6 +2221,7 @@
       "expires_at": null,
       "unmetered": true,
       "unlimited": true,
+      "free_usage_bonus": true,
       "windows": {},
       "burn_pct_per_worker_hour": {},
       "burn_basis": "Synthetic remote worker via dot2api; zero local quota burn.",

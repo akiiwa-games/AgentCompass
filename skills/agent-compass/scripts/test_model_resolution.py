@@ -147,13 +147,13 @@ class ModelResolutionTests(unittest.TestCase):
     def test_current_frontier_tiers_and_modality_contracts(self):
         for name, tier in {
             'gpt-6-pro': 5.0, 'claude-opus-5-5': 4.6, 'claude-fable-5-1': 4.6,
-            'claude-sonnet-5-5': 3.9, 'claude-haiku-5-5': 3.2,
-            'gpt-6-astra': 4.2, 'gpt-6.1-sol': 3.6, 'gpt-6-sol': 3.5,
-            'gpt-6-luna': 3.2, 'gemini-4-argon-high': 4.0,
+            'claude-sonnet-5-5': 3.9, 'claude-haiku-5-5': 2.93,
+            'gpt-6-astra': 4.2, 'gpt-6.1-sol': 3.6, 'gpt-6-sol': 3.48, 'gpt-6.1-terra': 3.51,
+            'gpt-6-luna': 2.96, 'gemini-4-argon-high': 4.0,
             'gemini-3.8-flash-high': 3.0, 'grok-4.7': 3.4,
-            'grok-4.7-build-fast': 3.1, 'deepseek-v4-pro': 3.9,
-            'deepseek-v4.1-flash-free': 2.8, 'glm-5.3': 3.7,
-            'glm-5.3-flash-free': 2.9,
+            'grok-4.7-build-fast': 3.1, 'deepseek-v4-pro': 2.86,
+            'deepseek-v4.1-flash-free': 2.8, 'glm-5.3': 3.08,
+            'glm-5.3-flash-free': 2.85,
         }.items():
             self.assertEqual(self.accounts['models'][name]['tier'], tier, name)
         for name in ['grok-4.7-build-fast', 'deepseek-v4-pro', 'qwen3-coder-next',

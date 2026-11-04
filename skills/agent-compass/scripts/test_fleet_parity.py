@@ -140,17 +140,38 @@ class CleanInstallParityTests(unittest.TestCase):
     def test_free_usage_bonus_needs_a_calibrated_sufficient_model(self):
         snap = snapshot()
         # Unknown to the data (generic prior) and an estimated public row: both checked, neither earns the bonus.
-        snap['accounts']['opencode']['models'] = ['opencode/zzz-new-free', 'opencode/nemotron-3.5-super-vl-free']
+        snap['accounts']['opencode']['models'] = ['opencode/zzz-new-free', 'opencode/qwen3-coder-next']
         accounts = inventory.apply(shipped_template(), snap)
+        self.assertTrue(accounts['models']['qwen3-coder-next']['score_estimated'])
         task = {'objective': 'Fix a failing unit test', 'work_kind': 'general_implementation', 'difficulty': 'routine',
                 'hours': 1, 'needs': {'local_only': True}}
         decision = allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
                                   accounts=accounts, overrides=[], host_policy_config=None)
-        for bid in ('auto:opencode:opencode:zzz-new-free', 'auto:opencode:opencode:nemotron-3.5-super-vl-free'):
+        for bid in ('auto:opencode:opencode:zzz-new-free', 'auto:opencode:opencode:qwen3-coder-next'):
             free = next(c for c in decision['ranking'] if c['id'] == bid)
             self.assertFalse(free['excluded'], bid)
             self.assertNotIn('free_usage', free['components'], bid)
             self.assertNotEqual(decision['choice'], bid)
+
+    def test_free_usage_bonus_is_declared_per_account_in_public_data(self):
+        snap = snapshot()
+        snap['accounts']['opencode']['models'] = ['opencode/mimo-v2.6-flash-free']  # measured row, unlimited account
+        accounts = inventory.apply(shipped_template(), snap)
+        specs = accounts['accounts']
+        self.assertTrue(specs['opencode']['unlimited'] and specs['dot']['unlimited'])
+        self.assertNotIn('free_usage_bonus', specs['opencode'])
+        self.assertTrue(specs['dot']['free_usage_bonus'])
+        self.assertNotIn('score_estimated', accounts['models']['mimo-v2.6-flash-free'])
+        task = {'objective': 'Summarize public release notes', 'work_kind': 'web_research', 'difficulty': 'routine',
+                'hours': 1, 'needs': {'local_only': False}}
+        decision = allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
+                                  accounts=accounts, overrides=[], host_policy_config=None)
+        rows = {c['id']: c for c in decision['ranking']}
+        free = rows['auto:opencode:opencode:mimo-v2.6-flash-free']
+        self.assertFalse(free['excluded'])
+        self.assertNotIn('free_usage', free['components'])  # unlimited without the flag: zero cost only
+        self.assertFalse(rows['dot_text']['excluded'])
+        self.assertEqual(rows['dot_text']['components']['free_usage'], accounts['scoring']['unlimited_bonus'])
 
     def test_template_stays_free_of_personal_choices(self):
         document = shipped_template()

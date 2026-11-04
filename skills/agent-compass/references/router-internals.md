@@ -105,9 +105,10 @@ its model in `superseded` (`{old id: {by: newer id, basis}}`); efforts and harne
 model share the entry, and a model unknown to the data starts checked. The user's
 model-management checkbox (`disabled` in accounts-override.json) overrides that default.
 Checked metered bundles stay a last resort: explicit selection, `metered_ok`, or no eligible
-subscription bundle. An unlimited (free) account's free-usage bonus needs a measured model
-row (no `score_estimated`) whose ability meets the task's required ability; estimated rows
-and family/generic defaults compete on zero opportunity cost alone.
+subscription bundle. The free-usage bonus is declared per account in public data
+(`free_usage_bonus: true`, shipped on Dot only) and needs a measured model row (no
+`score_estimated`) whose ability meets the task's required ability; other free accounts
+(OpenCode free models) compete on their zero opportunity cost alone.
 
 A discovered plan supplies capacity and burn priors; a family whose product does not
 report its tier locally uses the documented `<family>.default` plan (Antigravity: Ultra

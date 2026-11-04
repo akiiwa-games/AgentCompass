@@ -232,7 +232,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual({b['model'] for b in bundles}, {'claude-haiku-4-5', 'claude-opus-4-6',
             'claude-sonnet-4-6', 'qwen3-coder-next', 'some-new-model', 'another-new-model', 'gpt-6.1-terra'})
         self.assertEqual({b['model'] for b in bundles if b['model'].startswith('gpt-')}, {'gpt-6.1-terra'})
-        self.assertTrue(all(allocator.model_spec(accounts, b['model'])['tier'] >= 3 for b in bundles))
+        self.assertTrue(all(allocator.model_spec(accounts, b['model'])['tier'] >= 1 for b in bundles))  # every bundle is scored
 
     def test_bound_cc_switch_api_models_get_native_bundles_without_changing_signin(self):
         config = {'env': {'ANTHROPIC_BASE_URL': 'https://example.invalid',
