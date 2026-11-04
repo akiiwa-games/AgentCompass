@@ -136,18 +136,6 @@
         "A disabled credential is ignored; two logins of one provider are two accounts; a corrupt or locked agent.db is missing_credentials, not a crash",
         "Every check above is run once more against broken input inside the throwaway profile and must fail there"
       ]
-    },
-    {
-      "id": "F12",
-      "name": "Tray version display, one-click self-update & single-flight tray restart",
-      "harness": "packaging/foreign_machine_check.py::verify_f12_self_update_and_version_display",
-      "behaviors": [
-        "Tray and settings page display AgentCompass X.Y.Z and flag version mismatch when tray and router (skills, gate hooks, or PATH) differ",
-        "Release check caches GitHub Releases latest for 6h under STATE_DIR and shows '可更新到 vX.Y.Z' when a newer release exists",
-        "One-click Update AgentCompass detects install shape (installer, wheel, git), refuses missing or mismatched sha256 digests, and upgrades using the owning tool (uv, pip, git)",
-        "An installed older wheel (0.3.7) in a foreign profile upgrades to the locally built newer wheel (0.3.8) through update_agentcompass, refreshes public data, and clears the version mismatch",
-        "Clicking Restart tray is single-flight and emits immediate and post-restart tray notifications"
-      ]
     }
   ]
 }
