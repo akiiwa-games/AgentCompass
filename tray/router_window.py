@@ -2943,6 +2943,7 @@ class Panel:
         tk, ttk = self.tk, self.ttk
         scroll = ScrollFrame(frame)
         frame = scroll.body
+        self.build_version_card(frame)
         box = theme.card(frame, padding=14, fill="x")
         box.columnconfigure(1, weight=1)
         rows = ((_tr("开机自启"), _tr("AgentCompass 随 Windows 启动")), (_tr("宿主 Skill"), _tr("Claude / Codex 的 agent-compass 链接")),
@@ -2977,6 +2978,156 @@ class Panel:
         self._system_prefilled = False
         self.prefill(self._read_system_fast, self._system_fast_loaded)
         self.load_system(skip_fast=self._system_prefilled)
+
+    def build_version_card(self, frame):
+        import updates
+
+        tk, ttk = self.tk, self.ttk
+        bar = theme.card(frame, padding=0, fill="x", pady=(0, 12))
+        tk.Frame(bar, bg=theme.ACCENT, width=4).pack(side="left", fill="y")
+        inner = ttk.Frame(bar, style="Card.TFrame", padding=(14, 10))
+        inner.pack(side="left", fill="both", expand=True)
+        top = ttk.Frame(inner, style="Card.TFrame")
+        top.pack(fill="x")
+        local_ver = updates.local_version()
+        self.ac_version_var = tk.StringVar(value=f"AgentCompass {local_ver}")
+        self.ac_version_label = ttk.Label(top, textvariable=self.ac_version_var, style="CardH3.TLabel")
+        self.ac_version_label.pack(side="left")
+        self.ac_version_pill = theme.pill(top, _tr("检测中"), "idle")
+        self.ac_version_pill.pack(side="left", padx=(8, 0))
+        self.ac_update_button = ttk.Button(
+            top, text=_tr("更新 AgentCompass"), style="SmallAccent.TButton", command=self.update_agentcompass_now
+        )
+        self.ac_update_button.pack(side="right", padx=(6, 0))
+        self.ac_check_update_button = ttk.Button(
+            top, text=_tr("检查更新"), style="Small.TButton", command=lambda: self.check_agentcompass_update(force=True)
+        )
+        self.ac_check_update_button.pack(side="right", padx=(6, 0))
+        self.ac_update_progress_button = ttk.Button(
+            top, text=_tr("更新进度"), style="Small.TButton", command=self.open_updates
+        )
+        self.ac_update_progress_button.pack(side="right", padx=(6, 0))
+        self.ac_version_detail_var = tk.StringVar(value=_tr("正在读取安装状态…"))
+        self.ac_version_detail_label = ttk.Label(
+            inner,
+            textvariable=self.ac_version_detail_var,
+            style="CardTiny.TLabel",
+            wraplength=theme.px(680),
+            justify="left",
+        )
+        self.ac_version_detail_label.pack(anchor="w", pady=(4, 0))
+        self.ac_updating = False
+        self.ac_version_info = None
+
+    def ac_version_loaded(self, status: dict):
+        if not isinstance(status, dict):
+            return
+        self.ac_version_info = status
+        display_ver = status.get("display_version") or f"AgentCompass {status.get('tray_version', '0.0.0')}"
+        if hasattr(self, "ac_version_var"):
+            self.ac_version_var.set(display_ver)
+        if hasattr(self, "ac_version_pill") and not getattr(self, "ac_updating", False):
+            if status.get("update_available"):
+                theme.set_pill(self.ac_version_pill, status.get("update_label") or _tr("可更新"), "warn")
+            elif status.get("version_mismatch"):
+                theme.set_pill(self.ac_version_pill, _tr("版本不一致"), "warn")
+            elif not status.get("ok", True):
+                theme.set_pill(self.ac_version_pill, _tr("检查失败"), "warn")
+            else:
+                theme.set_pill(self.ac_version_pill, _tr("已是最新"), "ok")
+        if hasattr(self, "ac_version_detail_var") and not getattr(self, "ac_updating", False):
+            shape_map = {
+                "git": _tr("Git 仓库"),
+                "installer": _tr("安装包"),
+                "wheel": _tr("Wheel 包"),
+            }
+            shape_text = shape_map.get(status.get("shape"), status.get("shape") or "")
+            parts = []
+            if shape_text:
+                parts.append(_tr("安装形态：{0}").format(shape_text))
+            if status.get("status_line"):
+                parts.append(str(status["status_line"]))
+            installs = status.get("installs") or {}
+            for r_info in installs.get("separate_routers") or ():
+                r_tool = r_info.get("installer") or r_info.get("shape") or "router"
+                parts.append(f"Router ({r_tool} {r_info.get('version')}): {r_info.get('root')}")
+            self.ac_version_detail_var.set(" · ".join(parts))
+
+    def check_agentcompass_update(self, force: bool = False):
+        import updates
+
+        if getattr(self, "ac_updating", False):
+            return
+        if hasattr(self, "ac_check_update_button") and force:
+            self.ac_check_update_button.state(["disabled"])
+
+        def work():
+            return updates.version_status(force=force, network=True)
+
+        def done(status):
+            if hasattr(self, "ac_check_update_button"):
+                self.ac_check_update_button.state(["!disabled"])
+            self.ac_version_loaded(status)
+            if force and isinstance(status, dict) and status.get("status_line"):
+                self.status.set(status["status_line"])
+
+        self.run(work, done, _tr("正在检查 AgentCompass 更新…") if force else None)
+
+    def update_agentcompass_now(self):
+        import update_status
+        import updates
+
+        if getattr(self, "ac_updating", False):
+            return
+        self.ac_updating = True
+        if hasattr(self, "ac_update_button"):
+            self.ac_update_button.state(["disabled"])
+            self.ac_update_button.configure(text=_tr("更新中…"))
+        if hasattr(self, "ac_version_pill"):
+            theme.set_pill(self.ac_version_pill, _tr("更新中"), "warn")
+        if hasattr(self, "ac_version_detail_var"):
+            self.ac_version_detail_var.set(_tr("正在更新 AgentCompass…"))
+        self._open_update_window_if_interactive()
+        generation = self._generation
+
+        def progress(event):
+            update_status.record(event)
+            msg = event.get("message", "") if isinstance(event, dict) else str(event)
+            if msg:
+                self._post_ui_progress(generation, self._ac_update_progress, msg)
+
+        def work():
+            try:
+                summary = updates.update_agentcompass(progress=progress)
+                return {"ok": True, "summary": summary, "status": updates.version_status(force=False, network=False)}
+            except Exception as error:
+                return {
+                    "ok": False,
+                    "summary": _tr("AgentCompass 更新失败：{0}").format(error),
+                    "status": updates.version_status(force=False, network=False),
+                }
+
+        def done(result):
+            self.ac_updating = False
+            if hasattr(self, "ac_update_button"):
+                self.ac_update_button.state(["!disabled"])
+                self.ac_update_button.configure(text=_tr("更新 AgentCompass"))
+            if isinstance(result.get("status"), dict):
+                self.ac_version_loaded(result["status"])
+            summary = result.get("summary") or ""
+            if not result.get("ok") and hasattr(self, "ac_version_pill"):
+                theme.set_pill(self.ac_version_pill, _tr("更新失败"), "warn")
+            if summary:
+                if hasattr(self, "ac_version_detail_var"):
+                    self.ac_version_detail_var.set(summary)
+                self.status.set(summary)
+
+        self.run(work, done, _tr("正在更新 AgentCompass…"), long=True)
+
+    def _ac_update_progress(self, message: str):
+        if hasattr(self, "ac_version_detail_var"):
+            self.ac_version_detail_var.set(message)
+        self.status.set(message)
 
     def build_scorer_card(self, frame):
         tk, ttk = self.tk, self.ttk
@@ -3092,27 +3243,45 @@ class Panel:
             log_error(exc)
             return {"config_error": _tr('读取失败：{0}').format(f'{exc}')}
 
+    def _read_version_safe(self, network: bool = False):
+        import updates
+
+        try:
+            return updates.version_status(force=False, network=network)
+        except Exception as exc:
+            log_error(exc)
+            ver = updates.local_version()
+            return {"ok": False, "tray_version": ver, "display_version": f"AgentCompass {ver}", "status_line": str(exc)}
+
     def _read_system_fast(self):
-        return self.data_module().dot_details(), self._read_scorer_safe()
+        return self.data_module().dot_details(), self._read_scorer_safe(), self._read_version_safe(network=False)
 
     def _system_fast_loaded(self, value):
         self._system_prefilled = True
-        dot, scorer = value
+        dot, scorer = value[0], value[1]
         self.dot_repo_var.set(dot.get("transfer_repo") or "")
         self.scorer_loaded(scorer)
+        if len(value) > 2:
+            self.ac_version_loaded(value[2])
 
     def load_system(self, skip_fast: bool = False):
         import deploy
 
         if skip_fast:
-            self.run(deploy.startup_enabled, lambda on: self.autostart_var.set(bool(on)))
+            self.run(
+                lambda: (deploy.startup_enabled(), self._read_version_safe(network=True)),
+                lambda pair: (self.autostart_var.set(bool(pair[0])), self.ac_version_loaded(pair[1])),
+            )
         else:
-            self.run(lambda: (deploy.startup_enabled(), *self._read_system_fast()), self.system_loaded)
+            self.run(
+                lambda: (deploy.startup_enabled(), self.data_module().dot_details(), self._read_scorer_safe(), self._read_version_safe(network=True)),
+                self.system_loaded,
+            )
 
     def system_loaded(self, value):
-        startup_on, dot, scorer = value
+        startup_on = value[0]
         self.autostart_var.set(bool(startup_on))
-        self._system_fast_loaded((dot, scorer))
+        self._system_fast_loaded(value[1:])
 
     def toggle_tray_autostart(self):
         import deploy

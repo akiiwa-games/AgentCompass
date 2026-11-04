@@ -261,5 +261,36 @@ class UsageStartupTests(unittest.TestCase):
             delete.assert_not_called()
 
 
+class RestartSingleFlightTests(unittest.TestCase):
+    def test_concurrent_restart_is_ignored_while_mutex_is_held(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(deploy.services, "STATE_DIR", Path(directory)), \
+                mock.patch.object(deploy, "RESTART_MUTEX_NAME", "Local\\AgentCompassTrayRestartTestMutex"):
+            self.assertFalse(deploy.restart_in_progress())
+            handle = deploy.acquire_restart_mutex()
+            self.assertIsNotNone(handle)
+            try:
+                self.assertTrue(deploy.restart_in_progress())
+                with mock.patch.object(deploy.subprocess, "Popen") as popen:
+                    result = deploy.restart()
+                popen.assert_not_called()
+                self.assertTrue(any("重启中" in line or "restart" in line.lower() for line in result))
+            finally:
+                deploy.release_restart_mutex(handle)
+            self.assertFalse(deploy.restart_in_progress())
+
+    def test_restart_marker_roundtrip_and_expiry(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(deploy.services, "STATE_DIR", Path(directory)):
+            deploy.write_restart_marker("0.3.8")
+            marker = deploy.consume_restart_marker()
+            self.assertIsNotNone(marker)
+            self.assertEqual(marker["version"], "0.3.8")
+            self.assertIsNone(deploy.consume_restart_marker())
+
+            deploy.write_restart_marker("0.3.8")
+            self.assertIsNone(deploy.consume_restart_marker(now=marker["at"] + 500.0))
+
+
 if __name__ == "__main__":
     unittest.main()

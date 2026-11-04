@@ -1160,5 +1160,54 @@ class ResetEditorTests(unittest.TestCase):
             save.assert_called_once_with('codex', 'gpt-6-astra', hours=1)
 
 
+class SystemVersionCardTests(unittest.TestCase):
+    def test_system_settings_shows_version_mismatch_update_available_and_one_click_update(self):
+        import router_window
+        import tk_test_support
+        import updates
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        with mock.patch.object(router_window.Panel, "run"), mock.patch.object(router_window.Panel, "prefill"), \
+                mock.patch.object(router_window.theme, "set_window_icon"):
+            panel = router_window.Panel(root, "policy")
+            panel.show_setting("system")
+            self.assertIn("AgentCompass", panel.ac_version_var.get())
+            panel.ac_version_loaded({
+                "ok": True,
+                "tray_version": "0.3.8",
+                "shape": "git",
+                "display_version": "AgentCompass 0.3.8 · Router 0.3.5（版本不一致）",
+                "version_mismatch": True,
+                "update_available": True,
+                "update_label": "可更新到 v0.3.9",
+                "status_line": "可更新到 v0.3.9",
+                "installs": {"separate_routers": [{"installer": "uv", "version": "0.3.5", "root": "C:/uv/site-packages"}]},
+            })
+            self.assertEqual(panel.ac_version_var.get(), "AgentCompass 0.3.8 · Router 0.3.5（版本不一致）")
+            self.assertEqual(panel.ac_version_pill.cget("text").strip(), "可更新到 v0.3.9")
+            self.assertIn("Router (uv 0.3.5)", panel.ac_version_detail_var.get())
+
+            # Clicking "更新 AgentCompass" dispatches updates.update_agentcompass
+            panel.update_agentcompass_now()
+            work, done = panel.run.call_args.args[0], panel.run.call_args.args[1]
+            with mock.patch.object(updates, "update_agentcompass", return_value="已完成更新") as upd, \
+                    mock.patch.object(updates, "version_status", return_value={
+                        "ok": True,
+                        "tray_version": "0.3.9",
+                        "shape": "git",
+                        "display_version": "AgentCompass 0.3.9",
+                        "version_mismatch": False,
+                        "update_available": False,
+                        "status_line": "已是最新版本（v0.3.9）",
+                        "installs": {"separate_routers": []},
+                    }):
+                res = work()
+                done(res)
+            upd.assert_called_once()
+            self.assertEqual(panel.ac_version_var.get(), "AgentCompass 0.3.9")
+            self.assertEqual(panel.ac_version_pill.cget("text").strip(), "已是最新")
+
+
 if __name__ == "__main__":
     unittest.main()

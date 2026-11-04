@@ -18,15 +18,21 @@ ALL_RUNNING = dict(dot="运行中", web="运行中", gemini="已停止", float="
 
 
 def setUpModule():
-    # Never read or write the real ~/.agent-compass/plugins.json.
+    # Never read or write the real ~/.agent-compass/plugins.json or state files.
     global _isolation
     directory = tempfile.TemporaryDirectory()
-    _isolation = [directory, mock.patch.object(app.plugins, "PATH", Path(directory.name) / "plugins.json")]
-    _isolation[1].start()
+    _isolation = [
+        directory,
+        mock.patch.object(app.plugins, "PATH", Path(directory.name) / "plugins.json"),
+        mock.patch.object(app.services, "STATE_DIR", Path(directory.name)),
+    ]
+    for p in _isolation[1:]:
+        p.start()
 
 
 def tearDownModule():
-    _isolation[1].stop()
+    for p in reversed(_isolation[1:]):
+        p.stop()
     _isolation[0].cleanup()
 
 
@@ -35,8 +41,22 @@ class TrayTestCase(unittest.TestCase):
         saved = dict(app.STATE)
         self.addCleanup(lambda: (app.STATE.clear(), app.STATE.update(saved)))
         app.STATE.update(ALL_RUNNING)
-        for name, value in (("PRIORITY", {"label": "重置前优先", "entries": [], "targets": []}),
-                            ("PLUGINS", app.plugins.defaults())):
+        default_version = {
+            "tray_version": "0.3.8",
+            "display_version": "AgentCompass 0.3.8",
+            "menu_label": "AgentCompass 0.3.8",
+            "update_available": False,
+            "remote_tag": "",
+            "version_mismatch": False,
+            "status_line": "AgentCompass 0.3.8",
+        }
+        for name, value in (
+            ("PRIORITY", {"label": "重置前优先", "entries": [], "targets": []}),
+            ("PLUGINS", app.plugins.defaults()),
+            ("VERSION", default_version),
+            ("_RESTART_IN_FLIGHT", False),
+            ("_NOTIFIED_RELEASE_TAG", ""),
+        ):
             patcher = mock.patch.object(app, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -62,7 +82,8 @@ class MenuTests(TrayTestCase):
     def test_core_actions_and_enabled_plugin_windows_are_available(self):
         self.assertCountEqual(self.shown(), [
             "打开 AgentCompass", "重置前优先", "Usage Float：运行中",
-            "ChatGPT Web：运行中", "Gemini Web：已停止", "EasyTier：运行中（2 个对端）", "重启托盘", "退出"])
+            "ChatGPT Web：运行中", "Gemini Web：已停止", "EasyTier：运行中（2 个对端）",
+            "AgentCompass 0.3.8", "更新 AgentCompass", "重启托盘", "退出"])
         items = self.items()
         self.assertTrue(items[0].default)
 
@@ -82,7 +103,10 @@ class MenuTests(TrayTestCase):
     def test_with_no_window_plugin_enabled_only_the_core_items_remain(self):
         for row in app.PLUGINS.values():
             row["enabled"] = False
-        self.assertEqual(self.shown(), ["打开 AgentCompass", "重置前优先", "重启托盘", "退出"])
+        self.assertEqual(
+            self.shown(),
+            ["打开 AgentCompass", "重置前优先", "AgentCompass 0.3.8", "更新 AgentCompass", "重启托盘", "退出"],
+        )
 
     def test_menu_is_two_levels_at_most_and_plugins_have_no_submenu(self):
         for item in self.items()[2:]:
@@ -93,8 +117,58 @@ class MenuTests(TrayTestCase):
         with mock.patch.object(app.plugins, "load", guard), mock.patch.object(app.router_priority, "snapshot", guard), \
                 mock.patch.multiple(app.services, dot_label=guard, chatgpt_label=guard, gemini_label=guard,
                                     usage_float_label=guard), \
-                mock.patch.object(app.easytier, "snapshot", guard):
+                mock.patch.object(app.easytier, "snapshot", guard), \
+                mock.patch.object(app.updates, "inspect_installs", guard), \
+                mock.patch.object(app.updates, "version_status", guard):
             self.shown()
+
+    def test_version_and_update_items_reflect_mismatch_and_newer_release(self):
+        icon = mock.Mock()
+        with mock.patch.object(app.updates, "version_status", return_value={
+            "tray_version": "0.3.8",
+            "display_version": "AgentCompass 0.3.8 · Router 0.3.5（版本不一致）",
+            "menu_label": "AgentCompass 0.3.8 · Router 0.3.5（版本不一致） · 可更新到 v0.3.9",
+            "update_available": True,
+            "update_label": "可更新到 v0.3.9",
+            "remote_tag": "v0.3.9",
+            "version_mismatch": True,
+            "status_line": "可更新到 v0.3.9",
+        }):
+            app.refresh_version(icon, force=False, network=True)
+        self.assertIn("AgentCompass 0.3.8 · Router 0.3.5（版本不一致） · 可更新到 v0.3.9", self.shown())
+        icon.notify.assert_called_once_with("AgentCompass · 可更新到 v0.3.9", "AgentCompass")
+
+    def test_one_click_update_agentcompass_menu_item_triggers_update(self):
+        with mock.patch.object(app.updates, "update_agentcompass", return_value="已更新") as upd:
+            act = self.click(self.by_text()["更新 AgentCompass"])
+            act.assert_called_once()
+        upd.assert_called_once()
+
+    def test_restart_tray_is_single_flight_and_emits_feedback_on_click_and_after_restart(self):
+        icon = mock.Mock()
+        with mock.patch("subprocess.Popen") as popen, mock.patch("deploy.restart_in_progress", return_value=False):
+            first = app.restart_tray(icon)
+            second = app.restart_tray(icon)
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertEqual(popen.call_count, 1)
+        self.assertIn("正在重启托盘…", icon.title)
+        icon.notify.assert_called_once_with("正在重启托盘…", "AgentCompass")
+
+        # When the new tray starts up, it consumes the restart marker and emits the post-restart notification
+        new_icon = mock.Mock()
+        new_icon.run.side_effect = lambda setup: setup(new_icon)
+        with mock.patch.object(app, "single_instance", return_value=True), \
+             mock.patch.object(app.pystray, "Icon", return_value=new_icon), \
+             mock.patch.object(app.threading, "Thread"), \
+             mock.patch.object(app.sys, "argv", ["app.pyw", "--attach-only"]), \
+             mock.patch.object(app, "log_info"):
+            app.main()
+        new_icon.notify.assert_called_once_with("托盘已重启 · AgentCompass 0.3.8", "AgentCompass")
+        # A subsequent startup without a new restart does not emit the restart notification again
+        again_icon = mock.Mock()
+        self.assertFalse(app.notify_if_restarted(again_icon))
+        again_icon.notify.assert_not_called()
 
     def test_the_first_item_opens_the_panel(self):
         with mock.patch.object(app.router_window, "open_window") as window:

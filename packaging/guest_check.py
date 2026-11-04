@@ -752,6 +752,40 @@ def g_installer():
     kill_trays()
     gui_session(exe, "installed", router_only=False)
 
+    if (IN / "inno" / "tray" / "updates.py").is_file():
+        section("Inno Setup: one-click installer self-update in Windows Sandbox")
+        sys.path.insert(0, str(IN / "inno" / "tray"))
+        import updates as tray_updates
+        override_file = HOME / ".agent-compass" / "accounts-override.json"
+        override_doc = json.loads(override_file.read_text(encoding="utf-8")) if override_file.is_file() else {}
+        override_doc["self_update_preserved"] = True
+        override_file.write_text(json.dumps(override_doc, indent=2), encoding="utf-8")
+        subprocess.Popen([str(exe)], cwd=str(HOME), env=base_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        old_pids = wait_for(tray_processes, 40)
+        check("installed tray is running before self-update", bool(old_pids), old_pids)
+        check("detect_install_shape identifies the installed tray as 'installer'", tray_updates.detect_install_shape(INSTALL_DIR, frozen=True) == "installer")
+        refused = False
+        try:
+            tray_updates.update_agentcompass(
+                root=INSTALL_DIR, home=HOME, state_dir=HOME / ".agent-compass", which_path=None, frozen=True,
+                release={"tag_name": f"v{version}", "assets": [{"name": setup_exe.name, "url": setup_exe.as_uri(), "digest": "sha256:" + "0" * 64}]},
+                restart_fn=lambda: "",
+            )
+        except RuntimeError:
+            refused = True
+        check("update_agentcompass refuses an installer asset with a mismatched sha256 digest", refused)
+        os.environ["AGENTCOMPASS_PUBLIC_DATA"] = "off"
+        summary = tray_updates.update_agentcompass(
+            root=INSTALL_DIR, home=HOME, state_dir=HOME / ".agent-compass", which_path=None, frozen=True,
+            release={"tag_name": f"v{version}", "assets": [{"name": setup_exe.name, "url": setup_exe.as_uri(), "digest": f"sha256:{digest}"}]},
+            restart_fn=lambda: "",
+        )
+        new_pids = wait_for(lambda: [p for p in tray_processes() if p not in (old_pids or [])] or tray_processes(), 45)
+        check("update_agentcompass runs the verified installer silently and starts the tray again", bool(new_pids) and f"v{version}" in summary, (summary, old_pids, new_pids))
+        after_override = json.loads(override_file.read_text(encoding="utf-8")) if override_file.is_file() else {}
+        check("user settings in ~/.agent-compass/accounts-override.json are untouched by installer upgrade", after_override.get("self_update_preserved") is True, after_override)
+        kill_trays()
+
     section("Inno Setup: silent uninstall")
     started = subprocess.Popen([str(INSTALL_DIR / "unins000.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={LOGS / 'agentcompass-uninstall.log'}"], env=base_env())
     started.wait(timeout=120)

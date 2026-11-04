@@ -101,6 +101,7 @@ def stage(base: Path, repo_root: Path, gui: bool = False, inno: bool = False) ->
         (stage_in / "inno" / "packaging").mkdir(parents=True)
         shutil.copy2(installer, stage_in / "inno" / installer.name)
         shutil.copy2(repo / "packaging" / "agentcompass.iss", stage_in / "inno" / "packaging" / "agentcompass.iss")
+        shutil.copytree(repo / "tray", stage_in / "inno" / "tray", dirs_exist_ok=True)
         version = re.search(r"__version__\s*=\s*['" + chr(34) + r"]([^'" + chr(34) + r"]+)", (repo / "agentcompass" / "__init__.py").read_text(encoding="utf-8")).group(1)
         (stage_in / "inno" / "version.txt").write_text(version, encoding="utf-8")
     (stage_in / "guest").mkdir()

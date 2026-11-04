@@ -443,27 +443,101 @@ def close_tray(process: psutil.Process, wait: float = 8.0) -> str:
         return "killed"
 
 
+RESTART_MUTEX_NAME = "Local\\AgentCompassTrayRestart"
+RESTART_MARKER_MAX_AGE = 120.0
+
+
+def restart_marker_path() -> Path:
+    return services.STATE_DIR / "tray-restarted.json"
+
+
+def write_restart_marker(version: str | None = None) -> Path:
+    import json
+
+    path = restart_marker_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"at": time.time(), "version": version or updates.local_version()}
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def consume_restart_marker(now: float | None = None) -> dict | None:
+    import json
+
+    path = restart_marker_path()
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        data = None
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    if not isinstance(data, dict):
+        return None
+    stamp = float(data.get("at") or 0.0)
+    current = time.time() if now is None else float(now)
+    if 0.0 <= current - stamp <= RESTART_MARKER_MAX_AGE:
+        return data
+    return None
+
+
+def acquire_restart_mutex():
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    ctypes.set_last_error(0)
+    handle = kernel.CreateMutexW(None, False, RESTART_MUTEX_NAME)
+    if not handle:
+        return None
+    if ctypes.get_last_error() == 183:
+        kernel.CloseHandle(handle)
+        return None
+    return handle
+
+
+def release_restart_mutex(handle) -> None:
+    if handle:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CloseHandle(handle)
+
+
+def restart_in_progress() -> bool:
+    handle = acquire_restart_mutex()
+    if handle is None:
+        return True
+    release_restart_mutex(handle)
+    return False
+
+
 def restart() -> list[str]:
-    done = []
-    for proc in tray_processes():
-        done.append(_tr('托盘 {0} {1}').format(f'{proc.pid}', f'{close_tray(proc)}'))
-    services.STATE_DIR.mkdir(parents=True, exist_ok=True)
-    if not _on_default_desktop() and startup_ok(startup_fields()):
-        subprocess.run(
-            ["schtasks", "/Run", "/TN", TASK_NAME],
-            check=False, capture_output=True, creationflags=services.CREATE_NO_WINDOW,
-        )
-    else:
-        with (services.STATE_DIR / "tray-start.log").open("ab", buffering=0) as log:
-            subprocess.Popen(
-                component_launch.tray_command(), cwd=str(Path(sys.executable).parent if component_launch.frozen() else services.ROOT),
-                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                close_fds=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+    handle = acquire_restart_mutex()
+    if handle is None:
+        return [_tr("托盘正在重启中，已忽略重复请求")]
+    try:
+        done = []
+        write_restart_marker()
+        for proc in tray_processes():
+            done.append(_tr('托盘 {0} {1}').format(f'{proc.pid}', f'{close_tray(proc)}'))
+        services.STATE_DIR.mkdir(parents=True, exist_ok=True)
+        if not _on_default_desktop() and startup_ok(startup_fields()):
+            subprocess.run(
+                ["schtasks", "/Run", "/TN", TASK_NAME],
+                check=False, capture_output=True, creationflags=services.CREATE_NO_WINDOW,
             )
-    time.sleep(2)
-    now = tray_processes()
-    done.append(_tr('托盘已启动（{0} 个进程）').format(f'{len(now)}') if len(now) == 1 else _tr('托盘进程数异常：{0}').format(f'{len(now)}'))
-    return done
+        else:
+            with (services.STATE_DIR / "tray-start.log").open("ab", buffering=0) as log:
+                subprocess.Popen(
+                    component_launch.tray_command(), cwd=str(Path(sys.executable).parent if component_launch.frozen() else services.ROOT),
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                )
+        time.sleep(2)
+        now = tray_processes()
+        done.append(_tr('托盘已启动（{0} 个进程）').format(f'{len(now)}') if len(now) == 1 else _tr('托盘进程数异常：{0}').format(f'{len(now)}'))
+        return done
+    finally:
+        release_restart_mutex(handle)
 
 
 def main() -> int:

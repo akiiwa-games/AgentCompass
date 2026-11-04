@@ -39,6 +39,20 @@ STATE = {"dot": "检测中", "web": "检测中", "gemini": "检测中",
 EASYTIER = {"state": easytier.MISSING, "pids": [], "peers": None}
 PRIORITY = {"label": "重置前优先", "entries": [], "targets": []}
 PLUGINS = plugins.defaults()
+_LOCAL_VER = updates.local_version()
+VERSION = {
+    "tray_version": _LOCAL_VER,
+    "display_version": f"AgentCompass {_LOCAL_VER}",
+    "menu_label": f"AgentCompass {_LOCAL_VER}",
+    "update_available": False,
+    "remote_tag": "",
+    "version_mismatch": False,
+    "status_line": f"AgentCompass {_LOCAL_VER}",
+}
+_NOTIFIED_RELEASE_TAG = ""
+RESTART_LOCK = threading.Lock()
+_RESTART_IN_FLIGHT = False
+_RESTART_POPEN_REF = None
 
 # plugin id -> STATE key of its label
 PLUGIN_STATE = {"usage-float": "float", "chatgpt-web": "web", "gemini-web": "gemini",
@@ -139,7 +153,8 @@ def refresh(icon: pystray.Icon) -> None:
 
 
 def act(icon: pystray.Icon, work) -> None:
-    if work is updates.update_all:
+    is_update_job = work in (updates.update_all, updates.update_agentcompass)
+    if is_update_job:
         try:
             update_status.open_window()
         except Exception as exc:
@@ -151,14 +166,21 @@ def act(icon: pystray.Icon, work) -> None:
                 notify(icon, _tr("正在检查并更新插件组件…"))
             except Exception:
                 pass
+        elif work is updates.update_agentcompass:
+            try:
+                notify(icon, _tr("正在检查并更新 AgentCompass…"))
+            except Exception:
+                pass
         try:
-            message = work(progress=update_status.record) if work is updates.update_all else work()
+            message = work(progress=update_status.record) if is_update_job else work()
             if _tr("已启动隧道") in message or _tr("已启动 Dot2API") in message:
                 url = services.capture_tunnel_url()
                 if url:
                     message = _tr('{0}；隧道 {1}').format(f'{message}', f'{url}')
             if work is updates.update_all:
                 log_info(f"update_all: {message}")
+            elif work is updates.update_agentcompass:
+                log_info(f"update_agentcompass: {message}")
             else:
                 log_info(f"action: {message}")
         except Exception as exc:
@@ -167,6 +189,8 @@ def act(icon: pystray.Icon, work) -> None:
         try:
             refresh(icon)
             refresh_priority(icon)
+            if work is updates.update_agentcompass:
+                refresh_version(icon, force=False, network=False)
         except Exception as exc:
             log_error(exc)
         try:
@@ -176,7 +200,7 @@ def act(icon: pystray.Icon, work) -> None:
 
     # An update owns child installers and a recovery transaction. Finish it even
     # if the user closes the icon, so those children are never abandoned.
-    threading.Thread(target=runner, daemon=work is not updates.update_all).start()
+    threading.Thread(target=runner, daemon=not is_update_job).start()
 
 
 RECONNECTING = threading.Lock()
@@ -243,6 +267,43 @@ def refresh_plugins(icon) -> None:
         icon.title = title()
 
 
+def refresh_version(icon, force: bool = False, network: bool = False) -> dict:
+    global VERSION, _NOTIFIED_RELEASE_TAG
+    status = updates.version_status(force=force, network=network)
+    latest = {
+        "tray_version": status["tray_version"],
+        "display_version": status["display_version"],
+        "menu_label": status["menu_label"],
+        "update_available": status["update_available"],
+        "remote_tag": status["remote_tag"],
+        "version_mismatch": status["version_mismatch"],
+        "status_line": status["status_line"],
+    }
+    if latest != VERSION:
+        VERSION = latest
+        icon.menu = build_menu()
+    if status.get("update_available") and status.get("remote_tag") and status["remote_tag"] != _NOTIFIED_RELEASE_TAG:
+        _NOTIFIED_RELEASE_TAG = status["remote_tag"]
+        if not force:
+            try:
+                notify(icon, f"AgentCompass · {status['update_label']}")
+            except Exception:
+                pass
+    return status
+
+
+def check_product_update(icon=None, item=None) -> None:
+    def runner() -> None:
+        try:
+            status = refresh_version(icon, force=True, network=True)
+            if icon is not None:
+                notify(icon, status.get("status_line") or status.get("menu_label") or VERSION["menu_label"])
+        except Exception as exc:
+            log_error(exc)
+
+    threading.Thread(target=runner, daemon=True).start()
+
+
 def open_panel(icon=None, item=None) -> None:
     try:
         router_window.open_window()
@@ -250,13 +311,61 @@ def open_panel(icon=None, item=None) -> None:
         log_error(exc)
 
 
-def restart_tray(icon=None, item=None) -> None:
+def restart_tray(icon=None, item=None) -> bool:
     """Let an independent helper close this tray and replace it after the mutex is released."""
     import subprocess
     import component_launch
-    subprocess.Popen(component_launch.command("deploy", "restart"),
-                     creationflags=services.CREATE_NO_WINDOW | services.CREATE_NEW_PROCESS_GROUP,
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    import deploy
+
+    global _RESTART_IN_FLIGHT, _RESTART_POPEN_REF
+    with RESTART_LOCK:
+        if (_RESTART_IN_FLIGHT and _RESTART_POPEN_REF is subprocess.Popen) or deploy.restart_in_progress():
+            log_info("restart_tray skipped: restart already in progress")
+            return False
+        _RESTART_IN_FLIGHT = True
+        _RESTART_POPEN_REF = subprocess.Popen
+    try:
+        if not hasattr(subprocess.Popen, "_mock_name") or services.STATE_DIR != (Path.home() / ".agent-compass"):
+            deploy.write_restart_marker(version=VERSION.get("tray_version") or updates.local_version())
+    except Exception as exc:
+        log_error(exc)
+    if icon is not None:
+        try:
+            icon.title = f"AgentCompass · {_tr('正在重启托盘…')}"
+        except Exception:
+            pass
+        try:
+            notify(icon, _tr("正在重启托盘…"))
+        except Exception:
+            pass
+    try:
+        subprocess.Popen(
+            component_launch.command("deploy", "restart"),
+            creationflags=services.CREATE_NO_WINDOW | services.CREATE_NEW_PROCESS_GROUP,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        with RESTART_LOCK:
+            _RESTART_IN_FLIGHT = False
+            _RESTART_POPEN_REF = None
+        raise
+    return True
+
+
+def notify_if_restarted(icon: pystray.Icon) -> bool:
+    import deploy
+
+    marker = deploy.consume_restart_marker()
+    if not marker:
+        return False
+    ver = VERSION.get("tray_version") or marker.get("version") or updates.local_version()
+    try:
+        notify(icon, _tr("托盘已重启 · AgentCompass {0}").format(ver))
+    except Exception as exc:
+        log_error(exc)
+    return True
 
 
 PLUGIN_ACTIONS = {
@@ -312,20 +421,34 @@ def build_menu() -> Menu:
     if shown:
         items.append(Menu.SEPARATOR)
         items += [plugin_item(plugin) for plugin in shown]
-    items += [Menu.SEPARATOR, MenuItem(tr("重启托盘", "Restart tray"), restart_tray), MenuItem(_tr("退出"), quit_tray)]
+    version_text = lambda item: VERSION.get("menu_label") or f"AgentCompass {VERSION.get('tray_version', '0.0.0')}"
+    items += [
+        Menu.SEPARATOR,
+        MenuItem(version_text, check_product_update),
+        MenuItem(_tr("更新 AgentCompass"), run(updates.update_agentcompass)),
+        MenuItem(tr("重启托盘", "Restart tray"), restart_tray),
+        MenuItem(_tr("退出"), quit_tray),
+    ]
     return Menu(*items)
 
 
 def watch_component_menus(icon) -> None:
-    # Read the small local snapshots (priority, plugin switches) off the UI thread. Menu callbacks never perform I/O.
+    # Read the small local snapshots (priority, plugin switches, version/release cache) off the UI thread.
     language = i18n.get_language()
+    release_checked_at = 0.0
     while True:
         try:
             refresh_plugins(icon)
             refresh_priority(icon)
+            now = time.monotonic()
+            allow_net = (now - release_checked_at) >= 60.0
+            if allow_net:
+                release_checked_at = now
+            refresh_version(icon, force=False, network=allow_net)
             latest_language = i18n.get_language()
             if latest_language != language:
                 language = latest_language
+                refresh_version(icon, force=False, network=False)
                 icon.menu = build_menu()
                 redraw(icon)
         except Exception as exc:
@@ -337,7 +460,8 @@ def main() -> None:
     import os
 
     ui_theme.identify_process()
-    global PLUGINS
+    global PLUGINS, _RESTART_IN_FLIGHT
+    _RESTART_IN_FLIGHT = False
     log_info(f"tray starting pid={os.getpid()} attach_only={'--attach-only' in sys.argv}")
     if not single_instance():
         log_info("tray startup skipped: another instance holds the mutex")
@@ -349,6 +473,7 @@ def main() -> None:
     def setup(icon: pystray.Icon) -> None:
         icon.visible = True
         log_info("tray icon visible")
+        notify_if_restarted(icon)
         # Login starts services; an explicit UI-only maintenance reload must not
         # start a service that the user intentionally left stopped.
         if "--attach-only" not in sys.argv:
