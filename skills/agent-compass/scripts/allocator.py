@@ -1387,6 +1387,13 @@ def ability_floor(policy, route, difficulty):
     return float(own[difficulty]) if difficulty in own else float(policy['ability_floor'][difficulty])
 
 
+def critical_headroom(policy, difficulty):
+    """Extra ability critical work needs above the difficulty's floor: `critical_headroom_by_difficulty[difficulty]` when
+    the data sets one (it keeps a critical gate in place when a floor moves), otherwise `critical_headroom`."""
+    own = policy.get('critical_headroom_by_difficulty') or {}
+    return float(own[difficulty]) if difficulty in own else float(policy['critical_headroom'])
+
+
 def task_demand(profile, difficulty, critical, divergence, policy, high_precision=False, floor=None):
     """The task's continuous ability demand: the difficulty's floor (plus critical headroom) and an extra that grows with
     reasoning depth times the mean difficulty of the task's properties (code, context, divergence, hallucination risk,
@@ -1394,7 +1401,7 @@ def task_demand(profile, difficulty, critical, divergence, policy, high_precisio
     coefficient) reaches `required_ability`; the saturation interval runs one `saturation_span` above it."""
     cfg = demand_config(policy)
     floor = float(policy['ability_floor'][difficulty]) if floor is None else float(floor)
-    headroom = float(policy['critical_headroom']) if critical else 0.0
+    headroom = critical_headroom(policy, difficulty) if critical else 0.0
     precision = float(cfg['precision_headroom']) if high_precision and not critical else 0.0
     span = float((policy.get('profile') or {}).get('saturation_span', 0.3))
     if profile:
@@ -2011,11 +2018,12 @@ def evaluate_bundle(bundle, task, ctx):
     demand = task['demand']
     target = demand['required_ability']
     floor = demand['floor']
-    gate = floor + (policy['critical_headroom'] if task['critical'] else 0)
+    headroom = critical_headroom(policy, task['difficulty']) if task['critical'] else 0.0
+    gate = floor + headroom
     if ability < gate:
         result['below_floor'] = True
         exclude(f'ability {ability:.1f} below the {task["difficulty"]} floor {floor}'
-                + (f' plus the {policy["critical_headroom"]} headroom critical work needs' if task['critical'] else ''))
+                + (f' plus the {headroom:g} headroom critical work needs' if task['critical'] else ''))
     expires = parse_time(spec.get('expires_at'))
     if expires is not None and (expires - now).total_seconds() < hours * 3600:
         exclude('subscription ends before the work would finish')

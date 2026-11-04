@@ -306,11 +306,13 @@ class AllocatorTests(unittest.TestCase):
         # Frontier floor & steeper effort curve
         frontier = {'work_kind': 'general_implementation', 'difficulty': 'frontier'}
         eligible = {c['id'] for c in self.plan(frontier)['ranking'] if c['score'] is not None}
-        # Tier x effort curve decides, not a bundle label. The frontier floor is the top anchor (4.6): Opus clears it from
-        # High up (Medium is 4.4); Astra (Max 4.3), Sonnet (Max 4.54) and every Sol effort stay below it.
-        self.assertEqual(eligible, {'opus55_max', 'opus55_xhigh', 'opus55_high'})
+        # Tier x effort curve decides, not a bundle label. The frontier floor is Astra's anchor tier (4.2): Opus clears it
+        # from Medium (4.4) up and Astra from High (4.2) up; Sonnet High (3.9) and every Sol effort stay below it.
+        self.assertEqual(eligible, {'opus55_max', 'opus55_xhigh', 'opus55_high', 'opus55_medium', 'astra_high', 'astra_xhigh',
+                                    'pi_astra_high', 'pi_astra_xhigh'})
         lifted = {c['id'] for c in self.plan(frontier, accounts=custom)['ranking'] if c['score'] is not None}
-        self.assertFalse({'sonnet55_xhigh', 'sonnet55_max', 'sonnet55_high'} & lifted)
+        # Sonnet clears it only with effort: XHigh 4.3 and Max 4.54 qualify, High 3.9 does not.
+        self.assertEqual({'sonnet55_xhigh', 'sonnet55_max'}, {'sonnet55_xhigh', 'sonnet55_max', 'sonnet55_high'} & lifted)
 
     def test_effort_credit_follows_the_required_ability_not_a_lock(self):
         # Work whose required ability High already clears earns nothing from xhigh/max: same ability credit, more burn.
@@ -565,10 +567,9 @@ class AllocatorTests(unittest.TestCase):
             self.assertNotEqual(local['choice'], 'dot_text', kind)
         for difficulty in ('hard', 'coupled'):
             self.assertEqual(self.plan({'work_kind': 'web_research', 'difficulty': difficulty})['choice'], 'dot_text', difficulty)
-        # Frontier work is the newest top tier's (ability_floor.frontier is the top anchor): Dot, at Astra's tier, is below it.
+        # Frontier research: Dot sits at Astra's tier, which is the frontier floor, so it qualifies.
         frontier = self.plan({'work_kind': 'web_research', 'difficulty': 'frontier'})
-        self.assertNotEqual(frontier['choice'], 'dot_text')
-        self.assertTrue(any('below the frontier floor' in e for e in self.rows(frontier)['dot_text']['excluded']))
+        self.assertFalse(any('below the frontier floor' in e for e in self.rows(frontier)['dot_text']['excluded']))
         coupled = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled', 'needs': {'local_only': False}})
         models = {c['bundle']['model'] for c in coupled['ranking'] if c['score'] is not None}
         self.assertTrue({'claude-opus-5-5', 'gpt-6-astra', 'gemini-4-argon-high', 'claude-sonnet-5-5', 'gpt-6.1-sol', 'dot'} <= models)
@@ -1091,7 +1092,7 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(ordinary['choice'], 'opus55_high')
         self.assertNotIn('quality_bonus', self.rows(ordinary)['opus55_xhigh']['components'])
         # Effort curves are Artificial Analysis effort variants at 0.0495 tier per index point (2026-11-04): Opus XHigh
-        # +0.25 / Max +0.35, Sol XHigh +0.1 / Max +0.25. A frontier requirement above Opus XHigh buys Max; hard Sol work
+        # +0.25 / Max +0.35, Sol XHigh +0.1 / Max +0.25. A frontier requirement within Opus XHigh's reach buys XHigh; hard Sol work
         # whose requirement sits above Sol High buys Max, and only critical work (precision headroom) keeps High under
         # scarcity: non-critical work may step to Medium, which is 0.05 short.
         for model, kind, prof, hours, high_effort, tight_rem, lowest in (
@@ -1100,7 +1101,7 @@ class AllocatorTests(unittest.TestCase):
             ('claude-opus-5-5', 'debug_review', self.profile(reasoning_depth=3, code_complexity=3,
                 context_scale=3, hallucination_risk=3), 1, 'opus55_xhigh', 35, 'high'),
             ('claude-opus-5-5', 'general_implementation', self.profile(reasoning_depth=4,
-                code_complexity=3, context_scale=3), 1, 'opus55_max', 35, 'high'),
+                code_complexity=3, context_scale=3), 1, 'opus55_xhigh', 35, 'high'),
             ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, context_scale=3, divergence=2, hallucination_risk=3),
                 4, 'sol_max', 20, 'medium'),
             ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, context_scale=3, divergence=2, hallucination_risk=3,

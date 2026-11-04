@@ -129,7 +129,7 @@ under the communication contract below.
 
 ### No eligible bundle
 
-When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. The floor (`scoring.ability_floor`, or a route's own) is a hard gate at every difficulty, so a lower tier is never offered instead. If no bundle on the usable accounts clears the floor at all, the reason says so first. If a bundle that clears it is held back only by its own account's quota windows (`allocator.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise. Frontier work (floor = the top anchor tier) relies on this: when every top-tier model is out of quota, it waits rather than downgrading.
+When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. The floor (`scoring.ability_floor`, or a route's own) is a hard gate at every difficulty, so a lower tier is never offered instead. If no bundle on the usable accounts clears the floor at all, the reason says so first. If a bundle that clears it is held back only by its own account's quota windows (`allocator.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise. Frontier work (floor = Astra's anchor tier, the lowest top tier a vendor subscription ships) relies on this: when every model at or above it is out of quota, it waits rather than downgrading.
 
 ### Calibration data
 

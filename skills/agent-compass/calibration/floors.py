@@ -89,7 +89,7 @@ def main():
         best = max(b.values(), key=lambda r: r[0])
         tied = sorted((r for r in b.values() if r[2] >= best[1]), key=lambda r: -r[0])
         print(f'  {board}/{category}: ' + '; '.join(r[3] for r in tied))
-    print(f"  shipped frontier floor {shipped['frontier']} (the top anchor tier)")
+    print(f"  shipped frontier floor {shipped['frontier']} (the lowest top anchor tier a vendor subscription ships)")
 
     print('Anchor contradictions (reported, not applied)')
     flash, sol = 'Gemini 3.8 Flash', 'GPT-6.1 Sol'

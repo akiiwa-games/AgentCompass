@@ -202,7 +202,7 @@ class EffortMatchingTests(unittest.TestCase):
     def test_calibration_changes_the_choice_without_touching_the_task_side(self):
         """Opus Max at 4x the burn is picked only when its curve says the extra ability is real."""
         weak, strong = copy.deepcopy(self.accounts), copy.deepcopy(self.accounts)
-        for accounts, ability in ((weak, 0.05), (strong, 0.6)):
+        for accounts, ability in ((weak, 0.05), (strong, 1.0)):
             accounts['effort_curves']['claude-opus-5-5']['ability']['max'] = ability
             accounts['effort_curves']['claude-opus-5-5']['burn']['max'] = 0.7 * 4.0
         usage = quota(codex=(25, 100))

@@ -119,15 +119,18 @@ class CalibratedRoutingTests(unittest.TestCase):
                             self.assertIn('No bundle on the usable accounts clears the frontier floor', reason)
 
     def test_frontier_work_routes_to_a_top_tier_model_where_one_has_quota(self):
-        # Claude Max 5 and a pooled Claude plan carry Opus 5.5 with room for a 2-3 h frontier task; Codex-only and
-        # Antigravity-only sets do not reach the top tier, and the free tier has no frontier-capable model.
-        for account_set, expect in (('claude max5', True), ('magpie pool (3x claude pro)', True), ('codex pro', False),
-                                    ('antigravity pro', False), ('opencode free', False)):
+        # Claude plans carry Opus 5.5 and Codex plans GPT-6 Astra, the floor's anchor, so a Codex-only user has a frontier
+        # route. Antigravity's Opus 5.5 quota is short in this snapshot and its Argon High (4.0) is below the floor, and the
+        # free tier has no frontier-capable model, so those wait.
+        for account_set, model in (('claude max5', 'claude-opus-5-5'), ('magpie pool (3x claude pro)', 'claude-opus-5-5'),
+                                   ('codex plus', 'gpt-6-astra'), ('codex pro', 'gpt-6-astra'),
+                                   ('antigravity pro', None), ('opencode free', None)):
             accounts, pools = sim.accounts_for('fresh', account_set)
             for case in self.frontier_cases():
                 with self.subTest(account_set=account_set, case=case['id']):
                     decision = self.frontier_plan(case, accounts, pools, account_set, 'ample')
-                    self.assertEqual(decision['choice'] != 'none', expect)
+                    chosen = next((c for c in decision['ranking'] if c['id'] == decision['choice']), {})
+                    self.assertEqual((chosen.get('bundle') or {}).get('model'), model)
         accounts, pools = sim.accounts_for('fresh', 'claude max5')
         scarce = self.frontier_plan(self.frontier_cases()[0], accounts, pools, 'claude max5', 'claude scarce')
         self.assertEqual(scarce['choice'], 'none')

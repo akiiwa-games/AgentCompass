@@ -33,6 +33,7 @@ variants. Then rerun `apply_rows.py` and `efforts.py --apply`. Every written row
 
 - The anchor tiers (Opus 5.5 4.6, Astra 4.2, Sonnet 5.5 3.9, Sol 3.6, Grok 4.7 3.4, Flash 3.0) are the user's judgment.
   The scripts report contradictions with them and never change them.
-- A floor moves only when its bootstrap band excludes the shipped value. Frontier is the top anchor tier, because the
-  user defines frontier work as the newest top tier's work and no benchmark measures it.
+- A floor moves only when its bootstrap band excludes the shipped value. Frontier is the lowest top anchor tier a vendor
+  subscription ships (Astra 4.2): no benchmark measures frontier work, and the user wants every vendor's top model to
+  qualify. The critical frontier gate stays at 4.9 through `critical_headroom_by_difficulty`.
 - No model names in router code. Everything above is data in `accounts.json`.
