@@ -141,14 +141,14 @@ class CleanInstallParityTests(unittest.TestCase):
     def test_free_usage_bonus_needs_a_calibrated_sufficient_model(self):
         snap = snapshot()
         # Unknown to the data (generic prior) and an estimated public row: both checked, neither earns the bonus.
-        snap['accounts']['opencode']['models'] = ['opencode/zzz-new-free', 'opencode/qwen3-coder-next']
+        snap['accounts']['opencode']['models'] = ['opencode/zzz-new-free', 'opencode/flint-40b-free']
         accounts = inventory.apply(shipped_template(), snap)
-        self.assertTrue(accounts['models']['qwen3-coder-next']['score_estimated'])
+        self.assertTrue(accounts['models']['flint-40b-free']['score_estimated'])
         task = {'objective': 'Fix a failing unit test', 'work_kind': 'general_implementation', 'difficulty': 'routine',
                 'hours': 1, 'needs': {'local_only': True}}
         decision = allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
                                   accounts=accounts, overrides=[], host_policy_config=None)
-        for bid in ('auto:opencode:opencode:zzz-new-free', 'auto:opencode:opencode:qwen3-coder-next'):
+        for bid in ('auto:opencode:opencode:zzz-new-free', 'auto:opencode:opencode:flint-40b-free'):
             free = next(c for c in decision['ranking'] if c['id'] == bid)
             self.assertFalse(free['excluded'], bid)
             self.assertNotIn('free_usage', free['components'], bid)

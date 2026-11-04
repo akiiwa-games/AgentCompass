@@ -12,6 +12,8 @@ required = floor + critical_headroom + precision_headroom
 ```
 
 - `floor` is the hard gate for the work (a bundle below `floor + critical_headroom` is excluded). It is `scoring.ability_floor[difficulty]`, unless the route declares its own `ability_floor` for that difficulty in `capability_policy.routes`. Floors are measured, not judged. Each is the tier where expected success reaches 90% of the best model's, from public benchmarks mapped onto the tier scale. `scoring.ability_floor_basis` and each route's `ability_floor_basis` record the sources and dates.
+- The floor is only the gate. Graded ability on work that is not minimum-sufficient counts from `scoring.ability_score_origin[difficulty]`, so lowering a measured floor does not flatten the difference between the models above it.
+- An advertised model without a measured row takes `unmeasured_models.generic`: the median measured tier, below the hard floor, so it gets routine work only.
 - `property_load` is the weighted mean of `code_complexity`, `context_scale`, `divergence`, `hallucination_risk`, `error_cost` (`scoring.demand.property_weights`). Depth multiplies it, so the same heavy properties ask more of a deep task than a shallow one.
 - Work with no profile uses the difficulty index as depth and `default_load`.
 - Tunables live under `scoring.demand` (`property_span`, `default_load`, `depth_coupling`, `shortfall_weight`, `sprint_effort_weight`, `precision_headroom`, `property_weights`).
@@ -28,7 +30,7 @@ required = floor + critical_headroom + precision_headroom
 | `burn_mult` | burn multiplier over High (replaces `burn`) |
 | `calibration_source` | where the numbers came from; every shipped curve names one |
 
-Effective ability is `tier` shaped by the curve; quota cost is `unit_rate x burn_scale`. Opus Max costs about 4x High for about 9% more ability, so it is chosen only when the requirement is not met below it. Collect data per model and edit the curve; nothing else needs to change.
+Effective ability is `tier` shaped by the curve; quota cost is `unit_rate x burn_scale`. A tier means ability at High. Curves are Artificial Analysis effort variants at 0.0495 tier per index point (`calibration/efforts.py`). Opus Max costs about 2.9x High for about 8% more ability, so it is chosen only when the requirement is not met below it. A measured row whose LMArena listing is a higher-effort variant is moved to High when it is written (`calibration/apply_rows.py`), so the curve is not counted twice. Collect data per model and edit the curve; nothing else needs to change.
 
 ## The match
 

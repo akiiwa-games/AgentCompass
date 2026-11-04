@@ -16,8 +16,10 @@ GENERIC_MODEL_SPEC = {
 }
 
 
-def generic_model_spec():
-    return copy.deepcopy(GENERIC_MODEL_SPEC)
+def generic_model_spec(accounts=None):
+    """The default row for an unmeasured model: public data's `unmeasured_models.generic`, else the built-in baseline."""
+    row = ((accounts or {}).get('unmeasured_models') or {}).get('generic')
+    return copy.deepcopy(row if isinstance(row, dict) else GENERIC_MODEL_SPEC)
 
 
 def resolve_canonical_model(raw_model_name, known_models, aliases=None):

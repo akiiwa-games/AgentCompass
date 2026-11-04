@@ -22,7 +22,7 @@
     "read_only_review": "Any read-only code review, PR/diff inspection, release-readiness audit, or diagnostic report that writes NO production code MUST have `code_complexity: 0` (even when reviewing complex systems code), `work_kind: \"debug_review\"` (or `exploration_analysis`), and `hallucination_risk: 3`.",
     "context_scale": "Count coupled functional modules the worker must reason across, NOT the number of file paths mentioned in the prompt:\n- `1` (Single unit): Modifying/reviewing ONE primary functional module/script (plus its paired unit test file and any role/brief/output paths), OR any self-contained research/text/algorithm task, OR running a uniform command/checklist.\n- `2` (Multi-module): Modifying or tracing interactions across 2 to 5 distinct coupled functional modules or datasets.\n- `3` (System-wide): Whole-repository architecture, cross-subsystem refactoring (>5 modules), or multi-stage orchestrator lifecycle.",
     "divergence": "Measure how open-ended the solution space is:\n- `1` (Convergent): Known target, concrete feature spec, deterministic runbook, factual diff review, or fixing an already-isolated bug.\n- `2` (Multi-hypothesis): Diagnosing an unknown root cause with 2+ competing hypotheses (intermittent bug, race condition, memory/CPU anomaly) or comparing bounded technical alternatives.\n- `3` (Divergent / Creative): Open-ended creative ideation, cultural/motif research with gameplay/narrative/product scheme proposals, inventing a new architecture or scoring paradigm from first principles, or open-ended brainstorming with no single predetermined answer.",
-    "reasoning_depth": "Rate the cognitive depth required by the core problem:\n- `1` (Routine): Executing an explicit command/checklist/runbook, trivial constant/config tweak, mechanical bulk replacement, or simple smoke check (even inside a long Markdown brief).\n- `2` (Standard/Hard): Standard single- or multi-module feature implementation, bug diagnosis & fix, read-only PR/module review, or structured research synthesis.\n- `3` (Coupled/Deep): Cross-module architectural refactoring with strict invariants, deep concurrency/state root-cause forensics across subsystems, or first-principles system architecture design.\n- `4` (Frontier): Formal mathematical proof/derivation, algorithmic lower-bound analysis, or frontier theoretical critique.",
+    "reasoning_depth": "Rate the cognitive depth required by the core problem:\n- `1` (Routine): Executing an explicit command/checklist/runbook, trivial constant/config tweak, mechanical bulk replacement, or simple smoke check (even inside a long Markdown brief).\n- `2` (Standard/Hard): Standard single- or multi-module feature implementation, bug diagnosis & fix, read-only PR/module review, or structured research synthesis.\n- `3` (Coupled/Deep): Cross-module refactoring of an existing system with strict invariants, deep concurrency/state root-cause forensics across subsystems, or a migration/implementation plan inside an architecture that already exists.\n- `4` (Frontier): Open-ended design that decides a whole product or system and has no reference solution, which the user always gives to the newest top-tier model: a new game's overall technical architecture, detailed game-system design (progression, combat, economy rules and formulas), ultra-low-latency network/VPS architecture, a new system's first-principles architecture; also formal mathematical proof/derivation, algorithmic lower-bound analysis, or frontier theoretical critique.",
     "multi_task_vs_single_task": "Set `multi_task: true` ONLY when the brief bundles 2+ independent deliverables that could be assigned to separate workers in parallel (e.g., fixing a backend bug AND translating unrelated docs). A single deliverable with sequential steps (`diagnose -> fix -> test -> report`) or a single research report covering multiple sub-questions is ONE task (`multi_task: false, task_count: \"1\"`)."
   },
   "calibration_cases": [
@@ -332,6 +332,72 @@
         "urgency": "unknown",
         "multi_task": true,
         "task_count": "2"
+      }
+    },
+    {
+      "id": "frontier_game_architecture",
+      "task": "为我们的新游戏设计整体技术架构：客户端/服务器拆分、实体与系统框架、存档与同步方案、资源管线和热更新，给出模块边界、关键接口和取舍理由。",
+      "expected_profile": {
+        "interaction_style": "exploration",
+        "code_complexity": 0,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "work_kind": "complex_build_plan",
+        "reasoning_depth": 4,
+        "context_scale": 3,
+        "divergence": 3,
+        "expected_hours": 2.5
+      }
+    },
+    {
+      "id": "frontier_game_system_design",
+      "task": "细化游戏的养成与战斗系统设计：数值框架、成长曲线、技能与属性交互、经济产出消耗平衡，给出完整规则、公式和边界情况。",
+      "expected_profile": {
+        "interaction_style": "exploration",
+        "code_complexity": 0,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "work_kind": "direction_reasoning",
+        "reasoning_depth": 4,
+        "context_scale": 2,
+        "divergence": 3,
+        "expected_hours": 2.0
+      }
+    },
+    {
+      "id": "frontier_vps_low_latency_architecture",
+      "task": "Design an ultra-low-latency VPS network architecture for real-time game traffic: region placement, kernel/NIC tuning, UDP relay topology, failover and anycast, with latency budgets per hop and the trade-offs.",
+      "expected_profile": {
+        "interaction_style": "exploration",
+        "code_complexity": 0,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": false,
+        "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "work_kind": "complex_build_plan",
+        "reasoning_depth": 4,
+        "context_scale": 3,
+        "divergence": 2,
+        "expected_hours": 2.0
       }
     }
   ]

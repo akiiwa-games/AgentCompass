@@ -108,11 +108,11 @@ class EffortMatchingTests(unittest.TestCase):
         gain = lambda model, effort: allocator.effort_ability(self.policy, curves[model], self.accounts['models'][model], effort) \
             - self.accounts['models'][model]['tier']
         burn = lambda model, effort: allocator.burn_scale(self.policy, curves[model], effort)
-        self.assertGreater(gain('claude-sonnet-5-5', 'max'), gain('gpt-6.1-sol', 'max') * 3)
+        self.assertGreater(gain('claude-sonnet-5-5', 'max'), gain('gpt-6.1-sol', 'max') * 2)
         self.assertGreater(burn('claude-sonnet-5-5', 'max'), burn('gpt-6.1-sol', 'max') * 2.5)
         self.assertAlmostEqual(burn('claude-opus-5-5', 'high'), 1.0)
-        self.assertGreater(burn('claude-opus-5-5', 'max'), 3.0)
-        self.assertLess(gain('claude-opus-5-5', 'max') / self.accounts['models']['claude-opus-5-5']['tier'], 0.1)   # ~4x burn, ~9% ability
+        self.assertGreater(burn('claude-opus-5-5', 'max'), 2.5)    # AA cost per task: Max 10.04 vs High 3.46
+        self.assertLess(gain('claude-opus-5-5', 'max') / self.accounts['models']['claude-opus-5-5']['tier'], 0.1)   # ~3x burn, ~8% ability
 
     def test_curves_accept_multiplier_forms(self):
         info = {'tier': 4.0}
@@ -143,7 +143,7 @@ class EffortMatchingTests(unittest.TestCase):
         self.assertGreater(rows['opus55_medium']['score'], rows['opus55_high']['score'])
         self.assertGreater(rows['opus55_high']['score'], rows['opus55_xhigh']['score'])
         self.assertEqual(plan['selected_bundle']['effort'], 'medium')
-        # The same medium bundle is not available to work it cannot serve: frontier floor 4.2 vs Sol 3.6 - 0.2.
+        # The same medium bundle is not available to work it cannot serve: frontier floor 4.6 vs Sol 3.6 - 0.2.
         frontier = self.rows(self.plan(HEAVY_FRONTIER, tight))
         self.assertTrue(any('floor' in reason for reason in frontier['sol_medium']['excluded']))
 
@@ -152,8 +152,8 @@ class EffortMatchingTests(unittest.TestCase):
         rows = self.rows(healthy)
         required = healthy['decision']['task']['demand']['required_ability']
         self.assertEqual(healthy['choice'], 'opus55_max')
-        self.assertEqual(healthy['decision']['task']['max_recommended_effort'], 'max')
-        self.assertGreaterEqual(rows['opus55_max']['components']['ability_value'], required)
+        # Critical frontier work asks more than any effort reaches; Max comes closest.
+        self.assertIn(healthy['decision']['task']['max_recommended_effort'], (None, 'max'))
         for lower in ('opus55_xhigh', 'opus55_high', 'opus55_medium'):
             self.assertLess(rows[lower]['components']['ability_value'], required)
             if rows[lower]['excluded']:        # critical work: below the floor plus headroom (4.5) is out, not just worse
@@ -161,12 +161,16 @@ class EffortMatchingTests(unittest.TestCase):
                 continue
             self.assertGreater(rows[lower]['components']['shortfall'], 0)
             self.assertGreater(rows['opus55_max']['score'], rows[lower]['score'])
-        self.assertEqual(rows['opus55_xhigh']['excluded'], [])
-        self.assertTrue(rows['opus55_medium']['excluded'])
-        # Quota that cannot afford 3.3x burn steps down to the cheapest effort that still comes closest.
+        # Critical frontier work needs the top anchor plus critical headroom (4.9): only Opus Max (4.95) clears it, so
+        # tight quota does not step down to a lower effort or tier.
+        self.assertTrue(rows['opus55_xhigh']['excluded'] and rows['opus55_medium']['excluded'])
         tight = self.plan(HEAVY_FRONTIER, quota(claude=(25, 100)))
-        self.assertIn(tight['selected_bundle']['effort'], ('high', 'xhigh'))
-        self.assertLess(allocator.EFFORT_ORDER.index(tight['selected_bundle']['effort']), allocator.EFFORT_ORDER.index('max'))
+        self.assertEqual(tight['choice'], 'opus55_max')
+        # Ordinary (non-critical) frontier work admits Opus from High; tight quota steps down from Max, never below High.
+        ordinary = dict(HEAVY_FRONTIER, error_cost=2)
+        stepped = self.plan(ordinary, quota(claude=(25, 100)))['selected_bundle']
+        self.assertEqual(stepped['model'], 'claude-opus-5-5')
+        self.assertIn(stepped['effort'], ('high', 'xhigh'))
 
     def test_moderate_work_never_pays_for_xhigh_or_max(self):
         for profile in (LIGHT, WORKING, dict(WORKING, reasoning_depth=3, code_complexity=1, hallucination_risk=1, error_cost=1)):
@@ -179,9 +183,11 @@ class EffortMatchingTests(unittest.TestCase):
 
     def test_expiring_surplus_quota_raises_the_thinking_effort(self):
         profile = dict(WORKING, reasoning_depth=3, code_complexity=1, hallucination_risk=1, error_cost=1)
-        calm = self.plan(profile, quota(codex=(70, 100), claude=(30, 100)), hours=2)
+        # On Sol, whose XHigh/Max add measured ability (Astra's XHigh scores what its High does, so it has nothing to buy).
+        sol = {'constraints': {'model': 'gpt-6.1-sol'}}
+        calm = self.plan(profile, quota(codex=(70, 100), claude=(30, 100)), hours=2, **sol)
         sprint_usage = quota(codex=(70, 100), claude=(30, 100), reset_codex=3)
-        sprint = self.plan(profile, sprint_usage, hours=2)
+        sprint = self.plan(profile, sprint_usage, hours=2, **sol)
         order = allocator.EFFORT_ORDER.index
         self.assertEqual(sprint['selected_bundle']['account'], 'codex')
         self.assertGreater(order(sprint['selected_bundle']['effort']), order(calm['selected_bundle']['effort']))
@@ -201,7 +207,7 @@ class EffortMatchingTests(unittest.TestCase):
             accounts['effort_curves']['claude-opus-5-5']['burn']['max'] = 0.7 * 4.0
         usage = quota(codex=(25, 100))
         for accounts, expected in ((weak, False), (strong, True)):
-            plan = self.plan(HEAVY_FRONTIER, usage, accounts=accounts)
+            plan = self.plan(dict(HEAVY_FRONTIER, error_cost=2), usage, accounts=accounts)
             self.assertEqual(plan['selected_bundle']['model'] == 'claude-opus-5-5' and plan['selected_bundle']['effort'] == 'max', expected)
             row = self.rows(plan)['opus55_max']
             self.assertAlmostEqual(row['expected_usd'] / self.rows(plan)['opus55_high']['expected_usd'], 4.0, places=1)

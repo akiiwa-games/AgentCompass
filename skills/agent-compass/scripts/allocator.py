@@ -868,7 +868,7 @@ def model_spec(accounts, model):
     """Score advertised names using calibrated rows, family priors, then a baseline."""
     name = canonical(model, accounts)
     value = accounts.get('models', {}).get(name)
-    return value if isinstance(value, dict) else generic_model_spec()
+    return value if isinstance(value, dict) else generic_model_spec(accounts)
 
 
 def bundle_harness(bundle, account=None, bundle_id=None, *, family=None):
@@ -1818,6 +1818,25 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
     return found
 
 
+QUOTA_REASON = re.compile(r'^([\w.-]+)(?::| has | is )')
+
+
+def quota_wait_hours(candidate, usage):
+    """Hours until every quota window that excludes a candidate has reset, or None when anything other than its own
+    account's quota windows (ability, policy, model management, route) excludes it."""
+    account = (candidate.get('bundle') or {}).get('account')
+    windows = (((usage or {}).get('accounts') or {}).get(account) or {}).get('windows') or []
+    resets = {str(w.get('id')): w.get('seconds_until_reset') for w in windows if isinstance(w, dict)}
+    hours = 0.0
+    for reason in candidate.get('excluded') or []:
+        match = QUOTA_REASON.match(str(reason))
+        seconds = resets.get(match.group(1)) if match else None
+        if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+            return None
+        hours = max(hours, seconds / 3600)
+    return hours
+
+
 def pool_size(observed):
     """How many accounts a window reading pools (a Magpie pool reports `accounts: N`); 1 for a single account."""
     count = (observed or {}).get('accounts')
@@ -1994,6 +2013,7 @@ def evaluate_bundle(bundle, task, ctx):
     floor = demand['floor']
     gate = floor + (policy['critical_headroom'] if task['critical'] else 0)
     if ability < gate:
+        result['below_floor'] = True
         exclude(f'ability {ability:.1f} below the {task["difficulty"]} floor {floor}'
                 + (f' plus the {policy["critical_headroom"]} headroom critical work needs' if task['critical'] else ''))
     expires = parse_time(spec.get('expires_at'))
@@ -2296,7 +2316,10 @@ def evaluate_bundle(bundle, task, ctx):
     if kind in ('frontend_implementation', 'complex_build_plan', 'direction_reasoning') and not task['high_precision']:
         # Once sufficient reasoning is available, UI and planning/scheme quality are decided by route and subjective fit.
         span = (policy.get('profile') or {}).get('saturation_span', 0.3)
-    ability_score = clamp((credited - (gate if task['high_precision'] else floor)) / span, 0, 1)
+    # Graded ability counts from the difficulty's score origin, not from the gate: the measured floors only decide who may
+    # take the work, so lowering a floor does not flatten the quality difference between the models above it.
+    origin = float((policy.get('ability_score_origin') or {}).get(task['difficulty'], floor))
+    ability_score = clamp((credited - origin - ((gate - floor) if task['high_precision'] else 0.0)) / span, 0, 1)
     if task['high_precision']:
         result['components']['quality_bonus'] = round(float(policy.get('high_precision_effort_weight', 0.14)) * effort_gain, 4)
     if task['minimum_sufficient']:
@@ -2741,6 +2764,19 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision.update({'action': 'none', 'needs_user_decision': True,
                          'reason': 'No eligible bundle. Closest: ' + ' | '.join(
                              f"{c['id']}: {'; '.join(c['excluded'])}" for c in closest)})
+        # The floor is a hard gate at every difficulty, so nothing below it is offered instead. When a bundle that clears it
+        # is held back only by quota, say when that quota returns, so the parent can wait rather than pick a lower tier.
+        waits = sorted((h, c['id']) for c in candidates if c['excluded'] and (h := quota_wait_hours(c, usage)) is not None)
+        admitted = [c for c in candidates if not c.get('below_floor') and 'excluded by host policy' not in c['excluded']]
+        if not admitted:
+            decision['reason'] = (f'No bundle on the usable accounts clears the {task["difficulty"]} floor '
+                                  f'{task["demand"]["floor"]:g}; nothing below it is offered instead. ' + decision['reason'])
+        if waits:
+            hours, bundle_id = waits[0]
+            decision['next_reset'] = {'bundle': bundle_id, 'hours': round(hours, 1),
+                                      'at': (now + timedelta(hours=hours)).isoformat()}
+            decision['reason'] += (f'. Nothing below the {task["difficulty"]} floor is offered instead; {bundle_id} clears it '
+                                   f'and its quota returns in {hours:.1f}h: wait, or decide otherwise.')
         result['choice'] = 'none'
         return result
     can_wait = task['can_wait_hours']

@@ -202,13 +202,29 @@ def live_document():
     return usage_cache.merge(documents)[0] if documents else {'providers': {}}
 
 
-def ledger_document(compact):
-    """A ledger record's compact usage as the cache document it was read from (fetched_at, stale, windows)."""
+def pool_counts(document):
+    """{provider: {window id: accounts}} for the pooled windows of a cache document."""
+    return {name: {w.get('id'): w['accounts'] for w in row.get('windows') or []
+                   if isinstance(w, dict) and isinstance(w.get('accounts'), int) and w['accounts'] > 1}
+            for name, row in (document.get('providers') or {}).items() if isinstance(row, dict)}
+
+
+def ledger_document(compact, pools=None):
+    """A ledger record's compact usage as the cache document it was read from (fetched_at, stale, windows).
+
+    Records since 2026-11-04 keep a pooled window's `accounts`. Older ones dropped it; for those `pools` (the live cache's
+    pool counts, `pool_counts(live_document())`) fills it in, on the assumption that a pool's size rarely changes."""
     providers = {}
     for name, row in (compact or {}).items():
         if isinstance(row, dict) and row.get('fetched_at'):
+            windows = []
+            for w in row.get('windows') or []:
+                if not isinstance(w, dict):
+                    continue
+                known = ((pools or {}).get(name) or {}).get(w.get('id'))
+                windows.append(dict(w, accounts=known) if 'accounts' not in w and known else w)
             providers[name] = {'fetched_at': row['fetched_at'], 'stale': row.get('status') == 'stale', 'available': True,
-                               'windows': [w for w in row.get('windows') or [] if isinstance(w, dict)]}
+                               'windows': windows}
     return {'providers': providers}
 
 
@@ -336,14 +352,15 @@ def replay_task(row):
 def replay(last=None, path=None, accounts=None):
     """Re-plan each ledger decision with the usage it saw, read through the roll pipeline at its own time.
 
-    The ledger keeps fetched_at, stale and each window's used_pct/resets_at; it drops a Magpie pool's account
-    count, so a pooled account reads as one subscription's worth.
+    The ledger keeps fetched_at, stale, each window's used_pct/resets_at and a pooled window's account count; records
+    older than that count take the live cache's pool sizes (ledger_document).
     """
     accounts = accounts or machine_accounts()
+    pools = pool_counts(live_document())
     out = []
     for row in ledger_records(path, last):
         now = datetime.fromisoformat(row['at'])
-        usage = snapshot(ledger_document(row['usage']), accounts, now)
+        usage = snapshot(ledger_document(row['usage'], pools), accounts, now)
         decision = allocator.plan(replay_task(row), usage, now, accounts=copy.deepcopy(accounts), overrides=[], records=[])
         selected = decision.get('selected_bundle') or {}
         out.append({'at': row['at'], 'kind': row.get('kind'), 'difficulty': row.get('difficulty'),

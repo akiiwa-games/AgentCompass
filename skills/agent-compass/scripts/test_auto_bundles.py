@@ -36,9 +36,12 @@ class DefaultProfile(unittest.TestCase):
     def test_default_profile_uses_calibration_family_size_or_generic_baseline(self):
         for model, source, canonical, tier in (
             ('claude-opus-5-5-high', 'calibrated', 'claude-opus-5-5', None),
-            ('qwen3.7-max', 'family', None, None),
-            ('qwen-flash', None, None, ab.SMALL_DEFAULT['tier']),
-            ('zzz-unknown-9', 'generic', None, None),
+            ('qwen3.7-max', 'calibrated', 'qwen3.7-max', None),
+            ('qwen3.5-max', 'family', None, None),
+            # Alibaba documents `qwen-flash` as the Qwen3 Flash 2025-07-28 snapshot: an alias to its (unmeasured) row
+            ('qwen-flash', 'calibrated', 'qwen3-flash-2025-07-28', REAL['unmeasured_models']['generic']['tier']),
+            ('deepseek-flash', 'calibrated', 'deepseek-v4.1-flash-free', None),
+            ('zzz-unknown-9', 'generic', None, REAL['unmeasured_models']['generic']['tier']),
         ):
             with self.subTest(model=model):
                 profile = ab.default_profile(model, REAL)
@@ -51,6 +54,13 @@ class DefaultProfile(unittest.TestCase):
                 if source == 'family':
                     self.assertLess(profile['spec']['tier'], REAL['models']['qwen3.8-max']['tier'])
 
+    def test_an_unmeasured_model_takes_routine_work_only(self):
+        # The unmeasured default is data (unmeasured_models), placed between the routine and the hard floors.
+        floors = REAL['scoring']['ability_floor']
+        for spec in (ab.default_profile('opencode/big-pickle', REAL)['spec'], ab.default_profile('pulse-alpha-free', REAL)['spec']):
+            self.assertGreaterEqual(spec['tier'], floors['routine'])
+            self.assertLess(spec['tier'], floors['hard'])
+
     def test_split_effort(self):
         self.assertEqual(ab.split_effort('claude-opus-5-5-xhigh'), ('claude-opus-5-5', 'xhigh'))
         self.assertEqual(ab.split_effort('gpt-6.1-sol'), ('gpt-6.1-sol', None))
@@ -59,15 +69,16 @@ class DefaultProfile(unittest.TestCase):
 class Derive(unittest.TestCase):
     def test_proxy_metered_latest_checked_and_non_chat_excluded(self):
         # Checked is not routed: metered stays a last resort in allocator.evaluate_bundle.
-        out = ab.derive(proxy_accounts(), catalog('llmproxy', ['gpt-6.1-sol', 'kimi-k3', 'gemini-embedding-001', 'qwen-flash']), NOW)
+        out = ab.derive(proxy_accounts(), catalog('llmproxy', ['gpt-6.1-sol', 'kimi-k3', 'gemini-embedding-001', 'qwen-flash', 'zzz-proxy-model']), NOW)
         rows = out['bundles']['llmproxy']
         self.assertTrue(all(not b['disabled'] and b['billing'] == 'metered' for b in rows.values()))
         self.assertIn('auto:llmproxy:codex:gpt-6.1-sol@high', rows)
         self.assertEqual(rows['auto:llmproxy:codex:kimi-k3.1-pro@high']['compatibility'] if 'auto:llmproxy:codex:kimi-k3.1-pro@high' in rows
                          else rows['auto:llmproxy:codex:kimi-k3@high']['compatibility'], 'unverified')
         self.assertEqual([e['model'] for e in out['excluded']], ['gemini-embedding-001'])
-        self.assertTrue(rows['auto:llmproxy:codex:qwen-flash@high']['cost_estimated'])
-        self.assertEqual(rows['auto:llmproxy:codex:qwen-flash@high']['draws'], ['spend'])
+        # `qwen-flash` resolves (alias) to the Qwen3 Flash snapshot row it serves
+        self.assertEqual(rows['auto:llmproxy:codex:qwen3-flash-2025-07-28@high']['draws'], ['spend'])
+        self.assertTrue(rows['auto:llmproxy:codex:zzz-proxy-model@high']['cost_estimated'])
 
     def test_user_checkbox_overrides_default_both_ways(self):
         latest, old = 'auto:llmproxy:codex:gpt-6.1-sol@high', 'auto:llmproxy:codex:gpt-5.6-sol@high'

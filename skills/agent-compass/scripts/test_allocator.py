@@ -291,24 +291,26 @@ class AllocatorTests(unittest.TestCase):
         custom['accounts']['claude']['bundles']['sonnet55_xhigh'] = {'model': 'claude-sonnet-5-5', 'effort': 'xhigh'}
         rows = self.rows(self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 10}, accounts=custom))
         ability = {k: rows[k]['components']['ability_value'] for k in rows}
-        self.assertAlmostEqual(ability['sonnet55_xhigh'] - ability['sonnet55_high'], 0.5, places=2)
-        self.assertAlmostEqual(ability['sonnet55_max'] - ability['sonnet55_high'], 0.9, places=2)
-        self.assertAlmostEqual(ability['sol_max'] - ability['sol_high'], 0.2, places=2)
-        self.assertAlmostEqual(ability['astra_xhigh'] - ability['astra_high'], 0.1, places=2)
-        self.assertAlmostEqual(ability['opus55_xhigh'] - ability['opus55_high'], 0.2, places=2)
-        self.assertAlmostEqual(rows['sonnet55_max']['expected_pct'] / rows['sonnet55_high']['expected_pct'], 4.34 / 0.7, places=1)
-        self.assertAlmostEqual(rows['sol_max']['expected_pct'] / rows['sol_high']['expected_pct'], 1.58 / 0.7, places=1)
+        shipped = allocator.load_accounts()['effort_curves']
+        sonnet, sol = shipped['claude-sonnet-5-5']['ability'], shipped['gpt-6.1-sol']['ability']
+        self.assertAlmostEqual(ability['sonnet55_xhigh'] - ability['sonnet55_high'], sonnet['xhigh'], places=2)
+        self.assertAlmostEqual(ability['sonnet55_max'] - ability['sonnet55_high'], sonnet['max'], places=2)
+        self.assertAlmostEqual(ability['sol_max'] - ability['sol_high'], sol['max'], places=2)
+        self.assertGreater(sonnet['max'] - sonnet['high'], sol['max'] - sol['high'])    # Sonnet responds to effort more
+        self.assertAlmostEqual(ability['astra_xhigh'] - ability['astra_high'], shipped['gpt-6-astra']['ability']['xhigh'], places=2)
+        self.assertAlmostEqual(ability['opus55_xhigh'] - ability['opus55_high'], shipped['claude-opus-5-5']['ability']['xhigh'], places=2)
+        burn = lambda m, e: shipped[m]['burn'][e] / shipped[m]['burn']['high']
+        self.assertAlmostEqual(rows['sonnet55_max']['expected_pct'] / rows['sonnet55_high']['expected_pct'], burn('claude-sonnet-5-5', 'max'), places=1)
+        self.assertAlmostEqual(rows['sol_max']['expected_pct'] / rows['sol_high']['expected_pct'], burn('gpt-6.1-sol', 'max'), places=1)
 
         # Frontier floor & steeper effort curve
         frontier = {'work_kind': 'general_implementation', 'difficulty': 'frontier'}
         eligible = {c['id'] for c in self.plan(frontier)['ranking'] if c['score'] is not None}
-        # Tier x effort curve decides, not a bundle label: Opus clears the frontier floor from medium up (4.3), and its
-        # Max reaches 5.0. Astra needs High; every Sol effort stays below 4.2.
-        self.assertEqual(eligible, {'opus55_max', 'opus55_xhigh', 'opus55_high', 'opus55_medium',
-                                    'astra_high', 'astra_xhigh', 'pi_astra_high', 'pi_astra_xhigh'})
+        # Tier x effort curve decides, not a bundle label. The frontier floor is the top anchor (4.6): Opus clears it from
+        # High up (Medium is 4.4); Astra (Max 4.3), Sonnet (Max 4.54) and every Sol effort stay below it.
+        self.assertEqual(eligible, {'opus55_max', 'opus55_xhigh', 'opus55_high'})
         lifted = {c['id'] for c in self.plan(frontier, accounts=custom)['ranking'] if c['score'] is not None}
-        self.assertIn('sonnet55_xhigh', lifted)
-        self.assertNotIn('sonnet55_high', lifted)
+        self.assertFalse({'sonnet55_xhigh', 'sonnet55_max', 'sonnet55_high'} & lifted)
 
     def test_effort_credit_follows_the_required_ability_not_a_lock(self):
         # Work whose required ability High already clears earns nothing from xhigh/max: same ability credit, more burn.
@@ -561,8 +563,12 @@ class AllocatorTests(unittest.TestCase):
             self.assertEqual(res['choice'], 'dot_text', kind)
             local = self.plan({'work_kind': kind, 'difficulty': 'routine', 'needs': {'local_only': True}})
             self.assertNotEqual(local['choice'], 'dot_text', kind)
-        for difficulty in ('hard', 'coupled', 'frontier'):
+        for difficulty in ('hard', 'coupled'):
             self.assertEqual(self.plan({'work_kind': 'web_research', 'difficulty': difficulty})['choice'], 'dot_text', difficulty)
+        # Frontier work is the newest top tier's (ability_floor.frontier is the top anchor): Dot, at Astra's tier, is below it.
+        frontier = self.plan({'work_kind': 'web_research', 'difficulty': 'frontier'})
+        self.assertNotEqual(frontier['choice'], 'dot_text')
+        self.assertTrue(any('below the frontier floor' in e for e in self.rows(frontier)['dot_text']['excluded']))
         coupled = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled', 'needs': {'local_only': False}})
         models = {c['bundle']['model'] for c in coupled['ranking'] if c['score'] is not None}
         self.assertTrue({'claude-opus-5-5', 'gpt-6-astra', 'gemini-4-argon-high', 'claude-sonnet-5-5', 'gpt-6.1-sol', 'dot'} <= models)
@@ -580,10 +586,16 @@ class AllocatorTests(unittest.TestCase):
         v_task = {'work_kind': 'visual_analysis', 'difficulty': 'routine', 'needs': {'visual': True}}
         self.assertTrue(self.plan(v_task)['choice'].startswith('opus55'))
         claude_empty = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)], codex=[('usage', 95, 100)])
-        # Native Claude empty: the visual leader moves to another quota source (Opus through Antigravity, or Astra)
+        # Native Claude empty: the visual leader moves to another quota source. Graded ability counts from
+        # scoring.ability_score_origin (routine 3.0), not from the measured floor (2.3): Opus Low through Antigravity
+        # earns full ability only because its measured effective tier (4.6 - 0.84 = 3.76) clears origin + span.
         empty_plan = self.plan(v_task, claude_empty)
         self.assertNotEqual(empty_plan['selected_bundle']['account'], 'claude')
         self.assertIn(allocator.canonical(empty_plan['selected_bundle']['model'], accounts), ('claude-opus-5-5', 'gpt-6-astra'))
+        origin, span = accounts['scoring']['ability_score_origin']['routine'], accounts['scoring']['ability_span']
+        for row in self.rows(empty_plan).values():
+            if row['score'] is not None and row['components']['ability_value'] < origin + span:
+                self.assertLess(row['components']['ability'], 1.0, row['id'])
         codex_tight = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)],
                                  codex=[('usage', 50, 100)],
                                  antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 60, 100)])
@@ -1078,21 +1090,21 @@ class AllocatorTests(unittest.TestCase):
             reasoning_depth=3, code_complexity=3, context_scale=3, divergence=1)}, self.healthy_quota())
         self.assertEqual(ordinary['choice'], 'opus55_high')
         self.assertNotIn('quality_bonus', self.rows(ordinary)['opus55_xhigh']['components'])
-        for model, kind, prof, hours, high_effort, tight_rem in (
+        # Effort curves are Artificial Analysis effort variants at 0.0495 tier per index point (2026-11-04): Opus XHigh
+        # +0.25 / Max +0.35, Sol XHigh +0.1 / Max +0.25. A frontier requirement above Opus XHigh buys Max; hard Sol work
+        # whose requirement sits above Sol High buys Max, and only critical work (precision headroom) keeps High under
+        # scarcity: non-critical work may step to Medium, which is 0.05 short.
+        for model, kind, prof, hours, high_effort, tight_rem, lowest in (
             ('claude-opus-5-5', 'debug_review', self.profile(code_complexity=0, divergence=2,
-                hallucination_risk=3, interaction_style='exploration'), 1, 'opus55_xhigh', 35),
+                hallucination_risk=3, interaction_style='exploration'), 1, 'opus55_xhigh', 35, 'high'),
             ('claude-opus-5-5', 'debug_review', self.profile(reasoning_depth=3, code_complexity=3,
-                context_scale=3, hallucination_risk=3), 1, 'opus55_xhigh', 35),
+                context_scale=3, hallucination_risk=3), 1, 'opus55_xhigh', 35, 'high'),
             ('claude-opus-5-5', 'general_implementation', self.profile(reasoning_depth=4,
-                code_complexity=3, context_scale=3), 1, 'opus55_xhigh', 35),
-            # Hard work needs tier 3.1 (accounts.json ability_floor_basis): Sol Medium (3.3) stays short of it only when
-            # the properties ask for more, and critical hard work is met at XHigh, so Max is no longer bought for it.
+                code_complexity=3, context_scale=3), 1, 'opus55_max', 35, 'high'),
             ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, context_scale=3, divergence=2, hallucination_risk=3),
-                4, 'sol_xhigh', 20),
-            ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, divergence=1, hallucination_risk=3, error_cost=3),
-                4, 'sol_xhigh', 20),
-            ('gpt-6-astra', 'computer_use', self.profile(divergence=2, hallucination_risk=3,
-                needs_gui=True, needs_visual=True), 1, 'astra_xhigh', 35),
+                4, 'sol_max', 20, 'medium'),
+            ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, context_scale=3, divergence=2, hallucination_risk=3,
+                error_cost=3), 4, 'sol_max', 20, 'high'),
         ):
             with self.subTest(model=model, high_effort=high_effort):
                 task = {'work_kind': kind, 'profile': prof, 'expected_hours': hours}
@@ -1110,7 +1122,8 @@ class AllocatorTests(unittest.TestCase):
                     # curve. Where medium and high both saturate they tie and catalog order keeps medium;
                     # frontier does not saturate, so high outscores medium.
                     medium_row, high_row = tight_rows['agy_opus55_medium'], tight_rows['agy_opus55_high']
-                    self.assertAlmostEqual(medium_row['expected_usd'] / high_row['expected_usd'], 0.52 / 0.7, places=2)
+                    burn = allocator.load_accounts()['effort_curves']['claude-opus-5-5']['burn']
+                    self.assertAlmostEqual(medium_row['expected_usd'] / high_row['expected_usd'], burn['medium'] / burn['high'], places=2)
                     self.assertGreater(tight_rows['opus55_high']['score'], tight_rows['opus55_xhigh']['score'])
                     if medium_row['components']['ability'] == high_row['components']['ability']:
                         self.assertEqual(medium_row['score'], high_row['score'])
@@ -1124,9 +1137,14 @@ class AllocatorTests(unittest.TestCase):
                     order = allocator.EFFORT_ORDER.index
                     stepped = tight['selected_bundle']['effort']
                     self.assertLess(order(stepped), order(healthy['selected_bundle']['effort']))
-                    self.assertGreaterEqual(order(stepped), order('high'))
+                    self.assertGreaterEqual(order(stepped), order(lowest))
                 self.assertGreater(self.rows(healthy)[high_effort]['components']['quality_bonus'], 0)
                 self.assertNotIn('effort_capped', self.rows(healthy)[high_effort]['components'])
+
+        # Astra XHigh scores what High does on Artificial Analysis (55 = 55), so high-precision GUI work stays on High.
+        astra = self.plan({'work_kind': 'computer_use', 'expected_hours': 1, 'profile': self.profile(
+            divergence=2, hallucination_risk=3, needs_gui=True, needs_visual=True)}, self.healthy_quota())
+        self.assertEqual(astra['choice'], 'astra_high')
 
     def test_fast_mode_plentiful_quota_pre_reset_sprint_and_scarcity_suppression(self):
         task_base = {'work_kind': 'general_implementation',

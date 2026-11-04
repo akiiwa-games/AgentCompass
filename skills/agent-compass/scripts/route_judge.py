@@ -487,13 +487,17 @@ def read_ledger(path=None, limit=500):
 
 
 def usage_digest(usage):
-    """Per-account observation times and window usage, enough to compute a burn rate later."""
+    """Per-account observation times and window usage, enough to compute a burn rate later. A pooled window (a Magpie
+    pool reports `accounts: N`) keeps its account count, so a replay prices it as N accounts' worth."""
     digest = {}
     for name, row in (usage.get('accounts') or {}).items():
-        digest[name] = {
-            'status': row.get('status'), 'fetched_at': row.get('fetched_at'),
-            'windows': [{'id': w.get('id'), 'used_pct': w.get('used_pct'), 'resets_at': w.get('resets_at')}
-                        for w in row.get('windows') or []]}
+        windows = []
+        for w in row.get('windows') or []:
+            item = {'id': w.get('id'), 'used_pct': w.get('used_pct'), 'resets_at': w.get('resets_at')}
+            if isinstance(w.get('accounts'), int) and not isinstance(w.get('accounts'), bool) and w['accounts'] > 1:
+                item['accounts'] = w['accounts']
+            windows.append(item)
+        digest[name] = {'status': row.get('status'), 'fetched_at': row.get('fetched_at'), 'windows': windows}
     return digest
 
 

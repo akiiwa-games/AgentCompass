@@ -127,6 +127,14 @@ under the communication contract below.
 
 ---
 
+### No eligible bundle
+
+When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. The floor (`scoring.ability_floor`, or a route's own) is a hard gate at every difficulty, so a lower tier is never offered instead. If no bundle on the usable accounts clears the floor at all, the reason says so first. If a bundle that clears it is held back only by its own account's quota windows (`allocator.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise. Frontier work (floor = the top anchor tier) relies on this: when every top-tier model is out of quota, it waits rather than downgrading.
+
+### Calibration data
+
+`calibration/` refits model rows, effort curves and floors from LMArena, vals.ai and Artificial Analysis. See [`../calibration/README.md`](../calibration/README.md). Raw downloads stay outside git.
+
 ### Distribution simulation and ledger replay
 
 `scripts/route_simulation.py` shows where work goes across usage states, and replays past decisions. Usage reaches `allocator.plan` the way `roll` feeds it: a collector cache document (`providers.<account>.windows[]` with `used_pct`, `resets_at`, `fetched_at`, `stale`) goes through `route_judge.usage_snapshot`, which produces `remaining_pct_before_reset`, the reset time and freshness. Then `plan` merges discovery and quota sources itself. Synthetic states are written as cache documents, never as hand-made allocator input. A raw ledger or cache row passed straight to `plan` has no `remaining_pct_before_reset`, so every window reads as unknown and the result ignores usage. The pre-2026-11-04 ad-hoc replays made exactly this mistake.
@@ -151,7 +159,7 @@ python -X utf8 scripts/route_simulation.py replay [--last N] [--json out.json]
 - `--accounts NAME` (repeatable) routes in fresh mode for a synthetic account set instead of the accounts discovered here. The sets are `claude pro`, `claude max5`, `codex plus`, `codex pro`, `antigravity pro`, `claude pro + codex plus`, `magpie pool (3x claude pro)` and `opencode free`. Each is a discovery snapshot carrying the models that product's CLI advertises, and only the set's accounts are allowed. Use them to check that routing works for users unlike this machine.
 - Set `AGENTCOMPASS_PUBLIC_DATA=off` to evaluate the repository's data. Otherwise a newer fetched public copy in the state dir wins.
 - `explain` prints the top of one ranking with score components. Use it to answer "why does X never win".
-- `replay` re-plans each ledger `plan` record with the usage that decision saw. The record's compact usage (`fetched_at`, `status`, per-window `used_pct`/`resets_at`) is rebuilt into a cache document and read at the record's own time. The ledger does not keep a Magpie pool's account count, so a pooled account replays as a single subscription. Continuity, reservations and overrides are not replayed.
+- `replay` re-plans each ledger `plan` record with the usage that decision saw. The record's compact usage (`fetched_at`, `status`, per-window `used_pct`/`resets_at`) is rebuilt into a cache document and read at the record's own time. Since 2026-11-04 the record keeps a pooled window's `accounts` count (`route_judge.usage_digest`), so a Magpie pool replays as N accounts' worth. Older records lack it; replay fills it from the live cache's pool sizes (`route_simulation.pool_counts`), on the assumption that a pool's size rarely changes. Continuity, reservations and overrides are not replayed.
 - The CLI is read-only toward the real profile. It copies the small state files routing reads (top-level JSON, `public-data/`, `grok-bot/config.json`) into a throwaway state dir, so discovery bookkeeping lands there. It reads usage with an empty discovery inventory, so the Claude session-limit overlay is skipped. `test_route_simulation.py` pins the behavior: Claude scarcity must move work off Opus on `claude`, and Codex scarcity must move work off the Codex models.
 
 ## 3. Worker Launch, Communication & Permission Contract

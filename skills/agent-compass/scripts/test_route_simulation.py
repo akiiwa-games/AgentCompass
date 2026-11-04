@@ -68,5 +68,22 @@ class UsageAwareSimulationTests(unittest.TestCase):
         self.assertAlmostEqual(weekly['seconds_until_reset'], 3 * 86400, delta=1)
 
 
+    def test_a_pooled_window_keeps_its_account_count_through_the_ledger(self):
+        import allocator
+        import route_judge
+        at = NOW - timedelta(days=2)
+        reading = {'id': 'seven_day', 'used_pct': 40.0, 'resets_at': (at + timedelta(days=3)).isoformat(), 'accounts': 3}
+        digest = route_judge.usage_digest({'accounts': {'claude': {'status': 'ok', 'fetched_at': at.isoformat(),
+                                                                   'windows': [reading]}}})
+        self.assertEqual(digest['claude']['windows'][0]['accounts'], 3)
+        old = {'claude': {'status': 'ok', 'fetched_at': at.isoformat(), 'windows': [dict(reading, accounts=None)]}}
+        old['claude']['windows'][0].pop('accounts')
+        for compact, pools in ((digest, None), (old, {'claude': {'seven_day': 3}})):
+            usage = sim.snapshot(sim.ledger_document(compact, pools), self.accounts, at)
+            self.assertEqual(allocator.pool_size(window(usage, 'claude', 'seven_day')), 3)
+        usage = sim.snapshot(sim.ledger_document(old), self.accounts, at)    # old record, no live pool: one account
+        self.assertEqual(allocator.pool_size(window(usage, 'claude', 'seven_day')), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

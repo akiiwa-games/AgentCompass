@@ -8,8 +8,9 @@ Default score ("姒涙顓婚崚?) resolution, most specific first:
   1. calibrated   - the canonical model has a row in accounts['models'] (exact id or alias).
   2. family       - model_resolution's family prior matched; the target row is copied and shrunk
                     (tier -0.3, capability/subjective x0.9) because version and size are not verified.
-                    A small-size name (flash/lite/mini/...) on a non-small target uses SMALL_DEFAULT.
-  3. generic      - model_resolution.GENERIC_MODEL_SPEC (tier 3.3, every capability ~0.55).
+                    A small-size name (flash/lite/mini/...) on a non-small target uses the small default.
+  3. generic      - public data's `unmeasured_models.generic` (the median measured tier, below the hard floor);
+                    model_resolution.GENERIC_MODEL_SPEC and SMALL_DEFAULT only when the data has none.
 These are routing priors, not benchmarks. The harness factor (allocator.harness_quality_factor,
 scoring.harness_factors) is applied by the allocator on top; this module never applies it twice.
 """
@@ -109,6 +110,12 @@ def superseded_by(raw_model, accounts):
     return None
 
 
+def small_model_spec(accounts):
+    """The default row for an unmeasured small-size name: public data's `unmeasured_models.small`, else SMALL_DEFAULT."""
+    row = ((accounts or {}).get('unmeasured_models') or {}).get('small')
+    return copy.deepcopy(row if isinstance(row, dict) else SMALL_DEFAULT)
+
+
 def default_profile(raw_model, accounts):
     """Default score row for a model name, with its source. Never mutates accounts."""
     known = {k: v for k, v in (accounts.get('models') or {}).items() if isinstance(v, dict)}
@@ -120,16 +127,16 @@ def default_profile(raw_model, accounts):
                     'spec': copy.deepcopy(known[candidate]), 'basis': 'Calibrated row in accounts.models.'}
     target = resolve_canonical_model(base, known, aliases)
     small = bool(SMALL_NAME.search(base))
+    small_default = small_model_spec(accounts)
     if target and small and not SMALL_NAME.search(target):
-        spec = copy.deepcopy(SMALL_DEFAULT)
-        return {'model': base, 'source': 'family', 'target': None, 'spec': spec,
-                'basis': f'Small-size name; family prior {target} is not a small model. {SMALL_DEFAULT["basis"]}'}
+        return {'model': base, 'source': 'family', 'target': None, 'spec': small_default,
+                'basis': f'Small-size name; family prior {target} is not a small model. {small_default["basis"]}'}
     if target:
         spec = _shrink(known[target])
         spec['basis'] = (f'Family default from {target} (tier -{FAMILY_TIER_SHRINK}, vectors x{FAMILY_VECTOR_SHRINK}); '
                          'version and size of the advertised id are not verified.')
         return {'model': base, 'source': 'family', 'target': target, 'spec': spec, 'basis': spec['basis']}
-    spec = copy.deepcopy(SMALL_DEFAULT) if small else generic_model_spec()
+    spec = small_default if small else generic_model_spec(accounts)
     return {'model': base, 'source': 'generic', 'target': None, 'spec': spec, 'basis': spec['basis']}
 
 
