@@ -32,7 +32,7 @@ python -X utf8 packaging/verify_release.py
 ```
 
 This runs:
-- `packaging/foreign_machine_check.py`: builds the wheel + isolated `usage-float` repo, installs into a clean venv, and executes `F01`–`F10` across foreign profiles (`--only F10` runs one feature; F09 always runs).
+- `packaging/foreign_machine_check.py`: builds the wheel + isolated `usage-float` repo, installs into a clean venv, and executes `F01`–`F11` across foreign profiles (`--only F10` runs one feature; F09 always runs).
 - `packaging/zero_dispatch_check.py`: verifies every dispatch surface (`D01`–`D13`) from the installed wheel.
 - Pytest behavior & regression suites across `setup/`, `skills/agent-compass/scripts/`, `tray/`, and `usage-float/`.
 

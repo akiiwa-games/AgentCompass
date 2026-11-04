@@ -27,6 +27,10 @@ MAX_BYTES = 5 * 1024 * 1024
 GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/runtime/bin/gbot.mjs'
 # Paseo built-in providers recognized from their Paseo entry without a model catalog.
 PASEO_RECOGNIZED_ONLY = ('copilot', 'muse', 'dsh')
+# Oh My Pi signs in to subscriptions with OAuth (agent.db `auth_credentials`). omp's provider id -> the AgentCompass
+# family whose identity (auth_facts), plan templates and model rows such a login uses. A provider without a family
+# here is not routed: AgentCompass has no identity, plan or model data for it.
+OMP_OAUTH_FAMILIES = {'openai-codex': 'codex', 'anthropic': 'claude'}
 
 
 PLAN_TEMPLATES = Path(__file__).resolve().parents[1] / 'references/plan-templates.json'
@@ -226,6 +230,71 @@ def auth_facts(family, auth, home, profile=None):
             'plan': plan_name(family, claims.get('chatgpt_plan_type'))}
 
 
+def omp_credentials(agent_dir):
+    """Oh My Pi's stored sign-ins from agent.db, read-only and bounded; omp itself is never run.
+
+    Returns {'logins', 'api_keys', 'problem'}. `logins` are the enabled OAuth credentials of providers in
+    OMP_OAUTH_FAMILIES, in omp's order, as {'provider', 'family', 'data'}. `api_keys` is True when an enabled
+    credential of another type (an API key) is stored. `problem` is 'unreadable' for a corrupt, locked or foreign
+    database and None otherwise (a missing database included).
+    """
+    found = {'logins': [], 'api_keys': False, 'problem': None}
+    path = Path(agent_dir) / 'agent.db'
+    if not path.is_file():
+        return found
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=0.5)) as con:
+            rows = con.execute("SELECT provider, credential_type, data FROM auth_credentials "
+                               "WHERE disabled_cause IS NULL OR disabled_cause = '' ORDER BY id").fetchall()
+    except sqlite3.Error:
+        return dict(found, problem='unreadable')
+    for provider, kind, raw in rows:
+        if kind != 'oauth':
+            found['api_keys'] = True
+            continue
+        family = OMP_OAUTH_FAMILIES.get(provider)
+        try:
+            data = json.loads(raw) if family and isinstance(raw, str) and len(raw) <= MAX_BYTES else None
+        except ValueError:
+            data = None
+        if isinstance(data, dict) and isinstance(data.get('access'), str) and data['access']:
+            found['logins'].append({'provider': provider, 'family': family, 'data': data})
+    return found
+
+
+def omp_models(agent_dir):
+    """{omp provider id: [model ids]} from omp's own model cache (models.db), read-only; {} when unreadable."""
+    path = Path(agent_dir) / 'models.db'
+    if not path.is_file():
+        return {}
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=0.5)) as con:
+            rows = con.execute('SELECT provider_id, models FROM model_cache').fetchall()
+    except sqlite3.Error:
+        return {}
+    out = {}
+    for provider_id, raw in rows:
+        try:
+            models = json.loads(raw) if isinstance(raw, str) and len(raw) <= MAX_BYTES else []
+        except ValueError:
+            continue
+        ids = [m.get('id') for m in array(models) if isinstance(m, dict) and isinstance(m.get('id'), str)]
+        if ids:   # cache keys carry a version suffix: `openai-codex:0.159.0`
+            out.setdefault(str(provider_id).split(':', 1)[0], []).extend(ids)
+    return out
+
+
+def omp_auth(family, data):
+    """An omp OAuth record in the shape auth_facts reads for the family's own CLI, plus its profile."""
+    if family == 'claude':
+        return ({'claudeAiOauth': {'accessToken': data.get('access'), 'refreshToken': data.get('refresh'),
+                                   'subscriptionType': data.get('subscriptionType') or data.get('plan')}},
+                {'accountUuid': data.get('accountUuid') or data.get('accountId'), 'emailAddress': data.get('email'),
+                 'organizationUuid': data.get('organizationUuid') or data.get('orgId')})
+    return {'tokens': {'access_token': data.get('access'), 'account_id': data.get('accountId'),
+                       'id_token': data.get('idToken') or data.get('id_token')}}, None
+
+
 def resolve_definition(name, definitions):
     env, seen = {}, set()
     current = name
@@ -316,10 +385,18 @@ def _which(product, path_value):
 
 
 def _fresh_windows_path():
-    """The PATH a newly started process gets: machine then user `Path` from the registry. Empty off Windows."""
+    """The PATH a newly started process gets: machine then user `Path` from the registry. Empty off Windows.
+
+    Also empty when this process runs as another profile than the signed-in user's (USERPROFILE pointed at another
+    home, as a sandbox or a foreign-profile check does): that user's registry PATH names CLIs that profile does not have.
+    """
     if os.name != 'nt':
         return ''
     import winreg
+    owner = _registry_profile()
+    here = os.environ.get('USERPROFILE')
+    if not owner or not here or os.path.normcase(os.path.abspath(here)) != os.path.normcase(os.path.abspath(owner)):
+        return ''
     parts = []
     for hive, subkey in ((winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'),
                          (winreg.HKEY_CURRENT_USER, 'Environment')):
@@ -329,6 +406,16 @@ def _fresh_windows_path():
         except OSError:
             continue
     return os.pathsep.join(parts)
+
+
+def _registry_profile():
+    """The signed-in user's profile folder (HKCU `Volatile Environment` USERPROFILE); '' when it cannot be read."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Volatile Environment') as key:
+            return os.path.expandvars(str(winreg.QueryValueEx(key, 'USERPROFILE')[0]))
+    except OSError:
+        return ''
 
 
 def _registry_executables(product):
@@ -793,18 +880,53 @@ def _discover(home=None, environ=None, now=None):
     if grok_windows:
         result['accounts']['grok']['usage_windows'] = [w['id'] for w in grok_windows]
     result['launchers']['grok'] = {'family': 'grok', 'status': grok_status}
-    # Oh My Pi is Paseo's built-in `omp` provider. Its models come from the user's own
-    # API keys (~/.omp/agent/models.yml), so it is metered: explicit selection only.
+    # Oh My Pi is Paseo's built-in `omp` provider. The `omp` account is its API-key side (~/.omp/agent/models.yml or
+    # stored API keys), so it is metered: explicit selection only. OAuth subscription logins are accounts of their own
+    # below.
     omp_native = (bool(_which('omp', environ.get('PATH')))
                   or (home / '.bun' / 'bin' / ('omp.exe' if os.name == 'nt' else 'omp')).is_file())
     omp_defined = 'omp' in definitions
     _, _, omp_enabled = resolve_definition('omp', definitions)
     omp_status = ('disabled' if not omp_enabled or not omp_defined
                   else 'ready' if omp_native or obj(definitions.get('omp')).get('command') else 'missing_client')
+    omp_sources = (['native'] if omp_native else []) + (['paseo'] if omp_defined else [])
     result['accounts']['omp'] = {'family': 'omp', 'provider': 'omp',
-        'sources': (['native'] if omp_native else []) + (['paseo'] if omp_defined else []),
-        'status': omp_status, 'plan': 'API (Oh My Pi)', 'billing': 'metered'}
+        'sources': omp_sources, 'status': omp_status, 'plan': 'API (Oh My Pi)', 'billing': 'metered'}
     result['launchers']['omp'] = {'family': 'omp', 'status': omp_status}
+    # Each OAuth subscription login in omp is its own account. Like Pi on ChatGPT, one that signs in as a native
+    # account (same identity) shares that account's quota (`quota_account`); otherwise it is the subscription's only
+    # way in and routes on the family's plan defaults. Billing is subscription either way.
+    omp_dir = home / '.omp' / 'agent'
+    omp_found = omp_credentials(omp_dir)
+    logins = omp_found['logins']
+    cached_models = omp_models(omp_dir) if logins else {}
+    models_file = any((omp_dir / f).is_file() for f in ('models.yml', 'models.yaml'))
+    if omp_status == 'ready' and not models_file and not omp_found['api_keys']:
+        # Nothing shows an API key (no models.yml, no stored key; keys only in environment variables cannot be seen).
+        # With only subscription logins there is no API side to report; an unreadable database hides both.
+        if omp_found['problem']:
+            result['accounts']['omp'].update(status='missing_credentials', reason='agent.db unreadable')
+        elif logins:
+            del result['accounts']['omp']
+            result['launchers']['omp']['api_side'] = False
+    taken = {}
+    for login in logins:
+        provider, family = login['provider'], login['family']
+        taken[provider] = taken.get(provider, 0) + 1
+        name = f'omp-{provider}' + (f'-{taken[provider]}' if taken[provider] > 1 else '')
+        auth, profile = omp_auth(family, login['data'])
+        facts = auth_facts(family, auth, omp_dir, profile)
+        owner = next((cname for cname, crow in result['accounts'].items()
+                      if crow.get('family') == family and crow.get('identity') and crow['identity'] == facts['identity']),
+                     None)
+        plan = facts['plan'] or (result['accounts'][owner].get('plan') if owner else None)
+        result['accounts'][name] = {
+            'family': 'omp', 'provider': 'omp', 'quota_family': family, 'omp_provider': provider,
+            'home': str(omp_dir), 'sources': omp_sources, 'status': omp_status,
+            'plan': plan, 'identity': facts['identity'], 'billing': 'subscription',
+            **({'omp_models': cached_models[provider]} if cached_models.get(provider) else {}),
+            **({'quota_account': owner} if owner else {}),
+        }
     # Other Paseo built-in launchers are recognized from their Paseo entry alone. Their
     # billing is unknown and no model is invented, so they produce no bundle until the
     # user configures models; unknown billing then stays explicit-selection only.
@@ -1180,6 +1302,10 @@ def apply(accounts, inventory=None):
                 row = inventory['accounts'].get(name)
                 if not row or row.get('status') == 'missing_credentials':
                     specs.pop(name, None)
+            # Oh My Pi's API-key side (the template `omp` account) when discovery found only subscription logins.
+            if (family == 'omp' and name not in inventory['accounts']
+                    and obj(obj(inventory.get('launchers')).get('omp')).get('api_side') is False):
+                specs.pop(name, None)
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
 
@@ -1214,6 +1340,21 @@ def apply(accounts, inventory=None):
                     if b.get('provider') == 'pi'
                 }
                 specs[name] = base_tpl
+            elif family == 'omp' and row.get('quota_family') in templates:
+                # The family's own bundles, launched through omp with omp's `<provider>/<model>` ids. A login that
+                # shares a native account's quota hands these to that account below (quota_account), beside its
+                # native and Pi siblings; harness_order ranks the siblings.
+                qfamily = row['quota_family']
+                spec = copy.deepcopy(templates[qfamily])
+                spec['billing'] = 'subscription'
+                cached = set(row.get('omp_models') or [])
+                spec['bundles'] = {
+                    f'{name}__{bid}': {'model': b['model'], **({'effort': b['effort']} if b.get('effort') else {}),
+                                       'provider': 'omp', 'harness': 'omp',
+                                       'launch_model': f"{row['omp_provider']}/{b.get('launch_model') or b['model']}"}
+                    for bid, b in spec.get('bundles', {}).items()
+                    if b.get('provider', qfamily) == qfamily and (not cached or (b.get('launch_model') or b['model']) in cached)}
+                specs[name] = spec
             elif family == 'grok':
                 specs[name] = copy.deepcopy(templates.get('grok') or {
                     'plan': 'subscription', 'billing': 'subscription', 'expires_at': None,
@@ -1267,16 +1408,17 @@ def apply(accounts, inventory=None):
             spec.setdefault('bundles', {})
             continue
         plan = row.get('plan')
+        quota_family = row.get('quota_family') or family   # an omp OAuth login uses the plans of the family it signs in to
         # A plan the user wrote in the account document seeds the template when discovery reports none
         # (claude/codex without a discovered plan stay unknown below).
-        template_plan = configured_plan(family, plan or (spec.get('plan') if family not in ('claude', 'codex') else None))
-        template = plan_defaults(accounts, family, template_plan) if template_plan else None
+        template_plan = configured_plan(quota_family, plan or (spec.get('plan') if family not in ('claude', 'codex') else None))
+        template = plan_defaults(accounts, quota_family, template_plan) if template_plan else None
         if template is None and family not in ('claude', 'codex'):
             # A tier the product does not report locally routes on the family's documented default plan,
             # never on no capacity (plan-templates.json `<family>.default`).
-            template = plan_defaults(accounts, family, 'default')
+            template = plan_defaults(accounts, quota_family, 'default')
         if plan:
-            previous_plan = configured_plan(family, spec.get('plan'))
+            previous_plan = configured_plan(quota_family, spec.get('plan'))
             spec['plan'] = plan
             if previous_plan == template_plan:
                 pass  # same named plan can have account-specific promotional capacity

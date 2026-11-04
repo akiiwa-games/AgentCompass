@@ -122,6 +122,32 @@
         "The tray ability-floor chart places every bundle at the installed allocator's ability, save_ability_floors writes only numbers the router then reads, restore_ability_floor_defaults removes them, and AbilityFloorRenderer renders off-screen",
         "Every check above is run once more against data broken inside the throwaway profile and must fail there"
       ]
+    },
+    {
+      "id": "F11",
+      "name": "Oh My Pi OAuth subscription logins",
+      "harness": "packaging/foreign_machine_check.py::verify_f11_omp_oauth_subscriptions (probe: packaging/f11_omp_probe.py)",
+      "behaviors": [
+        "An enabled omp OAuth login (agent.db auth_credentials) signed in as the native Codex account is a subscription account whose quota_account is that account, and discovery output carries no omp token or email",
+        "Its bundles sit on the Codex account with omp's `<provider>/<model>` launch ids and no twin of a (harness, model, effort)",
+        "The plan treats an omp subscription bundle like Pi's: eligible, drawing the shared Codex window, excluded when that window is empty",
+        "With only subscription logins (no models.yml, no stored API key) there is no metered `omp` account in discovery or routing; a stored API key keeps it beside the login",
+        "An omp-only login is its own subscription account on the Codex plan's windows with omp bundles",
+        "A disabled credential is ignored; two logins of one provider are two accounts; a corrupt or locked agent.db is missing_credentials, not a crash",
+        "Every check above is run once more against broken input inside the throwaway profile and must fail there"
+      ]
+    },
+    {
+      "id": "F12",
+      "name": "Tray version display, one-click self-update & single-flight tray restart",
+      "harness": "packaging/foreign_machine_check.py::verify_f12_self_update_and_version_display",
+      "behaviors": [
+        "Tray and settings page display AgentCompass X.Y.Z and flag version mismatch when tray and router (skills, gate hooks, or PATH) differ",
+        "Release check caches GitHub Releases latest for 6h under STATE_DIR and shows '可更新到 vX.Y.Z' when a newer release exists",
+        "One-click Update AgentCompass detects install shape (installer, wheel, git), refuses missing or mismatched sha256 digests, and upgrades using the owning tool (uv, pip, git)",
+        "An installed older wheel (0.3.7) in a foreign profile upgrades to the locally built newer wheel (0.3.8) through update_agentcompass, refreshes public data, and clears the version mismatch",
+        "Clicking Restart tray is single-flight and emits immediate and post-restart tray notifications"
+      ]
     }
   ]
 }

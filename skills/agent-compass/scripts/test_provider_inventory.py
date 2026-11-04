@@ -4,6 +4,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import socket
@@ -15,7 +16,7 @@ import dispatch_registry
 import host_policy
 import provider_inventory as inventory
 
-from router_test_support import isolated_router_state, temporary_root
+from router_test_support import isolated_router_state, temporary_root, usage_windows
 
 
 def setUpModule():
@@ -622,6 +623,140 @@ class DiscoveryTests(unittest.TestCase):
                 True,
             )
 
+    # --- Oh My Pi OAuth subscription logins (agent.db) ---------------------------------------------------------------
+    def omp_installed(self):
+        target = self.home / '.bun' / 'bin' / ('omp.exe' if inventory.os.name == 'nt' else 'omp')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b'')
+        self.paseo({'codex': {'enabled': True}, 'omp': {'enabled': True}})
+
+    def omp_db(self, rows, models=None):
+        """A synthetic ~/.omp/agent/agent.db (and models.db) with omp's table shapes; no real credential."""
+        folder = self.home / '.omp' / 'agent'
+        folder.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(folder / 'agent.db')) as db:
+            db.execute('CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, '
+                       'credential_type TEXT NOT NULL, data TEXT NOT NULL, disabled_cause TEXT DEFAULT NULL, '
+                       'identity_key TEXT DEFAULT NULL, created_at INTEGER, updated_at INTEGER)')
+            db.executemany('INSERT INTO auth_credentials (provider, credential_type, data, disabled_cause, identity_key) '
+                           'VALUES (?,?,?,?,?)', [(p, t, json.dumps(d), cause, 'email:user@example.test')
+                                                   for p, t, d, cause in rows])
+            db.commit()
+        if models is not None:
+            with closing(sqlite3.connect(folder / 'models.db')) as db:
+                db.execute('CREATE TABLE model_cache (provider_id TEXT PRIMARY KEY, version INTEGER, models TEXT)')
+                db.executemany('INSERT INTO model_cache VALUES (?,?,?)',
+                               [(pid, 1, json.dumps([{'id': m} for m in ids])) for pid, ids in models.items()])
+                db.commit()
+        return folder / 'agent.db'
+
+    @staticmethod
+    def omp_codex_login(account):
+        return {'access': 'SECRET-omp-' + account, 'refresh': 'r', 'expires': 0, 'accountId': account,
+                'email': 'user@example.test'}
+
+    def test_omp_oauth_login_on_a_native_codex_account_shares_its_quota_as_a_subscription(self):
+        self.native_codex('codex', 'shared-acct')
+        self.omp_installed()
+        self.omp_db([('openai-codex', 'oauth', self.omp_codex_login('shared-acct'), None)],
+                    models={'openai-codex:0.159.0': ['gpt-6.1-sol', 'gpt-6-astra']})
+        snapshot = self.discover()
+        row = snapshot['accounts']['omp-openai-codex']
+        self.assertEqual((row['family'], row['quota_family'], row['billing'], row['quota_account']),
+                         ('omp', 'codex', 'subscription', 'codex'))
+        self.assertEqual(row['identity'], snapshot['accounts']['codex']['identity'])
+        # Only subscription logins: no API-key side is reported as a metered `omp` account.
+        self.assertNotIn('omp', snapshot['accounts'])
+        self.assertNotIn('SECRET-omp', json.dumps(snapshot))
+        self.assertNotIn('user@example.test', json.dumps(snapshot))
+        accounts = self.apply(snapshot)
+        self.assertNotIn('omp', accounts['accounts'])
+        self.assertEqual(accounts['accounts']['omp-openai-codex']['bundles'], {})
+        omp = {bid: b for bid, b in allocator.bundles(accounts).items() if b.get('harness') == 'omp'}
+        self.assertTrue(omp)
+        for bid, b in omp.items():
+            # On the Codex account itself: its windows, its subscription billing, omp's `<provider>/<model>` id.
+            self.assertEqual((b['account'], b['provider']), ('codex', 'omp'), bid)
+            self.assertTrue(b['launch_model'].startswith('openai-codex/'), b)
+            self.assertIsNone(allocator.accounts_override.manual_only_billing(b['account'], accounts))
+        # No twin: each (harness, model, effort) once on the shared account.
+        keys = [(allocator.bundle_harness(b, 'codex', bid), allocator.canonical(b['model'], accounts), b.get('effort'))
+                for bid, b in allocator.bundles(accounts).items() if b['account'] == 'codex']
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_omp_only_oauth_login_is_its_own_subscription_account_on_the_family_plan(self):
+        self.omp_installed()
+        self.omp_db([('openai-codex', 'oauth', self.omp_codex_login('omp-only-acct'), None)])
+        snapshot = self.discover()
+        row = snapshot['accounts']['omp-openai-codex']
+        self.assertIn(row.get('quota_account'), (None, 'omp-openai-codex'))   # owns its quota
+        accounts = self.apply(snapshot)
+        spec = accounts['accounts']['omp-openai-codex']
+        self.assertEqual(spec['billing'], 'subscription')
+        self.assertTrue(spec['verified'])
+        self.assertTrue(spec['windows'])   # the Codex plan's windows
+        self.assertTrue(spec['bundles'])
+        self.assertTrue(all(b['provider'] == 'omp' and b['harness'] == 'omp' for b in spec['bundles'].values()))
+
+    def test_omp_with_only_api_keys_stays_metered(self):
+        self.omp_installed()
+        self.omp_db([('openai', 'api_key', {'key': 'SECRET-sk'}, None)])
+        snapshot = self.discover()
+        self.assertEqual((snapshot['accounts']['omp']['billing'], snapshot['accounts']['omp']['status']), ('metered', 'ready'))
+        self.assertFalse([n for n in snapshot['accounts'] if n.startswith('omp-')])
+
+    def test_omp_disabled_oauth_credential_is_ignored(self):
+        self.native_codex('codex', 'shared-acct')
+        self.omp_installed()
+        self.omp_db([('openai-codex', 'oauth', self.omp_codex_login('shared-acct'), 'invalid_grant')])
+        snapshot = self.discover()
+        self.assertFalse([n for n in snapshot['accounts'] if n.startswith('omp-')])
+
+    def test_omp_several_oauth_logins_are_told_apart(self):
+        self.native_codex('codex', 'shared-acct')
+        self.omp_installed()
+        self.omp_db([('openai-codex', 'oauth', self.omp_codex_login('shared-acct'), None),
+                     ('openai-codex', 'oauth', self.omp_codex_login('second-acct'), None)])
+        snapshot = self.discover()
+        first, second = snapshot['accounts']['omp-openai-codex'], snapshot['accounts']['omp-openai-codex-2']
+        self.assertEqual(first.get('quota_account'), 'codex')
+        self.assertIn(second.get('quota_account'), (None, 'omp-openai-codex-2'))
+        self.assertNotEqual(first['identity'], second['identity'])
+
+    def test_omp_corrupt_or_locked_database_is_missing_credentials_not_a_crash(self):
+        self.omp_installed()
+        path = self.omp_db([('openai-codex', 'oauth', self.omp_codex_login('acct'), None)])
+        with closing(sqlite3.connect(path)) as holder:
+            holder.execute('BEGIN EXCLUSIVE')
+            locked = self.discover()
+            holder.rollback()
+        path.write_bytes(b'not a sqlite database' * 64)
+        corrupt = self.discover()
+        for snapshot in (locked, corrupt):
+            self.assertEqual(snapshot['accounts']['omp']['status'], 'missing_credentials')
+            self.assertFalse([n for n in snapshot['accounts'] if n.startswith('omp-')])
+
+    def test_omp_subscription_bundle_is_eligible_like_pi_and_draws_the_shared_quota(self):
+        self.native_codex('codex', 'shared-acct')
+        self.omp_installed()
+        self.omp_db([('openai-codex', 'oauth', self.omp_codex_login('shared-acct'), None)])
+        accounts = self.apply(self.discover())
+        accounts['accounts']['codex']['verified'] = True
+        omp_id = next(bid for bid, b in allocator.bundles(accounts).items() if b.get('harness') == 'omp')
+        task = {'objective': 'Fix a bug in parser.py', 'work_kind': 'general_implementation', 'expected_hours': 1,
+                'constraints': {'model': allocator.bundles(accounts)[omp_id]['model']}}
+        usage = usage_windows(self.now, {'codex': [('usage', 80, 100)]})
+        plan = allocator.plan(task, usage, self.now, accounts=accounts, overrides=[], records=[], host_policy_config=None)
+        row = next(c for c in plan['ranking'] if c['id'] == omp_id)
+        self.assertEqual(row['excluded'], [], row)
+        self.assertNotIn(allocator.METERED_LAST_RESORT, row['excluded'])
+        # It draws the Codex account's window, as Pi's rows do.
+        self.assertEqual(row['bundle']['account'], 'codex')
+        self.assertEqual(row['capacity']['window'], 'usage')
+        scarce = allocator.plan(task, usage_windows(self.now, {'codex': [('usage', 0, 100)]}), self.now,
+                                accounts=accounts, overrides=[], records=[], host_policy_config=None)
+        self.assertTrue(next(c for c in scarce['ranking'] if c['id'] == omp_id)['excluded'])
+
     def test_pi_on_the_codex_subscription_adds_no_twin_of_a_codex_pi_bundle(self):
         # LITTLESPRING 2026-11-03: Pi signed in as the Codex account re-derived every pi-harness model under `pi`,
         # enabled, next to Codex's own (curated, partly disabled) rows; launch then hit the disabled twin.
@@ -712,6 +847,17 @@ class FreshPathTests(unittest.TestCase):
             self.assertTrue(inventory._which('omp', os.environ['PATH']))
             # A PATH the caller supplied (a test fleet, another profile) is taken as given.
             self.assertIsNone(inventory._which('omp', str(root.parent / 'other-bin')))
+
+    @unittest.skipUnless(os.name == 'nt', 'the registry PATH exists on Windows only')
+    def test_a_process_run_as_another_profile_does_not_take_the_signed_in_users_registry_path(self):
+        # A sandbox or foreign-profile check points USERPROFILE at a throwaway home; the real user's PATH names CLIs
+        # that profile does not have.
+        owner = temporary_root(self.addCleanup)
+        with patch.object(inventory, '_registry_profile', return_value=str(owner)):
+            with patch.dict('os.environ', {'USERPROFILE': str(owner / 'sandbox-home')}):
+                self.assertEqual(inventory._fresh_windows_path(), '')
+            with patch.dict('os.environ', {'USERPROFILE': str(owner)}):
+                self.assertTrue(inventory._fresh_windows_path())   # the machine PATH at least
 
 
 class IsolationRecipeTests(unittest.TestCase):
