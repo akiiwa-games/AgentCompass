@@ -129,7 +129,8 @@ def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
     report("progress", _tr('从 GitHub 下载 {0} 到 {1}').format(f'{plugin.name}', f'{target}'), plugin.name)
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "Never"}
-    run(["git", "clone", plugin.repo, str(target)], target.parent, env=env, timeout=600)
+    repo = plugins._sibling_repo("usage-float") if plugin_id == "usage-float" else plugin.repo
+    run(["git", "clone", repo, str(target)], target.parent, env=env, timeout=600)
     services.refresh_plugin_roots()
     if plugin_id == "dot2api":
         sync_dot2api()

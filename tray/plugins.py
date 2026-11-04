@@ -23,13 +23,15 @@ def _sibling_repo(name: str) -> str:
     """Clone URL for a sibling repo. A checkout's git origin wins; a packaged install uses akiiwa-games."""
     if str(ROOT) not in sys.path:
         sys.path.append(str(ROOT))
-    from agentcompass.origin import sibling_repo
+    from agentcompass.origin import sibling_repo, usage_float_repo
 
     config = None
     try:
         config = (ROOT / ".git" / "config").read_text(encoding="utf-8", errors="ignore")
     except OSError:
         config = None
+    if name == "usage-float":
+        return usage_float_repo(git_config=config)
     return sibling_repo(name, git_config=config)
 
 

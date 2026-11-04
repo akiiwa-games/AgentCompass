@@ -966,7 +966,7 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
     if remote is not None:
         if remote.explicit:
             return fetch_magpie_claude_usage(remote, provider_id, force=force)
-        probed = fetch_magpie_claude_usage(remote, provider_id, probe_only=True)
+        probed = fetch_magpie_claude_usage(remote, provider_id, probe_only=True, force=force)
         if probed is not None:
             return probed
     home = None if provider_id == "claude" else claude_account_home(provider_id)

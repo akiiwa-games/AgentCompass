@@ -46,6 +46,7 @@ class FrozenRuntimeTests(unittest.TestCase):
             self.assertEqual(deploy.tray_processes(), listing[:2])
         with tempfile.TemporaryDirectory() as folder, \
                 mock.patch.object(deploy.services, 'STATE_DIR', Path(folder)), \
+                mock.patch.object(deploy, '_on_default_desktop', return_value=True), \
                 mock.patch.object(deploy, 'tray_processes', side_effect=[listing[:1], listing[1:2]]), \
                 mock.patch.object(deploy, 'close_tray') as close, \
                 mock.patch.object(deploy.subprocess, 'Popen') as popen, mock.patch.object(deploy.time, 'sleep'):

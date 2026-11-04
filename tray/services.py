@@ -572,7 +572,12 @@ def component_action(component: str, action: str) -> str:
         return _tr('{0} 更新中，请稍后操作').format(f'{component}')
     if local_controls.read_snapshot(component) is None:
         if component == "usage-float":
-            start_usage_float()
+            if not USAGE_FLOAT_SCRIPT.is_file():
+                plugin_start("usage-float")
+            else:
+                start_usage_float()
+            if not USAGE_FLOAT_SCRIPT.is_file():
+                return _tr("Usage Float 未安装")
         else:
             raise ValueError("Unknown component")
     deadline = time.monotonic() + 20

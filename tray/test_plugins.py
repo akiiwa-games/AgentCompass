@@ -200,6 +200,13 @@ class SiblingRepoTests(unittest.TestCase):
                     plugins._sibling_repo("usage-float"),
                     "https://github.com/override-org/usage-float.git",
                 )
+            with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(
+                os.environ, self._env(AGENTCOMPASS_USAGE_FLOAT_REPO="C:/local/usage-float"), clear=True
+            ):
+                self.assertEqual(
+                    plugins._sibling_repo("usage-float"),
+                    "C:/local/usage-float",
+                )
 
 
 if __name__ == "__main__":

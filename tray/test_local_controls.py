@@ -127,6 +127,15 @@ class ComponentLifecycleTests(unittest.TestCase):
         self.assertEqual(cwd, services.USAGE_FLOAT_ROOT)
         self.assertEqual(env["AGENTCOMPASS_HOSTED"], "1")
 
+    def test_component_action_bootstraps_missing_usage_float_plugin_without_hanging(self):
+        import services
+        with mock.patch.object(services.local_controls, "read_snapshot", return_value=None), \
+                mock.patch.object(services, "USAGE_FLOAT_SCRIPT", Path("nonexistent/usage_float.py")), \
+                mock.patch.object(services, "plugin_start", return_value="Usage Float 未安装") as start:
+            result = services.component_action("usage-float", "show")
+        start.assert_called_once_with("usage-float")
+        self.assertEqual(result, "Usage Float 未安装")
+
 
 if __name__ == "__main__":
     unittest.main()
