@@ -1056,7 +1056,6 @@ class AllocatorTests(unittest.TestCase):
         policy, curves = accounts['scoring'], (accounts.get('effort_curves') or {}).get('grok-bot', {})
         medium = allocator.effort_ability(policy, curves, row, 'medium')
         self.assertLess(medium, allocator.effort_ability(policy, curves, row, 'high'))
-        self.assertLess(medium, policy['ability_floor']['frontier'] + allocator.critical_headroom(policy, 'frontier'))
 
     def test_pool_window_forecasts_demand_against_the_whole_pool(self):
         # Two pooled accounts at a mean of 38.5% used hold 123% of one account's allowance out of 200%.

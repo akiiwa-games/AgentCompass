@@ -150,22 +150,26 @@ class EffortMatchingTests(unittest.TestCase):
     def test_demanding_work_selects_the_effort_that_saturates_the_requirement(self):
         healthy = self.plan(HEAVY_FRONTIER)
         rows = self.rows(healthy)
-        required = healthy['decision']['task']['demand']['required_ability']
-        self.assertEqual(healthy['choice'], 'opus55_max')
-        # Critical frontier work asks more than any effort reaches; Max comes closest.
-        self.assertIn(healthy['decision']['task']['max_recommended_effort'], (None, 'max'))
-        for lower in ('opus55_xhigh', 'opus55_high', 'opus55_medium'):
-            self.assertLess(rows[lower]['components']['ability_value'], required)
-            if rows[lower]['excluded']:        # critical work: below the floor plus headroom (4.5) is out, not just worse
-                self.assertTrue(any('ability' in reason for reason in rows[lower]['excluded']))
+        demand = healthy['decision']['task']['demand']
+        required = demand['required_ability']
+        chosen = healthy['selected_bundle']
+        self.assertEqual(chosen['model'], 'claude-opus-5-5')
+        # The lowest effort that reaches the requirement wins; the efforts below it fall short and score lower.
+        self.assertGreaterEqual(rows[healthy['choice']]['components']['ability_value'], required)
+        for row in rows.values():
+            if row['score'] is None or row['bundle'].get('model') != chosen['model']:
                 continue
-            self.assertGreater(rows[lower]['components']['shortfall'], 0)
-            self.assertGreater(rows['opus55_max']['score'], rows[lower]['score'])
-        # Critical frontier work needs the top anchor plus critical headroom (4.9): only Opus Max (4.95) clears it, so
-        # tight quota does not step down to a lower effort or tier.
-        self.assertTrue(rows['opus55_xhigh']['excluded'] and rows['opus55_medium']['excluded'])
+            if row['components']['ability_value'] < required:
+                self.assertGreater(rows[healthy['choice']]['score'], row['score'])
+        # Critical frontier work admits only abilities at the frontier floor plus its critical headroom; below that a
+        # candidate is excluded, not just scored lower, and tight quota never steps below the gate.
+        gate = demand['floor'] + demand['critical_headroom']
+        for row in rows.values():
+            ability = row['components'].get('ability_value')
+            if ability is not None and ability < gate:
+                self.assertTrue(any('ability' in reason for reason in row['excluded']), row['id'])
         tight = self.plan(HEAVY_FRONTIER, quota(claude=(25, 100)))
-        self.assertEqual(tight['choice'], 'opus55_max')
+        self.assertGreaterEqual(self.rows(tight)[tight['choice']]['components']['ability_value'], gate)
         # Ordinary (non-critical) frontier work admits Opus from High; tight quota steps down from Max, never below High.
         ordinary = dict(HEAVY_FRONTIER, error_cost=2)
         stepped = self.plan(ordinary, quota(claude=(25, 100)))['selected_bundle']
