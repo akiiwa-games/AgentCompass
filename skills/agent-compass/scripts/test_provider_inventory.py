@@ -697,6 +697,23 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(allocator.accounts_override_path({'ROUTER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
 
 
+class FreshPathTests(unittest.TestCase):
+    def test_a_cli_installed_after_the_process_started_is_found_on_the_fresh_path(self):
+        # The tray keeps the PATH it started with; the installer added the CLI's folder to the user PATH since.
+        root = temporary_root(self.addCleanup)
+        (root / 'omp.exe').write_bytes(b'')
+        (root / 'omp').write_bytes(b'')
+        (root / 'omp').chmod(0o755)
+        inventory._WHICH_CACHE.clear()
+        self.addCleanup(inventory._WHICH_CACHE.clear)
+        with patch.object(inventory, '_fresh_windows_path', return_value=str(root)), \
+                patch.dict('os.environ', {'PATH': str(root.parent / 'stale-bin')}):
+            import os
+            self.assertTrue(inventory._which('omp', os.environ['PATH']))
+            # A PATH the caller supplied (a test fleet, another profile) is taken as given.
+            self.assertIsNone(inventory._which('omp', str(root.parent / 'other-bin')))
+
+
 class IsolationRecipeTests(unittest.TestCase):
     """Discovery under another home: which inherited environment variables still reach the real machine.
 

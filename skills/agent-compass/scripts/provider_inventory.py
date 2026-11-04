@@ -305,8 +305,30 @@ def _which(product, path_value):
     if cached is not None and now_mono - cached[0] < 15.0:
         return cached[1]
     found = shutil.which(product, path=path_value)
+    if not found and path_value is not None and path_value == os.environ.get('PATH'):
+        # A long-running process (the tray, a daemon) keeps the PATH it started with; a CLI installed since then is
+        # on the PATH a new process would get, so look there too.
+        fresh = _fresh_windows_path()
+        if fresh:
+            found = shutil.which(product, path=fresh)
     _WHICH_CACHE[key] = (now_mono, found)
     return found
+
+
+def _fresh_windows_path():
+    """The PATH a newly started process gets: machine then user `Path` from the registry. Empty off Windows."""
+    if os.name != 'nt':
+        return ''
+    import winreg
+    parts = []
+    for hive, subkey in ((winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'),
+                         (winreg.HKEY_CURRENT_USER, 'Environment')):
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                parts.append(os.path.expandvars(str(winreg.QueryValueEx(key, 'Path')[0])))
+        except OSError:
+            continue
+    return os.pathsep.join(parts)
 
 
 def _registry_executables(product):
