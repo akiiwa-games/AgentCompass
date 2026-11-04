@@ -74,11 +74,12 @@
       "score_per_displaced_worker_hour": 0.06
     },
     "ability_floor": {
-      "routine": 3.0,
-      "hard": 3.3,
+      "routine": 2.3,
+      "hard": 3.1,
       "coupled": 3.6,
       "frontier": 4.2
     },
+    "ability_floor_basis": "A floor moves only when public measurements exclude its value. Each estimate is the tier at which a model's expected success on that difficulty reaches 90% of the best measured model's (at most a tenth more failures). Tiers come from the same LMArena WebDev/Agent anchor map as the model rows. Success is from SWE-bench Verified on vals.ai (Mini-SWE-agent; fetched 2026-11-04; 65 models with an Arena tier), split by the human fix-time buckets: routine = under 15 min, hard = 15 min-1 h, coupled = 1-4 h. Each bucket is a binomial logistic fit of success on tier, read at the 90%-of-best crossing, with the model-resampling bootstrap 10/50/90 percentiles: routine 2.24/2.34/2.44 (the old 3.0 is outside, so 2.3), hard 2.93/3.07/3.25 (the old 3.3 is outside, so 3.1), coupled 3.53/3.73/3.97 (3.6 is inside, so it stays). LMArena Agent real-world sessions (2026-11-02; confirmed outcome, steerability and overall net improvement within 0.10 of the best) cross at 3.58/3.60/3.75, consistent with coupled 3.6. Frontier stays at the user's Astra-level 4.2: no public set measures it, since SWE-bench has only 3 tasks over 4 h. A route whose own measurement differs declares `ability_floor` in capability_policy.routes.",
     "ability_span": 0.6,
     "effort_unlock_difficulties": [
       "coupled",
@@ -2240,7 +2241,9 @@
           "gemini-4-argon-high",
           "gpt-6.1-sol",
           "grok-4.7",
-          "gemini-3.8-flash-high"
+          "gemini-3.8-flash-high",
+          "claude-haiku-5-5",
+          "gpt-6-luna"
         ],
         "effort": "As supported and justified by the task",
         "restrict_models": false
@@ -2297,6 +2300,8 @@
         "role": "worker",
         "preferred": [
           "gemini-3.8-flash-high",
+          "claude-haiku-5-5",
+          "gpt-6-luna",
           "claude-opus-5",
           "grok-bot",
           "claude-sonnet-5",
@@ -2333,6 +2338,8 @@
         "role": "worker",
         "preferred": [
           "gemini-3.8-flash-high",
+          "claude-haiku-5-5",
+          "gpt-6-luna",
           "claude-opus-5",
           "grok-bot",
           "gemini-4-argon-high",
@@ -2349,6 +2356,8 @@
         "role": "bounded leaf worker",
         "preferred": [
           "gemini-3.8-flash-high",
+          "claude-haiku-5-5",
+          "gpt-6-luna",
           "grok-4.7",
           "gpt-6.1-sol",
           "claude-sonnet-5",
@@ -2365,6 +2374,8 @@
         "role": "tool-execution worker",
         "preferred": [
           "gemini-3.8-flash-high",
+          "claude-haiku-5-5",
+          "gpt-6-luna",
           "gpt-6.1-sol",
           "claude-sonnet-5",
           "gemini-4-argon-high",
@@ -2374,6 +2385,10 @@
           "grok-4.7"
         ],
         "effort": "Flash/Argon high for every worker packet; level is encoded in the model ID. Fallback effort follows assignment difficulty and runtime support.",
+        "ability_floor": {
+          "hard": 2.7
+        },
+        "ability_floor_basis": "Terminal-Bench 2.0 on vals.ai (Terminus 2 harness, 89 tasks, fetched 2026-11-04; 42 models with an Arena tier): the 90%-of-best crossing is tier 2.66 (bootstrap 10/50/90: 2.56/2.66/2.77). Terminal-Bench tasks are multi-step terminal outcomes at the hard level. LMArena Agent bash reliability (2026-11-02) barely depends on tier (r 0.58): Gemini 3.8 Flash, GPT-6 Luna and Grok 4.7 sit within 0.06 of the best. Routine, coupled and frontier tool work use the scoring floors.",
         "restrict_models": false
       },
       "computer_use": {
@@ -2411,8 +2426,11 @@
       "window_seconds": 600
     },
     "route_fit_peers": {
-      "grok-bot": "claude-opus-5-5"
-    }
+      "grok-bot": "claude-opus-5-5",
+      "claude-haiku-5-5": "gemini-3.8-flash-high",
+      "gpt-6-luna": "gemini-3.8-flash-high"
+    },
+    "route_fit_peers_basis": "A peer shares its anchor's place on every route that lists both. Claude Haiku 5.5 and GPT-6 Luna are Gemini 3.8 Flash peers on the coding and tool routes. LMArena WebDev 2026-10-28: Haiku 1589, Flash 1583, Luna 1579 (CIs overlap). Agent 2026-11-02: overall net improvement Flash 0.026, Luna 0.019, Haiku 0.007; bash reliability Flash 0.100, Luna 0.097, Haiku 0.074; confirmed outcome Flash 0.012, Haiku 0.019, Luna -0.004. Tiers 3.0 / 2.96 / 2.93. They are not listed on text, reasoning or vision routes, where Flash leads them by 50-60 Arena points (hard prompts, instruction following)."
   },
   "quota_sources": {
     "grok-bot": "grok"

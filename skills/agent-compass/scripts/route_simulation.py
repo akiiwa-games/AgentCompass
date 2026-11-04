@@ -40,6 +40,8 @@ import usage_cache  # noqa: E402
 DIFFICULTIES = ('routine', 'hard', 'coupled', 'frontier')
 SHORT_HOURS = 24
 AMPLE_USED, SCARCE_USED, SHORT_SCARCE_USED = 10.0, 95.0, 98.0
+# Tight: a fifth left with most of the window to run, so a cheap model's burn still fits where a strong one's does not.
+LEVELS = {'scarce': ((SCARCE_USED, 0.7), (SHORT_SCARCE_USED, None)), 'tight': ((80.0, 0.6), (85.0, None))}
 STALE_AGE = timedelta(days=3)
 
 # Scenario data: (family, window ids or None for all, or 'short' for windows under SHORT_HOURS).
@@ -56,10 +58,62 @@ STATES = {
     'claude+codex+antigravity scarce': [('claude', None), ('codex', None), ('antigravity', None)],
     '5h-only scarce': [(None, 'short')],
     'unknown/stale': 'stale',
+    'claude tight': [('claude', None, 'tight')],
+    'codex tight': [('codex', None, 'tight')],
+    'antigravity tight': [('antigravity', None, 'tight')],
 }
 
 
 # --- accounts -------------------------------------------------------------------------------------
+# Fresh-install account sets: synthetic discovery snapshots (what provider_inventory.discover would report) for users
+# unlike this machine. Each entry is {account: (family, plan)}; `pools` gives a Magpie pool's login count per account.
+ACCOUNT_SETS = {
+    'claude pro': {'accounts': {'claude': ('claude', 'pro')}},
+    'claude max5': {'accounts': {'claude': ('claude', 'max5')}},
+    'codex plus': {'accounts': {'codex': ('codex', 'plus')}},
+    'codex pro': {'accounts': {'codex': ('codex', 'pro')}},
+    'antigravity pro': {'accounts': {'antigravity': ('antigravity', 'pro')}},
+    'claude pro + codex plus': {'accounts': {'claude': ('claude', 'pro'), 'codex': ('codex', 'plus')}},
+    'magpie pool (3x claude pro)': {'accounts': {'claude': ('claude', 'pro')}, 'pools': {'claude': 3}},
+    'opencode free': {'accounts': {'opencode': ('opencode', 'free')}},
+}
+LAUNCHERS = {'antigravity': 'antigravity-resilient'}
+# What each product's CLI advertises (public model ids, 2026-11-04); discovery turns them into auto bundles.
+CATALOGS = {
+    'claude': ['claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-4-8',
+               'claude-sonnet-4-6', 'claude-haiku-4-5'],
+    'codex': ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra',
+              'gpt-5.6-luna'],
+    'antigravity': ['gemini-4-argon-high', 'gemini-4-argon-medium', 'gemini-3.8-flash-high', 'gemini-3.8-flash-medium',
+                    'claude-opus-5-5-high', 'claude-opus-5-5-medium', 'claude-sonnet-5-5-high', 'gpt-oss-120b-medium'],
+    'opencode': ['opencode/big-pickle', 'opencode/mimo-v2.6-flash-free', 'opencode/nemotron-3.5-lightning-free',
+                 'opencode/nemotron-3.5-super-vl-free', 'opencode/glm-5.3-flash-free', 'opencode/beam-free',
+                 'opencode/flint-40b-free', 'opencode/deepseek-v4.1-flash-free'],
+}
+
+
+def account_set_snapshot(name):
+    """A discovery snapshot holding only the set's accounts, each ready on a subscription."""
+    rows, launchers = {}, {}
+    for account, (family, plan) in ACCOUNT_SETS[name]['accounts'].items():
+        row = {'family': family, 'status': 'ready', 'plan': plan, 'billing': 'subscription', 'sources': ['native'],
+               'identity': f'sim-{account}', 'quota_account': account, 'models': list(CATALOGS.get(family, []))}
+        if family in LAUNCHERS:
+            row['provider'] = LAUNCHERS[family]
+            launchers[LAUNCHERS[family]] = {'family': LAUNCHERS[family], 'status': 'ready'}
+        rows[account] = row
+        launchers[family] = {'family': family, 'status': 'ready'}
+    return {'accounts': rows, 'launchers': launchers}
+
+
+def accounts_for(mode, account_set=None):
+    if mode == 'machine':
+        return machine_accounts(), {}
+    if account_set is None:
+        return fresh_accounts(), {}
+    return fresh_accounts(inventory=account_set_snapshot(account_set)), dict(ACCOUNT_SETS[account_set].get('pools') or {})
+
+
 def machine_accounts():
     """The document routing uses on this machine (allocator.load_accounts)."""
     return allocator.load_accounts()
@@ -72,6 +126,15 @@ def fresh_accounts(document=None, inventory=None):
     accounts = provider_inventory.apply(accounts, inventory)
     provider_inventory.apply_shared_quota(accounts)
     return accounts_override.normalize(accounts)
+
+
+def host_policy_for(mode, accounts, account_set=None):
+    """machine: the host policy routing loads. fresh: a new install admits what discovery found, so every account here,
+    or only the set's accounts for a synthetic account set."""
+    if mode == 'machine':
+        return None
+    names = ACCOUNT_SETS[account_set]['accounts'] if account_set else (accounts.get('accounts') or {})
+    return {'allowed_accounts': list(names)}
 
 
 def family_of(name, accounts):
@@ -95,8 +158,9 @@ def metered_accounts(accounts):
             if isinstance(spec.get('windows'), dict) and spec['windows'] and name not in followers}
 
 
-def synthetic_document(accounts, now, scenario):
-    """Collector cache rows for every windowed account: ample everywhere except the scenario's scarce windows."""
+def synthetic_document(accounts, now, scenario, pools=None):
+    """Collector cache rows for every windowed account: ample everywhere except the scenario's scarce windows.
+    `pools` gives a Magpie pool's login count; the collector reports it per window as `accounts`."""
     providers = {}
     stale = scenario == 'stale'
     for name, spec in metered_accounts(accounts).items():
@@ -105,14 +169,20 @@ def synthetic_document(accounts, now, scenario):
         for wid, wspec in spec['windows'].items():
             hours = float(wspec.get('hours') or 168)
             short = hours < SHORT_HOURS
-            scarce = not stale and any(
-                (fam is None or fam == family) and (ids is None or (ids == 'short' and short) or (isinstance(ids, tuple) and wid in ids))
-                for fam, ids in scenario)
-            if scarce:
-                used, reset = (SHORT_SCARCE_USED, 3.0) if short else (SCARCE_USED, hours * 0.7)
+            level = None if stale else next(
+                ((rule[2] if len(rule) > 2 else 'scarce') for rule in scenario
+                 if (rule[0] is None or rule[0] == family)
+                 and (rule[1] is None or (rule[1] == 'short' and short) or (isinstance(rule[1], tuple) and wid in rule[1]))),
+                None)
+            if level:
+                (long_used, long_left), (short_used, _) = LEVELS[level]
+                used, reset = (short_used, 3.0) if short else (long_used, hours * long_left)
             else:
                 used, reset = AMPLE_USED, hours * 0.5
-            windows.append({'id': wid, 'used_pct': used, 'resets_at': (now + timedelta(hours=reset)).isoformat()})
+            row = {'id': wid, 'used_pct': used, 'resets_at': (now + timedelta(hours=reset)).isoformat()}
+            if (pools or {}).get(name, 1) > 1:
+                row['accounts'] = pools[name]
+            windows.append(row)
         fetched = now - STALE_AGE if stale else now
         providers[name] = {'fetched_at': fetched.isoformat(), 'stale': stale, 'available': True, 'windows': windows}
     return {'providers': providers}
@@ -142,11 +212,11 @@ def ledger_document(compact):
     return {'providers': providers}
 
 
-def usage_for(state, accounts, now):
+def usage_for(state, accounts, now, pools=None):
     scenario = STATES[state]
     if scenario is None:
         return snapshot(live_document(), accounts, now)
-    return snapshot(synthetic_document(accounts, now, scenario), accounts, now)
+    return snapshot(synthetic_document(accounts, now, scenario, pools), accounts, now)
 
 
 # --- grid -----------------------------------------------------------------------------------------
@@ -182,19 +252,19 @@ def run_state(accounts, usage, now, tasks, host_policy_config):
     return wins_bundle, wins_model, seen
 
 
-def grid(mode, states=None, now=None):
+def grid(mode, states=None, now=None, account_set=None):
     now = now or datetime.now(timezone.utc)
-    accounts = machine_accounts() if mode == 'machine' else fresh_accounts()
-    # machine: the host policy routing loads; fresh: no policy file exists yet, so every account is allowed.
-    policy = None if mode == 'machine' else {'allowed_accounts': list(accounts.get('accounts') or {})}
+    accounts, pools = accounts_for(mode, account_set)
+    policy = host_policy_for(mode, accounts, account_set)
     tasks = grid_tasks(accounts)
     flat = allocator.bundles(accounts)
     enabled = {bid: b for bid, b in flat.items() if not b.get('disabled')}
-    report = {'mode': mode, 'tasks_per_state': len(tasks), 'states': {}}
+    report = {'mode': mode, 'account_set': account_set or ('this machine' if mode == 'machine' else 'discovered here'),
+              'tasks_per_state': len(tasks), 'states': {}}
     totals = Counter()
     seen_all = defaultdict(lambda: {'eligible': 0, 'gaps': [], 'excluded': Counter()})
     for state in states or STATES:
-        usage = usage_for(state, accounts, now)
+        usage = usage_for(state, accounts, now, pools)
         bundle_wins, model_wins, seen = run_state(accounts, usage, now, tasks, policy)
         totals.update(model_wins)
         for bid, row in seen.items():
@@ -222,12 +292,12 @@ def grid(mode, states=None, now=None):
     return report
 
 
-def explain(mode, state, task, bundle_ids=(), top=5, now=None):
+def explain(mode, state, task, bundle_ids=(), top=5, now=None, account_set=None):
     """One task under one usage state: the top of the ranking plus the named bundles, with score components."""
     now = now or datetime.now(timezone.utc)
-    accounts = machine_accounts() if mode == 'machine' else fresh_accounts()
-    policy = None if mode == 'machine' else {'allowed_accounts': list(accounts.get('accounts') or {})}
-    decision = allocator.plan(task, usage_for(state, accounts, now), now, accounts=accounts, overrides=[], records=[],
+    accounts, pools = accounts_for(mode, account_set)
+    policy = host_policy_for(mode, accounts, account_set)
+    decision = allocator.plan(task, usage_for(state, accounts, now, pools), now, accounts=accounts, overrides=[], records=[],
                               host_policy_config=policy)
     keep = [c for c in decision['ranking'] if c['score'] is not None][:top]
     keep += [c for c in decision['ranking'] if c['id'] in bundle_ids and c not in keep]
@@ -313,6 +383,8 @@ def main(argv=None):
     g = sub.add_parser('grid')
     g.add_argument('--mode', choices=('machine', 'fresh', 'both'), default='both')
     g.add_argument('--state', action='append', choices=list(STATES))
+    g.add_argument('--accounts', action='append', choices=list(ACCOUNT_SETS),
+                   help='fresh mode with a synthetic account set instead of the accounts discovered here (repeatable)')
     g.add_argument('--json')
     e = sub.add_parser('explain')
     e.add_argument('--mode', choices=('machine', 'fresh'), default='fresh')
@@ -322,6 +394,7 @@ def main(argv=None):
     e.add_argument('--local', action='store_true')
     e.add_argument('--bundle', action='append', default=[])
     e.add_argument('--top', type=int, default=5)
+    e.add_argument('--accounts', choices=list(ACCOUNT_SETS))
     e.add_argument('--json')
     r = sub.add_parser('replay')
     r.add_argument('--last', type=int)
@@ -340,16 +413,20 @@ def main(argv=None):
 def run(args, ledger):
     if args.command == 'grid':
         modes = ('machine', 'fresh') if args.mode == 'both' else (args.mode,)
-        result = [grid(mode, args.state) for mode in modes]
+        if args.accounts:
+            result = [grid('fresh', args.state, account_set=name) for name in args.accounts]
+        else:
+            result = [grid(mode, args.state) for mode in modes]
         for report in result:
-            print(f"== {report['mode']} ({report['tasks_per_state']} tasks per state)")
+            print(f"== {report['mode']} / {report['account_set']} ({report['tasks_per_state']} tasks per state)")
             for state, row in report['states'].items():
                 print(f'  {state:28s} {row["models"]}')
             print(f"  wins nowhere: {sorted(report['wins_nowhere'])}")
     elif args.command == 'explain':
         task = {'objective': f'{args.kind} task', 'work_kind': args.kind, 'difficulty': args.difficulty, 'hours': 2,
                 'needs': {'local_only': args.local}}
-        result = explain(args.mode, args.state, task, args.bundle, args.top)
+        result = explain('fresh' if args.accounts else args.mode, args.state, task, args.bundle, args.top,
+                         account_set=args.accounts)
         for row in result:
             print(row['id'], row['score'], row['excluded'] or '', {k: v for k, v in row['components'].items() if v})
     else:

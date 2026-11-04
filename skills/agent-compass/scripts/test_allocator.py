@@ -379,7 +379,9 @@ class AllocatorTests(unittest.TestCase):
         for kind in ('general_implementation', 'tool_execution', 'bounded_bulk_work', 'frontend_implementation'):
             self.assertEqual(self.plan({'work_kind': kind, 'difficulty': 'routine'})['choice'], 'flash_high', kind)
             harder = self.plan({'work_kind': kind, 'difficulty': 'hard'})
-            self.assertTrue(any('hard floor' in r for r in self.rows(harder)['flash_high']['excluded']), kind)
+            # Terminal-Bench puts hard tool work within reach of Flash (the tool_execution route floor); hard coding is not
+            floor_excluded = any('hard floor' in r for r in self.rows(harder)['flash_high']['excluded'])
+            self.assertEqual(floor_excluded, kind != 'tool_execution', kind)
         for kind in ('debug_review', 'frontend_implementation', 'general_implementation'):
             res = self.plan({'work_kind': kind})
             self.assertEqual(res['decision']['task']['difficulty'], 'hard', kind)
@@ -578,7 +580,10 @@ class AllocatorTests(unittest.TestCase):
         v_task = {'work_kind': 'visual_analysis', 'difficulty': 'routine', 'needs': {'visual': True}}
         self.assertTrue(self.plan(v_task)['choice'].startswith('opus55'))
         claude_empty = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)], codex=[('usage', 95, 100)])
-        self.assertTrue(self.plan(v_task, claude_empty)['choice'].startswith('astra'))
+        # Native Claude empty: the visual leader moves to another quota source (Opus through Antigravity, or Astra)
+        empty_plan = self.plan(v_task, claude_empty)
+        self.assertNotEqual(empty_plan['selected_bundle']['account'], 'claude')
+        self.assertIn(allocator.canonical(empty_plan['selected_bundle']['model'], accounts), ('claude-opus-5-5', 'gpt-6-astra'))
         codex_tight = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)],
                                  codex=[('usage', 50, 100)],
                                  antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 60, 100)])
@@ -800,10 +805,11 @@ class AllocatorTests(unittest.TestCase):
         # ability over the task's required ability plus the saturation span (not over the bare floor)
         required = result['decision']['task']['demand']['required_ability']
         self.assertGreater(required, result['decision']['task']['demand']['floor'])
-        for bundle, tier, price in (('astra_high', 4.2, 2.26), ('opus55_high', 4.6, 0.75)):
+        # with the measured routine floor (2.3) Sol's 3.6 also clears required + span, by a little
+        for bundle, tier, price in (('astra_high', 4.2, 2.26), ('opus55_high', 4.6, 0.75), ('sol_high', 3.6, 0.26)):
             excess = min(1.0, max(0.0, (tier - required - 0.3) / 0.6))
             self.assertAlmostEqual(rows[bundle]['components']['overqualification'], 0.08 * excess * price, places=3)
-        self.assertNotIn('overqualification', rows['sol_high']['components'])
+        self.assertLess(rows['sol_high']['components']['overqualification'], rows['astra_high']['components']['overqualification'])
         for profile in (self.profile(reasoning_depth=3, code_complexity=3), self.profile(error_cost=3)):
             deep = self.plan({'work_kind': 'general_implementation', 'profile': profile}, usage)
             self.assertFalse(deep['decision']['task']['minimum_sufficient'])
@@ -1079,17 +1085,19 @@ class AllocatorTests(unittest.TestCase):
                 context_scale=3, hallucination_risk=3), 1, 'opus55_xhigh', 35),
             ('claude-opus-5-5', 'general_implementation', self.profile(reasoning_depth=4,
                 code_complexity=3, context_scale=3), 1, 'opus55_xhigh', 35),
-            ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, divergence=1, hallucination_risk=3),
+            # Hard work needs tier 3.1 (accounts.json ability_floor_basis): Sol Medium (3.3) stays short of it only when
+            # the properties ask for more, and critical hard work is met at XHigh, so Max is no longer bought for it.
+            ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, context_scale=3, divergence=2, hallucination_risk=3),
                 4, 'sol_xhigh', 20),
             ('gpt-6.1-sol', 'debug_review', self.profile(code_complexity=2, divergence=1, hallucination_risk=3, error_cost=3),
-                4, 'sol_max', 20),
+                4, 'sol_xhigh', 20),
             ('gpt-6-astra', 'computer_use', self.profile(divergence=2, hallucination_risk=3,
                 needs_gui=True, needs_visual=True), 1, 'astra_xhigh', 35),
         ):
             with self.subTest(model=model, high_effort=high_effort):
                 task = {'work_kind': kind, 'profile': prof, 'expected_hours': hours}
-                if high_effort == 'sol_max':
-                    # Explicit family constraint isolates Max vs XHigh/High on a critical Sol assignment.
+                if model == 'gpt-6.1-sol':
+                    # Explicit family constraint isolates Max vs XHigh/High on a Sol assignment.
                     task['constraints'] = {'model': model}
                 healthy = self.plan(task, self.healthy_quota())
                 # Keep the same family for the scarcity comparison; it may otherwise rotate to a healthy model.

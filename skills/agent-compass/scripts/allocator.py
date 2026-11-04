@@ -1380,13 +1380,20 @@ def demand_config(policy):
     return cfg
 
 
-def task_demand(profile, difficulty, critical, divergence, policy, high_precision=False):
+def ability_floor(policy, route, difficulty):
+    """The minimum ability a route's work needs at a difficulty: the route's own measured floor when its data declares
+    one (`ability_floor` in capability_policy.routes), otherwise the scoring floor for that difficulty."""
+    own = (route or {}).get('ability_floor') or {}
+    return float(own[difficulty]) if difficulty in own else float(policy['ability_floor'][difficulty])
+
+
+def task_demand(profile, difficulty, critical, divergence, policy, high_precision=False, floor=None):
     """The task's continuous ability demand: the difficulty's floor (plus critical headroom) and an extra that grows with
     reasoning depth times the mean difficulty of the task's properties (code, context, divergence, hallucination risk,
     error cost). A candidate saturates the demand when its effective ability (base tier x its effort's thinking
     coefficient) reaches `required_ability`; the saturation interval runs one `saturation_span` above it."""
     cfg = demand_config(policy)
-    floor = float(policy['ability_floor'][difficulty])
+    floor = float(policy['ability_floor'][difficulty]) if floor is None else float(floor)
     headroom = float(policy['critical_headroom']) if critical else 0.0
     precision = float(cfg['precision_headroom']) if high_precision and not critical else 0.0
     span = float((policy.get('profile') or {}).get('saturation_span', 0.3))
@@ -1984,7 +1991,7 @@ def evaluate_bundle(bundle, task, ctx):
     high_ability = effort_ability(policy, curves, info, 'high')
     demand = task['demand']
     target = demand['required_ability']
-    floor = policy['ability_floor'][task['difficulty']]
+    floor = demand['floor']
     gate = floor + (policy['critical_headroom'] if task['critical'] else 0)
     if ability < gate:
         exclude(f'ability {ability:.1f} below the {task["difficulty"]} floor {floor}'
@@ -2650,7 +2657,8 @@ def normalize_task(raw, policy, capabilities, accounts):
             'profile': profile, 'profile_difficulty': derived, 'divergence': div,
             'requirements': profile_requirements(profile, policy) if profile else None,
             'subjective_weights': subjective_weights({**profile, 'divergence': div}, kind) if profile else None,
-            'demand': task_demand(profile, difficulty, critical, div, policy, high_precision),
+            'demand': task_demand(profile, difficulty, critical, div, policy, high_precision,
+                                  ability_floor(policy, capabilities['routes'][kind], difficulty)),
             'effort_unlocked': unlocked,
             'high_precision': high_precision,
             'minimum_sufficient': bool(profile and depth <= 2 and profile['code_complexity'] < 3

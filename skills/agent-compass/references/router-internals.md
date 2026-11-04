@@ -133,6 +133,7 @@ under the communication contract below.
 
 ```bash
 python -X utf8 scripts/route_simulation.py grid [--mode machine|fresh|both] [--state NAME ...] [--json out.json]
+python -X utf8 scripts/route_simulation.py grid --accounts "claude pro" --accounts "opencode free" [--state NAME ...]
 python -X utf8 scripts/route_simulation.py explain --kind general_implementation [--difficulty hard] [--local] [--state "claude scarce"] [--bundle grok47_high]
 python -X utf8 scripts/route_simulation.py replay [--last N] [--json out.json]
 ```
@@ -144,8 +145,11 @@ python -X utf8 scripts/route_simulation.py replay [--last N] [--json out.json]
   - Scarcity by account family, using discovery's family: `claude`, `codex`, antigravity `gemini` / `3p` windows, `grok` (the Grok Bot mirrors it), and the pairs `claude+codex`, `claude+antigravity` and `claude+codex+antigravity`.
   - `5h-only` scarcity: windows under 24h.
   - `unknown/stale`: readings three days old.
+  - `claude tight`, `codex tight` and `antigravity tight`: a fifth left with 60% of the window to run. A cheap model's burn still fits where a strong model's does not.
   - Scarce means 95% used with 70% of the window left; a short window means 98% used with 3h left.
 - `--mode machine` routes as this machine does: `accounts-override.json` checkboxes and the host policy apply. `--mode fresh` routes as a fresh install would: public data plus discovered accounts, with no personal choices and every account allowed.
+- `--accounts NAME` (repeatable) routes in fresh mode for a synthetic account set instead of the accounts discovered here. The sets are `claude pro`, `claude max5`, `codex plus`, `codex pro`, `antigravity pro`, `claude pro + codex plus`, `magpie pool (3x claude pro)` and `opencode free`. Each is a discovery snapshot carrying the models that product's CLI advertises, and only the set's accounts are allowed. Use them to check that routing works for users unlike this machine.
+- Set `AGENTCOMPASS_PUBLIC_DATA=off` to evaluate the repository's data. Otherwise a newer fetched public copy in the state dir wins.
 - `explain` prints the top of one ranking with score components. Use it to answer "why does X never win".
 - `replay` re-plans each ledger `plan` record with the usage that decision saw. The record's compact usage (`fetched_at`, `status`, per-window `used_pct`/`resets_at`) is rebuilt into a cache document and read at the record's own time. The ledger does not keep a Magpie pool's account count, so a pooled account replays as a single subscription. Continuity, reservations and overrides are not replayed.
 - The CLI is read-only toward the real profile. It copies the small state files routing reads (top-level JSON, `public-data/`, `grok-bot/config.json`) into a throwaway state dir, so discovery bookkeeping lands there. It reads usage with an empty discovery inventory, so the Claude session-limit overlay is skipped. `test_route_simulation.py` pins the behavior: Claude scarcity must move work off Opus on `claude`, and Codex scarcity must move work off the Codex models.

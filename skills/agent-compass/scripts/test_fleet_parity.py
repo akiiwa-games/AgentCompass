@@ -107,7 +107,8 @@ class CleanInstallParityTests(unittest.TestCase):
         self.assertEqual((scoring['unlimited_bonus'], scoring['fast_burn_multiplier']), (0.18, 2.0))
         policy = allocator.load_capabilities(accounts=self.accounts)
         self.assertEqual(policy['remote_reroute_guard'], {'enabled': True, 'bundle_id': 'dot_text', 'window_seconds': 600})
-        self.assertEqual(policy['route_fit_peers'], {'grok-bot': 'claude-opus-5-5'})
+        self.assertEqual(policy['route_fit_peers'], {'grok-bot': 'claude-opus-5-5', 'claude-haiku-5-5': 'gemini-3.8-flash-high',
+                                                  'gpt-6-luna': 'gemini-3.8-flash-high'})
         self.assertEqual(policy['routes']['dot_execution']['preferred'], ['dot'])
         self.assertTrue(policy['routes']['complex_build_plan']['restrict_models'])
         self.assertEqual(policy['routes']['computer_use']['preferred'], ['gpt-6-astra', 'gpt-6.1-sol'])

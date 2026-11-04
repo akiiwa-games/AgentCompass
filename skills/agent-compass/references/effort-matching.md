@@ -11,7 +11,7 @@ required = floor + critical_headroom + precision_headroom
          + property_span * (reasoning_depth / 4) * property_load
 ```
 
-- `floor` is the hard gate for the work (a bundle below `floor + critical_headroom` is excluded).
+- `floor` is the hard gate for the work (a bundle below `floor + critical_headroom` is excluded). It is `scoring.ability_floor[difficulty]`, unless the route declares its own `ability_floor` for that difficulty in `capability_policy.routes`. Floors are measured, not judged. Each is the tier where expected success reaches 90% of the best model's, from public benchmarks mapped onto the tier scale. `scoring.ability_floor_basis` and each route's `ability_floor_basis` record the sources and dates.
 - `property_load` is the weighted mean of `code_complexity`, `context_scale`, `divergence`, `hallucination_risk`, `error_cost` (`scoring.demand.property_weights`). Depth multiplies it, so the same heavy properties ask more of a deep task than a shallow one.
 - Work with no profile uses the difficulty index as depth and `default_load`.
 - Tunables live under `scoring.demand` (`property_span`, `default_load`, `depth_coupling`, `shortfall_weight`, `sprint_effort_weight`, `precision_headroom`, `property_weights`).
