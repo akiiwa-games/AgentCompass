@@ -497,10 +497,49 @@ def apply_removals(result, previous):
     result['removed'] = list(kept.values())
 
 
+def _expand_home(value, home):
+    text = str(value or '').strip()
+    if text == '~':
+        return Path(home)
+    if text.startswith(('~/', '~\\')):
+        return Path(home) / text[2:]
+    return Path(os.path.expandvars(text)).expanduser()
+
+
 def consult_home(home, environ):
     """The ChatGPT Web bridge profile the consultation client uses: PRO_CONSULT_HOME, else the default folder."""
     value = str(environ.get('PRO_CONSULT_HOME') or '').strip()
-    return Path(os.path.expandvars(value)).expanduser() if value else home / '.codex-chatgpt-web-consult'
+    return _expand_home(value, home) if value else Path(home) / '.codex-chatgpt-web-consult'
+
+
+def is_consult_home(path, home, environ=None):
+    """True when `path` is an isolated ChatGPT Web / Pro consultation profile rather than a Codex worker home."""
+    environ = os.environ if environ is None else environ
+    p = Path(path)
+    if p.name.lstrip('.').startswith(('codex-chatgpt-web', 'codex-pro-consult')):
+        return True
+    return _resolved(p) == _resolved(consult_home(home, environ))
+
+
+def orca_user_data_dirs(home=None):
+    """Orca's Electron userData directories under `home` (Windows roaming, macOS Application Support, Linux ~/.config).
+
+    ORCA_USER_DATA_PATH is deliberately not read: an inherited value would point a test or sandbox home at the real install.
+    """
+    home = Path(home) if home is not None else Path.home()
+    found = {}
+    for p in (home / 'AppData' / 'Roaming' / 'orca',
+              home / 'Library' / 'Application Support' / 'orca',
+              home / '.config' / 'orca'):
+        if p.is_dir():
+            found.setdefault(str(_resolved(p)), p)
+    return list(found.values())
+
+
+def orca_codex_homes(home=None):
+    """Codex homes Orca manages per signed-in account. Orca mirrors only config.toml into them, so AGENTS.md and skills never arrive."""
+    return [h for ud in orca_user_data_dirs(home)
+            for h in sorted((ud / 'codex-accounts').glob('*/home')) if h.is_dir()]
 
 
 def dot_configuration(home, environ):
@@ -588,9 +627,9 @@ def _discover(home=None, environ=None, now=None):
         for other in sorted(home.glob(f'.{family}-*')):
             if not other.is_dir():
                 continue
-            slot_name = other.name.lstrip('.')
-            if slot_name.startswith(('codex-chatgpt-web', 'codex-pro-consult')):
+            if family == 'codex' and is_consult_home(other, home, environ):
                 continue
+            slot_name = other.name.lstrip('.')
             slots[slot_name] = (family, other)
     for name in definitions:
         family, env, _ = resolve_definition(name, definitions)
@@ -598,14 +637,29 @@ def _discover(home=None, environ=None, now=None):
             root_key = 'CLAUDE_CONFIG_DIR' if family == 'claude' else 'CODEX_HOME'
             candidate = home / f'.{name}'
             fallback_home = candidate if candidate.is_dir() else home / ('.' + family)
-            slots[name] = (family, Path(env.get(root_key) or environ.get(root_key) or fallback_home))
+            raw_root = env.get(root_key) or (environ.get(root_key) if name == family else '')
+            target_home = _expand_home(raw_root, home) if raw_root else fallback_home
+            if family == 'codex' and is_consult_home(target_home, home, environ):
+                continue
+            slots[name] = (family, target_home)
+    orca_slots = set()
+    seen_codex_homes = {_resolved(h) for fam, h in slots.values() if fam == 'codex'}
+    for orca_home in orca_codex_homes(home):
+        if is_consult_home(orca_home, home, environ) or _resolved(orca_home) in seen_codex_homes:
+            continue
+        slot_name = f'orca-{orca_home.parent.name}'
+        slots[slot_name] = ('codex', orca_home)
+        orca_slots.add(slot_name)
+        seen_codex_homes.add(_resolved(orca_home))
     # Sources retain private binding material only until this function returns.
     bindings = {}
     for name, (family, default_home) in slots.items():
         _, env, enabled = resolve_definition(name, definitions)
         root_key = 'CLAUDE_CONFIG_DIR' if family == 'claude' else 'CODEX_HOME'
-        account_home = Path(env.get(root_key) or (environ.get(root_key) if name == family else '') or default_home)
-        credential_home = Path(env.get('CLAUDE_SECURESTORAGE_CONFIG_DIR') or account_home) if family == 'claude' else account_home
+        raw_root = env.get(root_key) or (environ.get(root_key) if name == family else '')
+        account_home = _expand_home(raw_root, home) if raw_root else default_home
+        raw_sec = env.get('CLAUDE_SECURESTORAGE_CONFIG_DIR') if family == 'claude' else ''
+        credential_home = _expand_home(raw_sec, home) if raw_sec else account_home
         auth, error = read_json(credential_home / ('.credentials.json' if family == 'claude' else 'auth.json'))
         profile_path = home / '.claude.json' if credential_home == home / '.claude' else credential_home / '.claude.json'
         profile, _ = read_json(profile_path) if family == 'claude' else ({}, None)
@@ -627,9 +681,11 @@ def _discover(home=None, environ=None, now=None):
         base, token, models = product_config(family, config)
         token = token if isinstance(token, str) else ''
         is_api = bool(base and token)
-        bound = name == family or name in definitions
+        is_orca = name in orca_slots
+        bound = name == family or name in definitions or is_orca
         row = {'family': family, 'provider': name, 'home': str(account_home),
-               'sources': ['native'] + (['paseo'] if name in definitions else []),
+               'cli_installed': bool(_which(family, environ.get('PATH'))),
+               'sources': ['native'] + (['paseo'] if name in definitions else []) + (['orca'] if is_orca else []),
                'status': 'ready' if bound and enabled and (facts['present'] or is_api) else
                          'disabled' if not enabled else 'saved' if not bound else 'missing_credentials',
                'plan': facts['plan'], 'credential_key': facts['credential_key'],
@@ -680,11 +736,13 @@ def _discover(home=None, environ=None, now=None):
         result['launchers'][name] = {'family': family, 'status': 'ready' if enabled else 'disabled'}
     agy = obj(cache_rows.get('antigravity'))
     agy_present = bool(_which('agy', environ.get('PATH')))
+    agy_cli = bool(agy_present or _which('gemini', environ.get('PATH')))
     # agy answers /usage only for a signed-in account, so a quota reading is the sign-in proof.
     agy_read = bool(array(agy.get('windows'))) and not agy.get('error')
     # /usage carries no tier; the tier comes from Google with agy's own sign-in (antigravity_plan), which is also a sign-in proof.
     agy_tier = antigravity_plan.cached_plan(state_dir)
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
+        'home': str(home / '.gemini'), 'cli_installed': agy_cli,
         'sources': ['native'] + (['usage-cache'] if agy_read else []) + (['account-tier'] if agy_tier else []),
         'status': 'ready' if agy_present else 'missing_client',
         'plan': agy.get('plan_label') or agy_tier, 'billing': 'subscription'}
@@ -693,6 +751,7 @@ def _discover(home=None, environ=None, now=None):
     if opencode['status'] == 'ready' and not installed:
         opencode['status'] = 'missing_client'
     result['accounts']['opencode'] = {'family': 'opencode', 'provider': 'opencode',
+        'home': str(home / '.config/opencode'), 'cli_installed': installed,
         'sources': ['native'], 'status': opencode['status'], 'plan': 'free', 'billing': 'subscription'}
     # Grok's ACP launcher is not an OAuth Claude/Codex slot. A cached reading is
     # metadata only; it cannot by itself prove that a client is installed.
@@ -748,7 +807,8 @@ def _discover(home=None, environ=None, now=None):
             result['accounts'][name] = {'family': launcher['family'], 'provider': name,
                 'sources': ['paseo'], 'status': launcher['status'], 'models': models,
                 'billing': 'unknown'}
-    pi_home = Path(environ.get('PI_CODING_AGENT_DIR') or home / '.pi/agent')
+    raw_pi = environ.get('PI_CODING_AGENT_DIR')
+    pi_home = _expand_home(raw_pi, home) if raw_pi else home / '.pi/agent'
     pi_auth, _ = read_json(pi_home / 'auth.json')
     pi_codex = obj(pi_auth.get('openai-codex'))
     pi_installed = bool(_which('pi', environ.get('PATH')))
@@ -769,12 +829,24 @@ def _discover(home=None, environ=None, now=None):
             'family': 'pi',
             'provider': 'pi',
             'home': str(pi_home),
+            'cli_installed': pi_installed,
             'sources': ['native'] + (['paseo'] if 'pi' in definitions else []),
             'status': 'ready' if pi_launcher['status'] == 'ready' else pi_launcher['status'],
             'plan': pi_plan,
             'identity': pi_facts['identity'],
             'billing': 'subscription',
             **({'quota_account': matched_codex} if matched_codex else {}),
+        }
+    elif pi_installed or pi_home.is_dir() or (home / '.pi').is_dir():
+        result['accounts']['pi'] = {
+            'family': 'pi',
+            'provider': 'pi',
+            'home': str(pi_home),
+            'cli_installed': pi_installed,
+            'sources': ['native'] + (['paseo'] if 'pi' in definitions else []),
+            'status': 'disabled' if pi_launcher['status'] == 'disabled' else 'missing_credentials',
+            'plan': None,
+            'billing': 'subscription',
         }
     override_env = (environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE') or environ.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE')
                     or environ.get('ROUTER_ACCOUNTS_OVERRIDE'))

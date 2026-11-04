@@ -644,5 +644,176 @@ class OrchestratorTests(HomeCase):
         self.assertEqual(self.snapshot(), before)
 
 
+class UnifiedDiscoveryAndParityTests(HomeCase):
+    """Setup and router share one discovery (`provider_inventory.discover`) and one per-family table (`FAMILY_SPECS`)."""
+
+    def test_paseo_provider_with_extends_chain_and_custom_claude_config_dir(self):
+        self.cli = {"claude": "claude"}
+        self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
+        custom_dir = self.home / "custom-homes" / "team-anthropic"
+        self.write("custom-homes/team-anthropic/.credentials.json", CLAUDE_CREDENTIALS)
+        self.write(".paseo/config.json", {
+            "agents": {
+                "providers": {
+                    "claude-mid": {"extends": "claude"},
+                    "team-anthropic": {
+                        "extends": "claude-mid",
+                        "env": {"CLAUDE_CONFIG_DIR": str(custom_dir)},
+                    },
+                }
+            }
+        })
+        skill = self.write("checkout-skills/agent-compass/SKILL.md", "---\nname: agent-compass\n---\n").parent
+        with patch.object(sg, "REPO_SKILLS", skill.parent):
+            self.sync(hooks=True, link_repo_skills=True)
+        self.assertTrue((self.home / ".claude" / "CLAUDE.md").is_file())
+        self.assertTrue((custom_dir / "CLAUDE.md").is_file())
+        self.assertTrue((custom_dir / "settings.json").is_file())
+        self.assertIn("router_gate_hook.py", (custom_dir / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(Path(sg.junction_target(custom_dir / "skills")), (self.home / ".claude" / "skills").resolve())
+        self.quiet(sg.uninstall)
+        self.assertFalse((custom_dir / "CLAUDE.md").exists())
+        self.assertFalse((custom_dir / "settings.json").exists())
+        self.assertFalse((custom_dir / "skills").exists())
+
+    def test_secondary_claude_dir_with_no_launcher(self):
+        # ~/.claude-x exists on disk with no Paseo launcher and no primary ~/.claude directory.
+        alt = self.home / ".claude-x"
+        alt.mkdir(parents=True)
+        skill = self.write("checkout-skills/agent-compass/SKILL.md", "---\nname: agent-compass\n---\n").parent
+        with patch.object(sg, "REPO_SKILLS", skill.parent):
+            self.sync(hooks=True, link_repo_skills=True)
+        self.assertTrue((alt / "CLAUDE.md").is_file())
+        self.assertTrue((alt / "settings.json").is_file())
+        self.assertTrue((alt / "skills" / "agent-compass" / "SKILL.md").is_file())
+        # Neither primary ~/.claude nor ~/.codex got rules/hooks because only ~/.claude-x is present.
+        self.assertFalse((self.home / ".claude" / "CLAUDE.md").exists())
+        self.assertFalse((self.home / ".codex" / "AGENTS.md").exists())
+
+    def test_orca_home_is_in_router_discovery_and_synced(self):
+        orca_home = self.home / "AppData" / "Roaming" / "orca" / "codex-accounts" / "acct-1" / "home"
+        self.write("AppData/Roaming/orca/codex-accounts/acct-1/home/config.toml", "model = 'gpt-5'\n")
+        self.write("AppData/Roaming/orca/codex-accounts/acct-1/home/auth.json",
+                   {"tokens": {"account_id": "orca-1", "access_token": "SECRET-orca-1"}})
+        inv = sg.provider_inventory.discover(home=self.home, environ=sg._sync_environ(self.home))
+        self.assertIn("orca-acct-1", inv["accounts"])
+        self.assertEqual(inv["accounts"]["orca-acct-1"]["status"], "ready")
+        self.assertIn("orca", inv["accounts"]["orca-acct-1"]["sources"])
+        self.assertEqual(Path(inv["accounts"]["orca-acct-1"]["home"]).resolve(), orca_home.resolve())
+        skill = self.write("checkout-skills/agent-compass/SKILL.md", "---\nname: agent-compass\n---\n").parent
+        with patch.object(sg, "REPO_SKILLS", skill.parent):
+            self.sync(hooks=True, link_repo_skills=True)
+        self.assertTrue((orca_home / "AGENTS.md").is_file())
+        self.assertTrue((orca_home / "hooks.json").is_file())
+        self.assertTrue((orca_home / "skills" / "agent-compass" / "SKILL.md").is_file())
+
+    def test_consult_homes_are_excluded_from_discovery_and_sync(self):
+        self.cli = {"codex": "codex"}
+        for name in (".codex-chatgpt-web-consult", ".codex-pro-consult", ".codex-chatgpt-web-2"):
+            (self.home / name).mkdir(parents=True)
+        self.write(".paseo/config.json", {
+            "agents": {
+                "providers": {
+                    "codex-consult-alias": {
+                        "extends": "codex",
+                        "env": {"CODEX_HOME": str(self.home / ".codex-pro-consult")},
+                    }
+                }
+            }
+        })
+        inv = sg.provider_inventory.discover(home=self.home, environ=sg._sync_environ(self.home))
+        for name in ("codex-chatgpt-web-consult", "codex-pro-consult", "codex-chatgpt-web-2", "codex-consult-alias"):
+            self.assertNotIn(name, inv["accounts"])
+        self.sync(hooks=True)
+        self.assertTrue((self.home / ".codex" / "AGENTS.md").is_file())
+        for name in (".codex-chatgpt-web-consult", ".codex-pro-consult", ".codex-chatgpt-web-2"):
+            self.assertFalse((self.home / name / "AGENTS.md").exists())
+            self.assertFalse((self.home / name / "hooks.json").exists())
+
+    def test_no_paseo_and_only_codex_profiles(self):
+        # Only Codex with no Paseo config or CLI.
+        self.cli = {"codex": "codex"}
+        self.write(".codex/auth.json", {"tokens": {"account_id": "c1", "access_token": "SECRET-c1"}})
+        self.sync(hooks=True)
+        self.assertTrue((self.home / ".codex" / "AGENTS.md").is_file())
+        self.assertTrue((self.home / ".codex" / "hooks.json").is_file())
+        for absent in (".claude", ".pi", ".gemini", ".config", ".paseo"):
+            self.assertFalse((self.home / absent).exists(), absent)
+
+    def test_agy_installed_but_not_signed_in_gets_sync_while_router_leaves_it_unverified(self):
+        self.cli = {"agy": "agy"}
+        inv = sg.provider_inventory.discover(home=self.home, environ=sg._sync_environ(self.home))
+        agy_row = inv["accounts"]["antigravity"]
+        self.assertEqual(agy_row["status"], "ready")
+        self.assertFalse(sg.provider_inventory.sign_in_proven(agy_row))
+        self.assertFalse(sg.provider_inventory.launch_verified(agy_row, False))
+        self.sync(hooks=True)
+        self.assertTrue((self.home / ".gemini" / "GEMINI.md").is_file())
+        self.assertTrue((self.home / ".gemini" / "config" / "GEMINI.md").is_file())
+        self.assertTrue((self.home / ".gemini" / "config" / "hooks.json").is_file())
+
+    def test_home_guard_never_resolves_or_modifies_targets_outside_home(self):
+        outside_temp = tempfile.TemporaryDirectory(prefix="onboard-outside-")
+        self.addCleanup(outside_temp.cleanup)
+        outside = Path(outside_temp.name).resolve()
+        outside_claude = outside / ".claude-2"
+        outside_codex = outside / ".codex-2"
+        outside_claude.mkdir()
+        outside_codex.mkdir()
+        (outside_claude / "CLAUDE.md").write_text("# real user file\n", encoding="utf-8")
+        (outside_codex / "AGENTS.md").write_text("# real user codex file\n", encoding="utf-8")
+        # Simulate a copied .paseo/config.json whose CLAUDE_CONFIG_DIR / CODEX_HOME point outside self.home.
+        self.write(".paseo/config.json", {
+            "agents": {
+                "providers": {
+                    "claude-2": {"extends": "claude", "env": {"CLAUDE_CONFIG_DIR": str(outside_claude)}},
+                    "codex-2": {"extends": "codex", "env": {"CODEX_HOME": str(outside_codex)}},
+                }
+            }
+        })
+        self.cli = {"claude": "claude"}
+        self.sync(hooks=True)
+        self.assertEqual((outside_claude / "CLAUDE.md").read_text(encoding="utf-8"), "# real user file\n")
+        self.assertEqual((outside_codex / "AGENTS.md").read_text(encoding="utf-8"), "# real user codex file\n")
+        self.assertFalse((outside_claude / "settings.json").exists())
+        self.assertFalse((outside_codex / "hooks.json").exists())
+        with self.assertRaises(ValueError):
+            sg.write_text(outside_claude / "CLAUDE.md", "overwrite")
+        with self.assertRaises(ValueError):
+            sg.create_junction(outside_claude / "skills", self.home)
+        with self.assertRaises(ValueError):
+            sg.remove_dir_or_junction(outside_claude / "CLAUDE.md")
+
+    def test_manifest_upgrade_retires_no_longer_discovered_home_without_orphans(self):
+        self.cli = {"claude": "claude"}
+        self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
+        retired_dir = self.home / "custom-homes" / "retired-claude"
+        retired_dir.mkdir(parents=True)
+        self.write(".paseo/config.json", {
+            "agents": {
+                "providers": {
+                    "retired-claude": {"extends": "claude", "env": {"CLAUDE_CONFIG_DIR": str(retired_dir)}},
+                }
+            }
+        })
+        skill = self.write("checkout-skills/agent-compass/SKILL.md", "---\nname: agent-compass\n---\n").parent
+        with patch.object(sg, "REPO_SKILLS", skill.parent):
+            self.sync(hooks=True, link_repo_skills=True)
+        self.assertTrue((retired_dir / "CLAUDE.md").is_file())
+        self.assertTrue((retired_dir / "settings.json").is_file())
+        self.assertTrue(sg.is_reparse_point(retired_dir / "skills"))
+        # Remove the custom provider from Paseo config so `retired_dir` is no longer discovered.
+        self.write(".paseo/config.json", {"agents": {"providers": {}}})
+        with patch.object(sg, "REPO_SKILLS", skill.parent):
+            self.sync(hooks=True, link_repo_skills=True)
+        self.assertFalse((retired_dir / "CLAUDE.md").exists())
+        self.assertFalse((retired_dir / "settings.json").exists())
+        self.assertFalse((retired_dir / "skills").exists())
+        manifest = sg.load_manifest()
+        self.assertFalse([k for k in manifest["docs"] if "retired-claude" in k])
+        self.assertFalse([k for k in manifest["hooks"] if "retired-claude" in k])
+        self.assertFalse([k for k in manifest["junctions"] if "retired-claude" in k])
+
+
 if __name__ == "__main__":
     unittest.main()

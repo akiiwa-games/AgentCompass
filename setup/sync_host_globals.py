@@ -2,6 +2,9 @@
 
 What it touches, and how it stays reversible:
 
+* Which harness homes are touched comes from a single scan: ``provider_inventory.discover(home=HOME, environ=...)``,
+  paired with ``FAMILY_SPECS`` below (one per-family table of global instruction files, rule kinds, skills layout and
+  hook locations).
 * Global rule files (~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ...) get a managed block between
   ``<!-- agentcompass:begin -->`` and ``<!-- agentcompass:end -->``; everything outside it is preserved. A file that
   already equals the generated text is treated as wholly managed (the pre-marker behaviour), as is one recorded as such.
@@ -26,8 +29,18 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+SETUP_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SETUP_DIR.parent
+sys.path.insert(0, str(SETUP_DIR))
+for _scripts_dir in (
+    REPO_ROOT / "skills" / "agent-compass" / "scripts",
+    Path(os.environ["ROUTER_SKILL_ROOT"]) / "scripts" if os.environ.get("ROUTER_SKILL_ROOT") else None,
+):
+    if _scripts_dir is not None and _scripts_dir.is_dir() and str(_scripts_dir) not in sys.path:
+        sys.path.insert(0, str(_scripts_dir))
+
 import host_rules  # noqa: E402
+import provider_inventory  # noqa: E402
 
 CRLF, LF = "\r\n", "\n"
 MARKER_BEGIN = "<!-- agentcompass:begin -->"
@@ -110,6 +123,61 @@ export default function (pi: any) {
   });
 }
 """.replace("__PYTHON_EXE__", json.dumps(PYTHON_EXE)).replace("__HOOK_SCRIPT__", json.dumps(ROUTER_HOOK_SCRIPT))
+
+# Per-family table of global instruction files, rule kinds, skills layout and router-gate hook locations.
+# Checked against each harness's own documentation and source:
+# - grok (Grok CLI 1.0.70): `~/.grok/docs/user-guide/12-project-rules.md` and `grok inspect` show Grok enables
+#   `[compat.claude] agents = true`, `skills = true`, `hooks = true` by default and already loads `~/.claude/CLAUDE.md`,
+#   `~/.claude/skills/` and `~/.claude/settings.json`; writing `~/.grok/AGENTS.md` as well would load rules twice.
+# - omp (Oh My Pi): Paseo's `@getpaseo/server` (`providers/omp/runtime.js`) passes `daemon.appendSystemPrompt` via
+#   `--append-system-prompt`, while `~/.omp/agent/SYSTEM.md` replaces the base system prompt template.
+# - copilot (GitHub Copilot CLI): Paseo's `copilot --acp` slot is `PASEO_RECOGNIZED_ONLY` without local discovery.
+FAMILY_SPECS: dict[str, dict] = {
+    "codex": {
+        "default_home": ".codex",
+        "rule_kind": "codex",
+        "docs": (("AGENTS.md", "{home_tag}-AGENTS.md"),),
+        "skills_dir": "skills",
+        "skills_mode": "codex",
+        "hook": ("hooks.json", "{home_tag}-hooks.json", "codex"),
+    },
+    "claude": {
+        "default_home": ".claude",
+        "rule_kind": "shared",
+        "docs": (("CLAUDE.md", "{home_tag}-CLAUDE.md"),),
+        "skills_dir": "skills",
+        "skills_mode": "claude",
+        "hook": ("settings.json", "{home_tag}-settings.json", "claude"),
+    },
+    "pi": {
+        "default_home": ".pi/agent",
+        "presence_dir": ".pi",
+        "rule_kind": "shared",
+        "docs": (("AGENTS.md", "pi-agent-AGENTS.md"),),
+        "skills_dir": "skills",
+        "skills_mode": "pi",
+        "hook": ("extensions/router-gate.ts", "pi-router-gate.ts", "pi"),
+    },
+    "antigravity": {
+        "default_home": ".gemini",
+        "rule_kind": "shared",
+        "docs": (
+            ("GEMINI.md", "gemini-GEMINI.md"),
+            ("config/GEMINI.md", "gemini-config-GEMINI.md"),
+        ),
+        "skills_dir": "skills",
+        "skills_mode": "gemini",
+        "hook": ("config/hooks.json", "gemini-hooks.json", "gemini"),
+    },
+    "opencode": {
+        "default_home": ".config/opencode",
+        "rule_kind": "shared",
+        "docs": (("AGENTS.md", "opencode-AGENTS.md"),),
+        "skills_dir": None,
+        "skills_mode": None,
+        "hook": None,
+    },
+}
 
 # --- run state -------------------------------------------------------------------------------------------------------
 
@@ -200,6 +268,29 @@ def is_reparse_point(path: Path) -> bool:
         return path.is_symlink()
 
 
+def _within_home(path: Path, home: Path | None = None) -> bool:
+    """True when `path` resolves inside `home` (strictly enforced whenever `home` is not the real user home)."""
+    base = Path(home) if home is not None else HOME
+    try:
+        base_res = base.resolve()
+        if base_res == Path.home().resolve():
+            return True
+        lexical = Path(os.path.abspath(path))
+        base_abs = Path(os.path.abspath(base))
+        if not (lexical == base_abs or base_abs in lexical.parents):
+            return False
+        check_path = path.parent if is_reparse_point(path) else path
+        resolved = check_path.resolve()
+        return resolved == base_res or base_res in resolved.parents
+    except OSError:
+        return False
+
+
+def _require_within_home(path: Path) -> None:
+    if not _within_home(path):
+        raise ValueError(f"Refusing to modify target outside --home ({HOME}): {path}")
+
+
 def backup_path(src: Path, rel_name: str) -> str | None:
     """Copy src into this run's backup directory (once per run) and return the backup path, or None."""
     if not src.exists() and not src.is_symlink():
@@ -219,6 +310,7 @@ def backup_path(src: Path, rel_name: str) -> str | None:
 
 
 def write_text(path: Path, text: str) -> None:
+    _require_within_home(path)
     if DRY_RUN:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -242,6 +334,7 @@ def junction_target(path: Path) -> str | None:
 
 
 def remove_dir_or_junction(path: Path) -> None:
+    _require_within_home(path)
     if DRY_RUN or (not path.exists() and not is_reparse_point(path)):
         return
     if is_reparse_point(path):
@@ -256,6 +349,7 @@ def remove_dir_or_junction(path: Path) -> None:
 
 
 def make_link(link: Path, target: Path) -> None:
+    _require_within_home(link)
     link.parent.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
         res = subprocess.run(
@@ -272,6 +366,7 @@ def make_link(link: Path, target: Path) -> None:
 
 def create_junction(link: Path, target: Path) -> None:
     """Point link at target, remembering what was there so uninstall can put it back."""
+    _require_within_home(link)
     key = str(link)
     existing_target = junction_target(link)
     if existing_target is not None and Path(existing_target) == target.resolve():
@@ -290,11 +385,6 @@ def create_junction(link: Path, target: Path) -> None:
     if existing_target is not None or link.exists():
         remove_dir_or_junction(link)
     make_link(link, target)
-
-
-def host_present(*names: str, dirs: tuple[Path, ...] = ()) -> bool:
-    """A harness counts as installed when its config directory exists or its CLI is on PATH."""
-    return any(d.exists() for d in dirs) or any(shutil.which(n) for n in names)
 
 
 # --- managed blocks --------------------------------------------------------------------------------------------------
@@ -356,7 +446,7 @@ def strip_block(existing: str) -> str | None:
     return before + after
 
 
-# --- global docs -----------------------------------------------------------------------------------------------------
+# --- unified discovery & global docs ---------------------------------------------------------------------------------
 
 
 def paseo_config_path() -> Path:
@@ -366,96 +456,148 @@ def paseo_config_path() -> Path:
     return HOME / ".paseo" / "config.json"
 
 
-def _paseo_providers() -> dict:
-    try:
-        cfg = json.loads(paseo_config_path().read_text(encoding="utf-8-sig"))
-        providers = (cfg.get("agents") or {}).get("providers") or {}
-        return providers if isinstance(providers, dict) else {}
-    except (OSError, ValueError, AttributeError):
-        return {}
-
-
-def _secondary_claude_dirs() -> list[Path]:
-    found: dict[str, Path] = {}
-    primary = (HOME / ".claude").resolve()
-    for p in sorted(HOME.glob(".claude-*")):
-        if p.is_dir() and p.resolve() != primary:
-            found[str(p.resolve())] = p
-    for name, row in _paseo_providers().items():
-        if not isinstance(row, dict) or not (name == "claude" or name.startswith("claude-") or row.get("extends") == "claude"):
-            continue
-        cfg_dir = (row.get("env") or {}).get("CLAUDE_CONFIG_DIR")
-        if isinstance(cfg_dir, str) and cfg_dir.strip():
-            p = Path(cfg_dir.strip()).expanduser()
-            if p.is_dir() and p.resolve() != primary:
-                found[str(p.resolve())] = p
-    return list(found.values())
-
-
 def orca_user_data_dirs(home: Path | None = None) -> list[Path]:
-    """Orca's Electron userData directories under `home` (Windows roaming, macOS Application Support, Linux ~/.config).
-
-    ORCA_USER_DATA_PATH is deliberately not read: an inherited value would point a test or sandbox home at the real install.
-    """
-    home = home or HOME
-    found: dict[str, Path] = {}
-    for p in (home / "AppData" / "Roaming" / "orca", home / "Library" / "Application Support" / "orca", home / ".config" / "orca"):
-        if p.is_dir():
-            found.setdefault(str(p.resolve()), p)
-    return list(found.values())
+    """Re-export from `provider_inventory` so `onboard.py` and callers share one implementation."""
+    return provider_inventory.orca_user_data_dirs(home or HOME)
 
 
 def orca_codex_homes(home: Path | None = None) -> list[Path]:
-    """Codex homes Orca manages per signed-in account. Orca mirrors only config.toml into them, so AGENTS.md and skills never arrive."""
-    return [h for ud in orca_user_data_dirs(home) for h in sorted((ud / "codex-accounts").glob("*/home")) if h.is_dir()]
+    """Re-export from `provider_inventory` so `onboard.py` and callers share one implementation."""
+    return provider_inventory.orca_codex_homes(home or HOME)
 
 
-def _secondary_codex_dirs() -> list[Path]:
-    found: dict[str, Path] = {}
-    primary = (HOME / ".codex").resolve()
-    for p in sorted(HOME.glob(".codex-*")):
-        if not p.is_dir() or p.resolve() == primary:
+def _sync_environ(home: Path | None = None) -> dict:
+    """Environment passed to `provider_inventory.discover()` when scanning `home`."""
+    target = Path(home) if home is not None else HOME
+    source = dict(os.environ)
+    env = {"PATH": source.get("PATH", "")}
+    for key in ("SYSTEMROOT", "PATHEXT", "TEMP", "TMP"):
+        if source.get(key):
+            env[key] = source[key]
+    env.update(
+        ROUTER_PROVIDER_HOME=str(target),
+        ROUTER_STATE_DIR=str(target / ".agent-compass"),
+        PASEO_HOME=str(target / ".paseo"),
+        APPDATA=str(target / "AppData" / "Roaming"),
+        LOCALAPPDATA=str(target / "AppData" / "Local"),
+        USERPROFILE=str(target),
+        HOME=str(target),
+    )
+    try:
+        if target.resolve() == Path.home().resolve():
+            for key in ("PASEO_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR", "PRO_CONSULT_HOME"):
+                if source.get(key):
+                    env[key] = source[key]
+    except OSError:
+        pass
+    return env
+
+
+def _is_skill_hub_only(home_dir: Path, base: Path) -> bool:
+    """True when `~/.codex` contains only the skill-hub junctions created by `link_repo_skills_into_hub`."""
+    try:
+        if home_dir.resolve() != (base / ".codex").resolve() or not home_dir.is_dir():
+            return False
+        if [p.name for p in home_dir.iterdir()] != ["skills"]:
+            return False
+        skills_dir = home_dir / "skills"
+        if not skills_dir.is_dir() or is_reparse_point(skills_dir):
+            return False
+        children = list(skills_dir.iterdir())
+        return bool(children) and all(p.name in SKILLS_FROM_REPO and is_reparse_point(p) for p in children)
+    except OSError:
+        return False
+
+
+def account_home_eligible(row: dict, home: Path | None = None) -> bool:
+    """Decide from a `provider_inventory.discover()` account row whether its home gets rules, skills and hooks.
+
+    Rule (derived strictly from the account row, never from the account name):
+    1. `row['family']` must be in `FAMILY_SPECS` and `row['home']` must be a non-empty directory path
+       (virtual/remote accounts such as LiteLLM proxies, Dot, ChatGPT Web and Grok Bot carry no local harness home).
+    2. When operating on a custom `--home`, `row['home']` must resolve inside that home.
+    3. The home gets rules, skills and hooks if:
+       - its directory already exists on disk (including disabled, paused, saved or signed-out homes that the user
+         may launch by hand), OR
+       - the account's discovery status is `ready`, OR
+       - the harness CLI is installed (`row.get('cli_installed')`) and `row['home']` is the family's default native
+         home (so a newly installed CLI gets its default home initialized before first sign-in, without creating
+         non-existent directories for disabled/unconfigured secondary Paseo definitions).
+    """
+    if not isinstance(row, dict):
+        return False
+    base = Path(home) if home is not None else HOME
+    family = row.get("family")
+    spec = FAMILY_SPECS.get(family)
+    raw_home = row.get("home")
+    if not spec or not isinstance(raw_home, str) or not raw_home.strip():
+        return False
+    home_dir = Path(raw_home)
+    if not _within_home(home_dir, base):
+        return False
+    presence_rel = spec.get("presence_dir")
+    exists = (home_dir.is_dir() and not _is_skill_hub_only(home_dir, base)) or bool(
+        presence_rel and (base / presence_rel).is_dir()
+    )
+    if exists or row.get("status") == "ready":
+        return True
+    if row.get("cli_installed"):
+        default_dir = (base / spec["default_home"]).resolve()
+        return home_dir.resolve() == default_dir
+    return False
+
+
+def discovered_homes(inventory: dict | None = None, home: Path | None = None) -> list[tuple[str, Path]]:
+    """Ordered `(family, home_dir)` pairs discovered via `provider_inventory.discover()`."""
+    base = Path(home) if home is not None else HOME
+    inv = inventory if isinstance(inventory, dict) else provider_inventory.discover(home=base, environ=_sync_environ(base))
+    accounts = inv.get("accounts") if isinstance(inv.get("accounts"), dict) else {}
+    by_family: dict[str, list[Path]] = {fam: [] for fam in FAMILY_SPECS}
+    seen: set[tuple[str, str]] = set()
+    for row in accounts.values():
+        if not account_home_eligible(row, base):
             continue
-        if p.name.startswith((".codex-chatgpt-web", ".codex-pro-consult")):
+        family = row["family"]
+        home_dir = Path(row["home"])
+        key = (family, str(home_dir.resolve()))
+        if key in seen:
             continue
-        found[str(p.resolve())] = p
-    for name, row in _paseo_providers().items():
-        if not isinstance(row, dict) or not (name == "codex" or name.startswith("codex-") or row.get("extends") == "codex"):
-            continue
-        cfg_dir = (row.get("env") or {}).get("CODEX_HOME")
-        if isinstance(cfg_dir, str) and cfg_dir.strip():
-            p = Path(cfg_dir.strip()).expanduser()
-            if p.is_dir() and p.resolve() != primary and not p.name.startswith((".codex-chatgpt-web", ".codex-pro-consult")):
-                found[str(p.resolve())] = p
-    for p in orca_codex_homes():
-        if p.resolve() != primary:
-            found[str(p.resolve())] = p
-    return list(found.values())
+        seen.add(key)
+        by_family[family].append(home_dir)
+    result: list[tuple[str, Path]] = []
+    for family, spec in FAMILY_SPECS.items():
+        default_res = (base / spec["default_home"]).resolve()
+        homes = sorted(by_family[family], key=lambda p: (p.resolve() != default_res, str(p.resolve())))
+        for h in homes:
+            result.append((family, h))
+    return result
 
 
-def doc_targets() -> list[tuple[Path, str, str]]:
-    """(path, backup name, rule kind) for every global instruction file of a harness that is present."""
+def _home_tag(home_dir: Path) -> str:
+    tag = home_dir.name.lstrip(".") or "home"
+    if tag == "home" and home_dir.parent.name:
+        return f"{home_dir.parent.name}-home"
+    return tag
+
+
+def doc_targets(homes: list[tuple[str, Path]] | None = None) -> list[tuple[Path, str, str]]:
+    """(path, backup name, rule kind) for every global instruction file of a discovered harness home."""
     targets: list[tuple[Path, str, str]] = []
-    if host_present("codex", dirs=(HOME / ".codex",)):
-        targets.append((HOME / ".codex" / "AGENTS.md", "codex-AGENTS.md", "codex"))
-    targets += [(d / "AGENTS.md", f"{d.name.lstrip('.')}-AGENTS.md", "codex") for d in _secondary_codex_dirs()]
-    if host_present("claude", dirs=(HOME / ".claude",)):
-        targets.append((HOME / ".claude" / "CLAUDE.md", "claude-CLAUDE.md", "shared"))
-    targets += [(d / "CLAUDE.md", f"{d.name.lstrip('.')}-CLAUDE.md", "shared") for d in _secondary_claude_dirs()]
-    if host_present("pi", dirs=(HOME / ".pi",)):
-        targets.append((HOME / ".pi" / "agent" / "AGENTS.md", "pi-agent-AGENTS.md", "shared"))
-    if host_present("agy", "gemini", dirs=(HOME / ".gemini",)):
-        targets.append((HOME / ".gemini" / "GEMINI.md", "gemini-GEMINI.md", "shared"))
-        targets.append((HOME / ".gemini" / "config" / "GEMINI.md", "gemini-config-GEMINI.md", "shared"))
-    if host_present("opencode", dirs=(HOME / ".config" / "opencode",)):
-        targets.append((HOME / ".config" / "opencode" / "AGENTS.md", "opencode-AGENTS.md", "shared"))
+    for family, home_dir in (discovered_homes() if homes is None else homes):
+        spec = FAMILY_SPECS[family]
+        tag = _home_tag(home_dir)
+        for rel_doc, backup_tpl in spec["docs"]:
+            targets.append((home_dir / rel_doc, backup_tpl.format(home_tag=tag), spec["rule_kind"]))
     return targets
 
 
-def unify_global_docs() -> None:
-    for path, backup_name, kind in doc_targets():
+def unify_global_docs(homes: list[tuple[str, Path]] | None = None) -> None:
+    targets = doc_targets(homes)
+    active_keys: set[str] = set()
+    for path, backup_name, kind in targets:
         content, source = host_rules.load(kind, HOME)
         key = str(path)
+        active_keys.add(key)
         entry = MANIFEST["docs"].get(key)
         existing = read_text(path)
         try:
@@ -475,6 +617,12 @@ def unify_global_docs() -> None:
             report(f"[docs] Updated {path} ({mode}, {source} rules)")
         entry.update(mode=mode, sha256=sha256(new_text))
         MANIFEST["docs"][key] = entry
+    for stale_key in sorted(set(MANIFEST["docs"]) - active_keys):
+        stale_path = Path(stale_key)
+        if _within_home(stale_path):
+            _uninstall_one_doc(stale_path, MANIFEST["docs"][stale_key])
+        if not DRY_RUN:
+            MANIFEST["docs"].pop(stale_key, None)
 
 
 # --- Paseo daemon config ---------------------------------------------------------------------------------------------
@@ -568,37 +716,56 @@ def _link_skill(dst: Path, src: Path, backup_name: str) -> None:
     report(f"[skills] Linked {dst} -> {src}")
 
 
-def deduplicate_and_link_skills() -> None:
+def deduplicate_and_link_skills(homes: list[tuple[str, Path]] | None = None) -> None:
+    active_homes = discovered_homes() if homes is None else homes
     codex_skills = HOME / ".codex" / "skills"
     agents_skills = HOME / ".agents" / "skills"
     claude_skills = HOME / ".claude" / "skills"
 
-    claude_present = host_present("claude", dirs=(HOME / ".claude",))
+    # 1-2. Claude homes (primary links individual shared skills; secondary homes link skills -> ~/.claude/skills)
+    for family, home_dir in active_homes:
+        if family != "claude":
+            continue
+        spec = FAMILY_SPECS[family]
+        skills_path = home_dir / spec["skills_dir"]
+        if home_dir.resolve() == (HOME / spec["default_home"]).resolve():
+            for name in SKILLS_TO_CODEX:
+                if (codex_skills / name).is_dir():
+                    _link_skill(skills_path / name, codex_skills / name, f"skills/claude-{name}")
+            for name in SKILLS_TO_AGENTS:
+                if (agents_skills / name).is_dir():
+                    _link_skill(skills_path / name, agents_skills / name, f"skills/claude-{name}")
+        elif claude_skills.is_dir():
+            _link_skill(skills_path, claude_skills, "")
+        else:
+            tag = _home_tag(home_dir)
+            for name in SKILLS_TO_CODEX:
+                if (codex_skills / name).is_dir():
+                    _link_skill(skills_path / name, codex_skills / name, f"skills/{tag}-{name}")
+            for name in SKILLS_TO_AGENTS:
+                if (agents_skills / name).is_dir():
+                    _link_skill(skills_path / name, agents_skills / name, f"skills/{tag}-{name}")
 
-    # 1. Replace duplicate/pointer skills in ~/.claude/skills with junctions to ~/.codex/skills
-    for name in SKILLS_TO_CODEX:
-        if claude_present and (codex_skills / name).is_dir():
-            _link_skill(claude_skills / name, codex_skills / name, f"skills/claude-{name}")
-
-    # 2. Replace duplicate paseo* skills in ~/.claude/skills with junctions to ~/.agents/skills
-    for name in SKILLS_TO_AGENTS:
-        if claude_present and (agents_skills / name).is_dir():
-            _link_skill(claude_skills / name, agents_skills / name, f"skills/claude-{name}")
-
-    # 3. Link <secondary-claude>/skills -> ~/.claude/skills for all discovered secondary Claude homes
-    if claude_skills.is_dir():
-        for alt_dir in _secondary_claude_dirs():
-            _link_skill(alt_dir / "skills", claude_skills, "")
-
-    # 3b. Orca's managed Codex account homes get the router skill only; their own skills directory is kept.
-    for codex_home in orca_codex_homes():
+    # 3. Secondary & Orca Codex homes get the router skill linked into <home>/skills/<name> (keeping their own skills dir)
+    for family, home_dir in active_homes:
+        if family != "codex":
+            continue
+        spec = FAMILY_SPECS[family]
+        if home_dir.resolve() == (HOME / spec["default_home"]).resolve():
+            continue
+        skills_path = home_dir / spec["skills_dir"]
+        if (skills_path.exists() or is_reparse_point(skills_path)) and skills_path.resolve() == codex_skills.resolve():
+            continue
         for name in SKILLS_FROM_REPO:
             if (codex_skills / name).is_dir():
-                _link_skill(codex_home / "skills" / name, codex_skills / name, "")
+                _link_skill(skills_path / name, codex_skills / name, "")
 
-    # 4. Populate ~/.pi/agent/skills with junctions to all shared skills (only when Pi is installed)
-    if host_present("pi", dirs=(HOME / ".pi",)):
-        pi_skills = HOME / ".pi" / "agent" / "skills"
+    # 4. Pi: populate <pi_home>/skills with junctions to all shared skills
+    for family, home_dir in active_homes:
+        if family != "pi":
+            continue
+        spec = FAMILY_SPECS[family]
+        pi_skills = home_dir / spec["skills_dir"]
         if not DRY_RUN:
             pi_skills.mkdir(parents=True, exist_ok=True)
         skill_sources: dict[str, Path] = {}
@@ -620,9 +787,14 @@ def deduplicate_and_link_skills() -> None:
             create_junction(pi_skills / name, target)
         report(f"[skills] Populated {pi_skills} with {len(skill_sources)} skill junctions")
 
-    # 5/6. Antigravity: skills.json plus real top-level skill directories (its scanner skips junction roots)
-    if host_present("agy", "gemini", dirs=(HOME / ".gemini",)):
-        _sync_gemini_skills(codex_skills, agents_skills, claude_skills)
+    # 5. Antigravity: skills.json plus real top-level skill directories (its scanner skips junction roots)
+    for family, home_dir in active_homes:
+        if family != "antigravity":
+            continue
+        _sync_gemini_skills(codex_skills, agents_skills, claude_skills, gemini_home=home_dir)
+
+    # Retire skill links/files belonging to homes that are no longer discovered
+    _retire_stale_skill_links(active_homes)
 
 
 def _materialized_children(path: Path) -> dict[str, Path]:
@@ -666,8 +838,10 @@ def backup_materialized_skill(src: Path, rel_name: str) -> str | None:
     return str(dst)
 
 
-def _sync_gemini_skills(codex_skills: Path, agents_skills: Path, claude_skills: Path) -> None:
-    gemini_skills_json = HOME / ".gemini" / "config" / "skills.json"
+def _sync_gemini_skills(codex_skills: Path, agents_skills: Path, claude_skills: Path,
+                        gemini_home: Path | None = None) -> None:
+    gemini_root = gemini_home or (HOME / ".gemini")
+    gemini_skills_json = gemini_root / "config" / "skills.json"
     gemini_skills_cfg = {
         "entries": [
             {"path": (HOME / ".codex" / "skills").as_posix(), "exclude": ["\\..*"]},
@@ -686,7 +860,7 @@ def _sync_gemini_skills(codex_skills: Path, agents_skills: Path, claude_skills: 
         write_text(gemini_skills_json, text)
         report(f"[skills] Wrote {gemini_skills_json}")
 
-    gemini_skills_dir = HOME / ".gemini" / "skills"
+    gemini_skills_dir = gemini_root / "skills"
     if not DRY_RUN:
         gemini_skills_dir.mkdir(parents=True, exist_ok=True)
     for name in SKILLS_TO_CODEX:
@@ -743,6 +917,47 @@ def link_repo_skills_into_hub() -> None:
                 continue
         create_junction(link, source)
         report(f"[skills] Linked {link} -> {source}")
+
+
+def _retire_stale_skill_links(active_homes: list[tuple[str, Path]]) -> None:
+    """Clean up manifest skill entries belonging to homes that are no longer discovered."""
+    active_roots = {h.resolve() for _, h in active_homes} | {(HOME / ".codex" / "skills").resolve()}
+
+    def _under_active(p: Path) -> bool:
+        try:
+            parent_res = p.parent.resolve()
+            return any(r == parent_res or r in parent_res.parents for r in active_roots)
+        except OSError:
+            return False
+
+    for key in sorted(list(MANIFEST["materialized"])):
+        path = Path(key)
+        if _under_active(path):
+            continue
+        if _within_home(path):
+            _uninstall_one_materialized(path, MANIFEST["materialized"][key])
+        if not DRY_RUN:
+            MANIFEST["materialized"].pop(key, None)
+
+    for key in sorted(list(MANIFEST["junctions"])):
+        link = Path(key)
+        if _under_active(link):
+            continue
+        if _within_home(link):
+            _uninstall_one_junction(link, MANIFEST["junctions"][key])
+        if not DRY_RUN:
+            MANIFEST["junctions"].pop(key, None)
+
+    for key in sorted(list(MANIFEST["files"])):
+        path = Path(key)
+        if _under_active(path):
+            continue
+        if _within_home(path):
+            entry = MANIFEST["files"][key]
+            if path.exists() or entry.get("backup"):
+                report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
+        if not DRY_RUN:
+            MANIFEST["files"].pop(key, None)
 
 
 def clean_dead_files() -> None:
@@ -838,71 +1053,95 @@ def _write_hook_file(path: Path, new_text: str, backup_name: str, kind: str) -> 
     MANIFEST["hooks"][str(path)] = entry
 
 
-def hooks_installed() -> bool:
-    """True when any harness already routes tool calls through the router gate."""
-    candidates = [HOME / ".claude" / "settings.json", HOME / ".codex" / "hooks.json", HOME / ".gemini" / "config" / "hooks.json",
-                  HOME / ".pi" / "agent" / "extensions" / "router-gate.ts"]
-    candidates += [d / "settings.json" for d in _secondary_claude_dirs()] + [d / "hooks.json" for d in _secondary_codex_dirs()]
-    for path in candidates:
+def hook_targets(homes: list[tuple[str, Path]] | None = None) -> list[tuple[str, Path, Path, str, str]]:
+    """(family, home_dir, hook_path, backup_name, hook_kind) for every discovered home that uses a router gate hook."""
+    targets: list[tuple[str, Path, Path, str, str]] = []
+    for family, home_dir in (discovered_homes() if homes is None else homes):
+        spec = FAMILY_SPECS[family]
+        hook = spec.get("hook")
+        if not hook:
+            continue
+        rel_path, backup_tpl, hook_kind = hook
+        tag = _home_tag(home_dir)
+        targets.append((family, home_dir, home_dir / rel_path, backup_tpl.format(home_tag=tag), hook_kind))
+    return targets
+
+
+def hooks_installed(homes: list[tuple[str, Path]] | None = None) -> bool:
+    """True when any discovered harness home already routes tool calls through the router gate."""
+    for _, _, path, _, _ in hook_targets(homes):
         text = read_text(path)
         if text and "router_gate_hook.py" in text:
             return True
     return False
 
 
-def configure_hooks() -> None:
-    # 1. Claude (& secondary Claude homes) settings.json
-    if host_present("claude", dirs=(HOME / ".claude",)):
-        claude_settings_path = HOME / ".claude" / "settings.json"
-        claude_settings = _read_json_file(claude_settings_path)
-        hooks = claude_settings.setdefault("hooks", {})
-        hooks["PreToolUse"] = ensure_hook_in_list(hooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=ROUTER_GATE_MATCHER)
-        text = _json_text(claude_settings)
-        _write_hook_file(claude_settings_path, text, "claude-settings.json", "claude")
+def configure_hooks(homes: list[tuple[str, Path]] | None = None) -> None:
+    targets = hook_targets(homes)
+    active_keys: set[str] = set()
+    claude_base_text: str | None = None
+    codex_base_text: str | None = None
 
-        for alt_dir in _secondary_claude_dirs():
-            alt_settings_path = alt_dir / "settings.json"
-            existing_alt = _read_json_file(alt_settings_path)
-            alt_settings = json.loads(text)
-            alt_env = dict(alt_settings.get("env") or {})
-            for k, v in (existing_alt.get("env") or {}).items():
-                if v is not None and v != "":
-                    alt_env[k] = v
-            alt_settings["env"] = alt_env
-            _write_hook_file(alt_settings_path, _json_text(alt_settings), f"{alt_dir.name.lstrip('.')}-settings.json", "claude")
+    for family, home_dir, hook_path, backup_name, hook_kind in targets:
+        active_keys.add(str(hook_path))
+        spec = FAMILY_SPECS[family]
+        is_default_home = home_dir.resolve() == (HOME / spec["default_home"]).resolve()
 
-    # 2. Codex (& any secondary Codex homes) hooks.json
-    if host_present("codex", dirs=(HOME / ".codex",)):
-        codex_hooks_path = HOME / ".codex" / "hooks.json"
-        codex_data = _read_json_file(codex_hooks_path)
-        chooks = codex_data.setdefault("hooks", {})
-        chooks["PreToolUse"] = ensure_hook_in_list(chooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=None)
-        codex_text = _json_text(codex_data)
-        _write_hook_file(codex_hooks_path, codex_text, "codex-hooks.json", "codex")
-        for alt_codex in _secondary_codex_dirs():
-            _write_hook_file(alt_codex / "hooks.json", codex_text, f"{alt_codex.name.lstrip('.')}-hooks.json", "codex")
+        if hook_kind == "claude":
+            if is_default_home or claude_base_text is None:
+                claude_settings = _read_json_file(hook_path)
+                hooks = claude_settings.setdefault("hooks", {})
+                hooks["PreToolUse"] = ensure_hook_in_list(hooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=ROUTER_GATE_MATCHER)
+                text = _json_text(claude_settings)
+                if is_default_home:
+                    claude_base_text = text
+                _write_hook_file(hook_path, text, backup_name, "claude")
+            else:
+                existing_alt = _read_json_file(hook_path)
+                alt_settings = json.loads(claude_base_text)
+                alt_env = dict(alt_settings.get("env") or {})
+                for k, v in (existing_alt.get("env") or {}).items():
+                    if v is not None and v != "":
+                        alt_env[k] = v
+                if alt_env or "env" in alt_settings or "env" in existing_alt:
+                    alt_settings["env"] = alt_env
+                _write_hook_file(hook_path, _json_text(alt_settings), backup_name, "claude")
 
-    # 3. Antigravity ~/.gemini/config/hooks.json
-    if host_present("agy", "gemini", dirs=(HOME / ".gemini",)):
-        gemini_hooks_path = HOME / ".gemini" / "config" / "hooks.json"
-        gemini_data = _read_json_file(gemini_hooks_path)
-        # Place router-gate first in PreToolUse evaluation order
-        new_gemini_data = {
-            "router-gate": {
-                "PreToolUse": [
-                    {"matcher": ROUTER_GATE_MATCHER, "hooks": [{"type": "command", "command": ROUTER_HOOK_CMD, "timeout": 10}]}
-                ]
+        elif hook_kind == "codex":
+            if is_default_home or hook_path.is_file() or codex_base_text is None:
+                codex_data = _read_json_file(hook_path)
+                chooks = codex_data.setdefault("hooks", {})
+                chooks["PreToolUse"] = ensure_hook_in_list(chooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=None)
+                text = _json_text(codex_data)
+                if is_default_home:
+                    codex_base_text = text
+                _write_hook_file(hook_path, text, backup_name, "codex")
+            else:
+                _write_hook_file(hook_path, codex_base_text, backup_name, "codex")
+
+        elif hook_kind == "gemini":
+            gemini_data = _read_json_file(hook_path)
+            new_gemini_data = {
+                "router-gate": {
+                    "PreToolUse": [
+                        {"matcher": ROUTER_GATE_MATCHER, "hooks": [{"type": "command", "command": ROUTER_HOOK_CMD, "timeout": 10}]}
+                    ]
+                }
             }
-        }
-        for k, v in gemini_data.items():
-            if k != "router-gate":
-                new_gemini_data[k] = v
-        _write_hook_file(gemini_hooks_path, _json_text(new_gemini_data), "gemini-hooks.json", "gemini")
+            for k, v in gemini_data.items():
+                if k != "router-gate":
+                    new_gemini_data[k] = v
+            _write_hook_file(hook_path, _json_text(new_gemini_data), backup_name, "gemini")
 
-    # 4. Pi ~/.pi/agent/extensions/router-gate.ts
-    if host_present("pi", dirs=(HOME / ".pi",)):
-        pi_ext_path = HOME / ".pi" / "agent" / "extensions" / "router-gate.ts"
-        _write_hook_file(pi_ext_path, PI_ROUTER_GATE_TS, "pi-router-gate.ts", "pi")
+        elif hook_kind == "pi":
+            _write_hook_file(hook_path, PI_ROUTER_GATE_TS, backup_name, "pi")
+
+    for stale_key in sorted(set(MANIFEST["hooks"]) - active_keys):
+        stale_path = Path(stale_key)
+        if _within_home(stale_path):
+            _uninstall_one_hook(stale_path, MANIFEST["hooks"][stale_key])
+        if not DRY_RUN:
+            MANIFEST["hooks"].pop(stale_key, None)
 
 
 # --- uninstall -------------------------------------------------------------------------------------------------------
@@ -921,76 +1160,82 @@ def _restore_file(path: Path, backup: str | None, created: bool) -> str:
     return "left in place (no backup; it already matched)"
 
 
+def _uninstall_one_doc(path: Path, entry: dict) -> None:
+    existing = read_text(path)
+    if existing is None:
+        return
+    if entry.get("mode") == "whole":
+        if sha256(existing) != entry.get("sha256"):
+            report(f"[uninstall] {path}: edited since setup; left untouched")
+        else:
+            report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
+        return
+    try:
+        stripped = strip_block(existing)
+    except ValueError:
+        stripped = None
+    if stripped is None:
+        report(f"[uninstall] {path}: no managed block found")
+        return
+    if not stripped.strip():
+        if not DRY_RUN:
+            path.unlink()
+        report(f"[uninstall] {path}: removed (only the managed block was left)")
+    else:
+        write_text(path, stripped)
+        report(f"[uninstall] {path}: managed block removed")
+
+
 def _uninstall_docs() -> None:
     for key, entry in sorted(MANIFEST["docs"].items()):
-        path = Path(key)
-        existing = read_text(path)
-        if existing is None:
-            continue
-        if entry.get("mode") == "whole":
-            if sha256(existing) != entry.get("sha256"):
-                report(f"[uninstall] {path}: edited since setup; left untouched")
+        _uninstall_one_doc(Path(key), entry)
+
+
+def _uninstall_one_hook(path: Path, entry: dict) -> None:
+    kind = entry.get("kind")
+    existing = read_text(path)
+    if existing is None:
+        return
+    if kind == "pi":
+        if "router_gate_hook.py" not in existing:
+            return
+        report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
+        return
+    try:
+        data = json.loads(existing)
+    except ValueError:
+        report(f"[uninstall] {path}: not valid JSON; left untouched")
+        return
+    if kind == "gemini":
+        data.pop("router-gate", None)
+    else:
+        hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+        if "PreToolUse" in hooks:
+            remaining = remove_hook_from_list(hooks["PreToolUse"])
+            if remaining:
+                hooks["PreToolUse"] = remaining
             else:
-                report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
-            continue
-        try:
-            stripped = strip_block(existing)
-        except ValueError:
-            stripped = None
-        if stripped is None:
-            report(f"[uninstall] {path}: no managed block found")
-            continue
-        if not stripped.strip():
-            if not DRY_RUN:
-                path.unlink()
-            report(f"[uninstall] {path}: removed (only the managed block was left)")
-        else:
-            write_text(path, stripped)
-            report(f"[uninstall] {path}: managed block removed")
+                hooks.pop("PreToolUse")
+        if not hooks:
+            data.pop("hooks", None)
+    backup = entry.get("backup")
+    original = read_text(Path(backup)) if backup else None
+    if not data and entry.get("created"):
+        if not DRY_RUN:
+            path.unlink()
+        report(f"[uninstall] {path}: removed (created by setup)")
+    elif original is not None and same_config(original, _json_text(data)):
+        if not DRY_RUN:
+            shutil.copy2(backup, path)       # back to the exact bytes the user had
+        report(f"[uninstall] {path}: router gate hook entry removed (original file restored)")
+    else:
+        write_text(path, _json_text(data))
+        report(f"[uninstall] {path}: router gate hook entry removed")
 
 
 def _uninstall_hooks() -> None:
     for key, entry in sorted(MANIFEST["hooks"].items()):
-        path = Path(key)
-        kind = entry.get("kind")
-        existing = read_text(path)
-        if existing is None:
-            continue
-        if kind == "pi":
-            if "router_gate_hook.py" not in existing:
-                continue
-            report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
-            continue
-        try:
-            data = json.loads(existing)
-        except ValueError:
-            report(f"[uninstall] {path}: not valid JSON; left untouched")
-            continue
-        if kind == "gemini":
-            data.pop("router-gate", None)
-        else:
-            hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
-            if "PreToolUse" in hooks:
-                remaining = remove_hook_from_list(hooks["PreToolUse"])
-                if remaining:
-                    hooks["PreToolUse"] = remaining
-                else:
-                    hooks.pop("PreToolUse")
-            if not hooks:
-                data.pop("hooks", None)
-        backup = entry.get("backup")
-        original = read_text(Path(backup)) if backup else None
-        if not data and entry.get("created"):
-            if not DRY_RUN:
-                path.unlink()
-            report(f"[uninstall] {path}: removed (created by setup)")
-        elif original is not None and same_config(original, _json_text(data)):
-            if not DRY_RUN:
-                shutil.copy2(backup, path)       # back to the exact bytes the user had
-            report(f"[uninstall] {path}: router gate hook entry removed (original file restored)")
-        else:
-            write_text(path, _json_text(data))
-            report(f"[uninstall] {path}: router gate hook entry removed")
+        _uninstall_one_hook(Path(key), entry)
 
 
 def _uninstall_paseo() -> None:
@@ -1045,38 +1290,44 @@ def _uninstall_paseo() -> None:
         report(f"[uninstall] {cfg_path}: Paseo changes reverted")
 
 
+def _uninstall_one_materialized(path: Path, entry: dict) -> None:
+    if path.exists() or is_reparse_point(path):
+        for child in sorted(path.iterdir()) if path.is_dir() else []:
+            if is_reparse_point(child):
+                remove_dir_or_junction(child)
+        remove_dir_or_junction(path)
+    if entry.get("backup") and Path(entry["backup"]).exists() and not DRY_RUN:
+        shutil.copytree(entry["backup"], path)
+    report(f"[uninstall] {path}: materialized skill directory removed")
+
+
+def _uninstall_one_junction(link: Path, entry: dict) -> None:
+    if is_reparse_point(link):
+        remove_dir_or_junction(link)
+    elif link.exists():
+        report(f"[uninstall] {link}: no longer a junction; left untouched")
+        return
+    if entry.get("backup") and Path(entry["backup"]).exists():
+        if not DRY_RUN:
+            shutil.copytree(entry["backup"], link)
+        report(f"[uninstall] {link}: junction removed, original directory restored")
+    elif entry.get("previous_target"):
+        if not DRY_RUN:
+            make_link(link, Path(entry["previous_target"]))
+        report(f"[uninstall] {link}: junction restored to {entry['previous_target']}")
+    else:
+        report(f"[uninstall] {link}: junction removed")
+
+
 def _uninstall_links() -> None:
     for key, entry in sorted(MANIFEST["materialized"].items()):
-        path = Path(key)
-        if path.exists() or is_reparse_point(path):
-            for child in sorted(path.iterdir()) if path.is_dir() else []:
-                if is_reparse_point(child):
-                    remove_dir_or_junction(child)
-            remove_dir_or_junction(path)
-        if entry.get("backup") and Path(entry["backup"]).exists() and not DRY_RUN:
-            shutil.copytree(entry["backup"], path)
-        report(f"[uninstall] {path}: materialized skill directory removed")
+        _uninstall_one_materialized(Path(key), entry)
     for key, entry in sorted(MANIFEST["junctions"].items()):
-        link = Path(key)
-        if is_reparse_point(link):
-            remove_dir_or_junction(link)
-        elif link.exists():
-            report(f"[uninstall] {link}: no longer a junction; left untouched")
-            continue
-        if entry.get("backup") and Path(entry["backup"]).exists():
-            if not DRY_RUN:
-                shutil.copytree(entry["backup"], link)
-            report(f"[uninstall] {link}: junction removed, original directory restored")
-        elif entry.get("previous_target"):
-            if not DRY_RUN:
-                make_link(link, Path(entry["previous_target"]))
-            report(f"[uninstall] {link}: junction restored to {entry['previous_target']}")
-        else:
-            report(f"[uninstall] {link}: junction removed")
+        _uninstall_one_junction(Path(key), entry)
     for key in sorted(MANIFEST["junctions"]):
         skills_dir = Path(key).parent
         try:
-            if not DRY_RUN and skills_dir.name == "skills" and skills_dir.parent.name == "home"                     and skills_dir.parent.parent.parent.name == "codex-accounts"                     and skills_dir.is_dir() and not any(skills_dir.iterdir()):
+            if not DRY_RUN and skills_dir.name == "skills" and skills_dir.is_dir() and not is_reparse_point(skills_dir) and not any(skills_dir.iterdir()):
                 skills_dir.rmdir()
         except OSError:
             pass
@@ -1132,8 +1383,8 @@ def ensure_paseo_bridge_dependencies() -> None:
     subprocess.run([npm, "ci"], cwd=bridge, check=True)
 
 
-def is_existing_install() -> bool:
-    return hooks_installed() or host_rules.overlay_dir(HOME).is_dir()
+def is_existing_install(homes: list[tuple[str, Path]] | None = None) -> bool:
+    return hooks_installed(homes) or host_rules.overlay_dir(HOME).is_dir()
 
 
 def sync(*, docs: bool = True, skills: bool = True, hooks: bool | None = None, dry_run: bool = False,
@@ -1143,22 +1394,23 @@ def sync(*, docs: bool = True, skills: bool = True, hooks: bool | None = None, d
     hooks=None keeps hooks that are already installed up to date and installs none for a new user.
     """
     begin_run(dry_run)
-    install_hooks = hooks_installed() if hooks is None else hooks
-    existing = is_existing_install()
+    homes = discovered_homes()
+    install_hooks = hooks_installed(homes) if hooks is None else hooks
+    existing = is_existing_install(homes)
     ensure_paseo_bridge_dependencies()
     if not dry_run:
         print(f"Backups (only if something changes): {backup_root()}")
     if docs:
-        unify_global_docs()
+        unify_global_docs(homes)
         update_paseo_config()
     if skills:
         if link_repo_skills or str(HOME / ".codex/skills/agent-compass") in MANIFEST["junctions"]:
             link_repo_skills_into_hub()
-        deduplicate_and_link_skills()
+        deduplicate_and_link_skills(homes)
     if clean if clean is not None else existing:
         clean_dead_files()
     if install_hooks:
-        configure_hooks()
+        configure_hooks(homes)
     else:
         report("[hooks] Router gate hook not installed (pass --hooks to install it; it blocks sub-agent launches without a recent router record).")
     if not dry_run:
