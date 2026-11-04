@@ -79,15 +79,39 @@ def read_source(home: Path, extra_env: dict[str, str] | None = None) -> Source |
     )
 
 
+def _matches(payload, source: Source):
+    pooled = source.account in ("", "*")
+    return [q for q in payload["data"] if isinstance(q, dict)
+            and q.get("provider") == source.provider
+            and q.get("kind") == "subscription"
+            and (pooled or q.get("user") == source.account or q.get("id") == source.account)]
+
+
+def reread_targets(payload, source: Source, now: float, max_age: float, force: bool = False):
+    """Accounts whose reading Magpie should take again (POST /v1/magpie/quotas/refresh?provider=&user=).
+
+    Magpie reads a Claude account only when asked (a saved account only on its card's refresh), so a reading
+    can be hours old; one older than max_age seconds, or every account when forced, is asked for again."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        return []
+    targets = []
+    for quota in _matches(payload, source):
+        user = quota.get("user") or quota.get("id")
+        try:
+            age = now - _timestamp(quota.get("readAt"))
+        except ValueError:
+            age = float("inf")
+        if user and (force or age > max_age):
+            targets.append((quota["provider"], user))
+    return targets
+
+
 def parse_quota(payload, source: Source):
     """Read the configured account; with none (or '*'), every subscription account of the provider."""
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         raise ValueError("Magpie 用量响应无效")
     pooled = source.account in ("", "*")
-    matches = [q for q in payload["data"] if isinstance(q, dict)
-               and q.get("provider") == source.provider
-               and q.get("kind") == "subscription"
-               and (pooled or q.get("user") == source.account or q.get("id") == source.account)]
+    matches = _matches(payload, source)
     if pooled and len(matches) > 1:
         return _parse_pool(matches, source)
     if len(matches) != 1:
@@ -131,6 +155,12 @@ def plan_rank(plan):
     return next((rank for word, rank in PLAN_RANKS if word in label), 0)
 
 
+def _masked(identity):
+    """An account as its hover line names it: 'k***@gmail.com', never the whole address."""
+    name, at, domain = str(identity).partition("@")
+    return f"{name[:1]}***{at}{domain}" if at else f"{name[:2]}***"
+
+
 def _parse_pool(matches, source):
     """The largest plan's N accounts as one window set: mean usage, N accounts' worth (two fresh ones = 200%)."""
     members = []
@@ -156,12 +186,15 @@ def _parse_pool(matches, source):
         for window in windows:
             if window["resets_at"]:
                 _timestamp(window["resets_at"])
-        members.append({"plan": quota.get("plan"), "read_at": quota["readAt"], "windows": by_id})
+        members.append({"label": _masked(identity), "plan": quota.get("plan"), "read_at": quota["readAt"],
+                        "windows": by_id})
     if not members:
         raise ValueError("VPS 暂未取得有效用量")
     top = max(plan_rank(m["plan"]) for m in members)
     largest = [m for m in members if plan_rank(m["plan"]) == top]
     count = len(largest)
+    for member in members:
+        member["counted"] = plan_rank(member["plan"]) == top  # smaller plans are listed, not added up
     ids = set(largest[0]["windows"])
     if any(set(m["windows"]) != ids for m in largest):
         raise ValueError("Magpie 账户池用量窗口不完整")

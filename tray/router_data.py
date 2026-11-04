@@ -513,6 +513,8 @@ def account_cards() -> list[dict]:
                       "badge": text, "kind": kind,
                       "plan": (row or {}).get("plan") or spec.get("plan"),
                       "usage_status": 'quota_exhausted' if (row or {}).get('status') == 'quota_exhausted' else usage_row.get("status"),
+                      "usage_age_seconds": usage_row.get("observation_age_seconds"),
+                      "pool_members": usage_row.get("pool_members") or [],
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
                           _tr("API 余额未提供，非无限额度") if spec.get('billing') == 'metered' and not windows else None,
                       "windows": windows, "bundles": bundle_pills,

@@ -905,11 +905,20 @@ def _claude_rate_limited_usage(provider_id: str = "claude") -> ProviderUsage:
     return stale_provider_usage(provider_id, _tr("限流退避中", 'Rate limit cooldown'))
 
 
-def fetch_magpie_claude_usage(source, provider_id: str, *, probe_only: bool = False) -> ProviderUsage | None:
+def fetch_magpie_claude_usage(source, provider_id: str, *, probe_only: bool = False,
+                              force: bool = False) -> ProviderUsage | None:
     if not source.valid:
         return None if probe_only else stale_provider_usage(provider_id, _tr("Magpie HTTPS 用量来源配置不完整", 'Magpie HTTPS usage source is not fully configured'))
-    status, payload = http_json(source.url + "/v1/magpie/quotas",
-                               headers={"Authorization": "Bearer " + source.token})
+    auth = {"Authorization": "Bearer " + source.token}
+    status, payload = http_json(source.url + "/v1/magpie/quotas", headers=auth)
+    # Magpie reads a Claude account only when asked, so its readings age by hours; have it read the old ones
+    # (or all, on a manual refresh) once more, then take the list again.
+    targets = magpie_usage.reread_targets(payload, source, time.time(), REFRESH_SECONDS * 2, force) if status == 200 else []
+    for vendor, user in targets:
+        http_json(source.url + "/v1/magpie/quotas/refresh?" + urllib.parse.urlencode({"provider": vendor, "user": user}),
+                  method="POST", headers=auth, timeout=60.0)
+    if targets:
+        status, payload = http_json(source.url + "/v1/magpie/quotas", headers=auth)
     if status != 200:
         if probe_only and status in (0, 400, 404, 405, 501):
             update_usage_cache(lambda c: c.setdefault("non_magpie_gateways", {})
@@ -946,7 +955,7 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
     remote = claude_magpie_source(provider_id)
     if remote is not None:
         if remote.explicit:
-            return fetch_magpie_claude_usage(remote, provider_id)
+            return fetch_magpie_claude_usage(remote, provider_id, force=force)
         probed = fetch_magpie_claude_usage(remote, provider_id, probe_only=True)
         if probed is not None:
             return probed

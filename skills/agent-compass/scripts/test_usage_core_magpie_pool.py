@@ -138,5 +138,17 @@ class MagpiePoolTests(unittest.TestCase):
                 self.assertEqual(cached.usage_details['aggregation'], 'plan_sum')
                 self.assertEqual(cached.windows[0].label, '7d×2')
 
+    def test_old_readings_are_read_again_by_magpie(self):
+        self.b['readAt'] = (self.now - timedelta(hours=5)).isoformat()
+        now = self.now.timestamp()
+        payload = {'data': [self.a, self.b]}
+        self.assertEqual(magpie_usage.reread_targets(payload, self.source, now, 600), [('claude', 'b')])
+        self.assertEqual(magpie_usage.reread_targets(payload, self.source, now, 600, force=True),
+                         [('claude', 'a'), ('claude', 'b')])
+        self.assertEqual(magpie_usage.reread_targets({'error': 'x'}, self.source, now, 600), [])
+        quota, _ = self.parse(self.a, self.b)
+        self.assertEqual([m['label'] for m in quota['usage_details']['members']], ['a***', 'b***'])
+        self.assertTrue(all(m['counted'] for m in quota['usage_details']['members']))
+
 if __name__ == '__main__':
     unittest.main()

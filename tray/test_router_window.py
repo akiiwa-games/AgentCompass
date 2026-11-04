@@ -921,6 +921,14 @@ class WindowHelperTests(unittest.TestCase):
         self.assertEqual([name(pool, w) for w in pool["windows"]], ["7d×2", "5h×2"])
         agy = {"account": "antigravity", "windows": [{"id": "gemini-weekly", "hours": 168}]}
         self.assertEqual(name(agy, agy["windows"][0]), "gemini 7d")
+        pool["windows"][0].update(remaining_pct=150, reset_in="5天7小时")
+        pool["windows"][1].update(remaining_pct=None, reset_in="已重置")
+        pool.update(label="Claude 2", plan="pro ×2", kind="ok", usage_status="fresh", pool_members=[
+            {"label": "k***@gmail.com", "windows": {"seven_day": {"used_pct": 59}, "five_hour": {"used_pct": 5}}},
+            {"label": "a***@proton.me", "windows": {"seven_day": {"used_pct": 0}}, "counted": False}])
+        self.assertEqual(router_window.quota_tooltip_text(pool).splitlines(), [
+            "Claude 2 · pro ×2", "7d×2 150% · 5d 7h", "5h×2 已重置",
+            "  k***@gmail.com  7d 41% · 5h 95%", "  a***@proton.me  7d 100% (不计入)"])
 
         # Verify pool_reservations aggregates active dispatch leases per (account, window_id).
         with tempfile.TemporaryDirectory() as tmp:

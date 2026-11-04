@@ -232,45 +232,55 @@ def quota_window_title(card: dict, window: dict) -> str:
 
 
 def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool = False) -> str:
-    """Full secondary details (plan, status, $ estimate, reservations, burn rate, reset time) for hover tooltip."""
-    label = card.get("label") or card.get("account") or "—"
-    badge = card.get("badge") or "—"
-    head = f"{label} · {window['id']}  [{badge}]" if window else f"{label}  [{badge}]"
-    plan = card.get("plan") or "—"
-    status = card.get("usage_status")
-    status_str = (tr("额度新鲜", "Fresh") if status == "fresh"
-                  else _tr(" · 额度{0}").format(_tr("过期") if status == "stale" else _tr("未知")).lstrip(" ·")
-                  if status else _tr("无计量窗口"))
-    lines = [head, f"{tr('套餐', 'Plan')}: {plan} · {status_str}"]
-    win_list = [window] if window is not None else list(card.get("windows") or ())
-    for w_item in win_list:
-        w_tag = card_window_name(card, w_item) or short_window_name(w_item)
-        rem = w_item.get("remaining_pct")
-        rem_str = "—" if rem is None else f"{rem:.0f}%"
-        usd_str = f" (≈${w_item['remaining_usd']:.0f})" if w_item.get("remaining_usd") is not None else ""
-        reset_str = _tr("{0}后重置").format(f"{w_item.get('reset_in') or '—'}")
-        lines.append(f"[{w_tag}] {tr('剩余额度', 'Remaining')}: {rem_str}{usd_str} · {reset_str}")
-        res_pct = float(w_item.get("reserved_pct") or 0.0)
-        res_usd = float(w_item.get("reserved_usd") or 0.0)
-        res_workers = list(w_item.get("reserved_workers") or ())
-        if res_pct > 0 or res_usd > 0 or res_workers:
-            lines.append(f"  {tr('在途占用', 'In-flight reserved')}: {res_pct:.1f}% (≈${res_usd:.2f})")
-            for w in res_workers:
-                aid = w.get("agent_id") or (w.get("dispatch_id") or "")[:8] or "—"
-                bname = w.get("bundle") or "—"
-                w_usd = float(w.get("usd") or 0.0)
-                w_pct = float(w.get("pct") or 0.0)
-                lines.append(f"    · {aid}  {bname}  ≈${w_usd:.2f} ({w_pct:.1f}%)")
-        rates = []
-        if w_item.get("rate_3h") is not None:
-            rates.append(f"3h {w_item['rate_3h']:.2f}%/h")
-        if w_item.get("rate_24h") is not None:
-            rates.append(f"24h {w_item['rate_24h']:.2f}%/h")
-        if rates:
-            lines.append(f"  {tr('消耗速率', 'Burn rate')}: {' · '.join(rates)}")
-    if refreshable:
-        lines.append(tr("点击右上 ↻ 或右键刷新该账号额度", "Click ↻ or right-click to refresh this account"))
+    """Hover: plan, what is left per window and when it resets, in-flight reservations, a pool's accounts."""
+    head = " · ".join(str(v) for v in (card.get("label") or card.get("account") or "—", card.get("plan")) if v)
+    if card.get("kind") not in (None, "ok") and card.get("badge"):
+        head += f"  [{card['badge']}]"
+    if card.get("usage_status") == "stale" and card.get("usage_age_seconds") is not None:
+        head += " · " + _tr("{0}前读").format(ago_text(card["usage_age_seconds"]))
+    lines = [head]
+    for w_item in [window] if window is not None else list(card.get("windows") or ()):
+        tag = card_window_name(card, w_item) or short_window_name(w_item)
+        rem, reset_in = w_item.get("remaining_pct"), w_item.get("reset_in")
+        if reset_in == _tr("已重置"):
+            lines.append(f"{tag} {_tr('已重置')}")
+            continue
+        text = f"{tag} {'—' if rem is None else f'{rem:.0f}%'}"
+        if reset_in and reset_in != "—":
+            text += f" · {short_countdown(reset_in)}"
+        reserved = float(w_item.get("reserved_pct") or 0.0)
+        if reserved > 0:
+            text += " · " + _tr("在途 {0}%").format(f"{reserved:.0f}")
+        lines.append(text)
+    lines.extend(pool_member_lines(card.get("pool_members")))
     return "\n".join(lines)
+
+
+def ago_text(seconds) -> str:
+    """'3分钟' / '5小时' / '2天' for how long ago a reading was taken."""
+    if not isinstance(seconds, (int, float)) or seconds < 0:
+        return "—"
+    if seconds < 3600:
+        return _tr("{0}分钟").format(max(1, int(seconds // 60)))
+    if seconds < 86400:
+        return _tr("{0}小时").format(int(seconds // 3600))
+    return _tr("{0}天").format(int(seconds // 86400))
+
+
+def pool_member_lines(members) -> list[str]:
+    """A Magpie pool's accounts, one short line each."""
+    if not isinstance(members, list) or len(members) < 2:
+        return []
+    lines = []
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        windows = member.get("windows") if isinstance(member.get("windows"), dict) else {}
+        parts = [f"{name} {100 - w['used_pct']:.0f}%" for wid, name in (("seven_day", "7d"), ("five_hour", "5h"))
+                 if isinstance(w := windows.get(wid), dict) and isinstance(w.get("used_pct"), (int, float))]
+        note = "" if member.get("counted", True) else " " + _tr("(不计入)")
+        lines.append(f"  {member.get('label') or '—'}  {' · '.join(parts)}{note}")
+    return lines
 
 
 class QuotaBar:

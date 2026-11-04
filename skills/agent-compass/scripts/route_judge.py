@@ -416,6 +416,9 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
             **({'rate_limited_until': rate_limited_until} if rate_limited_until else {}),
             **({'billing': row['billing']} if isinstance(row.get('billing'), str) else {}),
             **({'backend_kind': row['backend_kind']} if isinstance(row.get('backend_kind'), str) else {}),
+            # A Magpie pool's per-account readings, for display only (hover detail); routing uses the windows.
+            **({'pool_members': details['members']} if isinstance(details := row.get('usage_details'), dict)
+               and details.get('kind') == 'magpie_pool' and isinstance(details.get('members'), list) else {}),
         }
     return {
         'status': 'cached_observations', 'read_ok': True, 'read_at': now.isoformat(),
