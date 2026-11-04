@@ -70,6 +70,8 @@
 !/packaging/*.iss
 !/packaging/*.spec
 !/packaging/*.md
+!/packaging/verify-release/
+!/packaging/verify-release/**
 !/.github/
 /.github/*
 !/.github/RELEASE_NOTES.md

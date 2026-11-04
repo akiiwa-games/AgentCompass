@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "product": "AgentCompass + usage-float",
+  "entry_points": [
+    "python -X utf8 packaging/verify_release.py",
+    "python -X utf8 packaging/foreign_machine_check.py",
+    "python -X utf8 packaging/zero_dispatch_check.py",
+    "python -X utf8 packaging/windows_sandbox_check.py --connect"
+  ],
+  "features": [
+    {
+      "id": "F01",
+      "name": "Stale install & public reference data channel (schema 2)",
+      "harness": "packaging/foreign_machine_check.py::verify_f01_public_data_and_installed_copy",
+      "behaviors": [
+        "Installed wheel runs from site-packages, never the repo checkout",
+        "agentcompass data --refresh downloads and activates sha256+schema-2 verified reference data under ROUTER_STATE_DIR/public-data/sets/<version>",
+        "Tampered sha256 and corrupt JSON are rejected without overwriting the active set",
+        "A 0.3.5 install (schema 1) fetching schema-2 public data returns schema_too_new and keeps its bundled set without error",
+        "agentcompass doctor reports Reference data: fetched <version> (..., schema 2, ...)",
+        "AGENTCOMPASS_PUBLIC_DATA=off pins source to bundled and reports - channel off in doctor"
+      ]
+    },
+    {
+      "id": "F02",
+      "name": "Fleet parity on a clean install without accounts.local.json",
+      "harness": "packaging/foreign_machine_check.py::verify_f02_fleet_parity",
+      "behaviors": [
+        "No accounts.local.json exists in the built wheel or foreign profile",
+        "Clean discovered accounts route across bounded_coding, deep_debugging, and frontend_visual task archetypes with positive scores"
+      ]
+    },
+    {
+      "id": "F03",
+      "name": "Classifier cascade across multi-home accounts and families",
+      "harness": "packaging/foreign_machine_check.py::verify_f03_classifier_cascade",
+      "behaviors": [
+        "When JEV_API_KEY is absent and ~/.claude is signed out while ~/.claude-2 is signed in, score_task skips jev and ~/.claude and classifies with claude_haiku_low on account claude-2",
+        "When all Claude homes are signed out, score_task cascades to codex_terra_low on codex-2 without failing"
+      ]
+    },
+    {
+      "id": "F04",
+      "name": "Quota, window scope, gate parity, control messages, model management & twin suppression",
+      "harness": "packaging/foreign_machine_check.py::verify_f04_quota_gate_scope_and_twins",
+      "behaviors": [
+        "Pi signed into the same Codex subscription account_id produces no twin bundles alongside codex",
+        "Antigravity 3p windows on a template-only host have positive capacity priced from the pool prior",
+        "On Antigravity with 3p-weekly used up, a Gemini launch is allowed and a Claude-model launch is blocked by both routing and router_gate_hook",
+        "A 5h window at its floor blocks a new launch for claude, codex, and claude-2 (100% blocks all; 75% blocks claude/claude-2 Pro 25% floor)",
+        "Active in-flight ledger reservations count against quota in router_gate_hook and secondary Claude accounts not named claude-2 resolve from bundle/labels",
+        "A Magpie pool with accounts: 2 is judged on N*(100-mean)",
+        "A new data-declared scoped window works with zero code change",
+        "The owning parent's control message to its running worker on an exhausted window passes, while messages to idle, unknown-status, and non-owner workers are blocked",
+        "Superseded discovered models default to unchecked, latest & unknown new models default to checked, user checkbox overrides both ways, tray agrees with routing, and checked metered models are chosen only when no subscription is eligible"
+      ]
+    },
+    {
+      "id": "F05",
+      "name": "Antigravity plan tier from Google loadCodeAssist",
+      "harness": "packaging/foreign_machine_check.py::verify_f05_antigravity_plan_tier",
+      "behaviors": [
+        "antigravity_plan resolves tier ('ultra') from loadCodeAssist using agy's keyring token",
+        "antigravity-plan.json is cached under ROUTER_STATE_DIR without leaking the OAuth token",
+        "AGENTCOMPASS_ANTIGRAVITY_PLAN=off disables the Google tier lookup"
+      ]
+    },
+    {
+      "id": "F06",
+      "name": "Magpie gateway pools & stale reading POST refresh",
+      "harness": "packaging/foreign_machine_check.py::verify_f06_magpie_pools_and_refresh",
+      "behaviors": [
+        "Auto-discovered Magpie gateway calls POST /v1/magpie/quotas/refresh for hours-old readings on force=True",
+        "Largest plan wins and shows pool multiplier 'pro ×2' with window labels '7d×2' and '5h×2'",
+        "usage_details.members masks account emails (a***@...) and never stores raw emails or tokens"
+      ]
+    },
+    {
+      "id": "F07",
+      "name": "Stranger account topologies & setup/discovery/uninstall home parity",
+      "harness": "packaging/foreign_machine_check.py::verify_f07_stranger_topologies",
+      "behaviors": [
+        "Across only-Claude, only-Codex, Magpie-Claude, agy-not-signed-in, no-Paseo, and Paseo custom CLAUDE_CONFIG_DIR + 2-hop extends chain profiles, setup writes rules/skills/hooks to the exact set of homes provider_inventory.discover() finds",
+        "agentcompass uninstall --yes removes every setup-created file and restores pre-existing files unchanged",
+        "Re-running setup --yes --hooks after a previously managed custom home is retired cleans up its managed doc/hook/skill link and drops it from setup-manifest.json",
+        "only-Claude and only-Codex profiles classify and route cleanly without Paseo or API keys"
+      ]
+    },
+    {
+      "id": "F08",
+      "name": "Tray account cards & hover + usage-float standalone and hosted rows",
+      "harness": "packaging/foreign_machine_check.py::verify_f08_tray_cards_and_usage_float",
+      "behaviors": [
+        "agentcompass setup --usage-float clones usage-float into ~/.agent-compass/plugins/usage-float",
+        "Tray account_cards() shows remaining_pct, 'pro ×2', '7d×2'/'5h×2' tags, no window tag on week-only accounts, and masked member hover tooltip",
+        "Hosted usage-float shares ~/.agent-compass/usage-cache.json, displays left_pct=150%/100% on ×2 pools, titles week-only accounts without a '7d' suffix, and renders masked member hover detail",
+        "usage_float.parse_claude_usage sets models=['sonnet'] on weekly_sonnet and window_scope.binds scopes it to Sonnet only"
+      ]
+    },
+    {
+      "id": "F09",
+      "name": "Real machine isolation & process hygiene",
+      "harness": "packaging/foreign_machine_check.py::main",
+      "behaviors": [
+        "Real user profile files (~/.agent-compass, ~/.claude*, ~/.codex*, ~/.paseo) are unpolluted",
+        "No background process started inside the foreign-machine sandbox remains running"
+      ]
+    }
+  ]
+}

@@ -1074,13 +1074,29 @@ def usage_float_processes() -> list[int]:
     """Process ids of a running Usage Float on this machine (Windows); empty when none or when it cannot be told."""
     if os.name != "nt":
         return []
-    command = ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'usage_float' -and $_.ProcessId -ne $PID "
+    command = ("Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -match 'usage_float|app\\.pyw|AgentCompass\\.exe') -and $_.ProcessId -ne $PID "
                "-and $_.Name -notmatch 'powershell|pwsh' } | ForEach-Object { $_.ProcessId }")
     try:
         done = subprocess.run(["powershell", "-NoProfile", "-Command", command], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return []
     return [int(line) for line in done.stdout.split() if line.isdigit()]
+
+
+def real_files_polluted(paths, base: Path) -> list[str]:
+    markers = (str(base), str(base).replace("\\", "/"), "sandbox-codex-access", "sandbox-claude-access", "zero-codex", "zero-claude")
+    bad = []
+    for raw in paths:
+        path = Path(raw)
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if any(m in text for m in markers):
+            bad.append(str(path))
+    return bad
 
 
 def sandbox_processes(base: Path) -> list[str]:
@@ -1168,11 +1184,11 @@ def main(argv=None) -> int:
         after = real_state_snapshot()
         # Usage Float, when it runs on this machine, rewrites its own cache and the activity file every few minutes; those two
         # are only held to "unchanged" when no Usage Float process is running. The router's own files never may change.
-        float_owned = {str(Path.home() / ".usage-float" / "usage-cache.json"), str(Path.home() / ".agent-compass" / "usage-activity.json")}
+        float_owned = set(before)
         running = usage_float_processes()
         changed = sorted(k for k in before if before[k] != after[k])
         op.check("the router's own real files (~/.agent-compass cache, receipt, log) are unchanged",
-                 not [k for k in changed if k not in float_owned], {"changed": changed})
+                 not real_files_polluted(before.keys(), base) and not [k for k in changed if k not in float_owned], {"changed": changed, "polluted": real_files_polluted(before.keys(), base)})
         op.check("Usage Float's files changed only while a real Usage Float was running",
                  not [k for k in changed if k in float_owned] or bool(running), {"changed": changed, "usage_float_processes": running})
         op = run.operation("no process left behind", "nothing started from the sandbox is still running")

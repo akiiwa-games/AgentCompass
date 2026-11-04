@@ -46,6 +46,10 @@ def main() -> int:
                 "multi_task": False, "task_count": "1",
                 "reason": "fixture scorer classification",
             }
+            if "--output-last-message" in sys.argv:
+                idx = sys.argv.index("--output-last-message")
+                if idx + 1 < len(sys.argv):
+                    Path(sys.argv[idx + 1]).write_text(json.dumps(profile), encoding="utf-8")
             print(json.dumps({"structured_output": profile}))
             return 0
         sys.stderr.write("fixture CLI invoked as read-only scorer; use ScorerServer in zero_dispatch_check\n")

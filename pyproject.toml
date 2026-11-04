@@ -65,3 +65,7 @@ exclude = [
 
 [tool.hatch.build.hooks.custom]
 path = "packaging/hatch_build.py"
+
+[tool.pytest.ini_options]
+norecursedirs = ["host_sync", "node_modules", ".staged", ".build", "verify-release", ".git", "__pycache__"]
+

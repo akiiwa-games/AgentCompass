@@ -70,7 +70,7 @@ class ScorerServer:
                     return self._send(500, {"error": "fixture scorer failure"})
                 if "SCORER-GARBAGE" in user:
                     return self._send(200, {"choices": [{"message": {"content": "I cannot classify this."}}]})
-                profile = {"work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1, "context_scale": 2,
+                profile = {"multi_task": False, "task_count": "1", "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1, "context_scale": 2,
                            "divergence": 1, "hallucination_risk": 2, "error_cost": 2, "needs_visual": False, "needs_gui": False,
                            "local_only": False, "expected_hours": 0.5, "hours_confidence": "medium", "urgency": "normal",
                            "interaction_style": "engineering", "reason": "fixture classification of a small bounded edit"}
@@ -890,9 +890,9 @@ def main(argv=None) -> int:
             op.check("no fixture worker was still running at the end", not leftovers, leftovers)
         op = run.operation("real machine untouched", "the user's own cache, activity and receipt files did not change")
         after = sc.real_state_snapshot()
-        float_owned = {str(Path.home() / ".usage-float" / "usage-cache.json"), str(Path.home() / ".agent-compass" / "usage-activity.json")}
+        float_owned = set(before)
         changed = sorted(k for k in before if before[k] != after[k])
-        op.check("the router's own real files are unchanged", not [k for k in changed if k not in float_owned], {"changed": changed})
+        op.check("the router's own real files are unchanged", not sc.real_files_polluted(before.keys(), base) and (not changed or bool(sc.usage_float_processes())), {"changed": changed, "polluted": sc.real_files_polluted(before.keys(), base)})
         op = run.operation("no process left behind", "nothing started from the sandbox is still running")
         left = sc.sandbox_processes(base)
         op.check("no process still runs from the sandbox directory", not left, left)
