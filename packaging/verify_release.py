@@ -3,10 +3,10 @@
     python -X utf8 packaging/verify_release.py [--wheel X.whl] [--with-windows-sandbox] [--report DIR]
 
 Runs the full pre-release verification suite:
-  1. Foreign-machine packaged wheel & cloned usage-float behavioral verification (F01..F09)
+  1. Foreign-machine packaged wheel & cloned usage-float behavioral verification (F01..F10)
   2. Zero-credential 13-surface dispatch & scorer verification (zero_dispatch_check.py)
   3. Unit/regression suites across setup/, skills/agent-compass/scripts/, tray/, and usage-float/
-  4. Optional real Windows Sandbox installer + tray verification (F10, --with-windows-sandbox)
+  4. Optional real Windows Sandbox installer + tray verification (W01, --with-windows-sandbox)
 """
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def _run_step(name: str, argv: list[str], cwd: Path = ROOT) -> dict:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--wheel", type=Path, help="Existing wheel to verify.")
-    parser.add_argument("--with-windows-sandbox", action="store_true", help="Also run windows_sandbox_check.py --connect (F10).")
+    parser.add_argument("--with-windows-sandbox", action="store_true", help="Also run windows_sandbox_check.py --connect (W01).")
     parser.add_argument("--report", type=Path, default=ROOT / ".route-briefs" / "verify-release-report")
     args = parser.parse_args(argv)
 
@@ -73,7 +73,7 @@ def main(argv=None) -> int:
     foreign_cmd = [py, "-X", "utf8", str(HERE / "foreign_machine_check.py")]
     if args.wheel:
         foreign_cmd.extend(["--wheel", str(args.wheel.resolve())])
-    steps.append(_run_step("F01-F09 foreign_machine_check", foreign_cmd))
+    steps.append(_run_step("F01-F10 foreign_machine_check", foreign_cmd))
 
     zd_cmd = [py, "-X", "utf8", str(HERE / "zero_dispatch_check.py")]
     if args.wheel:
@@ -87,7 +87,7 @@ def main(argv=None) -> int:
         steps.append(_run_step("pytest usage-float/", [py, "-X", "utf8", "-m", "pytest", "-q"], cwd=USAGE_FLOAT_DIR))
 
     if args.with_windows_sandbox:
-        steps.append(_run_step("F10 windows_sandbox_check", [py, "-X", "utf8", str(HERE / "windows_sandbox_check.py"), "--connect"]))
+        steps.append(_run_step("W01 windows_sandbox_check", [py, "-X", "utf8", str(HERE / "windows_sandbox_check.py"), "--connect"]))
 
     failed = [s for s in steps if s["returncode"] != 0]
     report_dir = args.report.resolve() / time.strftime("run-%Y%m%d-%H%M%S")

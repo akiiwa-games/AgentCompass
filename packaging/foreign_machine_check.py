@@ -18,6 +18,9 @@ Designed the pstack way (behavior over implementation, prove it works from packa
       F07  Stranger account topologies + setup/discovery/uninstall home parity (only Claude; only Codex; Magpie Claude; agy installed not signed in; no Paseo; Paseo provider with extends chain & custom CLAUDE_CONFIG_DIR)
       F08  Tray account cards & hover + usage-float standalone & hosted rows, ×N pool left_pct, week-only titles, and masked member hover
       F09  Real machine untouched & no background process left behind
+      F10  Evidence-calibrated routing after 0.3.6 (default checkbox from public data, ability floors as data and no
+           silent frontier downgrade, fixed effort, free-usage bonus per account, pool demand against N x 100%, tray
+           ability-floor chart); each check is also shown to fail once against broken data in the throwaway profile
 """
 from __future__ import annotations
 
@@ -78,6 +81,7 @@ class ForeignFixtureServer:
         self.reset_7d = (now + dt.timedelta(days=4)).isoformat()
         self.magpie_refreshed_users: list[tuple[str, str]] = []
         self.magpie_bob_fresh = False
+        self.magpie_bob_reset_7d = None   # F10 sets a later weekly reset on one pool member
         # Google loadCodeAssist state
         self.google_tier_id = "g1-ultra-tier"
         outer = self
@@ -252,7 +256,7 @@ class ForeignFixtureServer:
                 "plan": "pro", "readAt": bob_read_at,
                 "windows": [
                     {"name": "5 hours", "used": bob_5h, "resetsAt": self.reset_5h},
-                    {"name": "7 days", "used": bob_7d, "resetsAt": self.reset_7d},
+                    {"name": "7 days", "used": bob_7d, "resetsAt": self.magpie_bob_reset_7d or self.reset_7d},
                 ],
             },
             {
@@ -577,7 +581,8 @@ def verify_f02_fleet_parity(ctx: dict):
         eligible = [c for c in ranking if not c.get("excluded") and c.get("score") is not None]
         op.check(f"clean foreign fleet plans {label} with a routable selected_bundle and positive score",
                  res.returncode == 0 and bool(selected.get("account")) and len(eligible) >= 2 and (eligible[0].get("score") or 0) > 0,
-                 {"rc": res.returncode, "choice": doc.get("choice"), "selected": selected, "stderr": res.stderr[-200:]})
+                 {"rc": res.returncode, "choice": doc.get("choice"), "selected": selected, "stderr": res.stderr[-200:],
+                  "ranking": [{k: c.get(k) for k in ("bundle", "id", "score", "excluded", "reason", "reasons")} for c in ranking[:8]]})
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1790,11 +1795,120 @@ print(json.dumps({{
              {"rc": res_once.returncode, "stdout": once_out, "stderr": res_once.stderr[-200:]})
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# F10: Evidence-calibrated routing after 0.3.6
+
+
+def verify_f10_evidence_calibrated_routing(ctx: dict):
+    run: sc.Run = ctx["run"]
+    fx: ForeignFixtureServer = ctx["fixture"]
+    box = make_profile(ctx, "f10-evidence-routing")
+    op = run.operation(
+        "F10 evidence-calibrated routing after 0.3.6",
+        "From the installed wheel in a foreign profile (Magpie Claude pool of two + Codex): first-scan checkboxes follow "
+        "public data superseded and billing; ability floors are data (frontier at or above the floor or wait/ask, override "
+        "changes the plan); fixed_effort scoring; free-usage bonus only on the declaring account; pool demand against "
+        "N x 100% with the later reset; tray ability-floor chart, saved floors and an off-screen render. Every check is also "
+        "run once against broken data in the profile and must fail there.",
+    )
+    box.claude.mkdir(parents=True, exist_ok=True)
+    (box.claude / "settings.json").write_text(json.dumps({"env": {
+        "ANTHROPIC_BASE_URL": "https://magpie.fixture.local", "ANTHROPIC_AUTH_TOKEN": "magpie-gateway-token"}}), encoding="utf-8")
+    sign_in_codex(box)
+    fx.magpie_refreshed_users.clear()
+    fx.magpie_bob_fresh = False
+    later = (dt.datetime.fromisoformat(fx.reset_7d) + dt.timedelta(hours=20)).isoformat()
+    fx.magpie_bob_reset_7d = later
+    try:
+        env = base_cli_env(box, ctx, include_clis=("claude", "codex"))
+        run_in_box(box, op, [box.agentcompass, "setup", "--yes", "--no-hooks"], env)
+        res_usage = run_in_box(box, op, [box.agentcompass, "usage"], env)
+    finally:
+        fx.magpie_bob_reset_7d = None
+    op.check("agentcompass usage reads the Magpie pool", res_usage.returncode == 0, res_usage.stderr[-300:])
+
+    # 5b. The pool's weekly reset is its members' later reset (every account refilled), from the installed collector.
+    cache = json.loads((box.state / "usage-cache.json").read_text(encoding="utf-8"))
+    claude_windows = ((cache.get("providers") or {}).get("claude") or {}).get("windows") or []
+    week = next((w for w in claude_windows if w.get("id") == "seven_day"), {})
+
+    def later_reset(window):
+        stamp = window.get("resets_at")
+        return (window.get("accounts") == 2 and bool(stamp)
+                and dt.datetime.fromisoformat(stamp) == dt.datetime.fromisoformat(later))
+
+    op.check("a pool's reset is its members' later reset", later_reset(week), week)
+    op.check("(failure shown) the reset check fails on a reading carrying the earlier member reset",
+             not later_reset(dict(week, resets_at=fx.reset_7d)), week)
+
+    # 2b. A scoring.ability_floor / scoring.route_ability_floor in accounts-override.json changes the plan (installed CLI).
+    task_file = box.root / "f10-frontier-task.json"
+    task_file.write_text(json.dumps({"task": {
+        "objective": "Design the architecture of a new multiplayer game from first principles.",
+        "work_kind": "complex_build_plan", "difficulty": "frontier", "expected_hours": 1.0,
+        "needs": {"local_only": False}}}), encoding="utf-8")
+    override = box.state / "accounts-override.json"
+    original = override.read_bytes() if override.is_file() else None
+
+    def plan_with(scoring: dict | None) -> dict:
+        doc = json.loads(original) if original else {"schema_version": 2}
+        if scoring is not None:
+            doc.setdefault("scoring", {}).update(scoring)
+        override.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+        return parse_json(run_in_box(box, op, [box.agentcompass, "plan", "--input", task_file, "--dry-run"], env).stdout)
+
+    try:
+        baseline = plan_with(None)
+        top = max(((c.get("components") or {}).get("ability_value") or 0) for c in baseline.get("ranking") or [{}])
+        above = round(top + 0.5, 2)
+        raised = plan_with({"ability_floor": {"frontier": above}})
+        route_raised = plan_with({"route_ability_floor": {"complex_build_plan": {"frontier": above}}})
+        misplaced = plan_with({"ability_floors": {"frontier": above}})   # not a key the router reads
+    finally:
+        if original is None:
+            override.unlink(missing_ok=True)
+        else:
+            override.write_bytes(original)
+
+    def changed(doc):
+        return doc.get("choice") == "none" and baseline.get("choice") not in (None, "none")
+
+    op.check("a scoring.ability_floor override above every bundle turns the frontier plan into a wait/ask",
+             changed(raised) and "floor" in str((raised.get("decision") or {}).get("reason")),
+             {"baseline": baseline.get("choice"), "raised": raised.get("choice"),
+              "reason": (raised.get("decision") or {}).get("reason")})
+    op.check("a scoring.route_ability_floor override for the task's route changes the plan the same way",
+             changed(route_raised), {"baseline": baseline.get("choice"), "route_raised": route_raised.get("choice")})
+    op.check("(failure shown) the override check fails when the value sits under a key the router does not read",
+             not changed(misplaced), {"baseline": baseline.get("choice"), "misplaced": misplaced.get("choice")})
+
+    # 1-6. The installed modules, intact and against broken data in this profile.
+    probe = HERE / "f10_evidence_probe.py"
+    scripts_dir = box.data / "skills" / "agent-compass" / "scripts"
+    tray_dir = ctx["repo"] / "tray"
+    results: dict[str, dict] = {}
+    for mode in ("intact", "broken"):
+        out = box.root / f"f10-{mode}.json"
+        res = run_in_box(box, op, [sc.TRAY_PYTHON, "-X", "utf8", probe, scripts_dir, tray_dir, mode, out], env)
+        op.check(f"F10 probe ({mode}) exits 0", res.returncode == 0 and out.is_file(), res.stderr[-600:])
+        results[mode] = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+    for leftover in ("f10-broken-accounts.json", "f10-scenario-cache.json", "f10-pool-cache.json"):
+        (box.state / leftover).unlink(missing_ok=True)
+    for name, outcome in results["intact"].items():
+        op.check(name, outcome.get("ok"), outcome.get("detail"))
+        broken = results["broken"].get(name) or {}
+        op.check(f"(failure shown) {name}: fails with its data broken", bool(broken) and not broken.get("ok"),
+                 broken.get("detail"))
+    op.check("the probe ran every F10 check",
+             len(results["intact"]) >= 10 and set(results["intact"]) == set(results["broken"]), sorted(results["intact"]))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--wheel", type=Path, help="Install this wheel instead of building one from the working tree.")
     parser.add_argument("--report", type=Path, default=ROOT / ".route-briefs" / "foreign-machine-report")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--only", nargs="+", metavar="FXX", help="Run only these features (F09 always runs), e.g. --only F10.")
     args = parser.parse_args(argv)
     args.report = args.report.resolve()
     names = sc.registry_clean()
@@ -1834,14 +1948,25 @@ def main(argv=None) -> int:
                 "wheel": wheel, "repo": repo, "uf_repo": uf_repo,
                 "bin_dir": bin_dir, "fixture_built": built,
             }
-            verify_f01_public_data_and_installed_copy(ctx)
-            verify_f02_fleet_parity(ctx)
-            verify_f03_classifier_cascade(ctx)
-            verify_f04_quota_gate_scope_and_twins(ctx)
-            verify_f05_antigravity_plan_tier(ctx)
-            magpie_box = verify_f06_magpie_pools_and_refresh(ctx)
-            verify_f07_stranger_topologies(ctx)
-            verify_f08_tray_cards_and_usage_float(ctx, magpie_box)
+            wanted = lambda fid: not args.only or fid in args.only
+            if wanted("F01"):
+                verify_f01_public_data_and_installed_copy(ctx)
+            if wanted("F02"):
+                verify_f02_fleet_parity(ctx)
+            if wanted("F03"):
+                verify_f03_classifier_cascade(ctx)
+            if wanted("F04"):
+                verify_f04_quota_gate_scope_and_twins(ctx)
+            if wanted("F05"):
+                verify_f05_antigravity_plan_tier(ctx)
+            if wanted("F06") or wanted("F08"):
+                magpie_box = verify_f06_magpie_pools_and_refresh(ctx)
+            if wanted("F07"):
+                verify_f07_stranger_topologies(ctx)
+            if wanted("F08"):
+                verify_f08_tray_cards_and_usage_float(ctx, magpie_box)
+            if wanted("F10"):
+                verify_f10_evidence_calibrated_routing(ctx)
 
         op = run.operation("F09 real machine untouched", "the user's own cache, activity and receipt files are unpolluted by the foreign-machine harness")
         after = sc.real_state_snapshot()

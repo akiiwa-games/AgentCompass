@@ -106,6 +106,22 @@
         "Real user profile files (~/.agent-compass, ~/.claude*, ~/.codex*, ~/.paseo) are unpolluted",
         "No background process started inside the foreign-machine sandbox remains running"
       ]
+    },
+    {
+      "id": "F10",
+      "name": "Evidence-calibrated routing after 0.3.6",
+      "harness": "packaging/foreign_machine_check.py::verify_f10_evidence_calibrated_routing (probe: packaging/f10_evidence_probe.py)",
+      "behaviors": [
+        "On a first scan a model public data lists in `superseded` (an older Haiku beside Haiku 5.5) is discovered unchecked and its successor checked",
+        "Metered accounts are a last resort (excluded while a subscription can take the work, chosen only when none can) and never-billed (unknown billing) accounts are explicit selection only",
+        "Frontier work routes only to a bundle at or above scoring.ability_floor.frontier; when only lower models have quota it returns none with needs_user_decision and next_reset instead of downgrading",
+        "A scoring.ability_floor or scoring.route_ability_floor value in accounts-override.json changes the installed CLI's plan",
+        "A model row's fixed_effort (Grok Bot) is the scored effort and its routed bundle carries no effort",
+        "The free-usage bonus applies only on the account public data declares it for (Dot), not on another free account running the same model",
+        "A Magpie pool of N accounts forecasts demand against N x 100% (remaining above one account's 100% does not hide other work's draw) and its reset is the members' later reset",
+        "The tray ability-floor chart places every bundle at the installed allocator's ability, save_ability_floors writes only numbers the router then reads, restore_ability_floor_defaults removes them, and AbilityFloorRenderer renders off-screen",
+        "Every check above is run once more against data broken inside the throwaway profile and must fail there"
+      ]
     }
   ]
 }
