@@ -473,41 +473,15 @@ def accounts_override_path(environ=None):
     return Path.home() / '.agent-compass' / 'accounts-override.json'
 
 
-def local_fleet_path(environ=None):
-    """Full account document for this machine, when one has been saved.
-
-    The shipped accounts.json is a neutral template. A file named accounts.local.json in the router
-    state directory replaces it as the base document; the sparse accounts-override.json still applies
-    on top. A pinned override path means this process is a test or another home, so the real machine
-    fleet stays out of it. An explicit load_accounts(path) never comes here.
-    """
+def fleet_document_path(environ=None):
+    """The public accounts.json (the fetched copy when newer than the shipped one). Accounts, plans and capacities
+    come from discovery and public data; personal choices live in accounts-override.json. No machine-local fleet
+    document exists. ROUTER_ACCOUNTS_FILE pins an explicit document for tests and fixtures only."""
     env = os.environ if environ is None else environ
     configured = (env.get('ROUTER_ACCOUNTS_FILE') or '').strip()
-    if configured:
-        path = Path(configured).expanduser()
-        return path if path.is_file() else None
-    # An explicit state directory is the whole router home for this process. Do not fall
-    # through to the real user fleet when that directory has no saved document.
-    state = (env.get('ROUTER_STATE_DIR') or '').strip()
-    if state:
-        candidate = Path(state).expanduser() / 'accounts.local.json'
-        return candidate if candidate.is_file() else None
-    override = (env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
-                  or env.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE') or '').strip()
-    if override:
-        candidate = Path(override).expanduser().parent / 'accounts.local.json'
-        return candidate if candidate.is_file() else None
-    try:
-        candidate = Path.home() / '.agent-compass' / 'accounts.local.json'
-    except (OSError, RuntimeError):
-        return None
-    return candidate if candidate.is_file() else None
-
-
-def fleet_document_path(environ=None):
-    """accounts.local.json when saved, else the public accounts.json (the fetched copy when newer than the shipped one)."""
-    local = local_fleet_path(environ)
-    return local if local is not None else public_data.effective(REFERENCES / 'accounts.json', environ)
+    if configured and Path(configured).expanduser().is_file():
+        return Path(configured).expanduser()
+    return public_data.effective(REFERENCES / 'accounts.json', environ)
 
 
 def configured_quota_sources(environ=None):

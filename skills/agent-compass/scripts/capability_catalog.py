@@ -1,6 +1,6 @@
 """Build capability views from the effective accounts catalogue.
 
-accounts.json is the public source; accounts.local.json may replace that document.
+accounts.json (shipped, or the newer fetched public copy) is the only source.
 Generated JSON/Markdown views are documentation, never another runtime authority.
 """
 import argparse

@@ -254,7 +254,7 @@ class LoaderPrecedenceTests(ChannelCase):
             before = (self.bundled / 'accounts.json').read_bytes()
             local = self.state / 'accounts.local.json'
             write_json(local, json.loads(before.decode('utf-8-sig')))
-            self.assertEqual(allocator.fleet_document_path(), local)  # a saved full fleet replaces the public base
+            self.assertNotEqual(allocator.fleet_document_path(), local)  # no machine-local fleet replaces public data
         self.assertEqual((self.bundled / 'accounts.json').read_bytes(), before)  # fetched data never writes user files
         self.assertEqual(json.loads(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']).read_text(encoding='utf-8')),
                          {'schema_version': 2, 'scoring': {'demand_cv': 0.9}})

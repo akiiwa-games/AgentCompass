@@ -7,7 +7,7 @@ proxies from the environment) into <state dir>/public-data/, verifies every hash
 the fetched set instead of the shipped one only when the set is complete, its schema is one this code reads
 and it was published after the shipped copy. A newer schema is noted and ignored, never half-applied.
 
-Precedence: shipped < fetched < the user's own files. Nothing here writes accounts.local.json,
+Precedence: shipped < fetched < the user's own settings. Nothing here writes
 accounts-override.json or host policy; their loaders layer them on top of whichever set is in effect.
 Shipped references that differ from their own manifest (a checkout with local edits) are used as they are.
 
