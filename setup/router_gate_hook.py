@@ -614,16 +614,19 @@ def check_account_quota_exhausted(
     windows: list[str] | None = None,
     bundles: list[dict] | None = None,
     model: str | None = None,
+    records: list[dict] | tuple[dict, ...] | None = None,
+    exclude_dispatch_id: str | None = None,
+    exclude_agent_id: str | None = None,
 ) -> str | None:
     """Block reason when a window the launch draws refuses it, decided by the router itself.
 
     `bundles` are the target's resolved bundles; without them the launch is probed as `model` on `account`
     (an unknown model draws every window). Which windows bind and when they refuse come from
     allocator.launch_blockers on route_judge.usage_snapshot, the same rules and reading routing uses:
-    the launch floor, a window used up inside its cycle, an empty short window, a scope from data only.
-    `windows` are the quota windows the launch draws, for the confirmed-exhaustion latch (an account-wide
-    latch blocks every launch). When the router modules cannot be loaded only that latch is checked and
-    the gate otherwise allows: it never invents quota rules of its own.
+    the launch floor, a window used up inside its cycle, an empty short window, active in-flight
+    reservations, and a scope from data only. `windows` are the quota windows the launch draws, for the
+    confirmed-exhaustion latch (an account-wide latch blocks every launch). When the router modules cannot
+    be loaded only that latch is checked and the gate otherwise allows: it never invents quota rules of its own.
     """
     if not account:
         return None
@@ -636,7 +639,11 @@ def check_account_quota_exhausted(
     except ImportError:
         exhaustion = None
     if exhaustion is not None and exhaustion.blocked(account, row, windows=windows):
-        return '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear the exhaustion record.'
+        return (
+            '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear '
+            'the exhaustion record. While the owned worker is running, send a control message with completion '
+            f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
+        )
     try:
         allocator = router_module("allocator")
         judge = router_module("route_judge")
@@ -644,10 +651,23 @@ def check_account_quota_exhausted(
         accounts = accounts if accounts is not None else allocator.load_accounts()
         usage = judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
         usage = inventory.merge_usage(usage, accounts, now, names={account})
+        if records is None:
+            try:
+                registry = router_module("dispatch_registry")
+                records = registry.reservations(now=now, read_only=True)
+            except Exception:
+                records = ()
+        if records and (exclude_dispatch_id or exclude_agent_id):
+            records = [
+                r for r in records
+                if not isinstance(r, dict)
+                or ((not exclude_dispatch_id or r.get("dispatch_id") != exclude_dispatch_id)
+                    and (not exclude_agent_id or r.get("agent_id") != exclude_agent_id))
+            ]
         probes = [dict(b, id=b.get("bundle_id") or b.get("id")) for b in bundles or ()] or [
             {"account": account, "model": model or ""}]
         found = [(probe, refusal) for probe in probes
-                 for refusal in allocator.launch_blockers(probe, accounts, usage, now)]
+                 for refusal in allocator.launch_blockers(probe, accounts, usage, now, records=records)]
     except Exception:
         return None
     if not found:
@@ -656,7 +676,8 @@ def check_account_quota_exhausted(
     what = probe.get("id") or probe.get("model") or "?"
     return (
         f"[Router Gate] 拦截向额度不足的窗口派发或续跑任务：{account} 的 {what} 所用窗口 {wid} 不可用（{why}）。"
-        f"路由同样不会选它；请把进展或任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 改派其他可用账号/档位。"
+        "运行中的受控子会话仍可由父会话直接发送控制消息收尾；idle 或运行状态未知的 worker 请先收取已有输出，"
+        f"必要时 cancel_agent，再把进展写进 <task.md> 运行 {ROUTER_CMD} roll --brief <task.md> 改派其他可用账号/档位。"
     )
 
 
@@ -667,26 +688,6 @@ def is_dot_route(row: dict | None) -> bool:
         return True
     bundle = row.get("bundle")
     return isinstance(bundle, dict) and bundle.get("provider") == "dot"
-
-
-def secondary_claude_provider(row: dict | None) -> str | None:
-    if not isinstance(row, dict):
-        return None
-    for key in ("bundle", "selected_bundle"):
-        b = row.get(key)
-        if isinstance(b, dict):
-            for field in ("account", "provider"):
-                val = str(b.get(field) or "")
-                if val.startswith("claude-"):
-                    return val
-    choice = str(row.get("choice") or "")
-    if choice in ("sonnet55_high_2", "opus55_high_2", "opus55_xhigh_2"):
-        return "claude-2"
-    m = re.match(r"^(?:sonnet55|opus55)_(?:high|xhigh)_(.+)$", choice)
-    if m:
-        suf = m.group(1)
-        return "claude-2" if suf == "2" else (suf if suf.startswith("claude-") else f"claude-{suf}")
-    return None
 
 
 def recent_routes(
@@ -754,15 +755,30 @@ def correlation_fields(*sources: dict) -> dict[str, str]:
     return result
 
 
-def route_spec(row: dict) -> dict[str, str]:
-    bundle = row.get("bundle") or row.get("selected_bundle") or {}
-    spec = normalize_launch(bundle if isinstance(bundle, dict) else {})
+def route_spec(row: dict, accounts: dict | None = None) -> dict[str, str]:
+    choice = row.get("choice")
+    catalog_bundle = {}
+    if isinstance(choice, str) and choice and isinstance(accounts, dict):
+        acct, matches = resolve_target({"bundle_id": choice}, accounts)
+        if matches:
+            catalog_bundle = dict(matches[0])
+            if acct and not catalog_bundle.get("account"):
+                catalog_bundle["account"] = acct
+    raw_bundle = row.get("bundle") or row.get("selected_bundle") or {}
+    merged = {
+        **catalog_bundle,
+        **(raw_bundle if isinstance(raw_bundle, dict) else {}),
+    }
+    for key in ("provider", "account", "model", "effort"):
+        val = row.get(key)
+        if isinstance(val, str) and val and not merged.get(key):
+            merged[key] = val
+    spec = normalize_launch(merged)
     if not spec.get("provider"):
-        sec_claude = secondary_claude_provider(row)
         if is_dot_route(row):
             spec["provider"] = "dot"
-        elif sec_claude:
-            spec["provider"] = sec_claude
+        elif isinstance(merged.get("account"), str) and merged["account"]:
+            spec["provider"] = merged["account"]
     return spec
 
 
@@ -778,7 +794,13 @@ def same_launch_value(key: str, requested: str, routed: str | None) -> bool:
     return requested == routed
 
 
-def match_route(rows: list[dict], requested: dict, context: dict, trigger: str) -> tuple[dict | None, str]:
+def match_route(
+    rows: list[dict],
+    requested: dict,
+    context: dict,
+    trigger: str,
+    accounts: dict | None = None,
+) -> tuple[dict | None, str]:
     """Use available correlation, then compare launch fields, without inventing IDs.
 
     A newer decision for the *same identified request* supersedes its old one.
@@ -806,7 +828,7 @@ def match_route(rows: list[dict], requested: dict, context: dict, trigger: str) 
             candidates = candidates[:1]
     mismatches = []
     for _, row in candidates:
-        chosen = route_spec(row)
+        chosen = route_spec(row, accounts)
         differences = [f"{key}: requested={value!r}, routed={chosen.get(key)!r}"
                        for key, value in requested.items() if not same_launch_value(key, value, chosen.get(key))]
         if is_dot_route(row) and trigger != "shell:run_dot_task.py":
@@ -915,14 +937,24 @@ def evaluate_payload(
             docs = {agent_id: load_paseo_agent(agent_id, paseo_agents_dir) for agent_id in agent_ids}
             targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id)
                        for agent_id, doc in docs.items() if isinstance(doc, dict)]
+        dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
         for target in targets:
             account, candidates = resolve_target(target, accounts)
             controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
-            reason = ((None if controlling else check_target_disabled(target, account, candidates, accounts, policy)) or
-                      check_account_quota_exhausted(account or target.get("provider"),
-                                                    usage_cache_path=usage_cache_path, now=now, accounts=accounts,
-                                                    windows=target_windows(candidates, accounts),
-                                                    bundles=candidates, model=target.get("model")))
+            reason = None if controlling else (
+                check_target_disabled(target, account, candidates, accounts, policy)
+                or check_account_quota_exhausted(
+                    account or target.get("provider"),
+                    usage_cache_path=usage_cache_path,
+                    now=now,
+                    accounts=accounts,
+                    windows=target_windows(candidates, accounts),
+                    bundles=candidates,
+                    model=target.get("model"),
+                    exclude_dispatch_id=dispatch_id,
+                    exclude_agent_id=target.get("agent_id"),
+                )
+            )
             if reason:
                 return format_response(False, harness_kind, reason)
         if not trigger:
@@ -958,7 +990,7 @@ def evaluate_payload(
         if not requested.get("provider") and (t_prov in ("claude", "dot") or t_prov.startswith("claude-")):
             requested["provider"] = t_prov
         context = correlation_fields(payload, tool_input, args)
-        row, diagnostic = match_route(rows, requested, context, trigger)
+        row, diagnostic = match_route(rows, requested, context, trigger, accounts=accounts)
         if row is None:
             reason = (f"[Router Gate] 启动参数与有效期内路由不匹配 ({trigger})：{diagnostic}。"
                       "请按本次任务的 router provider/model/effort 启动，或重新运行 roll。"

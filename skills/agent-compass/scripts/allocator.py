@@ -612,8 +612,32 @@ def burn_scale(policy, curves, effort):
     return effort_value(policy, curves, 'burn', effort, reference) / reference
 
 
-# Routing-scale prior for Google AI Ultra 20x (not billed USD); mirrors plan-templates.json antigravity.ultra20.
-AGY_WINDOW_CAPACITY_USD = {'gemini-weekly': 625.0, 'gemini-5h': 182.0, '3p-weekly': 88.0, '3p-5h': 17.6}
+def account_family(spec):
+    if not isinstance(spec, dict):
+        return None
+    family = spec.get('family')
+    if isinstance(family, str) and family.strip():
+        return family.strip().removesuffix('-resilient')
+    for bundle in (spec.get('bundles') or {}).values():
+        if not isinstance(bundle, dict):
+            continue
+        raw = bundle.get('family') or bundle.get('harness') or bundle.get('provider')
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip().removesuffix('-resilient')
+    return None
+
+
+def template_capacity_usd(spec, wid):
+    """Fallback window USD capacity from plan-templates.json when `spec` does not carry `capacity_usd` directly."""
+    family = account_family(spec)
+    if not family:
+        return None
+    plan_key = provider_inventory.configured_plan(family, spec.get('plan')) if isinstance(spec, dict) else ''
+    plan = provider_inventory.plan_defaults(None, family, plan_key) if plan_key else None
+    if plan is None and family not in ('claude', 'codex'):
+        plan = provider_inventory.plan_defaults(None, family, 'default')
+    cap = (plan or {}).get('capacity_usd', {}).get(wid) if isinstance(plan, dict) else None
+    return float(cap) if isinstance(cap, (int, float)) and not isinstance(cap, bool) and cap > 0 else None
 
 
 def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None):
@@ -625,8 +649,8 @@ def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None
     reference = effort_value(policy, curves, 'burn', 'high', 1.0)
     scale = burn_scale(policy, curves, effort)
     capacity, usd = capacity_usd(spec, wid, now or datetime.now(timezone.utc)), (info or {}).get('usd_per_hour')
-    if capacity is None and wid in AGY_WINDOW_CAPACITY_USD and usd is not None:
-        capacity = window_capacity_usd(spec, wid, now)
+    if capacity is None and usd is not None:
+        capacity = template_capacity_usd(spec, wid)
     if capacity and usd:
         return 100 * usd / capacity * scale
     model_rates = (info or {}).get('burn_pct_per_worker_hour') or {}
@@ -675,12 +699,12 @@ def shortage_probability(remaining, mean, sd):
 
 
 def window_capacity_usd(spec, wid, now=None):
-    """API-equivalent USD capacity for a window: explicit `capacity_usd` when set, else the equivalent pool USD derived from
-    the window's standard worker-hour burn prior (`antigravity` gemini-weekly $625, gemini-5h $182, 3p-weekly $88, 3p-5h $17.6)."""
+    """API-equivalent USD capacity for a window: explicit `capacity_usd` when set, else the plan template's
+    `capacity_usd` for the account family, else the equivalent pool USD derived from `burn_pct_per_worker_hour`."""
     explicit = capacity_usd(spec, wid, now or datetime.now(timezone.utc))
     if explicit is not None:
         return explicit
-    derived = AGY_WINDOW_CAPACITY_USD.get(wid)
+    derived = template_capacity_usd(spec, wid)
     if derived is not None:
         return derived
     rate = (spec.get('burn_pct_per_worker_hour') or {}).get(wid)
@@ -1629,16 +1653,19 @@ def below_launch_floor(window, observed, usage_row, now):
     """Existing launch protection, shared by ranking and dispatch."""
     floor = window.get('launch_min_remaining_pct')
     reset = parse_time((observed or {}).get('resets_at'))
-    if floor is not None and (observed or {}).get('rate_limited') is True and reset is not None and reset > now:
+    seconds = (observed or {}).get('seconds_until_reset')
+    active_reset = (reset is not None and reset > now) or (
+        reset is None and isinstance(seconds, (int, float)) and seconds > 0 and (observed or {}).get('reset_time_passed') is not True)
+    if floor is not None and (observed or {}).get('rate_limited') is True and active_reset:
         return True
     fetched = parse_time(usage_row.get('fetched_at'))
-    if (usage_row.get('status') != 'fresh' or usage_row.get('stale') is True or fetched is None
-            or not -60 <= (now - fetched).total_seconds() <= 900):
+    if (usage_row.get('status') != 'fresh' or usage_row.get('stale') is True or usage_row.get('available') is False
+            or ('fetched_at' in usage_row and (fetched is None or not -60 <= (now - fetched).total_seconds() <= 900))):
         return False
     remaining = (observed or {}).get('remaining_pct_before_reset')
-    if isinstance(remaining, (int, float)) and remaining <= 0 and (reset is None or reset > now):
+    if isinstance(remaining, (int, float)) and remaining <= 0 and (reset is None or active_reset):
         return True
-    return bool(floor is not None and reset is not None and reset > now
+    return bool(floor is not None and active_reset
                 and isinstance(remaining, (int, float)) and remaining <= floor)
 
 
@@ -1672,9 +1699,16 @@ def cycle_observation(window, observed, usage_row, now):
 
 def used_up_in_cycle(observed, now):
     """A reading from this cycle (cycle_observation) at 0% left holds until its reset, however old it is."""
-    left = (observed or {}).get('observed_remaining_pct')
-    reset = parse_time((observed or {}).get('resets_at'))
-    return reset is not None and reset > now and isinstance(left, (int, float)) and left <= 0
+    if not observed or observed.get('reset_time_passed') is True:
+        return False
+    left = observed.get('observed_remaining_pct')
+    if left is None:
+        left = observed.get('remaining_pct_before_reset')
+    reset = parse_time(observed.get('resets_at'))
+    seconds = observed.get('seconds_until_reset')
+    active_reset = (reset is not None and reset > now) or (
+        reset is None and isinstance(seconds, (int, float)) and seconds > 0)
+    return active_reset and isinstance(left, (int, float)) and left <= 0
 
 
 def window_refusal(wid, window, observed, usage_row, now, latched=()):
@@ -1695,15 +1729,31 @@ def short_window_limits(spec, wid, policy, now):
             policy.get('small_short_safety_margin_pct', 12) if small else policy.get('safety_margin_pct', 5))
 
 
-def launch_blockers(bundle, accounts, usage, now, latched=None):
+def reserve_inflight(account, spec, wid, wspec, state, records, accounts, policy, now):
+    """Apply active in-flight reservation deduction to a known window state; returns (state, reserved_usd, reserved_pct)."""
+    if not state or not state.get('known') or not records:
+        return state, 0.0, 0.0
+    win_cap_usd = window_capacity_usd(spec, wid, now)
+    reserved_usd = inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records, accounts, policy, now)
+    if reserved_usd > 0 and win_cap_usd:
+        reserved_pct = min(state['remaining'], round(100.0 * reserved_usd / win_cap_usd, 2))
+        state = {**state, 'observed_remaining': state['remaining'],
+                 'remaining': max(0.0, state['remaining'] - reserved_pct),
+                 'reserved_usd': round(reserved_usd, 2)}
+        return state, reserved_usd, reserved_pct
+    return state, 0.0, 0.0
+
+
+def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
     """[(window id, reason)] for windows this bundle draws that stop a launch now, whatever the task's size.
 
     These are the task-independent outcomes of evaluate_bundle for "start now": its exclusions (window_refusal:
     the confirmed-exhaustion latch and the launch floor; a short window with an active reset but no reading) and
     the windows it excludes or defers to their reset, which no task size escapes (a short window at or under its
-    floor; a priced window at or under the safety margin; a window this cycle's reading shows used up). In-flight
-    reservations, which only lower what is left further, are not counted. `usage` is route_judge.usage_snapshot after
-    provider_inventory.merge_usage; windows the model does not draw (window_scope) never appear.
+    floor; a priced window at or under the safety margin; a window this cycle's reading shows used up). Active
+    in-flight reservations (`records`) are deducted from remaining capacity just as evaluate_bundle deducts them.
+    `usage` is route_judge.usage_snapshot after provider_inventory.merge_usage; windows the model does not draw
+    (window_scope) never appear.
     """
     accounts = accounts if isinstance(accounts, dict) else {}
     spec = (accounts.get('accounts') or {}).get(bundle.get('account'))
@@ -1721,13 +1771,19 @@ def launch_blockers(bundle, accounts, usage, now, latched=None):
     found = []
     for wid, wspec, observed in applicable_windows(spec, model, row, bundle, accounts):
         observed = cycle_observation(wspec, observed, row, now)
+        reset_label = (observed or {}).get('resets_at') or f"in {((observed or {}).get('seconds_until_reset') or 0) / 3600:.1f}h"
         reason = window_refusal(wid, wspec, observed, row, now, latched) or (
-            f"{wid}: used up until its reset at {observed['resets_at']}; start after its reset"
+            f"{wid}: used up until its reset at {reset_label}; start after its reset"
             if used_up_in_cycle(observed, now) else None)
         state = None if reason else window_state(wid, wspec, observed, spec, now, policy.get('short_window_hours', 24),
                                                  account_stale=stale)
+        if state is not None and state['known']:
+            state, _, _ = reserve_inflight(bundle['account'], spec, wid, wspec, state, records, accounts, policy, now)
         if state is None:
             pass
+        elif state['known'] and isinstance(wspec.get('launch_min_remaining_pct'), (int, float)) and state['remaining'] <= float(wspec['launch_min_remaining_pct']):
+            floor = float(wspec['launch_min_remaining_pct'])
+            reason = f"{wid}: confirmed exhausted or below launch floor ({state['remaining']:.0f}% left, floor {floor:g}%); refresh quota or replan"
         elif not state['short']:
             # Priced work needs remaining - need >= safety margin; no task size passes at or under the margin.
             margin = policy.get('safety_margin_pct', 5)
@@ -1738,8 +1794,12 @@ def launch_blockers(bundle, accounts, usage, now, latched=None):
                           f"for {state['reset_hours']:.1f}h")
         elif not state['known']:
             reset = parse_time((observed or {}).get('resets_at'))
-            if reset is not None and reset > now and (observed or {}).get('reset_time_passed') is not True:
-                reason = f'{wid} has an active reset in {(reset - now).total_seconds() / 3600:.1f}h with unknown remaining percentage'
+            seconds = (observed or {}).get('seconds_until_reset')
+            if ((reset is not None and reset > now)
+                    or (reset is None and ((isinstance(seconds, (int, float)) and seconds > 0)
+                                           or (observed or {}).get('reset_time_passed') is False))) and (observed or {}).get('reset_time_passed') is not True:
+                wait = (reset - now).total_seconds() / 3600 if reset is not None else (seconds / 3600 if isinstance(seconds, (int, float)) else 0.0)
+                reason = f'{wid} has an active reset in {wait:.1f}h with unknown remaining percentage'
         elif state['remaining'] <= (floor := short_window_limits(spec, wid, policy, now)[1]):
             reason = (f"{wid} is empty ({state['remaining']:.0f}% left, floor {floor:g}%) "
                       f"for {state['reset_hours']:.1f}h; start after its reset")
@@ -1981,14 +2041,9 @@ def evaluate_bundle(bundle, task, ctx):
                         wait = (reset_dt - now).total_seconds() / 3600
                         exclude(f'{wid} has an active reset in {wait:.1f}h with unknown remaining percentage')
                 continue
-            win_cap_usd = window_capacity_usd(spec, wid, now)
-            reserved_usd = inflight_reserved_usd(bundle['account'], spec, wid, wspec, state, win_cap_usd,
-                                                 ctx.get('records'), accounts, policy, now)
-            if reserved_usd > 0 and win_cap_usd:
-                reserved_pct = min(state['remaining'], round(100.0 * reserved_usd / win_cap_usd, 2))
-                state = {**state, 'observed_remaining': state['remaining'],
-                         'remaining': max(0.0, state['remaining'] - reserved_pct),
-                         'reserved_usd': round(reserved_usd, 2)}
+            state, reserved_usd, reserved_pct = reserve_inflight(
+                bundle['account'], spec, wid, wspec, state, ctx.get('records'), accounts, policy, now)
+            if reserved_usd > 0:
                 result['notes'].append(f'{wid}: -${reserved_usd:.2f} (-{reserved_pct:.1f}%) reserved by in-flight {bundle["account"]} dispatch')
             if state['short']:
                 step = None if unit is None else hours * unit * context_scale

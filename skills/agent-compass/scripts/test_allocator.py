@@ -1363,9 +1363,16 @@ class AllocatorTests(unittest.TestCase):
         spec.pop('capacity_usd', None)
         spec.pop('burn_pct_per_worker_hour', None)
         info = allocator.model_spec(accounts, 'claude-opus-5-5')
-        for wid in ('3p-weekly', '3p-5h', 'gemini-weekly'):
+        template = allocator.provider_inventory.plan_defaults(None, 'antigravity', 'default')['capacity_usd']
+        for wid in ('3p-weekly', '3p-5h', 'gemini-weekly', 'gemini-5h'):
             rate = allocator.unit_rate(spec, wid, 'claude-opus-5-5', 'high', accounts['scoring'], info=info, now=self.now)
-            self.assertAlmostEqual(rate, 100 * info['usd_per_hour'] / allocator.AGY_WINDOW_CAPACITY_USD[wid], places=6)
+            self.assertAlmostEqual(rate, 100 * info['usd_per_hour'] / template[wid], places=6)
+        pro_spec = {**spec, 'plan': 'pro'}
+        pro_template = allocator.provider_inventory.plan_defaults(None, 'antigravity', 'pro')['capacity_usd']
+        for wid in ('3p-weekly', '3p-5h', 'gemini-weekly', 'gemini-5h'):
+            rate = allocator.unit_rate(pro_spec, wid, 'claude-opus-5-5', 'high', accounts['scoring'], info=info, now=self.now)
+            self.assertAlmostEqual(rate, 100 * info['usd_per_hour'] / pro_template[wid], places=6)
+        self.assertFalse(hasattr(allocator, 'AGY_WINDOW_CAPACITY_USD'))
 
 
 class OverrideContractTests(unittest.TestCase):

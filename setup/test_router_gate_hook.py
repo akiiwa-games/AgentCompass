@@ -732,8 +732,13 @@ class RouterGateHookTests(unittest.TestCase):
                 ({'allowed': []}, 0, 'host-policy.json'),
                 ({'accounts': {'claude-lab': {'verified': False}}}, 0, 'verified: false'),
                 ({'accounts': {'claude-lab': {'bundles': {'lab_sonnet55_high': {'disabled': True}}}}}, 0, '档位 lab_sonnet55_high'),
-                ({}, 2_000_000, 'historical_context_tokens=2,000,000/2,000,000')):
+                ({}, 2_000_000, 'historical_context_tokens=2,000,000/2,000,000'),
+                ({}, 0, 'five_hour')):
             self.write_settings(**settings)
+            if cause == 'five_hour':
+                self.exhausted_cache()
+            else:
+                (self.state / 'usage.json').unlink(missing_ok=True)
             with mock.patch.object(allocator, 'session_state', return_value={'context_tokens': tokens}):
                 for label, caller, labels, status, blocked in cases:
                     doc = {'provider': 'claude-lab/claude-sonnet-5-5',
@@ -797,15 +802,41 @@ class RouterGateHookTests(unittest.TestCase):
             'provider': 'claude-lab/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}), encoding='utf-8')
         self.write_settings(allowed=[])
         with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent'}):
-            # Spoofing running state in a launch request cannot bypass account disablement.
+            # Spoofing running state in a launch request cannot bypass account disablement or quota.
             result = gate.evaluate_payload({'tool_name': 'create_agent', 'tool_input': {
                 'provider': 'claude-lab/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}}, now=T0)
             self.assertIn('host-policy.json', result['reason'])
-            for notify, cause in ((False, 'notifyOnFinish: true or omit it'), (True, 'five_hour')):
-                self.exhausted_cache()
-                result = gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input': {
-                    'agentId': wid, 'prompt': 'wrap up', 'notifyOnFinish': notify}}, now=T0)
-                self.assertIn(cause, result['reason'])
+            self.write_settings()
+            self.exhausted_cache()
+            result = gate.evaluate_payload({'tool_name': 'create_agent', 'tool_input': {
+                'provider': 'claude-lab/claude-sonnet-5-5', 'labels': labels, 'lastStatus': 'running'}}, now=T0)
+            self.assertIn('five_hour', result['reason'])
+            # notifyOnFinish: false is still blocked even on a running owned worker.
+            result = gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input': {
+                'agentId': wid, 'prompt': 'wrap up', 'notifyOnFinish': False}}, now=T0)
+            self.assertIn('notifyOnFinish: true or omit it', result['reason'])
+            # Control message with completion notifications enabled skips quota on a running owned worker,
+            # including when the account's confirmed-exhaustion latch is set.
+            exhaustion = gate.router_module('quota_exhaustion')
+            exhaustion.record('claude-lab', 'Individual quota reached', windows=['five_hour'])
+            self.addCleanup(exhaustion.clear, 'claude-lab')
+            result = gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input': {
+                'agentId': wid, 'prompt': 'wrap up', 'notifyOnFinish': True}}, now=T0)
+            self.assertNotIn('reason', result)
+            # Idle, unknown-state, or non-owned workers remain blocked by quota on the same message.
+            for caller, state in (
+                ('parent', {'lastStatus': 'idle'}),
+                ('parent', {}),
+                ('other', {'lastStatus': 'running'}),
+            ):
+                (self.state / 'agents' / 'project' / (wid + '.json')).write_text(json.dumps({
+                    'provider': 'claude-lab/claude-sonnet-5-5', 'labels': labels, **state}), encoding='utf-8')
+                with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': caller}):
+                    result = gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input': {
+                        'agentId': wid, 'prompt': 'wrap up', 'notifyOnFinish': True}}, now=T0)
+                self.assertIn('reason', result)
+                self.assertIn('cancel_agent', result['reason'])
+                self.assertIn('roll --brief', result['reason'])
 
     def quota_cache(self, rows):
         path = self.state / "usage.json"
@@ -821,10 +852,16 @@ class RouterGateHookTests(unittest.TestCase):
         directory = self.state / "agents" / "project"
         directory.mkdir(parents=True, exist_ok=True)
         agent_id = "33333333-3333-4333-8333-333333333333"
-        (directory / (agent_id + ".json")).write_text(json.dumps({
-            "provider": provider, "lastStatus": status, "labels": {
+        doc = {
+            "provider": provider,
+            "labels": {
                 "router.parent_id": "parent", "paseo.parent-agent-id": "parent",
-                "router.account": account, "router.bundle_id": bundle_id}}), encoding="utf-8")
+                "router.account": account, "router.bundle_id": bundle_id,
+            },
+        }
+        if status is not None:
+            doc["lastStatus"] = status
+        (directory / (agent_id + ".json")).write_text(json.dumps(doc), encoding="utf-8")
         return agent_id
 
     def test_antigravity_third_party_exhaustion_blocks_only_models_that_draw_it(self):
@@ -835,13 +872,20 @@ class RouterGateHookTests(unittest.TestCase):
         for bundle_id, blocked in (("argon_high", False), ("flash_high", False),
                                    ("agy_opus55_low", True), ("agy_sonnet55_high", True)):
             agent_id = self.owned_worker("antigravity", bundle_id, "antigravity-resilient")
-            for caller, status in (("parent", "running"), ("parent", "idle"), ("other", "running")):
+            for caller, status, is_control in (
+                ("parent", "running", True),
+                ("parent", "idle", False),
+                ("parent", None, False),
+                ("other", "running", False),
+            ):
                 self.owned_worker("antigravity", bundle_id, "antigravity-resilient", status)
-                with self.subTest(bundle=bundle_id, caller=caller, status=status),                         mock.patch.dict(os.environ, {"PASEO_AGENT_ID": caller}):
+                expect_blocked = False if is_control else blocked
+                with self.subTest(bundle=bundle_id, caller=caller, status=status), \
+                        mock.patch.dict(os.environ, {"PASEO_AGENT_ID": caller}):
                     result = gate.evaluate_payload({"tool_name": "send_agent_prompt", "tool_input": {
                         "agentId": agent_id, "prompt": "wrap up"}}, now=T0)
-                    self.assertEqual("reason" in result, blocked, result)
-                    if blocked:
+                    self.assertEqual("reason" in result, expect_blocked, result)
+                    if expect_blocked:
                         self.assertIn("3p-weekly", result["reason"])
             ledger = self.write_ledger(str(self.state), [self.route("antigravity-resilient", "gemini-4-argon-high")])
             launch = {"tool_name": "create_agent", "tool_input": {
@@ -894,6 +938,58 @@ class RouterGateHookTests(unittest.TestCase):
             with self.subTest(fetched=fetched):
                 self.assertEqual(gate.check_account_quota_exhausted(
                     "codex", cache, T0, model="gpt-6.1-sol") is not None, blocked)
+
+    def test_route_spec_resolves_account_from_ledger_or_bundle_catalog_without_name_inference(self):
+        self.assertFalse(hasattr(gate, "secondary_claude_provider"))
+        accounts, _ = gate.load_dispatch_settings()
+        # Choice resolved from catalog when ledger row carries only choice
+        spec = gate.route_spec({"choice": "lab_sonnet55_high"}, accounts)
+        self.assertEqual(spec["provider"], "claude-lab")
+        self.assertEqual(spec["model"], "claude-sonnet-5-5")
+        self.assertEqual(spec["effort"], "high")
+        # Arbitrary account resolved from ledger bundle without claude-2 suffix guessing
+        custom = gate.route_spec(
+            {"choice": "custom_worker", "bundle": {"account": "team-east", "model": "claude-sonnet-5-5", "effort": "high"}},
+            accounts,
+        )
+        self.assertEqual(custom["provider"], "team-east")
+        # Unrecognized choice with no bundle or catalog match does not invent claude-2
+        unknown = gate.route_spec({"choice": "sonnet55_high_2"}, accounts)
+        self.assertNotIn("provider", unknown)
+
+    def test_quota_gate_counts_other_inflight_reservations_like_routing(self):
+        # Antigravity 3p-weekly ($88 on default Ultra 20x) at 93% used has 7% left (> 5% safety margin).
+        # An active $2.64 reservation (~3%) from another dispatch brings remaining to 4% (<= 5% margin).
+        cache = self.quota_cache({"antigravity": {"windows": [
+            self.window("gemini-weekly", 10, 100),
+            self.window("gemini-5h", 10, 4),
+            self.window("3p-weekly", 93.0, 100),
+            self.window("3p-5h", 10, 4),
+        ]}})
+        accounts, _ = gate.load_dispatch_settings()
+        _, candidates = gate.resolve_target({"bundle_id": "agy_opus55_high"}, accounts)
+        other_record = {
+            "stage": "dispatch",
+            "dispatch_id": "other-dispatch",
+            "state": "started",
+            "at": T0.isoformat(),
+            "lease_until": (T0 + dt.timedelta(minutes=10)).isoformat(),
+            "choice": "agy_opus55_high",
+            "bundle": {"account": "antigravity", "provider": "antigravity-resilient", "model": "claude-opus-5-5", "effort": "high"},
+            "expected_usd": 2.64,
+        }
+        # Without the in-flight reservation, 7% > 5% safety margin is allowed.
+        self.assertIsNone(gate.check_account_quota_exhausted(
+            "antigravity", cache, T0, accounts=accounts, bundles=candidates, records=()))
+        # With another dispatch's active reservation, remaining drops to 4% <= 5% and is blocked.
+        reason = gate.check_account_quota_exhausted(
+            "antigravity", cache, T0, accounts=accounts, bundles=candidates, records=[other_record])
+        self.assertIsNotNone(reason)
+        self.assertIn("3p-weekly", reason)
+        # A dispatch's own reservation is excluded when claiming that dispatch itself.
+        self.assertIsNone(gate.check_account_quota_exhausted(
+            "antigravity", cache, T0, accounts=accounts, bundles=candidates,
+            records=[other_record], exclude_dispatch_id="other-dispatch"))
 
     def test_without_router_modules_only_the_latch_is_checked(self):
         cache = self.quota_cache({"claude": {"windows": [self.window("five_hour", 100)]}})

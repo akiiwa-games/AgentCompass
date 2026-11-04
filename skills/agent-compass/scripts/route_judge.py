@@ -811,49 +811,33 @@ def build_request(stage, document, cache=None, now=None):
     state['usage'] = usage_snapshot(cache, accounts, now)
     if stage == 'select':
         allocator = None
-        acc_defs = {}
         loaded_accounts = {}
+        merged_usage = state['usage']
+        now_dt = now or datetime.now(timezone.utc)
+        records = ()
         try:
             allocator = load_allocator()
             loaded_accounts = allocator.load_accounts()
-            acc_defs = loaded_accounts.get('accounts') or {}
+            now_dt = allocator.parse_time((state['usage'] or {}).get('observed_at')) or now_dt
+            merged_usage = provider_inventory.merge_usage(state['usage'], loaded_accounts, now_dt)
+            records = dispatch_flow.reservation_records(read_only=True)
         except Exception:
             allocator = None
-            acc_defs = {}
             loaded_accounts = {}
 
         def _candidate_quota_exhausted(key, cand):
-            acc = cand.get('account') or ''
-            row = (state['usage'].get('accounts') or {}).get(acc)
-            if not isinstance(row, dict) or (row.get('status') != 'fresh' and not row.get('rate_limited_until')):
+            if allocator is None:
                 return False
-            acc_spec = acc_defs.get(acc) or {}
-            win_defs = acc_spec.get('windows') or {}
-            probe = {'account': acc, 'provider': cand.get('provider'), 'model': cand.get('model') or '', 'id': key}
-            if isinstance(cand.get('draws'), list):
-                probe['draws'] = list(cand['draws'])
-            pools = []
-            if allocator is not None:
-                try:
-                    pools = allocator.bundle_pools(probe, loaded_accounts or {'accounts': acc_defs})
-                except Exception:
-                    pools = []
-            for w in applicable_windows(row, cand.get('model') or '', acc_spec):
-                if w.get('reset_time_passed') is True:
-                    continue
-                rem = w.get('remaining_pct_before_reset')
-                if rem is None:
-                    continue
-                wid = allocator.canonical_window_id(acc_spec, w.get('id')) if allocator is not None else w.get('id')
-                if pools and wid not in pools:
-                    continue
-                w_spec = win_defs.get(wid) if isinstance(win_defs, dict) else None
-                floor = (w_spec or {}).get('launch_min_remaining_pct')
-                if floor is None:
-                    floor = 5
-                if rem <= floor:
-                    return True
-            return False
+            acc = cand.get('account') or ''
+            probe = {
+                'id': key,
+                'account': acc,
+                'provider': cand.get('provider'),
+                'model': cand.get('model') or '',
+                'effort': cand.get('effort'),
+                **({'draws': list(cand['draws'])} if isinstance(cand.get('draws'), list) else {}),
+            }
+            return bool(allocator.launch_blockers(probe, loaded_accounts, merged_usage, now_dt, records=records))
 
         quota_excluded = [k for k, v in state['candidates'].items() if _candidate_quota_exhausted(k, v)]
         if quota_excluded:
@@ -1697,6 +1681,12 @@ def scorer_test(config, objective=None, timeout=SCORER_TIMEOUT_SECONDS):
             'derived_kind': allocator.profile_kind(profile, allocator.load_accounts()['scoring']) if profile else None}
 
 
+def judge_account_blocked(acc, base, fleet, usage, now):
+    allocator = load_allocator()
+    probe = {'account': acc, 'provider': base.get('provider') or acc, 'model': base['model'], 'effort': base.get('effort')}
+    return bool(allocator.launch_blockers(probe, fleet, usage, now))
+
+
 def resolve_judge(kind, usage, availability=None):
     base = dict(JUDGES[kind])
     if kind != 'sonnet':
@@ -1705,9 +1695,14 @@ def resolve_judge(kind, usage, availability=None):
     if not isinstance(accounts, dict):
         return base
     try:
-        fleet = load_allocator().load_accounts()
+        allocator = load_allocator()
+        fleet = allocator.load_accounts()
+        now = allocator.parse_time((usage or {}).get('observed_at')) or datetime.now(timezone.utc)
+        merged_usage = provider_inventory.merge_usage(usage, fleet, now)
     except Exception:
         fleet = {}
+        now = datetime.now(timezone.utc)
+        merged_usage = usage
     acc_defs = fleet.get('accounts') or {}
     inventory = fleet.get('_discovery') or provider_inventory.current()
     claudes = [acc for acc in accounts
@@ -1719,24 +1714,11 @@ def resolve_judge(kind, usage, availability=None):
     def _health(acc):
         if not host_policy.judge_allowed(availability, 'sonnet', acc):
             return (2, True, float('inf'))
+        if judge_account_blocked(acc, base, fleet, merged_usage, now):
+            return (2, True, float('inf'))
         row = accounts.get(acc) or {}
         windows = binding_windows(row, base['model'], acc_defs.get(acc))
         known = [w for w in windows if w.get('remaining_pct_before_reset') is not None]
-        if any(w['remaining_pct_before_reset'] == 0 for w in known):
-            return (2, True, float('inf'))
-        win_defs = (acc_defs.get(acc) or {}).get('windows') or {}
-        if provider_inventory.account_family(acc, fleet, inventory) == 'claude':
-            if any(w.get('id') in ('five_hour', '5h') and w.get('reset_time_passed') is False
-                   and w.get('remaining_pct_before_reset') is None for w in windows):
-                return (2, True, float('inf'))
-            for w in known:
-                wid = 'five_hour' if w.get('id') in ('five_hour', '5h') else str(w.get('id') or '')
-                w_spec = win_defs.get(wid) if isinstance(win_defs, dict) else None
-                floor = (w_spec or {}).get('launch_min_remaining_pct')
-                if floor is None:
-                    floor = LOW_REMAINING_PCT
-                if w['remaining_pct_before_reset'] <= floor:
-                    return (2, True, float('inf'))
         low = any(w['remaining_pct_before_reset'] <= LOW_REMAINING_PCT for w in known)
         reset = min((w['seconds_until_reset'] for w in known), default=float('inf'))
         return (1 if low else 0, not bool(known), reset)
@@ -1760,6 +1742,15 @@ def judge_order(usage, requested):
         if not host_policy.judge_allowed(availability, requested, spec['account']):
             raise host_policy.HostPolicyError(f'Judge {requested} is excluded by host policy; continue feasible Self work.')
         return [requested]
+    try:
+        allocator = load_allocator()
+        fleet = allocator.load_accounts()
+        now = allocator.parse_time((usage or {}).get('observed_at')) or datetime.now(timezone.utc)
+        merged_usage = provider_inventory.merge_usage(usage, fleet, now) if isinstance(usage, dict) else usage
+    except Exception:
+        fleet = {}
+        now = datetime.now(timezone.utc)
+        merged_usage = usage
     ranked = []
     for kind in ('codex', 'sonnet'):
         spec = resolve_judge(kind, usage, availability)
@@ -1767,11 +1758,11 @@ def judge_order(usage, requested):
             continue
         if not host_policy.judge_allowed(availability, kind, spec['account']):
             continue
-        row = usage.get('accounts', {}).get(spec['account'], {})
+        if isinstance(usage, dict) and judge_account_blocked(spec['account'], spec, fleet, merged_usage, now):
+            continue
+        row = usage.get('accounts', {}).get(spec['account'], {}) if isinstance(usage, dict) else {}
         windows = binding_windows(row, spec['model'], judge_account_spec(spec['account']))
         known = [w for w in windows if w.get('remaining_pct_before_reset') is not None]
-        if any(w['remaining_pct_before_reset'] == 0 for w in known):
-            continue
         # Only a tiny judgment: prefer fresh, usable observations then the earlier reset.
         # Do not numerically compare provider percentages or estimate token capacity from them.
         # The one threshold is a health floor: a nearly empty account judges only after the others.
@@ -1949,9 +1940,8 @@ def record_constraint(args, task=None):
         raise ValueError(discovered['discovery_unavailable'])
     disabled_match = match_bundle(allocator, accounts, args, include_disabled=True) if chosen is None else None
     if disabled_match is not None:
-        disabled_info = allocator.bundles(accounts)[disabled_match]
         raise ValueError(
-            f"Bundle {disabled_match!r} ({args.account}/{args.model}) is disabled: {disabled_info.get('disabled')}. "
+            f"Bundle {disabled_match!r} ({args.account}/{args.model}) is disabled. "
             f"Do not dispatch {args.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
         )
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
@@ -1960,35 +1950,23 @@ def record_constraint(args, task=None):
             f"Account {args.account!r} is restricted to allowed_cwd {acc_spec.get('allowed_cwd')!r} "
             f"and cannot be dispatched from the current working directory."
         )
-    acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
     # External runners dispatch directly after record; apply the same registered
     # window protection used by prepared dispatches.
-    quota_bundle = {**discovered, 'account': args.account, 'provider': args.provider, 'model': args.model}
+    quota_bundle = {**discovered, 'account': args.account, 'provider': args.provider, 'model': args.model, 'effort': args.effort}
     if chosen:
         quota_bundle['id'] = chosen
         quota_bundle.setdefault('bundle_id', chosen)
     dispatch_registry.check_launch_quota(quota_bundle, accounts, usage, now)
-    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until'):
-        pools = allocator.bundle_pools(quota_bundle, accounts)
-        for w in applicable_windows(acc_usage, args.model, acc_spec):
-            if w.get('reset_time_passed') is True:
-                continue
-            rem = w.get('remaining_pct_before_reset')
-            if rem is None:
-                continue
-            wid = allocator.canonical_window_id(acc_spec, w.get('id'))
-            if pools and wid not in pools:
-                continue
-            win_spec = (acc_spec.get('windows') or {}).get(wid) or {}
-            floor = win_spec.get('launch_min_remaining_pct')
-            if floor is None:
-                floor = 2
-            if rem <= floor:
-                raise ValueError(
-                    f"Account {args.account!r} window {w.get('id')!r} is exhausted or below safety floor "
-                    f"({w.get('used_pct')}% used, {rem}% remaining, resets at {w.get('resets_at')}). "
-                    f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
-                )
+    acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
+    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until') or allocator.latched_windows(accounts, args.account):
+        blockers = allocator.launch_blockers(
+            quota_bundle, accounts, usage, now, records=dispatch_flow.reservation_records(read_only=True))
+        if blockers:
+            wid, reason = blockers[0]
+            raise ValueError(
+                f"Account {args.account!r} window {wid!r} is exhausted or below safety floor ({reason}). "
+                f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
+            )
     c_model = allocator.canonical(args.model, accounts)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:

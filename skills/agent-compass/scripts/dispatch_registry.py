@@ -245,7 +245,8 @@ def launch_request(bundle, launch):
 def active_records(connection, now):
     return [{'stage': 'dispatch', 'dispatch_id': r['dispatch_id'], 'state': r['state'],
              'at': r['created_at'], 'lease_until': r['lease_until'], 'choice': r['bundle']['bundle_id'],
-             'bundle': r['bundle'], 'expected_usd': r['expected_usd'], 'usage': r['usage']}
+             'bundle': r['bundle'], 'expected_usd': r['expected_usd'], 'usage': r['usage'],
+             **({'agent_id': r['agent_id']} if r.get('agent_id') else {})}
             for r in rows(connection, 'dispatches')
             if r['state'] in ACTIVE and parse(r['lease_until']) > now]
 

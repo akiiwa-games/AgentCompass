@@ -16,9 +16,9 @@ Codex rollouts carry the account's own rate-limit percentage on every call, so C
 source. Claude logs have no percentage; its windows come from the usage-cache samples taken while this runs.
 Pi sessions signed in to ChatGPT (provider openai-codex) spend the Codex account's allowance, so their calls are
 counted as Codex worker time; Pi calls to other providers are skipped.
-Antigravity (Gemini Flash and the third-party pool) keeps one SQLite database per conversation; every step has
-timestamps, so each conversation is an agent and its active time is agent-hours. Windows named gemini-* are
-charged only the Gemini models' hours and 3p-* windows only the others.
+Antigravity keeps one SQLite database per conversation; every step has timestamps, so each conversation is an
+agent and its active time is agent-hours. Which quota windows a model draws is declared in the account and plan
+window-scope data (`models` / `models_except`), not inferred here from window names.
 A worker-hour is one session actively running for one hour: the time between consecutive calls, with any gap
 longer than ACTIVE_GAP_SECONDS counted as idle. Nothing here decides a route; policy lives in the allocator.
 
