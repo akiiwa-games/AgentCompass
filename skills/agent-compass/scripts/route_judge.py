@@ -1570,7 +1570,7 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         return allocator.validate_profile(task['profile']), {'source': 'caller_profile', 'model': None}
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
-    reason, attempts = 'model_call_skipped', []
+    reason, attempts, skipped = 'model_call_skipped', [], []
     policy = host_policy.load_policy() if use_model else None
     if use_model:
         cache_key = score_cache_key(task, allocator, capabilities, order, config)
@@ -1580,11 +1580,17 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         input_error = None
         for scorer_type in order:
             # Every usable account of the family in turn; none (no account, client or key) skips it without an error.
-            for account in scorer_accounts(scorer_type, policy=policy):
+            # `skipped` only explains an absence (e.g. to the tray's scorer test); it is not a failure.
+            accounts = scorer_accounts(scorer_type, policy=policy)
+            if not accounts:
+                skipped.append({'scorer_type': scorer_type,
+                                'detail': f'No ready {SCORER_FAMILIES.get(scorer_type)} account on this host.'})
+            for account in accounts:
                 started = time.monotonic()
                 try:
                     profile, provider, model = run_scorer(scorer_type, task, allocator, capabilities, timeout, config, account)
-                except ScorerUnavailable:
+                except ScorerUnavailable as exc:
+                    skipped.append({'scorer_type': scorer_type, 'detail': str(exc)})
                     break
                 except SCORER_ERRORS as exc:
                     # Never echo CLI output or response bodies; the type (and our own fixed text) tells the cause.
@@ -1597,7 +1603,7 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
                         input_error = input_error or exc
                     continue
                 meta = {'source': 'system_one', 'scorer_type': scorer_type, 'provider': provider, 'model': model,
-                        **({'account': account} if account else {}),
+                        **({'account': account} if account else {}), **({'skipped': skipped} if skipped else {}),
                         'duration_ms': int((time.monotonic() - started) * 1000)}
                 if attempts:
                     meta.update(configured_scorer=configured, fallback_reason=attempts[0]['error_type'], attempts=attempts)
@@ -1613,6 +1619,9 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         meta['attempts'] = attempts
         if attempts[0].get('detail'):
             meta['fallback_detail'] = attempts[0]['detail']
+    if skipped:
+        meta['skipped'] = skipped
+        meta.setdefault('fallback_detail', skipped[0]['detail'])
     return None, meta
 
 
