@@ -995,6 +995,14 @@ class AbilityFloorRenderer:
             clears_parts.append(f"{_tr(DIFFICULTY_SHORT[d])}({floors.get(d, 0):.2f}):{state_str}")
         clears_line = _tr("门槛达标：") + "   ".join(clears_parts)
 
+        # Widen the card to its longest fixed line (the clears line runs past the base width in Chinese),
+        # never past the plot area.
+        widest = max(
+            tdraw.textbbox((0, 0), text, font=font)[2]
+            for text, font in ((title, f_head), (status_line, f_bold_sm), (eff_line, f_body), (clears_line, f_body))
+        )
+        card_w = min(max(card_w, widest + 2 * pad), plot_right - plot_left - int(round(24 * k)))
+
         basis_raw = m.get("basis") or _tr("公开基准校准数据")
         basis_lines = _wrap_text(tdraw, _tr("依据：") + basis_raw, f_body, card_w - 2 * pad, max_lines=3)
 
