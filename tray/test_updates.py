@@ -314,5 +314,22 @@ class UpdateAllTests(UpdateTestCase):
         gemini.assert_called_once()
 
 
+class PluginTagTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.directory.cleanup)
+        self.upstream = Upstream(Path(self.directory.name), "plugin", template=TEMPLATES["dot"])
+
+    def test_a_tag_upstream_re_pointed_does_not_block_the_update_check(self):
+        # The clone kept a release tag from before upstream rewrote its history; upstream's tag of the same name
+        # now points elsewhere.
+        git(self.upstream.clone, "tag", "-a", "v1.0", "-m", "old v1.0")
+        self.upstream.publish("src/app.py", "print(2)\n")
+        git(self.upstream.pusher, "tag", "v1.0")
+        git(self.upstream.pusher, "push", "-q", "origin", "v1.0")
+        self.assertEqual(updates.behind(self.upstream.clone), 1)
+        self.assertEqual(git(self.upstream.clone, "rev-parse", "v1.0^{commit}"), git(self.upstream.pusher, "rev-parse", "HEAD"))
+
+
 if __name__ == "__main__":
     unittest.main()

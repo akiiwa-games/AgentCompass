@@ -75,7 +75,9 @@ def version(root: Path) -> str:
 
 def behind(root: Path) -> int:
     """How many commits upstream has that this clone lacks, after fetching."""
-    git(root, "fetch", "--tags", "origin", timeout=180)
+    # Upstream tags win: a plugin clone is not where tags are made, and a tag upstream re-pointed (a rewritten
+    # history) would otherwise be rejected as "would clobber existing tag" on every update from then on.
+    git(root, "fetch", "--tags", "--force", "origin", timeout=180)
     return int(git(root, "rev-list", "--count", "HEAD..@{upstream}"))
 
 
