@@ -81,6 +81,7 @@
       "harness": "packaging/foreign_machine_check.py::verify_f07_stranger_topologies",
       "behaviors": [
         "Across only-Claude, only-Codex, Magpie-Claude, agy-not-signed-in, no-Paseo, and Paseo custom CLAUDE_CONFIG_DIR + 2-hop extends chain profiles, setup writes rules/skills/hooks to the exact set of homes provider_inventory.discover() finds",
+        "Each Claude/Codex home keeps its own settings (model, effortLevel, env) when setup adds the gate hook, and uninstall restores them unchanged",
         "agentcompass uninstall --yes removes every setup-created file and restores pre-existing files unchanged",
         "Re-running setup --yes --hooks after a previously managed custom home is retired cleans up its managed doc/hook/skill link and drops it from setup-manifest.json",
         "only-Claude and only-Codex profiles classify and route cleanly without Paseo or API keys"

@@ -1534,12 +1534,23 @@ def verify_f07_stranger_topologies(ctx: dict):
              ov_agy)
 
     # 5. Paseo provider with a custom CLAUDE_CONFIG_DIR and 2-hop extends chain (team-anthropic -> claude-base -> claude)
+    #    Also give primary ~/.claude and secondary custom_claude_dir distinct model/effortLevel/env in settings.json
+    #    to verify that setup adds the gate hook without clobbering the second home's settings, and uninstall restores both.
     box_paseo = make_profile(ctx, "f07-paseo-extends")
     sign_in_codex(box_paseo)
+    box_paseo.claude.mkdir(parents=True, exist_ok=True)
+    (box_paseo.claude / "settings.json").write_text(
+        json.dumps({"model": "opus[1m]", "effortLevel": "high", "env": {"A": "1"}}, indent=2),
+        encoding="utf-8",
+    )
     custom_claude_dir = box_paseo.home / ".custom-claude-team"
     custom_claude_dir.mkdir(parents=True, exist_ok=True)
     (custom_claude_dir / ".credentials.json").write_text(
         json.dumps({"claudeAiOauth": {"accessToken": "foreign-team-claude-token", "subscriptionType": "max"}}),
+        encoding="utf-8",
+    )
+    (custom_claude_dir / "settings.json").write_text(
+        json.dumps({"model": "opus", "effortLevel": "medium", "env": {"B": "2"}}, indent=2),
         encoding="utf-8",
     )
     paseo_dir = box_paseo.home / ".paseo"
@@ -1566,24 +1577,37 @@ def verify_f07_stranger_topologies(ctx: dict):
         {box_paseo.codex, box_paseo.claude, custom_claude_dir},
     )
 
-    # 6. Old-manifest upgrade: when a previously managed custom home (custom_claude_dir) is retired from .paseo/config.json,
-    #    re-running setup --yes --hooks removes its managed doc, hook, and skill link and drops it from setup-manifest.json
+    # 6. Secondary Claude home settings survival + Old-manifest upgrade:
+    #    - Verify that setup --yes --hooks preserves custom_claude_dir's own model/effortLevel/env alongside the gate hook
+    #    - When custom_claude_dir is retired from .paseo/config.json and removed, re-running setup --yes --hooks cleans up
+    #      its managed doc, hook, and skill link and drops it from setup-manifest.json
     run_in_box(box_paseo, op, [box_paseo.agentcompass, "setup", "--yes", "--hooks"], env_paseo)
+    primary_settings = json.loads((box_paseo.claude / "settings.json").read_text(encoding="utf-8"))
+    second_settings = json.loads((custom_claude_dir / "settings.json").read_text(encoding="utf-8"))
+    op.check(
+        "[secondary-settings] a second Claude home's model/effortLevel/env survive setup --yes --hooks alongside the gate hook",
+        (primary_settings.get("model"), primary_settings.get("effortLevel"), primary_settings.get("env")) == ("opus[1m]", "high", {"A": "1"})
+        and (second_settings.get("model"), second_settings.get("effortLevel"), second_settings.get("env")) == ("opus", "medium", {"B": "2"})
+        and "router_gate_hook.py" in json.dumps(primary_settings.get("hooks"))
+        and "router_gate_hook.py" in json.dumps(second_settings.get("hooks")),
+        {"primary": primary_settings, "second": second_settings},
+    )
     (paseo_dir / "config.json").write_text(json.dumps({"daemon": {}, "agents": {"providers": {}}}, indent=2), encoding="utf-8")
     r_upgrade = run_in_box(box_paseo, op, [box_paseo.agentcompass, "setup", "--yes", "--hooks"], env_paseo)
     manifest_up = json.loads((box_paseo.state / "setup-manifest.json").read_text(encoding="utf-8"))
     up_doc_homes = {_canonical_target_home(Path(k), box_paseo.home) for k in (manifest_up.get("docs") or {})}
     up_hook_homes = {_canonical_target_home(Path(k), box_paseo.home) for k in (manifest_up.get("hooks") or {})}
     retired_pos = custom_claude_dir.resolve().as_posix()
+    retired_settings_after = json.loads((custom_claude_dir / "settings.json").read_text(encoding="utf-8"))
     op.check(
-        "[manifest-upgrade] retiring a custom home from discovery cleans up its managed doc/hook/skill and removes it from setup-manifest.json",
+        "[manifest-upgrade] retiring a custom home from discovery cleans up its managed doc/hook/skill, restores its settings.json, and removes it from setup-manifest.json",
         r_upgrade.returncode == 0
         and retired_pos not in up_doc_homes
         and retired_pos not in up_hook_homes
         and not (custom_claude_dir / "CLAUDE.md").exists()
-        and not (custom_claude_dir / "settings.json").exists()
+        and retired_settings_after == {"model": "opus", "effortLevel": "medium", "env": {"B": "2"}}
         and not (custom_claude_dir / "skills").exists(),
-        {"up_doc_homes": sorted(up_doc_homes), "up_hook_homes": sorted(up_hook_homes)},
+        {"up_doc_homes": sorted(up_doc_homes), "up_hook_homes": sorted(up_hook_homes), "retired_settings_after": retired_settings_after},
     )
 
 
