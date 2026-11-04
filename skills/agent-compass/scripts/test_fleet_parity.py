@@ -118,6 +118,40 @@ class CleanInstallParityTests(unittest.TestCase):
         self.assertEqual((merged['safety_margin_pct'], merged['unlimited_bonus']), (7, 0.18))
         self.assertEqual(merged['profile']['subjective']['weight'], 0.49)
 
+    def test_discovered_models_default_from_public_data_alone(self):
+        snap = snapshot()
+        advertised = {'claude': ['claude-opus-5-5', 'claude-opus-4-8', 'claude-haiku-4-5', 'claude-haiku-5-5', 'claude-opus-9-1'],
+                      'codex': ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna', 'gpt-6-sol', 'gpt-5.6-terra'],
+                      'grok': ['grok-4.7', 'grok-4.7-build-fast', 'grok-4.6']}
+        for name, models in advertised.items():
+            snap['accounts'][name]['models'] = models
+        accounts = inventory.apply(shipped_template(), snap)
+        superseded = shipped_template()['superseded']
+        auto = {(b['provider'], b['launch_model']): b['disabled'] for spec in accounts['accounts'].values()
+                for b in spec['bundles'].values() if b.get('auto')}
+        self.assertTrue(auto)
+        for (provider, model), disabled in auto.items():
+            with self.subTest(provider=provider, model=model):
+                self.assertEqual(disabled, model in superseded)
+        self.assertEqual({m for (_, m), off in auto.items() if off},
+                         {'claude-opus-4-8', 'claude-haiku-4-5', 'gpt-6-sol', 'gpt-5.6-terra', 'grok-4.6'})
+        self.assertFalse(auto['claude', 'claude-opus-9-1'])  # newer than the data: checked
+
+    def test_free_usage_bonus_needs_a_calibrated_sufficient_model(self):
+        snap = snapshot()
+        # Unknown to the data (generic prior) and an estimated public row: both checked, neither earns the bonus.
+        snap['accounts']['opencode']['models'] = ['opencode/zzz-new-free', 'opencode/nemotron-3.5-super-vl-free']
+        accounts = inventory.apply(shipped_template(), snap)
+        task = {'objective': 'Fix a failing unit test', 'work_kind': 'general_implementation', 'difficulty': 'routine',
+                'hours': 1, 'needs': {'local_only': True}}
+        decision = allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
+                                  accounts=accounts, overrides=[], host_policy_config=None)
+        for bid in ('auto:opencode:opencode:zzz-new-free', 'auto:opencode:opencode:nemotron-3.5-super-vl-free'):
+            free = next(c for c in decision['ranking'] if c['id'] == bid)
+            self.assertFalse(free['excluded'], bid)
+            self.assertNotIn('free_usage', free['components'], bid)
+            self.assertNotEqual(decision['choice'], bid)
+
     def test_template_stays_free_of_personal_choices(self):
         document = shipped_template()
         bundles = [b for spec in document['accounts'].values() for b in spec.get('bundles', {}).values()]

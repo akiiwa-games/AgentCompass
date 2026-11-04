@@ -1,8 +1,10 @@
-"""Contract: only subscription accounts join automatic routing by default.
+"""Contract: only subscription accounts join automatic routing.
 
-Metered (API) and unknown billing stay recognized and launchable, but are chosen
-only by an explicit selection or a user's explicit bundle enable. Oh My Pi
-(Paseo's built-in `omp` provider) is the first metered Paseo launcher.
+Metered (API) and unknown billing stay recognized and launchable. A checked metered
+bundle is a last resort: chosen by an explicit selection, task.metered_ok, or when no
+subscription bundle can take the work. The model-management checkbox is eligibility,
+not consent to outrank subscriptions. Unknown billing stays explicit selection only.
+Oh My Pi (Paseo's built-in `omp` provider) is the first metered Paseo launcher.
 """
 from datetime import datetime, timezone
 import json
@@ -25,8 +27,9 @@ def setUpModule():
     isolated_router_state(unittest.addModuleCleanup, discovery=False, policy=False)
 
 
-def omp_accounts(billing='metered'):
+def omp_accounts(billing='metered', subscription=True):
     accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+    accounts['accounts']['codex']['verified'] = subscription  # one launchable subscription account
     spec = accounts['accounts']['omp']
     spec.update(billing=billing, verified=True)
     if billing is None:
@@ -59,11 +62,32 @@ class AutomaticRoutingTests(unittest.TestCase):
                 self.assertEqual(decision['choice'], BUNDLE)
                 self.assertEqual(decision['selected_bundle']['launch_model'], 'venice-api/zai-org-glm-5-2')
 
-    def test_user_explicit_enable_opts_into_automatic_routing(self):
-        accounts = omp_accounts('unknown')
-        accounts_override.apply(accounts, {'accounts': {'omp': {'bundles': {BUNDLE: {'disabled': False}}}}})
-        self.assertTrue(accounts['accounts']['omp']['bundles'][BUNDLE]['user_enabled'])
-        self.assertNotIn('unknown billing: explicit selection only', omp_row(self.plan(accounts))['excluded'])
+    def test_checked_metered_bundle_stays_last_resort(self):
+        for billing, reason in (('metered', 'metered access is a last resort'),
+                                ('unknown', 'unknown billing: explicit selection only')):
+            with self.subTest(billing=billing):
+                accounts = omp_accounts(billing)
+                accounts_override.apply(accounts, {'accounts': {'omp': {'bundles': {BUNDLE: {'disabled': False}}}}})
+                bundle = accounts['accounts']['omp']['bundles'][BUNDLE]
+                self.assertEqual({k for k in bundle if 'enabled' in k}, set())  # the checkbox writes only `disabled`
+                decision = self.plan(accounts)
+                self.assertTrue(decision['choice'].startswith(('sol_', 'astra_')))
+                self.assertIn(reason, omp_row(decision)['excluded'])
+                self.assertNotIn('metered_fallback', decision['decision']['task'])
+
+    def test_metered_used_when_no_subscription_can_take_the_work(self):
+        decision = self.plan(omp_accounts(subscription=False))
+        self.assertEqual(decision['choice'], BUNDLE)
+        self.assertTrue(decision['decision']['task']['metered_fallback'])
+        unchecked = omp_accounts(subscription=False)
+        unchecked['accounts']['omp']['bundles'][BUNDLE]['disabled'] = True
+        self.assertEqual(self.plan(unchecked)['choice'], 'none')  # unchecked is never a fallback
+        self.assertEqual(self.plan(omp_accounts('unknown', subscription=False))['choice'], 'none')
+
+    def test_task_metered_ok_admits_checked_metered_bundle(self):
+        decision = allocator.plan({**TASK, 'metered_ok': True}, {}, accounts=omp_accounts(), overrides=[],
+                                  host_policy_config=None)
+        self.assertFalse([r for r in omp_row(decision)['excluded'] if 'metered' in r])
 
     def test_subscription_accounts_are_unchanged(self):
         decision = self.plan(omp_accounts('subscription'))

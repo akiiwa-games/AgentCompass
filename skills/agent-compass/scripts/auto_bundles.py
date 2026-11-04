@@ -77,9 +77,8 @@ def _shrink(spec):
     return out
 
 
-def default_profile(raw_model, accounts):
-    """Default score row for a model name, with its source. Never mutates accounts."""
-    known = {k: v for k, v in (accounts.get('models') or {}).items() if isinstance(v, dict)}
+def _name_candidates(raw_model, accounts):
+    """(base, ids to look up most specific first): raw, effort-stripped, alias-resolved, vendor-tag-stripped."""
     aliases = accounts.get('aliases') or {}
     base, _ = split_effort(str(raw_model).rsplit('/', 1)[-1], accounts)
     name = base
@@ -93,7 +92,29 @@ def default_profile(raw_model, accounts):
         if nxt == stripped:
             break
         stripped = nxt
-    for candidate in (str(raw_model), base, name, stripped, aliases.get(stripped, stripped)):
+    return base, (str(raw_model), base, name, stripped, aliases.get(stripped, stripped))
+
+
+def superseded_by(raw_model, accounts):
+    """The newer model id public data names for this model, or None (latest, or unknown to the data).
+
+    The only source of a discovered model's default checkbox: `accounts['superseded']` maps an old model id
+    to {'by': newer id, 'basis': ...}. Efforts and harnesses of one model share its entry.
+    """
+    table = accounts.get('superseded') if isinstance(accounts.get('superseded'), dict) else {}
+    for candidate in _name_candidates(raw_model, accounts)[1]:
+        entry = table.get(candidate)
+        if isinstance(entry, dict) and entry.get('by'):
+            return entry['by']
+    return None
+
+
+def default_profile(raw_model, accounts):
+    """Default score row for a model name, with its source. Never mutates accounts."""
+    known = {k: v for k, v in (accounts.get('models') or {}).items() if isinstance(v, dict)}
+    aliases = accounts.get('aliases') or {}
+    base, candidates = _name_candidates(raw_model, accounts)
+    for candidate in candidates:
         if candidate in known:
             return {'model': candidate, 'source': 'calibrated', 'target': candidate,
                     'spec': copy.deepcopy(known[candidate]), 'basis': 'Calibrated row in accounts.models.'}
@@ -117,8 +138,8 @@ def harness_compatibility(harness, model, account_spec):
 
     Metered proxies (LiteLLM) are driven by Codex CLI over the Responses API. LiteLLM translates
     /v1/responses for non-OpenAI providers, but that bridge has not been verified on this proxy,
-    so non-OpenAI models on codex/pi over a proxy are 'unverified' (still derivable, default off
-    because metered). Claude Code needs an Anthropic Messages endpoint; non-Claude models there are
+    so non-OpenAI models on codex/pi over a proxy are 'unverified' (still derivable; metered
+    bundles stay a routing last resort). Claude Code needs an Anthropic Messages endpoint; non-Claude models there are
     excluded unless the account declares `anthropic_compatible: true`.
     """
     spec = account_spec or {}
@@ -183,12 +204,6 @@ def auto_bundle_id(account, harness, model, effort=None):
     return f'{AUTO_PREFIX}{account}:{harness}:{model}' + (f'@{effort}' if effort else '')
 
 
-def model_family(model):
-    """'claude-opus' for claude-opus-4-6, 'gpt' for gpt-6.1-sol, 'gemini' for gemini-4-argon-high."""
-    name = str(model).rsplit('/', 1)[-1].lower()
-    return re.split(r'[-.]?\d', name, maxsplit=1)[0] or name
-
-
 def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
     """Return {'bundles': {account: {bid: bundle}}, 'models': {name: spec}, 'excluded': [...], 'seen': {...}}.
 
@@ -214,7 +229,6 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
         manual = {(h, base_key(b.get('model') or ''), b.get('effort')) for bid, b in (spec.get('bundles') or {}).items()
                   if isinstance(b, dict) for h in [_harness_of(b, account, bid)]}
         manual_models = {(h, m) for h, m, _ in manual}
-        manual_families = {(h, model_family(m)) for h, m, _ in manual}
         metered = spec.get('billing') == 'metered'
         for pair_harness, provider in _account_harnesses(account, spec).items():
             entry = providers.get(provider) or providers.get(account)
@@ -250,17 +264,13 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                 model_name = profile['model'] if profile['source'] != 'calibrated' else key
                 if profile['source'] != 'calibrated':
                     out['models'].setdefault(model_name, {**profile['spec'], 'usd_per_hour': ESTIMATED_USD_PER_HOUR,
-                                                          'usd_estimated': True})
+                                                          'usd_estimated': True, 'score_estimated': True})
                 price = (known.get(key) or {}).get('usd_per_hour') if isinstance(known.get(key), dict) else None
                 cost_estimated = metered and not isinstance(price, (int, float))
                 pref = ((prefs.get(account) or {}).get('bundles') or {}).get(bid) or {}
-                # Subscription bundles start enabled only with a calibrated row; family/generic guesses wait for opt-in.
-                # Unmetered/free pools (OpenCode free) also wait: at zero cost an uncalibrated harness pairing
-                # would outrank every quota-priced model. When manual bundles on this account+harness already cover
-                # the model family (other efforts, older/newer generations), that curation stands; extras wait too.
-                default_disabled = (metered or profile['source'] != 'calibrated' or bool(spec.get('unmetered') or spec.get('unlimited'))
-                                    or (harness, model_family(key)) in manual_families
-                                    or ((spec.get('model_defaults') or {}).get(key) or {}).get('disabled', False))
+                # The checkbox default is public data alone: checked unless superseded there. The user's
+                # model-management checkbox (pref) overrides it. Metered stays a last resort in routing.
+                default_disabled = superseded_by(raw, accounts) is not None or superseded_by(key, accounts) is not None
                 bundle = {
                     'provider': provider, 'harness': harness, 'model': model_name, 'launch_model': raw,
                     **({'effort': effort} if effort else {}),

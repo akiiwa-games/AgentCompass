@@ -164,7 +164,3 @@ def apply(accounts, document):
                                       if key == bid and entry.get('provider') == name), None)
             if isinstance(bundle, dict) and isinstance(target_bundle, dict) and 'disabled' in bundle:
                 target_bundle['disabled'] = bundle['disabled']
-                # An explicit enable is the user's opt-in to automatic routing for
-                # non-subscription billing (see allocator.evaluate_bundle).
-                if bundle['disabled'] is False:
-                    target_bundle['user_enabled'] = True

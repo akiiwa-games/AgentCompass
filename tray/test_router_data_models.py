@@ -255,3 +255,35 @@ def test_only_discovered_ready_execution_profiles_with_bundles_are_shown(tmp_pat
     live = allocator.load_accounts()['accounts']['codex']['bundles']
     assert live['second_high']['_harness_disabled']
     assert not live['sol_high'].get('disabled')
+
+
+def test_discovered_model_checkbox_matches_routing_and_writes_only_the_boolean(tmp_path, monkeypatch):
+    target = settings(tmp_path, monkeypatch)
+    reference = allocator.REFERENCES / 'accounts.json'
+    doc = json.loads(reference.read_text())
+    doc['superseded'] = {'gpt-5.6-sol': {'by': 'gpt-6.1-sol', 'basis': 'test'}}
+    reference.write_text(json.dumps(doc))
+    inventory = {'accounts': {'codex': {'family': 'codex', 'status': 'ready',
+                                        'models': ['gpt-6.1-sol', 'gpt-5.6-sol', 'gpt-9-new']}}}
+    monkeypatch.setattr(allocator.provider_inventory, 'apply',
+                        lambda data: allocator.provider_inventory._apply_auto_bundles(data, inventory, False))
+
+    def states():
+        rows = router_data.harness_model_rows()
+        tray = {m['model']: m['enabled'] for row in rows if (row['account'], row['harness']) == ('codex', 'codex')
+                for m in row['models'] if m.get('routed', True)}
+        live = allocator.bundles(allocator.load_accounts())
+        routing = {b['model']: not b.get('disabled') for b in live.values() if b.get('auto') and b['harness'] == 'codex'}
+        return tray, routing
+
+    tray, routing = states()
+    assert routing == {'gpt-5.6-sol': False, 'gpt-9-new': True}  # superseded unchecked, unknown new model checked
+    assert {m: tray[m] for m in routing} == routing
+    router_data.toggle_harness_model('codex', 'codex', 'gpt-5.6-sol', True)
+    router_data.toggle_harness_model('codex', 'codex', 'gpt-9-new', False)
+    tray, routing = states()
+    assert routing == {'gpt-5.6-sol': True, 'gpt-9-new': False}
+    assert {m: tray[m] for m in routing} == routing
+    saved = json.loads(target.read_text())['accounts']['codex']['bundles']
+    assert saved == {'auto:codex:codex:gpt-5.6-sol@high': {'disabled': False},
+                     'auto:codex:codex:gpt-9-new@high': {'disabled': True}}

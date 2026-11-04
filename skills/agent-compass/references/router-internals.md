@@ -100,8 +100,14 @@ It then scores eligible candidates using the effective scoring weights, model ca
 priors, optional personal preference vectors, continuity and available quota evidence.
 Public routes ship a calibrated model order and public scoring gives preference vectors
 weight 0.49. A route restricts models only with `restrict_models: true` and a nonempty
-`preferred` list. Account `model_defaults[model].disabled` supplies an explicit default
-for dynamically discovered bundles; individual saved bundle choices still take precedence.
+`preferred` list. A dynamically discovered bundle starts checked unless public data lists
+its model in `superseded` (`{old id: {by: newer id, basis}}`); efforts and harnesses of one
+model share the entry, and a model unknown to the data starts checked. The user's
+model-management checkbox (`disabled` in accounts-override.json) overrides that default.
+Checked metered bundles stay a last resort: explicit selection, `metered_ok`, or no eligible
+subscription bundle. An unlimited (free) account's free-usage bonus needs a measured model
+row (no `score_estimated`) whose ability meets the task's required ability; estimated rows
+and family/generic defaults compete on zero opportunity cost alone.
 
 A discovered plan supplies capacity and burn priors; a family whose product does not
 report its tier locally uses the documented `<family>.default` plan (Antigravity: Ultra

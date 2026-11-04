@@ -462,6 +462,9 @@ MEASURED_MAX_AGE_DAYS = 14      # older measurements describe a past regime
 OBSERVED_MAX_AGE_HOURS = 2      # the live burn rate is only worth acting on while it is current
 
 
+METERED_LAST_RESORT = 'metered access is a last resort'
+
+
 def accounts_override_path(environ=None):
     env = os.environ if environ is None else environ
     configured = (env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
@@ -907,7 +910,7 @@ def bundles(accounts):
                               'model': bundle['model'], 'effort': bundle.get('effort'),
                               **{k: bundle[k] for k in ('modeId', 'disabled', 'launch_model', 'when', 'discovery_unavailable', 'draws',
                                                         'auto', 'billing', 'score_source', 'score_basis', 'cost_estimated',
-                                                        'availability', 'compatibility', 'compatibility_reason', 'user_enabled') if k in bundle}}
+                                                        'availability', 'compatibility', 'compatibility_reason') if k in bundle}}
     return out
 
 
@@ -1926,19 +1929,20 @@ def evaluate_bundle(bundle, task, ctx):
     if not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude('excluded by host policy')
     if bundle.get('disabled'):
-        exclude('disabled by user')
+        exclude('unchecked in model management')
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
                 else 'model not detected by discovery for 7+ days')
     if bundle['id'] in ctx['unavailable']:
         exclude('marked unavailable by the parent')
-    # Only subscription accounts join automatic routing by default. Metered (API) and
-    # unknown billing stay available to an explicit selection or a user's explicit enable.
+    # Only subscription accounts join automatic routing. A checked metered (API) bundle is a last resort:
+    # explicit selection, task.metered_ok, or plan()'s fallback pass when no subscription can take the work.
+    # Unknown billing stays explicit selection only.
     billing = accounts_override.manual_only_billing(bundle['account'], accounts)
-    if billing and not task['metered_ok'] and not bundle.get('user_enabled'):
+    if billing and not task['metered_ok'] and not (billing == 'metered' and task.get('metered_fallback')):
         if (task['constraint_model'] not in (bundle['id'], model) and task.get('pinned_bundle') != bundle['id']
                 and not any(o.get('account') == bundle['account'] for o in ctx['overrides'])):
-            exclude('metered access is a last resort' if billing == 'metered'
+            exclude(METERED_LAST_RESORT if billing == 'metered'
                     else f'{billing} billing: explicit selection only')
     if not spec.get('verified', True) and not task['include_unverified']:
         exclude('account not verified as launchable')
@@ -2006,7 +2010,11 @@ def evaluate_bundle(bundle, task, ctx):
     available_at = None
     if spec.get('unlimited'):
         result['notes'].append('unlimited usage')
-        result['components']['free_usage'] = policy['unlimited_bonus']
+        # The free-usage preference goes to a model the data shows sufficient for this task: a measured score
+        # (not `score_estimated`) whose ability meets the required ability. An estimated row, a family/generic
+        # default or an ability shortfall earns none, so free capacity cannot lift an unproven model.
+        if not info.get('score_estimated') and ability >= target:
+            result['components']['free_usage'] = policy['unlimited_bonus']
     boost = sum(float(o.get('boost') or 0) for o in ctx.get('overrides', ())
                 if o['account'] == bundle['account'] and (not o.get('model') or canonical(o['model'], accounts) == model)
                 and (expected_reset_time(o) is None or expected_reset_time(o) <= now))
@@ -2681,8 +2689,11 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
             task['worker'] = {**task['worker'], 'bundle': resolved}
     candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied, records,
                                         host_policy_config)
-    # No automatic metered fallback: non-subscription billing needs an explicit selection,
-    # task.metered_ok, or the user's explicit bundle enable (evaluate_bundle).
+    # Metered last resort: only when no subscription bundle is eligible, re-rank with checked metered bundles admitted.
+    if not eligible and any(c['excluded'] == [METERED_LAST_RESORT] for c in candidates):
+        task['metered_fallback'] = True
+        candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied,
+                                            records, host_policy_config)
     worker_id = (task['worker'] or {}).get('bundle')
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'critical', 'hours', 'chain_hours', 'coupling')}, 'system': system,
@@ -2699,6 +2710,8 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                             demand=task['demand'], max_recommended_effort=None)
     if task.get('wants_fast'):
         decision['task']['wants_fast'] = True
+    if task.get('metered_fallback'):
+        decision['task']['metered_fallback'] = True
     if task['profile']:
         decision['task'].update(profile=task['profile'], profile_difficulty=task['profile_difficulty'],
                                 minimum_sufficient=task['minimum_sufficient'])

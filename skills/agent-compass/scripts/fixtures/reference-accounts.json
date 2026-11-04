@@ -238,6 +238,80 @@
     "opencode/beam-free": "beam-free",
     "opencode/flint-40b-free": "flint-40b-free"
   },
+  "superseded": {
+    "claude-opus-4-6": {
+      "by": "claude-opus-5-5",
+      "basis": "Claude Opus 5.5 is the current Opus generation; 4.6 is the 4.x line."
+    },
+    "claude-opus-4-7": {
+      "by": "claude-opus-5-5",
+      "basis": "Claude Opus 5.5 is the current Opus generation; 4.7 is the 4.x line."
+    },
+    "claude-opus-4-8": {
+      "by": "claude-opus-5-5",
+      "basis": "Claude Opus 5.5 is the current Opus generation; 4.8 is the 4.x line."
+    },
+    "claude-sonnet-4-6": {
+      "by": "claude-sonnet-5-5",
+      "basis": "Claude Sonnet 5.5 is the current Sonnet generation."
+    },
+    "claude-haiku-4-5": {
+      "by": "claude-haiku-5-5",
+      "basis": "Claude Haiku 5.5 is the current Haiku generation (advertised by the same Claude accounts)."
+    },
+    "gpt-6-sol": {
+      "by": "gpt-6.1-sol",
+      "basis": "GPT-6.1 Sol is the newer Sol release."
+    },
+    "gpt-5.6-sol": {
+      "by": "gpt-6.1-sol",
+      "basis": "GPT-6.1 Sol is two releases newer in the Sol line."
+    },
+    "gpt-5.6-terra": {
+      "by": "gpt-6.1-terra",
+      "basis": "GPT-6.1 Terra is the newer Terra release."
+    },
+    "gpt-5.6-luna": {
+      "by": "gpt-6-luna",
+      "basis": "GPT-6 Luna is the newer Luna release."
+    },
+    "grok-4.5": {
+      "by": "grok-4.7",
+      "basis": "Grok 4.7 is the current Grok release."
+    },
+    "grok-4.6": {
+      "by": "grok-4.7",
+      "basis": "Grok 4.7 is the current Grok release."
+    },
+    "gemini-3.1-pro-preview": {
+      "by": "gemini-4-argon-high",
+      "basis": "Gemini 4 Pro (Argon) is the newer Pro generation."
+    },
+    "gemini-3.7-flash": {
+      "by": "gemini-3.8-flash-high",
+      "basis": "Gemini 3.8 Flash is the newer Flash release."
+    },
+    "glm-5.2": {
+      "by": "glm-5.3",
+      "basis": "GLM-5.3 is the newer GLM release."
+    },
+    "kimi-k2.6": {
+      "by": "kimi-k3",
+      "basis": "Kimi K3 is the newer Kimi generation."
+    },
+    "qwen3-max": {
+      "by": "qwen3.8-max",
+      "basis": "Qwen3.8-Max is the newer Qwen Max release."
+    },
+    "qwen3.7-max": {
+      "by": "qwen3.8-max",
+      "basis": "Qwen3.8-Max is the newer Qwen Max release."
+    },
+    "deepseek-v4-flash": {
+      "by": "deepseek-v4.1-flash-free",
+      "basis": "DeepSeek V4.1 Flash is the newer Flash release."
+    }
+  },
   "models": {
     "deepseek-v4.1-flash-free": {
       "tier": 2.8,
@@ -510,6 +584,7 @@
         "global_rigor": 0.53,
         "module_precision": 0.67
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache anthropic/claude-haiku-5-5. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "gpt-6.1-terra": {
@@ -531,6 +606,7 @@
         "global_rigor": 0.65,
         "module_precision": 0.88
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in pi --list-models and opencode cache openai/gpt-6.1-terra. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 500000
     },
@@ -553,6 +629,7 @@
         "global_rigor": 0.25,
         "module_precision": 0.92
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
@@ -575,6 +652,7 @@
         "global_rigor": 0.45,
         "module_precision": 0.68
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
@@ -596,6 +674,7 @@
         "global_rigor": 0.25,
         "module_precision": 0.88
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
@@ -617,6 +696,7 @@
         "global_rigor": 0.6,
         "module_precision": 0.83
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
@@ -638,6 +718,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.65
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in pi --list-models. Scores and hourly cost are estimates, not benchmark measurements or live API quotes.",
       "context_window": 272000
     },
@@ -659,6 +740,7 @@
         "global_rigor": 0.45,
         "module_precision": 0.6
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in ~/.grok/models_cache.json. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "deepseek-v4-pro": {
@@ -679,6 +761,7 @@
         "global_rigor": 0.74,
         "module_precision": 0.84
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache deepseek/deepseek-v4-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "glm-5.3": {
@@ -699,6 +782,7 @@
         "global_rigor": 0.72,
         "module_precision": 0.8
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache zhipuai/glm-5.3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "glm-5.3-flash-free": {
@@ -719,6 +803,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "qwen3-coder-next": {
@@ -739,6 +824,7 @@
         "global_rigor": 0.67,
         "module_precision": 0.84
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache openrouter/qwen/qwen3-coder-next. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "qwen3.8-max": {
@@ -759,6 +845,7 @@
         "global_rigor": 0.75,
         "module_precision": 0.8
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache alibaba/qwen3.8-max. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "kimi-k3.1-pro": {
@@ -779,6 +866,7 @@
         "global_rigor": 0.76,
         "module_precision": 0.81
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3.1-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "kimi-k3": {
@@ -799,6 +887,7 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache moonshotai/kimi-k3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "minimax-m3": {
@@ -819,6 +908,7 @@
         "global_rigor": 0.7,
         "module_precision": 0.82
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "minimax-m3.1-flash": {
@@ -839,6 +929,7 @@
         "global_rigor": 0.62,
         "module_precision": 0.76
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache minimax/MiniMax-M3.1-Flash. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "doubao-seed-2-1-pro-260628": {
@@ -859,6 +950,7 @@
         "global_rigor": 0.68,
         "module_precision": 0.74
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache volcengine/doubao-seed-2-1-pro-260628. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mimo-v2.6-pro": {
@@ -879,6 +971,7 @@
         "global_rigor": 0.67,
         "module_precision": 0.8
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache xiaomi/mimo-v2.6-pro. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mimo-v2.6-flash-free": {
@@ -899,6 +992,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "nemotron-3-ultra-free": {
@@ -919,6 +1013,7 @@
         "global_rigor": 0.62,
         "module_precision": 0.71
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "nemotron-3.5-super-vl-free": {
@@ -939,6 +1034,7 @@
         "global_rigor": 0.59,
         "module_precision": 0.66
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "nemotron-3.5-lightning-free": {
@@ -959,6 +1055,7 @@
         "global_rigor": 0.42,
         "module_precision": 0.56
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "mistral-large-4": {
@@ -979,6 +1076,7 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache mistral/mistral-large-4. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "muse-wonder-1.0": {
@@ -999,6 +1097,7 @@
         "global_rigor": 0.73,
         "module_precision": 0.77
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode cache meta/muse-wonder-1.0. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "beam-free": {
@@ -1019,6 +1118,7 @@
         "global_rigor": 0.45,
         "module_precision": 0.58
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "flint-40b-free": {
@@ -1039,6 +1139,7 @@
         "global_rigor": 0.4,
         "module_precision": 0.54
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior, ID/modalities verified in opencode models and opencode cache. Scores and hourly cost are estimates, not benchmark measurements or live API quotes."
     },
     "claude-haiku-4-5": {
@@ -1059,6 +1160,7 @@
         "global_rigor": 0.5,
         "module_precision": 0.64
       },
+      "score_estimated": true,
       "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
     },
     "claude-opus-4-6": {
@@ -1079,6 +1181,7 @@
         "global_rigor": 0.93,
         "module_precision": 0.88
       },
+      "score_estimated": true,
       "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
     },
     "claude-sonnet-4-6": {
@@ -1099,6 +1202,7 @@
         "global_rigor": 0.73,
         "module_precision": 0.76
       },
+      "score_estimated": true,
       "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
     },
     "usd_basis": "Synthetic hourly cost calibration, pooled over efforts from a 14-day sample: Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Cache reads and writes are priced separately. Fable uses Opus times the 2.5x list-price ratio. These retained test inputs are independent of plan labels and are not live price quotes.",
@@ -1123,6 +1227,7 @@
         "global_rigor": 0.68,
         "module_precision": 0.74
       },
+      "score_estimated": true,
       "basis": "Provisional routing prior shrunk from glm-5.3. ID verified in Venice /models as zai-org-glm-5-2 (text-only per Venice model_spec, reasoning efforts none/high/max). Scores and hourly cost are estimates, not benchmarks or live quotes."
     }
   },
@@ -1762,11 +1867,6 @@
           "effort": "high"
         }
       },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
-        }
-      },
       "label": "Text subscription sandbox"
     },
     "claude": {
@@ -1828,11 +1928,6 @@
         "sonnet55_medium": {
           "model": "claude-sonnet-5-5",
           "effort": "medium"
-        }
-      },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
         }
       },
       "label": "Studio reasoning pool"
@@ -1902,11 +1997,6 @@
         "lab_sonnet55_medium": {
           "model": "claude-sonnet-5-5",
           "effort": "medium"
-        }
-      },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
         }
       },
       "label": "Research sandbox"
@@ -1997,11 +2087,6 @@
           "launch_model": "openai-codex/gpt-6-astra"
         }
       },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
-        }
-      },
       "label": "Individual coding sandbox"
     },
     "codex-work": {
@@ -2026,11 +2111,6 @@
         "work_sol_xhigh": {
           "model": "gpt-6.1-sol",
           "effort": "xhigh"
-        }
-      },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
         }
       },
       "label": "Shared coding workspace"
@@ -2158,11 +2238,6 @@
           ]
         }
       },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
-        }
-      },
       "label": "Mixed model pool"
     },
     "dot": {
@@ -2179,11 +2254,6 @@
         "dot_text": {
           "model": "dot",
           "provider": "dot"
-        }
-      },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
         }
       },
       "label": "Remote execution sandbox"
@@ -2205,11 +2275,6 @@
           "when": {
             "min_difficulty": "frontier"
           }
-        }
-      },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
         }
       },
       "cadence": {
@@ -2235,11 +2300,6 @@
           "launch_model": "opencode/deepseek-v4.1-flash-free",
           "effort": "high",
           "modeId": "build"
-        }
-      },
-      "model_defaults": {
-        "claude-haiku-4-5": {
-          "disabled": true
         }
       },
       "label": "Free model sandbox"
