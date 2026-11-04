@@ -1,11 +1,11 @@
 {
   "schema_version": 2,
-  "version": "20f2b29db427",
-  "published_at": "2026-11-04T10:40:43Z",
+  "version": "8b04a4c5cff8",
+  "published_at": "2026-11-04T11:09:46Z",
   "files": {
     "accounts.json": {
-      "sha256": "969128d6f7ab04b76819a7ca41b1dce18c3f0919f3be02cdd433742783b98bf4",
-      "bytes": 120277
+      "sha256": "cd41a056c441cb3ecde01c0c36fbfc132f4877b57fe2f5a36e7a6db38342ba92",
+      "bytes": 120440
     },
     "plan-templates.json": {
       "sha256": "4877b6b862940bcae37fed3871334d0d5d53750ff92ffa8277fd79c72c1a5dfc",

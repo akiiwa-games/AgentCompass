@@ -559,6 +559,7 @@
     },
     "grok-bot": {
       "tier": 4.6,
+      "fixed_effort": "medium",
       "cost": 2,
       "visual": false,
       "excluded_when": "local_only",
@@ -576,7 +577,7 @@
         "global_rigor": 0.98,
         "module_precision": 0.92
       },
-      "basis": "Synthetic routing alignment to claude-opus-5-5: same tier, capability vector and subjective vector. Not a measured benchmark. Cost integer 2, unknown billing and no usd_per_hour are unchanged. Channel gates remain: visual admission is false, text_only, and excluded_when local_only. The Bot cannot see images, transfer files, or run on this machine."
+      "basis": "Synthetic routing alignment to claude-opus-5-5: same tier, capability vector and subjective vector. Scored at a fixed Medium effort: Grok Bot cannot set an effort and the upstream runs it at its own fixed level (user, 2026-11-04). Not a measured benchmark. Cost integer 2, unknown billing and no usd_per_hour are unchanged. Channel gates remain: visual admission is false, text_only, and excluded_when local_only. The Bot cannot see images, transfer files, or run on this machine."
     },
     "dot": {
       "tier": 4.2,

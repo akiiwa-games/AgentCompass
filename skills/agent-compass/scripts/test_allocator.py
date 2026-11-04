@@ -1045,6 +1045,19 @@ class AllocatorTests(unittest.TestCase):
                 self.assertGreater(row['capacity']['scarcity_cost'], 0)
                 self.assertGreater(self.rows(healthy)[owner]['score'], row['score'])
 
+    def test_a_model_with_a_fixed_effort_is_scored_at_it_without_launching_one(self):
+        # Grok Bot cannot set an effort; its data row declares the upstream's fixed level, which scoring uses.
+        accounts = allocator.load_accounts()
+        row = accounts['models']['grok-bot']
+        self.assertEqual(row.get('fixed_effort'), 'medium')
+        bundle = {'account': 'grok-bot', 'model': 'grok-bot'}
+        self.assertEqual(allocator.scoring_effort(bundle, row), 'medium')
+        self.assertEqual(allocator.scoring_effort(dict(bundle, effort='high'), row), 'high')
+        policy, curves = accounts['scoring'], (accounts.get('effort_curves') or {}).get('grok-bot', {})
+        medium = allocator.effort_ability(policy, curves, row, 'medium')
+        self.assertLess(medium, allocator.effort_ability(policy, curves, row, 'high'))
+        self.assertLess(medium, policy['ability_floor']['frontier'] + allocator.critical_headroom(policy, 'frontier'))
+
     def test_pool_window_forecasts_demand_against_the_whole_pool(self):
         # Two pooled accounts at a mean of 38.5% used hold 123% of one account's allowance out of 200%.
         # Other work has already drawn 77% this period, so it is expected to keep drawing; a single-account

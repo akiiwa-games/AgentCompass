@@ -606,6 +606,12 @@ def effort_ability(policy, curves, info, effort):
     return tier + effort_value(policy, curves, 'ability', effort, 0)
 
 
+def scoring_effort(bundle, info):
+    """The effort a bundle is scored at: its own, else its model's `fixed_effort` (a harness that cannot set one runs
+    at the upstream's fixed level; the launcher still passes no effort)."""
+    return bundle.get('effort') or (info or {}).get('fixed_effort')
+
+
 def burn_scale(policy, curves, effort):
     """Quota one task spends at `effort` relative to High: the curve's `burn_mult`, else its `burn` over High's `burn`."""
     mult = (curves or {}).get('burn_mult') or {}
@@ -1805,7 +1811,7 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
             # Priced work needs remaining - need >= safety margin; no task size passes at or under the margin.
             margin = policy.get('safety_margin_pct', 5)
             if state['known'] and state['remaining'] <= margin and unit_rate(
-                    spec, wid, model, bundle.get('effort'), policy, (accounts.get('effort_curves') or {}).get(model, {}),
+                    spec, wid, model, scoring_effort(bundle, model_spec(accounts, model)), policy, (accounts.get('effort_curves') or {}).get(model, {}),
                     model_spec(accounts, model), now):
                 reason = (f"{wid} has {state['remaining']:.1f}% left, within the {margin:g}% safety margin, "
                           f"for {state['reset_hours']:.1f}h")
@@ -2011,7 +2017,7 @@ def evaluate_bundle(bundle, task, ctx):
         exclude('explicit model constraint')
     # Model ability x this model's own thinking coefficient at this effort (accounts `effort_curves`). The task side is
     # depth x property difficulty (`task['demand']`); no effort tier is tied to a depth.
-    ability = effort_ability(policy, curves, info, bundle.get('effort'))
+    ability = effort_ability(policy, curves, info, scoring_effort(bundle, info))
     result['components']['ability_value'] = round(ability, 2)
     effective = ability
     high_ability = effort_ability(policy, curves, info, 'high')
@@ -2046,8 +2052,8 @@ def evaluate_bundle(bundle, task, ctx):
                                    f"{worker.get('compactions', '?')} compactions; rotate with a handoff packet")
     context_scale = 1 + context_extra
     step_pct = chain_pct = None
-    step_usd = bundle_task_usd(spec, model, bundle.get('effort'), hours, policy, curves, info, context_scale)
-    chain_usd = bundle_task_usd(spec, model, bundle.get('effort'), chain_hours, policy, curves, info, context_scale)
+    step_usd = bundle_task_usd(spec, model, scoring_effort(bundle, info), hours, policy, curves, info, context_scale)
+    chain_usd = bundle_task_usd(spec, model, scoring_effort(bundle, info), chain_hours, policy, curves, info, context_scale)
     binding = None
     opportunity = 0.0
     unknown = False
@@ -2081,7 +2087,7 @@ def evaluate_bundle(bundle, task, ctx):
             expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                  account_stale=acct_stale, expected_reset_at=expected)
-            unit = unit_rate(spec, wid, model, bundle.get('effort'), policy, curves, info, now)
+            unit = unit_rate(spec, wid, model, scoring_effort(bundle, info), policy, curves, info, now)
             if not state['known']:
                 if state['short']:
                     step = None if unit is None else hours * unit * context_scale
@@ -2173,7 +2179,7 @@ def evaluate_bundle(bundle, task, ctx):
                                   account_stale=acct_stale, expected_reset_at=expected)
                 if not st['known']:
                     continue
-                unit = unit_rate(spec, wid, model, bundle.get('effort'), policy, curves, info, now)
+                unit = unit_rate(spec, wid, model, scoring_effort(bundle, info), policy, curves, info, now)
                 win_cap_usd = window_capacity_usd(spec, wid, now)
                 res_usd = inflight_reserved_usd(bundle['account'], spec, wid, wspec, st, win_cap_usd,
                                                 ctx.get('records'), accounts, policy, now)
@@ -2282,7 +2288,7 @@ def evaluate_bundle(bundle, task, ctx):
     if task['profile'] is not None and (not route.get('strict_order') or route.get('capability_fit')):
         # A user-ranked strict order (visual_analysis) stays as stated; elsewhere the profile's needs share the fit.
         # Route fit is not capped. Listed place, ability, the capability vector and the subjective vector decide.
-        vfit = vector_fit(task['requirements'], effort_scaled_capabilities(info, policy, curves, bundle.get('effort')))
+        vfit = vector_fit(task['requirements'], effort_scaled_capabilities(info, policy, curves, scoring_effort(bundle, info)))
         s_weights = task.get('subjective_weights') or {}
         s_cfg = (policy.get('profile') or {}).get('subjective') if isinstance(info.get('subjective'), dict) else None
         result['components']['route_fit'] = round(fit, 3)
@@ -2301,7 +2307,7 @@ def evaluate_bundle(bundle, task, ctx):
     cfg = demand_config(policy)
     sunk_weight = (binding or {}).get('reset_sunk_weight', 0.0)
     sprint_sunk = 0.0 if task['difficulty'] == 'routine' else sunk_weight
-    effort_scale = burn_scale(policy, curves, bundle.get('effort'))
+    effort_scale = burn_scale(policy, curves, scoring_effort(bundle, info))
     # Near a reset with surplus quota the extra burn of a higher effort is quota that would lapse, so it is not charged
     # on non-routine work; routine (depth 1) work keeps its effort and overqualification discipline.
     effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0) * (1.0 - sprint_sunk), 4)

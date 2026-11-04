@@ -563,6 +563,7 @@
     },
     "grok-bot": {
       "tier": 4.6,
+      "fixed_effort": "medium",
       "cost": 2,
       "visual": false,
       "excluded_when": "local_only",
