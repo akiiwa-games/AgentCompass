@@ -597,7 +597,14 @@ class AllocatorTests(unittest.TestCase):
         for row in self.rows(empty_plan).values():
             if row['score'] is not None and row['components']['ability_value'] < origin + span:
                 self.assertLess(row['components']['ability'], 1.0, row['id'])
-        codex_tight = self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)],
+        # A floor raised above the origin (the tray edits floors) grades from the floor: a model that only just clears
+        # it earns no free ability share.
+        raised = copy.deepcopy(accounts)
+        floor = raised['scoring']['ability_floor']['routine'] = origin + 0.4
+        for row in self.rows(self.plan(v_task, claude_empty, accounts=raised)).values():
+            if row['score'] is not None:
+                self.assertLessEqual(row['components']['ability'], max(0.0, (row['components']['ability_value'] - floor) / span) + 1e-6, row['id'])
+        codex_tight =self.usage(claude=[('five_hour', 90, 3), ('seven_day', 2, 100), ('weekly_fable', 100, 100)],
                                  codex=[('usage', 50, 100)],
                                  antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 60, 100)])
         codex_tight_plan = self.plan(v_task, codex_tight)
@@ -1004,6 +1011,13 @@ class AllocatorTests(unittest.TestCase):
             ('Implement a standalone algorithm', 'self_contained_code'),
             ('实现独立算法并验证', 'self_contained_code'),
             ('Implement API pagination in the backend service', 'general_implementation'),
+            # Device nouns and "translation" inside code work are not GUI operation or text translation.
+            ('Fix the keyboard shortcuts in editor.py.', 'debug_review'),
+            ('Fix mouse event handler in app.ts', 'debug_review'),
+            ('Fix translation.py.', 'debug_review'),
+            ('Debug translation pipeline', 'debug_review'),
+            ('修复翻译模块的 bug', 'debug_review'),
+            ('用鼠标点击设置里的保存', 'computer_use'),
         ):
             with self.subTest(objective=objective):
                 self.assertEqual(allocator.infer_kind_from_objective(objective), kind)

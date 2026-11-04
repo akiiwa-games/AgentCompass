@@ -1084,6 +1084,11 @@ KIND_TRAITS = {
     'other_or_mixed': (1, 1, 2, 2, 'engineering'),
 }
 GUI_WORDS = ('click', 'screenshot', ' gui', 'desktop app', 'mouse', '点击', '截图', '桌面', '鼠标')
+# Operating a GUI, as an action. Bare device nouns ("keyboard shortcuts", "mouse event handler") name code as often.
+COMPUTER_USE_PHRASES = ('click the', 'click save', 'use the mouse', 'with the mouse', 'mouse and keyboard',
+                        'keyboard and mouse', 'operate the browser', 'operate the desktop', '点击', '用鼠标', '键鼠',
+                        '鼠标键盘', '操作浏览器', '操作桌面')
+CODE_FILE_RE = re.compile(r'[\w-]\.(?:py|pyw|ts|tsx|js|jsx|mjs|cjs|go|rs|java|kt|cs|cpp|cc|c|h|hpp|rb|php|swift|lua|sh|ps1)(?!\w)(?!\.\w)')
 # Same pattern as route_judge.OBJECTIVE_LOCAL_RUNTIME_RE. Kept here so the allocator does not import route_judge
 # (route_judge.load_allocator execs this file). A caller true/false still wins over both patterns.
 OBJECTIVE_LOCAL_RUNTIME_RE = re.compile(
@@ -1195,8 +1200,10 @@ def validate_profile(raw):
 def infer_kind_from_objective(objective):
     """Offline route fallback: prefer explicit deliverable/action phrases over incidental domain nouns."""
     text = f' {(objective or "").lower()} '
-    if any(w in text for w in ('click the', 'click save', 'mouse', 'keyboard', 'operate the browser',
-                               'operate the desktop', '点击', '鼠标', '键盘', '操作浏览器', '操作桌面')):
+    # A named source file means the words are about code: "fix the keyboard shortcuts in editor.py" or "fix
+    # translation.py" is engineering work, not operating a desktop or translating text.
+    names_code = bool(CODE_FILE_RE.search(text))
+    if not names_code and any(w in text for w in COMPUTER_USE_PHRASES):
         return 'computer_use'
     rules = (
         ('direction_reasoning', ('formal proof', 'mathematical critique', 'optimal-stopping', 'frontier reasoning',
@@ -1207,7 +1214,7 @@ def infer_kind_from_objective(objective):
                                '批量', '机械替换', '统一替换')),
         ('web_research', ('web survey', 'web research', 'vendor survey', 'public documentation', 'search the web', 'search public', 'open-web',
                           'literature survey', '网页调研', '文献综述', '厂商调研', '搜索官网', '公开文档')),
-        ('text_in_text_out', ('translate', 'translation', 'draft a document', 'draft documentation', 'rewrite the text',
+        ('text_in_text_out', ('translate', 'translation of', 'draft a document', 'draft documentation', 'rewrite the text',
                              'summarize the text', '翻译', '撰写文档', '文案', '润色', '摘要')),
         ('visual_analysis', ('visual diff', 'design diff', 'inspect screenshot', 'compare screenshot', 'inspect the image',
                              'inspect the screenshot', 'inspect the supplied screenshot', 'compare the screenshots',
@@ -1227,7 +1234,10 @@ def infer_kind_from_objective(objective):
         ('self_contained_code', ('standalone', 'self-contained', 'algorithm', 'isolated module',
                                  '独立算法', '独立脚本', '自包含', '实现算法')),
     )
+    debugging = any(word in text for word in dict(rules)['debug_review'])
     for kind, keywords in rules:
+        if kind == 'text_in_text_out' and (names_code or debugging):
+            continue    # "debug the translation pipeline" / "修复翻译模块" is a bug to fix, not text to translate
         if any(word in text for word in keywords):
             return kind
     return 'general_implementation' if objective and objective.strip() else 'other_or_mixed'
@@ -2339,7 +2349,9 @@ def evaluate_bundle(bundle, task, ctx):
         span = (policy.get('profile') or {}).get('saturation_span', 0.3)
     # Graded ability counts from the difficulty's score origin, not from the gate: the measured floors only decide who may
     # take the work, so lowering a floor does not flatten the quality difference between the models above it.
-    origin = float((policy.get('ability_score_origin') or {}).get(task['difficulty'], floor))
+    # Never below the gate: a floor raised above the shipped origin (the tray edits floors) must not hand the models
+    # that only just clear it a free share of the ability score.
+    origin = max(floor, float((policy.get('ability_score_origin') or {}).get(task['difficulty'], floor)))
     ability_score = clamp((credited - origin - ((gate - floor) if task['high_precision'] else 0.0)) / span, 0, 1)
     if task['high_precision']:
         result['components']['quality_bonus'] = round(float(policy.get('high_precision_effort_weight', 0.14)) * effort_gain, 4)
