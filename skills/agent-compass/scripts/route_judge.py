@@ -290,15 +290,20 @@ def window_state(window, now, observation_current=True):
     # (such as 101.0%); clamp finite values >100 to 100.0 instead of dropping to None.
     used = (100.0 if used > 100 else used) if finite_number(used, low=0, high=float('inf')) else None
     passed = reset <= now if reset else None
+    # A Magpie pool of N same-plan subscriptions reports their mean usage; what is left is N accounts' worth, in
+    # percent of one account (the unit of burn_pct_per_worker_hour and capacity_usd), so two fresh accounts are 200%.
+    count = window.get('accounts')
+    count = count if isinstance(count, int) and not isinstance(count, bool) and count > 1 else 1
+    left = count * (100 - used) if used is not None else None
     return {
         'id': window.get('id') if isinstance(window.get('id'), str) else None,
         'used_pct': used,
         'resets_at': reset.isoformat() if reset else None,
         'seconds_until_reset': max(0, (reset - now).total_seconds()) if reset else None,
         'reset_time_passed': passed,
-        'observed_remaining_pct': 100 - used if used is not None else None,
-        'remaining_pct_before_reset': (100 - used if used is not None
-                                      and passed is False and observation_current else None),
+        'observed_remaining_pct': left,
+        'remaining_pct_before_reset': left if passed is False and observation_current else None,
+        **({'accounts': count} if count > 1 else {}),
         **({'rate_limited': True} if window.get('rate_limited') is True and passed is False else {}),
         **({'models': window['models']} if isinstance(window.get('models'), list) and window['models']
            and all(isinstance(model, str) and model for model in window['models']) else {}),

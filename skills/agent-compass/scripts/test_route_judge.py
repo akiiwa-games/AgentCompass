@@ -144,6 +144,11 @@ class RoutingTests(unittest.TestCase):
         # Window math
         w = router.window_state({'used_pct': 35, 'resets_at': '2026-10-04T11:00:00+08:00'}, self.now)
         self.assertEqual((w['seconds_until_reset'], w['remaining_pct_before_reset']), (7200, 65))
+        pool = router.window_state({'used_pct': 25, 'accounts': 2, 'resets_at': '2026-10-04T11:00:00+08:00'}, self.now)
+        self.assertEqual((pool['used_pct'], pool['remaining_pct_before_reset'], pool['accounts']), (25, 150, 2))
+        for odd in (1, 0, True, '2'):
+            self.assertEqual(router.window_state({'used_pct': 0, 'accounts': odd, 'resets_at': '2026-10-04T11:00:00+08:00'},
+                                                 self.now)['remaining_pct_before_reset'], 100)
         for over_used in (100.5, 101.0, 110):
             over = router.window_state({'used_pct': over_used, 'resets_at': '2026-10-04T03:00:00Z'}, self.now)
             self.assertEqual((over['used_pct'], over['observed_remaining_pct'], over['remaining_pct_before_reset']),
