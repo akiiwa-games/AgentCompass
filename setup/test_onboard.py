@@ -676,6 +676,18 @@ class UnifiedDiscoveryAndParityTests(HomeCase):
         self.assertFalse((custom_dir / "settings.json").exists())
         self.assertFalse((custom_dir / "skills").exists())
 
+    def test_each_claude_home_keeps_its_own_settings(self):
+        # A second Claude account has its own model and effort; setup adds the gate hook and changes nothing else.
+        self.write(".claude/settings.json", {"model": "opus[1m]", "effortLevel": "high", "env": {"A": "1"}})
+        self.write(".claude-2/settings.json", {"model": "opus", "effortLevel": "medium", "env": {"B": "2"}})
+        self.sync(hooks=True)
+        primary = json.loads((self.home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        second = json.loads((self.home / ".claude-2" / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual((second["model"], second["effortLevel"], second["env"]), ("opus", "medium", {"B": "2"}))
+        self.assertEqual((primary["model"], primary["effortLevel"], primary["env"]), ("opus[1m]", "high", {"A": "1"}))
+        for settings in (primary, second):
+            self.assertIn("router_gate_hook.py", json.dumps(settings["hooks"]))
+
     def test_secondary_claude_dir_with_no_launcher(self):
         # ~/.claude-x exists on disk with no Paseo launcher and no primary ~/.claude directory.
         alt = self.home / ".claude-x"

@@ -1079,45 +1079,21 @@ def hooks_installed(homes: list[tuple[str, Path]] | None = None) -> bool:
 def configure_hooks(homes: list[tuple[str, Path]] | None = None) -> None:
     targets = hook_targets(homes)
     active_keys: set[str] = set()
-    claude_base_text: str | None = None
-    codex_base_text: str | None = None
 
     for family, home_dir, hook_path, backup_name, hook_kind in targets:
         active_keys.add(str(hook_path))
-        spec = FAMILY_SPECS[family]
-        is_default_home = home_dir.resolve() == (HOME / spec["default_home"]).resolve()
-
+        # Each home keeps its own settings (model, effort, permissions, env); setup only adds the gate hook.
         if hook_kind == "claude":
-            if is_default_home or claude_base_text is None:
-                claude_settings = _read_json_file(hook_path)
-                hooks = claude_settings.setdefault("hooks", {})
-                hooks["PreToolUse"] = ensure_hook_in_list(hooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=ROUTER_GATE_MATCHER)
-                text = _json_text(claude_settings)
-                if is_default_home:
-                    claude_base_text = text
-                _write_hook_file(hook_path, text, backup_name, "claude")
-            else:
-                existing_alt = _read_json_file(hook_path)
-                alt_settings = json.loads(claude_base_text)
-                alt_env = dict(alt_settings.get("env") or {})
-                for k, v in (existing_alt.get("env") or {}).items():
-                    if v is not None and v != "":
-                        alt_env[k] = v
-                if alt_env or "env" in alt_settings or "env" in existing_alt:
-                    alt_settings["env"] = alt_env
-                _write_hook_file(hook_path, _json_text(alt_settings), backup_name, "claude")
+            claude_settings = _read_json_file(hook_path)
+            hooks = claude_settings.setdefault("hooks", {})
+            hooks["PreToolUse"] = ensure_hook_in_list(hooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=ROUTER_GATE_MATCHER)
+            _write_hook_file(hook_path, _json_text(claude_settings), backup_name, "claude")
 
         elif hook_kind == "codex":
-            if is_default_home or hook_path.is_file() or codex_base_text is None:
-                codex_data = _read_json_file(hook_path)
-                chooks = codex_data.setdefault("hooks", {})
-                chooks["PreToolUse"] = ensure_hook_in_list(chooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=None)
-                text = _json_text(codex_data)
-                if is_default_home:
-                    codex_base_text = text
-                _write_hook_file(hook_path, text, backup_name, "codex")
-            else:
-                _write_hook_file(hook_path, codex_base_text, backup_name, "codex")
+            codex_data = _read_json_file(hook_path)
+            chooks = codex_data.setdefault("hooks", {})
+            chooks["PreToolUse"] = ensure_hook_in_list(chooks.get("PreToolUse", []), ROUTER_HOOK_CMD, matcher=None)
+            _write_hook_file(hook_path, _json_text(codex_data), backup_name, "codex")
 
         elif hook_kind == "gemini":
             gemini_data = _read_json_file(hook_path)
