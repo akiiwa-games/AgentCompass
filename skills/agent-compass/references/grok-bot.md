@@ -20,8 +20,8 @@ below (base version 0.12.4), with a small dependency-level scope correction.
 Authentication and HTTP transport stay in upstream code.
 Underlying model identity and cost are unknown; usage-float may supply native quota observations.
 A canonical dispatch bundle participates in ordinary automatic routing when
-ready and enabled; explicit requests remain supported. The existing
-`grok` / Grok Build integration is independent.
+ready and enabled; explicit requests remain supported. The `grok` / Grok Build
+integration is a separate launcher; the shipped `quota_sources` binds the Bot to its meter.
 
 Quota sharing with another runner is an explicit account binding in the effective
 configuration. A configured binding reuses the owner's observations, freshness,

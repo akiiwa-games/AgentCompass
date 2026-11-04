@@ -19,8 +19,8 @@ Inspect response usage.speed for Claude, where available. Fallback/cooldown/acco
 restrictions can return standard speed even with the requested feature enabled.
 
 Automatic `--fast` preference and pre-reset sprints apply only to Codex. Public
-subscription fast burn defaults to 2.5x; purchased credits use 2x. Explicit local
-`scoring.fast_burn_multiplier` calibration still wins for subscription accounting.
+subscription fast burn defaults to 2x (the shipped `scoring.fast_burn_multiplier`, calibrated
+on a measured fleet); purchased credits use 2x. An override still wins for subscription accounting.
 API billing follows API pricing rather than the ChatGPT credit multiplier; the
 router's API-equivalent estimates are not an invoice.
 

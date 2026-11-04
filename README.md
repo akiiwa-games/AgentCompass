@@ -56,8 +56,9 @@ every signed-in `model × effort` bundle on ability floors, task fit and quota e
 auditable, replayable ledger. With nothing signed in or no quota readings, `plan`/`roll` return `no_ready_account` /
 a `no_usage_data` warning pointing at `agentcompass setup` instead of guessing.
 
-> **Alpha.** The shipped `accounts.json` is a neutral public catalogue. Personal accounts and scoring policy go in
-> `~/.agent-compass/accounts.local.json`; later overrides in `accounts-override.json`. Model-capability files are generated views.
+> **Alpha.** The shipped `accounts.json` plus discovery is the whole fleet: accounts and plans are discovered, plan capacity
+> comes from `plan-templates.json`, and the calibrated scoring and route order ship as defaults. Personal choices (disabled
+> models, bundles, harnesses) go in `accounts-override.json`. Model-capability files are generated views.
 
 ## Why
 

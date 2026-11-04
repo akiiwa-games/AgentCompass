@@ -763,17 +763,19 @@ class PlanTemplateTests(unittest.TestCase):
 
     def test_shipped_templates_are_plain_family_plan_dicts(self):
         shipped, _ = inventory.read_json(inventory.PLAN_TEMPLATES)
-        self.assertEqual(set(shipped), {'claude', 'codex', 'antigravity'})
+        self.assertEqual(set(shipped), {'claude', 'codex', 'antigravity', 'chatgpt-web'})
         for family, plans in shipped.items():
             for plan, template in plans.items():
                 self.assertIsInstance(template, dict, (family, plan))
                 if 'alias' in template:
                     self.assertIn(template['alias'], plans)
                     continue
-                for pool, capacity in template['capacity_usd'].items():
+                self.assertIn('windows', template, (family, plan))
+                for pool, capacity in template.get('capacity_usd', {}).items():
                     self.assertIn(pool, template['windows'], (family, plan, pool))
                     self.assertGreater(template['burn_pct_per_worker_hour'][pool], 0, (family, plan, pool))
-                self.assertEqual(set(template['capacity_usd']), set(template['burn_pct_per_worker_hour']), (family, plan))
+                self.assertEqual(set(template.get('capacity_usd', {})), set(template.get('burn_pct_per_worker_hour', {})),
+                                 (family, plan))
 
     def test_plan_labels_resolve_to_templates(self):
         for family, label, expected in (

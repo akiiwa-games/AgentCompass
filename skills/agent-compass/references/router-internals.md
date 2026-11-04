@@ -85,23 +85,29 @@ Its model rows and `capability_policy` define public capability priors and route
 [`model-capabilities.md`](model-capabilities.md) are generated views; regenerate
 with `python -X utf8 skills/agent-compass/scripts/capability_catalog.py` (`--check` verifies them).
 
-A full `~/.agent-compass/accounts.local.json` supplies the machine's fleet and personal
-policy; sparse `accounts-override.json` preferences apply after discovery. Local fleet
-model rows and route policy also feed judge prompts. Keep personal ratings, route order,
-capacity/burn calibration and plan assumptions in this local layer. Keep their explanations
-in `~/.agent-compass/host-rules/*.md`.
+The shipped template plus discovery is the whole fleet: accounts and second logins come
+from discovery, plan capacity from the discovered plan through
+[`plan-templates.json`](plan-templates.json), and the calibrated scoring weights, route
+order and priority targets ship in `accounts.json`. Sparse `accounts-override.json`
+preferences (disabled bundles and harnesses, sign-in vetoes, scoring tweaks) apply after
+discovery; its `scoring` merges key by key, so defaults it does not set still apply.
+A full `~/.agent-compass/accounts.local.json` still replaces the template when present
+(legacy). Keep explanations in `~/.agent-compass/host-rules/*.md`.
 
 The allocator first checks discovered availability, explicit disablement, host policy,
 expiry, required tools and modalities, configured route restrictions and ability floors.
 It then scores eligible candidates using the effective scoring weights, model capability
 priors, optional personal preference vectors, continuity and available quota evidence.
-Public routes have no model order and public scoring gives personal preference vectors
-zero weight. A route restricts models only with `restrict_models: true` and a nonempty
+Public routes ship a calibrated model order and public scoring gives preference vectors
+weight 0.49. A route restricts models only with `restrict_models: true` and a nonempty
 `preferred` list. Account `model_defaults[model].disabled` supplies an explicit default
 for dynamically discovered bundles; individual saved bundle choices still take precedence.
 
-Generic account slots carry no plan capacity or burn estimate. Unknown quota is distinct
-from unlimited access. Configure capacity and any model-hour estimates locally; observed
+A discovered plan supplies capacity and burn priors; a family whose product does not
+report its tier locally uses the documented `<family>.default` plan (Antigravity: Ultra
+20x), never no capacity. Claude/Codex without a discovered plan stay unknown. Unknown
+quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
+free models, Dot, the ChatGPT Pro web bridge) are marked so in the template; observed
 telemetry retains its source and freshness. Optional account `cadence` state
 (`window_seconds`, `limit`) measures dispatch frequency and never proves remaining quota.
 A local `capability_policy.remote_reroute_guard.enabled` may retain a remote adapter's

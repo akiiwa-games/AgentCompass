@@ -32,9 +32,9 @@ def markdown(accounts):
             'Public scores are conservative, low-confidence routing priors, not measured benchmarks or a vendor ranking. '
             'Tier and text-capability values are the checked-in calibrated baseline; modality flags describe admission only. '
             'Known catalogue IDs do not prove sign-in, plan capacity, current price, or live model availability.', '',
-            'Personal scores, route order, effort calibration and account capacity belong in the local fleet. '
-            'Unknown capacity and hourly cost remain unknown; neither means unlimited. '
-            'No plan capacity is assumed for a generic subscription slot.', '',
+            'Route order, scoring weights and plan capacity ship as calibrated public defaults; plan capacity '
+            'follows the discovered plan (`plan-templates.json`). Disabled models and bundles are personal '
+            'settings in `accounts-override.json`. Unknown hourly cost remains unknown; it does not mean unlimited.', '',
             '| Model | Tier prior | R / C / E / A / V / G priors | Visual admission |',
             '| :--- | ---: | :--- | :--- |']
     for name, spec in sorted((accounts.get('models') or {}).items()):
@@ -46,8 +46,8 @@ def markdown(accounts):
         rows.append(f'| `{name}` | {spec.get("tier", "unknown")} | {vector} | {bool(spec.get("visual"))} |')
     rows += ['', 'R/C/E/A/V/G = reasoning, coding, exploration, anti-hallucination, visual and GUI.', '',
              '## Effective policy', '',
-             'Routes describe task scope and modality requirements. Public routes have no preferred model ordering. '
-             '`capability_policy` in a local fleet can set `preferred`, `strict_order` and `restrict_models`. '
+             'Routes describe task scope and modality requirements and ship a calibrated `preferred` order. '
+             '`capability_policy` in a local fleet can replace `preferred`, `strict_order` and `restrict_models`. '
              'A restriction is state, not an explanation string. The judge receives this effective policy and its model data.', '',
              '## Regeneration', '',
              'Run `python -X utf8 skills/agent-compass/scripts/capability_catalog.py` from the repository root. '

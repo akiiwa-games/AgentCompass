@@ -102,6 +102,20 @@
     "ultra": {
       "alias": "ultra20",
       "basis": "Ultra tier not reported as 5x or 20x; falls back to the Ultra 20x prior."
+    },
+    "default": {
+      "alias": "ultra20",
+      "basis": "agy reports no plan tier locally: `agy -p /usage` returns only bucket fractions and the tier arrives over the network (loadCodeAssist). An installed, signed-in Antigravity therefore routes on the Ultra 20x prior, the same scale allocator.AGY_WINDOW_CAPACITY_USD uses. A smaller plan can be named in the account document's `plan` (for example \"Google AI Pro\") or in `plan_templates`."
+    }
+  },
+  "chatgpt-web": {
+    "pro": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 200,
+      "basis": "The ChatGPT web bridge is only ready when its config reports proAvailable, so a ready bridge is a Pro web seat. Pro consultations draw no API-priced quota (unmetered); the cadence is a pacing alert of 5 consultations per 12 hours, not a hard limit.",
+      "windows": {},
+      "cadence": {"window_seconds": 43200, "limit": 5},
+      "unmetered": true
     }
   }
 }

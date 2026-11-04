@@ -4,23 +4,56 @@
     "dot_execution": {
       "scope": "A bounded assignment the user's own OpenAI Dot can finish end to end and return as a completed text deliverable.",
       "role": "worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task",
+      "preferred": [
+        "dot"
+      ],
+      "effort": "the Dot's own",
       "implies": {
         "local_only": false
-      }
+      },
+      "restrict_models": true
     },
     "web_research": {
       "scope": "Gather, check and organize information from the open web or other public sources on Dot's own computer, and return a written, sourced result: surveys of options or vendors, current prices, specs or versions, documentation and changelog lookups, fact-checks, news and background roundups, comparison tables.",
       "role": "worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "dot",
+        "claude-sonnet-5",
+        "grok-4.7",
+        "gemini-4-argon-high",
+        "gpt-6.1-sol",
+        "claude-opus-5",
+        "grok-bot",
+        "gpt-6-astra",
+        "gemini-3.8-flash-high"
+      ],
+      "effort": "As supported and justified by the task",
+      "restrict_models": false,
+      "harness_order": [
+        "pi",
+        "codex"
+      ]
     },
     "text_in_text_out": {
       "scope": "Self-contained work whose whole input fits in the packet and whose deliverable is text returned to the parent: drafting, rewriting, translating, summarizing, critiquing, comparing, explaining, and reviewing the logic of a document given in full (mark that `hard`).",
       "role": "worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "claude-opus-5",
+        "grok-bot",
+        "claude-sonnet-5",
+        "dot",
+        "gpt-6-astra",
+        "gemini-4-argon-high",
+        "gpt-6.1-sol",
+        "grok-4.7",
+        "gemini-3.8-flash-high"
+      ],
+      "effort": "As supported and justified by the task",
+      "restrict_models": false,
+      "harness_order": [
+        "pi",
+        "codex"
+      ]
     },
     "exploration_analysis": {
       "scope": "Explore and analyze material on this machine and return findings as text, with light or no code: map how a codebase or system works, trace where and why something happens, read logs, configs, data files or documents, run read-only commands and throwaway scripts to measure something, audit or compare options against the local evidence, and check a document against the code, configuration or data it describes.",
@@ -28,8 +61,22 @@
         "local_only": true
       },
       "role": "explorer or analyst (findings to the parent)",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "claude-sonnet-5",
+        "gpt-6.1-sol",
+        "claude-opus-5",
+        "grok-bot",
+        "gpt-6-astra",
+        "gemini-4-argon-high",
+        "grok-4.7",
+        "gemini-3.8-flash-high"
+      ],
+      "effort": "High by default; xhigh when the analysis is coupled or the evidence is large and conflicting.",
+      "restrict_models": false,
+      "harness_order": [
+        "pi",
+        "codex"
+      ]
     },
     "research_packet": {
       "scope": "Run a defined quantitative experiment, evaluation benchmark, simulation, backtest or data analysis pipeline on this machine's data. Use existing tooling or bounded experiment scripts, compare named variants against a baseline, verify statistical results and report metrics, uncertainty and reproducible artifacts.",
@@ -37,65 +84,170 @@
         "local_only": true
       },
       "role": "research worker (single owner of the packet)",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "claude-sonnet-5",
+        "claude-opus-5",
+        "grok-bot",
+        "gpt-6-astra",
+        "gemini-4-argon-high",
+        "gpt-6.1-sol",
+        "grok-4.7",
+        "gemini-3.8-flash-high"
+      ],
+      "effort": "High by default; xhigh when the discrimination chain is long or the readings conflict.",
+      "restrict_models": false,
+      "harness_order": [
+        "pi",
+        "codex"
+      ]
     },
     "self_contained_code": {
       "scope": "Self-contained code and validation work whose whole input fits in the packet (the spec, interfaces and any existing source it must match; keep it to about 40,000 characters) and whose deliverable is new files with their unit tests, or a report of numbers, returned as text: a module and its tests, a script, a data-processing, backtest or validation routine.",
       "role": "worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "dot",
+        "claude-opus-5",
+        "grok-bot",
+        "claude-sonnet-5",
+        "gpt-6-astra",
+        "gemini-4-argon-high",
+        "gpt-6.1-sol",
+        "grok-4.7",
+        "gemini-3.8-flash-high"
+      ],
+      "effort": "As supported and justified by the task",
+      "restrict_models": false
     },
     "visual_analysis": {
       "scope": "Interpret screenshots, charts, diagrams, spatial layouts, image evidence or visual discrepancies; distinct from writing frontend code.",
       "role": "visual analyst",
-      "preferred": [],
-      "effort": "As supported and justified by the task",
+      "preferred": [
+        "claude-opus-5",
+        "grok-bot",
+        "gpt-6-astra",
+        "gemini-4-argon-high",
+        "gpt-6.1-sol",
+        "claude-sonnet-5",
+        "gemini-3.8-flash-high"
+      ],
+      "effort": "Opus high or xhigh, Astra high, Argon high, Sol high, Sonnet high, Flash high",
       "implies": {
         "visual": true
-      }
+      },
+      "restrict_models": false,
+      "strict_order": true
     },
     "direction_reasoning": {
       "scope": "Deep reasoning and discussion of solution direction, competing architectures, assumptions, causal explanations, or which problem to solve.",
       "role": "advisor or scheme designer",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "ChatGPT Pro via chatgpt-pro-consult",
+        "gemini-4-argon-high",
+        "claude-opus-5",
+        "grok-bot",
+        "gpt-6-astra",
+        "claude-sonnet-5"
+      ],
+      "effort": "Argon/Opus high for worker sessions; highest available Pro effort in the web UI at frontier difficulty.",
+      "restrict_models": true
     },
     "complex_build_plan": {
       "scope": "Turn an agreed direction into a repository-grounded multi-system build plan: dependencies, interfaces, staged migrations, sequencing, validation and rollback.",
       "role": "planner (worker or advisory output)",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "ChatGPT Pro via chatgpt-pro-consult",
+        "gemini-4-argon-high",
+        "claude-opus-5",
+        "grok-bot",
+        "gpt-6-astra",
+        "claude-sonnet-5"
+      ],
+      "effort": "Argon/Opus high for worker sessions; highest available Pro effort in the web UI at frontier difficulty.",
+      "restrict_models": true
     },
     "general_implementation": {
       "scope": "Implement an agreed plan, maintain production features, refactor bounded code or deliver ordinary repository changes.",
       "role": "worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "gemini-3.8-flash-high",
+        "claude-opus-5",
+        "grok-bot",
+        "claude-sonnet-5",
+        "gpt-6-astra",
+        "gemini-4-argon-high",
+        "gpt-6.1-sol",
+        "grok-4.7"
+      ],
+      "effort": "Flash/Argon high for every worker packet; level is encoded in the model ID. Use the original supported medium/high efforts on fallbacks.",
+      "restrict_models": false
     },
     "debug_review": {
       "scope": "Subtle bug diagnosis, regression analysis, review of code and diffs, invariants, test-driven repairs and checking existing behavior.",
       "role": "reviewer or debugging worker, as assigned",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "gpt-6.1-sol",
+        "claude-sonnet-5",
+        "gpt-6-astra",
+        "claude-opus-5",
+        "grok-bot",
+        "gemini-4-argon-high",
+        "grok-4.7",
+        "gemini-3.8-flash-high"
+      ],
+      "effort": "Supported high/xhigh on the models listed first, more for coupled difficult failures; Argon/Flash high when assigned.",
+      "restrict_models": false,
+      "harness_order": [
+        "codex",
+        "pi"
+      ]
     },
     "frontend_implementation": {
       "scope": "Write UI components, interactions, animations and styling from the accepted design; visual evidence inspection is a separate visual_analysis task when material.",
       "role": "worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "gemini-3.8-flash-high",
+        "claude-opus-5",
+        "grok-bot",
+        "gemini-4-argon-high",
+        "gpt-6-astra",
+        "claude-sonnet-5",
+        "gpt-6.1-sol",
+        "grok-4.7"
+      ],
+      "effort": "Flash/Argon high for every worker packet; supported high/medium on fallbacks.",
+      "restrict_models": false
     },
     "bounded_bulk_work": {
       "scope": "Homogeneous small changes, independent extraction or inventory, boilerplate and fixed transformations with explicit acceptance.",
       "role": "bounded leaf worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "gemini-3.8-flash-high",
+        "grok-4.7",
+        "gpt-6.1-sol",
+        "claude-sonnet-5",
+        "gemini-4-argon-high",
+        "gpt-6-astra",
+        "claude-opus-5",
+        "grok-bot"
+      ],
+      "effort": "Flash/Argon high for every worker packet; supported medium/high on fallbacks.",
+      "restrict_models": false
     },
     "tool_execution": {
       "scope": "A bounded outcome primarily requiring file, shell, browser, API or other tool calls, with direction and authorized actions already established.",
       "role": "tool-execution worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "gemini-3.8-flash-high",
+        "gpt-6.1-sol",
+        "claude-sonnet-5",
+        "gemini-4-argon-high",
+        "claude-opus-5",
+        "grok-bot",
+        "gpt-6-astra",
+        "grok-4.7"
+      ],
+      "effort": "Flash/Argon high for every worker packet; level is encoded in the model ID. Fallback effort follows assignment difficulty and runtime support.",
+      "restrict_models": false
     },
     "computer_use": {
       "scope": "Operate a graphical computer or app through screenshots, mouse and keyboard (computer use): GUI-only applications, desktop or browser flows with no API, clicking through settings.",
@@ -106,15 +258,33 @@
         "gui": 1.0
       },
       "role": "computer-use worker",
-      "preferred": [],
-      "effort": "As supported and justified by the task"
+      "preferred": [
+        "gpt-6-astra",
+        "gpt-6.1-sol"
+      ],
+      "effort": "High on the models listed (Astra, Sol); unlisted vision models rank by their `gui` capability. Default difficulty is `hard` (Flash closed); a profiled small GUI task (reasoning_depth 1) or an explicit `routine` opens it to Flash and Sol.",
+      "restrict_models": false,
+      "strict_order": true,
+      "harness_order": [
+        "codex",
+        "pi"
+      ]
     },
     "other_or_mixed": {
       "scope": "Unmatched or mixed work.",
       "role": "parent or bounded worker",
       "preferred": [],
-      "effort": "As supported and justified by the task"
+      "effort": "As supported and justified by the task",
+      "restrict_models": false
     }
+  },
+  "remote_reroute_guard": {
+    "enabled": true,
+    "bundle_id": "dot_text",
+    "window_seconds": 600
+  },
+  "route_fit_peers": {
+    "grok-bot": "claude-opus-5-5"
   },
   "mainstream_defaults": {
     "models": {
@@ -979,6 +1149,26 @@
           "module_precision": 0.76
         },
         "basis": "Compatibility-only prior: exact IDs advertised by cc-switch:claude:default, verified. Frontier family fallbacks use Claude 5.5."
+      },
+      "glm-5.2": {
+        "tier": 3.5,
+        "cost": 2,
+        "visual": false,
+        "usd_per_hour": 1.0,
+        "capabilities": {
+          "reasoning": 0.68,
+          "coding": 0.74,
+          "exploration": 0.7,
+          "anti_hallucination": 0.68,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "subjective": {
+          "divergence": 0.56,
+          "global_rigor": 0.68,
+          "module_precision": 0.74
+        },
+        "basis": "Provisional routing prior shrunk from glm-5.3. ID verified in Venice /models as zai-org-glm-5-2 (text-only per Venice model_spec, reasoning efforts none/high/max). Scores and hourly cost are estimates, not benchmarks or live quotes."
       }
     }
   }

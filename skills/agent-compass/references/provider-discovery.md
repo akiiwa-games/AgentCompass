@@ -62,8 +62,9 @@ additional reserve is inferred from a secondary-account name or plan label.
 
 Quota sharing between independent integrations is explicit: top-level
 `quota_sources` maps an account to its quota owner, or an account sets `quota_source`.
-For example, a Grok Bot account shares Grok Build observations and reservations only
-when that binding is configured. Otherwise they retain independent quota state.
+The shipped template binds the Grok Bot to Grok (`"quota_sources": {"grok-bot": "grok"}`),
+the same meter the usage collector reads for it, so the Bot routes as a subscription
+account. An override can remove the binding; other products stay independent unless bound.
 
 ## Automatic admission of newly discovered accounts
 
@@ -105,8 +106,8 @@ it does not invent model benchmarks or quota capacity.
 and Node makes its launcher available. This is setup availability, not proof of
 current login: upstream performs a live read-only check before send. Billing and
 underlying model identity remain unknown. Public service scores are conservative
-priors. Personal ratings and model route order belong in the local fleet.
-Any quota-sharing binding must be explicit in account configuration; the bound
+priors; the shipped route order and `route_fit_peers` align it with Opus.
+Quota sharing is an explicit binding (shipped for Grok); the bound
 owner supplies observation freshness, reset and capacity policy. Execution
 enablement stays independent, and missing/stale quota never proves unlimited
 capacity. See

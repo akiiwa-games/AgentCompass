@@ -101,8 +101,8 @@ class FastModesTests(unittest.TestCase):
             self.assertIn('features.fast_mode=' + str(fast).lower(), args)
 
     def test_codex_public_subscription_rate_and_explicit_calibration(self):
-        self.assertEqual(fast_modes.codex_burn_multiplier({}, {'billing': 'subscription'}), 2.5)
-        self.assertEqual(fast_modes.codex_burn_multiplier({'fast_burn_multiplier': 2}, {'billing': 'subscription'}), 2)
+        self.assertEqual(fast_modes.codex_burn_multiplier({}, {'billing': 'subscription'}), 2.0)
+        self.assertEqual(fast_modes.codex_burn_multiplier({'fast_burn_multiplier': 2.5}, {'billing': 'subscription'}), 2.5)
         self.assertEqual(fast_modes.codex_burn_multiplier({'fast_burn_multiplier': 2.5}, {'billing': 'credits'}), 2)
         self.assertEqual(fast_modes.claude_billing({'billing': 'subscription'}), 'usage_credits')
         self.assertEqual(fast_modes.claude_billing({'billing': 'metered'}), 'api')

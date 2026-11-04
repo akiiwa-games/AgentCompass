@@ -4,7 +4,7 @@ Generated from `accounts.json` by `scripts/capability_catalog.py`; do not edit t
 
 Public scores are conservative, low-confidence routing priors, not measured benchmarks or a vendor ranking. Tier and text-capability values are the checked-in calibrated baseline; modality flags describe admission only. Known catalogue IDs do not prove sign-in, plan capacity, current price, or live model availability.
 
-Personal scores, route order, effort calibration and account capacity belong in the local fleet. Unknown capacity and hourly cost remain unknown; neither means unlimited. No plan capacity is assumed for a generic subscription slot.
+Route order, scoring weights and plan capacity ship as calibrated public defaults; plan capacity follows the discovered plan (`plan-templates.json`). Disabled models and bundles are personal settings in `accounts-override.json`. Unknown hourly cost remains unknown; it does not mean unlimited.
 
 | Model | Tier prior | R / C / E / A / V / G priors | Visual admission |
 | :--- | ---: | :--- | :--- |
@@ -23,6 +23,7 @@ Personal scores, route order, effort calibration and account capacity belong in 
 | `flint-40b-free` | 2.8 | 0.48 / 0.52 / 0.48 / 0.46 / 0.00 / 0.00 | False |
 | `gemini-3.8-flash-high` | 3.0 | 0.52 / 0.47 / 0.50 / 0.72 / 0.30 / 0.42 | True |
 | `gemini-4-argon-high` | 4.0 | 0.78 / 0.83 / 0.86 / 0.81 / 0.75 / 0.62 | True |
+| `glm-5.2` | 3.5 | 0.68 / 0.74 / 0.70 / 0.68 / 0.00 / 0.00 | False |
 | `glm-5.3` | 3.7 | 0.72 / 0.78 / 0.74 / 0.72 / 0.60 / 0.55 | True |
 | `glm-5.3-flash-free` | 2.9 | 0.50 / 0.54 / 0.52 / 0.52 / 0.40 / 0.30 | True |
 | `gpt-5.6-luna` | 3.1 | 0.55 / 0.62 / 0.54 / 0.59 / 0.50 / 0.45 | True |
@@ -55,7 +56,7 @@ R/C/E/A/V/G = reasoning, coding, exploration, anti-hallucination, visual and GUI
 
 ## Effective policy
 
-Routes describe task scope and modality requirements. Public routes have no preferred model ordering. `capability_policy` in a local fleet can set `preferred`, `strict_order` and `restrict_models`. A restriction is state, not an explanation string. The judge receives this effective policy and its model data.
+Routes describe task scope and modality requirements and ship a calibrated `preferred` order. `capability_policy` in a local fleet can replace `preferred`, `strict_order` and `restrict_models`. A restriction is state, not an explanation string. The judge receives this effective policy and its model data.
 
 ## Regeneration
 

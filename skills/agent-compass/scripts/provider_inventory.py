@@ -29,7 +29,7 @@ PASEO_RECOGNIZED_ONLY = ('copilot', 'muse', 'dsh')
 
 
 PLAN_TEMPLATES = Path(__file__).resolve().parents[1] / 'references/plan-templates.json'
-TEMPLATE_KEYS = ('windows', 'capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour')
+TEMPLATE_KEYS = ('windows', 'capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour', 'cadence', 'unmetered')
 POOL_KEYS = ('windows', 'burn_pct_per_worker_hour', 'capacity_usd', 'capacity_change', 'observed', 'expires_at')
 _SHIPPED_PLAN_TEMPLATES = None
 _STDLIB_WHICH = shutil.which
@@ -679,8 +679,11 @@ def _discover(home=None, environ=None, now=None):
         result['launchers'][name] = {'family': family, 'status': 'ready' if enabled else 'disabled'}
     agy = obj(cache_rows.get('antigravity'))
     agy_present = bool(_which('agy', environ.get('PATH')))
+    # agy answers /usage only for a signed-in account, so a quota reading is the sign-in proof.
+    agy_read = bool(array(agy.get('windows'))) and not agy.get('error')
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
-        'sources': ['native'], 'status': 'ready' if agy_present else 'missing_client',
+        'sources': ['native'] + (['usage-cache'] if agy_read else []),
+        'status': 'ready' if agy_present else 'missing_client',
         'plan': agy.get('plan_label'), 'billing': 'subscription'}
     opencode = result['launchers']['opencode']
     installed = bool(_which('opencode', environ.get('PATH')))
@@ -819,6 +822,9 @@ def _discover(home=None, environ=None, now=None):
     for name, status in (('dot', dot_configuration(home, environ)),
                          ('chatgpt-web', consult_configuration(web_home))):
         result['accounts'][name] = {'family': name, 'provider': name, 'sources': ['native'], 'status': status}
+    # The bridge is only ready when its config reports proAvailable: a ready bridge is a Pro web seat.
+    if result['accounts']['chatgpt-web']['status'] == 'ready':
+        result['accounts']['chatgpt-web']['plan'] = 'pro'
     # Remote external runner. No model benchmarks, inferred quota or credential reads.
     bot_config, bot_error = read_json(state_dir / 'grok-bot/config.json')
     bot_configured = bot_error is None and isinstance(bot_config.get('bot_id'), str) and bool(bot_config['bot_id'].strip())
@@ -1021,11 +1027,17 @@ def _apply_auto_bundles(accounts, inventory, live):
 
 UNVERIFIABLE_SIGN_IN = ('antigravity', 'opencode', 'grok')
 UNVERIFIED_SIGN_IN_LABEL = 'installed, sign-in unverified'
+# Plans whose models run without any account: there is no sign-in to prove (OpenCode's free models).
+NO_SIGN_IN_PLANS = {'opencode': ('free',)}
+
+
+def needs_no_sign_in(row):
+    return isinstance(row, dict) and row.get('plan') in NO_SIGN_IN_PLANS.get(row.get('family'), ())
 
 
 def sign_in_proven(row):
     """True when discovery can tell this account is signed in, not merely that its CLI is installed."""
-    if not isinstance(row, dict) or row.get('family') not in UNVERIFIABLE_SIGN_IN:
+    if not isinstance(row, dict) or row.get('family') not in UNVERIFIABLE_SIGN_IN or needs_no_sign_in(row):
         return True
     sources = row.get('sources') or []
     if isinstance(sources, str):
@@ -1052,7 +1064,8 @@ def launch_verified(row, previous):
 def account_state_label(row):
     """Same words setup uses when a CLI is installed but sign-in cannot be read."""
     status = row.get('status') if isinstance(row, dict) else None
-    if isinstance(row, dict) and row.get('family') in UNVERIFIABLE_SIGN_IN and status == 'ready':
+    if (isinstance(row, dict) and row.get('family') in UNVERIFIABLE_SIGN_IN and status == 'ready'
+            and not needs_no_sign_in(row)):
         return UNVERIFIED_SIGN_IN_LABEL
     return status
 
@@ -1161,6 +1174,10 @@ def apply(accounts, inventory=None):
         # (claude/codex without a discovered plan stay unknown below).
         template_plan = configured_plan(family, plan or (spec.get('plan') if family not in ('claude', 'codex') else None))
         template = plan_defaults(accounts, family, template_plan) if template_plan else None
+        if template is None and family not in ('claude', 'codex'):
+            # A tier the product does not report locally routes on the family's documented default plan,
+            # never on no capacity (plan-templates.json `<family>.default`).
+            template = plan_defaults(accounts, family, 'default')
         if plan:
             previous_plan = configured_plan(family, spec.get('plan'))
             spec['plan'] = plan
