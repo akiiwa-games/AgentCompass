@@ -491,7 +491,7 @@ def account_cards() -> list[dict]:
             rates = acct_obs.get(wid) or acct_obs.get(c_wid) or {}
             res = reservations.get((name, wid)) or reservations.get((name, c_wid)) or {}
             windows.append({
-                "id": wid, "hours": hours, "remaining_pct": remaining,
+                "id": wid, "hours": hours, "remaining_pct": remaining, "accounts": window.get("accounts") or 1,
                 "remaining_usd": round(cap * remaining / 100, 1) if cap and remaining is not None else None,
                 "reserved_pct": res.get("pct", 0.0), "reserved_usd": res.get("usd", 0.0),
                 "reserved_workers": list(res.get("workers") or ()),

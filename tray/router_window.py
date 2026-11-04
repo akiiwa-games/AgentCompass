@@ -211,6 +211,18 @@ def short_window_name(window: dict, multi: bool = True) -> str:
     return f"{wid} {span}".strip() if span and not wid.endswith(span) else wid
 
 
+def card_window_name(card: dict, window: dict) -> str:
+    """Window tag on an account card, matching Usage Float: a pool of N accounts reads '7d×N'; an account whose
+    only general window is the week (Codex, Claude Ultra) shows no tag; model-scoped weeks keep theirs."""
+    count = window.get("accounts")
+    suffix = f"×{count}" if isinstance(count, int) and not isinstance(count, bool) and count > 1 else ""
+    general = [w for w in card.get("windows") or () if not str(w.get("id") or "").startswith("weekly_")]
+    if (not suffix and card.get("account") != "antigravity" and len(general) == 1
+            and general[0].get("id") == window.get("id")):
+        return ""
+    return short_window_name(window) + suffix
+
+
 def quota_window_title(card: dict, window: dict) -> str:
     """Compact cell title combining account short name and window short tag."""
     acct = "AGY" if card.get("account") == "antigravity" else (card.get("label") or card.get("account") or "")
@@ -232,7 +244,7 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
     lines = [head, f"{tr('套餐', 'Plan')}: {plan} · {status_str}"]
     win_list = [window] if window is not None else list(card.get("windows") or ())
     for w_item in win_list:
-        w_tag = short_window_name(w_item)
+        w_tag = card_window_name(card, w_item) or short_window_name(w_item)
         rem = w_item.get("remaining_pct")
         rem_str = "—" if rem is None else f"{rem:.0f}%"
         usd_str = f" (≈${w_item['remaining_usd']:.0f})" if w_item.get("remaining_usd") is not None else ""
@@ -1588,17 +1600,21 @@ class Panel:
             remaining = window.get("remaining_pct")
             reserved = float(window.get("reserved_pct") or 0.0)
             is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh")
-            w_name.configure(text=short_window_name(window))
+            w_name.configure(text=card_window_name(card, window))
             w_detail.configure(text=short_countdown(window.get("reset_in")))
-            used = None if remaining is None else 100.0 - max(0.0, min(100.0, float(remaining)))
+            # remaining_pct is in percent of one account (a fresh pool of two reads 200%); the bar and colour
+            # describe the whole pool.
+            count = window.get("accounts") if isinstance(window.get("accounts"), int) and window["accounts"] > 1 else 1
+            share = None if remaining is None else max(0.0, min(100.0, float(remaining) / count))
+            used = None if share is None else 100.0 - share
             colour = "Red" if used is not None and used >= 90 else "Amber" if used is not None and used >= 70 else "Green"
             fg = ("#64748B" if is_stale
                   else theme.GREEN if colour == "Green"
                   else theme.AMBER if colour == "Amber"
                   else theme.RED)
-            w_share.configure(text="—" if used is None else f"{used:.0f}%", fg=fg)
+            w_share.configure(text="—" if remaining is None else f"{max(0.0, float(remaining)):.0f}%", fg=fg)
             if hasattr(bar, "set_segments"):
-                bar.set_segments(remaining, reserved, colour=colour, stale=is_stale)
+                bar.set_segments(share, reserved / count, colour=colour, stale=is_stale)
             else:
                 bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=used or 0)
 

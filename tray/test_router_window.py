@@ -911,6 +911,16 @@ class WindowHelperTests(unittest.TestCase):
         self.assertEqual(router_window.short_window_name({"id": "seven_day", "hours": 168}), "7d")
         self.assertEqual(router_window.short_window_name({"id": "five_hour", "hours": 5}), "5h")
         self.assertEqual(router_window.short_window_name({"id": "gemini-weekly", "hours": 168}), "gemini 7d")
+        name = router_window.card_window_name
+        week, five, fable = {"id": "seven_day", "hours": 168}, {"id": "five_hour", "hours": 5}, {"id": "weekly_fable", "hours": 168}
+        ultra = {"account": "claude", "windows": [fable, week]}
+        self.assertEqual([name(ultra, w) for w in ultra["windows"]], ["fable 7d", ""])  # week-only, like Codex
+        pro = {"account": "claude", "windows": [week, five]}
+        self.assertEqual([name(pro, w) for w in pro["windows"]], ["7d", "5h"])
+        pool = {"account": "claude-2", "windows": [dict(week, accounts=2), dict(five, accounts=2)]}
+        self.assertEqual([name(pool, w) for w in pool["windows"]], ["7d×2", "5h×2"])
+        agy = {"account": "antigravity", "windows": [{"id": "gemini-weekly", "hours": 168}]}
+        self.assertEqual(name(agy, agy["windows"][0]), "gemini 7d")
 
         # Verify pool_reservations aggregates active dispatch leases per (account, window_id).
         with tempfile.TemporaryDirectory() as tmp:
