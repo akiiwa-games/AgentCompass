@@ -19,7 +19,7 @@ import dispatch_flow
 import entry
 import dispatch_registry as registry
 import provider_inventory
-from worker_context import NATIVE_HOSTS, require_parent_id, resolve_parent
+from worker_context import NATIVE_HOSTS, harness_session, require_parent_id, resolve_parent
 
 # Launcher families a configured Paseo provider may use: the dispatch adapter's own table, so a ready Grok/ACP
 # definition is launched by Paseo instead of falling through to the CLI.
@@ -712,6 +712,9 @@ def _run(args, judge):
         parent, parent_host, parent_address = resolve_parent(args)
     task = build_task(args, text, parent)
     task.update(parent_host=parent_host, parent_address=parent_address)
+    host_session = harness_session(parent) if parent else ''
+    if host_session:
+        task['host_session_id'] = host_session
     if parent and not args.dry_run:
         pending_rows = [r for r in registry.pending() if r.get('parent_id') == parent]
         if pending_rows:

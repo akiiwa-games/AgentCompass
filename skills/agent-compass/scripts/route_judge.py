@@ -702,6 +702,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         'v': 1, 'at': now.isoformat(), 'stage': result.get('stage'), 'source': result.get('source'),
         'choice': result.get('choice'), 'specialty': result.get('specialty'),
         **{k: result[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound') if k in result},
+        **({'host_session_id': task['host_session_id']} if task.get('host_session_id') else {}),
         'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),
         **({'host_policy_violation': result['host_policy_violation']} if 'host_policy_violation' in result else {}),

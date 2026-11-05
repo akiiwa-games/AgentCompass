@@ -1029,6 +1029,16 @@ class RouterGateHookTests(unittest.TestCase):
         self.assertEqual(gate.evaluate_payload({"session_id": "a", "tool_name": "create_agent", "tool_input": {
             "provider": "codex/gpt-6-astra"}}, ledger_path=ledger, now=T0), {})
 
+    def test_a_host_terminal_parent_matches_the_harness_session_it_runs(self):
+        # Issue #2: roll inside an Orca terminal records the Orca session as the parent (the worker's reply
+        # address) and the Claude Code session it runs in; Claude's hook payload carries only the latter.
+        ledger = self.write_ledger(str(self.state), [self.route(parent_agent_id="orca-sess", host_session_id="claude-uuid")])
+        launch = {"tool_name": "create_agent", "tool_input": {"provider": "codex/gpt-6-astra"}}
+        self.assertEqual(gate.evaluate_payload(dict(launch, session_id="claude-uuid"), ledger_path=ledger, now=T0), {})
+        self.assertEqual(gate.evaluate_payload(dict(launch, session_id="orca-sess"), ledger_path=ledger, now=T0), {})
+        self.assertEqual(gate.evaluate_payload(dict(launch, session_id="other-claude"), ledger_path=ledger, now=T0)["decision"],
+                         "block")
+
     def test_nested_task_correlation_and_ttl_are_enforced(self):
         ledger = self.write_ledger(str(self.state), [self.route(task={"task_id": "a"}), self.route("pi", task={"task_id": "a"})])
         payload = {"tool_name": "create_agent", "tool_input": {"provider": "codex/gpt-6-astra", "taskId": "a"}}

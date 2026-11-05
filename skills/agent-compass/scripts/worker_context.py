@@ -57,6 +57,15 @@ def detect_host_session():
     return ''
 
 
+def harness_session(parent):
+    """The session ID of the harness running this process when it differs from the parent (an Orca or herdr terminal
+    around Claude Code): that harness's own hooks report this ID, not the terminal's, so the ledger records both."""
+    found = (detect_host_session() or '').strip().removeprefix('claude:')
+    if not found or found == parent or found.startswith(('claude-session-', 'codex-session-')):
+        return ''
+    return found
+
+
 def require_parent_id(value):
     if not isinstance(value, str) or not value.strip() or value.strip().lower() in {
         'top-level', 'none', 'null', 'unknown', 'parent', '<parent-id>', '<parent id>',

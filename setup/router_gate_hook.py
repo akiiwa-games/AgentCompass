@@ -810,9 +810,14 @@ def match_route(
     """
     candidates = []
     for row in rows:
-        identity = correlation_fields(row, row.get("task") if isinstance(row.get("task"), dict) else {})
+        task = row.get("task") if isinstance(row.get("task"), dict) else {}
+        identity = correlation_fields(row, task)
         shared = context.keys() & identity.keys()
-        if any(context[k] != identity[k] for k in shared):
+        # A parent recorded from a host terminal (Orca) is the worker's reply address; the harness running in it
+        # (Claude Code) reports its own session, which roll records alongside as host_session_id.
+        host_session = row.get("host_session_id") or task.get("host_session_id")
+        if any(context[k] != identity[k] and not (k == "parent" and host_session and context[k] == host_session)
+               for k in shared):
             continue
         candidates.append((len(shared), row))
     if not candidates:

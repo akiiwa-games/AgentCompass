@@ -35,6 +35,15 @@ class OrcaParentTests(unittest.TestCase):
         env = {'ORCA_AGENT_SESSION_ID': 'sess-1', 'CLAUDE_CODE_SESSION_ID': 'claude-9'}
         self.assertEqual(parent(env)[:2], ('sess-1', 'orca'))
 
+    def test_the_claude_session_inside_orca_is_recorded_beside_the_orca_parent(self):
+        # Issue #2: Claude's hooks report its own session, so the route must carry it as well as the Orca parent.
+        env = {'ORCA_AGENT_SESSION_ID': 'sess-1', 'CLAUDE_CODE_SESSION_ID': 'claude-9'}
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(wc.harness_session('sess-1'), 'claude-9')
+            self.assertEqual(wc.harness_session('claude-9'), '')
+        with patch.dict(os.environ, {'ORCA_AGENT_SESSION_ID': 'sess-1'}, clear=True):
+            self.assertEqual(wc.harness_session('sess-1'), '')
+
     def test_explicit_parent_in_orca_derives_the_address(self):
         self.assertEqual(parent({}, parent_host='orca', parent_id='sess-3'), ('sess-3', 'orca', 'orca_session_id:sess-3'))
         self.assertEqual(parent({'ORCA_TERMINAL_HANDLE': 'structworker_1'}, parent_host='orca', parent_id='sess-3'),

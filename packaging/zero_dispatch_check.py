@@ -789,6 +789,32 @@ def step_hooks_and_crash(z: Zero):
                                capture_output=True, text=True, encoding="utf-8", errors="replace", env=box.env(**z.env()), cwd=str(z.work), timeout=60)
         op.check("an unrelated tool call is untouched", (parse(other.stdout) or {}).get("hookSpecificOutput", {}).get("permissionDecision") != "deny", other.stdout[:200])
 
+        # Issue #2: a roll from Claude Code inside an Orca terminal records the Orca session as the parent; the
+        # Claude hook reports the Claude session. The launch from that Claude session must match the route.
+        op = run.operation("gate under an Orca terminal", "roll inside an Orca terminal running Claude Code: the Claude session's own launch matches the route, another session's does not")
+        orca_env = {"ORCA_AGENT_SESSION_ID": "orca-zero-sess", "ORCA_TERMINAL_HANDLE": "term_zero", "CLAUDECODE": "1",
+                    "CLAUDE_CODE_SESSION_ID": "claude-zero-uuid", "PASEO_AGENT_ID": None}
+        # Opus, so the unparented Sonnet record above cannot answer for this launch.
+        z.call(op, "roll", "--task", z.task("ok", "orca-terminal"), "--provider", "claude", "--account", "claude",
+               "--model", "claude-opus-5-5", "--effort", "high", "--basis", "from-zero orca gate test", "--wait", "0", **orca_env)
+        ledger = box.state / "router-ledger.jsonl"
+        rows = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()] if ledger.is_file() else []
+        routed = next((r for r in reversed(rows) if (r.get("bundle") or {}).get("model") == "claude-opus-5-5"), {})
+        op.check("the roll's route names the Orca session as the parent (the worker's reply address)", routed.get("parent_id") == "orca-zero-sess",
+                 {k: routed.get(k) for k in ("stage", "parent_id", "host_session_id", "bundle")})
+
+        def orca_gate(session):
+            body = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": session,
+                               "tool_input": {"subagent_type": "general-purpose", "prompt": "orca work", "model": "opus"}})
+            done = subprocess.run([GIT_BASH, "-c", command], input=body, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                  env=box.env(**z.env()), cwd=str(z.work), timeout=60)
+            op.log([command], f"installed gate command, Claude session {session}", done)
+            return ((parse(done.stdout) or {}).get("hookSpecificOutput") or {}).get("permissionDecision"), done.stdout
+        verdict, out = orca_gate("claude-zero-uuid")
+        op.check("the Claude session that ran the roll may launch the routed worker", verdict != "deny", out[:400])
+        verdict, out = orca_gate("claude-someone-else")
+        op.check("an unrelated Claude session is still denied", verdict == "deny", out[:400])
+
     op = run.operation("roll killed while it watches", "the dispatch outlives its roll process; the continuation finds the same agent and finishes it with no second create")
     env = z.paseo_env()
     z.set_parents(PARENT)
