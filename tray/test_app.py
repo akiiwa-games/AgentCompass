@@ -170,6 +170,17 @@ class MenuTests(TrayTestCase):
         self.assertFalse(app.notify_if_restarted(again_icon))
         again_icon.notify.assert_not_called()
 
+    def test_tray_log_lives_in_the_state_directory(self):
+        # Tests isolate STATE_DIR; a log path built from the home directory wrote test lines into the real tray.log.
+        app.log_info("isolated line")
+        try:
+            raise RuntimeError("isolated error")
+        except RuntimeError as exc:
+            app.log_error(exc)
+        text = (app.services.STATE_DIR / "tray.log").read_text(encoding="utf-8")
+        self.assertIn("isolated line", text)
+        self.assertIn("isolated error", text)
+
     def test_starting_again_while_running_opens_the_window(self):
         # The Start menu shortcut launches the tray exe; a second copy must show the running tray's window.
         for argv, opened in ((["app.pyw"], True), (["app.pyw", "--attach-only"], False)):

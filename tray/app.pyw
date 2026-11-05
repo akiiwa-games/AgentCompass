@@ -104,14 +104,14 @@ MAX_NOTIFY_LENGTH = 240
 
 
 def log_error(exc: BaseException) -> None:
-    path = Path.home() / ".agent-compass" / "tray.log"
+    path = services.STATE_DIR / "tray.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
         traceback.print_exception(exc, file=stream)
 
 
 def log_info(message: str) -> None:
-    path = Path.home() / ".agent-compass" / "tray.log"
+    path = services.STATE_DIR / "tray.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with path.open("a", encoding="utf-8") as stream:
