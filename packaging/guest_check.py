@@ -531,6 +531,34 @@ def windows_of(pid=None, title=None):
     return found
 
 
+def console_windows():
+    found = set()
+    for window in windows_of():
+        name = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(window["hwnd"], name, 256)
+        if name.value in ("ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS"):
+            found.add(window["hwnd"])
+    return found
+
+
+def console_command_opens_no_window(exe):
+    """The tray runs CLIs (version probes, updates, model lists) through the windowed exe's owned_command helper."""
+    before = console_windows()
+    helper = subprocess.Popen([str(exe), "--run-component", "owned_command", "cmd", "/c", "ping -n 4 127.0.0.1 >nul"],
+                              stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              cwd=str(HOME), env=base_env())
+    helper.stdin.write(b"1")
+    helper.stdin.close()
+    popped, deadline = set(), time.time() + 20
+    while helper.poll() is None and time.time() < deadline:
+        popped |= console_windows() - before
+        time.sleep(0.1)
+    if helper.poll() is None:
+        helper.kill()
+    check("a console command the installed tray runs opens no console window", helper.wait(10) == 0 and not popped,
+          f"rc={helper.returncode} new console windows={len(popped)}")
+
+
 def tray_processes():
     done = run(["tasklist", "/FI", "IMAGENAME eq AgentCompass.exe", "/FO", "CSV", "/NH"], label="tasklist")
     return [int(row.split('","')[1]) for row in done.stdout.splitlines() if row.startswith('"AgentCompass.exe"')]
@@ -752,6 +780,7 @@ def g_installer():
     check("the tray started by the task is still running 10 s later", bool(tray_processes()), tray_processes())
     shot(screen_rect(), "installed-task-desktop.png")
     kill_trays()
+    console_command_opens_no_window(exe)
     gui_session(exe, "installed", router_only=False)
 
     if (IN / "inno" / "tray" / "updates.py").is_file():

@@ -1,3 +1,4 @@
+import os
 """Frozen launch boundaries must never infer a sibling python.exe from AgentCompass.exe."""
 import importlib.machinery
 import importlib.util
@@ -67,7 +68,9 @@ class FrozenRuntimeTests(unittest.TestCase):
                 mock.patch.object(owned_command.sys, 'argv', ['owned_command', *command]), \
                 mock.patch.object(owned_command.subprocess, 'call', return_value=3) as call:
             self.assertEqual(owned_command.main(), 3)
-            call.assert_called_once_with(command, stdin=subprocess.DEVNULL)
+            # The installed helper is the windowed AgentCompass.exe: without this a console command opens its own window.
+            call.assert_called_once_with(command, stdin=subprocess.DEVNULL, **({'creationflags': subprocess.CREATE_NO_WINDOW}
+                                                                             if os.name == 'nt' else {}))
 
     def test_easytier_helper_task_uses_component_and_keeps_quoted_arguments(self):
         with mock.patch.object(easytier_setup, 'register_task') as register:

@@ -921,8 +921,8 @@ def subscription_env(account=None):
 def stop_process(process):
     if process.poll() is None:
         if os.name == 'nt':
-            subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
         else:
             os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=10)

@@ -21,9 +21,10 @@ from typing import NamedTuple
 
 OUTPUT_LIMIT = 24000
 # The helper waits for one byte on stdin, so the command cannot start before the Job owns the helper.
-HELPER = ("import subprocess,sys\n"
+HELPER = ("import os,subprocess,sys\n"
           "if sys.stdin.buffer.read(1) != b'1': raise SystemExit(125)\n"
-          "raise SystemExit(subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL))")
+          "raise SystemExit(subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL,"
+          " creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0))")
 
 
 class Result(NamedTuple):
