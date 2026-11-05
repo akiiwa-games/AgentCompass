@@ -754,6 +754,7 @@ def g_installer():
 
     if (IN / "inno" / "tray" / "updates.py").is_file():
         section("Inno Setup: one-click installer self-update in Windows Sandbox")
+        sys.path.insert(0, str(IN / "inno"))  # agentcompass and psutil staged beside tray/
         sys.path.insert(0, str(IN / "inno" / "tray"))
         import updates as tray_updates
         override_file = HOME / ".agent-compass" / "accounts-override.json"
@@ -775,9 +776,13 @@ def g_installer():
             refused = True
         check("update_agentcompass refuses an installer asset with a mismatched sha256 digest", refused)
         os.environ["AGENTCOMPASS_PUBLIC_DATA"] = "off"
+        # A real release carries the wheel too; the separate wheel install from g_setup upgrades from it.
+        staged_wheel = next((IN / "wheel").glob("agentcompass-*.whl"))
+        wheel_asset = {"name": staged_wheel.name, "url": staged_wheel.as_uri(),
+                       "digest": "sha256:" + hashlib.sha256(staged_wheel.read_bytes()).hexdigest()}
         summary = tray_updates.update_agentcompass(
             root=INSTALL_DIR, home=HOME, state_dir=HOME / ".agent-compass", which_path=None, frozen=True,
-            release={"tag_name": f"v{version}", "assets": [{"name": setup_exe.name, "url": setup_exe.as_uri(), "digest": f"sha256:{digest}"}]},
+            release={"tag_name": f"v{version}", "assets": [{"name": setup_exe.name, "url": setup_exe.as_uri(), "digest": f"sha256:{digest}"}, wheel_asset]},
             restart_fn=lambda: "",
         )
         new_pids = wait_for(lambda: [p for p in tray_processes() if p not in (old_pids or [])] or tray_processes(), 45)

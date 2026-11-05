@@ -102,6 +102,14 @@ def stage(base: Path, repo_root: Path, gui: bool = False, inno: bool = False) ->
         shutil.copy2(installer, stage_in / "inno" / installer.name)
         shutil.copy2(repo / "packaging" / "agentcompass.iss", stage_in / "inno" / "packaging" / "agentcompass.iss")
         shutil.copytree(repo / "tray", stage_in / "inno" / "tray", dirs_exist_ok=True)
+        # G09 imports tray/updates.py from source; tray/plugins.py puts the parent on sys.path and imports
+        # agentcompass.origin from it, as the frozen tray does from its bundle.
+        shutil.copytree(repo / "agentcompass", stage_in / "inno" / "agentcompass", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        # The staged guest Python has no site-packages; the tray source needs psutil (same CPython build as the host).
+        import psutil
+        shutil.copytree(Path(psutil.__file__).parent, stage_in / "inno" / "psutil", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("__pycache__", "tests"))
         version = re.search(r"__version__\s*=\s*['" + chr(34) + r"]([^'" + chr(34) + r"]+)", (repo / "agentcompass" / "__init__.py").read_text(encoding="utf-8")).group(1)
         (stage_in / "inno" / "version.txt").write_text(version, encoding="utf-8")
     (stage_in / "guest").mkdir()
