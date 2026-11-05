@@ -1,7 +1,8 @@
 """EasyTier for the tray: status, start, stop and restart of the host's one EasyTier node.
 
 The node is the SYSTEM scheduled task "AgentCompass EasyTier", registered once by easytier_setup.py. Its
-program, config and logs live under AgentCompass/easytier/. The tray itself stays unelevated: the task grants this
+program, config and logs live under %ProgramData%/AgentCompass/easytier (easytier_paths.py; a node not yet
+migrated from the checkout-era <root>/easytier is still found there). The tray itself stays unelevated: the task grants this
 user only read, run and stop on that one task (not edit), so every action here is a Task Scheduler call plus,
 for status, the bundled easytier-cli talking to the loopback RPC portal.
 """
@@ -16,12 +17,13 @@ import subprocess
 import time
 from pathlib import Path
 
+import easytier_paths
 import psutil
 import service_ports
 
 CREATE_NO_WINDOW = 0x08000000
 ROOT = Path(__file__).resolve().parents[1]
-HOME = ROOT / "easytier"
+HOME = easytier_paths.home()      # as found at import; installed() and peers() look again, a migration moves it
 BIN = HOME / "bin"
 PRIVATE = HOME / "private"
 LOGS = HOME / "logs"
@@ -42,7 +44,8 @@ MISSING, STOPPED, STARTING, RUNNING, FOREIGN, DISABLED = "missing", "stopped", "
 
 def installed() -> bool:
     """Whether the program is in place. Cheap and local; the task itself is checked by status()."""
-    return CORE.is_file() and CLI.is_file()
+    bin_dir = easytier_paths.home() / "bin"
+    return (bin_dir / CORE.name).is_file() and (bin_dir / CLI.name).is_file()
 
 
 def _scheduler_task():
@@ -106,10 +109,11 @@ def core_pids() -> list[int]:
 
 def peers(timeout: float = 8.0) -> list[dict] | None:
     """The node's peer table from its loopback RPC portal, or None while the portal does not answer."""
-    if not CLI.is_file():
+    cli = easytier_paths.home() / "bin" / CLI.name
+    if not cli.is_file():
         return None
     try:
-        result = subprocess.run([str(CLI), "-p", RPC_PORTAL, "-o", "json", "peer"], capture_output=True, text=True,
+        result = subprocess.run([str(cli), "-p", RPC_PORTAL, "-o", "json", "peer"], capture_output=True, text=True,
                                 errors="replace", check=False, timeout=timeout, creationflags=CREATE_NO_WINDOW)
         data = json.loads(result.stdout) if result.returncode == 0 else None
     except (OSError, subprocess.SubprocessError, ValueError):

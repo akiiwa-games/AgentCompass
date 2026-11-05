@@ -78,6 +78,10 @@ def plugin_root(plugin_id: str, plugins_dir: Path | None = None, repo_root: Path
     """Resolve plugin directory in ~/.agent-compass/plugins/<id> (falling back to legacy checkout if present)."""
     plugin = BY_ID[plugin_id]
     base_root = repo_root or ROOT
+    if plugin_id == "easytier":
+        import easytier_paths
+
+        return easytier_paths.home(root=base_root)
     if plugin.repo is None:
         return base_root / (plugin.legacy_dir or plugin_id)
     target = (plugins_dir or PLUGINS_DIR) / plugin_id

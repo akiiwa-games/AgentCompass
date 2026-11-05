@@ -1,8 +1,10 @@
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import easytier
+import easytier_paths
 
 PEERS = [
     {"cost": "Local", "hostname": "ME", "ipv4": "192.0.2.1"},
@@ -16,12 +18,73 @@ def reading(state, pids=(), peers=None):
 
 
 class PathTests(unittest.TestCase):
-    def test_everything_lives_under_the_router_directory(self):
-        root = Path(easytier.__file__).resolve().parents[1]
+    def test_everything_lives_under_one_home(self):
         for path in (easytier.CORE, easytier.CLI, easytier.CONFIG, easytier.LOGS, easytier.STATE, easytier.SUPERVISOR):
-            self.assertTrue(path.is_relative_to(root / "easytier"), path)
-        self.assertEqual(easytier.CORE, root / "easytier" / "bin" / "easytier-core.exe")
-        self.assertEqual(easytier.CONFIG, root / "easytier" / "private" / "node.toml")
+            self.assertTrue(path.is_relative_to(easytier.HOME), path)
+        self.assertEqual(easytier.CORE, easytier.HOME / "bin" / "easytier-core.exe")
+        self.assertEqual(easytier.CONFIG, easytier.HOME / "private" / "node.toml")
+
+    def test_installed_looks_at_the_home_found_now_not_at_import(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "AgentCompass" / "easytier"
+            with mock.patch.object(easytier.easytier_paths, "home", return_value=home):
+                self.assertFalse(easytier.installed())
+                (home / "bin").mkdir(parents=True)
+                for name in ("easytier-core.exe", "easytier-cli.exe"):
+                    (home / "bin" / name).write_bytes(b"")
+                self.assertTrue(easytier.installed())
+
+
+class HomeResolutionTests(unittest.TestCase):
+    """The node's home is per machine, outside the checkout and the installer's app directory."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.env = {"ProgramData": str(self.base / "ProgramData")}
+        self.product = self.base / "ProgramData" / "AgentCompass" / "easytier"
+
+    def node(self, home):
+        (home / "bin").mkdir(parents=True)
+        (home / "bin" / "easytier-core.exe").write_bytes(b"")
+
+    def test_the_product_home_is_under_programdata(self):
+        self.assertEqual(easytier_paths.product_home(self.env), self.product)
+        self.assertEqual(easytier_paths.product_parent(self.env), self.product.parent)
+
+    def test_a_frozen_or_wheel_install_never_resolves_into_its_own_directory(self):
+        for shape in ("frozen", "wheel"):
+            with self.subTest(shape=shape):
+                root = self.base / shape
+                if shape == "frozen":
+                    (root / "_internal").mkdir(parents=True)
+                    (root / "AgentCompass.exe").write_bytes(b"")
+                else:
+                    (root / "agentcompass-0.0.0.dist-info").mkdir(parents=True)
+                self.assertEqual(easytier_paths.home(self.env, root=root), self.product)
+
+    def test_a_node_left_in_the_checkout_is_found_until_it_is_migrated(self):
+        checkout = self.base / "checkout"
+        self.node(checkout / "easytier")
+        self.assertEqual(easytier_paths.home(self.env, root=checkout), checkout / "easytier")
+        self.node(self.product)
+        self.assertEqual(easytier_paths.home(self.env, root=checkout), self.product)
+
+    def test_plugin_root_follows_the_same_resolution(self):
+        import plugins
+
+        checkout = self.base / "checkout"
+        with mock.patch.dict(easytier_paths.os.environ, self.env, clear=False):
+            easytier_paths.os.environ.pop(easytier_paths.OVERRIDE, None)
+            self.assertEqual(plugins.plugin_root("easytier", repo_root=checkout), self.product)
+            self.node(checkout / "easytier")
+            self.assertEqual(plugins.plugin_root("easytier", repo_root=checkout), checkout / "easytier")
+
+    def test_the_override_moves_the_home_and_disables_the_parent_lock(self):
+        env = {**self.env, easytier_paths.OVERRIDE: str(self.base / "isolated")}
+        self.assertEqual(easytier_paths.product_home(env), self.base / "isolated")
+        self.assertIsNone(easytier_paths.product_parent(env))
 
 
 class SnapshotTests(unittest.TestCase):
