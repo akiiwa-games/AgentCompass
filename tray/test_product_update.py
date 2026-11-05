@@ -347,6 +347,7 @@ class OneClickUpdateTests(unittest.TestCase):
             # Case A: uv installer
             sp_uv, _, cli_uv = _make_wheel_install(base, version="0.3.5", installer="uv")
             uv_cmds = []
+            uv_cwds = []
             with mock.patch.object(updates, "_uv_executable", return_value="uv"):
                 updates.update_agentcompass(
                     root=sp_uv,
@@ -355,16 +356,19 @@ class OneClickUpdateTests(unittest.TestCase):
                     which_path=cli_uv,
                     frozen=False,
                     release=release,
-                    runner=lambda args, cwd=None, env=None: uv_cmds.append(list(args)) or "",
+                    runner=lambda args, cwd=None, env=None: uv_cmds.append(list(args)) or uv_cwds.append(cwd) or "",
                     restart_fn=lambda: "restarted",
                 )
             self.assertEqual(uv_cmds[0], ["uv", "tool", "install", "--force", wheel_url])
+            # uv removes the tool venv; a cwd inside it locks the directory on Windows (os error 32)
+            self.assertNotIn(sp_uv.parents[1].resolve(), [Path(uv_cwds[0]).resolve(), *Path(uv_cwds[0]).resolve().parents])
             self.assertEqual(uv_cmds[1], [str(cli_uv), "data", "--refresh"])
             self.assertFalse(any("setup" in cmd for cmd in uv_cmds))
 
             # Case B: pip installer
             sp_pip, py_pip, cli_pip = _make_wheel_install(base, version="0.3.5", installer="pip")
             pip_cmds = []
+            pip_cwds = []
             updates.update_agentcompass(
                 root=sp_pip,
                 home=home,
@@ -372,10 +376,11 @@ class OneClickUpdateTests(unittest.TestCase):
                 which_path=cli_pip,
                 frozen=False,
                 release=release,
-                runner=lambda args, cwd=None, env=None: pip_cmds.append(list(args)) or "",
+                runner=lambda args, cwd=None, env=None: pip_cmds.append(list(args)) or pip_cwds.append(cwd) or "",
                 restart_fn=lambda: "restarted",
             )
             self.assertEqual(pip_cmds[0], [str(py_pip), "-m", "pip", "install", "--upgrade", wheel_url])
+            self.assertNotIn(sp_pip.parents[1].resolve(), [Path(pip_cwds[0]).resolve(), *Path(pip_cwds[0]).resolve().parents])
             self.assertEqual(pip_cmds[1], [str(cli_pip), "data", "--refresh"])
             self.assertFalse(any("setup" in cmd for cmd in pip_cmds))
 

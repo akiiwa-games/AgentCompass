@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -992,7 +993,9 @@ def _upgrade_wheel_install(
 
     wheel_target = str(local_wheel) if (local_wheel is not None and wheel_url.startswith("file://")) else wheel_url
     installer_tool = str(wheel_info.get("installer") or "pip").strip().lower()
-    cwd = Path(wheel_info.get("root") or Path.cwd())
+    # Never run the installer from inside the install it replaces: Windows can't remove a
+    # directory that is a live process's cwd (uv tool install --force fails with os error 32).
+    cwd = Path(tempfile.gettempdir())
     tag_label = str((release or {}).get("tag_name") or (Path(wheel_target).name if wheel_target else "latest"))
     if installer_tool == "uv":
         uv_bin = _uv_executable()
