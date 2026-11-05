@@ -321,6 +321,18 @@ def offer_router_setup() -> None:
         log_error(exc)
 
 
+PREWARM_DELAY = 8.0
+
+
+def prewarm_window() -> None:
+    """Build the window hidden once login work has settled, so the first open is only a show."""
+    time.sleep(PREWARM_DELAY)
+    try:
+        router_window.prewarm()
+    except Exception as exc:
+        log_error(exc)
+
+
 def open_panel(icon=None, item=None) -> None:
     try:
         router_window.open_window()
@@ -504,6 +516,7 @@ def main() -> None:
         threading.Thread(target=watch_component_menus, args=(icon,), daemon=True).start()
         if "--attach-only" not in sys.argv:
             threading.Thread(target=offer_router_setup, daemon=True).start()
+        threading.Thread(target=prewarm_window, daemon=True).start()
 
     try:
         icon.run(setup)

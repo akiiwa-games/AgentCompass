@@ -1,7 +1,8 @@
 """AgentCompass main panel: decision compass, quota and live workers, routing settings, integrations.
 
-Runs as its own pythonw process (open_window), like the network and update windows, so the tray thread never
-waits on it and closing the window frees the GUI memory. All reads and actions run on worker threads.
+Runs as its own pythonw process, like the network and update windows, so the tray thread never waits on it.
+The tray starts that process hidden (prewarm) so its pages are built before the first open; closing the window
+only hides it, and open_window() shows it again. All reads and actions run on worker threads.
 The first two pages only watch; everything that changes how the router chooses lives on the settings page.
 """
 from __future__ import annotations
@@ -35,6 +36,7 @@ import i18n
 TITLE = "AgentCompass"
 LEGACY_TITLE = "Route Manager · 控制台"  # a panel started before the rename
 _process = None
+SHOW_EVENT = "Local\\AgentCompassWindowShow"  # created by the window process; open_window() sets it to show it
 PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "模型设置", "⚙"), ("plugins", "外部集成", "▦"))
 PAGES = LocalizedSequence(PAGES)
 SETTINGS = (("models", "模型与加权"), ("strategy", "评分与能力"), ("system", "系统选项"))
@@ -47,25 +49,70 @@ TRACK = "#E2E8F0"  # segmented switch track on the page background
 AUTO_REPLAY_ROWS = 5  # newest ledger rows tried for the opening decision; legacy rows replan, so keep it small
 
 
-def open_window(page: str | None = None) -> None:
-    """Raise the panel if it is open, else start it in its own process; never blocks the caller."""
+def _kernel32():
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenEventW.restype = kernel.CreateEventW.restype = kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.OpenEventW.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
+    kernel.CreateEventW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_wchar_p]
+    kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel.SetEvent.argtypes = kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    return kernel
+
+
+def warm_window_running() -> bool:
+    kernel = _kernel32()
+    handle = kernel.OpenEventW(0x00100000, False, SHOW_EVENT)  # SYNCHRONIZE
+    if handle:
+        kernel.CloseHandle(handle)
+    return bool(handle)
+
+
+def signal_warm_window() -> bool:
+    """Ask the running window process to show itself; False when there is none."""
+    kernel = _kernel32()
+    handle = kernel.OpenEventW(0x0002, False, SHOW_EVENT)  # EVENT_MODIFY_STATE
+    if not handle:
+        return False
+    try:
+        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY: let it come to the front
+        return bool(kernel.SetEvent(handle))
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _start(*args: str) -> None:
     global _process
+    if _process is not None and _process.poll() is None:
+        return
+    _process = subprocess.Popen(component_launch.command(__file__, *args, "--parent", str(os.getpid())),
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                close_fds=True, creationflags=0x08000000)
+
+
+def open_window(page: str | None = None) -> None:
+    """Show the panel: the warm process if one runs, else start it; never blocks the caller."""
     import win32con
     import win32gui
 
+    if signal_warm_window():
+        return
+    # A panel from before the warm window has no show event.
     window = win32gui.FindWindow("TkTopLevel", TITLE) or win32gui.FindWindow("TkTopLevel", LEGACY_TITLE)
-    if window:
+    if window and win32gui.IsWindowVisible(window):
         win32gui.ShowWindow(window, win32con.SW_RESTORE)
         try:
             win32gui.SetForegroundWindow(window)
         except Exception:
             win32gui.FlashWindow(window, True)
         return
-    if _process is not None and _process.poll() is None:
-        return
-    _process = subprocess.Popen(component_launch.command(__file__, *(["--page", page] if page else [])),
-                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                close_fds=True, creationflags=0x08000000)
+    _start(*(["--page", page] if page else []))
+
+
+def prewarm() -> None:
+    """Start the panel hidden so its pages are built before the first open; the tray calls this once."""
+    if not warm_window_running():
+        _start("--hidden")
 
 
 def log_error(exc: BaseException) -> None:
@@ -520,6 +567,7 @@ class Panel:
         self.auto_replayed = False
         self._generation = 0
         self._cards_cache = None
+        self.stale = set()  # built pages to read again when next raised, after the window was hidden
         root.bind("<<PanelResult>>", lambda e: self.drain_results())
         root.bind("<Button-1>", lambda e: self.close_model_menu(), add="+")
         with freeze_redraw(self.root):
@@ -632,11 +680,81 @@ class Panel:
             self._poll_id = self.root.after(30, self.poll)
             return
         self.drain_results()
-        if getattr(self, '_boost_refreshed', None) is not None and time.monotonic() - self._boost_refreshed >= 60:
+        if self.show_requested():
+            self.reveal()
+        hidden = self.hidden()
+        if hidden and not self.parent_alive() and not any(t.is_alive() for t in self.long_jobs):
+            os._exit(0)  # the tray that kept this window warm is gone
+        if not hidden and getattr(self, '_boost_refreshed', None) is not None \
+                and time.monotonic() - self._boost_refreshed >= 60:
             self.load_boost()
-        self._poll_id = self.root.after(30, self.poll)
+        self._poll_id = self.root.after(100 if hidden else 30, self.poll)
+
+    # ---------- warm window ----------
+
+    resident = False  # closing hides the window; the process stays for the next open
+    show_event = None
+    parent_handle = None
+
+    def stay_resident(self, event, parent_pid: int) -> None:
+        """Keep this process after the window closes while the tray `parent_pid` runs; `event` asks it to show."""
+        self.show_event = event
+        if parent_pid:
+            self.parent_handle = _kernel32().OpenProcess(0x00100000, False, parent_pid)  # SYNCHRONIZE
+        self.resident = bool(self.show_event and self.parent_handle)
+
+    def show_requested(self) -> bool:
+        return bool(self.show_event) and _kernel32().WaitForSingleObject(self.show_event, 0) == 0
+
+    def parent_alive(self) -> bool:
+        return not self.parent_handle or _kernel32().WaitForSingleObject(self.parent_handle, 0) != 0
+
+    def hidden(self) -> bool:
+        return self.root.state() == "withdrawn"
+
+    def hide(self):
+        """Withdraw the window but keep its built pages; the next open is only a show."""
+        self.close_model_menu()
+        self.root.withdraw()
+        page = self.pages[self.current]
+        page._page_hidden = True  # Tk still counts a withdrawn window's widgets as mapped
+        page_stack.notify(page, False)
+        self.stale = set(self.built)
+        self.root.after(1000, self.trim_memory)
+
+    def reveal(self):
+        """Show the window again: read the page on screen afresh, then bring the window to the front."""
+        if self.hidden():
+            self.stale.discard(self.current)
+            self.refresh_page(self.current)
+            self.root.deiconify()
+            page = self.pages[self.current]
+            page._page_hidden = False
+            page_stack.notify(page, True)
+        self.root.lift()
+        self.root.focus_force()
+
+    def refresh_page(self, key):
+        {"scoring": self.load_ledger, "quota": self.load_quota, "policy": self.load_policy,
+         "plugins": self.load_plugins}[key]()
+
+    def trim_memory(self):
+        """While hidden, hand the working set back to Windows; pages fault back in when the window shows."""
+        if not self.hidden() or sys.platform != "win32":
+            return
+        import gc
+
+        gc.collect()
+        kernel = _kernel32()
+        kernel.GetCurrentProcess.restype = ctypes.c_void_p
+        psapi = ctypes.WinDLL("psapi")
+        psapi.EmptyWorkingSet.argtypes = [ctypes.c_void_p]
+        psapi.EmptyWorkingSet(kernel.GetCurrentProcess())
 
     def close(self):
+        if self.resident and self.parent_alive():
+            self.hide()
+            return
         self.closing = True
         if getattr(self, "_poll_id", None) is not None:
             try:
@@ -776,6 +894,9 @@ class Panel:
         if not already_built:
             self.built.add(key)
             getattr(self, f"build_{key}")(self.pages[key])
+        elif key in self.stale and key != 'plugins':
+            self.refresh_page(key)
+        self.stale.discard(key)
         self.page_stack.show(self.pages[key])
         if key == 'plugins' and already_built:
             self.load_plugins()
@@ -808,6 +929,7 @@ class Panel:
             else:
                 key = next((key for key, _ in SETTINGS if key not in self.settings_built), None)
                 if key is None:
+                    self.trim_memory()  # a warm window built everything before anyone opened it
                     return
                 self.settings_built.add(key)
                 getattr(self, f"build_setting_{key}")(self.setting_frames[key])
@@ -3886,6 +4008,15 @@ class Panel:
 def main() -> None:
     import tkinter as tk
 
+    hidden = "--hidden" in sys.argv
+    parent = int(sys.argv[sys.argv.index("--parent") + 1]) if "--parent" in sys.argv[:-1] else 0
+    kernel = _kernel32()
+    ctypes.set_last_error(0)
+    event = kernel.CreateEventW(None, False, False, SHOW_EVENT)  # auto-reset
+    if event and ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS: another window process serves opens
+        if not hidden:
+            kernel.SetEvent(event)
+        return
     theme.identify_process()
     theme.dpi_aware()
     page = sys.argv[sys.argv.index("--page") + 1] if "--page" in sys.argv[:-1] else "scoring"
@@ -3893,8 +4024,10 @@ def main() -> None:
     root.withdraw()
     try:
         panel = Panel(root, page)
+        panel.stay_resident(event, parent)
         root.update_idletasks()
-        root.deiconify()
+        if not hidden:
+            root.deiconify()
         panel.start_prebuild()
     except Exception as exc:
         log_error(exc)

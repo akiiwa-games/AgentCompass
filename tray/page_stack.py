@@ -26,7 +26,7 @@ def watch(watcher) -> None:
 
 
 def shown(widget) -> bool:
-    """Mapped and not on a page another page covers."""
+    """Mapped and not on a page another page covers (or in a hidden window: its page is marked the same way)."""
     if not widget.winfo_ismapped():
         return False
     while widget is not None:
@@ -53,7 +53,8 @@ def _inside(widget, page) -> bool:
     return str(widget).startswith(str(page) + ".")
 
 
-def _notify(page, visible: bool) -> None:
+def notify(page, visible: bool) -> None:
+    """Tell watchers on `page` it was raised or covered; also used when the whole window is hidden or shown."""
     for watcher in list(_watchers):
         canvas = getattr(watcher, "canvas", None)
         if canvas is None or not _inside(canvas, page):
@@ -104,8 +105,8 @@ class PageStack:
             _hold_size(previous)
             previous._page_hidden = True
             self._move_focus(previous, page)
-            _notify(previous, False)
-        _notify(page, True)
+            notify(previous, False)
+        notify(page, True)
 
     def _move_focus(self, previous, page) -> None:
         """Keys must not go on landing in a widget on the page that was just covered."""

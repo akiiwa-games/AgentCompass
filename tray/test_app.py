@@ -170,6 +170,22 @@ class MenuTests(TrayTestCase):
         self.assertFalse(app.notify_if_restarted(again_icon))
         again_icon.notify.assert_not_called()
 
+    def test_tray_start_warms_the_window_hidden(self):
+        icon = mock.Mock()
+        icon.run.side_effect = lambda setup: setup(icon)
+        with mock.patch.object(app, "single_instance", return_value=True), \
+             mock.patch.object(app.pystray, "Icon", return_value=icon), \
+             mock.patch.object(app.threading, "Thread") as thread, \
+             mock.patch.object(app.sys, "argv", ["app.pyw", "--attach-only"]), \
+             mock.patch.object(app, "log_info"):
+            app.main()
+        self.assertIn(app.prewarm_window, [c.kwargs.get("target") for c in thread.call_args_list])
+        with mock.patch.object(app.router_window, "prewarm") as prewarm, \
+             mock.patch.object(app.time, "sleep") as sleep:
+            app.prewarm_window()
+        sleep.assert_called_once_with(app.PREWARM_DELAY)
+        prewarm.assert_called_once_with()
+
     def test_tray_log_lives_in_the_state_directory(self):
         # Tests isolate STATE_DIR; a log path built from the home directory wrote test lines into the real tray.log.
         app.log_info("isolated line")

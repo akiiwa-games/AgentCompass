@@ -614,9 +614,15 @@ def gui_session(exe, tag, router_only=False):
         check("the tray process is still running 15 s after launch (no crash on a fresh profile)", tray.poll() is None, f"exit {tray.poll()}")
         shot(screen_rect(), f"{tag}-tray-desktop.png")
         check("the tray started its helper processes (usage collector / capacity sampler children)", len(tray_processes()) >= 1, tray_processes())
+    opened_at = time.time()
     window_process = subprocess.Popen([str(exe), "--run-component", "router_window"], cwd=str(HOME), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    found = wait_for(lambda: windows_of(pid=window_process.pid) or windows_of(title="AgentCompass"), 60)
+    found = wait_for(lambda: windows_of(pid=window_process.pid) or windows_of(title="AgentCompass"), 60, interval=0.05)
+    open_seconds = round(time.time() - opened_at, 2)
     check("the router window opened on the desktop", bool(found), f"process exit {window_process.poll()}")
+    if tray is not None and found:
+        # The tray built the window hidden 8 s after it started; this launch only asks that process to show it.
+        check("the tray's warm window shows within 3 s of an open request", found[0]["pid"] != window_process.pid and open_seconds < 3,
+              (found[0]["pid"], window_process.pid, open_seconds))
     if not found:
         kill_trays()
         return
@@ -643,10 +649,23 @@ def gui_session(exe, tag, router_only=False):
     check("after clicking 刷新 the page's update-time label is different (the window really refreshed)", bool(label_after) and label_after != label_before, (label_before, label_after, after_seconds))
     check("the window stayed responsive after the click", not user32.IsHungAppWindow(hwnd))
     user32.PostMessageW(window["hwnd"], 0x0010, 0, 0)
-    closed = wait_for(lambda: window_process.poll() is not None, 20)
-    check("closing the window ends the router-window process", closed, window_process.poll())
-    if tray is not None:
+    if tray is None:
+        closed = wait_for(lambda: window_process.poll() is not None, 20)
+        check("closing the window ends the router-window process", closed, window_process.poll())
+    else:
+        warm = window["pid"]
+        hidden = wait_for(lambda: not windows_of(pid=warm), 20)
+        check("closing the window hides it and keeps its process for the next open", bool(hidden) and warm in tray_processes(), (warm, tray_processes()))
+        reopened_at = time.time()
+        subprocess.Popen([str(exe), "--run-component", "router_window"], cwd=str(HOME), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        again = wait_for(lambda: windows_of(pid=warm), 20, interval=0.05)
+        check("opening it again shows the same window within 3 s", bool(again) and time.time() - reopened_at < 3, round(time.time() - reopened_at, 2))
+        if again:
+            user32.PostMessageW(again[0]["hwnd"], 0x0010, 0, 0)
+            wait_for(lambda: not windows_of(pid=warm), 20)
         check("the tray stayed alive while its router window was opened and closed", tray.poll() is None, tray.poll())
+        tray.kill()
+        check("the hidden window process ends once its tray is gone", wait_for(lambda: warm not in tray_processes(), 20), tray_processes())
     check("no AgentCompass process is left after the test", kill_trays(), tray_processes())
 
 
