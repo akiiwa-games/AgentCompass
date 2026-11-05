@@ -771,8 +771,6 @@ EN = {
     '公开基准校准数据': 'Calibrated from public benchmarks',
     '依据：': 'Basis: ',
     '所属账号 / 模型名称': 'Account / Model',
-    'AgentCompass {0} · Router {1}（版本不一致）': 'AgentCompass {0} · Router {1} (version mismatch)',
-    'AgentCompass {0} · Router {1}': 'AgentCompass {0} · Router {1}',
     'AgentCompass {0} · 命令行 {1}（版本不一致）': 'AgentCompass {0} · command line {1} (version mismatch)',
     'AgentCompass {0} · 命令行 {1}': 'AgentCompass {0} · command line {1}',
     '可更新到 {0}': 'Update available: {0}',

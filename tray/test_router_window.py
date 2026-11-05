@@ -1177,14 +1177,14 @@ class SystemVersionCardTests(unittest.TestCase):
                 "ok": True,
                 "tray_version": "0.3.8",
                 "shape": "git",
-                "display_version": "AgentCompass 0.3.8 · Router 0.3.5（版本不一致）",
+                "display_version": "AgentCompass 0.3.8 · 命令行 0.3.5（版本不一致）",
                 "version_mismatch": True,
                 "update_available": True,
                 "update_label": "可更新到 v0.3.9",
                 "status_line": "可更新到 v0.3.9",
                 "installs": {"separate_routers": [{"installer": "uv", "version": "0.3.5", "root": "C:/uv/site-packages"}]},
             })
-            self.assertEqual(panel.ac_version_var.get(), "AgentCompass 0.3.8 · Router 0.3.5（版本不一致）")
+            self.assertEqual(panel.ac_version_var.get(), "AgentCompass 0.3.8 · 命令行 0.3.5（版本不一致）")
             self.assertEqual(panel.ac_version_pill.cget("text").strip(), "可更新到 v0.3.9")
             self.assertIn("Router (uv 0.3.5)", panel.ac_version_detail_var.get())
 

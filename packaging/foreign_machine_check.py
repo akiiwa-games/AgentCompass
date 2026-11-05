@@ -2135,7 +2135,7 @@ out_path.write_text(json.dumps({
     op.check(
         "inspect_installs detects version mismatch across PATH, skills, and gate hooks before update",
         bool(data.get("before_mismatch"))
-        and f"AgentCompass {new_ver} · Router 0.3.7（版本不一致）" == data.get("before_display")
+        and f"AgentCompass {new_ver} · 命令行 0.3.7（版本不一致）" == data.get("before_display")
         and data.get("before_routers", {}).get("path") == "0.3.7"
         and data.get("before_routers", {}).get("hooks") == "0.3.7",
         data,
@@ -2164,7 +2164,7 @@ out_path.write_text(json.dumps({
     op.check(
         "inspect_installs shows matching versions after self-update",
         not data.get("after_mismatch")
-        and data.get("after_display") == f"AgentCompass {new_ver} · Router {new_ver}"
+        and data.get("after_display") == f"AgentCompass {new_ver} · 命令行 {new_ver}"
         and data.get("after_routers", {}).get("path") == new_ver,
         data,
     )

@@ -126,8 +126,8 @@ class MenuTests(TrayTestCase):
         icon = mock.Mock()
         with mock.patch.object(app.updates, "version_status", return_value={
             "tray_version": "0.3.8",
-            "display_version": "AgentCompass 0.3.8 · Router 0.3.5（版本不一致）",
-            "menu_label": "AgentCompass 0.3.8 · Router 0.3.5（版本不一致） · 可更新到 v0.3.9",
+            "display_version": "AgentCompass 0.3.8 · 命令行 0.3.5（版本不一致）",
+            "menu_label": "AgentCompass 0.3.8 · 命令行 0.3.5（版本不一致） · 可更新到 v0.3.9",
             "update_available": True,
             "update_label": "可更新到 v0.3.9",
             "remote_tag": "v0.3.9",
@@ -135,7 +135,7 @@ class MenuTests(TrayTestCase):
             "status_line": "可更新到 v0.3.9",
         }):
             app.refresh_version(icon, force=False, network=True)
-        self.assertIn("AgentCompass 0.3.8 · Router 0.3.5（版本不一致） · 可更新到 v0.3.9", self.shown())
+        self.assertIn("AgentCompass 0.3.8 · 命令行 0.3.5（版本不一致） · 可更新到 v0.3.9", self.shown())
         icon.notify.assert_called_once_with("AgentCompass · 可更新到 v0.3.9", "AgentCompass")
 
     def test_one_click_update_agentcompass_menu_item_triggers_update(self):
