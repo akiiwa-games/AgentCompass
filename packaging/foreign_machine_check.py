@@ -1601,8 +1601,8 @@ def verify_f07_stranger_topologies(ctx: dict):
         "[secondary-settings] a second Claude home's model/effortLevel/env survive setup --yes --hooks alongside the gate hook",
         (primary_settings.get("model"), primary_settings.get("effortLevel"), primary_settings.get("env")) == ("opus[1m]", "high", {"A": "1"})
         and (second_settings.get("model"), second_settings.get("effortLevel"), second_settings.get("env")) == ("opus", "medium", {"B": "2"})
-        and "router_gate_hook.py" in json.dumps(primary_settings.get("hooks"))
-        and "router_gate_hook.py" in json.dumps(second_settings.get("hooks")),
+        and zd.GATE_HOOK.search(json.dumps(primary_settings.get("hooks")))
+        and zd.GATE_HOOK.search(json.dumps(second_settings.get("hooks"))),
         {"primary": primary_settings, "second": second_settings},
     )
     (paseo_dir / "config.json").write_text(json.dumps({"daemon": {}, "agents": {"providers": {}}}, indent=2), encoding="utf-8")

@@ -6,7 +6,8 @@ Runs the full pre-release verification suite:
   1. Foreign-machine packaged wheel & cloned usage-float behavioral verification (F01..F13)
   2. Zero-credential 13-surface dispatch & scorer verification (zero_dispatch_check.py)
   3. Unit/regression suites across setup/, skills/agent-compass/scripts/, tray/, and usage-float/
-  4. Optional real Windows Sandbox installer + tray verification (W01, --with-windows-sandbox)
+  4. Optional real Windows Sandbox installer + tray verification (W01, --with-windows-sandbox), including the installer
+     alone as the product (guest step `product`: no Python on PATH, new-shell CLI, setup, gate hook, upgrade, uninstall)
 """
 from __future__ import annotations
 

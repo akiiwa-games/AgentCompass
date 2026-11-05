@@ -823,11 +823,168 @@ def g_installer():
     run(["schtasks", "/Delete", "/TN", "Route Manager", "/F"], label="cleanup-legacy")
 
 
+def registry_path(root, subkey):
+    try:
+        with winreg.OpenKey(root, subkey) as key:
+            return winreg.QueryValueEx(key, "Path")[0]
+    except OSError:
+        return ""
+
+
+def user_path_entries():
+    return [p for p in registry_path(winreg.HKEY_CURRENT_USER, "Environment").split(os.pathsep) if p]
+
+
+def new_shell_env():
+    """What a terminal opened now would get: PATH from the registry (machine, then user), no Python of ours anywhere."""
+    machine = registry_path(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+    path = os.pathsep.join(os.path.expandvars(p) for p in (machine.split(os.pathsep) + user_path_entries()) if p)
+    env = {k: v for k, v in base_env().items() if not k.upper().startswith(("PYTHON", "VIRTUAL_ENV"))}
+    env["PATH"] = path
+    return env
+
+
+def shell(command, env, stdin=None, label=None):
+    return run(["cmd", "/d", "/c", command], env=env, stdin=stdin, label=label or command.split()[0])
+
+
+def g_product():
+    """W02: the installer alone is the product. No Python on PATH: install, new shell, setup, gate hook, upgrade, uninstall."""
+    if ONLY and "product" not in ONLY:
+        return
+    section("Installer as the whole product: agentcompass.exe on PATH, setup and gate hook with no Python")
+    setup_exe = BUILD / "dist" / "AgentCompass-tray-setup.exe"
+    staged = next((IN / "inno").glob("innosetup-*.exe"), None)
+    if not setup_exe.is_file() and staged is not None:
+        if not (INNO_DIR / "ISCC.exe").is_file():
+            run([staged, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", f"/DIR={INNO_DIR}"], label="inno-setup", timeout=600)
+        (BUILD / "packaging").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(IN / "inno" / "packaging" / "agentcompass.iss", BUILD / "packaging" / "agentcompass.iss")
+        shutil.copytree(IN / "frozen" / "AgentCompass", BUILD / "dist" / "AgentCompass", dirs_exist_ok=True)
+        version = (IN / "inno" / "version.txt").read_text(encoding="utf-8").strip()
+        run([INNO_DIR / "ISCC.exe", f"/DMyAppVersion={version}", BUILD / "packaging" / "agentcompass.iss"], cwd=BUILD, label="iscc", timeout=900)
+    check("the installer built from this tree is available", setup_exe.is_file(), setup_exe)
+    if not setup_exe.is_file():
+        return
+    version = (IN / "inno" / "version.txt").read_text(encoding="utf-8").strip()
+    cli_dir = INSTALL_DIR / "cli"
+    cli_exe = cli_dir / "agentcompass.exe"
+
+    # A clean machine: nothing of the wheel step on the user PATH, no router setup left over.
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ | winreg.KEY_SET_VALUE)
+    kept = [p for p in user_path_entries() if "ve nv" not in p.lower() and "python" not in p.lower()]
+    winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, os.pathsep.join(kept))
+    winreg.CloseKey(key)
+    for link in (HOME / ".codex" / "skills" / "agent-compass", HOME / ".claude" / "skills" / "agent-compass"):
+        if link.exists() or link.is_symlink():
+            run(["cmd", "/d", "/c", "rmdir", str(link)], label="rmdir-skill")
+    # Dummy sign-ins as in the setup step: `record` only accepts an account the router can see.
+    for folder, name, doc in ((".codex", "auth.json", {"tokens": {"access_token": "guest-dummy-codex-token", "account_id": "guest-account"}}),
+                              (".claude", ".credentials.json", {"claudeAiOauth": {"accessToken": "guest-dummy-claude-token", "subscriptionType": "max"}})):
+        (HOME / folder).mkdir(exist_ok=True)
+        if not (HOME / folder / name).exists():
+            (HOME / folder / name).write_text(json.dumps(doc), encoding="utf-8")
+    before = new_shell_env()
+    nopy = shell("where python python3 py", before, label="python-absent")
+    check("no Python on the new-shell PATH before install", nopy.returncode != 0, nopy.stdout + before["PATH"][:400])
+    no_cli = shell("agentcompass --version", before, label="cli-absent")
+    check("and no agentcompass either", no_cli.returncode != 0, no_cli.stdout[:200])
+
+    installed = run([setup_exe, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SETUP=hooks", f"/LOG={LOGS / 'product-install.log'}"],
+                    label="product-install", timeout=600)
+    check("silent install with /SETUP=hooks exits 0 and ships cli\\agentcompass.exe", installed.returncode == 0 and cli_exe.is_file(),
+          (installed.stdout + installed.stderr)[-300:])
+    entries = user_path_entries()
+    check("the user PATH (HKCU\\Environment) starts with the installer's cli folder, once",
+          bool(entries) and os.path.normcase(os.path.expandvars(entries[0])) == os.path.normcase(str(cli_dir))
+          and sum(os.path.normcase(os.path.expandvars(p)) == os.path.normcase(str(cli_dir)) for p in entries) == 1, entries)
+    env = new_shell_env()
+    nopy = shell("where python python3 py", env, label="python-absent-after")
+    check("still no Python on the new-shell PATH after install", nopy.returncode != 0, nopy.stdout + env["PATH"][:400])
+    where = shell("where agentcompass", env, label="where")
+    check("a new shell finds agentcompass in the installer's cli folder", where.returncode == 0
+          and os.path.normcase(where.stdout.strip().splitlines()[0]) == os.path.normcase(str(cli_exe)), where.stdout + where.stderr)
+    ver = shell("agentcompass --version", env, label="version")
+    check(f"`agentcompass --version` in a new shell prints {version}", ver.returncode == 0 and version in ver.stdout, ver.stdout + ver.stderr[-300:])
+    doc = shell("agentcompass doctor", env, label="doctor")
+    check("`agentcompass doctor` runs and names the Windows installer as the active install",
+          doc.returncode == 0 and "active: Windows installer" in doc.stdout, doc.stdout[-600:] + doc.stderr[-300:])
+    demo = shell("agentcompass plan --demo --dry-run", env, label="plan-demo")
+    check("`agentcompass plan --demo --dry-run` runs", demo.returncode == 0 and demo.stdout.strip(), demo.stdout[-300:] + demo.stderr[-300:])
+
+    log = HOME / ".agent-compass" / "installer-setup.log"
+    log_text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+    check("/SETUP=hooks ran setup and logged it to ~/.agent-compass/installer-setup.log", bool(log_text.strip()), log_text[-400:])
+    bundle = (cli_dir / "_internal" / "agentcompass" / "data" / "skills" / "agent-compass").resolve()
+    links = {name: (HOME / name / "skills" / "agent-compass") for name in (".codex", ".claude")}
+    check("the router skill is linked from ~/.codex and ~/.claude into the installed bundle",
+          all(p.exists() and p.resolve() == bundle for p in links.values()), {k: str(v.resolve()) if v.exists() else "missing" for k, v in links.items()})
+    settings = HOME / ".claude" / "settings.json"
+    hooks = [h.get("command", "") for g in (json.loads(settings.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", []) if settings.is_file() else [])
+             for h in g.get("hooks", [])]
+    gate = next((c for c in hooks if "gate-hook" in c), "")
+    check("the Claude PreToolUse hook calls the installed agentcompass.exe gate-hook, no Python",
+          bool(gate) and cli_exe.as_posix().lower() in gate.lower() and "python" not in gate.lower() and "router_gate_hook" not in gate, hooks)
+    codex_hooks = HOME / ".codex" / "hooks.json"
+    codex_text = codex_hooks.read_text(encoding="utf-8") if codex_hooks.is_file() else ""
+    check("the Codex hook calls the same exe", "gate-hook" in codex_text and "python" not in codex_text.lower(), codex_text[:400])
+    rules = HOME / ".claude" / "CLAUDE.md"
+    rules_text = rules.read_text(encoding="utf-8") if rules.is_file() else ""
+    check("global rules tell agents to run `agentcompass roll`", "agentcompass roll" in rules_text and "python" not in rules_text.split("agentcompass roll")[0][-40:].lower(),
+          rules_text[:300])
+
+    # The hook exactly as a host runs it (argv from the stored command), a sub-agent launch on stdin.
+    import shlex
+    argv = shlex.split(gate) if gate else [str(cli_exe), "gate-hook"]
+    payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "product-session",
+                          "tool_input": {"subagent_type": "general-purpose", "prompt": "do the work", "model": "sonnet"}})
+
+    def verdict():
+        done = run(argv, env=env, stdin=payload, label="gate-hook")
+        return ((parse(done.stdout) or {}).get("hookSpecificOutput") or {}).get("permissionDecision"), done
+    first, done = verdict()
+    check("an unrouted sub-agent launch is denied by the installed gate hook (no Python)", done.returncode == 0 and first == "deny", done.stdout[:300] + done.stderr[-300:])
+    rec = shell('agentcompass record --provider claude --account claude --model claude-sonnet-5-5 --effort high --constraint user_override --basis W02-gate-test',
+                env, label="record")
+    second, done = verdict()
+    check("after `agentcompass record` the same launch passes", rec.returncode == 0 and second != "deny", rec.stdout[-200:] + rec.stderr[-200:] + done.stdout[:300])
+    other = run(argv, env=env, stdin=json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {"file_path": "x"}}), label="gate-read")
+    check("an unrelated tool call passes", ((parse(other.stdout) or {}).get("hookSpecificOutput") or {}).get("permissionDecision") != "deny", other.stdout[:200])
+
+    # The tray's one-click update re-runs the same installer silently, without /SETUP.
+    upgraded = run([setup_exe, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={LOGS / 'product-upgrade.log'}"], label="product-upgrade", timeout=600)
+    kill_trays()
+    entries = user_path_entries()
+    check("an in-place upgrade keeps exactly one PATH entry", upgraded.returncode == 0
+          and sum(os.path.normcase(os.path.expandvars(p)) == os.path.normcase(str(cli_dir)) for p in entries) == 1, entries)
+    check("after the upgrade the skill links still resolve into the bundle", all(p.exists() and p.resolve() == bundle for p in links.values()))
+    again, done = verdict()
+    check("after the upgrade the stored hook command still runs (the routed launch still passes)", done.returncode == 0 and again != "deny", done.stdout[:300] + done.stderr[-300:])
+    ver = shell("agentcompass --version", new_shell_env(), label="version-after-upgrade")
+    check("after the upgrade a new shell still runs agentcompass", ver.returncode == 0 and version in ver.stdout, ver.stdout + ver.stderr[-200:])
+
+    section("Installer as the whole product: uninstall removes the PATH entry and what setup changed")
+    kill_trays()
+    started = subprocess.Popen([str(INSTALL_DIR / "unins000.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={LOGS / 'product-uninstall.log'}"], env=base_env())
+    started.wait(timeout=180)
+    wait_for(lambda: not cli_exe.exists(), 90)
+    check("the installed agentcompass.exe is gone", not cli_exe.exists())
+    entries = user_path_entries()
+    check("the cli folder is no longer on the user PATH", not any(os.path.normcase(os.path.expandvars(p)) == os.path.normcase(str(cli_dir)) for p in entries), entries)
+    check("the skill links are gone", not any(p.exists() or p.is_symlink() for p in links.values()), [str(p) for p in links.values() if p.exists()])
+    left = settings.read_text(encoding="utf-8") if settings.is_file() else ""
+    check("the gate hook is gone from Claude settings", "gate-hook" not in left, left[:300])
+    left = codex_hooks.read_text(encoding="utf-8") if codex_hooks.is_file() else ""
+    check("the gate hook is gone from Codex hooks", "gate-hook" not in left, left[:300])
+    gone = shell("agentcompass --version", new_shell_env(), label="cli-gone")
+    check("a new shell no longer finds agentcompass", gone.returncode != 0, gone.stdout[:200])
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     only = sys.argv[1:]
     ONLY[:] = only
-    for step in (g_isolation, g_stage, g_install, g_setup_and_uninstall, g_herdr, g_gui_probe, g_gui_tray, g_installer):
+    for step in (g_isolation, g_stage, g_install, g_setup_and_uninstall, g_herdr, g_gui_probe, g_gui_tray, g_installer, g_product):
         if only and step.__name__[2:] not in only and step.__name__ not in ("g_isolation", "g_stage", "g_install"):
             continue
         try:

@@ -58,7 +58,7 @@ $n
 
 
 TOOLS = Path(tempfile.gettempdir()) / "agentcompass-tools"          # task-temp tools: the Inno Setup installer is downloaded here, never installed on the host
-GUI_STEPS = ("gui_tray", "installer")
+GUI_STEPS = ("gui_tray", "installer", "product")          # product (W02) installs the installer built from the frozen folder
 
 
 def build_frozen(repo: Path, base: Path) -> Path:
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
     stage_in = None
     try:
         wants_gui = not args.only or any(step in GUI_STEPS for step in args.only)
-        stage_in = stage(base, ROOT, gui=wants_gui, inno=not args.only or "installer" in args.only)
+        stage_in = stage(base, ROOT, gui=wants_gui, inno=not args.only or "installer" in args.only or "product" in args.only)
         code, text = wsb("start", "--raw", "--config", config(stage_in, out.resolve()), timeout=180)
         note(f"wsb start rc={code}: {text.strip()[:200]}")
         found = re.findall(r"[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}", text)

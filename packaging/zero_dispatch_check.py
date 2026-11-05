@@ -104,6 +104,9 @@ class ScorerServer:
         self.server.server_close()
 
 
+# A gate hook command: the script form (checkout / wheel) or the Windows installer's `<app>\cli\agentcompass.exe gate-hook`.
+GATE_HOOK = re.compile(r"router_gate_hook\.py|agentcompass(?:\.exe)?[\"']?\s+gate-hook\b")
+
 def build_fake_clis(base: Path) -> Path:
     """codex.exe / claude.exe: one PyInstaller executable under two names. State goes to <base>/fixture/state."""
     work = base / "fakecli-build"
@@ -353,7 +356,7 @@ def step_setup(z: Zero):
     op = run.operation("hook install", "agentcompass setup --hooks installs the gate hook into the sandbox Claude/Codex settings")
     result = z.call(op, "setup", "--yes", "--hooks")
     settings = box.claude / "settings.json"
-    hooked = settings.is_file() and "router_gate_hook" in settings.read_text(encoding="utf-8")
+    hooked = settings.is_file() and bool(GATE_HOOK.search(settings.read_text(encoding="utf-8")))
     op.check("setup --hooks exits 0 and the gate hook command is in the sandbox Claude settings", result.returncode == 0 and hooked,
              (result.stdout + result.stderr)[-500:])
     if hooked:
@@ -763,7 +766,7 @@ def step_hooks_and_crash(z: Zero):
     if settings.is_file():
         for group in (json.loads(settings.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", [])):
             for hook in group.get("hooks", []):
-                if "router_gate_hook" in hook.get("command", ""):
+                if GATE_HOOK.search(hook.get("command", "")):
                     command = hook["command"]
     op.check("a PreToolUse gate command is installed in the sandbox Claude settings", bool(command), str(settings))
     if command and not Path(GIT_BASH).is_file():
@@ -781,6 +784,11 @@ def step_hooks_and_crash(z: Zero):
         verdict = (denied.get("hookSpecificOutput") or {}).get("permissionDecision")
         reason = (denied.get("hookSpecificOutput") or {}).get("permissionDecisionReason", "")
         op.check("an unrouted Agent launch is denied and the reason names the router command", verdict == "deny" and "roll" in reason, json.dumps(denied)[:400] + done.stderr[-200:])
+        # `agentcompass gate-hook` is the command the Windows installer writes (`<app>\cli\agentcompass.exe gate-hook`);
+        # in every install it must give the same verdict as the script command above.
+        sub = z.call(op, "gate-hook", stdin=payload)
+        sub_verdict = ((parse(sub.stdout) or {}).get("hookSpecificOutput") or {}).get("permissionDecision")
+        op.check("`agentcompass gate-hook` gives the same deny for the same payload", sub.returncode == 0 and sub_verdict == "deny", sub.stdout[:300] + sub.stderr[-200:])
         z.call(op, "record", "--provider", "claude", "--account", "claude", "--model", "claude-sonnet-5-5", "--effort", "high",
                "--constraint", "user_override", "--basis", "from-zero gate test")
         allowed, done = gate()
