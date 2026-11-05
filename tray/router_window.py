@@ -3537,7 +3537,7 @@ class Panel:
                 chrome = _tr("Chrome 已找到") if gateways.chrome_path().is_file() else _tr("缺 Chrome")
                 widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
             else:
-                widgets["info"].set(f"~/.agent-compass/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
+                widgets["info"].set(str(plugins.plugin_root(plugin.id)) if deployed else _tr("未下载 · 启用后自动部署"))
 
     def plugin_actions(self, plugin_id):
         import services
@@ -3737,7 +3737,7 @@ class Panel:
                 widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
             else:
                 deployed = (plugins.plugin_root(plugin.id) / ".git").exists()
-                widgets["info"].set(f"~/.agent-compass/plugins/{plugin.id}" if deployed else _tr("未下载 · 启用后自动部署"))
+                widgets["info"].set(str(plugins.plugin_root(plugin.id)) if deployed else _tr("未下载 · 启用后自动部署"))
         if hasattr(self, "plugins_status") and not getattr(self, "plugins_updating", False):
             self.plugins_status.set(_tr("集成：{0} 已启用 · {1} 运行中").format(enabled_count, running_count))
         if hasattr(self, "plugins_pill") and not getattr(self, "plugins_updating", False):

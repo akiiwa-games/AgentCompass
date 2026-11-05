@@ -25,6 +25,10 @@ Designed the pstack way (behavior over implementation, prove it works from packa
            metered API keys, disabled/corrupt/locked credentials; each check is also shown to fail once
       F12  Tray version display, one-click self-update (old wheel upgraded to locally built wheel in a foreign profile,
            sha256 digest verification, dirty git refusal, data --refresh), and single-flight tray restart
+      F13  Product layout without the dev checkout: a checkout-era profile (plugin clones in the checkout, a junction
+           from ~/.agent-compass/plugins) migrates to ~/.agent-compass/plugins with local changes kept; EasyTier's home
+           is %ProgramData%/AgentCompass/easytier from frozen- and wheel-shaped installs (checkout node until migrated);
+           grok-bot's CLI and the Paseo bridge's node_modules live under the state directory for a wheel install
 """
 from __future__ import annotations
 
@@ -2173,6 +2177,41 @@ out_path.write_text(json.dumps({
     op.check("single-flight restart mutex and one-shot restart marker work", bool(data.get("mutex_ok")) and bool(data.get("marker_ok")), data)
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# F13: Product layout without the dev checkout
+
+
+def verify_f13_product_layout(ctx: dict):
+    run: sc.Run = ctx["run"]
+    box = make_profile(ctx, "f13-product-layout")
+    op = run.operation(
+        "F13 product layout without the dev checkout",
+        "In a foreign profile with a checkout-era layout (synthetic git clones of the four plugins inside a checkout, "
+        "each with a local patch and an untracked file, and a junction from ~/.agent-compass/plugins to one of them): "
+        "migrate-plugins --dry-run changes nothing; the migration moves every clone to ~/.agent-compass/plugins/<id> "
+        "with its local changes, replaces the junction, and is a no-op the second time; plugin roots then resolve "
+        "there. EasyTier resolves to %ProgramData%/AgentCompass/easytier (the sandbox's ProgramData) from a frozen- "
+        "and a wheel-shaped install, keeps finding a checkout-era node until it is migrated, and the migration "
+        "dry run plans that move without elevating. The wheel's grok-bot CLI and Paseo bridge dependencies go under "
+        "the state directory, not site-packages.",
+    )
+    probe = HERE / "f13_product_layout_probe.py"
+    work = box.root / "work"
+    work.mkdir(parents=True, exist_ok=True)
+    out = box.root / "f13.json"
+    env = base_cli_env(box, ctx, include_clis=(), extra={
+        "ProgramData": box.root / "ProgramData", "ALLUSERSPROFILE": box.root / "ProgramData",
+        "AGENTCOMPASS_EASYTIER_HOME": None, "AGENTCOMPASS_GROK_BOT_RUNTIME": None,
+    })
+    res = run_in_box(box, op, [sc.TRAY_PYTHON, "-X", "utf8", probe, ctx["repo"] / "tray", box.scripts,
+                               box.data / "setup", work, out], env)
+    op.check("F13 probe exits 0", res.returncode == 0 and out.is_file(), res.stderr[-1200:])
+    results = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+    for name, outcome in results.items():
+        op.check(name, outcome.get("ok"), outcome.get("detail"))
+    op.check("the probe ran every F13 check", len(results) >= 16, sorted(results))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--wheel", type=Path, help="Install this wheel instead of building one from the working tree.")
@@ -2241,6 +2280,8 @@ def main(argv=None) -> int:
                 verify_f11_omp_oauth_subscriptions(ctx)
             if wanted("F12"):
                 verify_f12_self_update_and_version_display(ctx)
+            if wanted("F13"):
+                verify_f13_product_layout(ctx)
 
         op = run.operation("F09 real machine untouched", "the user's own cache, activity and receipt files are unpolluted by the foreign-machine harness")
         after = sc.real_state_snapshot()

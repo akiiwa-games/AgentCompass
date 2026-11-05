@@ -652,7 +652,7 @@ EN = {
     '环境变量 {0}': 'Environment variable {0}',
     '未设置': 'Not set',
     'skill 链接（{0} → ~/.codex/skills → ~/.claude/skills）': 'Skill links ({0} → ~/.codex/skills → ~/.claude/skills)',
-    'EasyTier 后台任务（easytier/ 下的 SYSTEM 计划任务）': 'EasyTier background task (SYSTEM scheduled task under easytier/)',
+    'EasyTier 后台任务（SYSTEM 计划任务）': 'EasyTier background task (SYSTEM scheduled task)',
     '托盘进程': 'Tray process',
     '{0} 个': '{0} instances',
     '无法给 ChatGPT Web 打补丁：{0}': 'Cannot patch ChatGPT Web: {0}',

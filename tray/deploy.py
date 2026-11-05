@@ -6,6 +6,8 @@
     python deploy.py restart    close the running tray (services keep running) and start it again, detached
     python deploy.py icons      repair branding of this installation's existing Windows shortcuts only
     python deploy.py all        install, then restart
+    python deploy.py migrate-plugins [--dry-run] [--from CHECKOUT] [--plugin ID]
+                                move plugin clones out of a checkout into ~/.agent-compass/plugins (plugin_migration.py)
 
 Every step is safe to repeat. A replaced startup shortcut is moved to ~/.agent-compass/backups/startup, not deleted.
 
@@ -247,7 +249,12 @@ def adopt_usage_float_startup() -> list[str]:
 
 
 def skill_links() -> list[tuple[Path, Path]]:
-    """(link, target) pairs: ~/.codex/skills/<name> -> skills/<name>, ~/.claude/skills/<name> -> the ~/.codex link."""
+    """(link, target) pairs: ~/.codex/skills/<name> -> skills/<name>, ~/.claude/skills/<name> -> the ~/.codex link.
+
+    Only a checkout has skills/ beside tray/. A packaged tray has none; there `agentcompass setup` links the skills
+    from the installed wheel, so there is nothing for the tray to link."""
+    if not SKILLS.is_dir():
+        return []
     pairs = []
     for skill in sorted(path for path in SKILLS.iterdir() if (path / "SKILL.md").is_file()):
         pairs.append((CODEX_SKILLS / skill.name, skill))
@@ -328,10 +335,11 @@ def check() -> list[tuple[str, bool, str]]:
         rows.append((_tr('旧开机项 {0} 已移除').format(f'{old.name}'), not old.exists(), _tr("仍在启动文件夹") if old.exists() else ""))
     for name, value in wanted_env().items():
         rows.append((_tr('环境变量 {0}').format(f'{name}'), user_env(name) == value, user_env(name) or _tr("未设置")))
-    missing = [str(link) for link, target in skill_links() if not skill_linked(link, target)]
-    rows.append((_tr('skill 链接（{0} → ~/.codex/skills → ~/.claude/skills）').format(f'{SKILLS}'), not missing, "、".join(missing)))
+    if SKILLS.is_dir():
+        missing = [str(link) for link, target in skill_links() if not skill_linked(link, target)]
+        rows.append((_tr('skill 链接（{0} → ~/.codex/skills → ~/.claude/skills）').format(f'{SKILLS}'), not missing, "、".join(missing)))
     state = easytier.snapshot()
-    rows.append((_tr("EasyTier 后台任务（easytier/ 下的 SYSTEM 计划任务）"), state["state"] != easytier.MISSING,
+    rows.append((_tr("EasyTier 后台任务（SYSTEM 计划任务）"), state["state"] != easytier.MISSING,
                  easytier.label(state) if state["state"] != easytier.MISSING else "python tray/easytier_setup.py install"))
     running = tray_processes()
     rows.append((_tr("托盘进程"), len(running) == 1, _tr('{0} 个').format(f'{len(running)}')))
@@ -540,10 +548,37 @@ def restart() -> list[str]:
         release_restart_mutex(handle)
 
 
+def migrate_plugins(checkout: Path, dry_run: bool, ids: list[str] | None = None) -> int:
+    """Move plugin clones from a checkout to ~/.agent-compass/plugins (plugin_migration.py). The tray is closed
+    first, so it cannot restart a plugin from the old path mid-move, and started again afterwards."""
+    import plugin_migration
+
+    trays = tray_processes()
+    if trays and dry_run:
+        print(f"[dry run] would close the tray ({', '.join(str(proc.pid) for proc in trays)}) and start it again")
+    elif trays:
+        for proc in trays:
+            print(_tr('托盘 {0} {1}').format(f'{proc.pid}', f'{close_tray(proc)}'))
+    try:
+        return plugin_migration.migrate(checkout, dry_run=dry_run, ids=tuple(ids or plugin_migration.MIGRATABLE))
+    finally:
+        if trays and not dry_run:
+            for line in restart():
+                print(line)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=("check", "install", "restart", "all", "icons", "startup"))
-    action = parser.parse_args().action
+    parser.add_argument("action", choices=("check", "install", "restart", "all", "icons", "startup", "migrate-plugins"))
+    parser.add_argument("--dry-run", action="store_true", help="migrate-plugins: print the plan only")
+    parser.add_argument("--from", dest="checkout", type=Path, default=services.ROOT,
+                        help="migrate-plugins: the checkout that holds the clones (default: this one)")
+    parser.add_argument("--plugin", action="append", choices=("usage-float", "chatgpt-web", "gemini-web", "dot2api"),
+                        help="migrate-plugins: only these plugins (repeatable)")
+    args = parser.parse_args()
+    action = args.action
+    if action == "migrate-plugins":
+        return migrate_plugins(args.checkout, args.dry_run, args.plugin)
     status = 0
     if action == "startup":
         write_startup()

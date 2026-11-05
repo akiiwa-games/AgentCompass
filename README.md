@@ -39,6 +39,34 @@ agentcompass roll --task "<what the worker should do>"     # hand a task to the 
 Windows users can instead run the per-user `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass/releases) (no admin rights). Or hand it to your coding agent:
 *"Read this repository. Run `agentcompass setup --dry-run`, show me what it would change, then run it and route this task: …"*
 
+#### Moving from a checkout to the product
+
+A machine that ran AgentCompass from a git checkout keeps parts of it inside that checkout. The installed product
+keeps them elsewhere, so move them once (every step has a dry run, is safe to repeat, and changes no account or rule):
+
+```powershell
+# 1. Plugin clones (usage-float, codex-chatgpt-web with its local patches, gemini-web, dot2api) -> ~/.agent-compass/plugins/<id>.
+#    Closes the tray, stops each running plugin, moves the whole working tree (local changes and untracked files too),
+#    replaces any junction that pointed back at the checkout, rebuilds dot2api's .venv, restarts what ran and the tray.
+python -X utf8 <checkout>\tray\deploy.py migrate-plugins --dry-run
+python -X utf8 <checkout>\tray\deploy.py migrate-plugins
+
+# 2. The EasyTier node -> %ProgramData%\AgentCompass\easytier (asks for administrator rights through UAC).
+#    Re-points the SYSTEM task at the new home, checks the node comes back (and sees the named peers), then deletes the
+#    old copy; if it does not come back the task goes back to the old home. --keep-old keeps the old copy.
+python -X utf8 <checkout>\tray\easytier_setup.py install --migrate-from <checkout>\easytier --dry-run
+python -X utf8 <checkout>\tray\easytier_setup.py install --migrate-from <checkout>\easytier --expect-peer OTHER_HOST
+
+# 3. The product itself: install the wheel, re-run setup (it points hooks and skills at the wheel and installs the
+#    Paseo bridge's Node packages under ~/.agent-compass/paseo-bridge), then install the tray.
+uv tool install "git+https://github.com/akiiwa-games/AgentCompass"   # or pip install the release wheel
+agentcompass setup --hooks
+# then run AgentCompass-tray-setup.exe from Releases
+```
+
+The tray finds plugins and the EasyTier node at their old checkout locations until they are moved, so the steps can
+run in any order. Host configs that still name a checkout path are listed at the end of step 1 for you to edit.
+
 ### One real decision
 
 ```text
@@ -223,8 +251,8 @@ State is stored atomically in `~/.agent-compass/plugins.json`:
 | Service / Plugin | Window in Tray Menu | Autostarts by Default | Description |
 |---|---|---|---|
 | **Usage Collector & Capacity Stats** (`core`) | No (background) | Always on | Runs the router's collector (`agentcompass usage`) and `tray/capacity_stats.py --once` every 5 minutes, writing `~/.agent-compass/usage-cache.json` and `~/.agent-compass/capacity.json`. |
-| `usage-float` | Yes | Yes | Borderless subscription quota HUD and live wallpaper switcher (`usage-float/`). |
-| `chatgpt-web` | Yes | Yes | Local ChatGPT Web bridge (`127.0.0.1:17843`) run from `codex-chatgpt-web/` with anchored patches from `tray/chatgpt_web_patch.py`. |
+| `usage-float` | Yes | Yes | Borderless subscription quota HUD and live wallpaper switcher (`~/.agent-compass/plugins/usage-float`). |
+| `chatgpt-web` | Yes | Yes | Local ChatGPT Web bridge (`127.0.0.1:17843`) run from `~/.agent-compass/plugins/chatgpt-web` with anchored patches from `tray/chatgpt_web_patch.py`. |
 | `gemini-web` | Yes | No (on demand) | Dedicated Google Chrome profile with loopback CDP (`127.0.0.1:17849`) for Gemini, AI Studio, Flow, and Omni 1.1 video generation. |
 | `easytier` | Yes | Yes | Per-host mesh VPN supervisor running `easytier-core.exe` (`127.0.0.1:15888` RPC portal) via a SYSTEM scheduled task. |
 | `dot2api` | No (background) | Yes | Local Dot2API server (`127.0.0.1:8788`) exposed via a Cloudflared quick tunnel; `tray/dot_reconnect.py` automatically registers new tunnel URLs in ChatGPT and prunes stale plugin entries. |
@@ -240,11 +268,12 @@ Selecting a model in the **Pre-Reset Priority** submenu applies a `+0.35` score 
 
 ### EasyTier Mesh Setup
 
-The tray remains unprivileged while `AgentCompass EasyTier` runs as a `SYSTEM` scheduled task (`SDDL GRGX` grants the interactive user only read/start/stop permissions on that task, while `easytier/bin/`, `private/`, `logs/`, and `state/` are writable only by `SYSTEM` and `Administrators`):
+The node lives in `%ProgramData%\AgentCompass\easytier`: per machine like its task, outside any user profile, and untouched when the tray is reinstalled or uninstalled (both replace the installer's app directory). The tray remains unprivileged while `AgentCompass EasyTier` runs as a `SYSTEM` scheduled task (`SDDL GRGX` grants the interactive user only read/start/stop permissions on that task, while that folder, its `AgentCompass` parent, `bin/`, `private/`, `logs/`, and `state/` are writable only by `SYSTEM` and `Administrators`; a pre-made junction there is refused):
 
 ```powershell
 python tray\easytier_setup.py check
 python tray\easytier_setup.py install --binaries DIR --config THIS_HOSTS_TOML [--hook pre-start.ps1] [--legacy legacy.json] [--switch --expect-peer HOSTNAME]
+python tray\easytier_setup.py install --migrate-from OLD_HOME [--expect-peer HOSTNAME] [--keep-old] [--dry-run]
 python tray\easytier_setup.py switch|recover|rollback --expect-peer HOSTNAME
 python tray\easytier_setup.py arm-recovery --expect-peer HOSTNAME --minutes 10
 python tray\easytier_setup.py detach-switch --expect-peer HOSTNAME
@@ -252,7 +281,7 @@ python tray\easytier_setup.py cleanup
 python tray\easytier_setup.py uninstall
 ```
 
-A node registered before the AgentCompass rename still runs as `Route Manager EasyTier`; the tray reads either name. Re-running `install --binaries easytier\bin --config easytier\private\node.toml` (elevated through UAC) registers `AgentCompass EasyTier`, deletes the old tasks and starts the new one.
+A node installed before that folder existed lives in `<checkout>\easytier`; the tray keeps finding it there until `install --migrate-from <checkout>\easytier` moves it (see *Moving from a checkout to the product*). A node registered before the AgentCompass rename still runs as `Route Manager EasyTier`; the tray reads either name, and `install` (with or without `--migrate-from`, elevated through UAC) registers `AgentCompass EasyTier`, deletes the old tasks and starts the new one.
 
 ### Host Rollout & System-Level Skill Loading (`setup/sync_host_globals.py`)
 
@@ -301,6 +330,7 @@ python tray\deploy.py check      # Inspect current installation state
 python tray\deploy.py install    # Apply ChatGPT Web patches, build launcher, register logon scheduled task
 python tray\deploy.py restart    # Restart the tray UI without stopping background services
 python tray\deploy.py all        # Install and restart
+python tray\deploy.py migrate-plugins [--dry-run]   # Move plugin clones out of a checkout into ~/.agent-compass/plugins
 python tray\updates.py check     # Check how many commits each managed repo is behind upstream
 python tray\updates.py update    # Fast-forward pull, rebuild, and restart enabled components with rollback on failure
 ```
