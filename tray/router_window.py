@@ -683,7 +683,13 @@ class Panel:
         return cards
 
     def prefill(self, work, done):
-        """Run a fast local read (a few ms) and fill a page while it is still unmapped, so it never shows empty first."""
+        """Fill the page on screen before it shows, so it never shows empty first.
+
+        A page built underneath reads on a thread instead: it isn't visible, and its reads (account files, CLI
+        probes, process scans) took up to a second, which froze the page in front during the idle prebuild."""
+        if self.prebuilding:
+            self.run(work, done)
+            return
         try:
             value = work()
         except Exception as exc:
@@ -776,6 +782,7 @@ class Panel:
 
     PREBUILD_DELAY_MS = 1200  # after the opening page has drawn and its first reads are in
     PREBUILD_GAP_MS = 250  # between pages, so clicks and redraws get through
+    prebuilding = False  # inside prebuild_next(): the page being built is covered
 
     def start_prebuild(self):
         self.prebuild = True
@@ -790,6 +797,7 @@ class Panel:
 
         Creating a native window costs about a millisecond where global window hooks are installed, so a page
         built on its first click froze the window for 0.5-1 s; built ahead, one page per idle slot, it doesn't."""
+        self.prebuilding = True
         try:
             for key, _, _ in PAGES:
                 if key not in self.built:
@@ -807,6 +815,8 @@ class Panel:
         except Exception as exc:
             log_error(exc)
             return
+        finally:
+            self.prebuilding = False
         self.schedule_prebuild(self.PREBUILD_GAP_MS)
 
     def header(self, parent, title, actions=()):

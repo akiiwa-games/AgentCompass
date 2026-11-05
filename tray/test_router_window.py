@@ -828,6 +828,32 @@ class LanguageTests(unittest.TestCase):
             self.assertTrue(panel.setting_frames["models"]._page_hidden)
             errors.assert_not_called()
 
+    def test_a_page_built_underneath_reads_its_data_off_the_ui_thread(self):
+        # A covered page can't show empty, so its reads (account files, CLI probes, process scans) must not stall
+        # the page on screen; the page in front still fills before it shows.
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        with mock.patch.object(router_window.Panel, "run") as run, \
+                mock.patch.object(router_window.theme, "set_window_icon"), \
+                mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()), \
+                mock.patch.object(router_window, "log_error"):
+            with mock.patch.object(router_window.Panel, "prefill"):
+                panel = router_window.Panel(root)
+            self.addCleanup(lambda: root.after_cancel(panel._poll_id))
+            run.reset_mock()
+            with mock.patch.object(panel, "cached_account_cards") as read, \
+                    mock.patch.object(panel, "schedule_prebuild"):
+                panel.prebuild_next()
+            self.assertIn("quota", panel.built)
+            read.assert_not_called()
+            self.assertIn(read, [c.args[0] for c in run.call_args_list])
+            filled = []
+            panel.prefill(lambda: "rows", filled.append)
+            self.assertEqual(filled, ["rows"])
+
 
 class WindowHelperTests(unittest.TestCase):
     def test_layout_keeps_the_tray_page_keys(self):
