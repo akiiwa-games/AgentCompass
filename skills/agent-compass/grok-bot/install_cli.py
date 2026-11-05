@@ -6,11 +6,15 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import sys
 import tempfile
 import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
+if str(ROOT.parent / 'scripts') not in sys.path:
+    sys.path.append(str(ROOT.parent / 'scripts'))
+import grok_bot_paths  # noqa: E402  where the CLI lives: per user, outside the skill
 
 
 def digest(data):
@@ -22,7 +26,7 @@ def pin():
 
 
 def check(directory=None):
-    directory = directory or ROOT / 'runtime'
+    directory = directory or grok_bot_paths.runtime_dir(ROOT)
     spec = pin()
     expected = {**spec['artifact_sha256'], **spec['patched_sha256']}
     for name, checksum in expected.items():
@@ -43,7 +47,9 @@ def install(archive=None):
     if len(data) > 64 * 1024 * 1024 or digest(data) != spec['archive_sha256']:
         raise ValueError('Upstream archive checksum mismatch; installation was not changed.')
     # Extract only the exact artifact paths from the pinned archive, never archive-controlled destinations.
-    with tempfile.TemporaryDirectory(prefix='install-', dir=ROOT) as temporary:
+    target = grok_bot_paths.install_dir()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='install-', dir=target.parent) as temporary:
         temporary = Path(temporary)
         staged = temporary / 'runtime'
         staged.mkdir()
@@ -61,7 +67,7 @@ def install(archive=None):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
         message = check(staged)
-        target, backup = ROOT / 'runtime', temporary / 'previous'
+        backup = temporary / 'previous'
         if target.exists():
             target.rename(backup)
         try:

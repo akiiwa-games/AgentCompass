@@ -19,12 +19,13 @@ import sqlite3
 import tempfile
 import tomllib
 import antigravity_plan
+import grok_bot_paths
 from model_resolution import resolve_canonical_model
 import public_data
 import usage_cache
 
 MAX_BYTES = 5 * 1024 * 1024
-GROK_BOT_CLI = Path(__file__).resolve().parents[1] / 'grok-bot/runtime/bin/gbot.mjs'
+GROK_BOT_CLI = grok_bot_paths.runtime_dir() / grok_bot_paths.ENTRY
 # Paseo built-in providers recognized from their Paseo entry without a model catalog.
 PASEO_RECOGNIZED_ONLY = ('copilot', 'muse', 'dsh')
 # Oh My Pi signs in to subscriptions with OAuth (agent.db `auth_credentials`). omp's provider id -> the AgentCompass

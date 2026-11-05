@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -17,6 +18,9 @@ class ArtifactInstallationTests(unittest.TestCase):
         change = patch.object(install_cli, 'ROOT', self.root)
         change.start()
         self.addCleanup(change.stop)
+        runtime = patch.dict(os.environ, {install_cli.grok_bot_paths.OVERRIDE: str(self.root / 'runtime')})
+        runtime.start()
+        self.addCleanup(runtime.stop)
         self.files = {'bin/gbot.mjs': b'synthetic entry', 'bin/gbot-flight.mjs': b'synthetic flight'}
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as archive:
@@ -67,6 +71,33 @@ class ArtifactInstallationTests(unittest.TestCase):
         flight.unlink()
         with self.assertRaises(OSError):
             install_cli.check()
+
+
+class RuntimeLocationTests(unittest.TestCase):
+    """A wheel keeps the skill in site-packages; the CLI must live outside it to survive an upgrade."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.base = Path(directory.name)
+        self.package = self.base / 'site-packages' / 'agentcompass' / 'data' / 'skills' / 'agent-compass' / 'grok-bot'
+        self.env = {'ROUTER_STATE_DIR': str(self.base / 'state')}
+
+    def test_install_goes_to_the_state_directory_not_the_skill(self):
+        paths = install_cli.grok_bot_paths
+        self.assertEqual(paths.install_dir(self.env), self.base / 'state' / 'grok-bot' / 'runtime')
+        self.assertEqual(paths.runtime_dir(self.package, self.env), self.base / 'state' / 'grok-bot' / 'runtime')
+
+    def test_a_cli_left_inside_the_skill_is_used_until_reinstalled(self):
+        paths = install_cli.grok_bot_paths
+        legacy = self.package / 'runtime' / 'bin' / 'gbot.mjs'
+        legacy.parent.mkdir(parents=True)
+        legacy.write_bytes(b'old')
+        self.assertEqual(paths.runtime_dir(self.package, self.env), self.package / 'runtime')
+        current = self.base / 'state' / 'grok-bot' / 'runtime' / 'bin' / 'gbot.mjs'
+        current.parent.mkdir(parents=True)
+        current.write_bytes(b'new')
+        self.assertEqual(paths.runtime_dir(self.package, self.env), current.parents[1])
 
 
 if __name__ == '__main__':

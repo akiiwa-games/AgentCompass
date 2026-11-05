@@ -13,20 +13,26 @@ spec.loader.exec_module(bootstrap)
 
 
 class PaseoBridgeBootstrapTests(unittest.TestCase):
-    def run_case(self, configured=False, installed=False, npm='npm.cmd'):
+    def run_case(self, configured=False, installed=False, npm='npm.cmd', checkout=True, inspect=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            if checkout:
+                (root / '.git').mkdir()
             if configured:
                 (root / '.paseo').mkdir()
                 (root / '.paseo/config.json').write_text('{}')
             bridge = root / 'setup/paseo-bridge'
             bridge.mkdir(parents=True)
+            (bridge / 'package.json').write_text('{"name": "bridge"}')
+            (bridge / 'package-lock.json').write_text('{"lockfileVersion": 3}')
             if installed:
                 (bridge / 'node_modules').mkdir()
             output = io.StringIO()
             with patch.object(bootstrap, 'HOME', root), patch.object(bootstrap, '__file__', str(root / 'setup/sync_host_globals.py')), patch.object(bootstrap.shutil, 'which', side_effect=lambda name: npm if name == 'npm' else None), patch.object(bootstrap.subprocess, 'run') as run, redirect_stdout(output):
                 bootstrap.ensure_paseo_bridge_dependencies()
                 calls = run.call_args_list
+                if inspect:
+                    inspect(root)
             return calls, output.getvalue(), bridge
 
     def test_non_paseo_host_does_not_require_node(self):
@@ -44,8 +50,41 @@ class PaseoBridgeBootstrapTests(unittest.TestCase):
     def test_missing_npm_prints_manual_step_and_continues(self):
         calls, output, _ = self.run_case(configured=True, npm=None)
         self.assertEqual(calls, [])
-        self.assertIn('npm --prefix setup/paseo-bridge ci', output)
+        self.assertIn('agentcompass setup', output)
         self.assertIn('Continuing other host setup', output)
+
+    def test_an_installed_wheel_installs_under_the_state_directory_not_site_packages(self):
+        seen = {}
+
+        def inspect(root):
+            target = root / '.agent-compass/paseo-bridge'
+            seen['lock'] = (target / 'package-lock.json').read_text()
+            seen['target'] = target
+
+        calls, _, bridge = self.run_case(configured=True, checkout=False, inspect=inspect)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].kwargs['cwd'], seen['target'])
+        self.assertEqual(seen['lock'], '{"lockfileVersion": 3}')
+
+    def test_an_upgraded_wheel_with_a_new_lock_reinstalls(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / '.paseo').mkdir()
+            (root / '.paseo/config.json').write_text('{}')
+            source = root / 'setup/paseo-bridge'
+            source.mkdir(parents=True)
+            target = root / '.agent-compass/paseo-bridge'
+            (target / 'node_modules').mkdir(parents=True)
+            for name, old, new in (('package.json', '{}', '{}'), ('package-lock.json', '{"v": 1}', '{"v": 2}')):
+                (target / name).write_text(old)
+                (source / name).write_text(new)
+            with patch.object(bootstrap, 'HOME', root), patch.object(bootstrap, '__file__', str(root / 'setup/sync_host_globals.py')),                     patch.object(bootstrap.shutil, 'which', side_effect=lambda name: 'npm.cmd' if name == 'npm' else None),                     patch.object(bootstrap.subprocess, 'run') as run, redirect_stdout(io.StringIO()):
+                bootstrap.ensure_paseo_bridge_dependencies()
+                self.assertEqual(run.call_args.kwargs['cwd'], target)
+                self.assertEqual((target / 'package-lock.json').read_text(), '{"v": 2}')
+                run.reset_mock()
+                bootstrap.ensure_paseo_bridge_dependencies()
+                run.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -338,14 +338,19 @@ export async function execute(client, input, notify = ensureNotification) {
 
 async function createClient() {
   const setup = path.dirname(fileURLToPath(import.meta.url));
-  const sdkRoot = process.env.ROUTER_PASEO_SDK_ROOT ?? path.join(setup, 'paseo-bridge/node_modules');
+  // A checkout installs beside this file; an installed wheel installs under the state directory, because an
+  // upgrade replaces site-packages (sync_host_globals.ensure_paseo_bridge_dependencies).
+  const candidates = [path.join(setup, 'paseo-bridge/node_modules'),
+    ...new Set([process.env.ROUTER_STATE_DIR, path.join(os.homedir(), '.agent-compass')].filter(Boolean)
+      .map((state) => path.join(state, 'paseo-bridge/node_modules')))];
+  const sdkRoot = process.env.ROUTER_PASEO_SDK_ROOT ?? candidates.find((dir) => fs.existsSync(dir)) ?? candidates[0];
   const require = createRequire(path.join(path.resolve(sdkRoot), '_router_dispatch.cjs'));
   let daemonClientModule, WebSocket;
   try {
     daemonClientModule = require.resolve('@getpaseo/client/internal/daemon-client');
     ({WebSocket} = require('ws'));
   } catch (cause) {
-    throw new Error('Paseo bridge dependencies are missing in ' + sdkRoot + '. Run: npm --prefix setup/paseo-bridge ci (from the repository root), or set ROUTER_PASEO_SDK_ROOT.', {cause});
+    throw new Error('Paseo bridge dependencies are missing in ' + candidates.join(' and ') + '. Run: agentcompass setup (or npm --prefix setup/paseo-bridge ci in a checkout), or set ROUTER_PASEO_SDK_ROOT.', {cause});
   }
   const {DaemonClient} = await import(pathToFileURL(daemonClientModule).href);
   // Local credential stays inside the adapter. No remote URL/credential forwarding.

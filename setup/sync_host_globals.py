@@ -1340,14 +1340,30 @@ def uninstall(dry_run: bool = False) -> int:
 # --- entry points ----------------------------------------------------------------------------------------------------
 
 
+PASEO_BRIDGE_MANIFESTS = ("package.json", "package-lock.json")
+
+
+def paseo_bridge_dir() -> Path:
+    """Where the dispatcher's Node dependencies go. A checkout keeps them beside setup/; an installed wheel keeps
+    them under the state directory, because an upgrade replaces site-packages and would drop node_modules."""
+    source = Path(__file__).resolve().parent / "paseo-bridge"
+    if (source.parents[1] / ".git").exists() or (source / "node_modules").is_dir():
+        return source
+    return state_dir() / "paseo-bridge"
+
+
 def ensure_paseo_bridge_dependencies() -> None:
     """Prepare the optional Paseo dispatcher without requiring Node for other hosts."""
     if not paseo_config_path().is_file() and not shutil.which("paseo"):
         return
-    bridge = Path(__file__).resolve().parent / "paseo-bridge"
-    if (bridge / "node_modules").is_dir():
+    source = Path(__file__).resolve().parent / "paseo-bridge"
+    bridge = paseo_bridge_dir()
+    stale = [name for name in PASEO_BRIDGE_MANIFESTS if bridge != source and (source / name).is_file()
+             and (not (bridge / name).is_file() or (bridge / name).read_bytes() != (source / name).read_bytes())]
+    if (bridge / "node_modules").is_dir() and not stale:
         return
-    hint = "Install Node.js with npm, then run npm --prefix setup/paseo-bridge ci from the repository root (only needed for Paseo worker dispatch via roll)."
+    hint = (f"Install Node.js with npm, then run agentcompass setup again, or npm ci in {bridge} "
+            "(only needed for Paseo worker dispatch via roll).")
     npm = shutil.which("npm")
     if not npm:
         print(f"[paseo-bridge] {hint} Continuing other host setup.")
@@ -1355,7 +1371,10 @@ def ensure_paseo_bridge_dependencies() -> None:
     if DRY_RUN:
         print("[paseo-bridge] Would install optional Paseo worker dispatch dependencies.")
         return
-    print("[paseo-bridge] Installing optional Paseo worker dispatch dependencies...")
+    print(f"[paseo-bridge] Installing optional Paseo worker dispatch dependencies in {bridge}...")
+    bridge.mkdir(parents=True, exist_ok=True)
+    for name in stale:
+        shutil.copy2(source / name, bridge / name)
     subprocess.run([npm, "ci"], cwd=bridge, check=True)
 
 

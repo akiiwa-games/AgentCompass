@@ -19,6 +19,14 @@ PACKAGE = ROOT / 'grok-bot'
 RUNNER = ROOT / 'scripts' / 'run_grok_bot.py'
 GUIDE = ROOT / 'references' / 'grok-bot.md'
 _connection = None
+
+
+def runtime_dir() -> Path:
+    """The installed CLI (skills/agent-compass/scripts/grok_bot_paths.py: per user, legacy copy in the skill)."""
+    if str(RUNNER.parent) not in sys.path:
+        sys.path.append(str(RUNNER.parent))
+    import grok_bot_paths
+    return grok_bot_paths.runtime_dir(PACKAGE)
 _probe_lock = threading.Lock()
 
 
@@ -46,7 +54,7 @@ def snapshot():
     node = shutil.which('node')
     if not node:
         return {'label': _tr('缺少 Node.js'), 'kind': 'warn'}
-    if not (PACKAGE / 'runtime/bin/gbot.mjs').is_file():
+    if not (runtime_dir() / 'bin/gbot.mjs').is_file():
         return {'label': _tr('CLI 未安装'), 'kind': 'idle'}
     try:
         valid = _run([python(), str(PACKAGE / 'install_cli.py'), '--check'], 15).returncode == 0

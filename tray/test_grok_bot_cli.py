@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -37,7 +38,8 @@ class GrokBotIntegrationTests(unittest.TestCase):
         self.binary = self.package / 'runtime/bin/gbot.mjs'
         self.binary.parent.mkdir(parents=True)
         self.binary.write_text('synthetic', encoding='utf-8')
-        for patch in (mock.patch.object(cli, 'PACKAGE', self.package),
+        state = {'ROUTER_STATE_DIR': str(self.package / 'state'), 'AGENTCOMPASS_GROK_BOT_RUNTIME': ''}
+        for patch in (mock.patch.object(cli, 'PACKAGE', self.package), mock.patch.dict(os.environ, state),
                       mock.patch.object(cli, '_connection', None),
                       mock.patch.object(cli.shutil, 'which', side_effect=lambda name: name)):
             patch.start()

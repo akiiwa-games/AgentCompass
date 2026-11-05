@@ -13,10 +13,11 @@ import subprocess
 import sys
 import time
 
+import grok_bot_paths
 import override_store
 
 PACKAGE = Path(__file__).resolve().parents[1] / 'grok-bot'
-CLI = PACKAGE / 'runtime/bin/gbot.mjs'
+CLI = grok_bot_paths.runtime_dir(PACKAGE) / grok_bot_paths.ENTRY
 # Cold send: list + EnsureSandBox + retried list + one send, each bounded upstream at 30s.
 # Include a possible initial Ensure for an absent descriptor and local startup/decryption overhead.
 CLI_TIMEOUT = 210
