@@ -137,7 +137,7 @@ class InstallShapeAndVersionDisplayTests(unittest.TestCase):
             sp_same, _, cli_same = _make_wheel_install(base, version="0.3.8", installer="pip")
             both_same = updates.inspect_installs(root=tray_root, home=home, which_path=cli_same, frozen=False)
             self.assertFalse(both_same["version_mismatch"])
-            self.assertEqual(both_same["display_version"], "AgentCompass 0.3.8 · Router 0.3.8")
+            self.assertEqual(both_same["display_version"], "AgentCompass 0.3.8 · 命令行 0.3.8")
 
             # Separate router on PATH with older version -> flagged as mismatch
             sp_old, _, cli_old = _make_wheel_install(
@@ -148,7 +148,7 @@ class InstallShapeAndVersionDisplayTests(unittest.TestCase):
             )
             mismatch_path = updates.inspect_installs(root=tray_root, home=home, which_path=cli_old, frozen=False)
             self.assertTrue(mismatch_path["version_mismatch"])
-            self.assertEqual(mismatch_path["display_version"], "AgentCompass 0.3.8 · Router 0.3.5（版本不一致）")
+            self.assertEqual(mismatch_path["display_version"], "AgentCompass 0.3.8 · 命令行 0.3.5（版本不一致）")
             self.assertEqual(mismatch_path["routers"]["path"]["installer"], "uv")
             self.assertIsNotNone(mismatch_path["routers"]["path"]["direct_url"])
 

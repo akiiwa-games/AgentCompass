@@ -33,6 +33,7 @@ import sync_host_globals as sg  # noqa: E402
 if str(REPO) not in sys.path:
     sys.path.append(str(REPO))
 from agentcompass.origin import DEFAULT_ORG  # noqa: E402
+from agentcompass import install as ac_install  # noqa: E402
 # Accounts whose sign-in cannot be read from disk: an installed CLI is taken as signed in unless the user says otherwise.
 UNVERIFIABLE_FAMILIES = ("antigravity", "opencode", "grok")
 CLI_ACCOUNTS = ("claude", "codex", "pi", "antigravity", "opencode", "grok")
@@ -265,7 +266,24 @@ class Asker:
 
 
 def _packaged() -> bool:
-    return "site-packages" in Path(__file__).resolve().parts
+    """The Windows installer's exe or an installed wheel: both are called as plain `agentcompass`."""
+    return ac_install.frozen() or ac_install.shape(__file__) == "wheel"
+
+
+def install_notes(environ: dict | None = None) -> list[str]:
+    """Which install ran setup, and an `agentcompass` on PATH that hides the installer's own exe."""
+    kind = ac_install.shape(None if ac_install.frozen() else __file__)
+    label = {"installer": "Windows installer (agentcompass.exe, no Python needed)", "wheel": "Python package (uv/pip)",
+             "checkout": "source checkout"}[kind]
+    notes = [f"  active install: {label}"]
+    shadow = ac_install.shadowing(environ)
+    if shadow:
+        notes.append(f"  warning: `agentcompass` in a new terminal runs {shadow['first']}, not the installer's {shadow['bundled']}.")
+        notes.append(f"           Remove the older copy with: {shadow['remove']}")
+    elif kind != "installer" and ac_install.bundled_cli(environ) is not None:
+        notes.append(f"  note: the Windows installer's {ac_install.bundled_cli(environ)} is installed too; "
+                     "run its `agentcompass setup` to point hooks and skills at it.")
+    return notes
 
 
 def _router_command() -> str:
@@ -387,6 +405,8 @@ def setup_main(argv: list[str] | None = None) -> int:
     _line(f"  router hook   : {summary['hooks']}")
     _line(f"  backups       : {home / '.agent-compass' / 'backups'}")
     _line(f"  undo          : {_undo_command()}")
+    for note in install_notes():
+        _line(note)
     if dry:
         _line("\nDry run complete; nothing was changed.")
     else:

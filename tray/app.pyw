@@ -22,6 +22,7 @@ import easytier
 import network_status
 import plugins
 import router_priority
+import router_setup
 import router_window
 import services
 import ui_theme
@@ -247,7 +248,7 @@ def refresh_priority(icon) -> None:
     try:
         latest = router_priority.snapshot()
     except router_priority.RouterMissing:
-        latest = {"label": _tr("未安装 router（运行 agentcompass setup）"), "entries": [], "targets": []}
+        latest = {"label": _tr("Router 未设置"), "entries": [], "targets": [], "missing": True}
     except Exception as exc:
         log_error(exc)
         latest = {"label": _tr("优先状态异常"), "entries": [], "targets": []}
@@ -302,6 +303,22 @@ def check_product_update(icon=None, item=None) -> None:
             log_error(exc)
 
     threading.Thread(target=runner, daemon=True).start()
+
+
+def open_router_setup(icon=None, item=None) -> None:
+    try:
+        router_setup.open_window()
+    except Exception as exc:
+        log_error(exc)
+
+
+def offer_router_setup() -> None:
+    """First launch without a router setup: open the consent window once (it records that it was offered)."""
+    try:
+        if router_setup.should_offer():
+            router_setup.open_window()
+    except Exception as exc:
+        log_error(exc)
 
 
 def open_panel(icon=None, item=None) -> None:
@@ -417,6 +434,8 @@ def build_menu() -> Menu:
         MenuItem(_tr("打开 AgentCompass"), open_panel, default=True),
         MenuItem(_tr(PRIORITY["label"]), priority_menu() if has_priority else None, enabled=has_priority),
     ]
+    if PRIORITY.get("missing"):
+        items.append(MenuItem(_tr("设置 Router…"), open_router_setup))
     shown = plugins.menu_plugins(PLUGINS)
     if shown:
         items.append(Menu.SEPARATOR)
@@ -480,6 +499,8 @@ def main() -> None:
             act(icon, services.start_all)
         threading.Thread(target=watch, args=(icon,), daemon=True).start()
         threading.Thread(target=watch_component_menus, args=(icon,), daemon=True).start()
+        if "--attach-only" not in sys.argv:
+            threading.Thread(target=offer_router_setup, daemon=True).start()
 
     try:
         icon.run(setup)

@@ -42,13 +42,29 @@ for _scripts_dir in (
 import host_rules  # noqa: E402
 import provider_inventory  # noqa: E402
 
+if str(REPO_ROOT) not in sys.path:
+    sys.path.append(str(REPO_ROOT))
+try:
+    from agentcompass import install as ac_install  # noqa: E402
+except ImportError:  # a bare copy of setup/ without the package: the Python/script shape only
+    ac_install = None
+
+
+def is_gate_hook_command(command: object) -> bool:
+    """A router gate hook entry from any install: the script path, or the Windows installer's `agentcompass.exe gate-hook`."""
+    if ac_install is not None:
+        return ac_install.is_gate_hook_command(command)
+    return "router_gate_hook.py" in str(command or "")
+
 CRLF, LF = "\r\n", "\n"
 MARKER_BEGIN = "<!-- agentcompass:begin -->"
 MARKER_END = "<!-- agentcompass:end -->"
 
-PYTHON_EXE = Path(sys.executable).resolve().as_posix()
 ROUTER_HOOK_SCRIPT = Path(__file__).resolve().with_name("router_gate_hook.py").as_posix()
-ROUTER_HOOK_CMD = shlex.join([PYTHON_EXE, "-X", "utf8", ROUTER_HOOK_SCRIPT])
+# What hosts run for the gate: the installer's `agentcompass.exe gate-hook` (no Python), else this Python and the script.
+ROUTER_HOOK_ARGV = (ac_install.gate_hook_argv(ROUTER_HOOK_SCRIPT) if ac_install is not None
+                    else [Path(sys.executable).resolve().as_posix(), "-X", "utf8", ROUTER_HOOK_SCRIPT])
+ROUTER_HOOK_CMD = shlex.join(ROUTER_HOOK_ARGV)
 
 ROUTER_GATE_MATCHER = (
     ".*request_user_input_async|.*request_user_input|.*AskUserQuestion|.*ask_user_question|"
@@ -59,8 +75,7 @@ ROUTER_GATE_MATCHER = (
 
 PI_ROUTER_GATE_TS = """import { spawnSync } from "node:child_process";
 
-const PYTHON_EXE = __PYTHON_EXE__;
-const HOOK_SCRIPT = __HOOK_SCRIPT__;
+const HOOK_ARGV = __HOOK_ARGV__;
 const SUBAGENT_TOOLS = new Set([
   "request_user_input_async",
   "request_user_input",
@@ -104,7 +119,7 @@ export default function (pi: any) {
         input: event?.input || {},
         cwd: process.cwd(),
       });
-      const res = spawnSync(PYTHON_EXE, ["-X", "utf8", HOOK_SCRIPT], {
+      const res = spawnSync(HOOK_ARGV[0], HOOK_ARGV.slice(1), {
         input: payload,
         encoding: "utf-8",
         timeout: 8000,
@@ -117,12 +132,12 @@ export default function (pi: any) {
         }
       }
     } catch {
-      // Fail-open if python is unexpectedly unavailable
+      // Fail-open if the hook command is unexpectedly unavailable
     }
     return undefined;
   });
 }
-""".replace("__PYTHON_EXE__", json.dumps(PYTHON_EXE)).replace("__HOOK_SCRIPT__", json.dumps(ROUTER_HOOK_SCRIPT))
+""".replace("__HOOK_ARGV__", json.dumps(ROUTER_HOOK_ARGV))
 
 # Per-family table of global instruction files, rule kinds, skills layout and router-gate hook locations.
 # Checked against each harness's own documentation and source:
@@ -993,7 +1008,7 @@ def ensure_hook_in_list(hook_entries: list, command_str: str, matcher: str | Non
     for group in hook_entries:
         other_hooks = [
             h for h in group.get("hooks", [])
-            if h.get("command") != command_str and "router_gate_hook.py" not in str(h.get("command", ""))
+            if h.get("command") != command_str and not is_gate_hook_command(h.get("command", ""))
         ]
         if other_hooks:
             new_group = dict(group)
@@ -1009,7 +1024,7 @@ def ensure_hook_in_list(hook_entries: list, command_str: str, matcher: str | Non
 def remove_hook_from_list(hook_entries: list) -> list:
     result = []
     for group in hook_entries:
-        others = [h for h in group.get("hooks", []) if "router_gate_hook.py" not in str(h.get("command", ""))]
+        others = [h for h in group.get("hooks", []) if not is_gate_hook_command(h.get("command", ""))]
         if others:
             new_group = dict(group)
             new_group["hooks"] = others
@@ -1071,7 +1086,7 @@ def hooks_installed(homes: list[tuple[str, Path]] | None = None) -> bool:
     """True when any discovered harness home already routes tool calls through the router gate."""
     for _, _, path, _, _ in hook_targets(homes):
         text = read_text(path)
-        if text and "router_gate_hook.py" in text:
+        if text and is_gate_hook_command(text):
             return True
     return False
 
@@ -1173,7 +1188,7 @@ def _uninstall_one_hook(path: Path, entry: dict) -> None:
     if existing is None:
         return
     if kind == "pi":
-        if "router_gate_hook.py" not in existing:
+        if not is_gate_hook_command(existing):
             return
         report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
         return

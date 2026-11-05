@@ -2,12 +2,16 @@
 
 ``setup`` and ``uninstall`` call ``setup/onboard.py``. The routing stages (roll, plan, providers, record, ...) run
 ``route_judge.py`` with ``python -I`` so the skill scripts stay real files on disk; ``usage`` runs the collector.
+
+The installer's frozen ``agentcompass.exe`` is its own Python for those scripts (``agentcompass.frozen_python``), and
+``gate-hook`` is the router gate hook command hosts run (``setup/router_gate_hook.py`` in this process).
 """
 
 from __future__ import annotations
 
 import importlib.util
 import re
+import runpy
 import subprocess
 import sys
 
@@ -64,6 +68,24 @@ def call_onboard(command: str, argv: list[str]) -> int:
         return int(module.main([command, *argv]) or 0)
     sys.stderr.write(f"{path} has no main(argv)\n")
     return 2
+
+
+def gate_hook(argv: list[str]) -> int:
+    """The router gate hook, as hosts call it from the installer (`agentcompass.exe gate-hook`): JSON on stdin, verdict on stdout."""
+    path = locations.setup_script("router_gate_hook.py")
+    if path is None:
+        sys.stderr.write("router_gate_hook.py is not part of this install\n")
+        return 0  # fail open, as the hook does when its own checks cannot run
+    sys.argv = [str(path), *argv]
+    folder = str(path.parent)
+    if folder not in sys.path:
+        sys.path.insert(0, folder)
+    try:
+        runpy.run_path(str(path), run_name="__main__")
+    except SystemExit as exc:
+        code = exc.code
+        return 0 if code is None else code if isinstance(code, int) else 1
+    return 0
 
 
 def route_judge_command(stage: str, args: list[str]) -> list[str]:
@@ -194,6 +216,11 @@ def plan_passthrough(args: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if getattr(sys, "frozen", False):
+        from agentcompass import frozen_python
+        if frozen_python.looks_like_python(argv):
+            frozen_python.environment_ready()
+            return frozen_python.run(argv)
     if not argv or argv[0] in ("-h", "--help"):
         sys.stdout.write(HELP)
         return 0
@@ -202,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     command, rest = argv[0], argv[1:]
     try:
+        if command == "gate-hook":
+            return gate_hook(rest)
         if command == "doctor":
             from agentcompass.doctor import main as doctor_main
             return doctor_main(rest)

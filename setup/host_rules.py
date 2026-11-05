@@ -9,31 +9,50 @@ rules, dated notes) drops Markdown files into ``~/.agent-compass/host-rules/`` a
 
 An overlay is used verbatim except for placeholders that depend on where this checkout and the user's home are:
 
-    @@AGENTCOMPASS@@        the router command: `agentcompass` for an installed package, otherwise
+    @@AGENTCOMPASS@@        the router command: `agentcompass` for the Windows installer or an installed package, otherwise
                             `python -X utf8 <checkout>/agentcompass` (same sub-commands, any working directory)
     @@ROUTE_JUDGE@@         legacy; `python -X utf8 @@ROUTE_JUDGE@@` is rewritten to @@AGENTCOMPASS@@, a bare path stays the script path
-    @@ROUTER_HOOK_SCRIPT@@  absolute path of setup/router_gate_hook.py in this checkout
+    @@ROUTER_HOOK_SCRIPT@@  what the gate hook runs: `<app>/cli/agentcompass.exe gate-hook` for the Windows installer,
+                            otherwise the absolute path of setup/router_gate_hook.py
     @@HOME_POSIX@@          the user's home directory with forward slashes
     @@SHARED@@              codex.md / daemon-append.md only: the whole shared rule text (overlay, else the default),
                             so the common rules live in one file and the others hold only what differs
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.append(str(REPO))
+try:
+    from agentcompass import install as ac_install  # noqa: E402
+except ImportError:  # a bare copy of setup/ without the package
+    ac_install = None
+
 ROUTE_JUDGE = (REPO / "skills" / "agent-compass" / "scripts" / "route_judge.py").as_posix()
 LEGACY_ENTRY = "python -X utf8 @@ROUTE_JUDGE@@"
 
 
 def agentcompass_command() -> str:
-    """The one way agents call the router: the console script when installed, else the checkout's package directory."""
-    if "site-packages" in Path(__file__).resolve().parts:
+    """The one way agents call the router: `agentcompass` when installed (Windows installer or package), else the checkout's package directory."""
+    if ac_install is not None and (ac_install.frozen() or ac_install.shape(__file__) == "wheel"):
+        return "agentcompass"
+    if ac_install is None and "site-packages" in Path(__file__).resolve().parts:
         return "agentcompass"
     return f"python -X utf8 {(REPO / 'agentcompass').as_posix()}"
 
 
-ROUTER_HOOK_SCRIPT = (Path(__file__).resolve().with_name("router_gate_hook.py")).as_posix()
+def router_hook_reference() -> str:
+    """@@ROUTER_HOOK_SCRIPT@@: the installer's exe-based hook command, else the hook script's path."""
+    script = Path(__file__).resolve().with_name("router_gate_hook.py")
+    if ac_install is not None and ac_install.frozen():
+        return ac_install.gate_hook_command(script)
+    return script.as_posix()
+
+
+ROUTER_HOOK_SCRIPT = router_hook_reference()
 
 OVERLAY_FILES = {"shared": "shared.md", "codex": "codex.md", "daemon-append": "daemon-append.md"}
 

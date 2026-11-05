@@ -11,12 +11,12 @@ import time
 from pathlib import Path
 
 from agentcompass import __version__
+from agentcompass import install
 from agentcompass import locations
 from agentcompass.ports import FEATURES, conflicts, listeners, load
 from agentcompass.tools import HINTS
 
 CLI_NAMES = ("claude", "codex", "agy", "grok", "npm", "git", "paseo", "hc", "python")
-_HOOK_MARKER = "router_gate_hook.py"
 
 
 def _which(names: tuple[str, ...], path: str | None = None) -> str | None:
@@ -163,7 +163,12 @@ def _hook_installed(path: Path) -> str:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return "unreadable"
-    return "installed" if _HOOK_MARKER in text else "not installed"
+    if not install.is_gate_hook_command(text):
+        return "not installed"
+    bundled = install.bundled_cli()
+    if bundled is not None and str(bundled).replace("\\", "/").lower() not in text.replace("\\\\", "/").replace("\\", "/").lower():
+        return "installed (not the installer's agentcompass.exe; run `agentcompass setup` to switch it)"
+    return "installed"
 
 
 def _cache_line(home: Path, environ: dict | None) -> str:
@@ -216,6 +221,28 @@ def _plugin_lines(home: Path) -> list[str]:
     return lines
 
 
+def install_lines(environ: dict | None = None) -> list[str]:
+    """Which install is running, every `agentcompass` on PATH, and one that hides the installer's exe."""
+    kind = install.shape(None if install.frozen() else locations.package_dir() / "__init__.py")
+    if kind == "installer":
+        where = f"Windows installer {Path(sys.executable).resolve()} (bundled Python, none needed on PATH)"
+    elif kind == "wheel":
+        where = f"Python package {locations.package_dir()}"
+    else:
+        where = f"checkout {locations.checkout_root() or locations.package_dir().parent}"
+    lines = [f"  active: {where}"]
+    bundled = install.bundled_cli(environ)
+    if bundled is not None and kind != "installer":
+        lines.append(f"  installer exe: {bundled}")
+    entries = install.on_path(environ)
+    lines.append("  on PATH: " + (", ".join(str(p) for p in entries) if entries else "none"))
+    shadow = install.shadowing(environ)
+    if shadow:
+        lines.append(f"  WARNING: a new terminal runs {shadow['first']}, not the installer's {shadow['bundled']}.")
+        lines.append(f"  remove the older copy with: {shadow['remove']}")
+    return lines
+
+
 def collect(home: Path | None = None) -> dict:
     home = Path.home() if home is None else Path(home)
     environ = None if _real_home(home) else pinned_environ(home)
@@ -229,6 +256,7 @@ def collect(home: Path | None = None) -> dict:
         "version": __version__,
         "python": f"{sys.version.split()[0]} ({sys.executable})",
         "install": f"checkout {checkout}" if checkout else f"package {locations.package_dir()}",
+        "installs": install_lines(),
         "skill": skill,
         "clis": [(name, _which((name, f"{name}.exe"), None if environ is None else environ.get("PATH")) or "not found")
                  for name in CLI_NAMES],
@@ -249,6 +277,9 @@ def render(report: dict) -> str:
         f"AgentCompass {report.get('version', __version__)} doctor",
         f"Python: {report.get('python', '')}",
         f"Install: {report.get('install', '')}",
+    ]
+    lines.extend(report.get("installs") or [])
+    lines += [
         f"Skill: {report.get('skill', '')}",
         "CLIs:",
     ]

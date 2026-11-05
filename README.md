@@ -22,6 +22,17 @@ to expire, rotates workers at 2M context tokens, and is enforced by a `PreToolUs
 
 ## Quickstart
 
+**Windows:** run the per-user `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass/releases). That is the whole install: no admin rights, no Python. It puts `agentcompass.exe` on your user PATH (`%LOCALAPPDATA%\AgentCompass\cli`, the same folder across upgrades), and on first start the tray shows what `agentcompass setup` would change, with the spawn gate off unless you tick it, and writes nothing until you confirm. Hooks and skills then run the bundled exe. Unattended installs choose up front:
+
+```powershell
+AgentCompass-tray-setup.exe /VERYSILENT /SETUP=hooks      # or /SETUP=nohooks; leave /SETUP out to set up later from the tray
+agentcompass setup --yes --hooks                            # the same thing from any terminal after installing
+```
+
+`/SETUP` logs to `%USERPROFILE%\.agent-compass\installer-setup.log`. Uninstalling removes the PATH entry and runs `agentcompass uninstall --yes`, which undoes what setup recorded. A tray update replaces the app folder in place, so the PATH entry, hooks and skill links keep working without another setup.
+
+**macOS / Linux, or a CLI-only install:**
+
 ```bash
 # Install the CLI (Python 3.11+)
 uv tool install "git+https://github.com/akiiwa-games/AgentCompass"     # or: pip install git+https://github.com/akiiwa-games/AgentCompass
@@ -32,11 +43,11 @@ agentcompass plan --demo --dry-run      # offline demo: no credentials, provider
 # Onboard: detects signed-in CLIs, asks before each step, backs up every file it changes,
 # never installs the spawn gate unless you say so
 agentcompass setup          # --dry-run to preview; `agentcompass uninstall` undoes it
-agentcompass doctor         # read-only health report
+agentcompass doctor         # read-only health report; names the active install and any copy that shadows it
 agentcompass roll --task "<what the worker should do>"     # hand a task to the router (agentcompass -h lists the rest)
 ```
 
-Windows users can instead run the per-user `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass/releases) (no admin rights). Or hand it to your coding agent:
+Or hand it to your coding agent:
 *"Read this repository. Run `agentcompass setup --dry-run`, show me what it would change, then run it and route this task: …"*
 
 #### Moving from a checkout to the product
@@ -57,11 +68,11 @@ python -X utf8 <checkout>\tray\deploy.py migrate-plugins
 python -X utf8 <checkout>\tray\easytier_setup.py install --migrate-from <checkout>\easytier --dry-run
 python -X utf8 <checkout>\tray\easytier_setup.py install --migrate-from <checkout>\easytier --expect-peer OTHER_HOST
 
-# 3. The product itself: install the wheel, re-run setup (it points hooks and skills at the wheel and installs the
-#    Paseo bridge's Node packages under ~/.agent-compass/paseo-bridge), then install the tray.
-uv tool install "git+https://github.com/akiiwa-games/AgentCompass"   # or pip install the release wheel
-agentcompass setup --hooks
-# then run AgentCompass-tray-setup.exe from Releases
+# 3. The product itself: quit the checkout tray, run AgentCompass-tray-setup.exe from Releases, then re-run setup with
+#    the installer's exe. Setup replaces hook, skill and rule entries that pointed at the checkout or a wheel.
+& "$env:LOCALAPPDATA\AgentCompass\cli\agentcompass.exe" setup --yes --hooks
+# 4. Remove a leftover wheel so it cannot shadow the installer's exe on PATH (`agentcompass doctor` prints the exact command).
+uv tool uninstall agentcompass      # or: python -m pip uninstall -y agentcompass
 ```
 
 The tray finds plugins and the EasyTier node at their old checkout locations until they are moved, so the steps can

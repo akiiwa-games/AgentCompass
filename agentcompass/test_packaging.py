@@ -143,6 +143,24 @@ class PackagingTests(unittest.TestCase):
                              ["Analysis-00.toc: tray/private_scratch.py is not tracked in git"])
 
 
+    def test_the_installer_ships_a_console_cli_on_the_user_path(self):
+        spec = (ROOT / "packaging" / "agentcompass-tray.spec").read_text(encoding="utf-8")
+        self.assertIn('name="agentcompass"', spec)
+        self.assertIn("console=True", spec)
+        self.assertIn('"AgentCompass" / "cli"', spec)
+        self.assertIn('"agentcompass/data/skills"', spec)
+        self.assertIn('("X utf8", None, "OPTION")', spec)
+        iss = (ROOT / "packaging" / "agentcompass.iss").read_text(encoding="utf-8")
+        self.assertIn("ChangesEnvironment=yes", iss)
+        self.assertIn("AddCliToPath();", iss)
+        self.assertIn("RemoveCliFromPath();", iss)
+        self.assertIn("{param:SETUP|}", iss)
+        # [Run] entries run before ssPostInstall: the folder the /SETUP log is appended to must come from [Dirs].
+        dirs = iss.split("[Dirs]", 1)[1].split("\n[", 1)[0] if "[Dirs]" in iss else ""
+        self.assertIn(r'Name: "{%USERPROFILE}\.agent-compass"', dirs)
+        self.assertIn(r'Filename: "{app}\cli\agentcompass.exe"; Parameters: "uninstall --yes"', iss)
+        self.assertNotIn("/D /C agentcompass uninstall", iss)       # never whichever agentcompass PATH finds first
+
 
 if __name__ == "__main__":
     unittest.main()

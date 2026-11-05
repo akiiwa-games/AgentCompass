@@ -406,6 +406,14 @@ def _norm_root(path: Path) -> str:
         return os.path.normcase(str(path))
 
 
+def _is_installer_dir(path: Path) -> bool:
+    """The installer's folder (tray exe or uninstaller). Not its cli\ subfolder: file names ignore case, so
+    cli\agentcompass.exe would pass for AgentCompass.exe."""
+    if path.name.lower() == "cli" and _is_installer_dir(path.parent):
+        return False
+    return (path / "AgentCompass.exe").is_file() or (path / "unins000.exe").is_file()
+
+
 def detect_install_shape(root: Path | None = None, frozen: bool | None = None) -> str:
     """Return 'installer', 'wheel', or 'git' for the given installation root."""
     if frozen is None:
@@ -418,7 +426,7 @@ def detect_install_shape(root: Path | None = None, frozen: bool | None = None) -
             (current / "agentcompass").is_dir() or (current / "tray").is_dir() or current == target
         ):
             return "git"
-        if (current / "AgentCompass.exe").is_file() or (current / "unins000.exe").is_file():
+        if _is_installer_dir(current):
             return "installer"
         if list(current.glob("agentcompass-*.dist-info")):
             return "wheel"
@@ -499,7 +507,7 @@ def _install_info_from_path(target: Path, python_hint: Path | None = None) -> di
                 "direct_url": None,
                 "python": None,
             }
-        if (current / "AgentCompass.exe").is_file() or (current / "unins000.exe").is_file():
+        if _is_installer_dir(current):
             return {
                 "shape": "installer",
                 "root": current.resolve(),
@@ -660,7 +668,9 @@ def inspect_installs(
         gemini_home / "settings.json",
         home_dir / ".pi" / "agent" / "extensions" / "router-gate.ts",
     )
-    hook_pattern = re.compile(r'([A-Za-z]:[\\/][^"\'\r\n:]*?router_gate_hook\.py|/[^"\'\r\n:]*?router_gate_hook\.py)')
+    # The script path of a wheel or checkout, or the Windows installer's `<app>/cli/agentcompass.exe gate-hook`.
+    hook_pattern = re.compile(r'([A-Za-z]:[\\/][^"\'\r\n:]*?router_gate_hook\.py|/[^"\'\r\n:]*?router_gate_hook\.py|'
+                              r'[A-Za-z]:[\\/][^"\'\r\n:]*?agentcompass\.exe(?=["\']?\s+gate-hook))')
     for hf in hook_files:
         if not hf.is_file():
             continue
@@ -718,9 +728,9 @@ def inspect_installs(
         mismatched = [r["version"] for r in separate_routers if r["version"] != tray["version"]]
         router_vers = "/".join(dict.fromkeys(mismatched or [r["version"] for r in separate_routers]))
         if version_mismatch:
-            display_version = _tr("AgentCompass {0} · Router {1}（版本不一致）").format(tray["version"], router_vers)
+            display_version = _tr("AgentCompass {0} · 命令行 {1}（版本不一致）").format(tray["version"], router_vers)
         else:
-            display_version = _tr("AgentCompass {0} · Router {1}").format(tray["version"], router_vers)
+            display_version = _tr("AgentCompass {0} · 命令行 {1}").format(tray["version"], router_vers)
     else:
         display_version = f"AgentCompass {tray['version']}"
 

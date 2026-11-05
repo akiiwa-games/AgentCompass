@@ -2,7 +2,7 @@
 
 A source checkout (or an installed package) is run by its package directory: `python -X utf8 <dir>/agentcompass <command>`
 works from any working directory. When this skill is a bare copy with no package next to it, the console script name is
-all that can be given.
+all that can be given. Inside the Windows installer's frozen `agentcompass.exe` the argv is that exe itself.
 """
 import shlex
 import sys
@@ -22,6 +22,8 @@ def package_dir():
 
 def argv(*args):
     """Argument vector that runs `agentcompass <args>`; a list, so paths with spaces need no quoting."""
+    if getattr(sys, 'frozen', False):
+        return [sys.executable, *map(str, args)]
     package = package_dir()
     if package is None:
         return ['agentcompass', *map(str, args)]
@@ -30,7 +32,7 @@ def argv(*args):
 
 def command(*args):
     """The same as one line of text for messages (quoted where a path needs it)."""
-    package = package_dir()
+    package = None if getattr(sys, 'frozen', False) else package_dir()
     if package is None:
         return ' '.join(['agentcompass', *map(str, args)])
     return ' '.join(['python', '-X', 'utf8',

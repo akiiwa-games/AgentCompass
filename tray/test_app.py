@@ -234,7 +234,10 @@ class MenuTests(TrayTestCase):
             app.refresh_priority(icon)
         log_error.assert_not_called()
         self.assertEqual(app.PRIORITY['entries'], [])
-        self.assertIn('agentcompass setup', app.PRIORITY['label'])
+        self.assertEqual(app.PRIORITY['label'], 'Router 未设置')
+        # The tray offers the consent window instead of telling a Windows user to type a command.
+        labels = [str(i.text) for i in app.build_menu().items]
+        self.assertIn('设置 Router…', labels)
 
     def test_switching_a_plugin_off_in_the_panel_rebuilds_the_menu(self):
         icon = mock.Mock()

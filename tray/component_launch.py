@@ -23,6 +23,7 @@ COMPONENTS = (
     "network_status",
     "owned_command",
     "owned_process",
+    "router_setup",
     "router_window",
     "update_status",
     "usage_collect",

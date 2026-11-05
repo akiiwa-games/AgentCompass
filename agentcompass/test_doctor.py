@@ -68,6 +68,39 @@ class DoctorTests(unittest.TestCase):
         })
         self.assertIn("opencode: installed, sign-in unverified", text)
 
+    def test_doctor_names_the_active_install_and_an_agentcompass_that_hides_the_installer(self):
+        import os
+        from unittest import mock
+        from agentcompass import install
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            bundled = base / "Local" / "AgentCompass" / "cli" / "agentcompass.exe"
+            pip_bin = base / "Python" / "Scripts" / "agentcompass.exe"
+            for exe in (bundled, pip_bin, base / "Python" / "python.exe"):
+                exe.parent.mkdir(parents=True, exist_ok=True)
+                exe.write_bytes(b"MZ")
+            env = {"LOCALAPPDATA": str(base / "Local"), "PATHEXT": ".EXE",
+                   "PATH": os.pathsep.join([str(pip_bin.parent), str(bundled.parent)])}
+            with mock.patch.object(install, "_registry_install_dir", return_value=None):
+                lines = doctor.install_lines(env)
+        text = "\n".join(lines)
+        self.assertIn("active: checkout", text)
+        self.assertIn(f"installer exe: {bundled}", text)
+        self.assertIn(f"WARNING: a new terminal runs {pip_bin}", text)
+        self.assertIn("-m pip uninstall -y agentcompass", text)
+
+    def test_hooks_pointing_at_python_while_the_installer_exists_are_flagged(self):
+        from unittest import mock
+        from agentcompass import install
+        with TemporaryDirectory() as tmp:
+            settings = Path(tmp) / "settings.json"
+            exe = Path(tmp) / "AgentCompass" / "cli" / "agentcompass.exe"
+            settings.write_text('{"command": "C:/Python/python.exe -X utf8 E:/repo/setup/router_gate_hook.py"}', encoding="utf-8")
+            with mock.patch.object(install, "bundled_cli", return_value=exe):
+                self.assertIn("not the installer's agentcompass.exe", doctor._hook_installed(settings))
+                settings.write_text('{"command": "%s gate-hook"}' % exe.as_posix(), encoding="utf-8")
+                self.assertEqual(doctor._hook_installed(settings), "installed")
+
 
 if __name__ == "__main__":
     unittest.main()
