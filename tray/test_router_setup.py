@@ -78,6 +78,26 @@ class InstallerOnlyVersionDisplayTests(unittest.TestCase):
             self.assertEqual(found["separate_routers"], [])
             self.assertEqual(found["display_version"], "AgentCompass 0.3.11")
 
+    def test_the_running_trays_own_install_reports_its_version_not_0_0_0(self):
+        # No local_version mock: in the real bundle the package sits in PyInstaller's archive, so the installer
+        # folder has no __init__.py to read. The hook, skill and PATH entries are the tray's own install.
+        import agentcompass
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, cli = self._installed(base)
+            home = base / "home"
+            (home / ".claude").mkdir(parents=True)
+            (home / ".claude" / "settings.json").write_text(json.dumps(
+                {"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": f"{cli.as_posix()} gate-hook"}]}]}}), encoding="utf-8")
+            (home / ".codex" / "skills").mkdir(parents=True)
+            with mock.patch.object(updates.component_launch, "frozen", return_value=True), \
+                    mock.patch.object(updates.sys, "executable", str(app / "AgentCompass.exe")), \
+                    mock.patch.dict("sys.modules", {"router_priority": mock.Mock(modules=lambda: (_ for _ in ()).throw(RuntimeError()))}):
+                found = updates.inspect_installs(home=home, which_path=cli)
+            self.assertEqual(found["routers"]["hooks"]["version"], agentcompass.__version__)
+            self.assertEqual(found["routers"]["path"]["version"], agentcompass.__version__)
+            self.assertEqual(found["display_version"], f"AgentCompass {agentcompass.__version__}")
+
 
 if __name__ == "__main__":
     unittest.main()

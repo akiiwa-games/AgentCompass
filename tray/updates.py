@@ -414,6 +414,16 @@ def _is_installer_dir(path: Path) -> bool:
     return (path / "AgentCompass.exe").is_file() or (path / "unins000.exe").is_file()
 
 
+def _installer_version(root: Path) -> str:
+    """PyInstaller keeps the package in an archive, so an installer folder has no __init__.py or dist-info to read.
+    Its tray, cli and skills come from one installer build: when this is the running tray's own install, the
+    version is the tray's."""
+    ver = local_version(root)
+    if ver == "0.0.0" and component_launch.frozen() and _norm_root(Path(sys.executable).parent) == _norm_root(root):
+        ver = local_version()
+    return ver
+
+
 def detect_install_shape(root: Path | None = None, frozen: bool | None = None) -> str:
     """Return 'installer', 'wheel', or 'git' for the given installation root."""
     if frozen is None:
@@ -511,7 +521,7 @@ def _install_info_from_path(target: Path, python_hint: Path | None = None) -> di
             return {
                 "shape": "installer",
                 "root": current.resolve(),
-                "version": local_version(current),
+                "version": _installer_version(current),
                 "installer": "installer",
                 "direct_url": None,
                 "python": None,
