@@ -14,7 +14,7 @@ from agentcompass import __version__
 from agentcompass import install
 from agentcompass import locations
 from agentcompass.ports import FEATURES, conflicts, listeners, load
-from agentcompass.tools import HINTS
+from agentcompass.tools import HINTS, known_locations
 
 CLI_NAMES = ("claude", "codex", "agy", "grok", "npm", "git", "paseo", "hc", "python")
 
@@ -128,7 +128,8 @@ def _tool_lines(checkout: Path | None) -> list[str]:
         return lines
     lines = []
     for file_name, item in HINTS.items():
-        found = _which((item["tool"], file_name))
+        found = _which((item["tool"], file_name)) or next(
+            (str(p) for p in known_locations(file_name) if p.is_file()), None)
         if found:
             lines.append(f"  {item['tool']}: {found}")
         else:

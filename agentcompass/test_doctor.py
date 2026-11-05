@@ -101,6 +101,19 @@ class DoctorTests(unittest.TestCase):
                 settings.write_text('{"command": "%s gate-hook"}' % exe.as_posix(), encoding="utf-8")
                 self.assertEqual(doctor._hook_installed(settings), "installed")
 
+    def test_without_a_checkout_a_tool_in_its_installers_own_location_is_found_off_path(self):
+        # Bun's installer puts bun.exe in ~/.bun/bin; the tray finds it there, so doctor must not call it missing.
+        from unittest import mock
+        with TemporaryDirectory() as tmp:
+            bun = Path(tmp) / ".bun" / "bin" / "bun.exe"
+            bun.parent.mkdir(parents=True)
+            bun.write_bytes(b"")
+            with mock.patch.object(doctor, "_which", return_value=None), \
+                    mock.patch.object(Path, "home", return_value=Path(tmp)):
+                lines = doctor._tool_lines(None)
+        self.assertIn(f"  bun: {bun}", lines)
+        self.assertTrue(any(line.startswith("  uv: missing") for line in lines))
+
 
 if __name__ == "__main__":
     unittest.main()

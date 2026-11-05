@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 HINTS = {
     "uv.exe": {
         "tool": "uv",
@@ -24,6 +27,19 @@ HINTS = {
         "install": "Install Node.js from https://nodejs.org or run: winget install OpenJS.NodeJS.LTS",
     },
 }
+
+
+def known_locations(name: str) -> list[Path]:
+    """Where each tool's own installer puts it when it is not on PATH; the tray's runtime_paths looks here too."""
+    home = Path.home()
+    program_files = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+    program_files_x86 = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
+    return {
+        "uv.exe": [home / ".local/bin/uv.exe"],
+        "bun.exe": [home / ".bun/bin/bun.exe"],
+        "cloudflared.exe": [program_files_x86 / "cloudflared/cloudflared.exe", program_files / "cloudflared/cloudflared.exe"],
+        "node.exe": [program_files / "nodejs/node.exe"],
+    }.get(name, [])
 
 
 def hint(name: str) -> dict[str, str]:
