@@ -2247,11 +2247,13 @@ def _round_dollars(value: float) -> int:
 
 
 def format_llm_proxy_spend(spend: float, budget: float | None = None) -> str:
-    """Compact dollar readout, e.g. $2/200."""
-    used = _round_dollars(spend)
+    """Compact dollar readout of what is left, e.g. $198/200 after $2 of a $200 budget.
+
+    Every other row reads what is left, so a budgeted key does too; with no budget
+    nothing is known to be left and the spend alone is shown ($12)."""
     if budget is None or budget <= 0:
-        return f"${used}"
-    return f"${used}/{_round_dollars(budget)}"
+        return f"${_round_dollars(spend)}"
+    return f"${_round_dollars(max(0.0, budget - spend))}/{_round_dollars(budget)}"
 
 
 def _llm_proxy_probe(
