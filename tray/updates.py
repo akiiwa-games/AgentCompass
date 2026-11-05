@@ -407,8 +407,8 @@ def _norm_root(path: Path) -> str:
 
 
 def _is_installer_dir(path: Path) -> bool:
-    """The installer's folder (tray exe or uninstaller). Not its cli\ subfolder: file names ignore case, so
-    cli\agentcompass.exe would pass for AgentCompass.exe."""
+    """The installer's folder (tray exe or uninstaller). Not its cli/ subfolder: file names ignore case, so
+    cli/agentcompass.exe would pass for AgentCompass.exe."""
     if path.name.lower() == "cli" and _is_installer_dir(path.parent):
         return False
     return (path / "AgentCompass.exe").is_file() or (path / "unins000.exe").is_file()
