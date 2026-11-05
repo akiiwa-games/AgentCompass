@@ -657,6 +657,7 @@ class Panel:
             while True:
                 generation, done, value, error = self.results.get_nowait()
                 self.busy_jobs -= 1
+                self.trim_due = True  # a fill touches memory; give it back once the hidden window is idle
                 if generation != self._generation:
                     continue
                 if error is not None:
@@ -685,6 +686,9 @@ class Panel:
         hidden = self.hidden()
         if hidden and not self.parent_alive() and not any(t.is_alive() for t in self.long_jobs):
             os._exit(0)  # the tray that kept this window warm is gone
+        if hidden and self.trim_due and not self.busy_jobs and not (self.prebuild and not self.prebuild_finished):
+            self.trim_due = False
+            self.trim_memory()
         if not hidden and getattr(self, '_boost_refreshed', None) is not None \
                 and time.monotonic() - self._boost_refreshed >= 60:
             self.load_boost()
@@ -693,6 +697,8 @@ class Panel:
     # ---------- warm window ----------
 
     resident = False  # closing hides the window; the process stays for the next open
+    trim_due = False  # hidden and touched since the last trim
+    prebuild_finished = False
     show_event = None
     parent_handle = None
 
@@ -720,7 +726,7 @@ class Panel:
         page._page_hidden = True  # Tk still counts a withdrawn window's widgets as mapped
         page_stack.notify(page, False)
         self.stale = set(self.built)
-        self.root.after(1000, self.trim_memory)
+        self.trim_due = True
 
     def reveal(self):
         """Show the window again: read the page on screen afresh, then bring the window to the front."""
@@ -929,7 +935,8 @@ class Panel:
             else:
                 key = next((key for key, _ in SETTINGS if key not in self.settings_built), None)
                 if key is None:
-                    self.trim_memory()  # a warm window built everything before anyone opened it
+                    self.prebuild_finished = True
+                    self.trim_due = True  # a warm window built everything before anyone opened it
                     return
                 self.settings_built.add(key)
                 getattr(self, f"build_setting_{key}")(self.setting_frames[key])

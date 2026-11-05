@@ -117,6 +117,25 @@ class ResidentPanelTests(unittest.TestCase):
             panel.poll()
         exit_.assert_called_once_with(0)
 
+    def test_a_hidden_window_gives_memory_back_whenever_it_goes_idle(self):
+        rw, root, panel = self.make_panel()
+        panel.resident = True
+        panel.hide()
+        with mock.patch.object(panel, "trim_memory") as trim:
+            panel.busy_jobs = 1
+            panel.poll()
+            trim.assert_not_called()  # a read is still running
+            panel.busy_jobs = 0
+            panel.poll()
+            panel.poll()
+            self.assertEqual(trim.call_count, 1)
+            # A late result fills a page and touches memory again.
+            panel.busy_jobs = 1
+            panel.results.put((panel._generation, None, "", None))
+            panel.drain_results()
+            panel.poll()
+            self.assertEqual(trim.call_count, 2)
+
     def test_the_show_request_reveals_the_hidden_window(self):
         rw, root, panel = self.make_panel()
         panel.resident = True
