@@ -161,6 +161,12 @@ class PackagingTests(unittest.TestCase):
         self.assertIn(r'Filename: "{app}\cli\agentcompass.exe"; Parameters: "uninstall --yes"', iss)
         self.assertNotIn("/D /C agentcompass uninstall", iss)       # never whichever agentcompass PATH finds first
 
+    def test_the_installer_leaves_a_start_menu_entry_to_launch_the_tray(self):
+        iss = (ROOT / "packaging" / "agentcompass.iss").read_text(encoding="utf-8")
+        icons = iss.split("[Icons]", 1)[1].split("\n[", 1)[0] if "[Icons]" in iss else ""
+        self.assertIn(r'Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"', icons)
+        self.assertIn("Tasks: desktopicon", icons)                  # the desktop icon stays opt-in
+
 
 if __name__ == "__main__":
     unittest.main()

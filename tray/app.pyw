@@ -484,6 +484,9 @@ def main() -> None:
     log_info(f"tray starting pid={os.getpid()} attach_only={'--attach-only' in sys.argv}")
     if not single_instance():
         log_info("tray startup skipped: another instance holds the mutex")
+        if "--attach-only" not in sys.argv:
+            # Started again from the Start menu or desktop shortcut while the tray runs: show its window, not nothing.
+            router_window.open_window()
         return
     PLUGINS = plugins.load()
     icon = pystray.Icon("agentcompass", draw_icon(), "AgentCompass")

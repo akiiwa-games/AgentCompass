@@ -170,6 +170,18 @@ class MenuTests(TrayTestCase):
         self.assertFalse(app.notify_if_restarted(again_icon))
         again_icon.notify.assert_not_called()
 
+    def test_starting_again_while_running_opens_the_window(self):
+        # The Start menu shortcut launches the tray exe; a second copy must show the running tray's window.
+        for argv, opened in ((["app.pyw"], True), (["app.pyw", "--attach-only"], False)):
+            with mock.patch.object(app, "single_instance", return_value=False), \
+                 mock.patch.object(app.sys, "argv", argv), \
+                 mock.patch.object(app.pystray, "Icon") as icon, \
+                 mock.patch.object(app.router_window, "open_window") as window, \
+                 mock.patch.object(app, "log_info"):
+                app.main()
+            self.assertEqual(window.called, opened, argv)
+            icon.assert_not_called()
+
     def test_the_first_item_opens_the_panel(self):
         with mock.patch.object(app.router_window, "open_window") as window:
             self.items()[0](mock.Mock())

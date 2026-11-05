@@ -464,6 +464,7 @@ LOCAL = Path(os.environ.get("LOCALAPPDATA") or HOME / "AppData" / "Local")
 INSTALL_DIR = LOCAL / "AgentCompass"
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{A7B3E2C1-4F58-4C9A-9D2E-1B6A8C0D5E77}_is1"
 STARTUP = Path(os.environ.get("APPDATA") or HOME / "AppData" / "Roaming") / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+START_MENU_LINK = STARTUP.parent / "AgentCompass.lnk"
 ENV_NAMES = ("PRO_CONSULT_LAUNCHER", "PRO_CONSULT_LAUNCHER_ARGS", "CODEX_WEB_GPT_EXTERNAL_TRAY")
 ONLY: list[str] = []
 
@@ -733,6 +734,7 @@ def g_installer():
     exe = INSTALL_DIR / "AgentCompass.exe"
     check("silent install exits 0 and puts AgentCompass.exe under %LOCALAPPDATA%\\AgentCompass (no admin)", installed.returncode == 0 and exe.is_file(), (installed.stdout + installed.stderr)[-300:])
     check("the uninstaller (unins000.exe) is next to it", (INSTALL_DIR / "unins000.exe").is_file())
+    check("a Start menu 'AgentCompass' shortcut launches the tray again after it is quit", START_MENU_LINK.is_file())
     try:
         winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY))
         registered = True
@@ -799,6 +801,7 @@ def g_installer():
     time.sleep(3)
     check("the installed folder is gone or empty", not INSTALL_DIR.exists() or not any(INSTALL_DIR.rglob("*.exe")), [str(p) for p in INSTALL_DIR.rglob("*")][:8] if INSTALL_DIR.exists() else "")
     check("scheduled task 'AgentCompass' was deleted", schtasks_xml("AgentCompass") is None)
+    check("the Start menu shortcut was removed", not START_MENU_LINK.exists())
     check("no AgentCompass process is left", not tray_processes(), tray_processes())
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment")
     leftovers = []

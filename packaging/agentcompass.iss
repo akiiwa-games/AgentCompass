@@ -41,6 +41,14 @@ CloseApplications=force
 RestartApplications=no
 ChangesEnvironment=yes
 
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+[Icons]
+; How a user finds the tray again after quitting it; a second launch opens the running tray's window.
+Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+
 [InstallDelete]
 ; Files a newer build dropped must not linger in the bundle; the folder itself keeps its path (skill links point into it).
 Type: filesandordirs; Name: "{app}\cli\_internal"
