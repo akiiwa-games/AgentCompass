@@ -3,7 +3,8 @@
 // JSON answer. Unlike the real bridge it needs no daemon: agents are records under $FIXTURE_STATE/agents, and each
 // created agent is a REAL process (the fixture CLI in $FIXTURE_BIN) that finishes, fails, hangs or crashes by itself.
 //
-// Fault injection for the tests: $FIXTURE_STATE/faults.json {"create": "reject" | "uncertain" | "gone", "observe": "unavailable"}
+// Fault injection for the tests: $FIXTURE_STATE/faults.json {"create": "reject" | "uncertain" | "gone", "observe": "unavailable",
+// "create_delay_ms": N}
 // (each fault is consumed by the next call that matches it).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,6 +53,9 @@ function observeAgent(id) {
 }
 
 function create(input) {
+  // A slow host: the request is logged (bridge-calls.jsonl) but nothing exists on the host yet for this long.
+  const delay = Number(takeFault('create_delay_ms')) || 0;
+  if (delay > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
   const parents = readJson(path.join(STATE, 'parents.json'), []);
   if (typeof input.parent_id !== 'string' || !input.parent_id.trim() || input.parent_id === 'top-level')
     return { ok: false, sent: false, error: 'addressable_parent_required' };

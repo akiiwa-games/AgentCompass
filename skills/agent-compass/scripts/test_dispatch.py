@@ -550,6 +550,27 @@ except ValueError as e:
         waiting = registry.observe(row['dispatch_id'], self.snapshot(row, 'idle', pendingPermissionCount=1), now=self.now)
         self.assertEqual(waiting['state'], 'started')
 
+    def test_a_create_cut_off_before_the_host_says_why_the_continuation_cannot_bind(self):
+        # The roll is killed while its bridge is mid-create (zero_dispatch S29 on CI): the bridge's answer never
+        # arrives, and no host agent carries the dispatch labels. The continuation observes only, never creates again.
+        row = self.prepare()
+        calls = []
+
+        def host(request):
+            calls.append(request['operation'])
+            if request['operation'] == 'create':
+                return {'ok': False, 'sent': True, 'error': 'invalid_host_response'}
+            self.assertIsNone(request['agent_id'])
+            return {'ok': True, 'agent': None, 'missing': False}
+
+        first = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+        self.assertEqual((first['state'], first['agent_id']), ('launching', None))
+        again = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+        self.assertEqual(again['state'], 'launching')
+        self.assertEqual(again['observe_error'], 'agent_not_observed')
+        self.assertIn('continuation', again)
+        self.assertEqual(calls, ['create', 'observe', 'observe'])
+
     def test_launch_recovers_expired_started_lease_by_observation_only(self):
         row = self.prepare()
         registry.claim(row['request'], now=self.now)

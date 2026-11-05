@@ -136,11 +136,13 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
                              if item.get('completion_notification')), notification)
         row = registry.inspect(dispatch_id, path)
     deadline = time.monotonic() + watch_seconds
+    observe_error = None
     while row['state'] not in registry.TERMINAL:
         observations = reconcile(dispatch_id, host=host, path=path)
         queried_host = True
         notification = next((item['completion_notification'] for item in observations
                              if item.get('completion_notification')), notification)
+        observe_error = next((item['error'] for item in observations if item.get('error')), None)
         row = registry.inspect(dispatch_id, path)
         if row['state'] in registry.TERMINAL or time.monotonic() >= deadline:
             break
@@ -156,6 +158,11 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     if notification:
         result['completion_notification'] = notification
     if row['state'] not in registry.TERMINAL:
+        if observe_error:
+            # Why the host agent is not bound yet. With no agent_id, agent_not_observed means no host agent carries
+            # this dispatch's labels: a create cut off before it reached the host (the roll killed mid-create) never
+            # created one, and the claim is released when lease_until passes rather than created a second time.
+            result['observe_error'] = observe_error
         result['continuation'] = 'Run dispatch --dispatch-action reconcile or launch with this dispatch_id; it will observe, not create again.'
         result['continuation_argv'] = entry.argv('launch', '--dispatch-id', dispatch_id, '--parent-id', parent_id, '--watch-seconds', '120')
     return result

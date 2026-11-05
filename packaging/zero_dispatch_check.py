@@ -826,12 +826,16 @@ def step_hooks_and_crash(z: Zero):
     op = run.operation("roll killed while it watches", "the dispatch outlives its roll process; the continuation finds the same agent and finishes it with no second create")
     env = z.paseo_env()
     z.set_parents(PARENT)
-    z.set_fault()
-    calls = len(z.bridge_calls())
+    # A slow host keeps the bridge inside its create for a while after it logs the request. The roll is "watching"
+    # only once the host has answered that create; killing the roll's tree earlier kills the bridge mid-create, so no
+    # agent ever exists (the v0.3.13 CI flake: the kill fired on the request log line, not on the answer).
+    z.set_fault(create_delay_ms=1500)
+    calls, answers, inbox = len(z.bridge_calls()), len(z.bridge_answers()), len(z.inbox())
     process = subprocess.Popen([str(box.agentcompass), "roll", "--task", z.task("slow", "crash-continue"), "--wait", "120"], cwd=str(z.work),
                                env=box.env(**z.env(**env)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
-    created = z.wait_for(lambda: [c for c in z.bridge_calls()[calls:] if c["operation"] == "create"], 60, 0.3)
-    op.check("the host received the create while roll was still watching", bool(created), z.bridge_calls()[calls:])
+    created = z.wait_for(lambda: [a for a in z.bridge_answers()[answers:] if a["operation"] == "create" and (a.get("answer") or {}).get("ok")], 60, 0.3)
+    op.check("the host answered the create while roll was still watching", bool(created) and process.poll() is None,
+             {"answers": z.bridge_answers()[answers:], "roll_exit": process.poll()})
     z.kill(process.pid)
     try:
         process.communicate(timeout=30)
@@ -846,7 +850,11 @@ def step_hooks_and_crash(z: Zero):
     got = parse(followed.stdout) or {}
     op.check("the public launch continuation observes the same dispatch through to completed", got.get("state") == "completed", followed.stdout[:300] + followed.stderr[-200:])
     op.check("the host saw exactly one create", sum(1 for c in z.bridge_calls() if c["operation"] == "create" and c["dispatch_id"] == did) == 1, z.bridge_calls()[-4:])
-    op.check("the worker's report is in the parent's mailbox", any("slow" in m.get("text", "") for m in z.inbox()), z.inbox()[-2:])
+    agent = z.agents().get(did or "none") or {}
+    op.check("this dispatch's worker finished on the host", agent.get("status") == "idle" and agent.get("attentionReason") == "finished",
+             {k: agent.get(k) for k in ("status", "attentionReason", "lastError")})
+    op.check("the worker's report is in the parent's mailbox (one new report)",
+             len(z.inbox()) == inbox + 1 and "(slow)" in z.inbox()[-1].get("text", ""), z.inbox()[inbox:])
 
 
 def step_entries(z: Zero):
