@@ -304,6 +304,22 @@ class SkillUpgradeTests(HomeCase):
         self.assertEqual(link.resolve(), custom)
         self.assertEqual((link / "SKILL.md").read_text(), "mine")
 
+    def test_a_signed_out_primary_claude_keeps_the_skill_links_a_secondary_home_reads(self):
+        # ~/.claude-2/skills is a link to ~/.claude/skills; when only claude-2 is signed in, the links inside
+        # ~/.claude/skills still serve it and must not be retired.
+        self.write(".codex/skills/agent-compass/SKILL.md", "router")
+        primary, secondary = self.home / ".claude", self.home / ".claude-2"
+        primary.mkdir()
+        secondary.mkdir()
+        sg.begin_run(False)
+        self.quiet(sg.deduplicate_and_link_skills, [("claude", primary), ("claude", secondary)])
+        self.assertEqual((secondary / "skills").resolve(), (primary / "skills").resolve())
+        self.assertTrue((primary / "skills/agent-compass/SKILL.md").is_file())
+        sg.save_manifest()
+        sg.begin_run(False)
+        self.quiet(sg.deduplicate_and_link_skills, [("claude", secondary)])
+        self.assertTrue((secondary / "skills/agent-compass/SKILL.md").is_file())
+
     def test_links_into_another_install_are_taken_over_and_restored_on_uninstall(self):
         # A checkout-era hub: links made by hand (no manifest) into the checkout's skills/.
         self.write("checkout/setup/sync_host_globals.py", "")

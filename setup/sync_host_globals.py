@@ -736,6 +736,12 @@ def deduplicate_and_link_skills(homes: list[tuple[str, Path]] | None = None) -> 
     codex_skills = HOME / ".codex" / "skills"
     agents_skills = HOME / ".agents" / "skills"
     claude_skills = HOME / ".claude" / "skills"
+    # A secondary Claude home links its skills dir to ~/.claude/skills, so the primary's skill links serve it even
+    # when the primary itself is signed out; keep them managed (not retired) in that case.
+    primary_claude = HOME / FAMILY_SPECS["claude"]["default_home"]
+    claude_homes = [h for f, h in active_homes if f == "claude"]
+    if claude_skills.is_dir() and claude_homes and all(h.resolve() != primary_claude.resolve() for h in claude_homes):
+        active_homes = [("claude", primary_claude), *active_homes]
 
     # 1-2. Claude homes (primary links individual shared skills; secondary homes link skills -> ~/.claude/skills)
     for family, home_dir in active_homes:
