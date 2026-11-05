@@ -913,23 +913,40 @@ REPO_SKILLS = Path(__file__).resolve().parents[1] / "skills"
 SKILLS_FROM_REPO = ["agent-compass"]
 
 
-def link_repo_skills_into_hub() -> None:
-    """New-user bootstrap: expose this checkout's router skill as ~/.codex/skills/<name>, the hub the other hosts link to.
+def _other_install_copy(target: str | None, name: str) -> bool:
+    """True when target is another AgentCompass install's copy of skill `name`: `<root>/skills/<name>` of a checkout,
+    a wheel or the Windows installer bundle, all of which carry `<root>/setup/sync_host_globals.py`."""
+    if target is None:
+        return False
+    path = Path(target)
+    if path.name != name or path.parent.name != "skills":
+        return False
+    return (path.parent.parent / "setup" / "sync_host_globals.py").is_file()
 
-    Refresh links still matching our manifest; preserve user-owned or retargeted paths.
+
+def link_repo_skills_into_hub() -> None:
+    """New-user bootstrap: expose this install's router skill as ~/.codex/skills/<name>, the hub the other hosts link to.
+
+    Refresh links still matching our manifest, and take over links that point at another AgentCompass install's
+    copy of a skill this install ships (moving from a checkout or wheel to the installer); preserve user-owned or
+    retargeted paths.
     """
     hub = HOME / ".codex" / "skills"
-    for name in SKILLS_FROM_REPO:
+    shipped = sorted(p.name for p in REPO_SKILLS.iterdir()
+                     if not is_reparse_point(p) and (p / "SKILL.md").is_file()) if REPO_SKILLS.is_dir() else []
+    for name in shipped:
         source = REPO_SKILLS / name
         link = hub / name
-        if not (source / "SKILL.md").is_file():
-            continue
         if link.exists() or is_reparse_point(link):
             recorded = MANIFEST["junctions"].get(str(link), {}).get("target")
             current = junction_target(link)
-            if not recorded or current is None or Path(current) != Path(recorded).resolve():
-                report(f"[skills] {link} is not a matching managed link; left as is")
+            managed = recorded and current is not None and Path(current) == Path(recorded).resolve()
+            if not managed and not (current is not None and _other_install_copy(current, name)):
+                if name in SKILLS_FROM_REPO:
+                    report(f"[skills] {link} is not a matching managed link; left as is")
                 continue
+        elif name not in SKILLS_FROM_REPO:
+            continue
         create_junction(link, source)
         report(f"[skills] Linked {link} -> {source}")
 

@@ -304,6 +304,38 @@ class SkillUpgradeTests(HomeCase):
         self.assertEqual(link.resolve(), custom)
         self.assertEqual((link / "SKILL.md").read_text(), "mine")
 
+    def test_links_into_another_install_are_taken_over_and_restored_on_uninstall(self):
+        # A checkout-era hub: links made by hand (no manifest) into the checkout's skills/.
+        self.write("checkout/setup/sync_host_globals.py", "")
+        for name in ("agent-compass", "gemini-web"):
+            self.write(f"checkout/skills/{name}/SKILL.md", f"checkout {name}")
+        self.write("bundle/setup/sync_host_globals.py", "")
+        for name in ("agent-compass", "gemini-web", "dot-subagent"):
+            self.write(f"bundle/skills/{name}/SKILL.md", f"bundle {name}")
+        foreign = self.write("elsewhere/skills/gemini-web/SKILL.md", "user's").parent
+        hub = self.home / ".codex/skills"
+        hub.mkdir(parents=True)
+        sg.make_link(hub / "agent-compass", self.home / "checkout/skills/agent-compass")
+        sg.make_link(hub / "gemini-web", self.home / "checkout/skills/gemini-web")
+        bundle = self.home / "bundle/skills"
+        with patch.object(sg, "REPO_SKILLS", bundle):
+            self.sync(docs=False, dry_run=True)
+            self.assertEqual((hub / "agent-compass").resolve(), (self.home / "checkout/skills/agent-compass").resolve())
+            self.sync(docs=False, link_repo_skills=True)
+        self.assertEqual((hub / "agent-compass").resolve(), (bundle / "agent-compass").resolve())
+        self.assertEqual((hub / "gemini-web").resolve(), (bundle / "gemini-web").resolve())
+        self.assertFalse((hub / "dot-subagent").exists())  # shipped, but a new link is only made for SKILLS_FROM_REPO
+        self.quiet(sg.uninstall)
+        self.assertEqual((hub / "agent-compass").resolve(), (self.home / "checkout/skills/agent-compass").resolve())
+        self.assertEqual((hub / "gemini-web").resolve(), (self.home / "checkout/skills/gemini-web").resolve())
+
+        # A link into a directory that is not an AgentCompass install stays the user's.
+        sg.remove_dir_or_junction(hub / "gemini-web")
+        sg.make_link(hub / "gemini-web", foreign)
+        with patch.object(sg, "REPO_SKILLS", bundle):
+            self.sync(docs=False, link_repo_skills=True)
+        self.assertEqual((hub / "gemini-web").resolve(), foreign.resolve())
+
 
 class UninstallTests(HomeCase):
     def snapshot(self):
