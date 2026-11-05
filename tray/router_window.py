@@ -25,6 +25,7 @@ import component_launch
 import plugins
 import radar_chart
 import ability_floor_chart
+import page_stack
 import decision_theatre
 import decision_summary
 import display_names
@@ -525,6 +526,7 @@ class Panel:
             self.build_shell(page)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._poll_id = root.after(80, self.poll)
+        self.prebuild = False  # start_prebuild(), once the window is on screen
 
     def build_shell(self, page):
         tk, ttk, root = self.tk, self.ttk, self.root
@@ -542,9 +544,10 @@ class Panel:
         self.content = ttk.Frame(main, padding=(18, 14, 18, 12))
         self.content.pack(fill="both", expand=True)
         self.content.pack_propagate(False)
+        self.page_stack = page_stack.PageStack(self.content)
         self.pages = {}
         for key, _, _ in PAGES:
-            self.pages[key] = ttk.Frame(self.content)  # mapped only while shown, see show()
+            self.pages[key] = ttk.Frame(self.content)  # stacked by page_stack on first show or by prebuild_next()
         self.built = set()
         self.show(page if page in self.pages else "scoring")
 
@@ -568,6 +571,8 @@ class Panel:
             self._dna_redraw_pending = False
             self._initial_setting = setting
             self.build_shell(page)
+        if self.prebuild:
+            self.schedule_prebuild()
         self.status.set(tr("已切换界面语言为简体中文", "Language switched to English"))
 
     # ---------- plumbing ----------
@@ -754,25 +759,55 @@ class Panel:
         self.paint_nav(key, "#1E293B" if inside else theme.INK, "#CBD5E1")
 
     def show(self, key):
-        """Map one page and unmap the last; inactive pages stay unmapped so their native widgets never repaint."""
+        """Raise one page over the others; a page is built unmapped on its first show, so it appears complete."""
         if key == self.current:
             return
         already_built = key in self.built
-        previous, self.current = self.current, key
-        if previous == "scoring" and hasattr(self, "theatre"):
-            self.theatre.stop()
+        self.current = key
         for name in self.nav:
             active = name == key
             self.paint_nav(name, theme.ACCENT if active else theme.INK, "#FFFFFF" if active else "#CBD5E1", active)
-        with freeze_redraw(self.content):
-            if not already_built:
-                self.built.add(key)
-                getattr(self, f"build_{key}")(self.pages[key])  # built while unmapped: it appears complete
-            if previous is not None:
-                self.pages[previous].pack_forget()
-            self.pages[key].pack(fill="both", expand=True)
+        if not already_built:
+            self.built.add(key)
+            getattr(self, f"build_{key}")(self.pages[key])
+        self.page_stack.show(self.pages[key])
         if key == 'plugins' and already_built:
             self.load_plugins()
+
+    PREBUILD_DELAY_MS = 1200  # after the opening page has drawn and its first reads are in
+    PREBUILD_GAP_MS = 250  # between pages, so clicks and redraws get through
+
+    def start_prebuild(self):
+        self.prebuild = True
+        self.schedule_prebuild()
+
+    def schedule_prebuild(self, delay: int = PREBUILD_DELAY_MS):
+        generation = self._generation
+        self.root.after(delay, lambda: self.prebuild_next() if generation == self._generation and not self.closing else None)
+
+    def prebuild_next(self):
+        """Build one page not opened yet under the current one, so its first visit is only a raise.
+
+        Creating a native window costs about a millisecond where global window hooks are installed, so a page
+        built on its first click froze the window for 0.5-1 s; built ahead, one page per idle slot, it doesn't."""
+        try:
+            for key, _, _ in PAGES:
+                if key not in self.built:
+                    self.built.add(key)
+                    getattr(self, f"build_{key}")(self.pages[key])
+                    self.page_stack.prepare(self.pages[key])
+                    break
+            else:
+                key = next((key for key, _ in SETTINGS if key not in self.settings_built), None)
+                if key is None:
+                    return
+                self.settings_built.add(key)
+                getattr(self, f"build_setting_{key}")(self.setting_frames[key])
+                self.setting_stack.prepare(self.setting_frames[key])
+        except Exception as exc:
+            log_error(exc)
+            return
+        self.schedule_prebuild(self.PREBUILD_GAP_MS)
 
     def header(self, parent, title, actions=()):
         ttk = self.ttk
@@ -1639,6 +1674,7 @@ class Panel:
         self.policy_stack = ttk.Frame(page)
         self.policy_stack.pack(fill="both", expand=True)
         self.policy_stack.pack_propagate(False)
+        self.setting_stack = page_stack.PageStack(self.policy_stack)
         self.setting_frames = {key: ttk.Frame(self.policy_stack) for key, _ in SETTINGS}
         self.settings_built = set()
         self.current_setting = None
@@ -1654,14 +1690,11 @@ class Panel:
             return
         self.setting_switch.set(key)
         revisit = key in self.settings_built
-        with freeze_redraw(self.policy_stack):
-            if not revisit:
-                self.settings_built.add(key)
-                getattr(self, f"build_setting_{key}")(self.setting_frames[key])
-            if self.current_setting is not None:
-                self.setting_frames[self.current_setting].pack_forget()
-            self.current_setting = key
-            self.setting_frames[key].pack(fill="both", expand=True)
+        if not revisit:
+            self.settings_built.add(key)
+            getattr(self, f"build_setting_{key}")(self.setting_frames[key])
+        self.current_setting = key
+        self.setting_stack.show(self.setting_frames[key])
         if revisit and key == "models":
             if time.monotonic() - getattr(self, "_models_loaded_at", 0.0) >= 5.0:
                 self.load_models()
@@ -3849,9 +3882,10 @@ def main() -> None:
     root = tk.Tk()
     root.withdraw()
     try:
-        Panel(root, page)
+        panel = Panel(root, page)
         root.update_idletasks()
         root.deiconify()
+        panel.start_prebuild()
     except Exception as exc:
         log_error(exc)
         raise

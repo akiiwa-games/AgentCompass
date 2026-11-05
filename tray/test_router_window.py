@@ -797,6 +797,38 @@ class LanguageTests(unittest.TestCase):
             errors.assert_not_called()
 
 
+    def test_page_switches_cover_pages_and_idle_prebuild_builds_the_rest_underneath(self):
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        with mock.patch.object(router_window.Panel, "run"),                 mock.patch.object(router_window.Panel, "prefill"),                 mock.patch.object(router_window.theme, "set_window_icon"),                 mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()),                 mock.patch.object(router_window, "log_error") as errors:
+            panel = router_window.Panel(root)
+            self.addCleanup(lambda: root.after_cancel(panel._poll_id))
+            self.assertEqual(panel.built, {"scoring"})
+            self.assertFalse(panel.prebuild)  # only main() starts it, once the window is on screen
+            with mock.patch.object(panel, "schedule_prebuild") as again:
+                for _ in range(10):
+                    panel.prebuild_next()
+            # One page or setting per idle slot, each laid out under the page on screen; then it stops.
+            self.assertEqual(panel.built, {key for key, _, _ in router_window.PAGES})
+            self.assertEqual(panel.settings_built, {key for key, _ in router_window.SETTINGS})
+            self.assertEqual(again.call_count, 5)
+            self.assertEqual(panel.current, "scoring")
+            self.assertTrue(all(panel.pages[key]._page_hidden for key in ("quota", "policy", "plugins")))
+            panel.show("quota")
+            panel.show("scoring")
+            # Covered, not unmapped: coming back never re-places and re-shows every native window of the page.
+            self.assertEqual(panel.pages["quota"].winfo_manager(), "place")
+            self.assertTrue(panel.pages["quota"]._page_hidden)
+            panel.show("policy")
+            panel.show_setting("strategy")
+            self.assertEqual(panel.setting_frames["models"].winfo_manager(), "place")
+            self.assertTrue(panel.setting_frames["models"]._page_hidden)
+            errors.assert_not_called()
+
+
 class WindowHelperTests(unittest.TestCase):
     def test_layout_keeps_the_tray_page_keys(self):
         import router_window

@@ -13,6 +13,8 @@ import time
 
 from PIL import Image, ImageColor, ImageDraw, ImageTk
 
+import page_stack
+
 
 def clamp(value, low=0.0, high=1.0) -> float:
     try:
@@ -242,6 +244,7 @@ class RadarChartCanvas:
         self.canvas.bind("<Configure>", self.on_configure)
         self.canvas.bind("<Map>", self.on_map)
         self.canvas.bind("<Unmap>", lambda event: self.cancel_animation())
+        page_stack.watch(self)  # a covered page stays mapped: page_shown / page_hidden mark the switch
         self.canvas.bind("<Destroy>", self.on_destroy)
         self.canvas.bind("<Motion>", self.on_motion)
         self.canvas.bind("<Leave>", lambda event: self.hide_tip())
@@ -273,8 +276,9 @@ class RadarChartCanvas:
         target = self.target_values()
         start = [previous[i] if previous_axes == [axis[0] for axis in self.axes] and i < len(previous)
                  else [0] * len(self.axes) for i in range(len(target))]
-        self.draw(start if self.canvas.winfo_ismapped() else target)
-        if start != target and self.canvas.winfo_ismapped():
+        visible = page_stack.shown(self.canvas)
+        self.draw(start if visible else target)
+        if start != target and visible:
             self.animate(start)
 
     def target_values(self):
@@ -290,6 +294,12 @@ class RadarChartCanvas:
             self.cancel_animation()
             self._destroyed = True
             self._photo = self._renderer = None
+
+    def page_shown(self):
+        self.on_map(None)
+
+    def page_hidden(self):
+        self.cancel_animation()
 
     def on_map(self, _event):
         if len(self.axes) >= 3 and self.series:

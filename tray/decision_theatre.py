@@ -14,6 +14,7 @@ import time
 
 from PIL import Image, ImageDraw, ImageFont, ImageColor, ImageTk
 
+import page_stack
 import radar_chart as radar
 import ui_theme as theme
 
@@ -963,6 +964,7 @@ class DecisionTheatre:
         self.canvas.bind("<Configure>",self.configure)
         self.canvas.bind("<Map>",self.mapped)
         self.canvas.bind("<Unmap>",lambda e:self.stop())
+        page_stack.watch(self)  # a covered page stays mapped: page_shown / page_hidden mark the switch
         self.canvas.bind("<Destroy>",self.destroy)
         self.canvas.bind("<Button-1>",lambda e:self.skip())
         for key in ("<space>","<Return>","<Escape>"):
@@ -995,7 +997,7 @@ class DecisionTheatre:
         self.scene = scene_from_result(result)
         self.renderer = None
         self.pending = bool(animate)
-        if self.canvas.winfo_ismapped():
+        if page_stack.shown(self.canvas):
             self.start()
 
     def start(self):
@@ -1012,6 +1014,12 @@ class DecisionTheatre:
 
     def mapped(self,event):
         self.start()
+
+    def page_shown(self):
+        self.start()
+
+    def page_hidden(self):
+        self.stop()
 
     def configure(self,event):
         self.renderer = None
@@ -1037,7 +1045,7 @@ class DecisionTheatre:
 
     def tick(self):
         self.after_id = None
-        if self.dead or not self.canvas.winfo_ismapped():
+        if self.dead or not page_stack.shown(self.canvas):
             self.stop()
             return
         index = None

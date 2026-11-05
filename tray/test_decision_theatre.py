@@ -333,6 +333,17 @@ def test_pending_hidden_replay_and_destroy_do_not_leak():
     t.top.unbind.assert_called_once_with('<Escape>','key')
 
 
+def test_a_replay_on_a_covered_page_waits_for_the_page_and_stops_when_covered_again():
+    # Covered pages stay mapped (page_stack), so the film must ask whether its page is on top.
+    t=driver(); page=SimpleNamespace(_page_hidden=True,master=None); t.canvas.master=page
+    t.play(result())
+    assert t.pending and not t.canvas.callbacks
+    page._page_hidden=False; t.page_shown()
+    assert t.running and len(t.canvas.callbacks)==1
+    t.page_hidden()
+    assert not t.running and not t.canvas.callbacks
+
+
 def test_kind_resolves_below_the_underline_and_holds_readable_with_the_title():
     renderer=dt.TheatreRenderer(dt.scene_from_result(result()),630,600,1.5)
     s=renderer.s

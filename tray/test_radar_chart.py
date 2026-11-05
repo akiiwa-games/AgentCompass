@@ -120,6 +120,25 @@ class AnimationTests(unittest.TestCase):
         chart.cancel_animation()
         self.assertIsNone(chart._animation_id)
 
+    def test_a_chart_on_a_covered_page_stays_idle_until_its_page_is_raised(self):
+        # Covered pages stay mapped (page_stack), so winfo_ismapped() alone no longer means "on screen".
+        import tkinter as tk
+
+        page = tk.Frame(self.root)
+        self.addCleanup(page.destroy)
+        chart = radar.RadarChartCanvas(page, size=420)
+        page._page_hidden = True
+        new = [{"label": "B", "values": {key: .6 for key, _, _ in radar.DNA_AXES}}]
+        with mock.patch.object(chart.canvas, "winfo_ismapped", return_value=True):
+            chart.show(radar.DNA_AXES, new)
+            self.assertIsNone(chart._animation_id)
+            self.assertEqual(chart._display_values, [[.6] * len(radar.DNA_AXES)])
+            page._page_hidden = False
+            chart.page_shown()
+            self.assertIsNotNone(chart._animation_id)
+            chart.page_hidden()
+            self.assertIsNone(chart._animation_id)
+
 
 if __name__ == "__main__":
     unittest.main()
