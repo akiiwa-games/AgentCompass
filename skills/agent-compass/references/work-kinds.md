@@ -32,6 +32,14 @@ Judging logic, consistency or correctness is `hard`. Wording, translation, summa
 | Run an agreed deployment or API sequence | `tool_execution` | `routine` |
 | Gather prices, versions or documentation from the web | `web_research` | `routine` |
 | Interpret a screenshot or chart | `visual_analysis` | `hard` |
+| Operate a live game, ticket/flash-sale page, order-book terminal, or App in a continuous observe-act loop | `computer_use` (`realtime_loop: true`) | `routine` / `hard` |
 
 Work that changes kind midway is two tasks: an analysis followed by a fix is `exploration_analysis`, then
 `debug_review`.
+
+## `realtime_loop` Flag (Live Observe-Act Loops)
+
+- **`realtime_loop: true`**: The worker itself must stay inside a running external system's observe-act loop across turns, where slow per-turn latency directly hurts the outcome.
+  - **Positive examples**: Operating a live game (dailies, dungeons, matches, AFK/auto-battle supervision); ticket/merchandise/course/appointment sniping or flash-sale grabbing; live order-book watching and order placement; polling a live webpage/App to click immediately when a target appears; live-stream bullet-chat interaction.
+  - **Counterexamples (`realtime_loop: false`)**: Writing, fixing, or debugging a ticket/game/automation script or bot (the script runs the fast loop, not the model); analyzing game/AFK/trading logs; fixing game automation code; a one-off GUI settings click.
+- **Interaction with `needs_gui` & `computer_use`**: When `realtime_loop: true` and the task operates a live interface (game, webpage, App, emulator, desktop window), `needs_gui`, `needs_visual`, and `local_only` are promoted to `true` and `computer_use`'s `gui` capability matching applies.

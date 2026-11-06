@@ -120,6 +120,12 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
     exact = next((b for b in siblings if b.get('effort') == bundle.get('effort')), None)
     if exact:
         return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
+    bid = bundle.get('bundle_id') or bundle.get('id')
+    by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
+    resp_curves = ((accounts.get('effort_curves') or {}).get(model) or {}).get('responsiveness') or {}
+    if by_id and isinstance(resp_curves, dict) and bundle.get('effort') in resp_curves:
+        return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'],
+                    **({'fast': True} if bundle.get('fast') else {}))
     if not explicit_override:
         return None
     contract = accounts.get('dispatch_efforts', {}).get(bundle.get('provider'), {}).get(model, [])

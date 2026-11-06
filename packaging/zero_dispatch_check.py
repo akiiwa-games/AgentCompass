@@ -91,10 +91,13 @@ class ScorerServer:
                     return self._send(500, {"error": "fixture scorer failure"})
                 if "SCORER-GARBAGE" in user:
                     return self._send(200, {"choices": [{"message": {"content": "I cannot classify this."}}]})
-                profile = {"multi_task": False, "task_count": "1", "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1, "context_scale": 2,
-                           "divergence": 1, "hallucination_risk": 2, "error_cost": 2, "needs_visual": False, "needs_gui": False,
-                           "local_only": False, "expected_hours": 0.5, "hours_confidence": "medium", "urgency": "normal",
-                           "interaction_style": "engineering", "reason": "fixture classification of a small bounded edit"}
+                is_rt = "REALTIME-LOOP" in user
+                profile = {"multi_task": False, "task_count": "1", "work_kind": "computer_use" if is_rt else "general_implementation",
+                           "reasoning_depth": 2, "code_complexity": 0 if is_rt else 1, "context_scale": 1 if is_rt else 2,
+                           "divergence": 1, "hallucination_risk": 2, "error_cost": 2, "needs_visual": is_rt, "needs_gui": is_rt,
+                           "local_only": is_rt, "realtime_loop": is_rt, "expected_hours": 0.5, "hours_confidence": "medium",
+                           "urgency": "normal", "interaction_style": "engineering",
+                           "reason": "fixture classification of a small bounded edit"}
                 self._send(200, {"choices": [{"message": {"content": json.dumps(profile)}}]})
 
             def _send(self, status, body):
@@ -415,6 +418,24 @@ def step_accounts_and_usage(z: Zero):
     before = len(z.scorer.requests)
     result = z.call(op, "scorer", "--action", "test")
     op.check("scorer test reaches the fixture model", result.returncode == 0 and len(z.scorer.requests) > before, result.stdout[-300:] + result.stderr[-300:])
+
+    op = run.operation("fresh install responsiveness", "from-zero install carries responsiveness policy/capabilities and scores realtime_loop tasks without local speed state")
+    rt_input = z.work / "realtime_task.json"
+    rt_input.write_text(json.dumps({
+        "task": {
+            "objective": "REALTIME-LOOP: Keep watching the live game emulator window in a continuous loop and click immediately when the match starts",
+            "expected_hours": 0.5,
+        }
+    }), encoding="utf-8")
+    rt_res = z.call(op, "plan", "--dry-run", "--input", str(rt_input))
+    rt_plan = parse(rt_res.stdout) or {}
+    rt_dec = rt_plan.get("decision") or {}
+    rt_ranking = rt_plan.get("ranking") or []
+    has_resp_comp = any(isinstance((c.get("components") or {}).get("responsiveness"), (int, float)) for c in rt_ranking)
+    op.check("from-zero plan on a realtime_loop task exposes responsiveness on candidates and decision",
+             rt_res.returncode == 0 and (rt_dec.get("task") or {}).get("realtime_loop") is True
+             and rt_dec.get("responsiveness") is not None and has_resp_comp,
+             {"choice": rt_plan.get("choice"), "responsiveness": rt_dec.get("responsiveness"), "task": rt_dec.get("task")})
 
 
 def check_cli_worker(z: Zero, op, tag: str, result, scenario: str, expect_exit: int | None):

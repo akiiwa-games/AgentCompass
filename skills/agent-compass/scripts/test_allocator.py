@@ -1824,5 +1824,594 @@ class RouterIntegrationTests(unittest.TestCase):
             self.assertIn('needs_user_decision', [a['code'] for a in blocked['alerts']])
 
 
+class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
+    """Tests for `realtime_loop` task-profile flag, heuristic fallback, `responsiveness` scoring/floor,
+    fresh-install zero-local-data behavior, conservative default on unmeasured models, and `refresh_speed_data.py`."""
+
+    def setUp(self):
+        self.now = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)
+
+    def healthy_usage(self):
+        windows = {
+            'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
+            'claude-lab': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
+            'codex': [('usage', 80, 100)],
+            'grok': [('credits', 80, 100)],
+            'antigravity': [('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 80, 100)],
+        }
+        return usage_windows(self.now, windows)
+
+    SPEED_FIXTURE = {
+        'schema_version': 1,
+        'fetched_at': '2026-11-06T09:16:00Z',
+        'sources': [
+            {
+                'id': 'artificial_analysis',
+                'url': 'https://artificialanalysis.ai/leaderboards/models',
+                'accessed_at': '2026-11-06',
+                'access': 'scrape',
+            },
+            {
+                'id': 'openrouter',
+                'url': 'https://openrouter.ai/api/v1/models/<author>/<slug>/endpoints',
+                'accessed_at': '2026-11-06',
+                'access': 'api',
+            },
+        ],
+        'models': {
+            'gemini-4-argon-high': {
+                'status': 'ok',
+                'entries': [
+                    {
+                        'router_model': 'gemini-4-argon-high',
+                        'effort': 'high',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Gemini 4 Argon (High)',
+                        'source_slug': 'gemini-4-argon',
+                        'match_kind': 'exact',
+                        'output_tps': 78.66,
+                        'ttft_s': 41.09,
+                        'reasoning_tokens_per_turn': 2888116,
+                    },
+                ],
+            },
+            'gemini-3.8-flash-high': {
+                'status': 'ok',
+                'entries': [
+                    {
+                        'router_model': 'gemini-3.8-flash-high',
+                        'effort': 'low',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Gemini 3.8 Flash (Low)',
+                        'source_slug': 'gemini-3-8-flash',
+                        'match_kind': 'exact',
+                        'output_tps': 68.54,
+                        'ttft_s': 1.80,
+                        'reasoning_tokens_per_turn': 570993,
+                    },
+                    {
+                        'router_model': 'gemini-3.8-flash-high',
+                        'effort': 'medium',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Gemini 3.8 Flash (Medium)',
+                        'source_slug': 'gemini-3-8-flash',
+                        'match_kind': 'exact',
+                        'output_tps': 67.35,
+                        'ttft_s': 5.74,
+                        'reasoning_tokens_per_turn': 1707038,
+                    },
+                    {
+                        'router_model': 'gemini-3.8-flash-high',
+                        'effort': 'high',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Gemini 3.8 Flash (High)',
+                        'source_slug': 'gemini-3-8-flash',
+                        'match_kind': 'exact',
+                        'output_tps': 73.12,
+                        'ttft_s': 19.62,
+                        'reasoning_tokens_per_turn': 5668404,
+                    },
+                ],
+            },
+            'gpt-6.1-sol': {
+                'status': 'ok',
+                'entries': [
+                    {
+                        'router_model': 'gpt-6.1-sol',
+                        'effort': 'low',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'GPT-6.1 Sol (Low)',
+                        'source_slug': 'gpt-6-1-sol',
+                        'match_kind': 'exact',
+                        'output_tps': 53.06,
+                        'ttft_s': 2.76,
+                        'reasoning_tokens_per_turn': 300000,
+                    },
+                    {
+                        'router_model': 'gpt-6.1-sol',
+                        'effort': 'medium',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'GPT-6.1 Sol (Medium)',
+                        'source_slug': 'gpt-6-1-sol',
+                        'match_kind': 'exact',
+                        'output_tps': 53.44,
+                        'ttft_s': 6.60,
+                        'reasoning_tokens_per_turn': 1000000,
+                    },
+                    {
+                        'router_model': 'gpt-6.1-sol',
+                        'effort': 'high',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'GPT-6.1 Sol (High)',
+                        'source_slug': 'gpt-6-1-sol',
+                        'match_kind': 'exact',
+                        'output_tps': 53.16,
+                        'ttft_s': 45.89,
+                        'reasoning_tokens_per_turn': 5000000,
+                    },
+                ],
+            },
+            'gpt-6-astra': {
+                'status': 'ok',
+                'entries': [
+                    {
+                        'router_model': 'gpt-6-astra',
+                        'effort': 'low',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'GPT-6 Astra (Low)',
+                        'source_slug': 'gpt-6-astra',
+                        'match_kind': 'exact',
+                        'output_tps': 43.58,
+                        'ttft_s': 3.97,
+                        'reasoning_tokens_per_turn': 400000,
+                    },
+                    {
+                        'router_model': 'gpt-6-astra',
+                        'effort': 'medium',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'GPT-6 Astra (Medium)',
+                        'source_slug': 'gpt-6-astra',
+                        'match_kind': 'exact',
+                        'output_tps': 46.64,
+                        'ttft_s': 6.95,
+                        'reasoning_tokens_per_turn': 1100000,
+                    },
+                    {
+                        'router_model': 'gpt-6-astra',
+                        'effort': 'high',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'GPT-6 Astra (High)',
+                        'source_slug': 'gpt-6-astra',
+                        'match_kind': 'exact',
+                        'output_tps': 43.85,
+                        'ttft_s': 55.88,
+                        'reasoning_tokens_per_turn': 6000000,
+                    },
+                ],
+            },
+            'claude-sonnet-5-5': {
+                'status': 'ok',
+                'entries': [
+                    {
+                        'router_model': 'claude-sonnet-5-5',
+                        'effort': 'low',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Claude Sonnet 5.5 (Low)',
+                        'source_slug': 'claude-sonnet-5-5',
+                        'match_kind': 'exact',
+                        'output_tps': 96.48,
+                        'ttft_s': 2.43,
+                    },
+                    {
+                        'router_model': 'claude-sonnet-5-5',
+                        'effort': 'medium',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Claude Sonnet 5.5 (Medium)',
+                        'source_slug': 'claude-sonnet-5-5',
+                        'match_kind': 'exact',
+                        'output_tps': 98.18,
+                        'ttft_s': 4.13,
+                    },
+                    {
+                        'router_model': 'claude-sonnet-5-5',
+                        'effort': 'high',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Claude Sonnet 5.5 (High)',
+                        'source_slug': 'claude-sonnet-5-5',
+                        'match_kind': 'exact',
+                        'output_tps': 97.68,
+                        'ttft_s': 12.16,
+                    },
+                ],
+            },
+            'claude-opus-5-5': {
+                'status': 'ok',
+                'entries': [
+                    {
+                        'router_model': 'claude-opus-5-5',
+                        'effort': 'low',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Claude Opus 5.5 (Low)',
+                        'source_slug': 'claude-opus-5-5',
+                        'match_kind': 'exact',
+                        'output_tps': 105.86,
+                        'ttft_s': 6.34,
+                    },
+                    {
+                        'router_model': 'claude-opus-5-5',
+                        'effort': 'medium',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Claude Opus 5.5 (Medium)',
+                        'source_slug': 'claude-opus-5-5',
+                        'match_kind': 'exact',
+                        'output_tps': 107.68,
+                        'ttft_s': 19.55,
+                    },
+                    {
+                        'router_model': 'claude-opus-5-5',
+                        'effort': 'high',
+                        'source_id': 'artificial_analysis',
+                        'source_name': 'Claude Opus 5.5 (High)',
+                        'source_slug': 'claude-opus-5-5',
+                        'match_kind': 'exact',
+                        'output_tps': 107.41,
+                        'ttft_s': 36.89,
+                    },
+                ],
+            },
+            'gemini-3.7-flash': {
+                'status': 'ok',
+                'entries': [
+                    {
+                        'router_model': 'gemini-3.7-flash',
+                        'effort': 'default',
+                        'source_id': 'openrouter',
+                        'source_name': 'Google | google/gemini-3.7-flash-20260813',
+                        'source_slug': 'google/gemini-3.7-flash-20260813',
+                        'match_kind': 'exact',
+                        'output_tps': 90.0,
+                        'ttft_s': 2.236,
+                    },
+                ],
+            },
+            'gpt-6-pro': {
+                'status': 'missing',
+                'entries': [],
+                'note': 'ChatGPT Pro web bridge; no public speed entry',
+            },
+            'grok-bot': {
+                'status': 'not_applicable',
+                'entries': [],
+                'note': 'Web session channel; not applicable for realtime_loop',
+            },
+            'dot': {
+                'status': 'not_applicable',
+                'entries': [],
+                'note': 'Async packet worker; not applicable for realtime_loop',
+            },
+        },
+    }
+
+    def test_schema_and_validation_require_boolean_realtime_loop(self):
+        self.assertIn('realtime_loop', allocator.PROFILE_FLAGS)
+        self.assertIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['properties'])
+        self.assertIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['required'])
+        desc = allocator.TASK_PROFILE_SCHEMA['properties']['realtime_loop']['description']
+        self.assertIn('observe-act loop', desc)
+        self.assertIn('False for writing', desc)
+
+        good = {
+            'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1,
+            'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
+            'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+            'interaction_style': 'engineering',
+        }
+        validated = allocator.validate_profile(good)
+        self.assertIs(validated['realtime_loop'], True)
+
+        for bad_val in ('yes', 1, 0, ['true']):
+            with self.assertRaises(ValueError) as ctx:
+                allocator.validate_profile({**good, 'realtime_loop': bad_val})
+            self.assertIn('task.profile.realtime_loop must be true or false', str(ctx.exception))
+
+        # Classifier calibration cases include >= 8 positive and >= 8 negative realtime_loop examples
+        cases_path = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
+        doc = json.loads(cases_path.read_text(encoding='utf-8-sig'))
+        self.assertIn('realtime_loop', doc.get('dimension_rubric') or {})
+        positives = [c for c in doc['calibration_cases'] if c['expected_profile'].get('realtime_loop') is True]
+        negatives = [c for c in doc['calibration_cases'] if c['expected_profile'].get('realtime_loop') is False]
+        self.assertGreaterEqual(len(positives), 8)
+        self.assertGreaterEqual(len(negatives), 8)
+        for case in doc['calibration_cases']:
+            self.assertIsInstance(allocator.validate_profile(case['expected_profile'])['realtime_loop'], bool)
+
+    def test_heuristic_infer_realtime_loop_positive_and_negative_cases(self):
+        positives = [
+            '你是该游戏的唯一执行子 Agent，持续在模拟器里操作游戏完成日常刷本与挂机对局',
+            'Operate the mobile game client in the emulator in a continuous loop until daily dungeons are cleared',
+            '守着浏览器里的票务页面，12点放票时第一时间点击抢票下单',
+            'Keep watching the flash sale webpage and click checkout immediately when the countdown hits zero',
+            '在本地行情客户端持续实时盯盘，盘口价差触及阈值时立刻点击下单',
+            'Continuously watch the live order book in the trading terminal and place the order immediately',
+            '每隔3秒轮询刷新选课页面，一旦出现空位马上点击选课',
+            '一直守在直播间盯着实时弹幕并第一时间互动回复观众',
+            '通过 adb 守着手机 App 的放号预约界面，状态变为可预约后马上点击抢号',
+        ]
+        for text in positives:
+            with self.subTest(positive=text):
+                self.assertTrue(allocator.infer_realtime_loop(text), f'Expected True for: {text}')
+
+        negatives = [
+            '写一个抢票脚本 `ticket_bot.py`，轮询票务页面并在放票时立刻下单',
+            'Write a Python automation script to poll the flash-sale webpage in a loop and grab tickets',
+            '实现游戏自动挂机刷本工具模块并补齐单元测试',
+            '分析昨晚模拟器游戏挂机刷本的报错日志，统计掉线原因',
+            'Analyze the live order-book watcher logs to diagnose latency spikes during market open',
+            '修复游戏挂机脚本 `auto_farm.py` 里轮询窗口卡死的 bug',
+            'Fix the race condition in the flash-sale sniping bot',
+            '打开桌面客户端设置窗口，点击保存按钮并截图验证',
+            'Open the browser settings page, toggle dark mode, click Save, and take one screenshot',
+            '开发直播间弹幕自动回复机器人代码',
+        ]
+        for text in negatives:
+            with self.subTest(negative=text):
+                self.assertFalse(allocator.infer_realtime_loop(text), f'Expected False for: {text}')
+
+    def test_parse_aa_rsc_html_offline_fixture(self):
+        import refresh_speed_data
+
+        # Offline Next.js RSC stream fixture testing both initialModels array and $hex dereferenced model objects
+        rsc_html = (
+            '<html><body>'
+            '<script>self.__next_f.push([1,"1a:{\\"outputSpeed\\":78.66,\\"timeToFirstAnswerToken\\":41.09,\\"outputTokens\\":2888116}\\n"])</script>'
+            '<script>self.__next_f.push([1,"1b:{\\"name\\":\\"Gemini 4 Argon (High)\\",\\"slug\\":\\"gemini-4-argon\\",\\"effort\\":{\\"slug\\":\\"high\\"},\\"headline\\":\\"$1a\\"}\\n"])</script>'
+            '<script>self.__next_f.push([1,"1c:{\\"initialModels\\":[{\\"name\\":\\"Claude Sonnet 5.5 (Low, Default Fallback)\\",\\"slug\\":\\"claude-sonnet-5-5\\",\\"outputSpeed\\":96.48,\\"timeToFirstAnswerToken\\":2.43,\\"reasoning_output_tokens\\":119402}]}\\n"])</script>'
+            '</body></html>'
+        )
+        rows = refresh_speed_data.parse_aa_rsc_html(rsc_html)
+        self.assertIn('gemini-4-argon', rows)
+        argon = rows['gemini-4-argon']
+        self.assertEqual(argon['effort'], 'high')
+        self.assertAlmostEqual(argon['output_tps'], 78.66)
+        self.assertAlmostEqual(argon['ttft_s'], 41.09)
+        self.assertEqual(argon['reasoning_tokens_per_turn'], 2888116)
+
+        self.assertIn('claude-sonnet-5-5', rows)
+        sonnet_low = rows['claude-sonnet-5-5']
+        self.assertEqual(sonnet_low['effort'], 'low')
+        self.assertAlmostEqual(sonnet_low['output_tps'], 96.48)
+        self.assertAlmostEqual(sonnet_low['ttft_s'], 2.43)
+        self.assertEqual(sonnet_low['reasoning_tokens_per_turn'], 119402)
+
+    def test_refresh_speed_data_and_floor_excludes_slow_argon_while_keeping_fast_models(self):
+        import dispatch_registry
+        import refresh_speed_data
+
+        base_accounts = copy.deepcopy(allocator.load_accounts())
+        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        usage = self.healthy_usage()
+
+        # 1. Refresh script computes T_turn = ttft_s + 400 / output_tps (never adding reasoning_tokens_per_turn)
+        updated_accounts, report = refresh_speed_data.apply_speed_data(base_accounts, self.SPEED_FIXTURE)
+        self.assertEqual(report['updated_count'], 7)
+        self.assertIn('gpt-6-pro', report['default_models'])
+        self.assertEqual(sorted(report['not_applicable_models']), ['dot', 'grok-bot'])
+
+        # Argon High: T_turn = 41.09 + 400 / 78.66 = 46.18s -> responsiveness 0.000 (< floor 0.50)
+        argon_spec = updated_accounts['models']['gemini-4-argon-high']
+        self.assertEqual(argon_spec['responsiveness'], 0.0)
+        self.assertIn('46.18s->0.000', argon_spec['responsiveness_basis'])
+        # OpenRouter fallback explicitly notes metric difference in basis
+        g37_spec = updated_accounts['models']['gemini-3.7-flash']
+        self.assertIn('openrouter fallback', g37_spec['responsiveness_basis'])
+        self.assertIn('p50_latency', g37_spec['responsiveness_basis'])
+
+        # Per-effort curves on multi-effort models (Sol: low 0.846 / medium 0.754 / high 0.0; Astra: low 0.777 / medium 0.719 / high 0.0)
+        sol_curve = updated_accounts['effort_curves']['gpt-6.1-sol']['responsiveness']
+        self.assertAlmostEqual(sol_curve['low'], 0.846, places=2)
+        self.assertAlmostEqual(sol_curve['medium'], 0.754, places=2)
+        self.assertEqual(sol_curve['high'], 0.0)
+
+        # 2. Test on shipped references/accounts.json (which carries full speed-data.json numbers):
+        # On a realtime_loop game task (even if misclassified as general_implementation + needs_gui=False,
+        # like the lajishouyou ledger case), needs_gui is promoted, Argon High (only high) and grok-bot/dot (not_applicable)
+        # are excluded, multi-effort bundles whose configured effort is high (e.g. astra_high, flash_high, grok47_high)
+        # step down to a faster supported effort that clears floor=0.50, and a fast GUI-capable model wins.
+        lajishouyou_profile = {
+            'work_kind': 'general_implementation',
+            'reasoning_depth': 2, 'code_complexity': 1, 'context_scale': 1, 'divergence': 1,
+            'hallucination_risk': 2, 'error_cost': 2,
+            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': True,
+            'interaction_style': 'engineering',
+        }
+        rt_plan = allocator.plan(
+            {
+                'objective': '你是该游戏的唯一执行子 Agent，持续在模拟器窗口里操作游戏完成日常挂机刷本',
+                'expected_hours': 1.0,
+                'profile': lajishouyou_profile,
+            },
+            usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
+        )
+        by_id = {c['id']: c for c in rt_plan['ranking']}
+        self.assertTrue(rt_plan['decision']['task']['realtime_loop'])
+        self.assertTrue(rt_plan['decision']['task']['profile']['needs_gui'])
+        self.assertTrue(rt_plan['decision']['task']['profile']['needs_visual'])
+
+        # Argon High only offers `high` (46.18s -> 0.000) -> excluded
+        self.assertTrue(any('too slow per turn for a live loop' in r for r in by_id['argon_high']['excluded']),
+                        by_id['argon_high']['excluded'])
+        self.assertTrue(by_id['argon_high'].get('below_floor'))
+
+        # Multi-effort bundles step down to an effort clearing both floor=0.50 and the hard ability gate (3.1):
+        # - astra_high steps down from high (0.0) to medium (0.719, ability 4.05 >= 3.1)
+        self.assertEqual(by_id['astra_high']['excluded'], [])
+        self.assertEqual(by_id['astra_high']['bundle']['effort'], 'medium')
+        self.assertEqual(by_id['astra_high']['components']['effort_stepped_down_from'], 'high')
+        # - sol_medium (0.754, ability 3.40 >= 3.1), sonnet55_medium (0.898), sonnet55_high (0.701), opus55_medium (0.530) pass directly
+        self.assertEqual(by_id['sol_medium']['excluded'], [])
+        self.assertEqual(by_id['sonnet55_medium']['excluded'], [])
+        self.assertEqual(by_id['sonnet55_high']['excluded'], [])
+        self.assertEqual(by_id['opus55_medium']['excluded'], [])
+        self.assertNotEqual(rt_plan['choice'], 'argon_high')
+
+        # A stepped-down bundle resolves cleanly in dispatch_registry
+        stepped_bundle = dispatch_registry.resolve_bundle(
+            dict(by_id['astra_high']['bundle'], bundle_id='astra_high'),
+            accounts=base_accounts,
+        )
+        self.assertEqual(stepped_bundle['effort'], 'medium')
+
+        # On a routine non-GUI realtime_loop task, flash_high steps down to medium (0.813), grok47_high steps down to low (0.744),
+        # and grok-bot / dot (not_applicable) are excluded.
+        routine_rt = allocator.plan(
+            {
+                'objective': '持续轮询命令行行情接口，价差触及阈值时立刻调用下单命令',
+                'expected_hours': 0.5,
+                'needs': {'local_only': False, 'outbound_ok': True},
+                'profile': {
+                    'work_kind': 'tool_execution',
+                    'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
+                    'hallucination_risk': 1, 'error_cost': 1,
+                    'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
+                    'interaction_style': 'engineering',
+                },
+            },
+            usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
+        )
+        routine_by_id = {c['id']: c for c in routine_rt['ranking']}
+        self.assertEqual(routine_by_id['flash_high']['excluded'], [])
+        self.assertEqual(routine_by_id['flash_high']['bundle']['effort'], 'medium')
+        self.assertEqual(routine_by_id['grok47_high']['excluded'], [])
+        self.assertEqual(routine_by_id['grok47_high']['bundle']['effort'], 'low')
+        for na_id in ('grok_bot', 'dot_text'):
+            if na_id in routine_by_id:
+                self.assertTrue(
+                    any('not_applicable' in r and 'too slow per turn for a live loop' in r
+                        for r in routine_by_id[na_id]['excluded']),
+                    routine_by_id[na_id]['excluded'],
+                )
+
+    def test_non_realtime_tasks_are_completely_unaffected_by_responsiveness(self):
+        base_accounts = copy.deepcopy(allocator.load_accounts())
+        stripped_accounts = copy.deepcopy(base_accounts)
+        for spec in stripped_accounts['models'].values():
+            if isinstance(spec, dict):
+                spec.pop('responsiveness', None)
+                spec.pop('responsiveness_basis', None)
+                spec.pop('responsiveness_status', None)
+        for curve in stripped_accounts.get('effort_curves', {}).values():
+            if isinstance(curve, dict):
+                curve.pop('responsiveness', None)
+        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        usage = self.healthy_usage()
+
+        non_rt_tasks = [
+            {
+                'objective': 'Implement the retry backoff module and unit tests',
+                'expected_hours': 0.5,
+                'profile': {
+                    'work_kind': 'general_implementation',
+                    'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
+                    'hallucination_risk': 1, 'error_cost': 2,
+                    'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+                    'interaction_style': 'engineering',
+                },
+            },
+            {
+                'objective': '修复游戏挂机脚本 `auto_farm.py` 里轮询窗口卡死的 bug',
+                'expected_hours': 0.5,
+                'profile': {
+                    'work_kind': 'debug_review',
+                    'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
+                    'hallucination_risk': 1, 'error_cost': 2,
+                    'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+                    'interaction_style': 'engineering',
+                },
+            },
+        ]
+        for task in non_rt_tasks:
+            before = allocator.plan(task, usage, now=self.now, accounts=stripped_accounts, capabilities=capabilities, overrides=[])
+            after = allocator.plan(task, usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[])
+            self.assertEqual(before['choice'], after['choice'])
+            before_scores = {c['id']: (c['score'], c['excluded'], c['components'].get('fit')) for c in before['ranking']}
+            after_scores = {c['id']: (c['score'], c['excluded'], c['components'].get('fit')) for c in after['ranking']}
+            self.assertEqual(before_scores, after_scores)
+            for c in after['ranking']:
+                self.assertNotIn('responsiveness', c['components'])
+
+    def test_zero_local_data_fresh_install_and_conservative_default_for_unmeasured_models(self):
+        with tempfile.TemporaryDirectory() as empty_state:
+            with patch.dict(os.environ, {'ROUTER_STATE_DIR': empty_state}):
+                fresh_accounts = copy.deepcopy(allocator.load_accounts())
+                # Simulate an unmeasured model on codex (`astra_high` without speed data) to test conservative default
+                del fresh_accounts['models']['gpt-6-astra']['responsiveness']
+                del fresh_accounts['effort_curves']['gpt-6-astra']['responsiveness']
+                capabilities = allocator.load_capabilities(accounts=fresh_accounts)
+                usage = self.healthy_usage()
+
+                # `gpt-6-astra` without speed data gets conservative default (0.52 >= floor 0.50):
+                # not excluded, marked `responsiveness: default`, and ranked behind measured fast models.
+                rt_task = {
+                    'objective': '守着票务网页等放票立即点击抢票',
+                    'expected_hours': 0.5,
+                    'profile': {
+                        'work_kind': 'computer_use',
+                        'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
+                        'hallucination_risk': 2, 'error_cost': 2,
+                        'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+                        'interaction_style': 'engineering',
+                    },
+                }
+                res = allocator.plan(rt_task, usage, now=self.now, accounts=fresh_accounts, capabilities=capabilities, overrides=[])
+                by_id = {c['id']: c for c in res['ranking']}
+                self.assertEqual(by_id['astra_high']['excluded'], [])
+                self.assertEqual(by_id['astra_high']['components']['responsiveness_source'], 'default')
+                self.assertAlmostEqual(by_id['astra_high']['components']['responsiveness'],
+                                       fresh_accounts['scoring']['responsiveness']['default'])
+                self.assertIn('responsiveness: default', by_id['astra_high']['notes'])
+                # Measured fast models rank ahead of unmeasured default models
+                self.assertGreater(by_id['sol_medium']['score'], by_id['astra_high']['score'])
+
+                # When an unmeasured model is selected (e.g. only eligible candidate), decision marks `responsiveness: default`
+                other_ids = [cid for cid in by_id if cid != 'astra_high']
+                pinned = allocator.plan(
+                    rt_task, usage, now=self.now, accounts=fresh_accounts, capabilities=capabilities,
+                    unavailable=other_ids, overrides=[],
+                )
+                self.assertEqual(pinned['choice'], 'astra_high')
+                self.assertEqual(pinned['decision'].get('responsiveness'), 'default')
+                self.assertIn('responsiveness: default', pinned['decision'].get('reason', ''))
+
+                # Optional local speed telemetry shrinkage only activates at >= min_samples (20) and is bounded
+                telem_path = Path(empty_state) / 'speed-telemetry.json'
+                telem_path.write_text(json.dumps({
+                    'models': {'gpt-6.1-sol': {'samples': 5, 'median_turn_seconds': 35.0}}
+                }), encoding='utf-8')
+                low_sample_val, low_src = allocator.bundle_responsiveness(
+                    {'id': 'sol_medium', 'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'medium'},
+                    fresh_accounts['models']['gpt-6.1-sol'],
+                    fresh_accounts['scoring'],
+                    fresh_accounts['effort_curves']['gpt-6.1-sol'],
+                    state_dir=empty_state,
+                )
+                self.assertEqual(low_src, 'measured')
+
+                telem_path.write_text(json.dumps({
+                    'models': {'gpt-6.1-sol': {'samples': 40, 'median_turn_seconds': 35.0}}
+                }), encoding='utf-8')
+                blended_val, blended_src = allocator.bundle_responsiveness(
+                    {'id': 'sol_medium', 'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'medium'},
+                    fresh_accounts['models']['gpt-6.1-sol'],
+                    fresh_accounts['scoring'],
+                    fresh_accounts['effort_curves']['gpt-6.1-sol'],
+                    state_dir=empty_state,
+                )
+                self.assertEqual(blended_src, 'local_blended')
+                self.assertLess(blended_val, low_sample_val)
+                self.assertGreaterEqual(low_sample_val - blended_val, 0.01)
+                self.assertLessEqual(low_sample_val - blended_val,
+                                     fresh_accounts['scoring']['responsiveness']['local_telemetry']['max_shift'] + 1e-6)
+
+
 if __name__ == '__main__':
     unittest.main()

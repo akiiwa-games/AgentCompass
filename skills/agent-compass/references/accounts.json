@@ -88,6 +88,30 @@
     },
     "ability_score_origin_basis": "The zero point of graded ability (allocator.evaluate_bundle: ability = (credited - origin) / ability_span) on work that is not minimum-sufficient. It is kept apart from ability_floor, which is only the gate: the floors were measured down to 2.3/3.1 on 2026-11-04, and if the score counted from them every model above about 2.9 would score full ability on routine work (Opus 5.5 Low through Antigravity tied Astra High on routine visual work). The origins stay at the pre-measurement floors, where the ability weights and the route-fit balance were calibrated. Minimum-sufficient work is unaffected: it scores ability as met or not at the gate.",
     "ability_span": 0.6,
+    "responsiveness": {
+      "floor": 0.5,
+      "default": 0.52,
+      "weight": 0.35,
+      "fast_turn_seconds": 4.0,
+      "slow_turn_seconds": 45.0,
+      "output_tokens_per_turn": 400,
+      "harness_overhead": {
+        "default": 1.0,
+        "antigravity": 1.0,
+        "antigravity-resilient": 1.0,
+        "codex": 1.0,
+        "claude": 1.0,
+        "pi": 1.0,
+        "opencode": 1.0,
+        "grok": 1.0
+      },
+      "local_telemetry": {
+        "min_samples": 20,
+        "max_blend": 0.3,
+        "max_shift": 0.15
+      },
+      "basis": "Per-turn live-loop latency model calibrated on Artificial Analysis (AA) 2026-11-06 speed data (OpenRouter fallback only when AA speed is absent): T_turn = (ttft_s + output_tokens_per_turn / output_tps) * harness_overhead[harness], with output_tokens_per_turn = 400. AA ttft_s is headline.timeToFirstAnswerToken (which already includes single-turn thinking time; reasoning_tokens_per_turn is the 9-benchmark suite total and is never added to T_turn). Mapped linearly from [fast_turn_seconds=4.0s -> 1.0, slow_turn_seconds=45.0s -> 0.0] and stored per effort in effort_curves.<model>.responsiveness. On realtime_loop tasks, floor=0.50 (T_turn <= 24.5s) is evaluated per (model, effort): bundles whose configured effort is below floor step down to the highest faster supported effort that clears both floor and the task ability gate; models with no effort clearing floor (e.g. Gemini 4 Argon High at 46.2s -> 0.000) or marked not_applicable (grok-bot, dot) are excluded as too slow per turn for a live loop, while Sonnet 5.5 (low 6.6s / medium 8.2s / high 16.3s), Sol 6.1 (low 10.3s / medium 14.1s), Astra (low 13.1s / medium 15.5s), Luna (5.7-17.8s), Flash 3.8 (low 7.6s / medium 11.7s), Opus 5.5 (low 10.1s / medium 23.3s), Grok 4.7 (low 14.5s) and DeepSeek V4 Pro (none 7.6s) pass at their fast/medium efforts. Models without community speed data receive conservative default=0.52 (above floor so not excluded, below measured fast models so ranked behind them) and mark responsiveness: default."
+    },
     "effort_unlock_difficulties": [
       "coupled",
       "frontier"
@@ -386,7 +410,9 @@
         "global_rigor": 0.35,
         "module_precision": 0.55
       },
-      "basis": "OpenCode free DeepSeek V4.1 Flash model (`opencode/deepseek-v4.1-flash-free`); explicit override worker below the automatic routine floor."
+      "basis": "OpenCode free DeepSeek V4.1 Flash model (`opencode/deepseek-v4.1-flash-free`); explicit override worker below the automatic routine floor.",
+      "responsiveness": 0.46,
+      "responsiveness_basis": "artificial_analysis (DeepSeek V4.1 Flash 1017 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 4.01s->1.000 (148.57 tok/s, ttft 1.32s); high: 26.15s->0.460 (175.4 tok/s, ttft 23.87s); max: 54.53s->0.000 (171.51 tok/s, ttft 52.2s)]; base@high=26.15s -> responsiveness=0.460"
     },
     "claude-fable-5-1": {
       "tier": 4.0,
@@ -406,7 +432,9 @@
         "global_rigor": 0.95,
         "module_precision": 0.9
       },
-      "basis": "LMArena: WebDev 2026-10-28 Claude Fable 5.1 (Max) 1746 [1737,1754]; Agent 2026-11-02 Claude Fable 5.1 (Max) score 0.131 [0.113,0.150]; Vision 2026-10-19 Claude Fable 5.1 (Max) 1319 [1310,1329]; Text hard prompts (style control) 2026-10-28 Claude Fable 5.1 (Max) 1524 [1517,1531]; Text (style control) 2026-10-28 Claude Fable 5.1 (Max) 1504 [1499,1510]. tier 3.73 = mean of the per-board fits {'webdev': 3.59, 'agent': 3.88}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 4.0 = 3.73 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': -0.21, 'agent': -0.32}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Fable 5.1 (Max) 1746 [1737,1754]; Agent 2026-11-02 Claude Fable 5.1 (Max) score 0.131 [0.113,0.150]; Vision 2026-10-19 Claude Fable 5.1 (Max) 1319 [1310,1329]; Text hard prompts (style control) 2026-10-28 Claude Fable 5.1 (Max) 1524 [1517,1531]; Text (style control) 2026-10-28 Claude Fable 5.1 (Max) 1504 [1499,1510]. tier 3.73 = mean of the per-board fits {'webdev': 3.59, 'agent': 3.88}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 4.0 = 3.73 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': -0.21, 'agent': -0.32}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.588,
+      "responsiveness_basis": "artificial_analysis (Claude Fable 5.1 (High, Default Fallback), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 13.62s->0.765 (86.1 tok/s, ttft 8.97s); medium: 14.89s->0.734 (85.62 tok/s, ttft 10.22s); high: 20.89s->0.588 (86.57 tok/s, ttft 16.27s); xhigh: 69.61s->0.000 (86.24 tok/s, ttft 64.97s); max: 188.31s->0.000 (87.59 tok/s, ttft 183.74s)]; base@high=20.89s -> responsiveness=0.588"
     },
     "claude-opus-5-5": {
       "fast_capable": true,
@@ -427,7 +455,9 @@
         "global_rigor": 0.98,
         "module_precision": 0.92
       },
-      "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); Calibration sample (14d) $9.30/h (207.3h)."
+      "basis": "AA v4.3.2 High 53.6 / Max 57.6 (#1), Terminal-Bench 64.8% (#1), SciCode 66.9% (#1), MMMU-Pro 87.7% (#1), Bug Hunt 31.7-41.7/105 (74.8%-82.2% prec); Calibration sample (14d) $9.30/h (207.3h).",
+      "responsiveness": 0.107,
+      "responsiveness_basis": "artificial_analysis (Claude Opus 5.5 (High, Default Fallback), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 10.12s->0.851 (105.86 tok/s, ttft 6.34s); medium: 23.26s->0.530 (107.68 tok/s, ttft 19.55s); high: 40.61s->0.107 (107.41 tok/s, ttft 36.89s); xhigh: 86.37s->0.000 (106.36 tok/s, ttft 82.61s); max: 338.26s->0.000 (105.54 tok/s, ttft 334.47s)]; base@high=40.61s -> responsiveness=0.107"
     },
     "gpt-6.1-sol": {
       "tier": 3.6,
@@ -449,7 +479,9 @@
         "global_rigor": 0.25,
         "module_precision": 0.95
       },
-      "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; Calibration sample (14d) $2.19/h at high (159.1h)."
+      "basis": "AA v4.3.2 High 50.2 / Max 51.8 ($0.32-$0.72/task), Bug Hunt 36.5-44.3/105, Terminal-Bench 58.2%, #2 Codex GUI grounding; Calibration sample (14d) $2.19/h at high (159.1h).",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (GPT-6.1 Sol (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 10.30s->0.846 (53.06 tok/s, ttft 2.76s); medium: 14.09s->0.754 (53.44 tok/s, ttft 6.6s); high: 53.41s->0.000 (53.16 tok/s, ttft 45.89s); xhigh: 85.95s->0.000 (51.55 tok/s, ttft 78.19s); max: 214.26s->0.000 (50.9 tok/s, ttft 206.4s)]; base@high=53.41s -> responsiveness=0.000"
     },
     "gpt-6-astra": {
       "tier": 4.2,
@@ -470,7 +502,9 @@
         "global_rigor": 0.82,
         "module_precision": 0.84
       },
-      "basis": "AA v4.3.2 High 50.9 / Max 52.7, Terminal-Bench 58.2%, Omniscience 43.7, MMMU-Pro 86.4%, Bug Hunt 35.0-45.0/105, #1 Codex GUI/cua_repl grounding; Calibration sample (14d) $22.75/h (41.5h)."
+      "basis": "AA v4.3.2 High 50.9 / Max 52.7, Terminal-Bench 58.2%, Omniscience 43.7, MMMU-Pro 86.4%, Bug Hunt 35.0-45.0/105, #1 Codex GUI/cua_repl grounding; Calibration sample (14d) $22.75/h (41.5h).",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (GPT-6 Astra (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 13.15s->0.777 (43.58 tok/s, ttft 3.97s); medium: 15.53s->0.719 (46.64 tok/s, ttft 6.95s); high: 65.00s->0.000 (43.85 tok/s, ttft 55.88s); xhigh: 133.41s->0.000 (42.92 tok/s, ttft 124.09s); max: 248.22s->0.000 (42.73 tok/s, ttft 238.86s)]; base@high=65.00s -> responsiveness=0.000"
     },
     "gemini-4-argon-high": {
       "usd_per_hour": 4.0,
@@ -495,7 +529,9 @@
         "global_rigor": 0.8,
         "module_precision": 0.8
       },
-      "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); Calibration sample (14d) 94.5h."
+      "basis": "AA v4.3.2 High 52.6 (#2 at High), SciCode 61.8%, Terminal-Bench 4.0 57.1%, HLE 57.1%, Omniscience 42.4 (84.9% non-hallucination), Bug Hunt 40.7/105 (84.8% prec, n=3); Calibration sample (14d) 94.5h.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Gemini 4 Argon (High), 2026-11-06): T_turn=ttft_s+400/output_tps [high: 46.18s->0.000 (74.29 tok/s, ttft 40.8s)]; base@high=46.18s -> responsiveness=0.000"
     },
     "claude-sonnet-5-5": {
       "tier": 3.9,
@@ -515,7 +551,9 @@
         "global_rigor": 0.76,
         "module_precision": 0.78
       },
-      "basis": "AA v4.3.2 High 46.8 / Max 56.0, Bug Hunt Max 51.3/105 (#1) / High 34.3/105 (76.2% prec), Mercor BrowseComp 73.0% (#1), AA-Briefcase 57.5% (#1), Terminal-Bench 61.8%; Calibration sample (14d) $3.73/h (63.7h)."
+      "basis": "AA v4.3.2 High 46.8 / Max 56.0, Bug Hunt Max 51.3/105 (#1) / High 34.3/105 (76.2% prec), Mercor BrowseComp 73.0% (#1), AA-Briefcase 57.5% (#1), Terminal-Bench 61.8%; Calibration sample (14d) $3.73/h (63.7h).",
+      "responsiveness": 0.701,
+      "responsiveness_basis": "artificial_analysis (Claude Sonnet 5.5 (High, Default Fallback), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 6.58s->0.937 (134.67 tok/s, ttft 3.61s); medium: 8.20s->0.898 (141.98 tok/s, ttft 5.38s); high: 16.26s->0.701 (139.11 tok/s, ttft 13.38s); xhigh: 35.69s->0.227 (136.42 tok/s, ttft 32.76s); max: 284.22s->0.000 (151.22 tok/s, ttft 281.57s)]; base@high=16.26s -> responsiveness=0.701"
     },
     "grok-4.7": {
       "usd_per_hour": 1.5,
@@ -535,7 +573,9 @@
         "global_rigor": 0.4,
         "module_precision": 0.58
       },
-      "basis": "AA v4.3.2 High 46.3 / xHigh 46.4, GDPval 60.3%, AA-Briefcase 55.0%, Terminal-Bench 37.6%, Bug Hunt 19.3-29.0/105; text-only CLI."
+      "basis": "AA v4.3.2 High 46.3 / xHigh 46.4, GDPval 60.3%, AA-Briefcase 55.0%, Terminal-Bench 37.6%, Bug Hunt 19.3-29.0/105; text-only CLI.",
+      "responsiveness": 0.201,
+      "responsiveness_basis": "artificial_analysis (Grok 4.7 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 14.52s->0.744 (70.83 tok/s, ttft 8.87s); high: 36.78s->0.201 (71.2 tok/s, ttft 31.16s); xhigh: 60.69s->0.000 (71.15 tok/s, ttft 55.07s)]; base@high=36.78s -> responsiveness=0.201"
     },
     "gemini-3.8-flash-high": {
       "usd_per_hour": 0.5,
@@ -555,7 +595,9 @@
         "global_rigor": 0.35,
         "module_precision": 0.65
       },
-      "basis": "AA v4.3.2 Low 33.5 / Med 39.8 / High 40.9, LCR 81.3%, MMMU-Pro 85.6%, Bug Hunt 18.0/105 (81.8% prec); high-quota Antigravity volume sink for routine tasks."
+      "basis": "AA v4.3.2 Low 33.5 / Med 39.8 / High 40.9, LCR 81.3%, MMMU-Pro 85.6%, Bug Hunt 18.0/105 (81.8% prec); high-quota Antigravity volume sink for routine tasks.",
+      "responsiveness": 0.486,
+      "responsiveness_basis": "artificial_analysis (Gemini 3.8 Flash (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 7.64s->0.911 (72.94 tok/s, ttft 2.16s); medium: 11.68s->0.813 (120.41 tok/s, ttft 8.36s); high: 25.09s->0.486 (114.54 tok/s, ttft 21.6s)]; base@high=25.09s -> responsiveness=0.486"
     },
     "grok-bot": {
       "tier": 4.6,
@@ -577,7 +619,10 @@
         "global_rigor": 0.98,
         "module_precision": 0.92
       },
-      "basis": "Synthetic routing alignment to claude-opus-5-5: same tier, capability vector and subjective vector. Scored at a fixed Medium effort: Grok Bot cannot set an effort and the upstream runs it at its own fixed level (user, 2026-11-04). Not a measured benchmark. Cost integer 2, unknown billing and no usd_per_hour are unchanged. Channel gates remain: visual admission is false, text_only, and excluded_when local_only. The Bot cannot see images, transfer files, or run on this machine."
+      "basis": "Synthetic routing alignment to claude-opus-5-5: same tier, capability vector and subjective vector. Scored at a fixed Medium effort: Grok Bot cannot set an effort and the upstream runs it at its own fixed level (user, 2026-11-04). Not a measured benchmark. Cost integer 2, unknown billing and no usd_per_hour are unchanged. Channel gates remain: visual admission is false, text_only, and excluded_when local_only. The Bot cannot see images, transfer files, or run on this machine.",
+      "responsiveness": "not_applicable",
+      "responsiveness_status": "not_applicable",
+      "responsiveness_basis": "not_applicable (2026-11-06): special web/packet channel outside standard token-stream observe-act loops; excluded on realtime_loop tasks. Special web/agent channel (grok-bot); token generation speed and API TTFT are not applicable."
     },
     "dot": {
       "tier": 4.2,
@@ -597,7 +642,10 @@
         "global_rigor": 0.82,
         "module_precision": 0.84
       },
-      "basis": "OpenAI Dot remote worker via dot2api; GPT-6 Astra class text/code/exploration intelligence without local vision or GUI."
+      "basis": "OpenAI Dot remote worker via dot2api; GPT-6 Astra class text/code/exploration intelligence without local vision or GUI.",
+      "responsiveness": "not_applicable",
+      "responsiveness_status": "not_applicable",
+      "responsiveness_basis": "not_applicable (2026-11-06): special web/packet channel outside standard token-stream observe-act loops; excluded on realtime_loop tasks. Special web/agent channel (dot); token generation speed and API TTFT are not applicable."
     },
     "gpt-6-pro": {
       "tier": 5.0,
@@ -621,7 +669,9 @@
         "global_rigor": 0.96,
         "module_precision": 0.9
       },
-      "basis": "ChatGPT Pro web bridge advisor; ceiling anchor across reasoning (1.00) and anti_hallucination (0.95)."
+      "basis": "ChatGPT Pro web bridge advisor; ceiling anchor across reasoning (1.00) and anti_hallucination (0.95).",
+      "responsiveness_status": "missing",
+      "responsiveness_basis": "missing (2026-11-06): no public speed measurement in Artificial Analysis or OpenRouter; routes with conservative default (0.52). Not found as a standalone model in Artificial Analysis (/leaderboards/models, /leaderboards/providers, 726-model catalog) or OpenRouter (/api/v1/models). In accounts.json, gpt-6-pro is an advisor_only entry representing the ChatGPT Pro web bridge advisor. (Note: OpenRouter lists per-family API Pro endpoints such as openai/gpt-6-astra-pro, openai/gpt-6.1-sol-pro, openai/gpt-6-sol-pro, and openai/gpt-6-luna-pro, but no unified gpt-6-pro speed benchmark exists; marked missing without estimation.)"
     },
     "claude-haiku-5-5": {
       "tier": 2.94,
@@ -641,7 +691,9 @@
         "global_rigor": 0.53,
         "module_precision": 0.67
       },
-      "basis": "LMArena: WebDev 2026-10-28 Claude Haiku 5.5 (High) 1589 [1579,1599]; Agent 2026-11-02 Claude Haiku 5.5 (High) score 0.007 [-0.004,0.017]; Text hard prompts (style control) 2026-10-28 Claude Haiku 5.5 (High) 1452 [1443,1462]; Text (style control) 2026-10-28 Claude Haiku 5.5 (High) 1425 [1417,1432]. tier 2.94 = mean of the per-board fits {'webdev': 3.04, 'agent': 2.83}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Haiku 5.5 (High) 1589 [1579,1599]; Agent 2026-11-02 Claude Haiku 5.5 (High) score 0.007 [-0.004,0.017]; Text hard prompts (style control) 2026-10-28 Claude Haiku 5.5 (High) 1452 [1443,1462]; Text (style control) 2026-10-28 Claude Haiku 5.5 (High) 1425 [1417,1432]. tier 2.94 = mean of the per-board fits {'webdev': 3.04, 'agent': 2.83}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.439,
+      "responsiveness_basis": "artificial_analysis (Claude Haiku 5.5 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 11.22s->0.824 (215.89 tok/s, ttft 9.37s); medium: 13.28s->0.774 (217.81 tok/s, ttft 11.44s); high: 27.00s->0.439 (219.07 tok/s, ttft 25.17s); xhigh: 57.04s->0.000 (233.8 tok/s, ttft 55.33s); max: 183.63s->0.000 (235.64 tok/s, ttft 181.93s)]; base@high=27.00s -> responsiveness=0.439"
     },
     "gpt-6.1-terra": {
       "fast_capable": true,
@@ -663,7 +715,9 @@
         "module_precision": 0.88
       },
       "basis": "LMArena: WebDev 2026-10-28 GPT-6.1 Terra (Max) 1673 [1657,1688]; Agent 2026-11-02 GPT-6.1 Terra (Max) score 0.102 [0.090,0.113]. tier 3.51 = mean of the per-board fits {'webdev': 3.46, 'agent': 3.56}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 3.2 = 3.51 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': 0.31, 'agent': 0.31}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98).",
-      "context_window": 500000
+      "context_window": 500000,
+      "responsiveness": 0.65,
+      "responsiveness_basis": "artificial_analysis (GPT-6.1 Terra (High), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 7.38s->0.918 (70.42 tok/s, ttft 1.7s); low: 8.09s->0.900 (69 tok/s, ttft 2.29s); medium: 10.72s->0.836 (69.83 tok/s, ttft 4.99s); high: 18.34s->0.650 (70.15 tok/s, ttft 12.64s); xhigh: 43.47s->0.037 (71.14 tok/s, ttft 37.85s); max: 187.79s->0.000 (73.05 tok/s, ttft 182.31s)]; base@high=18.34s -> responsiveness=0.650"
     },
     "gpt-6-sol": {
       "fast_capable": true,
@@ -685,7 +739,9 @@
         "module_precision": 0.92
       },
       "basis": "LMArena: WebDev 2026-10-28 GPT-6 Sol (Max) 1678 [1669,1688]; Agent 2026-11-02 GPT-6 Sol (Max) score 0.069 [0.054,0.085]; Vision 2026-10-19 GPT-6 Sol (Max) 1240 [1229,1251]; Text hard prompts (style control) 2026-10-28 GPT-6 Sol (Max) 1484 [1477,1491]. tier 3.48 = mean of the per-board fits {'webdev': 3.47, 'agent': 3.49}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
-      "context_window": 272000
+      "context_window": 272000,
+      "responsiveness": 0.733,
+      "responsiveness_basis": "artificial_analysis (GPT-6 Sol (High), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 4.95s->0.977 (106.92 tok/s, ttft 1.21s); low: 6.32s->0.943 (91.53 tok/s, ttft 1.95s); high: 14.94s->0.733 (107.33 tok/s, ttft 11.21s); xhigh: 26.82s->0.444 (112.47 tok/s, ttft 23.26s); max: 70.21s->0.000 (111.12 tok/s, ttft 66.61s)]; base@high=14.94s -> responsiveness=0.733"
     },
     "gpt-6-luna": {
       "fast_capable": true,
@@ -707,7 +763,9 @@
         "module_precision": 0.68
       },
       "basis": "LMArena: WebDev 2026-10-28 GPT-6 Luna (Max) 1579 [1574,1585]; Agent 2026-11-02 GPT-6 Luna (Max) score 0.019 [0.015,0.023]; Vision 2026-10-19 GPT-6 Luna (Max) 1216 [1205,1227]; Text hard prompts (style control) 2026-10-28 GPT-6 Luna (Max) 1464 [1459,1468]; Text (style control) 2026-10-28 GPT-6 Luna (Max) 1441 [1437,1445]. tier 2.96 = mean of the per-board fits {'webdev': 2.97, 'agent': 2.94}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 2.61 = 2.96 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': 0.35, 'agent': 0.35}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98).",
-      "context_window": 272000
+      "context_window": 272000,
+      "responsiveness": 0.664,
+      "responsiveness_basis": "artificial_analysis (GPT-6 Luna (High), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 5.67s->0.959 (87.97 tok/s, ttft 1.12s); low: 7.04s->0.926 (89.9 tok/s, ttft 2.59s); medium: 13.14s->0.777 (91.19 tok/s, ttft 8.75s); high: 17.79s->0.664 (93.56 tok/s, ttft 13.51s); xhigh: 29.65s->0.374 (95.12 tok/s, ttft 25.44s); max: 105.41s->0.000 (100.64 tok/s, ttft 101.44s)]; base@high=17.79s -> responsiveness=0.664"
     },
     "gpt-5.6-sol": {
       "tier": 3.34,
@@ -728,7 +786,9 @@
         "module_precision": 0.88
       },
       "basis": "LMArena: WebDev 2026-10-28 GPT-5.6 Sol (xHigh, Codex Harness) 1616 [1610,1622]; Agent 2026-11-02 GPT-5.6 Sol (xHigh) score 0.046 [0.035,0.056]; Vision 2026-10-19 GPT-5.6 Sol (xHigh) 1281 [1273,1288]; Text hard prompts (style control) 2026-10-28 GPT-5.6 Sol (xHigh) 1511 [1506,1516]. tier 3.34 = mean of the per-board fits {'webdev': 3.24, 'agent': 3.44}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
-      "context_window": 272000
+      "context_window": 272000,
+      "responsiveness": 0.663,
+      "responsiveness_basis": "artificial_analysis (GPT-5.6 Sol (High), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 5.54s->0.962 (101.93 tok/s, ttft 1.62s); low: 7.53s->0.914 (90.41 tok/s, ttft 3.11s); medium: 10.46s->0.842 (95.13 tok/s, ttft 6.26s); high: 17.81s->0.663 (102.89 tok/s, ttft 13.92s); xhigh: 31.59s->0.327 (106.43 tok/s, ttft 27.83s); max: 73.51s->0.000 (101.42 tok/s, ttft 69.57s)]; base@high=17.81s -> responsiveness=0.663"
     },
     "gpt-5.6-terra": {
       "tier": 2.59,
@@ -749,7 +809,9 @@
         "module_precision": 0.83
       },
       "basis": "LMArena: WebDev 2026-10-28 GPT-5.6 Terra (xHigh, Codex Harness) 1520 [1514,1526]; Agent 2026-11-02 GPT-5.6 Terra (xHigh) score -0.015 [-0.023,-0.007]; Vision 2026-10-19 GPT-5.6 Terra (xHigh) 1271 [1264,1278]; Text hard prompts (style control) 2026-10-28 GPT-5.6 Terra (xHigh) 1490 [1485,1494]. tier 2.59 = mean of the per-board fits {'webdev': 2.55, 'agent': 2.63}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
-      "context_window": 272000
+      "context_window": 272000,
+      "responsiveness": 0.737,
+      "responsiveness_basis": "artificial_analysis (GPT-5.6 Terra (High), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 5.41s->0.966 (96.2 tok/s, ttft 1.25s); low: 8.07s->0.901 (86.36 tok/s, ttft 3.44s); medium: 7.27s->0.920 (93.54 tok/s, ttft 2.99s); high: 14.78s->0.737 (96.92 tok/s, ttft 10.65s); xhigh: 29.96s->0.367 (100.87 tok/s, ttft 25.99s); max: 100.46s->0.000 (100.11 tok/s, ttft 96.46s)]; base@high=14.78s -> responsiveness=0.737"
     },
     "gpt-5.6-luna": {
       "tier": 2.55,
@@ -770,7 +832,9 @@
         "module_precision": 0.65
       },
       "basis": "LMArena: WebDev 2026-10-28 GPT-5.6 Luna (xHigh, Codex Harness) 1519 [1512,1525]; Vision 2026-10-19 GPT-5.6 Luna (xHigh) 1257 [1250,1265]; Text hard prompts (style control) 2026-10-28 GPT-5.6 Luna (xHigh) 1475 [1470,1480]. tier 2.55 = mean of the per-board fits {'webdev': 2.55}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
-      "context_window": 272000
+      "context_window": 272000,
+      "responsiveness": 0.637,
+      "responsiveness_basis": "artificial_analysis (GPT-5.6 Luna (High), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 5.52s->0.963 (85.31 tok/s, ttft 0.83s); low: 7.29s->0.920 (95.5 tok/s, ttft 3.1s); medium: 8.43s->0.892 (90.4 tok/s, ttft 4.01s); high: 18.90s->0.637 (92.59 tok/s, ttft 14.58s); xhigh: 40.38s->0.113 (102.51 tok/s, ttft 36.48s); max: 78.26s->0.000 (93.58 tok/s, ttft 73.99s)]; base@high=18.90s -> responsiveness=0.637"
     },
     "grok-4.7-build-fast": {
       "tier": 3.4,
@@ -790,7 +854,9 @@
         "global_rigor": 0.45,
         "module_precision": 0.6
       },
-      "basis": "Grok 4.7 on faster serving, available in Grok Build and Cursor (xAI launch coverage, 2026-09-21); no board lists it separately. tier 3.4 = the measured grok-4.7 row (calibration/tiers.py SAME_AS)."
+      "basis": "Grok 4.7 on faster serving, available in Grok Build and Cursor (xAI launch coverage, 2026-09-21); no board lists it separately. tier 3.4 = the measured grok-4.7 row (calibration/tiers.py SAME_AS).",
+      "responsiveness_status": "missing",
+      "responsiveness_basis": "missing (2026-11-06): no public speed measurement in Artificial Analysis or OpenRouter; routes with conservative default (0.52). Not listed separately in Artificial Analysis (/leaderboards/models, /leaderboards/providers, 726-model catalog), OpenRouter (/api/v1/models, x-ai/grok-4.7 endpoints), LMArena, or vals.ai. Represents xAI's faster serving tier for Grok 4.7 in Grok Build and Cursor (accounts.json calibrates its capability tier as SAME_AS grok-4.7). On OpenRouter x-ai/grok-4.7, the xai/priority endpoint has only n=3 requests (p50_throughput=91.0 tok/s, p50_latency=0.702s); marked missing per no-estimation rule."
     },
     "deepseek-v4-pro": {
       "tier": 2.86,
@@ -810,7 +876,9 @@
         "global_rigor": 0.74,
         "module_precision": 0.84
       },
-      "basis": "LMArena: WebDev 2026-10-28 DeepSeek-V4-Pro (High, 20260813) 1582 [1572,1591]; Agent 2026-11-02 DeepSeek-V4-Pro (High, 20260813) score -0.003 [-0.020,0.014]; Text hard prompts (style control) 2026-10-28 DeepSeek-V4-Pro (High, 20260813) 1483 [1475,1491]. tier 2.86 = mean of the per-board fits {'webdev': 2.99, 'agent': 2.74}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 DeepSeek-V4-Pro (High, 20260813) 1582 [1572,1591]; Agent 2026-11-02 DeepSeek-V4-Pro (High, 20260813) score -0.003 [-0.020,0.014]; Text hard prompts (style control) 2026-10-28 DeepSeek-V4-Pro (High, 20260813) 1483 [1475,1491]. tier 2.86 = mean of the per-board fits {'webdev': 2.99, 'agent': 2.74}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (DeepSeek V4 Pro 0813 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 7.61s->0.912 (79.24 tok/s, ttft 2.56s); max: 89.18s->0.000 (70.27 tok/s, ttft 83.49s)]; base@max=89.18s -> responsiveness=0.000"
     },
     "glm-5.3": {
       "tier": 3.08,
@@ -830,7 +898,9 @@
         "global_rigor": 0.72,
         "module_precision": 0.8
       },
-      "basis": "LMArena: WebDev 2026-10-28 GLM-5.3 (Max) 1623 [1616,1630]; Agent 2026-11-02 GLM-5.3 (Max) score 0.012 [0.004,0.020]; Text hard prompts (style control) 2026-10-28 GLM-5.3 (Max) 1505 [1499,1511]. tier 3.08 = mean of the per-board fits {'webdev': 3.29, 'agent': 2.87}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 GLM-5.3 (Max) 1623 [1616,1630]; Agent 2026-11-02 GLM-5.3 (Max) score 0.012 [0.004,0.020]; Text hard prompts (style control) 2026-10-28 GLM-5.3 (Max) 1505 [1499,1511]. tier 3.08 = mean of the per-board fits {'webdev': 3.29, 'agent': 2.87}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (GLM-5.3 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 19.84s->0.614 (50.61 tok/s, ttft 11.94s); max: 108.00s->0.000 (63.25 tok/s, ttft 101.68s)]; base@max=108.00s -> responsiveness=0.000"
     },
     "glm-5.3-flash-free": {
       "tier": 2.85,
@@ -850,7 +920,9 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
-      "basis": "LMArena: WebDev 2026-10-28 GLM-5.3-Flash 1607 [1600,1613]; Agent 2026-11-02 GLM-5.3-Flash score -0.025 [-0.032,-0.018]; Vision 2026-10-19 GLM-5.3-Flash 1294 [1288,1300]; Text hard prompts (style control) 2026-10-28 GLM-5.3-Flash 1502 [1496,1507]. tier 2.85 = mean of the per-board fits {'webdev': 3.17, 'agent': 2.54}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 GLM-5.3-Flash 1607 [1600,1613]; Agent 2026-11-02 GLM-5.3-Flash score -0.025 [-0.032,-0.018]; Vision 2026-10-19 GLM-5.3-Flash 1294 [1288,1300]; Text hard prompts (style control) 2026-10-28 GLM-5.3-Flash 1502 [1496,1507]. tier 2.85 = mean of the per-board fits {'webdev': 3.17, 'agent': 2.54}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (GLM-5.3-Flash, 2026-11-06): T_turn=ttft_s+400/output_tps [max: 106.08s->0.000 (56.1 tok/s, ttft 98.95s)]; base@max=106.08s -> responsiveness=0.000"
     },
     "qwen3-coder-next": {
       "tier": 1.71,
@@ -870,7 +942,9 @@
         "global_rigor": 0.67,
         "module_precision": 0.84
       },
-      "basis": "Secondary measurement, 2026-11-04: SWE-bench Verified 71.1 as reported in Qwen3-Coder-Next technical report (arXiv 2603.00729), Mini-SWE-agent -> tier 1.9 (r 0.84, n 65); Terminal-Bench 2.0 36.2 as reported in same report, Terminus 2 (json) -> tier 1.52 (r 0.89, n 42). tier 1.71 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py)."
+      "basis": "Secondary measurement, 2026-11-04: SWE-bench Verified 71.1 as reported in Qwen3-Coder-Next technical report (arXiv 2603.00729), Mini-SWE-agent -> tier 1.9 (r 0.84, n 65); Terminal-Bench 2.0 36.2 as reported in same report, Terminus 2 (json) -> tier 1.52 (r 0.89, n 42). tier 1.71 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).",
+      "responsiveness": 0.923,
+      "responsiveness_basis": "artificial_analysis (Qwen3 Coder Next, 2026-11-06): T_turn=ttft_s+400/output_tps [none: 7.15s->0.923 (69.72 tok/s, ttft 1.41s)]; base@none=7.15s -> responsiveness=0.923"
     },
     "qwen3.8-max": {
       "tier": 3.14,
@@ -890,7 +964,9 @@
         "global_rigor": 0.75,
         "module_precision": 0.8
       },
-      "basis": "LMArena: WebDev 2026-10-28 Qwen3.8-Max (0902) 1676 [1669,1683]; Agent 2026-11-02 Qwen3.8-Max score 0.004 [-0.002,0.011]; Vision 2026-10-19 Qwen3.8-Max 1313 [1305,1320]; Text hard prompts (style control) 2026-10-28 Qwen3.8-Max 1504 [1498,1509]. tier 3.14 = mean of the per-board fits {'webdev': 3.47, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Qwen3.8-Max (0902) 1676 [1669,1683]; Agent 2026-11-02 Qwen3.8-Max score 0.004 [-0.002,0.011]; Vision 2026-10-19 Qwen3.8-Max 1313 [1305,1320]; Text hard prompts (style control) 2026-10-28 Qwen3.8-Max 1504 [1498,1509]. tier 3.14 = mean of the per-board fits {'webdev': 3.47, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Qwen3.8 Max, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 149.25s->0.000 (49.8 tok/s, ttft 141.22s); xhigh: 150.33s->0.000 (46.44 tok/s, ttft 141.72s)]; base@default=149.25s -> responsiveness=0.000"
     },
     "kimi-k3.1-pro": {
       "tier": 3.47,
@@ -910,7 +986,9 @@
         "global_rigor": 0.76,
         "module_precision": 0.81
       },
-      "basis": "LMArena: WebDev 2026-10-28 Kimi K3.1 Pro (Max) 1695 [1682,1708]; Agent 2026-11-02 Kimi K3.1 Pro (Max) score 0.047 [0.034,0.060]. tier 3.47 = mean of the per-board fits {'webdev': 3.5, 'agent': 3.44}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Kimi K3.1 Pro (Max) 1695 [1682,1708]; Agent 2026-11-02 Kimi K3.1 Pro (Max) score 0.047 [0.034,0.060]. tier 3.47 = mean of the per-board fits {'webdev': 3.5, 'agent': 3.44}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Kimi K3.1 Pro, 2026-11-06): T_turn=ttft_s+400/output_tps [max: 180.66s->0.000 (33.33 tok/s, ttft 168.66s)]; base@max=180.66s -> responsiveness=0.000"
     },
     "kimi-k3": {
       "tier": 3.14,
@@ -930,7 +1008,9 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
-      "basis": "LMArena: WebDev 2026-10-28 Kimi K3 (Max) 1656 [1651,1662]; Agent 2026-11-02 Kimi K3 (Max) score 0.009 [0.003,0.014]; Text hard prompts (style control) 2026-10-28 Kimi K3 (Max) 1517 [1512,1522]. tier 3.14 = mean of the per-board fits {'webdev': 3.43, 'agent': 2.84}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Kimi K3 (Max) 1656 [1651,1662]; Agent 2026-11-02 Kimi K3 (Max) score 0.009 [0.003,0.014]; Text hard prompts (style control) 2026-10-28 Kimi K3 (Max) 1517 [1512,1522]. tier 3.14 = mean of the per-board fits {'webdev': 3.43, 'agent': 2.84}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Kimi K3 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 27.29s->0.432 (36.44 tok/s, ttft 16.31s); max: 97.60s->0.000 (39.03 tok/s, ttft 87.35s)]; base@max=97.60s -> responsiveness=0.000"
     },
     "minimax-m3": {
       "tier": 2.05,
@@ -950,7 +1030,9 @@
         "global_rigor": 0.7,
         "module_precision": 0.82
       },
-      "basis": "LMArena: WebDev 2026-10-28 MiniMax-M3 1483 [1478,1489]; Agent 2026-11-02 MiniMax-M3 score -0.104 [-0.116,-0.092]; Vision 2026-10-19 MiniMax-M3 1251 [1245,1257]; Text hard prompts (style control) 2026-10-28 MiniMax-M3 1462 [1457,1466]. tier 2.05 = mean of the per-board fits {'webdev': 2.29, 'agent': 1.81}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 MiniMax-M3 1483 [1478,1489]; Agent 2026-11-02 MiniMax-M3 score -0.104 [-0.116,-0.092]; Vision 2026-10-19 MiniMax-M3 1251 [1245,1257]; Text hard prompts (style control) 2026-10-28 MiniMax-M3 1462 [1457,1466]. tier 2.05 = mean of the per-board fits {'webdev': 2.29, 'agent': 1.81}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (MiniMax-M3, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 88.39s->0.000 (112.26 tok/s, ttft 84.83s)]; base@default=88.39s -> responsiveness=0.000"
     },
     "minimax-m3.1-flash": {
       "tier": 2.73,
@@ -970,7 +1052,9 @@
         "global_rigor": 0.62,
         "module_precision": 0.76
       },
-      "basis": "LMArena: WebDev 2026-10-28 MiniMax-M3.1-Flash 1582 [1571,1594]; Agent 2026-11-02 MiniMax-M3.1-Flash score -0.032 [-0.048,-0.017]. tier 2.73 = mean of the per-board fits {'webdev': 2.99, 'agent': 2.47}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 MiniMax-M3.1-Flash 1582 [1571,1594]; Agent 2026-11-02 MiniMax-M3.1-Flash score -0.032 [-0.048,-0.017]. tier 2.73 = mean of the per-board fits {'webdev': 2.99, 'agent': 2.47}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (MiniMax-M3.1-Flash, 2026-11-06): T_turn=ttft_s+400/output_tps [max: 78.02s->0.000 (124.06 tok/s, ttft 74.8s)]; base@max=78.02s -> responsiveness=0.000"
     },
     "doubao-seed-2-1-pro-260628": {
       "tier": 2.55,
@@ -990,7 +1074,9 @@
         "global_rigor": 0.68,
         "module_precision": 0.74
       },
-      "basis": "LMArena: WebDev 2026-10-28 Seed2.1 Pro Preview 1519 [1513,1525]. tier 2.55 = mean of the per-board fits {'webdev': 2.55}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Seed2.1 Pro Preview 1519 [1513,1525]. tier 2.55 = mean of the per-board fits {'webdev': 2.55}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness_status": "missing",
+      "responsiveness_basis": "missing (2026-11-06): no public speed measurement in Artificial Analysis or OpenRouter; routes with conservative default (0.52). Not found in Artificial Analysis (/leaderboards/models, /leaderboards/providers, 726-model catalog only has doubao-seed-code with null speed and seed-oss-36b-instruct) or OpenRouter (/api/v1/models only lists bytedance-seed/seed-2-1-turbo, seed-2.0-code, seed-2.0-lite, seed-2.0-mini, seed-1.6). In accounts.json this model is calibrated solely from LMArena WebDev ('Seed2.1 Pro Preview'), which does not publish tok/s or TTFT."
     },
     "mimo-v2.6-pro": {
       "tier": 3.15,
@@ -1010,7 +1096,9 @@
         "global_rigor": 0.67,
         "module_precision": 0.8
       },
-      "basis": "LMArena: WebDev 2026-10-28 MiMo-V2.6-Pro 1625 [1617,1634]; Agent 2026-11-02 MiMo-V2.6-Pro score 0.024 [0.015,0.033]; Vision 2026-10-19 MiMo-V2.6-Pro 1263 [1248,1278]; Text hard prompts (style control) 2026-10-28 MiMo-V2.6-Pro 1504 [1493,1516]. tier 3.15 = mean of the per-board fits {'webdev': 3.31, 'agent': 2.99}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 MiMo-V2.6-Pro 1625 [1617,1634]; Agent 2026-11-02 MiMo-V2.6-Pro score 0.024 [0.015,0.033]; Vision 2026-10-19 MiMo-V2.6-Pro 1263 [1248,1278]; Text hard prompts (style control) 2026-10-28 MiMo-V2.6-Pro 1504 [1493,1516]. tier 3.15 = mean of the per-board fits {'webdev': 3.31, 'agent': 2.99}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (MiMo-V2.6-Pro, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 52.81s->0.000 (45.19 tok/s, ttft 43.96s)]; base@default=52.81s -> responsiveness=0.000"
     },
     "mimo-v2.6-flash-free": {
       "tier": 3.1,
@@ -1030,7 +1118,9 @@
         "global_rigor": 0.42,
         "module_precision": 0.58
       },
-      "basis": "LMArena: WebDev 2026-10-28 MiMo-V2.6-Flash 1637 [1629,1646]; Agent 2026-11-02 MiMo-V2.6-Flash score 0.004 [-0.006,0.015]; Vision 2026-10-19 MiMo-V2.6-Flash 1256 [1245,1267]; Text hard prompts (style control) 2026-10-28 MiMo-V2.6-Flash 1475 [1468,1482]. tier 3.1 = mean of the per-board fits {'webdev': 3.4, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 MiMo-V2.6-Flash 1637 [1629,1646]; Agent 2026-11-02 MiMo-V2.6-Flash score 0.004 [-0.006,0.015]; Vision 2026-10-19 MiMo-V2.6-Flash 1256 [1245,1267]; Text hard prompts (style control) 2026-10-28 MiMo-V2.6-Flash 1475 [1468,1482]. tier 3.1 = mean of the per-board fits {'webdev': 3.4, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (MiMo-V2.6-Flash, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 65.15s->0.000 (34.8 tok/s, ttft 53.66s)]; base@default=65.15s -> responsiveness=0.000"
     },
     "nemotron-3-ultra-free": {
       "tier": 1.34,
@@ -1050,7 +1140,9 @@
         "global_rigor": 0.62,
         "module_precision": 0.71
       },
-      "basis": "LMArena: Agent 2026-11-02 Nemotron 3 Ultra score -0.156 [-0.188,-0.124]; Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3-Ultra-550B-A55B (NVFP4) 1444 [1436,1452]. tier 1.34 = mean of the per-board fits {'agent': 1.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: Agent 2026-11-02 Nemotron 3 Ultra score -0.156 [-0.188,-0.124]; Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3-Ultra-550B-A55B (NVFP4) 1444 [1436,1452]. tier 1.34 = mean of the per-board fits {'agent': 1.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.86,
+      "responsiveness_basis": "artificial_analysis (Nemotron 3 Ultra 550B A55B (Reasoning), 2026-11-06): T_turn=ttft_s+400/output_tps [default: 9.75s->0.860 (136.99 tok/s, ttft 6.83s)]; base@default=9.75s -> responsiveness=0.860"
     },
     "nemotron-3.5-super-vl-free": {
       "tier": 1.5,
@@ -1070,7 +1162,9 @@
         "global_rigor": 0.59,
         "module_precision": 0.66
       },
-      "basis": "LMArena: WebDev 2026-10-28 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1399 [1386,1412]; Agent 2026-11-02 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) score -0.159 [-0.169,-0.149]; Vision 2026-10-19 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1205 [1192,1218]; Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1431 [1419,1442]. tier 1.5 = mean of the per-board fits {'webdev': 1.7, 'agent': 1.31}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1399 [1386,1412]; Agent 2026-11-02 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) score -0.159 [-0.169,-0.149]; Vision 2026-10-19 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1205 [1192,1218]; Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1431 [1419,1442]. tier 1.5 = mean of the per-board fits {'webdev': 1.7, 'agent': 1.31}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.7,
+      "responsiveness_basis": "artificial_analysis (Nemotron 3.5 Super VL, 2026-11-06): T_turn=ttft_s+400/output_tps [high: 16.29s->0.700 (264.73 tok/s, ttft 14.78s)]; base@high=16.29s -> responsiveness=0.700"
     },
     "nemotron-3.5-lightning-free": {
       "tier": 1.29,
@@ -1090,7 +1184,9 @@
         "global_rigor": 0.42,
         "module_precision": 0.56
       },
-      "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4) 1375 [1368,1381]; Text (style control) 2026-10-28 NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4) 1353 [1348,1359]. Secondary measurement, 2026-11-04: SWE-bench Verified 52.8 (vals.ai/AA board) -> tier 1.01 (r 0.84, n 65); Artificial Analysis Intelligence Index 6 (vals.ai/AA board) -> tier 1.57 (r 0.94, n 31). tier 1.29 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py)."
+      "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4) 1375 [1368,1381]; Text (style control) 2026-10-28 NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4) 1353 [1348,1359]. Secondary measurement, 2026-11-04: SWE-bench Verified 52.8 (vals.ai/AA board) -> tier 1.01 (r 0.84, n 65); Artificial Analysis Intelligence Index 6 (vals.ai/AA board) -> tier 1.57 (r 0.94, n 31). tier 1.29 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).",
+      "responsiveness": 0.64,
+      "responsiveness_basis": "artificial_analysis (Nemotron 3.5 Lightning, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 18.77s->0.640 (244.94 tok/s, ttft 17.14s)]; base@default=18.77s -> responsiveness=0.640"
     },
     "mistral-large-4": {
       "tier": 2.45,
@@ -1110,7 +1206,9 @@
         "global_rigor": 0.71,
         "module_precision": 0.78
       },
-      "basis": "LMArena: WebDev 2026-10-28 Mistral Large 4 1544 [1534,1555]; Agent 2026-11-02 Mistral Large 4 score -0.064 [-0.085,-0.043]; Vision 2026-10-19 Mistral Large 4 1272 [1253,1291]; Text hard prompts (style control) 2026-10-28 Mistral Large 4 1453 [1446,1461]. tier 2.45 = mean of the per-board fits {'webdev': 2.72, 'agent': 2.18}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Mistral Large 4 1544 [1534,1555]; Agent 2026-11-02 Mistral Large 4 score -0.064 [-0.085,-0.043]; Vision 2026-10-19 Mistral Large 4 1272 [1253,1291]; Text hard prompts (style control) 2026-10-28 Mistral Large 4 1453 [1446,1461]. tier 2.45 = mean of the per-board fits {'webdev': 2.72, 'agent': 2.18}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.273,
+      "responsiveness_basis": "artificial_analysis (Mistral Large 4 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [medium: 19.73s->0.616 (104.5 tok/s, ttft 15.9s); high: 33.82s->0.273 (110.67 tok/s, ttft 30.21s)]; base@high=33.82s -> responsiveness=0.273"
     },
     "muse-wonder-1.0": {
       "tier": 3.21,
@@ -1130,7 +1228,9 @@
         "global_rigor": 0.73,
         "module_precision": 0.77
       },
-      "basis": "LMArena: WebDev 2026-10-28 Muse Wonder (Max) 1652 [1641,1663]; Agent 2026-11-02 Muse Wonder (Max) score 0.025 [0.011,0.039]; Text hard prompts (style control) 2026-10-28 Muse Wonder (Max) 1524 [1515,1533]. tier 3.21 = mean of the per-board fits {'webdev': 3.43, 'agent': 3.0}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Muse Wonder (Max) 1652 [1641,1663]; Agent 2026-11-02 Muse Wonder (Max) score 0.025 [0.011,0.039]; Text hard prompts (style control) 2026-10-28 Muse Wonder (Max) 1524 [1515,1533]. tier 3.21 = mean of the per-board fits {'webdev': 3.43, 'agent': 3.0}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.786,
+      "responsiveness_basis": "artificial_analysis (Muse Wonder (High), 2026-11-06): T_turn=ttft_s+400/output_tps [high: 12.77s->0.786 (126.13 tok/s, ttft 9.6s); max: 25.21s->0.483 (123.89 tok/s, ttft 21.98s)]; base@high=12.77s -> responsiveness=0.786"
     },
     "beam-free": {
       "tier": 2.15,
@@ -1150,7 +1250,9 @@
         "global_rigor": 0.45,
         "module_precision": 0.58
       },
-      "basis": "LMArena: WebDev 2026-10-28 Beam 1.0 501B A23B 1436 [1423,1449]; Agent 2026-11-02 Beam 1.0 501B A23B score -0.047 [-0.073,-0.021]; Text hard prompts (style control) 2026-10-28 Beam 1.0 501B A23B 1461 [1449,1473]. tier 2.15 = mean of the per-board fits {'webdev': 1.96, 'agent': 2.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Beam 1.0 501B A23B 1436 [1423,1449]; Agent 2026-11-02 Beam 1.0 501B A23B score -0.047 [-0.073,-0.021]; Text hard prompts (style control) 2026-10-28 Beam 1.0 501B A23B 1461 [1449,1473]. tier 2.15 = mean of the per-board fits {'webdev': 1.96, 'agent': 2.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.849,
+      "responsiveness_basis": "artificial_analysis (Beam 1.0, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 10.18s->0.849 (227.74 tok/s, ttft 8.42s)]; base@default=10.18s -> responsiveness=0.849"
     },
     "flint-40b-free": {
       "tier": 2.8,
@@ -1171,7 +1273,9 @@
         "module_precision": 0.54
       },
       "score_estimated": true,
-      "basis": "Recursive Flint (39.8B MoE, released 2026-10-21) reports only SWE-bench Pro v2 itself; no independent board lists it. tier = the unmeasured default (accounts.json unmeasured_models.generic), below the hard floor."
+      "basis": "Recursive Flint (39.8B MoE, released 2026-10-21) reports only SWE-bench Pro v2 itself; no independent board lists it. tier = the unmeasured default (accounts.json unmeasured_models.generic), below the hard floor.",
+      "responsiveness": 0.964,
+      "responsiveness_basis": "openrouter (Recursive | recursive/flint-v1.0-20261021:free (recursive/bf16, n=10548), 2026-11-06): T_turn=ttft_s+400/output_tps [default: 5.46s->0.964 (98.5 tok/s, ttft 1.399s)]; base@default=5.46s -> responsiveness=0.964; openrouter fallback (AA has no speed entry; p50_latency is first-chunk prefill latency without thinking time)"
     },
     "claude-haiku-4-5": {
       "tier": 1.21,
@@ -1191,7 +1295,9 @@
         "global_rigor": 0.5,
         "module_precision": 0.64
       },
-      "basis": "LMArena: WebDev 2026-10-28 Claude Haiku 4.5 (20251001) 1330 [1325,1335]; Text hard prompts (style control) 2026-10-28 Claude Haiku 4.5 (20251001) 1442 [1439,1445]. tier 1.21 = mean of the per-board fits {'webdev': 1.21}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Haiku 4.5 (20251001) 1330 [1325,1335]; Text hard prompts (style control) 2026-10-28 Claude Haiku 4.5 (20251001) 1442 [1439,1445]. tier 1.21 = mean of the per-board fits {'webdev': 1.21}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Claude 4.5 Haiku (Reasoning), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 4.92s->0.978 (97.06 tok/s, ttft 0.8s); default: 49.28s->0.000 (95.89 tok/s, ttft 45.11s)]; base@default=49.28s -> responsiveness=0.000"
     },
     "claude-opus-4-6": {
       "tier": 2.74,
@@ -1211,7 +1317,9 @@
         "global_rigor": 0.93,
         "module_precision": 0.88
       },
-      "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.6 (High) 1546 [1541,1552]; Vision 2026-10-19 Claude Opus 4.6 (High) 1316 [1309,1322]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.6 (High) 1531 [1527,1535]. tier 2.74 = mean of the per-board fits {'webdev': 2.74}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.6 (High) 1546 [1541,1552]; Vision 2026-10-19 Claude Opus 4.6 (High) 1316 [1309,1322]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.6 (High) 1531 [1527,1535]. tier 2.74 = mean of the per-board fits {'webdev': 2.74}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Claude Opus 4.6 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 10.04s->0.853 (52.33 tok/s, ttft 2.4s); max: 57.12s->0.000 (56.84 tok/s, ttft 50.08s)]; base@max=57.12s -> responsiveness=0.000"
     },
     "claude-sonnet-4-6": {
       "tier": 2.57,
@@ -1231,7 +1339,9 @@
         "global_rigor": 0.73,
         "module_precision": 0.76
       },
-      "basis": "LMArena: WebDev 2026-10-28 Claude Sonnet 4.6 1523 [1517,1528]; Vision 2026-10-19 Claude Sonnet 4.6 1283 [1277,1289]; Text hard prompts (style control) 2026-10-28 Claude Sonnet 4.6 1503 [1499,1507]. tier 2.57 = mean of the per-board fits {'webdev': 2.57}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Sonnet 4.6 1523 [1517,1528]; Vision 2026-10-19 Claude Sonnet 4.6 1283 [1277,1289]; Text hard prompts (style control) 2026-10-28 Claude Sonnet 4.6 1503 [1499,1507]. tier 2.57 = mean of the per-board fits {'webdev': 2.57}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Claude Sonnet 4.6 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 10.18s->0.849 (54.99 tok/s, ttft 2.91s); low: 9.16s->0.874 (56.03 tok/s, ttft 2.02s); max: 127.97s->0.000 (60.34 tok/s, ttft 121.34s)]; base@max=127.97s -> responsiveness=0.000"
     },
     "usd_basis": "Synthetic hourly cost calibration, pooled over efforts from a 14-day sample: Opus 5.5 $7.5 (131 h), Sonnet 5.5 $4.4 (54 h), Sol 6.1 $2.6 (396 h), Astra $22.6 (89 h). Cache reads and writes are priced separately. Fable uses Opus times the 2.5x list-price ratio. These retained test inputs are independent of plan labels and are not live price quotes.",
     "capabilities_basis": "6D vectors: benchmark-calibrated core rows retain their existing basis; newly discovered frontier rows use explicitly provisional routing priors, not measured benchmark scores. Visual/GUI zero for text-only catalog entries. Full catalog evidence and compatibility policy: model-capabilities.md.",
@@ -1255,7 +1365,9 @@
         "global_rigor": 0.68,
         "module_precision": 0.74
       },
-      "basis": "LMArena: WebDev 2026-10-28 GLM-5.2 (Max) 1606 [1600,1612]; Agent 2026-11-02 GLM-5.2 (Max) score 0.007 [-0.000,0.015]; Text hard prompts (style control) 2026-10-28 GLM-5.2 (Max) 1496 [1491,1501]. tier 3.0 = mean of the per-board fits {'webdev': 3.16, 'agent': 2.83}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page."
+      "basis": "LMArena: WebDev 2026-10-28 GLM-5.2 (Max) 1606 [1600,1612]; Agent 2026-11-02 GLM-5.2 (Max) score 0.007 [-0.000,0.015]; Text hard prompts (style control) 2026-10-28 GLM-5.2 (Max) 1496 [1491,1501]. tier 3.0 = mean of the per-board fits {'webdev': 3.16, 'agent': 2.83}; each board is mapped by piecewise-linear interpolation through the six anchor rows (Flash 3.8 3.0, Grok 4.7 3.4, GPT-6.1 Sol 3.6, Sonnet 5.5 3.9, Astra 4.2, Opus 5.5 4.6), pooling anchors a board orders against that scale (Agent: Astra/Sonnet within CI); outside the anchor range the Flash-Opus slope, floor 1.0. coding = anchor regression on WebDev (r=0.98); models and anchors at their best listed variant. Other capabilities and subjective stay routing priors (Arena hard-prompt r=0.47 and vision r=0.64 against the anchors). usd_per_hour is an estimate: no calibration sample or price page.",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (GLM-5.2 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 4.04s->0.999 (184.31 tok/s, ttft 1.87s); max: 51.35s->0.000 (85.06 tok/s, ttft 46.65s)]; base@max=51.35s -> responsiveness=0.000"
     },
     "gpt-oss-120b": {
       "tier": 1.0,
@@ -1275,7 +1387,9 @@
         "global_rigor": 0.5,
         "module_precision": 0.5
       },
-      "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 gpt-oss-120b 1362 [1356,1367]; Text (style control) 2026-10-28 gpt-oss-120b 1352 [1347,1356]. Secondary measurement, 2026-11-04: SWE-bench Verified 33.6 (vals.ai/AA board) -> tier 1.0 (r 0.84, n 65); Terminal-Bench 2.0 19.1 (vals.ai/AA board) -> tier 1.0 (r 0.89, n 42). tier 1.0 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py)."
+      "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 gpt-oss-120b 1362 [1356,1367]; Text (style control) 2026-10-28 gpt-oss-120b 1352 [1347,1356]. Secondary measurement, 2026-11-04: SWE-bench Verified 33.6 (vals.ai/AA board) -> tier 1.0 (r 0.84, n 65); Terminal-Bench 2.0 19.1 (vals.ai/AA board) -> tier 1.0 (r 0.89, n 42). tier 1.0 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).",
+      "responsiveness": 0.65,
+      "responsiveness_basis": "artificial_analysis (gpt-oss-120b (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 4.80s->0.981 (161.27 tok/s, ttft 2.32s); high: 18.33s->0.650 (151.27 tok/s, ttft 15.69s)]; base@high=18.33s -> responsiveness=0.650"
     },
     "gemini-3.1-flash-lite": {
       "usd_per_hour": 0.5,
@@ -1295,7 +1409,9 @@
         "global_rigor": 0.315,
         "module_precision": 0.585
       },
-      "basis": "LMArena: WebDev 2026-10-28 Gemini 3.1 Flash-Lite Preview 1256 [1249,1263]; Vision 2026-10-19 Gemini 3.1 Flash-Lite Preview 1240 [1234,1246]; Text hard prompts (style control) 2026-10-28 Gemini 3.1 Flash-Lite Preview 1445 [1441,1450]; Text (style control) 2026-10-28 Gemini 3.1 Flash-Lite Preview 1433 [1429,1437]. tier 1.0 = mean of the per-board fits {'webdev': 1.0}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Gemini 3.1 Flash-Lite Preview 1256 [1249,1263]; Vision 2026-10-19 Gemini 3.1 Flash-Lite Preview 1240 [1234,1246]; Text hard prompts (style control) 2026-10-28 Gemini 3.1 Flash-Lite Preview 1445 [1441,1450]; Text (style control) 2026-10-28 Gemini 3.1 Flash-Lite Preview 1433 [1429,1437]. tier 1.0 = mean of the per-board fits {'webdev': 1.0}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.721,
+      "responsiveness_basis": "artificial_analysis (Gemini 3.1 Flash-Lite, 2026-11-06): T_turn=ttft_s+400/output_tps [high: 15.43s->0.721 (336.04 tok/s, ttft 14.24s)]; base@high=15.43s -> responsiveness=0.721"
     },
     "kimi-k2.7-code": {
       "tier": 2.22,
@@ -1315,7 +1431,9 @@
         "global_rigor": 0.684,
         "module_precision": 0.729
       },
-      "basis": "LMArena: WebDev 2026-10-28 Kimi K2.7 Code 1474 [1464,1483]. tier 2.22 = mean of the per-board fits {'webdev': 2.22}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Kimi K2.7 Code 1474 [1464,1483]. tier 2.22 = mean of the per-board fits {'webdev': 2.22}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Kimi K2.7 Code, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 58.12s->0.000 (45.14 tok/s, ttft 49.26s)]; base@default=58.12s -> responsiveness=0.000"
     },
     "qwen3.6-plus": {
       "tier": 2.14,
@@ -1335,7 +1453,9 @@
         "global_rigor": 0.675,
         "module_precision": 0.72
       },
-      "basis": "LMArena: WebDev 2026-10-28 Qwen3.6-Plus 1462 [1456,1467]; Text hard prompts (style control) 2026-10-28 Qwen3.6-Plus 1467 [1462,1472]; Text (style control) 2026-10-28 Qwen3.6-Plus 1443 [1439,1447]. tier 2.14 = mean of the per-board fits {'webdev': 2.14}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Qwen3.6-Plus 1462 [1456,1467]; Text hard prompts (style control) 2026-10-28 Qwen3.6-Plus 1467 [1462,1472]; Text (style control) 2026-10-28 Qwen3.6-Plus 1443 [1439,1447]. tier 2.14 = mean of the per-board fits {'webdev': 2.14}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Qwen3.6 Plus, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 82.43s->0.000 (51.37 tok/s, ttft 74.64s)]; base@default=82.43s -> responsiveness=0.000"
     },
     "claude-opus-4-7": {
       "fast_capable": true,
@@ -1356,7 +1476,9 @@
         "global_rigor": 0.882,
         "module_precision": 0.828
       },
-      "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.7 (High) 1558 [1552,1563]; Vision 2026-10-19 Claude Opus 4.7 1317 [1310,1323]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.7 (High) 1525 [1521,1530]; Text (style control) 2026-10-28 Claude Opus 4.7 (High) 1501 [1497,1505]. tier 2.82 = mean of the per-board fits {'webdev': 2.82}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.7 (High) 1558 [1552,1563]; Vision 2026-10-19 Claude Opus 4.7 1317 [1310,1323]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.7 (High) 1525 [1521,1530]; Text (style control) 2026-10-28 Claude Opus 4.7 (High) 1501 [1497,1505]. tier 2.82 = mean of the per-board fits {'webdev': 2.82}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Claude Opus 4.7 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 6.92s->0.929 (76.15 tok/s, ttft 1.67s); max: 49.58s->0.000 (80.43 tok/s, ttft 44.61s)]; base@max=49.58s -> responsiveness=0.000"
     },
     "claude-opus-4-8": {
       "fast_capable": true,
@@ -1377,7 +1499,9 @@
         "global_rigor": 0.882,
         "module_precision": 0.828
       },
-      "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.8 (High) 1556 [1550,1562]; Vision 2026-10-19 Claude Opus 4.8 (High) 1294 [1288,1301]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.8 (High) 1513 [1509,1518]; Text (style control) 2026-10-28 Claude Opus 4.8 (High) 1482 [1478,1486]. tier 2.81 = mean of the per-board fits {'webdev': 2.81}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.8 (High) 1556 [1550,1562]; Vision 2026-10-19 Claude Opus 4.8 (High) 1294 [1288,1301]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.8 (High) 1513 [1509,1518]; Text (style control) 2026-10-28 Claude Opus 4.8 (High) 1482 [1478,1486]. tier 2.81 = mean of the per-board fits {'webdev': 2.81}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.051,
+      "responsiveness_basis": "artificial_analysis (Claude Opus 4.8 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [max: 42.91s->0.051 (82.13 tok/s, ttft 38.04s)]; base@max=42.91s -> responsiveness=0.051"
     },
     "grok-4.5": {
       "usd_per_hour": 1.5,
@@ -1397,7 +1521,9 @@
         "global_rigor": 0.36,
         "module_precision": 0.522
       },
-      "basis": "LMArena: WebDev 2026-10-28 Grok 4.5 1553 [1546,1560]; Vision 2026-10-19 Grok 4.5 1287 [1280,1294]; Text hard prompts (style control) 2026-10-28 Grok 4.5 1488 [1483,1493]; Text (style control) 2026-10-28 Grok 4.5 1465 [1461,1470]. tier 2.79 = mean of the per-board fits {'webdev': 2.79}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Grok 4.5 1553 [1546,1560]; Vision 2026-10-19 Grok 4.5 1287 [1280,1294]; Text hard prompts (style control) 2026-10-28 Grok 4.5 1488 [1483,1493]; Text (style control) 2026-10-28 Grok 4.5 1465 [1461,1470]. tier 2.79 = mean of the per-board fits {'webdev': 2.79}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.66,
+      "responsiveness_basis": "artificial_analysis (Grok 4.5 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [high: 17.96s->0.660 (70.58 tok/s, ttft 12.29s)]; base@high=17.96s -> responsiveness=0.660"
     },
     "grok-4.6": {
       "usd_per_hour": 1.5,
@@ -1417,7 +1543,9 @@
         "global_rigor": 0.36,
         "module_precision": 0.522
       },
-      "basis": "LMArena: WebDev 2026-10-28 Grok 4.6 (High) 1616 [1609,1623]; Agent 2026-11-02 Grok 4.6 (xHigh) score 0.003 [-0.008,0.015]; Vision 2026-10-19 Grok 4.6 (High) 1263 [1255,1271]; Text hard prompts (style control) 2026-10-28 Grok 4.6 (High) 1481 [1476,1486]; Text (style control) 2026-10-28 Grok 4.6 (High) 1455 [1451,1460]. tier 3.02 = mean of the per-board fits {'webdev': 3.24, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Grok 4.6 (High) 1616 [1609,1623]; Agent 2026-11-02 Grok 4.6 (xHigh) score 0.003 [-0.008,0.015]; Vision 2026-10-19 Grok 4.6 (High) 1263 [1255,1271]; Text hard prompts (style control) 2026-10-28 Grok 4.6 (High) 1481 [1476,1486]; Text (style control) 2026-10-28 Grok 4.6 (High) 1455 [1451,1460]. tier 3.02 = mean of the per-board fits {'webdev': 3.24, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.129,
+      "responsiveness_basis": "artificial_analysis (Grok 4.6 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 17.31s->0.675 (64.93 tok/s, ttft 11.15s); medium: 30.71s->0.348 (75.46 tok/s, ttft 25.41s); high: 39.73s->0.129 (72.35 tok/s, ttft 34.2s); xhigh: 39.06s->0.145 (70.4 tok/s, ttft 33.38s)]; base@high=39.73s -> responsiveness=0.129"
     },
     "gemini-3.1-pro-preview": {
       "usd_per_hour": 4.0,
@@ -1442,7 +1570,9 @@
         "global_rigor": 0.72,
         "module_precision": 0.72
       },
-      "basis": "LMArena: WebDev 2026-10-28 Gemini 3.1 Pro Preview 1447 [1442,1452]; Agent 2026-11-02 Gemini 3.1 Pro Preview score -0.046 [-0.060,-0.032]; Vision 2026-10-19 Gemini 3.1 Pro Preview 1296 [1291,1301]; Text hard prompts (style control) 2026-10-28 Gemini 3.1 Pro Preview 1508 [1504,1511]; Text (style control) 2026-10-28 Gemini 3.1 Pro Preview 1487 [1484,1490]. tier 2.18 = mean of the per-board fits {'webdev': 2.03, 'agent': 2.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Gemini 3.1 Pro Preview 1447 [1442,1452]; Agent 2026-11-02 Gemini 3.1 Pro Preview score -0.046 [-0.060,-0.032]; Vision 2026-10-19 Gemini 3.1 Pro Preview 1296 [1291,1301]; Text hard prompts (style control) 2026-10-28 Gemini 3.1 Pro Preview 1508 [1504,1511]; Text (style control) 2026-10-28 Gemini 3.1 Pro Preview 1487 [1484,1490]. tier 2.18 = mean of the per-board fits {'webdev': 2.03, 'agent': 2.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.573,
+      "responsiveness_basis": "artificial_analysis (Gemini 3.1 Pro Preview, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 21.51s->0.573 (121.56 tok/s, ttft 18.22s)]; base@default=21.51s -> responsiveness=0.573"
     },
     "gemini-3.7-flash": {
       "usd_per_hour": 0.5,
@@ -1462,7 +1592,9 @@
         "global_rigor": 0.315,
         "module_precision": 0.585
       },
-      "basis": "LMArena: WebDev 2026-10-28 Gemini 3.7 Flash (High) 1590 [1583,1596]; Agent 2026-11-02 Gemini 3.7 Flash (High) score -0.016 [-0.025,-0.008]; Vision 2026-10-19 Gemini 3.7 Flash (High) 1314 [1305,1323]; Text hard prompts (style control) 2026-10-28 Gemini 3.7 Flash (High) 1509 [1504,1515]; Text (style control) 2026-10-28 Gemini 3.7 Flash (High) 1490 [1485,1494]. tier 2.83 = mean of the per-board fits {'webdev': 3.05, 'agent': 2.62}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Gemini 3.7 Flash (High) 1590 [1583,1596]; Agent 2026-11-02 Gemini 3.7 Flash (High) score -0.016 [-0.025,-0.008]; Vision 2026-10-19 Gemini 3.7 Flash (High) 1314 [1305,1323]; Text hard prompts (style control) 2026-10-28 Gemini 3.7 Flash (High) 1509 [1504,1515]; Text (style control) 2026-10-28 Gemini 3.7 Flash (High) 1490 [1485,1494]. tier 2.83 = mean of the per-board fits {'webdev': 3.05, 'agent': 2.62}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.935,
+      "responsiveness_basis": "openrouter (Google | google/gemini-3.7-flash-20260813 (google-vertex/global, n=55848), 2026-11-06): T_turn=ttft_s+400/output_tps [default: 6.68s->0.935 (90 tok/s, ttft 2.236s)]; base@default=6.68s -> responsiveness=0.935; openrouter fallback (AA has no speed entry; p50_latency is first-chunk prefill latency without thinking time)"
     },
     "kimi-k2.6": {
       "tier": 2.48,
@@ -1482,7 +1614,9 @@
         "global_rigor": 0.684,
         "module_precision": 0.729
       },
-      "basis": "LMArena: WebDev 2026-10-28 Kimi K2.6 1509 [1502,1516]; Vision 2026-10-19 Kimi K2.6 1282 [1275,1289]; Text hard prompts (style control) 2026-10-28 Kimi K2.6 1486 [1480,1491]; Text (style control) 2026-10-28 Kimi K2.6 1461 [1457,1465]. tier 2.48 = mean of the per-board fits {'webdev': 2.48}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Kimi K2.6 1509 [1502,1516]; Vision 2026-10-19 Kimi K2.6 1282 [1275,1289]; Text hard prompts (style control) 2026-10-28 Kimi K2.6 1486 [1480,1491]; Text (style control) 2026-10-28 Kimi K2.6 1461 [1457,1465]. tier 2.48 = mean of the per-board fits {'webdev': 2.48}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Kimi K2.6 (Reasoning), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 17.04s->0.682 (39.81 tok/s, ttft 6.99s); default: 83.11s->0.000 (41.93 tok/s, ttft 73.57s)]; base@default=83.11s -> responsiveness=0.000"
     },
     "qwen3-max": {
       "tier": 1.15,
@@ -1502,7 +1636,9 @@
         "global_rigor": 0.675,
         "module_precision": 0.72
       },
-      "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 Qwen3-Max (2025-09-23) 1446 [1438,1455]; Text (style control) 2026-10-28 Qwen3-Max (2025-09-23) 1423 [1417,1430]. Secondary measurement, 2026-11-04: Terminal-Bench 2.0 24.72 (vals.ai/AA board) -> tier 1.15 (r 0.89, n 42). tier 1.15 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py)."
+      "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 Qwen3-Max (2025-09-23) 1446 [1438,1455]; Text (style control) 2026-10-28 Qwen3-Max (2025-09-23) 1423 [1417,1430]. Secondary measurement, 2026-11-04: Terminal-Bench 2.0 24.72 (vals.ai/AA board) -> tier 1.15 (r 0.89, n 42). tier 1.15 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).",
+      "responsiveness_status": "missing",
+      "responsiveness_basis": "missing (2026-11-06): no public speed measurement in Artificial Analysis or OpenRouter; routes with conservative default (0.52). Checked Artificial Analysis (slug 'qwen3-max' and 'qwen3-max-thinking' exist in the 726-model catalog with releaseDate 2025-09-23, but headline.outputSpeed, timeToFirstToken, and timeToFirstAnswerToken are all null), OpenRouter (/api/v1/models only lists qwen/qwen3.7-max and qwen/qwen3.8-max-0902), LMArena, and vals.ai. No public tok/s or TTFT measurement available."
     },
     "qwen3.7-max": {
       "tier": 2.33,
@@ -1522,7 +1658,9 @@
         "global_rigor": 0.675,
         "module_precision": 0.72
       },
-      "basis": "LMArena: WebDev 2026-10-28 Qwen3.7-Max (20260517) 1515 [1508,1523]; Agent 2026-11-02 Qwen3.7-Max score -0.067 [-0.079,-0.055]. tier 2.33 = mean of the per-board fits {'webdev': 2.52, 'agent': 2.15}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Qwen3.7-Max (20260517) 1515 [1508,1523]; Agent 2026-11-02 Qwen3.7-Max score -0.067 [-0.079,-0.055]. tier 2.33 = mean of the per-board fits {'webdev': 2.52, 'agent': 2.15}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.673,
+      "responsiveness_basis": "artificial_analysis (Qwen3.7 Max, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 17.41s->0.673 (164.6 tok/s, ttft 14.98s)]; base@default=17.41s -> responsiveness=0.673"
     },
     "qwen3-flash-2025-07-28": {
       "tier": 2.8,
@@ -1544,7 +1682,9 @@
       },
       "score_estimated": true,
       "context_window": 1000000,
-      "basis": "Qwen3 Flash, snapshot 2025-07-28: Alibaba Model Studio documents the `qwen-flash` model name as functionally equivalent to qwen-flash-2025-07-28 (text in, text out, 1M context; help.aliyun.com/en/model-studio/qwen-flash, read 2026-11-04). No LMArena, vals.ai or Artificial Analysis board lists it, so tier = the unmeasured default (unmeasured_models.generic). usd_per_hour is an estimate."
+      "basis": "Qwen3 Flash, snapshot 2025-07-28: Alibaba Model Studio documents the `qwen-flash` model name as functionally equivalent to qwen-flash-2025-07-28 (text in, text out, 1M context; help.aliyun.com/en/model-studio/qwen-flash, read 2026-11-04). No LMArena, vals.ai or Artificial Analysis board lists it, so tier = the unmeasured default (unmeasured_models.generic). usd_per_hour is an estimate.",
+      "responsiveness_status": "missing",
+      "responsiveness_basis": "missing (2026-11-06): no public speed measurement in Artificial Analysis or OpenRouter; routes with conservative default (0.52). Checked Artificial Analysis (/leaderboards/models, /leaderboards/providers, 726-model catalog), OpenRouter (/api/v1/models), LMArena, and vals.ai. Alibaba Model Studio snapshot (qwen-flash-2025-07-28) is not benchmarked on any public speed leaderboard."
     },
     "gemini-4-carbon": {
       "usd_per_hour": 4.0,
@@ -1569,7 +1709,9 @@
         "global_rigor": 0.72,
         "module_precision": 0.72
       },
-      "basis": "LMArena: WebDev 2026-10-28 Gemini 4 Carbon (High) 1768 [1753,1783]; Agent 2026-11-02 Gemini 4 Carbon (High) score 0.166 [0.158,0.174]; Text hard prompts (style control) 2026-10-28 Gemini 4 Carbon (High) 1548 [1536,1560]; Text (style control) 2026-10-28 Gemini 4 Carbon (High) 1528 [1518,1537]. tier 4.06 = mean of the per-board fits {'webdev': 3.88, 'agent': 4.25}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 4.35 = 4.06 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': -0.24, 'agent': -0.35}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98)."
+      "basis": "LMArena: WebDev 2026-10-28 Gemini 4 Carbon (High) 1768 [1753,1783]; Agent 2026-11-02 Gemini 4 Carbon (High) score 0.166 [0.158,0.174]; Text hard prompts (style control) 2026-10-28 Gemini 4 Carbon (High) 1548 [1536,1560]; Text (style control) 2026-10-28 Gemini 4 Carbon (High) 1528 [1518,1537]. tier 4.06 = mean of the per-board fits {'webdev': 3.88, 'agent': 4.25}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 4.35 = 4.06 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': -0.24, 'agent': -0.35}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98).",
+      "responsiveness": 0.0,
+      "responsiveness_basis": "artificial_analysis (Gemini 4 Carbon (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 18.62s->0.643 (39.16 tok/s, ttft 8.41s); medium: 37.07s->0.193 (72.04 tok/s, ttft 31.52s); high: 75.20s->0.000 (67.92 tok/s, ttft 69.31s)]; base@high=75.20s -> responsiveness=0.000"
     }
   },
   "dispatch_efforts": {
@@ -1694,7 +1836,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.853,
+        "max": 0.0
+      }
     },
     "claude-sonnet-4-6": {
       "ability": {
@@ -1705,7 +1851,12 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.849,
+        "low": 0.874,
+        "max": 0.0
+      }
     },
     "claude-haiku-4-5": {
       "ability": {
@@ -1716,7 +1867,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.978,
+        "default": 0.0
+      }
     },
     "basis": "Per-model effort curves. `ability` is the change in tier from High (or `ability_mult`: tier multiplier per effort); `burn` is the quota multiplier (0.7 = High; or `burn_mult`: multiplier relative to High). Effective ability = model tier x its effort coefficient; the task side is depth x property difficulty (scoring.demand), never a fixed depth-to-effort table. Efforts a model has no entry for fall back to the policy-wide `effort_ability` and `effort_burn`. `ability` is the Artificial Analysis Intelligence Index change from High at each effort times 0.0495 tier per index point (the AA-to-tier slope over the models with an LMArena tier; the 2026-10-09 curves used 0.1, which doubled every effort gain and loss); `burn` is 0.7 times the Artificial Analysis cost per task relative to High. Each entry names its `calibration_source`; recalibrate an entry by replacing its numbers and source together. Grok has no medium or max entry, Flash no low, xhigh or max.",
     "deepseek-v4.1-flash-free": {
@@ -1728,7 +1883,12 @@
         "high": 0.7,
         "max": 0.91
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "none": 1.0,
+        "high": 0.46,
+        "max": 0.0
+      }
     },
     "claude-opus-5-5": {
       "ability": {
@@ -1745,7 +1905,14 @@
         "xhigh": 1.22,
         "max": 2.03
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.851,
+        "medium": 0.53,
+        "high": 0.107,
+        "xhigh": 0.0,
+        "max": 0.0
+      }
     },
     "claude-sonnet-5-5": {
       "ability": {
@@ -1762,7 +1929,14 @@
         "xhigh": 1.75,
         "max": 4.28
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.937,
+        "medium": 0.898,
+        "high": 0.701,
+        "xhigh": 0.227,
+        "max": 0.0
+      }
     },
     "gpt-6-astra": {
       "ability": {
@@ -1779,7 +1953,14 @@
         "xhigh": 0.79,
         "max": 1.35
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.777,
+        "medium": 0.719,
+        "high": 0.0,
+        "xhigh": 0.0,
+        "max": 0.0
+      }
     },
     "gpt-6.1-sol": {
       "ability": {
@@ -1796,7 +1977,14 @@
         "xhigh": 0.9,
         "max": 1.51
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.846,
+        "medium": 0.754,
+        "high": 0.0,
+        "xhigh": 0.0,
+        "max": 0.0
+      }
     },
     "grok-4.7": {
       "ability": {
@@ -1809,7 +1997,12 @@
         "high": 0.7,
         "xhigh": 0.88
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.744,
+        "high": 0.201,
+        "xhigh": 0.0
+      }
     },
     "gemini-3.8-flash-high": {
       "ability": {
@@ -1821,7 +2014,12 @@
         "medium": 0.56,
         "high": 0.7
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.911,
+        "medium": 0.813,
+        "high": 0.486
+      }
     },
     "gemini-4-argon-high": {
       "ability": {
@@ -1835,7 +2033,10 @@
         "high": 0.7
       },
       "basis": "Bug Hunt Bench Antigravity CLI n=3 sweep low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16).",
-      "calibration_source": "Bug Hunt Bench Antigravity CLI n=3 sweep: low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16)"
+      "calibration_source": "Bug Hunt Bench Antigravity CLI n=3 sweep: low 35.3/105 ($6.47), medium 39.3/105 ($7.50), high 40.7/105 ($7.16)",
+      "responsiveness": {
+        "high": 0.0
+      }
     },
     "claude-haiku-5-5": {
       "ability": {
@@ -1852,7 +2053,14 @@
         "xhigh": 1.09,
         "max": 1.79
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.824,
+        "medium": 0.774,
+        "high": 0.439,
+        "xhigh": 0.0,
+        "max": 0.0
+      }
     },
     "gpt-6.1-terra": {
       "ability": {
@@ -1869,7 +2077,15 @@
         "xhigh": 1.08,
         "max": 2.58
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "none": 0.918,
+        "low": 0.9,
+        "medium": 0.836,
+        "high": 0.65,
+        "xhigh": 0.037,
+        "max": 0.0
+      }
     },
     "gpt-6-sol": {
       "ability": {
@@ -1880,7 +2096,14 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.977,
+        "low": 0.943,
+        "high": 0.733,
+        "xhigh": 0.444,
+        "max": 0.0
+      }
     },
     "gpt-6-luna": {
       "ability": {
@@ -1897,7 +2120,15 @@
         "xhigh": 1.0,
         "max": 1.5
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "none": 0.959,
+        "low": 0.926,
+        "medium": 0.777,
+        "high": 0.664,
+        "xhigh": 0.374,
+        "max": 0.0
+      }
     },
     "gpt-5.6-sol": {
       "ability": {
@@ -1908,7 +2139,15 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.962,
+        "low": 0.914,
+        "medium": 0.842,
+        "high": 0.663,
+        "xhigh": 0.327,
+        "max": 0.0
+      }
     },
     "gpt-5.6-terra": {
       "ability": {
@@ -1919,7 +2158,15 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.966,
+        "low": 0.901,
+        "medium": 0.92,
+        "high": 0.737,
+        "xhigh": 0.367,
+        "max": 0.0
+      }
     },
     "gpt-5.6-luna": {
       "ability": {
@@ -1930,7 +2177,15 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.963,
+        "low": 0.92,
+        "medium": 0.892,
+        "high": 0.637,
+        "xhigh": 0.113,
+        "max": 0.0
+      }
     },
     "grok-4.7-build-fast": {
       "ability": {
@@ -1952,7 +2207,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.912,
+        "max": 0.0
+      }
     },
     "glm-5.3": {
       "ability": {
@@ -1963,7 +2222,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "low": 0.614,
+        "max": 0.0
+      }
     },
     "glm-5.3-flash-free": {
       "ability": {
@@ -1974,7 +2237,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "max": 0.0
+      }
     },
     "qwen3-coder-next": {
       "ability": {
@@ -1985,7 +2251,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "none": 0.923
+      }
     },
     "qwen3.8-max": {
       "ability": {
@@ -1996,7 +2265,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.0,
+        "xhigh": 0.0
+      }
     },
     "kimi-k3.1-pro": {
       "ability": {
@@ -2007,7 +2280,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "max": 0.0
+      }
     },
     "kimi-k3": {
       "ability": {
@@ -2018,7 +2294,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "low": 0.432,
+        "max": 0.0
+      }
     },
     "minimax-m3": {
       "ability": {
@@ -2029,7 +2309,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.0
+      }
     },
     "minimax-m3.1-flash": {
       "ability": {
@@ -2040,7 +2323,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "max": 0.0
+      }
     },
     "doubao-seed-2-1-pro-260628": {
       "ability": {
@@ -2062,7 +2348,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.0
+      }
     },
     "mimo-v2.6-flash-free": {
       "ability": {
@@ -2073,7 +2362,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.0
+      }
     },
     "nemotron-3-ultra-free": {
       "ability": {
@@ -2084,7 +2376,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.86
+      }
     },
     "nemotron-3.5-super-vl-free": {
       "ability": {
@@ -2095,7 +2390,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "high": 0.7
+      }
     },
     "nemotron-3.5-lightning-free": {
       "ability": {
@@ -2106,7 +2404,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.64
+      }
     },
     "mistral-large-4": {
       "ability": {
@@ -2117,7 +2418,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "medium": 0.616,
+        "high": 0.273
+      }
     },
     "muse-wonder-1.0": {
       "ability": {
@@ -2128,7 +2433,11 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "high": 0.786,
+        "max": 0.483
+      }
     },
     "beam-free": {
       "ability": {
@@ -2139,7 +2448,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.849
+      }
     },
     "flint-40b-free": {
       "ability": {
@@ -2150,7 +2462,10 @@
         "default": 0.7,
         "high": 0.7
       },
-      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data"
+      "calibration_source": "prior: single-effort model on the policy-wide High baseline; no per-effort data",
+      "responsiveness": {
+        "default": 0.964
+      }
     },
     "claude-fable-5-1": {
       "ability": {
@@ -2167,7 +2482,14 @@
         "xhigh": 1.01,
         "max": 1.21
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.765,
+        "medium": 0.734,
+        "high": 0.588,
+        "xhigh": 0.0,
+        "max": 0.0
+      }
     },
     "gemini-4-carbon": {
       "ability": {
@@ -2180,7 +2502,84 @@
         "medium": 0.59,
         "high": 0.7
       },
-      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High"
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-04; ability = 0.0495 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.643,
+        "medium": 0.193,
+        "high": 0.0
+      }
+    },
+    "glm-5.2": {
+      "responsiveness": {
+        "none": 0.999,
+        "max": 0.0
+      }
+    },
+    "gpt-oss-120b": {
+      "responsiveness": {
+        "low": 0.981,
+        "high": 0.65
+      }
+    },
+    "gemini-3.1-flash-lite": {
+      "responsiveness": {
+        "high": 0.721
+      }
+    },
+    "kimi-k2.7-code": {
+      "responsiveness": {
+        "default": 0.0
+      }
+    },
+    "qwen3.6-plus": {
+      "responsiveness": {
+        "default": 0.0
+      }
+    },
+    "claude-opus-4-7": {
+      "responsiveness": {
+        "none": 0.929,
+        "max": 0.0
+      }
+    },
+    "claude-opus-4-8": {
+      "responsiveness": {
+        "max": 0.051
+      }
+    },
+    "grok-4.5": {
+      "responsiveness": {
+        "high": 0.66
+      }
+    },
+    "grok-4.6": {
+      "responsiveness": {
+        "low": 0.675,
+        "medium": 0.348,
+        "high": 0.129,
+        "xhigh": 0.145
+      }
+    },
+    "gemini-3.1-pro-preview": {
+      "responsiveness": {
+        "default": 0.573
+      }
+    },
+    "gemini-3.7-flash": {
+      "responsiveness": {
+        "default": 0.935
+      }
+    },
+    "kimi-k2.6": {
+      "responsiveness": {
+        "none": 0.682,
+        "default": 0.0
+      }
+    },
+    "qwen3.7-max": {
+      "responsiveness": {
+        "default": 0.673
+      }
     }
   },
   "accounts": {

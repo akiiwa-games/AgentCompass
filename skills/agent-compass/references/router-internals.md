@@ -43,7 +43,7 @@ Standard `task.json`:
 
 **Classifier Authority Rule (No Manual Classification by Parent Agents)**:
 - **Do NOT manually fill `work_kind`, `difficulty`, or `profile` in `task.json`, and do NOT read classification examples or rubrics.**
-- `plan` (and `roll`) automatically invoke the System-One classifier (inspect `agentcompass scorer --action show` for the effective scorer and available choices; configure it with `scorer --action set` or AgentCompass settings) to determine the route category (`work_kind`), difficulty floor, and 10D `TaskProfile` (including `divergence` `1..3`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
+- `plan` (and `roll`) automatically invoke the System-One classifier (inspect `agentcompass scorer --action show` for the effective scorer and available choices; configure it with `scorer --action set` or AgentCompass settings) to determine the route category (`work_kind`), difficulty floor, and `TaskProfile` (including `divergence` `1..3` and boolean `realtime_loop`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
 - When the caller leaves `needs.local_only` unset, a classifier profile with `local_only: true` is trusted: the router sets `needs.local_only: true`, copies the profile `reason` into `needs.local_only_reason`, and records `profile_local_only_applied`. This judgment is not rechecked by the caller-reason validator. Explicit caller values take precedence; `needs.local_only: false` in `plan` input keeps work Dot-eligible subject to route and modality constraints. `roll` has no separate negative flag.
 - Factual `task` fields the parent agent may provide:
   - `objective` (required): Concrete description of what the worker must accomplish and how it will be verified.
@@ -98,6 +98,17 @@ The allocator first checks discovered availability, explicit disablement, host p
 expiry, required tools and modalities, configured route restrictions and ability floors.
 It then scores eligible candidates using the effective scoring weights, model capability
 priors, optional personal preference vectors, continuity and available quota evidence.
+On `realtime_loop: true` tasks (where the worker itself stays inside a live external
+system's observe-act loop across turns), the allocator also evaluates each bundle's
+per-turn `responsiveness` (`0..1`, per-effort in `effort_curves.<model>.responsiveness`,
+computed offline by `scripts/refresh_speed_data.py` from Artificial Analysis `ttft_s`
+(`headline.timeToFirstAnswerToken`, which already includes single-turn thinking time) and
+`output_tps` benchmarks — with OpenRouter `p50_latency`/`p50_throughput` as fallback only
+when AA speed is absent — via `T_turn = (ttft_s + 400 / output_tps) * harness_overhead`,
+mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` in `scoring.responsiveness`):
+- The floor `scoring.responsiveness.floor` (`0.50`, `T_turn <= 24.5s`) is evaluated per `(model, effort)`. If a bundle's configured effort is below `floor`, routing steps down to the highest faster effort in `effort_curves.<model>.responsiveness` that clears both `floor` and the task ability gate (when no lower-effort sibling bundle on the same account/harness/model already clears `floor`). Models with no supported effort clearing `floor` (such as `gemini-4-argon-high` at `46.2s -> 0.000`) or marked `not_applicable` (`grok-bot`, `dot`) are excluded with `"too slow per turn for a live loop"`.
+- `responsiveness` shares `scoring.responsiveness.weight` (`0.35`) of `fit`, and when the live loop operates an interface (game, webpage, App, emulator, desktop window), `needs_gui` is promoted to `true` and `computer_use`'s `gui` capability fit is blended in.
+- Models without community speed benchmarks receive the conservative `scoring.responsiveness.default` (`0.52`, above the floor so not excluded, below fast measured models so ranked behind them) and record `responsiveness: default` in the decision. Optional local telemetry (`speed-telemetry.json` in the state dir) shrinks toward observed local turn latency only after `min_samples` is reached, bounded by `max_blend` and `max_shift`. Non-`realtime_loop` tasks are completely unaffected.
 Public routes ship a calibrated model order and public scoring gives preference vectors
 weight 0.49. A route restricts models only with `restrict_models: true` and a nonempty
 `preferred` list. A dynamically discovered bundle starts checked unless public data lists

@@ -920,7 +920,7 @@ class SelectableScorerTests(unittest.TestCase):
         questions = request['questions']
         self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'context_scale',
                                           'divergence', 'hallucination_risk', 'error_cost', 'needs_visual', 'needs_gui', 'local_only',
-                                          'effort_band', 'urgency', 'multi_task', 'task_count'})
+                                          'realtime_loop', 'effort_band', 'urgency', 'multi_task', 'task_count'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
@@ -929,7 +929,7 @@ class SelectableScorerTests(unittest.TestCase):
             q = questions[name]
             self.assertEqual((q['type'], len(q['criteria']), isinstance(q['criteria'], list)), ('score', high - low + 1, True), name)
             self.assertLessEqual(len(q['criteria']), 10)
-        for name in ('needs_visual', 'needs_gui', 'local_only'):
+        for name in ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop'):
             self.assertEqual(questions[name]['type'], 'noul')
             self.assertNotIn('criteria', questions[name])
 

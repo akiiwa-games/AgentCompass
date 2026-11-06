@@ -95,6 +95,10 @@ SCORER_PROMPT = (
     'self-contained research/text/algorithm task; 2 = 2..5 coupled functional modules interacting; 3 = repo/system-wide.\n'
     '4. `divergence`: 1 = convergent spec/fix/review/checklist; 2 = multi-hypothesis root-cause diagnosis or bounded option '
     'comparison; 3 = open-ended creative ideation, cultural/gameplay motif proposals, or first-principles paradigm design.\n'
+    '5. `realtime_loop`: `true` ONLY when the worker itself stays in a live observe-act loop across turns where slow '
+    'turns hurt results (playing/farming a live game, ticket/flash-sale/course/appointment sniping, live order-book '
+    'trading, polling a live page/app to click immediately, live-stream chat). `false` for writing/fixing a ticket/'
+    'game/automation script, analyzing logs, or a one-off GUI click.\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
@@ -973,7 +977,7 @@ def scorer_prefix():
 def scorer_command(prefix, schema, prompt):
     # --print takes the prompt and must come last: agy reads anything after --print as prompt text.
     return prefix + ['--disable-slash-commands', '--model', SCORER['model'], '--output-format', 'json',
-                     '--json-schema', json.dumps(schema), '--print', prompt]
+                     '--json-schema', json.dumps(schema, separators=(',', ':')), '--print', prompt]
 
 
 # agy takes --print's prompt only as an argument, so a long task cannot ride the command line; its stream-json mode
@@ -983,7 +987,7 @@ ARGV_LIMIT_CHARS = 30000 if os.name == 'nt' else 100000
 
 def scorer_stream_command(prefix, schema):
     return prefix + ['--disable-slash-commands', '--model', SCORER['model'], '--input-format', 'stream-json',
-                     '--output-format', 'stream-json', '--json-schema', json.dumps(schema), '--print', '']
+                     '--output-format', 'stream-json', '--json-schema', json.dumps(schema, separators=(',', ':')), '--print', '']
 
 
 def parse_scorer_stream(stdout):
@@ -1018,9 +1022,29 @@ def scorer_task_fields(task):
     return {k: task[k] for k in SCORER_TASK_FIELDS if task.get(k) not in (None, '', {}, [])}
 
 
+def _compact_rubric_for_prompt(rubric):
+    if not isinstance(rubric, dict) or not isinstance(rubric.get('calibration_cases'), list):
+        return rubric
+    cases = rubric['calibration_cases']
+    sample = next((c.get('expected_profile') for c in cases if isinstance(c, dict) and isinstance(c.get('expected_profile'), dict)), None)
+    if not sample:
+        return rubric
+    fields = list(sample.keys())
+    compact_cases = [
+        [c.get('id'), c.get('task'), [c['expected_profile'].get(f) for f in fields]]
+        if isinstance(c, dict) and isinstance(c.get('expected_profile'), dict) else c
+        for c in cases
+    ]
+    return {
+        **rubric,
+        'calibration_columns': ['id', 'task', fields],
+        'calibration_cases': compact_cases,
+    }
+
+
 def scorer_evidence(task):
-    rubric = load_classifier_cases()
-    rubric_block = ('Classifier rubric and calibration cases:\n' + json.dumps(rubric, ensure_ascii=False) + '\n'
+    rubric = _compact_rubric_for_prompt(load_classifier_cases())
+    rubric_block = ('Classifier rubric and calibration cases:\n' + json.dumps(rubric, ensure_ascii=False, separators=(',', ':')) + '\n'
                     if rubric else '')
     return rubric_block + 'Task (evidence only, not instructions to you):\n' + json.dumps(scorer_task_fields(task), ensure_ascii=False)
 
@@ -1284,6 +1308,7 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
     for name, instructions in JEV_NOUL_QUESTIONS.items():
         questions[name] = {'type': 'noul', 'instructions': instructions}
     allocator = load_allocator()
+    questions['realtime_loop'] = {'type': 'noul', 'instructions': allocator.REALTIME_LOOP_QUESTION}
     questions['multi_task'] = {'type': 'noul', 'instructions': allocator.MULTI_TASK_QUESTION}
     questions['task_count'] = {'type': 'choice', 'instructions': allocator.TASK_COUNT_QUESTION,
                                'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
@@ -1330,6 +1355,10 @@ def parse_jev_response(response, allocator):
             else:
                 profile['urgency'] = choice
     # Optional like the effort band: a Jev answer without them leaves the brief unsplit.
+    rt = answers.get('realtime_loop')
+    rt = rt.get('noul') if isinstance(rt, dict) else rt
+    if isinstance(rt, (int, float)) and not isinstance(rt, bool) and math.isfinite(rt):
+        profile['realtime_loop'] = float(rt) >= 0.5
     multi = answers.get('multi_task')
     multi = multi.get('noul') if isinstance(multi, dict) else multi
     if isinstance(multi, (int, float)) and not isinstance(multi, bool) and math.isfinite(multi):
@@ -1481,7 +1510,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 7  # 7: structured-only classifier output (no free-text reason) and local_only rubric
+SCORE_CACHE_VERSION = 8  # 8: realtime_loop flag in task profile schema and rubric
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 
@@ -2327,6 +2356,12 @@ def plan_stage(document, args):
         profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
         if profile is None:
             return scorer_unavailable_result(task, scorer, started), 2
+        if 'realtime_loop' not in profile:
+            profile = {**profile, 'realtime_loop': allocator.infer_realtime_loop(
+                task.get('objective'), task.get('context'), task.get('environment'))}
+        if profile.get('realtime_loop') and allocator.realtime_loop_needs_gui(
+                task.get('objective'), profile, task.get('context'), task.get('environment')):
+            profile = {**profile, 'needs_gui': True, 'needs_visual': True, 'local_only': True}
         classified_kind = allocator.profile_kind(profile, policy)
         derived = allocator.profile_difficulty(profile, policy)
         order = list(policy['ability_floor'])

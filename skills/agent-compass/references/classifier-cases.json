@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-03",
+  "version": "2026-11-06",
   "route_definitions": {
     "computer_use": "Operate a live desktop, browser, or application GUI via screenshots, mouse clicks, keyboard input, or window automation.",
     "visual_analysis": "Read-only inspection or comparison of images, screenshots, UI mockups, or design frames without writing UI code or clicking a live GUI.",
@@ -23,7 +23,8 @@
     "context_scale": "Count coupled functional modules the worker must reason across, NOT the number of file paths mentioned in the prompt:\n- `1` (Single unit): Modifying/reviewing ONE primary functional module/script (plus its paired unit test file and any role/brief/output paths), OR any self-contained research/text/algorithm task, OR running a uniform command/checklist.\n- `2` (Multi-module): Modifying or tracing interactions across 2 to 5 distinct coupled functional modules or datasets.\n- `3` (System-wide): Whole-repository architecture, cross-subsystem refactoring (>5 modules), or multi-stage orchestrator lifecycle.",
     "divergence": "Measure how open-ended the solution space is:\n- `1` (Convergent): Known target, concrete feature spec, deterministic runbook, factual diff review, or fixing an already-isolated bug.\n- `2` (Multi-hypothesis): Diagnosing an unknown root cause with 2+ competing hypotheses (intermittent bug, race condition, memory/CPU anomaly) or comparing bounded technical alternatives.\n- `3` (Divergent / Creative): Open-ended creative ideation, cultural/motif research with gameplay/narrative/product scheme proposals, inventing a new architecture or scoring paradigm from first principles, or open-ended brainstorming with no single predetermined answer.",
     "reasoning_depth": "Rate the cognitive depth required by the core problem:\n- `1` (Routine): Executing an explicit command/checklist/runbook, trivial constant/config tweak, mechanical bulk replacement, or simple smoke check (even inside a long Markdown brief).\n- `2` (Standard/Hard): Standard single- or multi-module feature implementation, bug diagnosis & fix, read-only PR/module review, or structured research synthesis.\n- `3` (Coupled/Deep): Cross-module refactoring of an existing system with strict invariants, deep concurrency/state root-cause forensics across subsystems, or a migration/implementation plan inside an architecture that already exists.\n- `4` (Frontier): Open-ended design that decides a whole product or system and has no reference solution, which the user always gives to the newest top-tier model: a new game's overall technical architecture, detailed game-system design (progression, combat, economy rules and formulas), ultra-low-latency network/VPS architecture, a new system's first-principles architecture; also formal mathematical proof/derivation, algorithmic lower-bound analysis, or frontier theoretical critique.",
-    "multi_task_vs_single_task": "Set `multi_task: true` ONLY when the brief bundles 2+ independent deliverables that could be assigned to separate workers in parallel (e.g., fixing a backend bug AND translating unrelated docs). A single deliverable with sequential steps (`diagnose -> fix -> test -> report`) or a single research report covering multiple sub-questions is ONE task (`multi_task: false, task_count: \"1\"`)."
+    "multi_task_vs_single_task": "Set `multi_task: true` ONLY when the brief bundles 2+ independent deliverables that could be assigned to separate workers in parallel (e.g., fixing a backend bug AND translating unrelated docs). A single deliverable with sequential steps (`diagnose -> fix -> test -> report`) or a single research report covering multiple sub-questions is ONE task (`multi_task: false, task_count: \"1\"`).",
+    "realtime_loop": "Set `realtime_loop: true` ONLY when the worker itself stays in a live external system's observe-act loop across turns where slow turns hurt results (live game play/dailies/dungeons/AFK, ticket/course/appointment/flash-sale sniping, live order-book watching & trading, polling a live page/App to click immediately, live-stream chat interaction; when operating a GUI, also set `needs_gui: true, needs_visual: true, local_only: true, work_kind: \"computer_use\"`). Set `realtime_loop: false` for writing/fixing/debugging a ticket/game/automation script or bot, analyzing game/AFK logs, or a one-off GUI click."
   },
   "calibration_cases": [
     {
@@ -45,7 +46,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -67,7 +69,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -89,7 +92,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -111,7 +115,8 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -133,7 +138,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -155,7 +161,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -177,7 +184,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -199,7 +207,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -221,7 +230,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -243,7 +253,8 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -265,7 +276,8 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -287,7 +299,8 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -309,7 +322,8 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "realtime_loop": false
       }
     },
     {
@@ -331,7 +345,8 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": true,
-        "task_count": "2"
+        "task_count": "2",
+        "realtime_loop": false
       }
     },
     {
@@ -353,7 +368,8 @@
         "reasoning_depth": 4,
         "context_scale": 3,
         "divergence": 3,
-        "expected_hours": 2.5
+        "expected_hours": 2.5,
+        "realtime_loop": false
       }
     },
     {
@@ -375,7 +391,8 @@
         "reasoning_depth": 4,
         "context_scale": 2,
         "divergence": 3,
-        "expected_hours": 2.0
+        "expected_hours": 2.0,
+        "realtime_loop": false
       }
     },
     {
@@ -397,7 +414,376 @@
         "reasoning_depth": 4,
         "context_scale": 3,
         "divergence": 2,
-        "expected_hours": 2.0
+        "expected_hours": 2.0,
+        "realtime_loop": false
+      }
+    },
+    {
+      "id": "realtime_loop_game_dailies_cn",
+      "task": "你是该游戏的唯一执行子 Agent，禁止编写自动化脚本，直接在模拟器窗口中持续观察画面并操作游戏角色完成今日日常任务、主线刷本与竞技场对局，直到体力耗尽。",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 1.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "realtime_loop_game_dungeon_en",
+      "task": "Operate the mobile game client in the local Android emulator yourself in a continuous loop: watch the combat screen, trigger skills when cooldowns finish, collect drops, and re-enter the dungeon until 10 runs are completed.",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 1.0,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "realtime_loop_ticket_sniping_cn",
+      "task": "守着浏览器里的演出票务页面，盯着12:00开售倒计时，一旦放票或有人退票回流出现余票，第一时间点击选座并立即提交抢票订单。",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "high",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "realtime_loop_flash_sale_en",
+      "task": "Keep watching the limited-edition product page in the open browser window and click Add to Cart and Checkout immediately as soon as the flash sale countdown hits zero.",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 0.3,
+        "hours_confidence": "high",
+        "urgency": "high",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "realtime_loop_orderbook_watch_cn",
+      "task": "在本地行情客户端持续实时盯盘，观察买卖盘口价差与挂单量变化，当价差收窄到阈值以内时立刻点击下单按钮完成成交。",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 3,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 1.0,
+        "hours_confidence": "medium",
+        "urgency": "high",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "realtime_loop_course_polling_click_cn",
+      "task": "每隔几秒轮询刷新教务选课网页，持续盯着目标课程名额列，一旦名额从0变成有空位立刻点击选课并确认提交。",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 0.5,
+        "hours_confidence": "medium",
+        "urgency": "high",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "realtime_loop_livestream_chat_cn",
+      "task": "一直守在打开的直播间页面里盯着实时滚动弹幕，看到观众提问产品价格或优惠券时第一时间在聊天框发送对应回复。",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 1.0,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "realtime_loop_app_appointment_cn",
+      "task": "通过 adb 守着手机 App 的专家号放号预约页面，持续刷新等待状态变为可预约后马上点击抢号并确认就诊人。",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 2,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": true,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "high",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_write_ticket_script_cn",
+      "task": "编写一个 Python 抢票脚本 `scripts/ticket_sniper.py`，支持并发轮询票务接口、解析放票状态并在发现余票时立即发送下单请求，附带单元测试。",
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 0.8,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_fix_flash_sale_bot_en",
+      "task": "Fix the token-refresh race condition in the flash-sale sniping bot `bots/flash_buyer.py` so concurrent polling workers do not overwrite the session cookie, and add a regression test.",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_write_game_afk_tool_cn",
+      "task": "实现游戏日常挂机刷本自动化工具模块 `automation/daily_farm.py`，封装 adb 截图模板匹配与战斗结算点击逻辑，并补齐单元测试。",
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 1.0,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_analyze_game_afk_logs_cn",
+      "task": "分析昨晚模拟器游戏挂机刷本的运行日志 `logs/afk_session_20261105.log`，统计每轮对局耗时分布与掉线重连报错原因，输出汇总报告。",
+      "expected_profile": {
+        "work_kind": "exploration_analysis",
+        "interaction_style": "exploration",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 0.4,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_analyze_orderbook_latency_en",
+      "task": "Analyze the live order-book watcher telemetry in `logs/order_watcher.jsonl` to identify why p99 tick-to-order latency spiked during the market open.",
+      "expected_profile": {
+        "work_kind": "exploration_analysis",
+        "interaction_style": "exploration",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 2,
+        "hallucination_risk": 3,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_fix_game_automation_code_cn",
+      "task": "修复游戏自动化代码 `src/game_bot/window_controller.py` 中模拟器窗口失焦后鼠标点击坐标偏移的 bug，运行测试确认通过。",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_oneoff_gui_click_cn",
+      "task": "打开桌面客户端设置窗口，将语言切换为简体中文，点击保存按钮并截图验证设置已生效。",
+      "expected_profile": {
+        "work_kind": "computer_use",
+        "interaction_style": "engineering",
+        "reasoning_depth": 1,
+        "code_complexity": 0,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 2,
+        "error_cost": 1,
+        "needs_visual": true,
+        "needs_gui": true,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 0.15,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "non_realtime_write_livestream_bot_cn",
+      "task": "开发直播间弹幕自动回复机器人脚本 `tools/danmu_responder.py`，对接弹幕 WebSocket 流并按关键词规则匹配回复文案。",
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "expected_hours": 0.8,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
       }
     }
   ]

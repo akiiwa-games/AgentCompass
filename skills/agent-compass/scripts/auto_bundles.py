@@ -67,6 +67,8 @@ def is_chat_model(raw):
 
 def _shrink(spec):
     out = copy.deepcopy(spec)
+    for key in ('responsiveness', 'responsiveness_basis', 'responsiveness_status', 'speed_metrics'):
+        out.pop(key, None)
     if isinstance(out.get('tier'), (int, float)):
         out['tier'] = round(max(1.0, out['tier'] - FAMILY_TIER_SHRINK), 2)
     for block in ('capabilities', 'subjective'):

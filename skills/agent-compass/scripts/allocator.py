@@ -978,7 +978,12 @@ SUBJECTIVE_DIMENSIONS = ('divergence', 'global_rigor', 'module_precision')
 INTERACTION_STYLES = ('engineering', 'exploration', 'text_only', 'advisory')
 PROFILE_INTEGERS = {'reasoning_depth': (1, 4), 'code_complexity': (0, 3), 'context_scale': (1, 3),
                     'divergence': (1, 3), 'hallucination_risk': (1, 3), 'error_cost': (1, 3)}
-PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only')
+PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop')
+REALTIME_LOOP_QUESTION = (
+    'True when the worker itself stays in a live external system\'s observe-act loop across turns where slow turns '
+    'hurt results (live game play/dailies/dungeons/AFK, ticket/course/appointment/flash-sale sniping, live order-book '
+    'trading, polling a page/app to click immediately, live-stream chat). False for writing/fixing a ticket/game/'
+    'automation script or bot, analyzing game/AFK logs, fixing automation code, or a one-off GUI click.')
 DEPTH_BY_DIFFICULTY = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 4}
 DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
 HARD_BY_DEFAULT = ('debug_review', 'general_implementation', 'frontend_implementation', 'computer_use',
@@ -1045,6 +1050,7 @@ TASK_PROFILE_SCHEMA = {
             'environment. False when all required inputs are inlined in the prompt or fetched from the public web '
             '(web_research, self_contained_code, text_in_text_out, direction_reasoning, complex_build_plan)—even if the '
             'brief has a workspace header or names a local target path where the finished output will be saved.')},
+        'realtime_loop': {'type': 'boolean', 'description': REALTIME_LOOP_QUESTION},
         'interaction_style': {'type': 'string', 'enum': list(INTERACTION_STYLES), 'description': (
             'engineering = write or change software; exploration = explore a codebase, run experiments or backtests, '
             'analyze logs or data; text_only = pure text in and out or public web lookup; advisory = direction '
@@ -1152,8 +1158,85 @@ def infer_divergence(objective, kind=None, style=None):
     return 1
 
 
+# Heuristic realtime_loop fallback when a classifier omits the field or runs offline. Three feature groups—
+# (1) loop/continuous, (2) live external target, (3) time pressure—with any two groups sufficient unless an
+# engineering/log-analysis counterexample applies without explicit direct-operation-by-worker wording.
+REALTIME_LOOP_CONTINUOUS_WORDS = (
+    '持续', '循环', '反复', '一直', '挂机', '轮询', '每隔', '蹲守', '蹲点', '蹲', '守着', '守候', '守', '盯着', '盯盘', '盯',
+    '直到', '日常', '刷本', '对局', '打怪', '连打', '不间断',
+    'keep ', 'poll ', 'polling', 'until ', 'watch ', 'watching', 'in a loop', 'looping', 'loop ', 'repeatedly',
+    'continuously', 'every few seconds', 'farm ', 'farming', 'grind ', 'grinding', 'afk ', 'auto-battle',
+)
+REALTIME_LOOP_TARGET_WORDS = (
+    '游戏', '手游', '端游', '客户端', '模拟器', 'adb', '网页', '页面', '浏览器', '窗口', '直播间', '弹幕', '票务',
+    '盘口', '行情', '看盘', '界面', '屏幕', '选课系统', '预约系统',
+    'game', 'client', 'emulator', 'browser', 'webpage', 'web page', 'page', 'window', 'livestream', 'live stream',
+    'stream chat', 'ticket', 'order book', 'orderbook', 'trading terminal', 'market', 'screen', ' mobile app', ' app ',
+)
+REALTIME_LOOP_PRESSURE_WORDS = (
+    '抢票', '抢购', '秒杀', '抢课', '抢号', '放号', '放票', '捡漏', '开售', '限时', '倒计时', '第一时间', '立刻', '立即',
+    '马上', '实时', '盯盘', '下单', '抢位', '抢单', '抢',
+    'asap', 'immediately', 'instantly', 'real-time', 'real time', 'realtime', 'flash sale', 'snipe', 'sniping',
+    'grab ', 'countdown', 'as soon as', 'right away', 'time-critical', 'live ',
+)
+REALTIME_DIRECT_EXECUTION_PHRASES = (
+    '由你执行', '由你亲自', '亲自操作', '你直接操作', '直接操作游戏', '唯一执行子', '进入游戏执行', '进入游戏操作',
+    '不要写脚本', '不写脚本', '禁止写脚本',
+    'operate it yourself', 'play the game yourself', 'execute the loop yourself', 'you directly operate',
+    'do not write a script', 'without writing a script', 'sole execution subagent',
+)
+REALTIME_ENGINEERING_ACTION_WORDS = (
+    '写', '编写', '实现', '修复', '修改', '开发', '重构', '调试', '排查', '分析', '统计', '审阅', '审查', '构建',
+    'write ', 'writing ', 'implement', 'fix ', 'fixing ', 'develop', 'refactor', 'debug', 'diagnos', 'analyz',
+    'analyse', 'review ', 'build a ', 'create a ',
+)
+REALTIME_ENGINEERING_ARTIFACT_WORDS = (
+    '脚本', '代码', '工具', '模块', '函数', '插件', '机器人', '框架', '服务', '接口', '日志', '报错', '崩溃', '回测',
+    '单元测试', '测试用例', '自动化代码',
+    'script', 'code', 'tool', 'bot', 'module', 'function', 'plugin', 'framework', 'service', 'daemon', 'log', 'logs',
+    'crash', 'traceback', 'backtest', 'unit test', 'scraper', 'automation code',
+)
+REALTIME_GUI_TARGET_WORDS = (
+    '游戏', '手游', '端游', '客户端', '模拟器', 'adb', '网页', '页面', '浏览器', '窗口', '桌面', '界面', '屏幕', '直播间',
+    '点击', '截图', '鼠标', '键鼠', '票务', '盘口', '看盘', '盯盘',
+    'game', 'client', 'emulator', 'browser', 'webpage', 'web page', 'page', 'window', 'desktop', 'gui', 'screen',
+    'livestream', 'live stream', 'click', 'tap ', 'screenshot', 'mouse', ' mobile app', ' app ',
+)
+
+
+def infer_realtime_loop(objective, context='', environment=''):
+    """Heuristic fallback for `realtime_loop`: True when >=2 of (continuous/loop, live target, time pressure) match
+    and no code/script/log-analysis counterexample overrides it."""
+    raw = ' '.join(str(part or '') for part in (objective, context, environment)).strip()
+    if not raw:
+        return False
+    text = f' {raw.lower()} '
+    direct_live = any(p in text for p in REALTIME_DIRECT_EXECUTION_PHRASES)
+    if not direct_live:
+        if is_readonly_review_task(raw) or CODE_FILE_RE.search(text):
+            return False
+        has_eng_action = any(w in text for w in REALTIME_ENGINEERING_ACTION_WORDS)
+        has_eng_artifact = any(w in text for w in REALTIME_ENGINEERING_ARTIFACT_WORDS)
+        if has_eng_action and has_eng_artifact:
+            return False
+    has_loop = any(w in text for w in REALTIME_LOOP_CONTINUOUS_WORDS)
+    has_target = any(w in text for w in REALTIME_LOOP_TARGET_WORDS)
+    has_pressure = any(w in text for w in REALTIME_LOOP_PRESSURE_WORDS)
+    return (int(has_loop) + int(has_target) + int(has_pressure)) >= 2
+
+
+def realtime_loop_needs_gui(objective, profile=None, context='', environment=''):
+    """True when a `realtime_loop` task operates a live interface (game, page, App, emulator, desktop window)."""
+    if isinstance(profile, dict) and (profile.get('needs_gui') or profile.get('needs_visual')
+                                      or profile.get('work_kind') == 'computer_use'):
+        return True
+    raw = ' '.join(str(part or '') for part in (objective, context, environment)).strip()
+    text = f' {raw.lower()} '
+    return any(w in text for w in REALTIME_GUI_TARGET_WORDS)
+
+
 def validate_profile(raw):
-    """A task profile with every field checked, or ValueError. `reason`, `work_kind`, and `divergence` may be omitted in legacy fixtures."""
+    """A task profile with every field checked, or ValueError. `reason`, `work_kind`, `divergence`, and `realtime_loop` may be omitted in legacy fixtures."""
     if not isinstance(raw, dict):
         raise ValueError('task.profile must be an object')
     profile = {}
@@ -1171,6 +1254,8 @@ def validate_profile(raw):
             raise ValueError(f'task.profile.{name} must be an integer from {low} to {high}')
         profile[name] = value
     for name in PROFILE_FLAGS:
+        if name == 'realtime_loop' and name not in raw:
+            continue
         if not isinstance(raw.get(name), bool):
             raise ValueError(f'task.profile.{name} must be true or false')
         profile[name] = raw[name]
@@ -1263,6 +1348,15 @@ def infer_task_profile(task, capabilities):
         if kind == 'general_implementation':
             kind = 'debug_review'
     gui = kind == 'computer_use' or (kind == 'other_or_mixed' and any(w in f' {objective.lower()}' for w in GUI_WORDS))
+    realtime_loop = (bool(needs['realtime_loop']) if 'realtime_loop' in needs and needs.get('realtime_loop') is not None
+                     else bool(task['realtime_loop']) if 'realtime_loop' in task and task.get('realtime_loop') is not None
+                     else infer_realtime_loop(objective, task.get('context'), task.get('environment')))
+    if realtime_loop and realtime_loop_needs_gui(objective, None, task.get('context'), task.get('environment')):
+        gui = True
+        if task.get('work_kind') not in routes and kind in GENERIC_CALLER_KINDS:
+            kind = 'computer_use'
+            implies = routes[kind].get('implies') or {}
+            code, context, risk, cost, style = KIND_TRAITS['computer_use']
     if depth >= 3:
         context = max(context, 2)
         if style == 'engineering' and code:
@@ -1279,7 +1373,7 @@ def infer_task_profile(task, capabilities):
     elif local_hit:
         local_only = True
         local_note = '; objective names a local runtime, path, or machine dependency'
-    elif implies.get('local_only'):
+    elif implies.get('local_only') or gui:
         local_only = True
         local_note = ''
     else:
@@ -1292,7 +1386,7 @@ def infer_task_profile(task, capabilities):
         'reasoning_depth': depth, 'code_complexity': code, 'context_scale': context, 'divergence': divergence,
         'hallucination_risk': risk, 'error_cost': cost,
         'needs_visual': bool(needs.get('visual') or implies.get('visual') or gui), 'needs_gui': gui,
-        'local_only': local_only, 'interaction_style': style, 'reason': reason,
+        'local_only': local_only, 'realtime_loop': realtime_loop, 'interaction_style': style, 'reason': reason,
         # Offline the only evidence of separate tasks is headings that number them (交付物 1, Deliverable 2, Task 3).
         **multi_task_marks(objective)})
 
@@ -1416,6 +1510,264 @@ def critical_headroom(policy, difficulty):
     the data sets one (it keeps a critical gate in place when a floor moves), otherwise `critical_headroom`."""
     own = policy.get('critical_headroom_by_difficulty') or {}
     return float(own[difficulty]) if difficulty in own else float(policy['critical_headroom'])
+
+
+RESPONSIVENESS_DEFAULTS = {
+    'floor': 0.50,
+    'default': 0.52,
+    'weight': 0.35,
+    'fast_turn_seconds': 4.0,
+    'slow_turn_seconds': 45.0,
+    'output_tokens_per_turn': 400,
+    'harness_overhead': {
+        'default': 1.0,
+        'antigravity': 1.0,
+        'antigravity-resilient': 1.0,
+        'codex': 1.0,
+        'claude': 1.0,
+        'pi': 1.0,
+        'opencode': 1.0,
+        'grok': 1.0,
+    },
+    'local_telemetry': {
+        'min_samples': 20,
+        'max_blend': 0.3,
+        'max_shift': 0.15,
+    },
+}
+
+REALTIME_EFFORT_ORDER = ('none', 'minimal', 'default', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+
+
+def _effort_rank(effort):
+    eff = str(effort or 'high')
+    return REALTIME_EFFORT_ORDER.index(eff) if eff in REALTIME_EFFORT_ORDER else REALTIME_EFFORT_ORDER.index('high')
+
+
+def responsiveness_config(policy):
+    """Merged `scoring.responsiveness` policy with defaults."""
+    cfg = {
+        **RESPONSIVENESS_DEFAULTS,
+        'harness_overhead': dict(RESPONSIVENESS_DEFAULTS['harness_overhead']),
+        'local_telemetry': dict(RESPONSIVENESS_DEFAULTS['local_telemetry']),
+    }
+    own = (policy or {}).get('responsiveness') if isinstance((policy or {}).get('responsiveness'), dict) else {}
+    for key, value in own.items():
+        if key in ('harness_overhead', 'local_telemetry') and isinstance(value, dict):
+            cfg[key].update(value)
+        elif key in cfg or key in ('basis', 'reasoning_tokens_by_effort'):
+            cfg[key] = value
+    return cfg
+
+
+def harness_overhead_multiplier(harness, policy=None):
+    """Per-turn CLI harness overhead coefficient (e.g. antigravity/codex/claude wrapper & streaming overhead)."""
+    table = responsiveness_config(policy).get('harness_overhead') or {}
+    if harness and isinstance(table.get(harness), (int, float)) and not isinstance(table.get(harness), bool):
+        return max(0.1, float(table[harness]))
+    default = table.get('default', 1.0)
+    return max(0.1, float(default) if isinstance(default, (int, float)) and not isinstance(default, bool) else 1.0)
+
+
+def compute_turn_seconds(ttft_s, output_tps, effort='high', reasoning_tokens=None, output_tokens=None,
+                         harness=None, policy=None):
+    """Estimated seconds per live-loop turn: `T_turn = (ttft_s + output_tokens / output_tps) * harness_overhead`.
+
+    Artificial Analysis `ttft_s` (`headline.timeToFirstAnswerToken`) already includes single-turn thinking time;
+    `reasoning_tokens` is a multi-turn benchmark cumulative total and is never added to `ttft_s`."""
+    del effort, reasoning_tokens
+    cfg = responsiveness_config(policy)
+    if output_tokens is None:
+        output_tokens = float(cfg.get('output_tokens_per_turn', 400))
+    tps = max(1e-6, float(output_tps))
+    base_turn = max(0.0, float(ttft_s)) + max(0.0, float(output_tokens)) / tps
+    return base_turn * harness_overhead_multiplier(harness, policy)
+
+
+def turn_seconds_to_responsiveness(turn_seconds, policy=None):
+    """Map per-turn duration in seconds onto 0..1 using `[fast_turn_seconds -> 1.0, slow_turn_seconds -> 0.0]`."""
+    cfg = responsiveness_config(policy)
+    fast = float(cfg.get('fast_turn_seconds', 4.0))
+    slow = max(fast + 1e-6, float(cfg.get('slow_turn_seconds', 45.0)))
+    return round(clamp((slow - float(turn_seconds)) / (slow - fast), 0.0, 1.0), 4)
+
+
+def speed_telemetry_path(state_dir=None):
+    base = Path(state_dir).expanduser() if state_dir else public_data.state_dir()
+    return base / 'speed-telemetry.json'
+
+
+def local_speed_telemetry(model, effort, base_responsiveness, policy=None, state_dir=None):
+    """Optional local speed shrinkage once local samples reach `min_samples` (bounded by `max_blend` and `max_shift`).
+    Missing or low-sample local telemetry leaves `base_responsiveness` untouched."""
+    path = speed_telemetry_path(state_dir)
+    try:
+        if not path.is_file():
+            return base_responsiveness, False
+        doc = json.loads(path.read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError):
+        return base_responsiveness, False
+    models = doc.get('models') if isinstance(doc, dict) else None
+    row = models.get(model) if isinstance(models, dict) else None
+    if not isinstance(row, dict):
+        return base_responsiveness, False
+    by_effort = row.get('by_effort') if isinstance(row.get('by_effort'), dict) else {}
+    target = by_effort.get(effort) if isinstance(by_effort.get(effort), dict) else row
+    samples = target.get('samples', 0)
+    if isinstance(samples, bool) or not isinstance(samples, (int, float)):
+        return base_responsiveness, False
+    cfg = responsiveness_config(policy).get('local_telemetry') or {}
+    min_samples = max(1, int(cfg.get('min_samples', 20)))
+    if samples < min_samples:
+        return base_responsiveness, False
+    local_resp = target.get('responsiveness')
+    if isinstance(local_resp, bool) or not isinstance(local_resp, (int, float)):
+        turn_s = target.get('median_turn_seconds', target.get('turn_seconds'))
+        if isinstance(turn_s, bool) or not isinstance(turn_s, (int, float)):
+            return base_responsiveness, False
+        local_resp = turn_seconds_to_responsiveness(float(turn_s), policy)
+    local_resp = clamp(float(local_resp), 0.0, 1.0)
+    max_blend = clamp(float(cfg.get('max_blend', 0.3)), 0.0, 1.0)
+    max_shift = clamp(float(cfg.get('max_shift', 0.15)), 0.0, 1.0)
+    blend = min(max_blend, max_blend * min(1.0, float(samples) / float(min_samples * 2)))
+    delta = clamp(blend * (local_resp - base_responsiveness), -max_shift, max_shift)
+    return round(clamp(base_responsiveness + delta, 0.0, 1.0), 4), True
+
+
+def _lookup_curve_responsiveness(curves_resp, effort, default_effort='high'):
+    if not isinstance(curves_resp, dict) or not curves_resp:
+        return None
+    eff = str(effort or default_effort or 'high')
+    if eff in curves_resp:
+        val = curves_resp.get(eff)
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and not isnan(float(val)):
+            return float(val)
+    if len(curves_resp) == 1:
+        only_val = next(iter(curves_resp.values()))
+        if isinstance(only_val, (int, float)) and not isinstance(only_val, bool) and not isnan(float(only_val)):
+            return float(only_val)
+    if eff in ('high', 'xhigh', 'max', 'ultra'):
+        fallbacks = ('high', 'default', 'max', 'xhigh')
+    elif eff in ('none', 'minimal', 'low', 'default'):
+        fallbacks = ('low', 'none', 'default', 'medium')
+    else:
+        fallbacks = ('medium', 'low', 'default', 'none', 'high')
+    for fb in fallbacks:
+        val = curves_resp.get(fb)
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and not isnan(float(val)):
+            return float(val)
+    return None
+
+
+def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None, effort=None):
+    """`(responsiveness_0_to_1, source)` for `bundle` at `effort` (or its scoring effort).
+    `source` is `'measured'`, `'local_blended'`, `'default'` (when community speed data is absent),
+    or `'not_applicable'` (for special web/packet channels such as `grok-bot` and `dot`)."""
+    cfg = responsiveness_config(policy)
+    info = info if isinstance(info, dict) else {}
+    info_resp = info.get('responsiveness')
+    if info_resp == 'not_applicable' or info.get('responsiveness_status') == 'not_applicable':
+        return None, 'not_applicable'
+    eff = effort or scoring_effort(bundle or {}, info) or info.get('default_effort') or 'high'
+    harness = (bundle or {}).get('harness') or bundle_harness(bundle or {}, (bundle or {}).get('account'), (bundle or {}).get('id'))
+    curves_resp = (curves or {}).get('responsiveness') if isinstance(curves, dict) else None
+    measured = _lookup_curve_responsiveness(curves_resp, eff, info.get('default_effort') or 'high')
+    if measured is None:
+        if isinstance(info_resp, dict):
+            measured = _lookup_curve_responsiveness(info_resp, eff, info.get('default_effort') or 'high')
+        elif isinstance(info_resp, (int, float)) and not isinstance(info_resp, bool) and not isnan(float(info_resp)):
+            measured = float(info_resp)
+    if measured is None and isinstance(info.get('speed_metrics'), dict):
+        sm = info['speed_metrics']
+        ttft = sm.get('ttft_s')
+        tps = sm.get('output_tps')
+        if (isinstance(ttft, (int, float)) and not isinstance(ttft, bool)
+                and isinstance(tps, (int, float)) and not isinstance(tps, bool) and tps > 0):
+            turn_s = compute_turn_seconds(
+                ttft, tps, effort=eff,
+                output_tokens=sm.get('output_tokens_per_turn'),
+                harness=harness, policy=policy,
+            )
+            measured = turn_seconds_to_responsiveness(turn_s, policy)
+    if measured is None:
+        base_val = clamp(float(cfg.get('default', 0.52)), 0.0, 1.0)
+        source = 'default'
+    else:
+        base_val = clamp(measured, 0.0, 1.0)
+        source = 'measured'
+    model_name = str((bundle or {}).get('model') or '')
+    adjusted, blended = local_speed_telemetry(model_name, eff, base_val, policy=policy, state_dir=state_dir)
+    if blended:
+        return adjusted, 'local_blended'
+    return round(base_val, 4), source
+
+
+def resolve_realtime_effort(bundle, task, ctx, model, info, policy, curves, gate=0.0):
+    """Evaluate `bundle` at its configured effort on a `realtime_loop` task, stepping down to a faster effort in
+    `curves['responsiveness']` when its configured effort is below `floor` and no lower-effort sibling bundle on the
+    same `(account, harness, canonical_model)` already clears `floor`.
+
+    Returns `(effective_effort, resp_val, resp_source, stepped_from)`."""
+    state_dir = ctx.get('state_dir')
+    raw_effort = scoring_effort(bundle, info)
+    resp_val, resp_source = bundle_responsiveness(
+        bundle, info, policy, curves, state_dir=state_dir, effort=raw_effort)
+    if resp_source == 'not_applicable' or resp_val is None:
+        return raw_effort, resp_val, resp_source, None
+    resp_floor = float(responsiveness_config(policy)['floor'])
+    if resp_val >= resp_floor:
+        return raw_effort, resp_val, resp_source, None
+    curves_resp = (curves or {}).get('responsiveness') if isinstance(curves, dict) else None
+    if not isinstance(curves_resp, dict) or not curves_resp:
+        return raw_effort, resp_val, resp_source, None
+
+    pinned = (task.get('pinned_bundle') == bundle.get('id')
+              or task.get('constraint_model') == bundle.get('id'))
+    if not pinned:
+        harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
+        siblings = []
+        for b in (ctx.get('bundles') or {}).values():
+            if b.get('account') != bundle.get('account'):
+                continue
+            if (b.get('harness') or bundle_harness(b, b.get('account'), b.get('id'))) != harness:
+                continue
+            if canonical(b.get('model') or '', ctx['accounts']) != model:
+                continue
+            if b.get('disabled') or b.get('discovery_unavailable') or not bundle_applies(b, task):
+                continue
+            siblings.append(b)
+        for sib in siblings:
+            if sib.get('id') == bundle.get('id'):
+                continue
+            sib_eff = scoring_effort(sib, info)
+            sib_resp, sib_src = bundle_responsiveness(
+                sib, info, policy, curves, state_dir=state_dir, effort=sib_eff)
+            if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor:
+                return raw_effort, resp_val, resp_source, None
+        if siblings:
+            min_rank = min(_effort_rank(scoring_effort(s, info)) for s in siblings)
+            if _effort_rank(raw_effort) > min_rank:
+                return raw_effort, resp_val, resp_source, None
+
+    raw_rank = _effort_rank(raw_effort)
+    faster = [eff for eff in REALTIME_EFFORT_ORDER if eff in curves_resp and _effort_rank(eff) < raw_rank]
+    faster.sort(key=_effort_rank, reverse=True)
+    best_clearing_both = None
+    best_clearing_resp = None
+    for cand_eff in faster:
+        cand_resp, cand_src = bundle_responsiveness(
+            bundle, info, policy, curves, state_dir=state_dir, effort=cand_eff)
+        if cand_src == 'not_applicable' or cand_resp is None or cand_resp < resp_floor:
+            continue
+        if best_clearing_resp is None:
+            best_clearing_resp = (cand_eff, cand_resp, cand_src)
+        if effort_ability(policy, curves, info, cand_eff) >= gate:
+            best_clearing_both = (cand_eff, cand_resp, cand_src)
+            break
+    chosen = best_clearing_both or best_clearing_resp
+    if chosen is not None:
+        return chosen[0], chosen[1], chosen[2], raw_effort
+    return raw_effort, resp_val, resp_source, None
 
 
 def task_demand(profile, difficulty, critical, divergence, policy, high_precision=False, floor=None):
@@ -2036,21 +2388,47 @@ def evaluate_bundle(bundle, task, ctx):
         exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
     if task['constraint_model'] and task['constraint_model'] not in (bundle['id'], model):
         exclude('explicit model constraint')
-    # Model ability x this model's own thinking coefficient at this effort (accounts `effort_curves`). The task side is
-    # depth x property difficulty (`task['demand']`); no effort tier is tied to a depth.
-    ability = effort_ability(policy, curves, info, scoring_effort(bundle, info))
-    result['components']['ability_value'] = round(ability, 2)
-    effective = ability
-    high_ability = effort_ability(policy, curves, info, 'high')
     demand = task['demand']
     target = demand['required_ability']
     floor = demand['floor']
     headroom = critical_headroom(policy, task['difficulty']) if task['critical'] else 0.0
     gate = floor + headroom
+    eff = scoring_effort(bundle, info)
+    resp_val = resp_source = stepped_from = None
+    if task.get('realtime_loop'):
+        resp_cfg = responsiveness_config(policy)
+        eff, resp_val, resp_source, stepped_from = resolve_realtime_effort(
+            bundle, task, ctx, model, info, policy, curves, gate)
+        if stepped_from is not None:
+            result['bundle']['effort'] = eff
+            result['components']['effort_stepped_down_from'] = stepped_from
+            result['notes'].append(f'effort stepped down from {stepped_from} to {eff} for realtime_loop')
+    # Model ability x this model's own thinking coefficient at this effort (accounts `effort_curves`). The task side is
+    # depth x property difficulty (`task['demand']`); no effort tier is tied to a depth.
+    ability = effort_ability(policy, curves, info, eff)
+    result['components']['ability_value'] = round(ability, 2)
+    effective = ability
+    high_ability = effort_ability(policy, curves, info, 'high')
     if ability < gate:
         result['below_floor'] = True
         exclude(f'ability {ability:.1f} below the {task["difficulty"]} floor {floor}'
                 + (f' plus the {headroom:g} headroom critical work needs' if task['critical'] else ''))
+    if task.get('realtime_loop'):
+        resp_cfg = responsiveness_config(policy)
+        result['components']['responsiveness_source'] = resp_source
+        if resp_source == 'not_applicable' or resp_val is None:
+            result['components']['responsiveness'] = None
+            result['below_floor'] = True
+            exclude('responsiveness not_applicable for this channel (too slow per turn for a live loop)')
+        else:
+            result['components']['responsiveness'] = round(resp_val, 3)
+            if resp_source == 'default':
+                result['notes'].append('responsiveness: default')
+            resp_floor = float(resp_cfg['floor'])
+            if resp_val < resp_floor:
+                result['below_floor'] = True
+                exclude(f'responsiveness {resp_val:.2f} below the realtime_loop floor {resp_floor:g} '
+                        f'(too slow per turn for a live loop)')
     expires = parse_time(spec.get('expires_at'))
     if expires is not None and (expires - now).total_seconds() < hours * 3600:
         exclude('subscription ends before the work would finish')
@@ -2073,8 +2451,8 @@ def evaluate_bundle(bundle, task, ctx):
                                    f"{worker.get('compactions', '?')} compactions; rotate with a handoff packet")
     context_scale = 1 + context_extra
     step_pct = chain_pct = None
-    step_usd = bundle_task_usd(spec, model, scoring_effort(bundle, info), hours, policy, curves, info, context_scale)
-    chain_usd = bundle_task_usd(spec, model, scoring_effort(bundle, info), chain_hours, policy, curves, info, context_scale)
+    step_usd = bundle_task_usd(spec, model, eff, hours, policy, curves, info, context_scale)
+    chain_usd = bundle_task_usd(spec, model, eff, chain_hours, policy, curves, info, context_scale)
     binding = None
     opportunity = 0.0
     unknown = False
@@ -2108,7 +2486,7 @@ def evaluate_bundle(bundle, task, ctx):
             expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                  account_stale=acct_stale, expected_reset_at=expected)
-            unit = unit_rate(spec, wid, model, scoring_effort(bundle, info), policy, curves, info, now)
+            unit = unit_rate(spec, wid, model, eff, policy, curves, info, now)
             if not state['known']:
                 if state['short']:
                     step = None if unit is None else hours * unit * context_scale
@@ -2200,7 +2578,7 @@ def evaluate_bundle(bundle, task, ctx):
                                   account_stale=acct_stale, expected_reset_at=expected)
                 if not st['known']:
                     continue
-                unit = unit_rate(spec, wid, model, scoring_effort(bundle, info), policy, curves, info, now)
+                unit = unit_rate(spec, wid, model, eff, policy, curves, info, now)
                 win_cap_usd = window_capacity_usd(spec, wid, now)
                 res_usd = inflight_reserved_usd(bundle['account'], spec, wid, wspec, st, win_cap_usd,
                                                 ctx.get('records'), accounts, policy, now)
@@ -2309,7 +2687,7 @@ def evaluate_bundle(bundle, task, ctx):
     if task['profile'] is not None and (not route.get('strict_order') or route.get('capability_fit')):
         # A user-ranked strict order (visual_analysis) stays as stated; elsewhere the profile's needs share the fit.
         # Route fit is not capped. Listed place, ability, the capability vector and the subjective vector decide.
-        vfit = vector_fit(task['requirements'], effort_scaled_capabilities(info, policy, curves, scoring_effort(bundle, info)))
+        vfit = vector_fit(task['requirements'], effort_scaled_capabilities(info, policy, curves, eff))
         s_weights = task.get('subjective_weights') or {}
         s_cfg = (policy.get('profile') or {}).get('subjective') if isinstance(info.get('subjective'), dict) else None
         result['components']['route_fit'] = round(fit, 3)
@@ -2325,10 +2703,18 @@ def evaluate_bundle(bundle, task, ctx):
         else:
             weight = (policy.get('profile') or {}).get('vector_weight', 0.5)
             fit = (1 - weight) * fit + weight * vfit
+    if task.get('realtime_loop') and resp_val is not None:
+        if task.get('needs_gui') and not route.get('capability_fit'):
+            cu_cap = (capabilities['routes'].get('computer_use') or {}).get('capability_fit') or {'gui': 1.0}
+            gui_fit = capability_score(cu_cap, model, accounts)
+            result['components']['gui_fit'] = round(gui_fit, 3)
+            fit = 0.5 * fit + 0.5 * gui_fit
+        w_resp = clamp(float(responsiveness_config(policy).get('weight', 0.35)), 0.0, 1.0)
+        fit = (1.0 - w_resp) * fit + w_resp * resp_val
     cfg = demand_config(policy)
     sunk_weight = (binding or {}).get('reset_sunk_weight', 0.0)
     sprint_sunk = 0.0 if task['difficulty'] == 'routine' else sunk_weight
-    effort_scale = burn_scale(policy, curves, scoring_effort(bundle, info))
+    effort_scale = burn_scale(policy, curves, eff)
     # Near a reset with surplus quota the extra burn of a higher effort is quota that would lapse, so it is not charged
     # on non-routine work; routine (depth 1) work keeps its effort and overqualification discipline.
     effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0) * (1.0 - sprint_sunk), 4)
@@ -2672,7 +3058,27 @@ def dot_may_take(kind, needs, capabilities, profile=None):
 def normalize_task(raw, policy, capabilities, accounts):
     task = dict(raw or {})
     profile = validate_profile(task['profile']) if task.get('profile') is not None else None
-    kind = task_kind(task, capabilities, policy)
+    needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
+    if _flag_present(needs, 'realtime_loop'):
+        realtime_loop = bool(needs['realtime_loop'])
+    elif _flag_present(task, 'realtime_loop'):
+        realtime_loop = bool(task['realtime_loop'])
+    elif profile is not None and 'realtime_loop' in profile:
+        realtime_loop = bool(profile['realtime_loop'])
+    else:
+        realtime_loop = infer_realtime_loop(task.get('objective'), task.get('context'), task.get('environment'))
+    if profile is not None and 'realtime_loop' not in profile:
+        profile = {**profile, 'realtime_loop': realtime_loop}
+    rt_gui = bool(realtime_loop and realtime_loop_needs_gui(
+        task.get('objective'), profile, task.get('context'), task.get('environment')))
+    if rt_gui:
+        if profile is not None:
+            profile = {**profile, 'needs_gui': True, 'needs_visual': True, 'local_only': True, 'realtime_loop': True}
+        if not _flag_present(needs, 'visual'):
+            needs['visual'] = True
+        if not _flag_present(needs, 'local_only'):
+            needs['local_only'] = True
+    kind = task_kind({**task, 'profile': profile}, capabilities, policy)
     derived = profile_difficulty(profile, policy) if profile else None
     difficulty = task.get('difficulty') or derived or default_difficulty(kind)
     source = 'caller' if task.get('difficulty') else 'profile' if derived else 'route_default'
@@ -2684,7 +3090,6 @@ def normalize_task(raw, policy, capabilities, accounts):
         raise ValueError('chain.coupling must be low, medium or high')
     hours = float(task.get('expected_hours') or policy['default_hours'][difficulty])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
-    needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
     if profile and needs.get('critical') is None:
         needs['critical'] = profile['error_cost'] >= 3
     implies = capabilities['routes'][kind].get('implies') or {}
@@ -2714,8 +3119,10 @@ def normalize_task(raw, policy, capabilities, accounts):
                 worker[k] = max(worker.get(k) or 0, v)
             else:
                 worker.setdefault(k, v)
+    needs_gui = bool((profile or {}).get('needs_gui') or needs.get('gui') or kind == 'computer_use' or rt_gui)
     return {'kind': kind, 'difficulty': difficulty, 'difficulty_source': source, 'hours': hours,
             'profile': profile, 'profile_difficulty': derived, 'divergence': div,
+            'realtime_loop': realtime_loop, 'needs_gui': needs_gui,
             'requirements': profile_requirements(profile, policy) if profile else None,
             'subjective_weights': subjective_weights({**profile, 'divergence': div}, kind) if profile else None,
             'demand': task_demand(profile, difficulty, critical, div, policy, high_precision,
@@ -2788,6 +3195,8 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                             demand=task['demand'], max_recommended_effort=None)
     if task.get('wants_fast'):
         decision['task']['wants_fast'] = True
+    if task.get('realtime_loop'):
+        decision['task']['realtime_loop'] = True
     if task.get('metered_fallback'):
         decision['task']['metered_fallback'] = True
     if task['profile']:
@@ -2850,6 +3259,9 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     if top['bundle'].get('fast'):
         decision['fast'] = True
         decision['fast_reason'] = top['components'].get('fast_reason')
+    if task.get('realtime_loop'):
+        decision['responsiveness'] = ('default' if top['components'].get('responsiveness_source') == 'default'
+                                      else top['components'].get('responsiveness'))
     decision.setdefault('reason', explain(top, system))
     top_model = canonical(top['bundle']['model'], accounts)
     offered = sorted({c['bundle'].get('effort') for c in candidates if canonical(c['bundle']['model'], accounts) == top_model
@@ -2879,7 +3291,7 @@ SNAPSHOT_CAPACITY_KEYS = ('window', 'remaining', 'after', 'step_pct', 'chain_pct
                           'shortage_probability', 'scarcity_cost', 'opportunity_cost', 'reset_sunk_weight', 'reset_bonus',
                           'surplus_pct', 'stale')
 SNAPSHOT_DECISION_KEYS = ('action', 'needs_user_decision', 'margin', 'needs_judgment', 'reason', 'alternatives', 'continuity',
-                          'fast', 'fast_reason', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
+                          'fast', 'fast_reason', 'responsiveness', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
 
 
 def _round(value, places=4):
@@ -2910,6 +3322,7 @@ def _snapshot_row(candidate, detail):
         row['components'] = {}
     else:
         keep = ('fit', 'ability', 'opportunity_cost', 'capability', 'divergence', 'global_rigor', 'module_precision',
+                'responsiveness', 'responsiveness_source',
                 'reset_bonus', 'boost', 'free_usage', 'overqualification', 'effort_penalty')
         row['components'] = {k: _round(comps[k]) for k in keep if k in comps and comps[k]}
         for k in ('fit', 'ability', 'opportunity_cost'):
@@ -3013,4 +3426,8 @@ def explain(top, system):
                      f"bonus {top['components'].get('fast_bonus', 0):+.2f})")
     if top['components'].get('boost'):
         parts.append(f"includes a temporary user-override boost of {top['components']['boost']:+.2f}")
+    if top['components'].get('responsiveness_source') == 'default':
+        parts.append('responsiveness: default')
+    elif top['components'].get('responsiveness') is not None:
+        parts.append(f"responsiveness {top['components']['responsiveness']:.2f}")
     return '; '.join(parts)
