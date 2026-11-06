@@ -33,12 +33,18 @@ def paseo_reachable(timeout=1.0):
         return False
 
 
+HOST_TIMEOUT = 25
+# Paseo restores an idle worker from persistence before a resumed turn starts; that took ~25 s on Antigravity.
+RESUME_TIMEOUT = 90
+
+
 def host_call(payload):
     bridge = Path(os.environ.get('ROUTER_PASEO_BRIDGE') or
                   Path(__file__).resolve().parents[3] / 'setup' / 'paseo_dispatch_bridge.mjs')
     try:
         result = subprocess.run(['node', str(bridge)], input=json.dumps(payload), capture_output=True,
-                                text=True, encoding='utf-8', timeout=25)
+                                text=True, encoding='utf-8',
+                                timeout=RESUME_TIMEOUT if payload.get('operation') == 'resume' else HOST_TIMEOUT)
     except subprocess.TimeoutExpired:
         return {'ok': False, 'sent': payload['operation'] in ('create', 'resume'), 'error': 'host_timeout'}
     except OSError:
@@ -79,7 +85,8 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None):
         response = host({'operation': 'observe', 'dispatch_id': row['dispatch_id'], 'agent_id': row.get('agent_id')})
         if response.get('ok') and response.get('agent'):
             try:
-                row = registry.observe(row['dispatch_id'], response['agent'], now=now, path=path)
+                row = registry.observe(row['dispatch_id'], response['agent'], now=now, path=path,
+                                       terminal=(response.get('completion_notification') or {}).get('terminal'))
                 results.append(dict(public(row), completion_notification=response.get('completion_notification')))
             except ValueError as exc:
                 results.append({'dispatch_id': row['dispatch_id'], 'error': str(exc)})
@@ -126,8 +133,13 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         if response.get('ok') and response.get('agent'):
             row = registry.observe(dispatch_id, response['agent'], path=path)
         elif response.get('sent') is False:
-            row = registry.release(dispatch_id, parent_id, 'host_rejected_before_create', failed=True, path=path)
             launch_error = response.get('error')
+            cause = ':'.join(str(p) for p in (launch_error, response.get('failure_class')) if p)
+            row = registry.release(dispatch_id, parent_id,
+                                   'host_rejected_before_create' + (':' + cause if cause else ''), failed=True, path=path)
+            if launch_error == 'host_creation_failed':
+                import launch_failures
+                launch_failures.record(row['bundle'], response.get('failure_class') or 'unknown')
         # Ambiguous errors retain the single-use claim; reconcile locates any created agent by labels.
     elif row['state'] == 'expired' and row.get('launched_at'):
         observations = reconcile(dispatch_id, host=host, path=path)

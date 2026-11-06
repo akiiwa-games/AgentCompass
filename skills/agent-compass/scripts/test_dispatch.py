@@ -410,6 +410,145 @@ class DispatchTests(unittest.TestCase):
             host.assert_called_once()
         self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'completed')
 
+    def launched(self):
+        row = self.prepare(self.issue())
+        registry.claim(row['request'], now=self.now)
+        registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+        return row
+
+    def test_late_observation_keeps_a_finished_worker_completed(self):
+        # 11-05: a worker finished, Paseo collected its idle runtime an hour later (status closed), and the first
+        # observation after that recorded it canceled. 11-01: a finished worker read as failed after a plugin reload.
+        later = self.now + timedelta(hours=2)
+        closed = self.launched()
+        registry.observe(closed['dispatch_id'], self.snapshot(closed, 'closed', attentionReason='finished',
+                                                              updatedAt=later.isoformat()), now=later)
+        self.assertEqual(registry.inspect(closed['dispatch_id'])['state'], 'completed')
+
+        seen_finished = {'reason': 'finished', 'status': 'idle', 'at': (self.now + timedelta(minutes=5)).isoformat()}
+        for snapshot in ({'status': 'error'}, {'status': 'closed'}, {'archivedAt': later.isoformat(), 'status': 'idle'},
+                         {'status': 'idle', 'providerUnavailable': True}):
+            row = self.launched()
+            registry.observe(row['dispatch_id'], self.snapshot(row, updatedAt=later.isoformat(), **snapshot),
+                             now=later, terminal=seen_finished)
+            self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'completed', snapshot)
+
+        # Without a finish the same snapshots still mean what they did, and an older finish does not count.
+        cases = (({'status': 'closed'}, None, 'canceled'), ({'status': 'error'}, None, 'failed'),
+                 ({'status': 'error'}, {'reason': 'error', 'at': later.isoformat()}, 'failed'),
+                 ({'status': 'closed'}, {'reason': 'finished', 'at': (self.now - timedelta(days=1)).isoformat()}, 'canceled'))
+        for snapshot, terminal, expected in cases:
+            row = self.launched()
+            registry.observe(row['dispatch_id'], self.snapshot(row, updatedAt=later.isoformat(), **snapshot),
+                             now=later, terminal=terminal)
+            self.assertEqual(registry.inspect(row['dispatch_id'])['state'], expected, (snapshot, terminal))
+
+        # Reconcile hands the notifier's sighting through from the bridge's observe answer.
+        row = self.launched()
+        answer = {'ok': True, 'agent': self.snapshot(row, 'error', updatedAt=later.isoformat()),
+                  'completion_notification': {'status': 'delivered', 'terminal': seen_finished}}
+        flow.reconcile(row['dispatch_id'], host=lambda _: answer, now=later)
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'completed')
+
+    def test_resumed_worker_previous_finish_is_not_this_dispatch_finish(self):
+        # Resume now relabels before sending; the worker then still shows the previous turn's idle/finished.
+        row = registry.prepare(self.issue()['decision_id'], self.task, self.launch, self.usage,
+                               accounts=self.accounts, now=self.now, resume_agent_id='agent-old')
+        registry.claim(row['request'], now=self.now)
+        later = (self.now + timedelta(seconds=30)).isoformat()
+        stale = self.snapshot(row, 'idle', id='agent-old', attentionReason='finished', updatedAt=later,
+                              lastUserMessageAt=(self.now - timedelta(days=14)).isoformat())
+        self.assertEqual(registry.observe(row['dispatch_id'], stale, now=self.now)['state'], 'launched')
+        self.assertEqual(registry.observe(row['dispatch_id'], dict(stale, status='closed'), now=self.now)['state'],
+                         'canceled')
+        row = registry.prepare(self.issue()['decision_id'], self.task, self.launch, self.usage,
+                               accounts=self.accounts, now=self.now, resume_agent_id='agent-old')
+        registry.claim(row['request'], now=self.now)
+        landed = dict(self.snapshot(row, 'idle', id='agent-old', attentionReason='finished', updatedAt=later),
+                      lastUserMessageAt=later)
+        self.assertEqual(registry.observe(row['dispatch_id'], landed, now=self.now)['state'], 'completed')
+
+    def test_reuse_skips_closed_and_long_idle_workers(self):
+        agents = self.root / '.paseo' / 'agents' / 'workspace'
+        agents.mkdir(parents=True)
+        rows = {}
+        for name, status in (('idle', 'idle'), ('closed', 'closed')):
+            row = self.prepare(self.issue())
+            registry.claim(row['request'], now=self.now)
+            registry.observe(row['dispatch_id'], self.snapshot(row, id=f'agent-{name}'), now=self.now)
+            registry.observe(row['dispatch_id'], self.snapshot(row, 'idle', attentionReason='finished', id=f'agent-{name}'),
+                             now=self.now)
+            (agents / f'agent-{name}.json').write_text(json.dumps(
+                {'id': f'agent-{name}', 'status': status, 'labels': {'router.parent_id': 'parent-a'}}), encoding='utf-8')
+            rows[name] = row
+        ids = [w['agent_id'] for w in registry.reusable_workers('parent-a', now=self.now + timedelta(minutes=1))]
+        self.assertEqual(ids, ['agent-idle'])
+        stale = self.now + timedelta(hours=registry.REUSE_MAX_IDLE_HOURS, minutes=1)
+        self.assertEqual(registry.reusable_workers('parent-a', now=stale), [])
+
+    def test_reuse_needs_overlap_with_the_new_brief(self):
+        import argparse
+        import roll
+        worker = {'agent_id': 'agent-review', 'task_ids': ['roll-old'], 'brief_paths': [],
+                  'titles': ['Independent review: s01-telegram fix (b)'], 'updated_at': self.now.isoformat()}
+        args = argparse.Namespace(new_worker=False, resume=None, task_id='roll-new', title=None)
+        task = {'task_id': 'roll-new', 'brief_path': None}
+        self.assertIsNone(roll.match_reusable_worker(args, task, '# Weekly storage scan', 'parent-a', workers=[worker]))
+        matched = roll.match_reusable_worker(args, task, '# Telegram fix: second review round', 'parent-a',
+                                             workers=[worker])
+        self.assertEqual(matched['agent_id'], 'agent-review')
+
+    def test_definitive_create_failure_cools_the_account_down_and_a_start_clears_it(self):
+        import launch_failures
+        store = self.root / 'launch-failures.json'
+        with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)}):
+            row = self.prepare(self.issue())
+            refused = {'ok': False, 'sent': False, 'error': 'host_creation_failed',
+                       'failure_class': 'provider_refresh_timeout'}
+            result = flow.launch(row['dispatch_id'], 'parent-a', host=lambda _: refused, watch_seconds=0)
+            self.assertEqual(result['state'], 'failed')
+            self.assertEqual(result['error'], 'host_creation_failed')
+            events = registry.inspect(row['dispatch_id'])['events']
+            self.assertEqual(events[-1]['reason'], 'host_rejected_before_create:host_creation_failed:provider_refresh_timeout')
+            plan = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
+            for candidate in plan['ranking']:
+                if candidate['bundle'].get('account') == 'claude-lab':
+                    self.assertTrue(any('cooling down' in e for e in candidate['excluded']), candidate['id'])
+            self.assertNotEqual(plan['choice'], 'lab_sonnet55_high')
+            # A pending decision for the cooling bundle is refused at prepare instead of launching again.
+            with self.assertRaisesRegex(ValueError, 'cooling down'):
+                self.prepare(self.issue())
+            launch_failures.clear('claude-lab')
+            self.launched()
+            self.assertEqual(launch_failures.active(), {})
+
+    def test_launch_failure_cooldown_scope_and_backoff(self):
+        import launch_failures
+        from datetime import datetime, timezone
+        store = self.root / 'cooldown.json'
+        t0 = datetime(2026, 11, 3, 5, 1, tzinfo=timezone.utc)
+        with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)}):
+            bundle = {'account': 'claude-2', 'model': 'claude-sonnet-5-5'}
+            other = {'account': 'claude-2', 'model': 'claude-opus-5-5'}
+            launch_failures.record(bundle, 'model_unavailable', now=t0)
+            active = launch_failures.active(now=t0)
+            self.assertIsNotNone(launch_failures.reason(bundle, active, now=t0))
+            self.assertIsNone(launch_failures.reason(other, active, now=t0))   # model-scoped
+            launch_failures.record(bundle, 'provider_refresh_timeout', now=t0)
+            active = launch_failures.active(now=t0)
+            self.assertIn('account', launch_failures.reason(other, active, now=t0))
+            first = launch_failures.record(bundle, 'provider_refresh_timeout', now=t0 + timedelta(seconds=17))
+            self.assertEqual(first['streak'], 2)
+            until = datetime.fromisoformat(first['until'])
+            self.assertEqual(until - (t0 + timedelta(minutes=launch_failures.COOLDOWN_MINUTES)), timedelta(minutes=30))
+            self.assertEqual(launch_failures.active(now=until + timedelta(seconds=1)), {})
+            much_later = until + timedelta(minutes=launch_failures.MAX_COOLDOWN_MINUTES + 1)
+            self.assertEqual(launch_failures.record(bundle, 'provider_refresh_timeout', now=much_later)['streak'], 1)
+            # Uncertain outcomes never cool anything down.
+            with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': 'off'}):
+                self.assertIsNone(launch_failures.record(bundle, 'unknown'))
+                self.assertFalse(launch_failures.enabled())
+
     def test_authoritative_missing_agent_releases_but_unknown_submission_does_not(self):
         row = self.prepare()
         registry.claim(row['request'], now=self.now)

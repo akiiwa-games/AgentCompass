@@ -39,7 +39,8 @@ export function notificationReceipt(file) {
   const record = readRecord(file);
   if (!record) return {status: 'unavailable', state_file: file};
   return {status: !DONE.has(record.status) && !alive(record.pid) ? 'stopped' : record.status,
-    pid: record.pid, state_file: file, deadline: record.deadline};
+    pid: record.pid, state_file: file, deadline: record.deadline,
+    ...(record.terminal ? {terminal: record.terminal} : {})};
 }
 
 // A single persisted record and exclusive process lock own each dispatch. The
@@ -96,7 +97,13 @@ export function notificationEvents(agent, record, now) {
   if (agent.pendingPermissions?.length) return agent.pendingPermissions.map(p =>
     ({key: `permission:${p.id}`, reason: 'needs permission'}));
   if (agent.attentionReason === 'permission') return [{key: 'permission', reason: 'needs permission'}];
-  if (agent.status === 'idle' && (agent.attentionReason === 'finished' || record.started))
+  // A resumed worker is relabeled before its turn is sent: until the turn is seen running or its message lands,
+  // idle/finished is still the previous turn's.
+  const resumed = record.agent_id && record.agent_id !== record.dispatch_id;
+  const created = (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
+  const turnSeen = record.started || (typeof agent.lastUserMessageAt === 'string'
+    && Date.parse(agent.lastUserMessageAt) >= created);
+  if (agent.status === 'idle' && (resumed ? turnSeen : (agent.attentionReason === 'finished' || record.started)))
     return [{key: 'terminal', reason: 'finished'}];
   return [];
 }
@@ -105,17 +112,25 @@ export function notificationEvents(agent, record, now) {
 // message before sending: a lost acknowledgment retries the same messageId.
 export async function notificationStep(client, record, persist, now = Date.now()) {
   if (DONE.has(record.status)) return true;
+  let event;
+  const targetId = record.agent_id ?? record.dispatch_id;
+  if (!record.pending) {
+    const agent = (await client.fetchAgent(targetId))?.agent;
+    const events = now >= record.deadline
+      ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
+      : notificationEvents(agent, record, now);
+    event = events.find(event => !record.delivered.includes(event.key));
+    // The first terminal sighting is the outcome. The registry reads it, because Paseo later closes an
+    // idle finished worker or fails it on a plugin reload, and a late observation would see only that.
+    if (event?.key === 'terminal' && !record.terminal)
+      record.terminal = {reason: event.reason, status: agent?.status ?? null,
+        attentionReason: agent?.attentionReason ?? null, at: new Date(now).toISOString()};
+  }
   const parent = (await client.fetchAgent(record.parent_id))?.agent;
   if (!parent || parent.archivedAt || parent.status === 'closed') {
     record.status = 'parent_unavailable'; persist(); return true;
   }
   if (!record.pending) {
-    const targetId = record.agent_id ?? record.dispatch_id;
-    const agent = (await client.fetchAgent(targetId))?.agent;
-    const events = now >= record.deadline
-      ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
-      : notificationEvents(agent, record, now);
-    const event = events.find(event => !record.delivered.includes(event.key));
     if (event) {
       record.pending = {...event, messageId: createHash('sha256')
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
@@ -202,6 +217,17 @@ async function watch(dispatchId, parentId, agentId = dispatchId) {
   }
 }
 
+// A fixed vocabulary for a definitive create failure. The SDK error text stays private; the class tells the
+// router whether the whole account (its provider never came up) or only this model failed.
+export function creationFailureClass(creation) {
+  const text = typeof creation?.error === 'string' ? creation.error : '';
+  if (/timed out refreshing|refresh(?:ing)? timed out/i.test(text)) return 'provider_refresh_timeout';
+  if (/unavailable provider|provider (?:is )?unavailable|not (?:installed|signed in)|sign in/i.test(text)) return 'provider_unavailable';
+  if (/quota|usage limit|rate.?limit/i.test(text)) return 'quota';
+  if (/model/i.test(text) && /unknown|not found|unsupported|invalid/i.test(text)) return 'model_unavailable';
+  return 'unknown';
+}
+
 export function project(agent) {
   if (!agent) return null;
   const result = Object.fromEntries(['id', 'provider', 'model', 'status', 'updatedAt', 'createdAt',
@@ -248,7 +274,7 @@ export async function execute(client, input, notify = ensureNotification) {
           fs.writeFileSync(`${file}.creation-failed`, 'host_creation_failed', {mode: 0o600});
           saveRecord(file, {...record, status: 'creation_failed'});
         }
-        return {ok: false, sent: false, error: 'host_creation_failed',
+        return {ok: false, sent: false, error: 'host_creation_failed', failure_class: creationFailureClass(creation),
           completion_notification: {...completion_notification, status: 'creation_failed'}};
       }
       // A timeout can follow successful creation; never report definite failure here.
@@ -288,12 +314,15 @@ export async function execute(client, input, notify = ensureNotification) {
     catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
     if (alreadyBound)
       return {ok: true, sent: true, agent: project(existing), completion_notification};
-    let sent = false;
+    let sent = false, relabeled = false;
+    const mergedLabels = {...labels, ...(r.labels ?? {}), 'paseo.parent-agent-id': input.parent_id};
     try {
+      // Bind first, then send. A send cut off by the caller's timeout leaves an agent already carrying this
+      // dispatch's labels, so reconcile can observe it; sending first left it bound to the previous dispatch.
+      await client.updateAgent(input.agent_id, {name: r.title, labels: mergedLabels});
+      relabeled = true;
       await client.sendMessage(input.agent_id, r.initialPrompt, {messageId: input.dispatch_id});
       sent = true;
-      const mergedLabels = {...labels, ...(r.labels ?? {}), 'paseo.parent-agent-id': input.parent_id};
-      await client.updateAgent(input.agent_id, {name: r.title, labels: mergedLabels});
       const fetched = (await client.fetchAgent(input.agent_id))?.agent;
       const nowIso = new Date().toISOString();
       const fresh = fetched
@@ -305,6 +334,12 @@ export async function execute(client, input, notify = ensureNotification) {
       return {ok: true, sent: true, agent: project(fresh), completion_notification};
     } catch {
       if (!sent) {
+        // A definite send failure falls back to a fresh create with the same dispatch labels: give the old
+        // worker its previous labels back so only one agent carries this dispatch.
+        if (relabeled) {
+          try { await client.updateAgent(input.agent_id, {name: existing.title, labels}); }
+          catch { return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification}; }
+        }
         const file = notificationFile(input.dispatch_id);
         const record = readRecord(file);
         if (record?.parent_id === input.parent_id) {

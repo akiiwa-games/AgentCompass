@@ -30,6 +30,8 @@ DECISION_TTL = 900
 PREPARE_LEASE = 300
 RUN_LEASE = 600
 MAX_LIFETIME = 86400
+# A worker idle longer than this is not resumed: its runtime and prompt cache are gone.
+REUSE_MAX_IDLE_HOURS = 24
 LABELS = ('router.decision_id', 'router.dispatch_id', 'router.parent_id',
           'router.task_id', 'router.account', 'router.bundle_id', 'router.request_hash')
 BOUND = ('provider', 'settings')
@@ -317,6 +319,9 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
         latest = history[-1]
         if latest.get('state') != 'completed':
             continue
+        last_seen = latest.get('updated_at') or latest.get('created_at')
+        if not last_seen or now - parse(last_seen) > timedelta(hours=REUSE_MAX_IDLE_HOURS):
+            continue
         doc = paseo_agent_record(agent_id, paseo_home=paseo_home)
         if isinstance(doc, dict):
             labels = doc.get('labels') if isinstance(doc.get('labels'), dict) else {}
@@ -324,7 +329,9 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
             if owner and owner != parent_id:
                 continue
             status = doc.get('status') or doc.get('lastStatus')
-            if (doc.get('archivedAt') or status in ('running', 'initializing', 'error')
+            # `closed`: Paseo collected the idle runtime. A resume must cold-restore it from persistence first,
+            # which outlasts the launch call (~25 s on Antigravity) and can land the turn on a new provider session.
+            if (doc.get('archivedAt') or status in ('running', 'initializing', 'error', 'closed')
                     or doc.get('attentionReason') in ('error', 'permission')
                     or doc.get('providerUnavailable') or doc.get('pendingPermissions')):
                 continue
@@ -507,8 +514,22 @@ def claim(request, parent_id=None, call_id=None, now=None, path=None):
         return row
 
 
-def observe(dispatch_id, snapshot, now=None, path=None):
-    """Accept only the bound host agent; start/terminal receipts are idempotent."""
+def finished_before(terminal, launched_at):
+    """The bridge's notifier saw this launch finish; later host lifecycle (idle collection, plugin reload,
+    archiving) must not rewrite that outcome."""
+    if not isinstance(terminal, dict) or terminal.get('reason') != 'finished':
+        return False
+    at = terminal.get('at')
+    try:
+        return isinstance(at, str) and parse(at) >= parse(launched_at)
+    except ValueError:
+        return False
+
+
+def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
+    """Accept only the bound host agent; start/terminal receipts are idempotent.
+
+    `terminal` is the notifier's first terminal sighting of this dispatch, when it has one."""
     now = now or utcnow()
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)
@@ -546,11 +567,23 @@ def observe(dispatch_id, snapshot, now=None, path=None):
         row['observed_at'] = stamp(now)
         status = snapshot.get('status')
         reason = snapshot.get('attentionReason')
+        # A resumed worker carries this dispatch's labels before its turn starts, so its idle/finished state may
+        # still be the previous turn's. Only a seen run or a user message after this launch shows the new turn.
+        last_message = snapshot.get('lastUserMessageAt')
+        try:
+            delivered = isinstance(last_message, str) and parse(last_message) >= parse(row['launched_at'])
+        except ValueError:
+            delivered = False
+        if row.get('operation') == 'resume' and not row.get('started_at') and not delivered and status != 'running':
+            reason = None
         target = None
-        if status == 'error' or reason == 'error' or snapshot.get('providerUnavailable'):
+        if finished_before(terminal, row['launched_at']) and status != 'running':
+            target = 'completed'
+        elif status == 'error' or reason == 'error' or snapshot.get('providerUnavailable'):
             target = 'failed'
         elif status == 'closed' or snapshot.get('archivedAt'):
-            target = 'canceled'
+            # Paseo closes a finished worker once it collects the idle runtime; only an unfinished one was canceled.
+            target = 'completed' if reason == 'finished' else 'canceled'
         elif reason == 'permission' or snapshot.get('pendingPermissionCount', 0) > 0:
             target = 'started' if row.get('started_at') else 'launched'
         elif status == 'idle' and (reason == 'finished' or row.get('started_at')):
@@ -571,7 +604,10 @@ def observe(dispatch_id, snapshot, now=None, path=None):
         if row['state'] != target:
             event(row, target, now)
         save(connection, row)
-        return row
+    if target in ('started', 'completed'):
+        import launch_failures
+        launch_failures.clear(row['bundle'].get('account'))
+    return row
 
 
 def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):

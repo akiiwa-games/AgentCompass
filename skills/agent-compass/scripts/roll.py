@@ -167,8 +167,9 @@ def match_reusable_worker(args, task, text, parent, workers=None):
             eligible.append(((not w.get('worn', False), 2, 1.0 + overlap, w.get('updated_at') or ''), w))
             continue
         overlap = len(query_tokens & w_tokens) / max(1, len(query_tokens | w_tokens)) if (query_tokens and w_tokens) else 0.0
-        tier = 2 if overlap > 0 else 1
-        eligible.append(((not w.get('worn', False), tier, overlap, w.get('updated_at') or ''), w))
+        if overlap <= 0:
+            continue  # Same bundle alone is not continuity: an unrelated worker brings only wrong context.
+        eligible.append(((not w.get('worn', False), 2, overlap, w.get('updated_at') or ''), w))
     if not eligible:
         return None
     return max(eligible, key=lambda item: item[0])[1]

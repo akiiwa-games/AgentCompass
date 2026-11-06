@@ -6,7 +6,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
-import {execute, project, notificationStep, notificationEvents, ensureNotification} from './paseo_dispatch_bridge.mjs';
+import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
+  creationFailureClass} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -66,7 +67,8 @@ test('SDK resume sends message, updates labels, and watches target agent id', as
     fetchAgent: async id => ({agent: id === 'parent' ? {cwd: 'E:/fixture', status: 'running'} : workerState}),
     sendMessage: async (id, text, options) => {
       sent.push({id, text, options});
-      workerState = {...workerState, status: 'running', attentionReason: undefined};
+      workerState = {...workerState, status: 'running', attentionReason: undefined,
+        lastUserMessageAt: '2026-11-03T00:01:00.000Z'};
     },
     updateAgent: async (id, patch) => {
       updated.push({id, patch});
@@ -99,6 +101,11 @@ test('SDK resume sends message, updates labels, and watches target agent id', as
     id: workerId, status: 'idle', attentionReason: 'finished',
     labels: {'router.dispatch_id': 'old-dispatch'},
   }, record, 10), []);
+  // Bound but the new turn not yet delivered: the previous turn's finish must not fire either
+  assert.deepEqual(notificationEvents({
+    id: workerId, status: 'idle', attentionReason: 'finished', lastUserMessageAt: '1969-12-31T23:00:00.000Z',
+    labels: {'router.dispatch_id': dispatchId},
+  }, {...record, creation_deadline: 0}, 10), []);
   // Once bound and finished, notificationStep queries workerId and includes workerId in the message
   workerState = {...workerState, status: 'idle', attentionReason: 'finished'};
   const parentMsgs = [];
@@ -347,4 +354,89 @@ test('detached notifier has one owner, recovers a killed owner, and exits after 
     await until(() => [...pids].every(pid => !running(pid)));
     fs.rmSync(root, {recursive: true, force: true});
   }
+});
+
+test('resume binds the dispatch labels before sending, and a refused send gives the old labels back', async () => {
+  const dispatchId = '22334455-6677-4888-9999-aabbccddeeff';
+  const request = {provider: 'antigravity-resilient/gemini-4-argon-high', title: 'Drift round',
+    initialPrompt: 'secret-resume-canary', labels: {'router.dispatch_id': dispatchId, 'router.parent_id': 'parent'},
+    settings: {modeId: 'full-access'}};
+  const oldLabels = {'router.dispatch_id': 'old-dispatch', 'router.parent_id': 'parent'};
+  const make = (sendMessage) => {
+    const calls = [];
+    let worker = {id: 'worker', title: 'Old title', provider: 'antigravity-resilient', model: 'gemini-4-argon-high',
+      currentModeId: 'full-access', status: 'idle', attentionReason: 'finished', labels: oldLabels};
+    return {calls, client: {
+      fetchAgent: async id => ({agent: id === 'parent' ? {status: 'running'} : worker}),
+      updateAgent: async (id, patch) => { calls.push(['update', patch.labels['router.dispatch_id'], patch.name]);
+        worker = {...worker, labels: patch.labels}; },
+      sendMessage: async (...args) => { calls.push(['send', worker.labels['router.dispatch_id']]); return sendMessage(...args); },
+    }};
+  };
+  const input = {operation: 'resume', dispatch_id: dispatchId, parent_id: 'parent', agent_id: 'worker', request};
+
+  // 11-06: the send outlived the caller's 25 s timeout; the worker must already carry this dispatch's labels.
+  const ok = make(async () => {});
+  assert.equal((await execute(ok.client, input, notifier)).ok, true);
+  assert.deepEqual(ok.calls, [['update', dispatchId, 'Drift round'], ['send', dispatchId]]);
+
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-resume-'));
+  const previous = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = stateDir;
+  try {
+    const refused = make(async () => { throw new Error('send refused'); });
+    const result = await execute(refused.client, input, notifier);
+    assert.deepEqual([result.ok, result.sent, result.error], [false, false, 'host_resume_failed']);
+    assert.deepEqual(refused.calls, [['update', dispatchId, 'Drift round'], ['send', dispatchId],
+      ['update', 'old-dispatch', 'Old title']]);
+  } finally {
+    if (previous === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = previous;
+    fs.rmSync(stateDir, {recursive: true, force: true});
+  }
+});
+
+test('the notifier keeps its first terminal sighting and the receipt reports it', async () => {
+  const dispatchId = '33445566-7788-4999-aaaa-bbccddeeff00';
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-terminal-'));
+  const previous = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = stateDir;
+  try {
+    let worker = {id: dispatchId, status: 'idle', attentionReason: 'finished', labels: {'router.dispatch_id': dispatchId}};
+    let parent = {status: 'closed'};
+    const client = {fetchAgent: async id => ({agent: id === 'parent' ? parent : worker}), sendMessage: async () => {}};
+    const record = {dispatch_id: dispatchId, parent_id: 'parent', status: 'watching', creation_deadline: 0,
+      deadline: 10_000, delivered: [], pending: null, started: true, pid: process.pid};
+    const file = path.join(stateDir, 'paseo-notifications', `${dispatchId}.json`);
+    fs.mkdirSync(path.dirname(file), {recursive: true});
+    const persist = () => fs.writeFileSync(file, JSON.stringify(record));
+    // Even when the parent is already gone, the finish is recorded for the registry.
+    assert.equal(await notificationStep(client, record, persist, 5_000), true);
+    assert.equal(record.status, 'parent_unavailable');
+    assert.deepEqual(record.terminal, {reason: 'finished', status: 'idle', attentionReason: 'finished',
+      at: new Date(5_000).toISOString()});
+    assert.deepEqual(notificationReceipt(file).terminal, record.terminal);
+
+    // A live parent: the sighting is kept once, later lifecycle (closed after idle collection) does not replace it.
+    parent = {status: 'running'};
+    const second = {...record, status: 'watching', terminal: undefined, delivered: []};
+    assert.equal(await notificationStep(client, second, () => {}, 6_000), true);
+    worker = {...worker, status: 'closed', attentionReason: null};
+    second.status = 'watching'; second.delivered = [];
+    await notificationStep(client, second, () => {}, 9_000);
+    assert.equal(second.terminal.reason, 'finished');
+    assert.equal(second.terminal.at, new Date(6_000).toISOString());
+  } finally {
+    if (previous === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = previous;
+    fs.rmSync(stateDir, {recursive: true, force: true});
+  }
+});
+
+test('a definitive create failure carries a fixed failure class, never the SDK text', () => {
+  assert.equal(creationFailureClass({error: 'Timed out refreshing Claude 2 after 120000ms; pending: models'}),
+    'provider_refresh_timeout');
+  assert.equal(creationFailureClass({error: "Agent x references unavailable provider 'antigravity-resilient'"}),
+    'provider_unavailable');
+  assert.equal(creationFailureClass({error: 'Unknown model gpt-x'}), 'model_unavailable');
+  assert.equal(creationFailureClass({error: 'something with secret-prompt-canary'}), 'unknown');
+  assert.equal(creationFailureClass(undefined), 'unknown');
 });

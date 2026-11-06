@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fast_modes
 import window_scope
 import host_policy
+import launch_failures
 import override_store
 import antigravity_telemetry
 import provider_inventory
@@ -2000,6 +2001,9 @@ def evaluate_bundle(bundle, task, ctx):
                 else 'model not detected by discovery for 7+ days')
     if bundle['id'] in ctx['unavailable']:
         exclude('marked unavailable by the parent')
+    cooling = launch_failures.reason(bundle, ctx.get('launch_failures'))
+    if cooling:
+        exclude(cooling)
     # Only subscription accounts join automatic routing. A checked metered (API) bundle is a last resort:
     # explicit selection, task.metered_ok, or plan()'s fallback pass when no subscription can take the work.
     # Unknown billing stays explicit selection only.
@@ -2525,7 +2529,8 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     ctx = {'policy': policy, 'accounts': accounts, 'capabilities': capabilities, 'usage': usage, 'now': now,
            'unavailable': set(unavailable), 'bundles': bundles(accounts),
            'host_policy': host_policy.load_policy() if host_policy_config is None else host_policy_config,
-           'overrides': list(overrides), 'records': list(records or ())}
+           'overrides': list(overrides), 'records': list(records or ()),
+           'launch_failures': launch_failures.active() if launch_failures.enabled() else {}}
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values() if bundle_applies(b, task)]
     eligible = [c for c in candidates if not c['excluded']]
     # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
