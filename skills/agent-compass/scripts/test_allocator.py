@@ -2307,10 +2307,11 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         self.assertEqual(by_id['opus55_medium']['excluded'], [])
         self.assertNotEqual(rt_plan['choice'], 'argon_high')
 
-        # A stepped-down bundle resolves cleanly in dispatch_registry
+        # A stepped-down bundle resolves cleanly in dispatch_registry when allow_realtime_stepdown=True
         stepped_bundle = dispatch_registry.resolve_bundle(
             dict(by_id['astra_high']['bundle'], bundle_id='astra_high'),
             accounts=base_accounts,
+            allow_realtime_stepdown=True,
         )
         self.assertEqual(stepped_bundle['effort'], 'medium')
 
@@ -2503,15 +2504,15 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         self.assertIsNone(dispatch_registry.resolve_bundle(tampered, accounts=accounts, explicit_override=False))
         self.assertIsNone(dispatch_registry.resolve_bundle(
             dict(bundles_map['astra_high'], bundle_id='astra_high', effort='minimal', realtime_stepped_from='high'),
-            accounts=accounts, explicit_override=False,
+            accounts=accounts, explicit_override=False, allow_realtime_stepdown=True,
         ))
         self.assertIsNone(dispatch_registry.resolve_bundle(
             dict(bundles_map['flash_high'], bundle_id='flash_high', effort='medium', realtime_stepped_from='high'),
-            accounts=accounts, explicit_override=False,
+            accounts=accounts, explicit_override=False, allow_realtime_stepdown=True,
         ))
         valid_stepdown = dispatch_registry.resolve_bundle(
             dict(bundles_map['astra_high'], bundle_id='astra_high', effort='medium', realtime_stepped_from='high'),
-            accounts=accounts, explicit_override=False,
+            accounts=accounts, explicit_override=False, allow_realtime_stepdown=True,
         )
         self.assertIsNotNone(valid_stepdown)
         self.assertEqual(valid_stepdown['effort'], 'medium')
@@ -2602,6 +2603,225 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                 self.assertEqual(src, 'default')
                 self.assertAlmostEqual(val, policy['responsiveness']['default'])
                 self.assertGreaterEqual(val, policy['responsiveness']['floor'])
+
+    def test_issue1_resolve_bundle_requires_realtime_flag_highest_qualifying_effort_and_survives_disabled_sibling(self):
+        import dispatch_registry
+        import router_test_support
+
+        accounts = copy.deepcopy(allocator.load_accounts())
+        bundles_map = allocator.bundles(accounts)
+
+        # 1a. Forged `realtime_stepped_from` on a non-realtime call (`allow_realtime_stepdown=False`) is rejected.
+        forged_non_rt = dict(bundles_map['astra_high'], id='astra_high', bundle_id='astra_high',
+                             effort='medium', realtime_stepped_from='high')
+        self.assertIsNone(dispatch_registry.resolve_bundle(
+            forged_non_rt, accounts, explicit_override=False, allow_realtime_stepdown=False,
+        ))
+
+        # 1b. Skipping over a higher qualifying effort (`sol_high` -> `low` when `medium` clears the floor) is rejected.
+        forged_skip_tier = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
+                                effort='low', realtime_stepped_from='high')
+        self.assertIsNone(dispatch_registry.resolve_bundle(
+            forged_skip_tier, accounts, explicit_override=False, allow_realtime_stepdown=True,
+        ))
+        valid_sol = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
+                         effort='medium', realtime_stepped_from='high')
+        resolved_sol = dispatch_registry.resolve_bundle(
+            valid_sol, accounts, explicit_override=False, allow_realtime_stepdown=True,
+        )
+        self.assertIsNotNone(resolved_sol)
+        self.assertEqual(resolved_sol['bundle_id'], 'sol_high')
+        self.assertEqual(resolved_sol['effort'], 'medium')
+
+        # 1c. Explicit caller `realtime_loop=False` overrides `profile['realtime_loop']=True` in `normalize_task`.
+        prof_rt = {
+            'work_kind': 'computer_use', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
+            'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
+            'realtime_loop': True, 'interaction_style': 'engineering',
+        }
+        norm = allocator.normalize_task(
+            {'objective': 'implement polling', 'realtime_loop': False, 'profile': prof_rt},
+            accounts['scoring'], allocator.load_capabilities(accounts=accounts), accounts,
+        )
+        self.assertFalse(norm['realtime_loop'])
+        self.assertFalse(norm['profile']['realtime_loop'])
+
+        # 1d. When `opus55_medium` is disabled in model management and `opus55_high` steps down to `medium`,
+        # `resolve_bundle`, `issue()`, and `prepare()` preserve `bundle_id='opus55_high'` (not disabled `opus55_medium`).
+        acc_disabled_sib = copy.deepcopy(accounts)
+        for k, v in acc_disabled_sib['accounts'].items():
+            if isinstance(v, dict):
+                v['verified'] = (k == 'claude')
+        for bid, b in acc_disabled_sib['accounts']['claude']['bundles'].items():
+            if bid != 'opus55_high':
+                b['disabled'] = True
+        caps = allocator.load_capabilities(accounts=acc_disabled_sib)
+        usage = router_test_support.usage_windows(
+            self.now, {'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)]}
+        )
+        task = {
+            'objective': 'Play game live', 'parent_agent_id': 'p1', 'task_id': 't_opus_stepdown',
+            'difficulty': 'hard', 'realtime_loop': True,
+        }
+        orig_hp = allocator.host_policy.load_policy
+        orig_la = allocator.load_accounts
+        try:
+            allocator.host_policy.load_policy = lambda *a, **kw: None
+            allocator.load_accounts = lambda *a, **kw: acc_disabled_sib
+            plan_res = allocator.plan(task, usage, now=self.now, accounts=acc_disabled_sib, capabilities=caps, overrides=[])
+            self.assertEqual(plan_res['choice'], 'opus55_high')
+            self.assertEqual(plan_res['selected_bundle']['effort'], 'medium')
+            with tempfile.TemporaryDirectory() as td:
+                db = os.path.join(td, 'reg.sqlite')
+                issued = dispatch_registry.issue(plan_res, task, now=self.now, path=db, allocation_task=task)
+                prepared = dispatch_registry.prepare(
+                    issued['decision_id'], task, {'title': 'rt', 'initialPrompt': 'go'},
+                    usage, accounts=acc_disabled_sib, now=self.now, path=db,
+                )
+                self.assertEqual(prepared['bundle']['bundle_id'], 'opus55_high')
+                self.assertEqual(prepared['bundle']['effort'], 'medium')
+                self.assertFalse(prepared['bundle'].get('disabled'))
+        finally:
+            allocator.host_policy.load_policy = orig_hp
+            allocator.load_accounts = orig_la
+
+    def test_issue2_pinned_and_user_override_preserve_chosen_model_and_effort_with_warning(self):
+        import dispatch_registry
+        import router_test_support
+
+        accounts = copy.deepcopy(allocator.load_accounts())
+        for k, v in accounts['accounts'].items():
+            if isinstance(v, dict):
+                v['verified'] = True
+        caps = allocator.load_capabilities(accounts=accounts)
+        bundles_map = allocator.bundles(accounts)
+        usage = self.healthy_usage()
+
+        # 2a. `pinned_bundle='opus55_high'` on a `realtime_loop=True` task keeps `effort='high'` and records a warning.
+        pinned_plan = allocator.plan(
+            {'objective': 'Play game live', 'difficulty': 'routine', 'realtime_loop': True, 'pinned_bundle': 'opus55_high'},
+            usage, now=self.now, accounts=accounts, capabilities=caps, overrides=[],
+        )
+        self.assertEqual(pinned_plan['choice'], 'opus55_high')
+        self.assertEqual(pinned_plan['selected_bundle']['effort'], 'high')
+        self.assertTrue(any('responsiveness' in w for w in pinned_plan['decision'].get('warnings', [])),
+                        pinned_plan['decision'].get('warnings'))
+
+        # 2b. Explicit model constraint on a slow-only model (`gemini-4-argon-high`) is not excluded by responsiveness floor.
+        constrained_plan = allocator.plan(
+            {'objective': 'Play game live', 'difficulty': 'routine', 'realtime_loop': True,
+             'constraints': {'model': 'gemini-4-argon-high'}},
+            usage, now=self.now, accounts=accounts, capabilities=caps, overrides=[],
+        )
+        self.assertEqual(constrained_plan['choice'], 'argon_high')
+        self.assertEqual(constrained_plan['selected_bundle']['effort'], 'high')
+        self.assertTrue(any('responsiveness' in w for w in constrained_plan['decision'].get('warnings', [])),
+                        constrained_plan['decision'].get('warnings'))
+
+        # 2c. `record --constraint user_override` with `astra_high` (`effort='high'`) or `argon_high` (`effort='high'`)
+        # succeeds through `dispatch_registry.issue()` + `prepare()` without crashing.
+        usage_prep = router_test_support.usage_windows(self.now, {
+            'codex': [('usage', 80, 100)],
+            'antigravity': [('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 80, 100)],
+        })
+        orig_hp = allocator.host_policy.load_policy
+        orig_la = allocator.load_accounts
+        try:
+            allocator.host_policy.load_policy = lambda *a, **kw: None
+            allocator.load_accounts = lambda *a, **kw: accounts
+            for bid in ('astra_high', 'argon_high'):
+                with self.subTest(bundle_id=bid), tempfile.TemporaryDirectory() as td:
+                    db = os.path.join(td, 'reg.sqlite')
+                    task = {'objective': 'Play game live', 'parent_agent_id': 'p1', 'task_id': f't_{bid}', 'realtime_loop': True}
+                    rec = {
+                        'stage': 'record', 'choice': 'constraint', 'constraint': 'user_override',
+                        'basis': f'User explicitly requested {bid}',
+                        'selected_bundle': dict(bundles_map[bid], id=bid, bundle_id=bid, effort='high'),
+                        'decision': {'action': 'dispatch', 'needs_user_decision': False, 'task': {'realtime_loop': True}},
+                    }
+                    issued = dispatch_registry.issue(rec, task, now=self.now, path=db, allocation_task=task)
+                    prepared = dispatch_registry.prepare(
+                        issued['decision_id'], task, {'title': 'rt', 'initialPrompt': 'go'},
+                        usage_prep, accounts=accounts, now=self.now, path=db,
+                    )
+                    self.assertEqual(prepared['bundle']['bundle_id'], bid)
+                    self.assertEqual(prepared['bundle']['effort'], 'high')
+        finally:
+            allocator.host_policy.load_policy = orig_hp
+            allocator.load_accounts = orig_la
+
+    def test_issue3_realtime_sibling_deference_ignores_unavailable_and_cooling_down_siblings(self):
+        accounts = copy.deepcopy(allocator.load_accounts())
+        for v in accounts['accounts'].values():
+            if isinstance(v, dict):
+                v['verified'] = True
+        caps = allocator.load_capabilities(accounts=accounts)
+        bundles_map = allocator.bundles(accounts)
+        usage = self.healthy_usage()
+
+        orig_hp = allocator.host_policy.load_policy
+        try:
+            allocator.host_policy.load_policy = lambda *a, **kw: None
+            # When all lower-effort siblings are in `unavailable`, the high/xhigh bundle steps down instead of deferring.
+            for target_id in ('sol_high', 'opus55_high', 'opus55_xhigh', 'astra_xhigh'):
+                with self.subTest(target_id=target_id):
+                    unavail = [bid for bid in bundles_map if bid != target_id]
+                    res = allocator.plan(
+                        {'objective': 'Play game live', 'difficulty': 'hard', 'realtime_loop': True},
+                        usage, now=self.now, unavailable=unavail, accounts=accounts, capabilities=caps, overrides=[],
+                    )
+                    cand = next(c for c in res['ranking'] if c['id'] == target_id)
+                    self.assertEqual(res['choice'], target_id)
+                    self.assertEqual(cand['excluded'], [])
+                    self.assertEqual(cand['bundle']['effort'], 'medium')
+
+            # When a lower-effort sibling is in `launch_failures` cooldown, `resolve_realtime_effort` ignores it and steps down.
+            custom_bundles = {
+                'opus55_medium': dict(bundles_map['opus55_medium'], id='opus55_medium', model='claude-opus-5-5-medium'),
+                'opus55_high': dict(bundles_map['opus55_high'], id='opus55_high', model='claude-opus-5-5'),
+            }
+            accounts_alias = copy.deepcopy(accounts)
+            accounts_alias.setdefault('aliases', {})['claude-opus-5-5-medium'] = 'claude-opus-5-5'
+            rt_ctx = {
+                'accounts': accounts_alias,
+                'policy': accounts_alias['scoring'],
+                'bundles': custom_bundles,
+                'unavailable': set(),
+                'now': self.now,
+                'launch_failures': {
+                    'claude/claude-opus-5-5-medium': {
+                        'failure_class': 'host_creation_failed',
+                        'streak': 1,
+                        'until': '2099-01-01T00:00:00Z',
+                    }
+                },
+            }
+            eff, resp_val, resp_src, stepped_from = allocator.resolve_realtime_effort(
+                custom_bundles['opus55_high'],
+                {'realtime_loop': True},
+                rt_ctx,
+                'claude-opus-5-5',
+                info=accounts_alias['models']['claude-opus-5-5'],
+                policy=accounts_alias['scoring'],
+                curves=accounts_alias['effort_curves']['claude-opus-5-5'],
+                gate=3.1,
+            )
+            self.assertEqual((eff, stepped_from), ('medium', 'high'))
+            self.assertGreaterEqual(resp_val, 0.5)
+        finally:
+            allocator.host_policy.load_policy = orig_hp
+
+    def test_issue4_infer_task_profile_local_only_matches_origin_main_without_gui_expansion(self):
+        caps = allocator.load_capabilities()
+        for task in (
+            {'objective': 'Click the Save button in the dialog'},
+            {'work_kind': 'computer_use', 'objective': 'Operate the application'},
+            {'work_kind': 'other_or_mixed', 'objective': 'Take a screenshot of the result'},
+            {'objective': 'Design a browser dashboard UI layout in React'},
+        ):
+            with self.subTest(task=task):
+                prof = allocator.infer_task_profile(task, caps)
+                self.assertFalse(prof['local_only'])
 
 
 if __name__ == '__main__':

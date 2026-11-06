@@ -1296,7 +1296,7 @@ def infer_task_profile(task, capabilities):
     elif local_hit:
         local_only = True
         local_note = '; objective names a local runtime, path, or machine dependency'
-    elif implies.get('local_only') or gui:
+    elif implies.get('local_only'):
         local_only = True
         local_note = ''
     else:
@@ -1696,40 +1696,53 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
     if auto_bundles.split_effort(raw_launch_id, accounts if isinstance(accounts, dict) and 'models' in accounts else {'models': {}})[1] is not None:
         return raw_effort, resp_val, resp_source, None
 
-    pinned = (task.get('pinned_bundle') and task.get('pinned_bundle') == bundle.get('id')) or (
-        task.get('constraint_model') and task.get('constraint_model') == bundle.get('id'))
-    if not pinned:
-        siblings = []
-        for bid, b in (ctx.get('bundles') or {}).items():
-            if not isinstance(b, dict):
-                continue
-            if b.get('account') != bundle.get('account'):
-                continue
-            if (b.get('harness') or bundle_harness(b, b.get('account'), b.get('id') or bid)) != eff_harness:
-                continue
-            if canonical(b.get('model') or '', accounts) != model:
-                continue
-            if b.get('disabled') or b.get('discovery_unavailable') or not bundle_applies(b, task):
-                continue
-            siblings.append({**b, 'id': b.get('id') or bid})
-        self_id = bundle.get('id')
-        for sib in siblings:
-            if (self_id and sib.get('id') == self_id) or (not self_id and sib.get('effort') == bundle.get('effort')):
-                continue
-            sib_eff = scoring_effort(sib, info)
-            sib_resp, sib_src = bundle_responsiveness(
-                sib, info, policy, curves, state_dir=state_dir, effort=sib_eff, harness=eff_harness)
-            sib_ab = effort_ability(policy, curves, info, sib_eff)
-            if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor and sib_ab >= gate:
-                return raw_effort, resp_val, resp_source, None
-        if siblings:
-            step_down_peers = [
-                s for s in siblings
-                if effort_ability(policy, curves, info, scoring_effort(s, info)) >= gate
-            ] or siblings
-            min_rank = min(_effort_rank(scoring_effort(s, info)) for s in step_down_peers)
-            if _effort_rank(raw_effort) > min_rank:
-                return raw_effort, resp_val, resp_source, None
+    pinned = bool(
+        (task.get('pinned_bundle') and task.get('pinned_bundle') == bundle.get('id'))
+        or (task.get('constraint_bundle') and task.get('constraint_bundle') == bundle.get('id'))
+        or (task.get('constraint_model') and task.get('constraint_model') in (bundle.get('id'), model))
+    )
+    if pinned:
+        return raw_effort, resp_val, resp_source, None
+
+    unavailable_ids = set(ctx.get('unavailable') or ())
+    failures_map = ctx.get('launch_failures')
+    siblings = []
+    for bid, b in (ctx.get('bundles') or {}).items():
+        if not isinstance(b, dict):
+            continue
+        sib_id = b.get('id') or bid
+        if sib_id in unavailable_ids:
+            continue
+        if b.get('account') != bundle.get('account'):
+            continue
+        if (b.get('harness') or bundle_harness(b, b.get('account'), sib_id)) != eff_harness:
+            continue
+        if canonical(b.get('model') or '', accounts) != model:
+            continue
+        if b.get('disabled') or b.get('discovery_unavailable') or not bundle_applies(b, task):
+            continue
+        sib_bundle = {**b, 'id': sib_id}
+        if launch_failures.reason(sib_bundle, failures_map, now=ctx.get('now')):
+            continue
+        siblings.append(sib_bundle)
+    self_id = bundle.get('id')
+    for sib in siblings:
+        if (self_id and sib.get('id') == self_id) or (not self_id and sib.get('effort') == bundle.get('effort')):
+            continue
+        sib_eff = scoring_effort(sib, info)
+        sib_resp, sib_src = bundle_responsiveness(
+            sib, info, policy, curves, state_dir=state_dir, effort=sib_eff, harness=eff_harness)
+        sib_ab = effort_ability(policy, curves, info, sib_eff)
+        if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor and sib_ab >= gate:
+            return raw_effort, resp_val, resp_source, None
+    if siblings:
+        step_down_peers = [
+            s for s in siblings
+            if effort_ability(policy, curves, info, scoring_effort(s, info)) >= gate
+        ] or siblings
+        min_rank = min(_effort_rank(scoring_effort(s, info)) for s in step_down_peers)
+        if _effort_rank(raw_effort) > min_rank:
+            return raw_effort, resp_val, resp_source, None
 
     dispatch_table = (accounts.get('dispatch_efforts') or {}).get(provider) if isinstance(accounts, dict) else None
     allowed_efforts = None
@@ -2411,19 +2424,37 @@ def evaluate_bundle(bundle, task, ctx):
     if task.get('realtime_loop'):
         resp_cfg = responsiveness_config(policy)
         result['components']['responsiveness_source'] = resp_source
+        pinned_choice = bool(
+            (task.get('pinned_bundle') and task.get('pinned_bundle') == bundle.get('id'))
+            or (task.get('constraint_bundle') and task.get('constraint_bundle') == bundle.get('id'))
+            or (task.get('constraint_model') and task.get('constraint_model') in (bundle.get('id'), model))
+        )
         if resp_source == 'not_applicable' or resp_val is None:
             result['components']['responsiveness'] = None
-            result['below_floor'] = True
-            exclude('responsiveness not_applicable for this channel (too slow per turn for a live loop)')
+            if pinned_choice:
+                warn = (f"pinned {bundle.get('id')} ({model}@{eff}) responsiveness is not_applicable "
+                        f"for realtime_loop (too slow per turn for a live loop); kept per explicit user selection")
+                result['components']['realtime_slow_pin_warning'] = warn
+                result['notes'].append(warn)
+            else:
+                result['below_floor'] = True
+                exclude('responsiveness not_applicable for this channel (too slow per turn for a live loop)')
         else:
             result['components']['responsiveness'] = round(resp_val, 3)
             if resp_source == 'default':
                 result['notes'].append('responsiveness: default')
             resp_floor = float(resp_cfg['floor'])
             if resp_val < resp_floor:
-                result['below_floor'] = True
-                exclude(f'responsiveness {resp_val:.2f} below the realtime_loop floor {resp_floor:g} '
-                        f'(too slow per turn for a live loop)')
+                if pinned_choice:
+                    warn = (f"pinned {bundle.get('id')} ({model}@{eff}) responsiveness {resp_val:.2f} is below "
+                            f"the realtime_loop floor {resp_floor:g} (too slow per turn for a live loop); "
+                            f"kept per explicit user selection")
+                    result['components']['realtime_slow_pin_warning'] = warn
+                    result['notes'].append(warn)
+                else:
+                    result['below_floor'] = True
+                    exclude(f'responsiveness {resp_val:.2f} below the realtime_loop floor {resp_floor:g} '
+                            f'(too slow per turn for a live loop)')
     expires = parse_time(spec.get('expires_at'))
     if expires is not None and (expires - now).total_seconds() < hours * 3600:
         exclude('subscription ends before the work would finish')
@@ -3068,7 +3099,7 @@ def normalize_task(raw, policy, capabilities, accounts):
         realtime_loop = bool(profile['realtime_loop'])
     else:
         realtime_loop = False
-    if profile is not None and 'realtime_loop' not in profile:
+    if profile is not None:
         profile = {**profile, 'realtime_loop': realtime_loop}
     kind = task_kind({**task, 'profile': profile}, capabilities, policy)
     derived = profile_difficulty(profile, policy) if profile else None
@@ -3139,6 +3170,7 @@ def normalize_task(raw, policy, capabilities, accounts):
             'handoff_ready': bool(chain.get('handoff_ready')), 'needs_visual': needs['visual'],
             'local_only': bool(needs.get('local_only')), 'critical': critical,
             'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
+            'constraint_bundle': constraints.get('bundle') if isinstance(constraints.get('bundle'), str) else None,
             'constraint_model': canonical(constraints.get('model') or constraints.get('bundle') or '', accounts) or None,
             'metered_ok': bool(task.get('metered_ok')), 'include_unverified': bool(task.get('include_unverified')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),
@@ -3228,16 +3260,20 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     can_wait = task['can_wait_hours']
     ready = [c for c in eligible if (c['available_in_hours'] or 0) <= can_wait]
     pool = ready or eligible
-    top = pool[0]
+    pinned_cand = (
+        next((c for c in pool if c['id'] == task.get('pinned_bundle')), None)
+        if task.get('pinned_bundle') else None
+    )
+    top = pinned_cand or pool[0]
     better = eligible[0]
     if better is not top and better['available_in_hours']:
         decision['better_if_waiting'] = {'bundle': better['id'], 'hours': round(better['available_in_hours'], 1),
                                          'score_gain': round(better['score'] - top['score'], 4)}
-    forced = False
-    if task['coupling'] == 'high' and resume is not None and not resume['excluded'] and resume['action'] == 'resume':
+    forced = pinned_cand is not None
+    if task['coupling'] == 'high' and resume is not None and not resume['excluded'] and resume['action'] == 'resume' and not forced:
         top, forced = resume, True        # a coupled chain finishes on its owner while that owner is not worn
     decision.update({'action': top['action'], 'needs_user_decision': False,
-                     'continuity': 'high-coupling chain stays with its owner' if forced else None})
+                     'continuity': 'high-coupling chain stays with its owner' if (forced and pinned_cand is None) else None})
     if (top['available_in_hours'] or 0) > can_wait:
         # can_wait_hours is a limit, not a preference: say so instead of quietly starting later than allowed
         decision.update({'needs_user_decision': True, 'wait_hours': round(top['available_in_hours'], 1),
@@ -3261,7 +3297,14 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     if task.get('realtime_loop'):
         decision['responsiveness'] = ('default' if top['components'].get('responsiveness_source') == 'default'
                                       else top['components'].get('responsiveness'))
+        slow_pin_warn = top['components'].get('realtime_slow_pin_warning')
+        if slow_pin_warn:
+            decision.setdefault('warnings', []).append(slow_pin_warn)
     decision.setdefault('reason', explain(top, system))
+    if task.get('realtime_loop') and top['components'].get('realtime_slow_pin_warning'):
+        warn_msg = top['components']['realtime_slow_pin_warning']
+        if warn_msg not in (decision.get('reason') or ''):
+            decision['reason'] = f"{decision['reason']}; {warn_msg}"
     top_model = canonical(top['bundle']['model'], accounts)
     offered = sorted({c['bundle'].get('effort') for c in candidates if canonical(c['bundle']['model'], accounts) == top_model
                       and c['bundle'].get('effort') in EFFORT_ORDER}, key=EFFORT_ORDER.index) or EFFORT_ORDER
