@@ -11,6 +11,7 @@
 !/llms.txt
 !/docs/
 /docs/*
+!/docs/*.md
 !/docs/*.png
 !/docs/*.gif
 !/docs/tools/

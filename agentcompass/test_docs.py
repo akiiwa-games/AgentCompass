@@ -20,6 +20,7 @@ class DocsTests(unittest.TestCase):
     def documents(self):
         skill = self.root / "skills" / "agent-compass"
         yield from (self.root / "README.md", self.root / "llms.txt", skill / "SKILL.md", skill / "agents" / "openai.yaml")
+        yield from sorted((self.root / "docs").glob("*.md"))
         yield from sorted((skill / "references").glob("*.md"))
 
     def lines(self):

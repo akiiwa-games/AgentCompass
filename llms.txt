@@ -10,7 +10,8 @@
 
 ## Core Entry Points
 
-- [README.md](README.md): Architecture overview, scoring formula, 5-axis decision console, and host setup.
+- [README.md](README.md): Core overview and quickstart (English and Chinese).
+- [docs/technical-reference.md](docs/technical-reference.md): Scoring formula, quota collection, Windows tray console, packaging, and host rollout details.
 - [Decision Compass hero](docs/hero.gif): The real Decision Compass window replaying a synthetic decision: task → kind → routes → ranking → top-two radar → winner with effort; illustrative scores, no live account data.
 - [skills/agent-compass/SKILL.md](skills/agent-compass/SKILL.md): Primary Agent Skill definition (the `agentcompass` commands `roll`, `plan`, `select`, `record`, `providers`) and worker communication contract.
 - `agentcompass` (console script; in a checkout without an install: `python -X utf8 <checkout>/agentcompass`): the one CLI entry. `roll --task "<text>"` combines System-One task classification, deterministic allocation, ledger recording, and worker dispatch; `agentcompass -h` lists `plan`, `providers`, `usage`, `record`, `override`, `doctor`, `setup`. Implementation: [skills/agent-compass/scripts/route_judge.py](skills/agent-compass/scripts/route_judge.py).
