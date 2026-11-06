@@ -38,6 +38,27 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import sandbox_check as sc  # noqa: E402
 
+
+def process_created(pid: int) -> float | None:
+    """When process `pid` started, as a Unix time; None when Windows will not say."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel.OpenProcess(0x1000, False, pid)        # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return None
+    try:
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+            return None
+        ticks = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        return ticks / 10_000_000 - 11_644_473_600         # FILETIME counts 100 ns from 1601
+    finally:
+        kernel.CloseHandle(handle)
+
 ROOT = sc.ROOT
 PARENT = "parent-session-7"
 GIT_BASH = "C:" + chr(92) + "Program Files" + chr(92) + "Git" + chr(92) + "bin" + chr(92) + "bash.exe"     # Claude Code runs hook commands through bash on Windows
@@ -208,6 +229,15 @@ class Zero:
             return False
         done = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"], capture_output=True)       # bytes: the "no tasks" line is in the OEM code page
         return f'"{pid}"'.encode() in done.stdout
+
+    def worker_alive(self, worker: dict) -> bool:
+        """The fixture worker itself is still running. Windows hands a finished worker's PID to the next process within
+        one run (the v0.3.18 CI failure: S31 named a PID that S33 found no sandbox process for), so a live PID counts
+        only when its process started before the worker wrote its record."""
+        if not self.pid_alive(worker.get("pid")):
+            return False
+        created = process_created(worker["pid"])
+        return created is None or created <= worker.get("started", 0) + 1
 
     def kill(self, pid):
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
@@ -476,7 +506,7 @@ def step_cli_worker(z: Zero):
     op.check("after the caller stops it the process is gone", z.wait_for(lambda: not z.pid_alive(pid), 20), pid)
 
     op = run.operation("no process left behind", "the CLI worker scenarios left no fixture process running")
-    leftovers = [w["pid"] for w in z.workers() if z.pid_alive(w["pid"])]
+    leftovers = [w["pid"] for w in z.workers() if z.worker_alive(w)]
     op.check("no fixture worker is still alive", not leftovers, leftovers)
 
 
@@ -614,7 +644,7 @@ def step_paseo_host(z: Zero):
     z.set_parents(PARENT)
 
     op = run.operation("no process left behind (Paseo host)", "every fixture worker has ended or was stopped")
-    leftovers = [w["pid"] for w in z.workers() if z.pid_alive(w["pid"])]
+    leftovers = [w["pid"] for w in z.workers() if z.worker_alive(w)]
     for pid in leftovers:
         z.kill(pid)
     op.check("no fixture worker was still alive after the steps", not leftovers, leftovers)
@@ -925,7 +955,7 @@ def main(argv=None) -> int:
                     import traceback
                     op = run.operation(f"step {name} crashed", "the harness could not complete this step")
                     op.check(f"{name} ran to the end", False, traceback.format_exc()[-800:])
-            leftovers = [w["pid"] for w in z.workers() if z.pid_alive(w["pid"])]
+            leftovers = [w["pid"] for w in z.workers() if z.worker_alive(w)]
             for pid in leftovers:
                 z.kill(pid)
             op = run.operation("fixture processes", "every worker the fixtures started has ended")
