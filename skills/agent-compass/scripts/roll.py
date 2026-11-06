@@ -129,6 +129,23 @@ def _match_tokens(*texts):
     return tokens
 
 
+_REVIEW_RE = re.compile(r'review|audit|interrogate|blast.radius|审查|复审|审核|评审|核查', re.IGNORECASE)
+_AUTHORING_RE = re.compile(r'\bfix|address|implement|resolve|修复|实现|整改', re.IGNORECASE)
+
+
+def is_review_title(title):
+    """A brief whose job is to review: the review word leads. "Fix the review findings" leads with authoring;
+    "re-review the fixed changes" leads with review."""
+    review, authoring = _REVIEW_RE.search(title or ''), _AUTHORING_RE.search(title or '')
+    return bool(review) and (authoring is None or review.start() < authoring.start())
+
+
+def independent_reviewers(workers):
+    """Workers that may take a review: only those that have never written code in their history. A worker that
+    implemented or fixed the work would be reviewing itself, whatever brief overlap or chain points at it."""
+    return [w for w in workers if all(is_review_title(t) for t in w.get('titles') or ())]
+
+
 def match_reusable_worker(args, task, text, parent, workers=None):
     """Select the best idle Paseo worker of `parent` for continuation or rotation."""
     if not parent or getattr(args, 'new_worker', False):
@@ -324,6 +341,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         excluded = set(getattr(args, '_exclude_agents', None) or ())
         compatible = [w for w in registry.reusable_workers(parent)
                       if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w)]
+        if is_review_title(args.title or title_of(text)):
+            compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
                            if isinstance(task.get('chain'), dict) else None)
         if chain_worker_id and any(w['agent_id'] == chain_worker_id for w in compatible):

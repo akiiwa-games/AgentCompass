@@ -498,6 +498,18 @@ class DispatchTests(unittest.TestCase):
                                              workers=[worker])
         self.assertEqual(matched['agent_id'], 'agent-review')
 
+    def test_a_review_never_goes_back_to_a_worker_that_wrote_the_code(self):
+        import roll
+        implementer = {'agent_id': 'agent-fixer', 'titles': ['任务：修复"代码包增量更新"审查发现的问题',
+                                                             '任务：对抗审查 AgentCompass "代码包增量更新"']}
+        reviewer = {'agent_id': 'agent-review', 'titles': ['Independent review of the s01 telegram change']}
+        self.assertTrue(roll.is_review_title('任务：复审"代码包增量更新"修复后的未提交改动（只读）'))
+        self.assertTrue(roll.is_review_title('Adversarial code review of the update fix'))
+        self.assertFalse(roll.is_review_title('任务：修复"代码包增量更新"审查发现的问题'))
+        self.assertFalse(roll.is_review_title('Step 1-Rev: Address review comments'))
+        self.assertEqual([w['agent_id'] for w in roll.independent_reviewers([implementer, reviewer])],
+                         ['agent-review'])
+
     def test_definitive_create_failure_cools_the_account_down_and_a_start_clears_it(self):
         import launch_failures
         store = self.root / 'launch-failures.json'
