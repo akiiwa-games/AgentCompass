@@ -21,6 +21,7 @@ A smoke with a real model or a real host is a different kind of evidence and is 
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import http.server
 import json
@@ -233,11 +234,23 @@ class Zero:
         done = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"], capture_output=True)       # bytes: the "no tasks" line is in the OEM code page
         return f'"{pid}"'.encode() in done.stdout
 
+    def pid_image(self, pid) -> str | None:
+        """The executable name running as `pid`, lower-cased; None when no process has that PID."""
+        if not isinstance(pid, int):
+            return None
+        done = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"], capture_output=True)
+        for row in csv.reader(done.stdout.decode("mbcs" if os.name == "nt" else "utf-8", "replace").splitlines()):
+            if len(row) > 1 and row[1] == str(pid):
+                return row[0].lower()
+        return None
+
     def worker_alive(self, worker: dict) -> bool:
         """The fixture worker itself is still running. Windows hands a finished worker's PID to the next process within
         one run (the v0.3.18 CI failure: S31 named a PID that S33 found no sandbox process for), so a live PID counts
-        only when its process started before the worker wrote its record."""
-        if not self.pid_alive(worker.get("pid")):
+        only when it still runs the worker's own executable and started before the worker wrote its record. A system
+        process that took the PID refuses to give its start time (the v0.4.1 CI failure: S32 named [7128]), so the
+        executable name has to match as well."""
+        if self.pid_image(worker.get("pid")) != f"{worker.get('cli')}.exe":
             return False
         created = process_created(worker["pid"])
         return created is None or created <= worker.get("started", 0) + 1
