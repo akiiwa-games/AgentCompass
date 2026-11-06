@@ -281,8 +281,24 @@ def quota_window_title(card: dict, window: dict) -> str:
 
 
 def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool = False) -> str:
-    """Hover: plan, what is left per window and when it resets, in-flight reservations, a pool's accounts."""
-    head = " · ".join(str(v) for v in (card.get("label") or card.get("account") or "—", card.get("plan")) if v)
+    """Hover: plan, what is left per window and when it resets, in-flight reservations.
+
+    A Magpie pool's hover is Usage Float's: its accounts' table alone, the card already showing the pooled windows;
+    a badge, a stale reading or in-flight reservations still follow it."""
+    table = pool_member_lines(card.get("pool_members"))
+    if table:
+        extra = []
+        if card.get("kind") not in (None, "ok") and card.get("badge"):
+            extra.append(f"[{card['badge']}]")
+        if card.get("usage_status") == "stale" and card.get("usage_age_seconds") is not None:
+            extra.append(_tr("{0}前读").format(ago_text(card["usage_age_seconds"])))
+        for w_item in [window] if window is not None else list(card.get("windows") or ()):
+            reserved = float(w_item.get("reserved_pct") or 0.0)
+            if reserved > 0:
+                tag = card_window_name(card, w_item) or short_window_name(w_item)
+                extra.append(f"{tag} " + _tr("在途 {0}%").format(f"{reserved:.0f}"))
+        return "\n".join([*table, *extra])
+    head =" · ".join(str(v) for v in (card.get("label") or card.get("account") or "—", card.get("plan")) if v)
     if card.get("kind") not in (None, "ok") and card.get("badge"):
         head += f"  [{card['badge']}]"
     if card.get("usage_status") == "stale" and card.get("usage_age_seconds") is not None:
@@ -301,7 +317,6 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
         if reserved > 0:
             text += " · " + _tr("在途 {0}%").format(f"{reserved:.0f}")
         lines.append(text)
-    lines.extend(pool_member_lines(card.get("pool_members")))
     return "\n".join(lines)
 
 
@@ -316,19 +331,54 @@ def ago_text(seconds) -> str:
     return _tr("{0}天").format(int(seconds // 86400))
 
 
+# A Magpie account is read only when asked, so a reading this old is marked on its hover line.
+POOL_MEMBER_STALE_SECONDS = 1800
+
+
+def compact_countdown(seconds) -> str:
+    """'3d7h' / '2h8m' / '45m': a table cell's countdown."""
+    seconds = int(seconds)
+    days, rest = divmod(seconds, 86400)
+    hours, minutes = rest // 3600, rest % 3600 // 60
+    if days:
+        return f"{days}d{hours}h" if hours else f"{days}d"
+    return (f"{hours}h{minutes}m" if minutes else f"{hours}h") if hours else f"{max(1, minutes)}m"
+
+
 def pool_member_lines(members) -> list[str]:
-    """A Magpie pool's accounts, one short line each."""
+    """A Magpie pool's accounts as a small table: one row per account, per window what is left and when that
+    account resets."""
     if not isinstance(members, list) or len(members) < 2:
         return []
-    lines = []
+    members = [m for m in members if isinstance(m, dict)]
+    names = [str(m.get("label") or "—") for m in members]
+    short = [n.split("@")[0] for n in names]
+    names = short if len(set(short)) == len(short) else names
+    present = [(wid, tag) for wid, tag in (("seven_day", "7d"), ("five_hour", "5h"))
+               if any(isinstance((m.get("windows") or {}).get(wid), dict) for m in members)]
+    cells = []
     for member in members:
-        if not isinstance(member, dict):
-            continue
-        windows = member.get("windows") if isinstance(member.get("windows"), dict) else {}
-        parts = [f"{name} {100 - w['used_pct']:.0f}%" for wid, name in (("seven_day", "7d"), ("five_hour", "5h"))
-                 if isinstance(w := windows.get(wid), dict) and isinstance(w.get("used_pct"), (int, float))]
+        row = []
+        for wid, _tag in present:
+            w = (member.get("windows") or {}).get(wid)
+            if not isinstance(w, dict) or not isinstance(w.get("used_pct"), (int, float)):
+                row.append("")
+                continue
+            cell = f"{100 - w['used_pct']:.0f}%"
+            if isinstance(w.get("reset_seconds"), (int, float)):
+                cell += " " + compact_countdown(w["reset_seconds"])
+            row.append(cell)
+        cells.append(row)
+    name_w = max(len(n) for n in names)
+    widths = [max(len(tag), *(len(r[i]) for r in cells)) for i, (_wid, tag) in enumerate(present)]
+    lines = [(" " * name_w +"".join(f"  {tag.ljust(w)}" for (_wid, tag), w in zip(present, widths))).rstrip()]
+    for name, member, row in zip(names, members, cells):
         note = "" if member.get("counted", True) else " " + _tr("(不计入)")
-        lines.append(f"  {member.get('label') or '—'}  {' · '.join(parts)}{note}")
+        age = member.get("age_seconds")
+        if isinstance(age, (int, float)) and age > POOL_MEMBER_STALE_SECONDS:
+            note += " " + _tr("{0}前读").format(ago_text(age))
+        lines.append((name.ljust(name_w) +"".join(f"  {c.ljust(w)}" for c, w in zip(row, widths))).rstrip()
+                     + note)
     return lines
 
 
@@ -1497,9 +1547,10 @@ class Panel:
             tip.wm_attributes("-topmost", True)
         except Exception:
             pass
+        # Usage Float's hover look (colours, monospace, padding), so a pool reads the same in both.
         lbl = tk.Label(
-            tip, text=text, justify="left", anchor="w", bg=theme.INK, fg="#F8FAFC",
-            font=(theme.FONT, 9), padx=theme.px(10), pady=theme.px(6), bd=1, relief="solid")
+            tip, text=text, justify="left", anchor="w", bg="#1f2937", fg="#f9fafb",
+            font=("Consolas", 12), padx=theme.px(12), pady=theme.px(8), bd=0)
         lbl.pack()
         x = getattr(event, "x_root", self.root.winfo_rootx() + 80) + 12
         y = getattr(event, "y_root", self.root.winfo_rooty() + 80) + 12
@@ -1786,6 +1837,7 @@ class Panel:
             reserved = float(window.get("reserved_pct") or 0.0)
             is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh")
             w_name.configure(text=card_window_name(card, window))
+            # A pool counts down to its next partial refill; each account's own reset is on the hover.
             w_detail.configure(text=short_countdown(window.get("reset_in")))
             # remaining_pct is in percent of one account (a fresh pool of two reads 200%); the bar and colour
             # describe the whole pool.

@@ -958,6 +958,44 @@ class WindowHelperTests(unittest.TestCase):
         # Unmetered opencode follows metered cards into the shortest remaining column (claude-lab, col 1).
         self.assertEqual(placements[4], (7, 1, 3))
 
+    def test_pool_hover_is_one_row_per_account_with_its_own_reset(self):
+        import router_data
+        import router_window
+
+        week, five = {"id": "seven_day", "hours": 168}, {"id": "five_hour", "hours": 5}
+        pool = {"account": "claude-2", "windows": [dict(week, accounts=2), dict(five, accounts=2)]}
+        pool["windows"][0].update(remaining_pct=150, reset_in="5天7小时")
+        pool["windows"][1].update(remaining_pct=None, reset_in="已重置")
+        pool.update(label="Claude 2", plan="pro ×2", kind="ok", usage_status="fresh", pool_members=[
+            {"label": "k***@gmail.com", "windows": {"seven_day": {"used_pct": 59}, "five_hour": {"used_pct": 5}}},
+            {"label": "a***@proton.me", "windows": {"seven_day": {"used_pct": 0}}, "counted": False}])
+        # Usage Float's hover: the table alone (the card shows the pooled windows); exceptions follow it.
+        self.assertEqual(router_window.quota_tooltip_text(pool).splitlines(), [
+            "      7d    5h", "k***  41%   95%", "a***  100% (不计入)"])
+        pool["windows"][0]["reserved_pct"] = 12
+        pool.update(kind="warn", badge="额度紧张")
+        self.assertEqual(router_window.quota_tooltip_text(pool).splitlines()[3:], ["[额度紧张]", "7d×2 在途 12%"])
+
+        # A pool counts down to its next partial refill; the hover table gives each account's own reset.
+        now = router_data.datetime(2026, 11, 6, 12, 0, tzinfo=router_data.timezone.utc)
+        at = lambda hours: (now + router_data.timedelta(hours=hours)).isoformat()
+        rows = router_data.pool_member_rows([
+            {"label": "k***@gmail.com", "read_at": at(-0.1), "windows": {
+                "seven_day": {"used_pct": 80, "resets_at": at(2)}, "five_hour": {"used_pct": 40, "resets_at": at(-0.05)}}},
+            {"label": "k***@pm.me", "read_at": at(-3), "windows": {
+                "seven_day": {"used_pct": 30, "resets_at": at(100)}, "five_hour": {"used_pct": 2, "resets_at": at(1)}}},
+            {"label": "a***@qq.com", "read_at": at(-0.1), "counted": False, "windows": {
+                "seven_day": {"used_pct": 90, "resets_at": at(0.5)}}}], now)
+        self.assertEqual(rows[0]["windows"]["five_hour"], {"used_pct": 0.0, "refilled": True, "reset_seconds": None})
+        self.assertEqual(router_data.pool_next_refill_seconds(rows, "seven_day"), 7200)
+        self.assertIsNone(router_data.pool_next_refill_seconds(rows, "five_hour"))  # nothing spent enough to refill
+        self.assertEqual(router_window.pool_member_lines(rows), [  # same initials: the domains tell them apart
+            "                7d        5h",
+            "k***@gmail.com  20% 2h    100%",
+            "k***@pm.me      70% 4d4h  98% 1h 3小时前读",
+            "a***@qq.com     10% 30m (不计入)"])
+
+
     @desktop_test
     def test_quota_page_regrids_without_rebuilding_and_keeps_worker_table_visible(self):
         import sqlite3
@@ -979,14 +1017,6 @@ class WindowHelperTests(unittest.TestCase):
         self.assertEqual([name(pool, w) for w in pool["windows"]], ["7d×2", "5h×2"])
         agy = {"account": "antigravity", "windows": [{"id": "gemini-weekly", "hours": 168}]}
         self.assertEqual(name(agy, agy["windows"][0]), "gemini 7d")
-        pool["windows"][0].update(remaining_pct=150, reset_in="5天7小时")
-        pool["windows"][1].update(remaining_pct=None, reset_in="已重置")
-        pool.update(label="Claude 2", plan="pro ×2", kind="ok", usage_status="fresh", pool_members=[
-            {"label": "k***@gmail.com", "windows": {"seven_day": {"used_pct": 59}, "five_hour": {"used_pct": 5}}},
-            {"label": "a***@proton.me", "windows": {"seven_day": {"used_pct": 0}}, "counted": False}])
-        self.assertEqual(router_window.quota_tooltip_text(pool).splitlines(), [
-            "Claude 2 · pro ×2", "7d×2 150% · 5d 7h", "5h×2 已重置",
-            "  k***@gmail.com  7d 41% · 5h 95%", "  a***@proton.me  7d 100% (不计入)"])
 
         # Verify pool_reservations aggregates active dispatch leases per (account, window_id).
         with tempfile.TemporaryDirectory() as tmp:

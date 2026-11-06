@@ -410,6 +410,50 @@ def countdown(seconds) -> str:
     return _tr('{0}分').format(f'{minutes}')
 
 
+def _iso_datetime(value) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else None
+
+
+# An account this little spent gives nothing back when it resets, so its reset is not the pool's next refill.
+POOL_REFILL_MIN_USED_PCT = 5.0
+
+
+def pool_member_rows(members, now: datetime) -> list[dict]:
+    """A Magpie pool's accounts as the hover reads them: per window what is left and when it resets.
+
+    A reading taken before a reset that has since passed counts as refilled (left 100%), as the pooled bar does."""
+    rows = []
+    for member in members if isinstance(members, list) else ():
+        if not isinstance(member, dict):
+            continue
+        read = _iso_datetime(member.get("read_at"))
+        windows = {}
+        for wid, window in (member.get("windows") or {}).items() if isinstance(member.get("windows"), dict) else ():
+            if not isinstance(window, dict) or not isinstance(window.get("used_pct"), (int, float)):
+                continue
+            reset = _iso_datetime(window.get("resets_at"))
+            refilled = bool(read and reset and read < reset <= now)
+            used = 0.0 if refilled else max(0.0, min(100.0, float(window["used_pct"])))
+            windows[wid] = {"used_pct": used, "refilled": refilled,
+                            "reset_seconds": (reset - now).total_seconds() if reset and reset > now else None}
+        rows.append({"label": member.get("label") or "—", "plan": member.get("plan"),
+                     "counted": member.get("counted", True) is not False,
+                     "age_seconds": (now - read).total_seconds() if read else None, "windows": windows})
+    return rows
+
+
+def pool_next_refill_seconds(rows: list[dict], wid: str) -> float | None:
+    """Seconds until a pool window next gets quota back: the soonest reset of a counted account that spent some."""
+    counted = [w for r in rows if r["counted"] and isinstance(w := r["windows"].get(wid), dict)]
+    pending = [w["reset_seconds"] for w in counted
+               if w["reset_seconds"] is not None and w["used_pct"] >= POOL_REFILL_MIN_USED_PCT]
+    return min(pending) if len(counted) > 1 and pending else None
+
+
 def signed_out(row: dict | None) -> bool:
     """A Claude/Codex slot whose login discovery can check but found none (installed CLI, template entry)."""
     if not isinstance(row, dict) or row.get("family") not in ("claude", "codex"):
@@ -473,6 +517,7 @@ def account_cards() -> list[dict]:
         usage_row = (usage.get("accounts") or {}).get(name) or {}
         windows = []
         latched = set((row or {}).get("exhausted_windows") or ())  # Only these windows are latched out.
+        member_rows = pool_member_rows(usage_row.get("pool_members"), now)
         for window in usage_row.get("windows") or []:
             wid = window.get("id")
             c_wid = allocator.canonical_window_id(spec, wid)
@@ -490,13 +535,16 @@ def account_cards() -> list[dict]:
             acct_obs = observed.get(name) or {}
             rates = acct_obs.get(wid) or acct_obs.get(c_wid) or {}
             res = reservations.get((name, wid)) or reservations.get((name, c_wid)) or {}
+            # A pool counts down to its next partial refill; each account's own reset is on the hover.
+            refill = None if reset_passed else pool_next_refill_seconds(member_rows, wid)
             windows.append({
                 "id": wid, "hours": hours, "remaining_pct": remaining, "accounts": window.get("accounts") or 1,
                 "remaining_usd": round(cap * remaining / 100, 1) if cap and remaining is not None else None,
                 "reserved_pct": res.get("pct", 0.0), "reserved_usd": res.get("usd", 0.0),
                 "reserved_workers": list(res.get("workers") or ()),
                 "rate_3h": rates.get("pct_per_hour_3h"), "rate_24h": rates.get("pct_per_hour_24h"),
-                "reset_in": _tr("已重置") if reset_passed else countdown(window.get("seconds_until_reset")),
+                "reset_in": _tr("已重置") if reset_passed else countdown(
+                    refill if refill is not None else window.get("seconds_until_reset")),
                 "stale": reset_passed or usage_row.get("status") != "fresh"})
         bundle_pills = []
         for bid, bspec in (spec.get("bundles") or {}).items():
@@ -514,7 +562,7 @@ def account_cards() -> list[dict]:
                       "plan": (row or {}).get("plan") or spec.get("plan"),
                       "usage_status": 'quota_exhausted' if (row or {}).get('status') == 'quota_exhausted' else usage_row.get("status"),
                       "usage_age_seconds": usage_row.get("observation_age_seconds"),
-                      "pool_members": usage_row.get("pool_members") or [],
+                      "pool_members": member_rows,
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
                           _tr("API 余额未提供，非无限额度") if spec.get('billing') == 'metered' and not windows else None,
                       "windows": windows, "bundles": bundle_pills,
