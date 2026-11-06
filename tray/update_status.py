@@ -35,6 +35,7 @@ def record(event: dict | str, *, directory: Path | None = None) -> None:
             _state = {
                 "running": True,
                 "started": time.time(),
+                "owner_pid": os.getpid(),
                 "title": event.get("title", ""),
                 "targets": list(dict.fromkeys(event.get("targets") or ())),
                 "results": {},
@@ -42,6 +43,11 @@ def record(event: dict | str, *, directory: Path | None = None) -> None:
             }
         if not _state:
             return
+        if "pending_installer" in event:
+            if event["pending_installer"] is None:
+                _state.pop("pending_installer", None)
+            else:
+                _state["pending_installer"] = event["pending_installer"]
         component = event.get("component", "")
         message = event.get("message", "")
         targets = _state.setdefault("targets", [])
@@ -58,6 +64,7 @@ def record(event: dict | str, *, directory: Path | None = None) -> None:
             _state["running"] = False
             _state["finished"] = time.time()
             _state["component"] = ""
+            _state.pop("pending_installer", None)
         _state["message"] = message
         line = f"[{time.strftime('%H:%M:%S')}] {component + ' · ' if component else ''}{message}"
         _state["events"] = (_state["events"] + [line])[-150:]
@@ -69,12 +76,218 @@ def record(event: dict | str, *, directory: Path | None = None) -> None:
         temporary.replace(target_dir / "update-status.json")
 
 
-def read_status(directory: Path | None = None) -> dict:
-    target_dir = directory or DIRECTORY
+def _pid_alive(pid: object) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.restype = ctypes.c_void_p
+            kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+            kernel.WaitForSingleObject.restype = ctypes.c_uint32
+            kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            kernel.GetExitCodeProcess.restype = ctypes.c_int
+            kernel.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+            kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+
+            handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+            if handle:
+                try:
+                    return kernel.WaitForSingleObject(handle, 0) == 0x00000102  # WAIT_TIMEOUT
+                finally:
+                    kernel.CloseHandle(handle)
+            handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if handle:
+                try:
+                    code = ctypes.c_uint32(0)
+                    if kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+                        return code.value == 259  # STILL_ACTIVE
+                finally:
+                    kernel.CloseHandle(handle)
+            return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED
+        except Exception:
+            return False
     try:
-        return json.loads((target_dir / "update-status.json").read_text(encoding="utf-8"))
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _installer_process_running() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _PROCESSENTRY32W(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", wintypes.WCHAR * 260),
+            ]
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+        kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        kernel.Process32FirstW.restype = wintypes.BOOL
+        kernel.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_PROCESSENTRY32W)]
+        kernel.Process32NextW.restype = wintypes.BOOL
+        kernel.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_PROCESSENTRY32W)]
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+
+        snap = kernel.CreateToolhelp32Snapshot(0x00000002, 0)  # TH32CS_SNAPPROCESS
+        invalid = ctypes.c_void_p(-1).value
+        if not snap or snap == invalid:
+            return False
+        try:
+            entry = _PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+            ok = kernel.Process32FirstW(snap, ctypes.byref(entry))
+            while ok:
+                name = str(entry.szExeFile or "").lower()
+                if name.startswith("agentcompass-tray-setup"):
+                    return True
+                ok = kernel.Process32NextW(snap, ctypes.byref(entry))
+        finally:
+            kernel.CloseHandle(snap)
+    except Exception:
+        pass
+    return False
+
+
+def _read_installed_version(inst_root: str | Path | None = None) -> str:
+    import re
+
+    roots: list[Path] = []
+    if inst_root:
+        roots.append(Path(inst_root))
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (
+            (parent / "runtime-info.json").is_file()
+            or (parent / "AgentCompass.exe").is_file()
+            or (parent / "app" / "current" / "app-manifest.json").is_file()
+            or (parent / "agentcompass" / "__init__.py").is_file()
+        ):
+            if parent not in roots:
+                roots.append(parent)
+    for root in roots:
+        for rel, keys in (
+            (Path("app") / "current" / "app-manifest.json", ("version",)),
+            (Path("app") / "state.json", ("active_version", "current_version")),
+            (Path("runtime-info.json"), ("runtime_version", "version")),
+        ):
+            cand = root / rel
+            if cand.is_file():
+                try:
+                    data = json.loads(cand.read_text(encoding="utf-8-sig"))
+                    if isinstance(data, dict):
+                        for key in keys:
+                            val = str(data.get(key) or "").strip().lstrip("vV")
+                            if val and val != "0.0.0":
+                                return val
+                except Exception:
+                    pass
+        for init_rel in (Path("app") / "current" / "agentcompass" / "__init__.py", Path("agentcompass") / "__init__.py"):
+            init_file = root / init_rel
+            if init_file.is_file():
+                try:
+                    match = re.search(
+                        r'^__version__\s*=\s*[\'"]([^\'"]+)[\'"]',
+                        init_file.read_text(encoding="utf-8-sig"),
+                        re.M,
+                    )
+                    if match:
+                        val = match.group(1).strip().lstrip("vV")
+                        if val and val != "0.0.0":
+                            return val
+                except Exception:
+                    pass
+    return ""
+
+
+def reconcile_status(directory: Path | None = None, *, current_version: str | None = None) -> dict:
+    """Reconcile an update-status.json left in running=True after the installer killed the previous tray."""
+    target_dir = Path(directory) if directory is not None else DIRECTORY
+    status_file = target_dir / "update-status.json"
+    try:
+        state = json.loads(status_file.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return {}
+    if not isinstance(state, dict) or not state.get("running"):
+        return state if isinstance(state, dict) else {}
+
+    pending = state.get("pending_installer") if isinstance(state.get("pending_installer"), dict) else None
+    owner_pid = state.get("owner_pid")
+
+    if pending is not None:
+        inst_pid = pending.get("pid")
+        if _pid_alive(owner_pid) or _pid_alive(inst_pid) or _installer_process_running():
+            return state
+        target_ver = str(pending.get("target_version") or "").strip().lstrip("vV")
+        tag_label = str(pending.get("tag_label") or (f"v{target_ver}" if target_ver else "AgentCompass-tray-setup.exe"))
+        inst_root = pending.get("install_root")
+        cur_ver = str(current_version or _read_installed_version(inst_root) or "").strip().lstrip("vV")
+        upgraded = bool(target_ver and cur_ver and cur_ver != "0.0.0" and cur_ver == target_ver)
+        if upgraded:
+            msg = _tr("已完成安装包静默更新（{0}）").format(tag_label)
+        else:
+            msg = _tr("AgentCompass 更新失败：目标版本 v{0}，当前版本 v{1}").format(
+                target_ver or "?", cur_ver or _tr("未知")
+            )
+        result_text = msg
+    else:
+        targets = state.get("targets") or ()
+        is_product_update = state.get("title") == "AgentCompass" or targets == ["AgentCompass"]
+        if not is_product_update:
+            return state
+        if _pid_alive(owner_pid) or _installer_process_running():
+            return state
+        msg = _tr("已结束，结果未知")
+        result_text = msg
+
+    with _lock:
+        state.setdefault("results", {})["AgentCompass"] = result_text
+        state["running"] = False
+        state["finished"] = time.time()
+        state["component"] = ""
+        state["message"] = _tr("AgentCompass 更新结束")
+        state.pop("pending_installer", None)
+        stamp = time.strftime("%H:%M:%S")
+        line1 = f"[{stamp}] AgentCompass · {msg}"
+        line2 = f"[{stamp}] {_tr('AgentCompass 更新结束')}"
+        events = list(state.get("events") or ())
+        for line in (line1, line2):
+            if not events or events[-1] != line:
+                events.append(line)
+        state["events"] = events[-150:]
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            with (target_dir / "updates.log").open("a", encoding="utf-8") as stream:
+                stream.write(line1 + "\n" + line2 + "\n")
+            temporary = target_dir / f"update-status.{os.getpid()}.tmp"
+            temporary.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(status_file)
+        except OSError:
+            pass
+    return state
+
+
+def read_status(directory: Path | None = None) -> dict:
+    return reconcile_status(directory)
 
 
 def open_log(directory: Path | None = None) -> str:

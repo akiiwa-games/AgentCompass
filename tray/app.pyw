@@ -62,12 +62,39 @@ PLUGIN_STATE = {"usage-float": "float", "chatgpt-web": "web", "gemini-web": "gem
 SERVICE_PLUGINS = ("dot2api", "chatgpt-web", "easytier", "usage-float", "muse2api")
 
 
+_SINGLE_INSTANCE_MUTEX = None
+
+
 def single_instance() -> bool:
     import ctypes
 
+    global _SINGLE_INSTANCE_MUTEX
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateMutexW(None, False, "Local\\AgentCompassTray")
-    return ctypes.get_last_error() != 183
+    kernel.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel.CreateMutexW(None, False, "Local\\AgentCompassTray")
+    if ctypes.get_last_error() == 183:
+        if handle:
+            kernel.CloseHandle(ctypes.c_void_p(handle))
+        return False
+    _SINGLE_INSTANCE_MUTEX = handle
+    sys._agentcompass_tray_mutex = handle
+    return True
+
+
+def release_single_instance() -> None:
+    global _SINGLE_INSTANCE_MUTEX
+    handle = _SINGLE_INSTANCE_MUTEX or getattr(sys, "_agentcompass_tray_mutex", None)
+    if not handle:
+        return
+    try:
+        import ctypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CloseHandle(ctypes.c_void_p(handle))
+    except Exception:
+        pass
+    _SINGLE_INSTANCE_MUTEX = None
+    sys._agentcompass_tray_mutex = None
 
 
 STATUS_COLOURS = {"ok": (16, 185, 129), "attention": (245, 158, 11), "error": (239, 68, 68)}
@@ -507,6 +534,22 @@ def main() -> None:
     def setup(icon: pystray.Icon) -> None:
         icon.visible = True
         log_info("tray icon visible")
+        try:
+            st = update_status.reconcile_status()
+            if isinstance(st, dict) and st.get("running"):
+                def _reconcile_after_installer() -> None:
+                    for _ in range(60):
+                        time.sleep(0.5)
+                        try:
+                            cur = update_status.reconcile_status()
+                            if not isinstance(cur, dict) or not cur.get("running"):
+                                break
+                        except Exception:
+                            break
+
+                threading.Thread(target=_reconcile_after_installer, daemon=True).start()
+        except Exception as exc:
+            log_error(exc)
         notify_if_restarted(icon)
         # Login starts services; an explicit UI-only maintenance reload must not
         # start a service that the user intentionally left stopped.
@@ -533,5 +576,6 @@ if __name__ == "__main__":
     try:
         main()
     except BaseException as exc:
+        release_single_instance()
         log_error(exc)
         raise

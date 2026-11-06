@@ -67,5 +67,6 @@ exclude = [
 path = "packaging/hatch_build.py"
 
 [tool.pytest.ini_options]
-norecursedirs = ["host_sync", "node_modules", ".staged", ".build", "verify-release", ".git", "__pycache__"]
+testpaths = ["agentcompass", "tray", "setup", "skills/agent-compass", "skills/chatgpt-pro-consult", "skills/dot-subagent"]
+norecursedirs = ["host_sync", "node_modules", ".staged", ".build", "verify-release", ".git", "__pycache__", ".*", "dist", "build", "scratch", "route-agent-work"]
 

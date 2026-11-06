@@ -26,6 +26,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 
 import chatgpt_web_patch as web_patch
@@ -51,7 +52,8 @@ def report(kind: str, message: str, component: str | None = None, **extra) -> No
 
 def run(args: list[str], cwd: Path, env: dict[str, str] | None = None, timeout: float = 600) -> str:
     report("progress", _tr('执行 {0} {1}').format(f'{Path(args[0]).name}', f"{' '.join(args[1:3])}"))
-    process = subprocess.Popen(args, cwd=str(cwd), env=env, text=True, encoding="utf-8", errors="replace",
+    safe_work_dir = services.safe_cwd(cwd)
+    process = subprocess.Popen(args, cwd=str(safe_work_dir), env=env, text=True, encoding="utf-8", errors="replace",
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=services.CREATE_NO_WINDOW)
     try:
@@ -351,8 +353,26 @@ def update_all(progress=None) -> str:
         LOCK.release()
 
 
+def _read_version_from_json(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return ""
+    if isinstance(payload, dict):
+        ver = str(payload.get("version") or "").strip().lstrip("vV")
+        if ver:
+            return ver
+    return ""
+
+
 def local_version(root: Path | None = None) -> str:
     if root is None and component_launch.frozen():
+        exe_dir = Path(sys.executable).resolve().parent
+        disk_ver = local_version(exe_dir)
+        if disk_ver and disk_ver != "0.0.0":
+            return disk_ver
         try:
             import agentcompass
             ver = getattr(agentcompass, "__version__", "")
@@ -361,11 +381,46 @@ def local_version(root: Path | None = None) -> str:
         except Exception:
             pass
     search = Path(root) if root is not None else Path(__file__).resolve().parents[1]
-    for init in (search / "agentcompass" / "__init__.py", search / "__init__.py"):
+    for app_manifest in (search / "app" / "current" / "app-manifest.json", search / "app-manifest.json"):
+        ver = _read_version_from_json(app_manifest)
+        if ver:
+            return ver
+    for init in (
+        search / "app" / "current" / "agentcompass" / "__init__.py",
+        search / "agentcompass" / "__init__.py",
+        search / "__init__.py",
+    ):
         if init.is_file():
             match = re.search(r'^__version__\s*=\s*[\'"]([^\'"]+)[\'"]', init.read_text(encoding="utf-8", errors="replace"), re.M)
             if match:
                 return match.group(1)
+    for manifest_json in (search / "manifest.json", search / "app" / "state.json", search / "runtime-info.json"):
+        if manifest_json.name == "state.json" and manifest_json.is_file():
+            try:
+                state_payload = json.loads(manifest_json.read_text(encoding="utf-8", errors="replace"))
+                if isinstance(state_payload, dict):
+                    cur_ver = str(
+                        state_payload.get("current_version")
+                        or state_payload.get("active_version")
+                        or ""
+                    ).strip().lstrip("vV")
+                    if cur_ver:
+                        return cur_ver
+            except Exception:
+                pass
+        elif manifest_json.name == "runtime-info.json" and manifest_json.is_file():
+            try:
+                rt_payload = json.loads(manifest_json.read_text(encoding="utf-8", errors="replace"))
+                if isinstance(rt_payload, dict):
+                    rt_ver = str(rt_payload.get("runtime_version") or rt_payload.get("version") or "").strip().lstrip("vV")
+                    if rt_ver:
+                        return rt_ver
+            except Exception:
+                pass
+        else:
+            ver = _read_version_from_json(manifest_json)
+            if ver:
+                return ver
     for base in (search, search.parent):
         for meta in sorted(base.glob("agentcompass-*.dist-info/METADATA")):
             if meta.is_file():
@@ -407,20 +462,44 @@ def _norm_root(path: Path) -> str:
 
 
 def _is_installer_dir(path: Path) -> bool:
-    """The installer's folder (tray exe or uninstaller). Not its cli/ subfolder: file names ignore case, so
-    cli/agentcompass.exe would pass for AgentCompass.exe."""
+    """The installer's folder (tray exe, uninstaller, or runtime metadata). Not its cli/ subfolder: file names
+    ignore case, so cli/agentcompass.exe would pass for AgentCompass.exe."""
     if path.name.lower() == "cli" and _is_installer_dir(path.parent):
         return False
-    return (path / "AgentCompass.exe").is_file() or (path / "unins000.exe").is_file()
+    return (
+        (path / "AgentCompass.exe").is_file()
+        or (path / "unins000.exe").is_file()
+        or (path / "runtime-info.json").is_file()
+    )
 
 
 def _installer_version(root: Path) -> str:
-    """PyInstaller keeps the package in an archive, so an installer folder has no __init__.py or dist-info to read.
-    Its tray, cli and skills come from one installer build: when this is the running tray's own install, the
-    version is the tray's."""
+    """Since 0.4.0, installer folders keep the active code package under app/current/ (with app-manifest.json and
+    agentcompass/__init__.py) plus runtime-info.json at the install root, so local_version(root) reads the installed
+    version directly on disk even from non-frozen processes. Fall back to the running process version or cli --version
+    only for legacy (<0.4.0) single-bundle installs that had no version file on disk."""
     ver = local_version(root)
     if ver == "0.0.0" and component_launch.frozen() and _norm_root(Path(sys.executable).parent) == _norm_root(root):
         ver = local_version()
+    if ver == "0.0.0":
+        cli_exe = Path(root) / "cli" / ("agentcompass.exe" if os.name == "nt" else "agentcompass")
+        try:
+            if cli_exe.is_file() and cli_exe.stat().st_size > 4096:
+                res = subprocess.run(
+                    [str(cli_exe), "--version"],
+                    capture_output=True,
+                    text=True,
+                    errors="replace",
+                    timeout=5,
+                    creationflags=services.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                    check=False,
+                )
+                if res.returncode == 0:
+                    match = re.search(r"(\d+\.\d+\.\d+)", res.stdout or "")
+                    if match:
+                        return match.group(1)
+        except Exception:
+            pass
     return ver
 
 
@@ -917,13 +996,42 @@ def _find_release_asset(release: dict, predicate) -> dict | None:
     return None
 
 
-def _verify_digest_string(digest: str) -> str:
+APP_MANIFEST_FILENAME = "app-manifest.json"
+RUNTIME_INFO_FILENAME = "runtime-info.json"
+RELEASE_MANIFEST_FILENAME = "manifest.json"
+APP_REQUIRED_FILES = (
+    "agentcompass/__init__.py",
+    "agentcompass/cli.py",
+    "tray/app.pyw",
+    "tray/component_launch.py",
+    "skills/agent-compass/SKILL.md",
+    "setup/onboard.py",
+)
+
+
+class _IncompatibleCodePackageRuntime(RuntimeError):
+    """Raised when an app-<version>.zip requires a runtime that does not match the installed runtime."""
+
+
+def _verify_digest_string(digest: str, fallback_sha256: str = "") -> str:
     text = str(digest or "").strip()
+    fallback = str(fallback_sha256 or "").strip().lower()
+    if fallback.startswith("sha256:"):
+        fallback = fallback.split(":", 1)[1].strip()
+    if not text and fallback:
+        text = f"sha256:{fallback}"
     if not text or not text.lower().startswith("sha256:"):
         raise RuntimeError(_tr("安装包缺少 sha256 校验值，已拒绝安装"))
     expected = text.split(":", 1)[1].strip().lower()
     if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
         raise RuntimeError(_tr("安装包 sha256 校验值格式无效，已拒绝安装"))
+    if fallback:
+        if len(fallback) != 64 or any(c not in "0123456789abcdef" for c in fallback):
+            raise RuntimeError(_tr("安装包 sha256 校验值格式无效，已拒绝安装"))
+        if expected != fallback:
+            raise RuntimeError(
+                _tr("安装包 sha256 校验不匹配（期望 {0}，实际 {1}），已拒绝安装").format(fallback[:12], expected[:12])
+            )
     return expected
 
 
@@ -940,8 +1048,14 @@ def _local_file_from_url(url: str) -> Path | None:
     return cand if cand.is_file() else None
 
 
-def _download_verified_installer(asset: dict, dest_dir: Path, opener=None) -> Path:
-    expected = _verify_digest_string(asset.get("digest") or "")
+def _download_verified_installer(
+    asset: dict,
+    dest_dir: Path,
+    opener=None,
+    *,
+    fallback_sha256: str = "",
+) -> Path:
+    expected = _verify_digest_string(asset.get("digest") or "", fallback_sha256=fallback_sha256)
     url = str(asset.get("url") or asset.get("browser_download_url") or "").strip()
     if not url:
         raise RuntimeError(_tr("安装包缺少下载地址，已拒绝安装"))
@@ -966,6 +1080,452 @@ def _download_verified_installer(asset: dict, dest_dir: Path, opener=None) -> Pa
     part_path.write_bytes(data)
     part_path.replace(final_path)
     return final_path
+
+
+def read_local_runtime_info(root: Path) -> dict | None:
+    """Read <root>/runtime-info.json (or fallback runtime_fingerprint from <root>/manifest.json)."""
+    root = Path(root)
+    rt_file = root / RUNTIME_INFO_FILENAME
+    if rt_file.is_file():
+        try:
+            payload = json.loads(rt_file.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(payload, dict) and str(payload.get("runtime_fingerprint") or "").strip():
+                return payload
+        except Exception:
+            pass
+    manifest_file = root / RELEASE_MANIFEST_FILENAME
+    if manifest_file.is_file():
+        try:
+            payload = json.loads(manifest_file.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(payload, dict) and str(payload.get("runtime_fingerprint") or "").strip():
+                return {
+                    "runtime_fingerprint": str(payload.get("runtime_fingerprint")).strip(),
+                    "runtime_version": str(payload.get("version") or "0.0.0").strip(),
+                }
+        except Exception:
+            pass
+    return None
+
+
+def read_local_runtime_fingerprint(root: Path) -> str | None:
+    info = read_local_runtime_info(root)
+    if not isinstance(info, dict):
+        return None
+    fp = str(info.get("runtime_fingerprint") or "").strip()
+    return fp or None
+
+
+def _load_release_manifest(release: dict, opener=None) -> dict | None:
+    if not isinstance(release, dict):
+        return None
+    if isinstance(release.get("manifest"), dict):
+        return {**release["manifest"], "_digest_verified": True}
+    asset = _find_release_asset(release, lambda name: name == RELEASE_MANIFEST_FILENAME)
+    if asset is None:
+        return None
+    url = str(asset.get("url") or asset.get("browser_download_url") or "").strip()
+    if not url:
+        return None
+    try:
+        local_src = _local_file_from_url(url)
+        if local_src is not None:
+            data = local_src.read_bytes()
+        else:
+            open_url = opener or urllib.request.urlopen
+            request = urllib.request.Request(url, headers={"User-Agent": "agentcompass"})
+            with open_url(request, timeout=60) as response:
+                data = response.read()
+    except Exception:
+        return None
+    digest = str(asset.get("digest") or "").strip()
+    if digest:
+        expected = _verify_digest_string(digest)
+        actual = hashlib.sha256(data).hexdigest().lower()
+        if actual != expected:
+            raise RuntimeError(
+                _tr("manifest.json sha256 校验不匹配（期望 {0}，实际 {1}），已拒绝采信").format(
+                    expected[:12], actual[:12]
+                )
+            )
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return {**payload, "_digest_verified": bool(digest)}
+
+
+def can_use_code_package(local_runtime: dict | None, manifest: dict | None) -> tuple[bool, str]:
+    """Determine whether an installer install can update via app-<version>.zip instead of the full setup.exe."""
+    if not isinstance(local_runtime, dict):
+        return False, "missing_local_runtime_info"
+    local_fp = str(local_runtime.get("runtime_fingerprint") or "").strip().lower()
+    if not local_fp:
+        return False, "missing_local_runtime_fingerprint"
+    if not isinstance(manifest, dict):
+        return False, "missing_release_manifest"
+    manifest_fp = str(manifest.get("runtime_fingerprint") or "").strip().lower()
+    app_pkg = manifest.get("app_package")
+    if not isinstance(app_pkg, dict):
+        return False, "missing_app_package_in_manifest"
+    pkg_name = str(app_pkg.get("name") or "").strip()
+    pkg_sha = str(app_pkg.get("sha256") or "").strip().lower()
+    if not pkg_name or not pkg_sha:
+        return False, "incomplete_app_package_entry"
+    required_fp = str(app_pkg.get("required_runtime_fingerprint") or manifest_fp or "").strip().lower()
+    if not required_fp:
+        return False, "missing_required_runtime_fingerprint"
+    min_rt_version = str(app_pkg.get("min_runtime_version") or manifest.get("min_runtime_version") or "").strip()
+    local_rt_version = str(
+        local_runtime.get("runtime_version") or local_runtime.get("version") or "0.0.0"
+    ).strip()
+    if min_rt_version and local_rt_version and local_rt_version != "0.0.0":
+        if _version_key(local_rt_version) < _version_key(min_rt_version):
+            return False, f"runtime_version_too_old:{local_rt_version}<{min_rt_version}"
+    local_iss = str(local_runtime.get("iss_sha256") or "").strip().lower()
+    manifest_rt = manifest.get("runtime") if isinstance(manifest.get("runtime"), dict) else {}
+    manifest_iss = str(manifest.get("iss_sha256") or manifest_rt.get("iss_sha256") or "").strip().lower()
+    if local_iss and manifest_iss and local_iss != manifest_iss:
+        return False, f"iss_sha256_mismatch:{local_iss[:12]}!={manifest_iss[:12]}"
+    if manifest_fp and local_fp != manifest_fp:
+        return False, f"runtime_fingerprint_mismatch:{local_fp[:12]}!={manifest_fp[:12]}"
+    if local_fp != required_fp:
+        return False, f"required_runtime_fingerprint_mismatch:{local_fp[:12]}!={required_fp[:12]}"
+    return True, "runtime_fingerprint_match"
+
+
+def _remove_dir_or_link(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    try:
+        path.unlink()
+        return
+    except OSError:
+        pass
+    if os.name == "nt":
+        try:
+            os.rmdir(path)
+            return
+        except OSError:
+            pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _ensure_legacy_cli_data_links(install_root: Path, active_dir: Path) -> None:
+    """Keep <install_root>/cli/_internal/agentcompass/data/{skills,setup} pointing to <active_dir>/{skills,setup}."""
+    cli_internal = install_root / "cli" / "_internal"
+    if not cli_internal.is_dir():
+        return
+    data_root = cli_internal / "agentcompass" / "data"
+    try:
+        data_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    for name in ("skills", "setup"):
+        target = active_dir / name
+        if not target.is_dir():
+            continue
+        link = data_root / name
+        try:
+            if link.exists() and link.resolve() == target.resolve():
+                continue
+        except OSError:
+            pass
+        _remove_dir_or_link(link)
+        if os.name == "nt":
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                check=False,
+                capture_output=True,
+                creationflags=services.CREATE_NO_WINDOW,
+            )
+        if not link.exists():
+            try:
+                os.symlink(str(target), str(link), target_is_directory=True)
+            except OSError:
+                shutil.copytree(target, link, dirs_exist_ok=True)
+
+
+def _validate_extracted_app_dir(
+    app_dir: Path,
+    *,
+    expected_runtime_fingerprint: str = "",
+    local_runtime_version: str = "",
+) -> dict:
+    for rel in APP_REQUIRED_FILES:
+        if not (app_dir / rel).is_file():
+            raise RuntimeError(_tr("代码包缺少必要文件：{0}").format(rel))
+    manifest_file = app_dir / APP_MANIFEST_FILENAME
+    if not manifest_file.is_file():
+        raise RuntimeError(_tr("代码包缺少清单文件 app-manifest.json"))
+    try:
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(_tr("代码包清单 app-manifest.json 格式无效：{0}").format(exc)) from exc
+    if not isinstance(manifest, dict):
+        raise RuntimeError(_tr("代码包清单 app-manifest.json 格式无效"))
+
+    expected_fp = str(expected_runtime_fingerprint or "").strip().lower()
+    required_fp = str(manifest.get("required_runtime_fingerprint") or "").strip().lower()
+    if expected_fp and required_fp and required_fp != expected_fp:
+        raise _IncompatibleCodePackageRuntime(
+            _tr("代码包要求的运行时指纹不匹配（本地 {0}，要求 {1}）").format(expected_fp[:12], required_fp[:12])
+        )
+    min_rt = str(manifest.get("min_runtime_version") or "").strip()
+    local_rt_ver = str(local_runtime_version or "").strip()
+    if min_rt and local_rt_ver and local_rt_ver != "0.0.0":
+        if _version_key(local_rt_ver) < _version_key(min_rt):
+            raise _IncompatibleCodePackageRuntime(
+                _tr("代码包要求的最低运行时版本（{0}）高于当前运行时版本（{1}）").format(min_rt, local_rt_ver)
+            )
+
+    files_map = manifest.get("files")
+    if isinstance(files_map, dict):
+        for rel, info in files_map.items():
+            if isinstance(info, dict):
+                exp_sha = str(info.get("sha256") or "").strip().lower()
+            elif isinstance(info, str):
+                exp_sha = info.strip().lower()
+            else:
+                continue
+            if not exp_sha:
+                continue
+            fpath = app_dir / str(rel)
+            if not fpath.is_file():
+                raise RuntimeError(_tr("代码包缺少清单所列文件：{0}").format(rel))
+            act_sha = hashlib.sha256(fpath.read_bytes()).hexdigest().lower()
+            if act_sha != exp_sha:
+                raise RuntimeError(_tr("代码包文件校验失败：{0}").format(rel))
+    return manifest
+
+
+def _safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
+    dest_resolved = dest_dir.resolve()
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for member in zf.infolist():
+            member_path = (dest_dir / member.filename).resolve()
+            if dest_resolved != member_path and dest_resolved not in member_path.parents:
+                raise RuntimeError(_tr("代码包包含非法路径：{0}").format(member.filename))
+        zf.extractall(dest_dir)
+
+
+def _replace_or_copy_file(tmp_target: Path, target: Path) -> None:
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            tmp_target.replace(target)
+            return
+        except PermissionError as exc:
+            last_err = exc
+            try:
+                shutil.copy2(tmp_target, target)
+                tmp_target.unlink(missing_ok=True)
+                return
+            except OSError as copy_exc:
+                last_err = copy_exc
+                if attempt < 2:
+                    time.sleep(0.05)
+    tmp_target.unlink(missing_ok=True)
+    if last_err is not None:
+        raise last_err
+
+
+def _sync_dir_in_place(src_dir: Path, dest_dir: Path) -> None:
+    """Synchronize dest_dir to match src_dir in-place when Windows holds a directory handle on dest_dir."""
+    src_dir = Path(src_dir).resolve()
+    dest_dir = Path(dest_dir).resolve()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    src_rel_paths: set[Path] = set()
+    for item in src_dir.rglob("*"):
+        rel = item.relative_to(src_dir)
+        src_rel_paths.add(rel)
+        target = dest_dir / rel
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp_target = target.parent / f".{target.name}.tmp-{uuid.uuid4().hex[:8]}"
+            shutil.copy2(item, tmp_target)
+            _replace_or_copy_file(tmp_target, target)
+    for existing in sorted(dest_dir.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        rel = existing.relative_to(dest_dir)
+        if rel not in src_rel_paths:
+            if existing.is_file() or existing.is_symlink():
+                try:
+                    existing.unlink()
+                except OSError:
+                    pass
+            elif existing.is_dir():
+                try:
+                    existing.rmdir()
+                except OSError:
+                    shutil.rmtree(existing, ignore_errors=True)
+
+
+def rollback_code_package(root: Path, reason: str = "") -> Path | None:
+    """Roll back <root>/app/current to <root>/app/previous and record rollback state."""
+    root = Path(root)
+    app_root = root / "app"
+    current_dir = app_root / "current"
+    previous_dir = app_root / "previous"
+    if not previous_dir.is_dir():
+        return None
+    prev_manifest = _validate_extracted_app_dir(previous_dir)
+    broken_dir = app_root / f"broken-{int(time.time())}"
+    shutil.rmtree(broken_dir, ignore_errors=True)
+    try:
+        if current_dir.exists():
+            current_dir.replace(broken_dir)
+        previous_dir.replace(current_dir)
+        shutil.rmtree(broken_dir, ignore_errors=True)
+    except PermissionError:
+        shutil.rmtree(broken_dir, ignore_errors=True)
+        _sync_dir_in_place(previous_dir, current_dir)
+        shutil.rmtree(previous_dir, ignore_errors=True)
+    _ensure_legacy_cli_data_links(root, current_dir)
+    state_file = app_root / "state.json"
+    state: dict = {}
+    if state_file.is_file():
+        try:
+            loaded = json.loads(state_file.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                state = loaded
+        except Exception:
+            state = {}
+    restored_ver = str(prev_manifest.get("version") or local_version(current_dir))
+    state["current_version"] = restored_ver
+    state["active_version"] = restored_ver
+    state["rolled_back_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    state["rollback_reason"] = reason
+    try:
+        state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    except OSError:
+        pass
+    return current_dir
+
+
+def _apply_code_package(
+    root: Path,
+    zip_path: Path,
+    *,
+    expected_runtime_fingerprint: str = "",
+    local_runtime_version: str = "",
+) -> dict:
+    """Atomically unpack and activate app-<version>.zip under <root>/app/current, retaining <root>/app/previous."""
+    root = Path(root)
+    app_root = root / "app"
+    current_dir = app_root / "current"
+    previous_dir = app_root / "previous"
+    packages_dir = app_root / "packages"
+    staging_dir = app_root / f"staging-{uuid.uuid4().hex[:8]}"
+    backup_prev = app_root / f"previous-backup-{uuid.uuid4().hex[:8]}"
+    app_root.mkdir(parents=True, exist_ok=True)
+    packages_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        _safe_extract_zip(zip_path, staging_dir)
+        new_manifest = _validate_extracted_app_dir(
+            staging_dir,
+            expected_runtime_fingerprint=expected_runtime_fingerprint,
+            local_runtime_version=local_runtime_version,
+        )
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+
+    old_version = local_version(current_dir) if current_dir.is_dir() else None
+    new_version = str(new_manifest.get("version") or local_version(staging_dir)).strip().lstrip("vV")
+    moved_current_to_previous = False
+    moved_previous_to_backup = False
+
+    try:
+        if previous_dir.exists():
+            shutil.rmtree(backup_prev, ignore_errors=True)
+            try:
+                previous_dir.replace(backup_prev)
+            except PermissionError:
+                shutil.copytree(previous_dir, backup_prev, dirs_exist_ok=True)
+                shutil.rmtree(previous_dir, ignore_errors=True)
+            moved_previous_to_backup = True
+        if current_dir.exists():
+            try:
+                current_dir.replace(previous_dir)
+                moved_current_to_previous = True
+                staging_dir.replace(current_dir)
+            except PermissionError:
+                # A live child process on Windows holds an open directory handle inside current_dir.
+                # Save current_dir to previous_dir and synchronize staging_dir into current_dir in-place.
+                if not previous_dir.exists():
+                    shutil.copytree(current_dir, previous_dir, dirs_exist_ok=True)
+                moved_current_to_previous = True
+                _sync_dir_in_place(staging_dir, current_dir)
+                shutil.rmtree(staging_dir, ignore_errors=True)
+        else:
+            staging_dir.replace(current_dir)
+        # Re-validate after activation so any failure triggers rollback to previous_dir.
+        _validate_extracted_app_dir(
+            current_dir,
+            expected_runtime_fingerprint=expected_runtime_fingerprint,
+            local_runtime_version=local_runtime_version,
+        )
+        pkg_target = packages_dir / f"app-{new_version}.zip"
+        if zip_path.resolve() != pkg_target.resolve():
+            shutil.copy2(zip_path, pkg_target)
+        _ensure_legacy_cli_data_links(root, current_dir)
+        state_payload = {
+            "current_version": new_version,
+            "active_version": new_version,
+            "previous_version": old_version if (moved_current_to_previous and old_version != "0.0.0") else None,
+            "runtime_fingerprint": expected_runtime_fingerprint or str(new_manifest.get("required_runtime_fingerprint") or ""),
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        (app_root / "state.json").write_text(
+            json.dumps(state_payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        root_manifest_file = root / RELEASE_MANIFEST_FILENAME
+        if root_manifest_file.is_file():
+            try:
+                rm_data = json.loads(root_manifest_file.read_text(encoding="utf-8"))
+                if isinstance(rm_data, dict):
+                    rm_data["version"] = new_version
+                    root_manifest_file.write_text(
+                        json.dumps(rm_data, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8",
+                        newline="\n",
+                    )
+            except Exception:
+                pass
+        if moved_previous_to_backup and backup_prev.exists():
+            shutil.rmtree(backup_prev, ignore_errors=True)
+        return new_manifest
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        if moved_current_to_previous and previous_dir.exists():
+            try:
+                shutil.rmtree(current_dir, ignore_errors=True)
+                if current_dir.exists():
+                    _sync_dir_in_place(previous_dir, current_dir)
+                    shutil.rmtree(previous_dir, ignore_errors=True)
+                else:
+                    previous_dir.replace(current_dir)
+                _ensure_legacy_cli_data_links(root, current_dir)
+            except OSError:
+                try:
+                    _sync_dir_in_place(previous_dir, current_dir)
+                    _ensure_legacy_cli_data_links(root, current_dir)
+                except OSError:
+                    pass
+        if moved_previous_to_backup and backup_prev.exists() and not previous_dir.exists():
+            try:
+                backup_prev.replace(previous_dir)
+            except OSError:
+                pass
+        shutil.rmtree(backup_prev, ignore_errors=True)
+        raise
 
 
 def _uv_executable() -> str:
@@ -1061,8 +1621,11 @@ def _refresh_public_data_step(installs: dict, exec_run) -> str:
     tray_root = Path(installs["tray"]["root"])
     path_router = installs["routers"].get("path") or {}
     cli_bin = path_router.get("cli") or shutil.which("agentcompass")
+    bundled_cli = tray_root / "cli" / ("agentcompass.exe" if os.name == "nt" else "agentcompass")
     if cli_bin:
         cmd = [str(cli_bin), "data", "--refresh"]
+    elif bundled_cli.is_file():
+        cmd = [str(bundled_cli), "data", "--refresh"]
     elif installs["wheel_installs"] and installs["wheel_installs"][0].get("python"):
         cmd = [str(installs["wheel_installs"][0]["python"]), "-m", "agentcompass", "data", "--refresh"]
     else:
@@ -1071,20 +1634,24 @@ def _refresh_public_data_step(installs: dict, exec_run) -> str:
     return _tr("已刷新公共路由数据（agentcompass data --refresh）")
 
 
-def _restart_tray_step() -> str:
+def _restart_tray_step(state_dir: Path | None = None) -> str:
     try:
         import deploy
         if not deploy.tray_processes():
+            deploy.stop_resident_components(restart_usage_float=True)
             return _tr("未检测到运行中的托盘，无需重启托盘")
-        deploy.write_restart_marker(version=local_version())
+        deploy.write_restart_marker(version=local_version(), state_dir=state_dir)
+        deploy.stop_resident_components()
     except Exception:
         pass
     subprocess.Popen(
-        component_launch.command("deploy", "restart"),
+        component_launch.command("deploy", "restart", "--refresh-components"),
+        cwd=str(services.safe_cwd()),
         creationflags=services.CREATE_NO_WINDOW | services.CREATE_NEW_PROCESS_GROUP,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        close_fds=True,
     )
     return _tr("正在重启托盘…")
 
@@ -1143,20 +1710,176 @@ def update_agentcompass(
         updated_any = False
 
         if shape == "installer":
-            report("component", _tr("下载并校验托盘安装包"))
-            installer_asset = _find_release_asset(
-                release_info or {},
-                lambda name: name == "AgentCompass-tray-setup.exe" or name.endswith("-setup.exe"),
-            )
-            if installer_asset is None:
-                raise RuntimeError(_tr("发布版本中未找到安装包 AgentCompass-tray-setup.exe"))
+            inst_root = Path(tray["root"])
             dl_dir = (Path(state_dir) if state_dir is not None else services.STATE_DIR) / "downloads"
-            installer_exe = _download_verified_installer(installer_asset, dl_dir, opener=opener)
-            exec_run([str(installer_exe), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], installer_exe.parent)
-            msg = _tr("已完成安装包静默更新（{0}）").format((release_info or {}).get("tag_name") or installer_exe.name)
-            steps.append(msg)
-            report("result", msg)
-            updated_any = True
+            local_rt = read_local_runtime_info(inst_root)
+            manifest_data = _load_release_manifest(release_info or {}, opener=opener)
+            use_code_pkg, _pkg_reason = can_use_code_package(local_rt, manifest_data)
+            app_pkg_info = (manifest_data or {}).get("app_package") if isinstance(manifest_data, dict) else None
+            app_asset_name = str((app_pkg_info or {}).get("name") or "")
+            app_asset = (
+                _find_release_asset(
+                    release_info or {},
+                    lambda name: (bool(app_asset_name) and name == app_asset_name)
+                    or (name.startswith("app-") and name.endswith(".zip")),
+                )
+                if use_code_pkg
+                else None
+            )
+            used_code_pkg = False
+            manifest_verified = bool((manifest_data or {}).get("_digest_verified"))
+            if use_code_pkg and app_asset is not None:
+                try:
+                    report("component", _tr("下载并校验代码增量包"))
+                    manifest_sha = (
+                        str((app_pkg_info or {}).get("sha256") or "").strip().lower()
+                        if manifest_verified
+                        else ""
+                    )
+                    app_zip = _download_verified_installer(
+                        app_asset,
+                        dl_dir,
+                        opener=opener,
+                        fallback_sha256=manifest_sha,
+                    )
+                    applied_manifest = _apply_code_package(
+                        inst_root,
+                        app_zip,
+                        expected_runtime_fingerprint=str((local_rt or {}).get("runtime_fingerprint") or ""),
+                        local_runtime_version=str(
+                            (local_rt or {}).get("runtime_version") or (local_rt or {}).get("version") or ""
+                        ),
+                    )
+                    pkg_label = (
+                        str((release_info or {}).get("tag_name") or "")
+                        or f"v{applied_manifest.get('version')}"
+                        if applied_manifest.get("version")
+                        else app_zip.name
+                    )
+                    msg = _tr("已完成代码包增量更新（{0}）").format(pkg_label)
+                    steps.append(msg)
+                    report("result", msg)
+                    updated_any = True
+                    used_code_pkg = True
+                except _IncompatibleCodePackageRuntime:
+                    used_code_pkg = False
+
+            if not used_code_pkg:
+                report("component", _tr("下载并校验托盘安装包"))
+                installer_info = (manifest_data or {}).get("installer") if isinstance(manifest_data, dict) else None
+                installer_name = str((installer_info or {}).get("name") or "AgentCompass-tray-setup.exe")
+                installer_sha = (
+                    str((installer_info or {}).get("sha256") or "").strip().lower()
+                    if manifest_verified
+                    else ""
+                )
+                installer_asset = _find_release_asset(
+                    release_info or {},
+                    lambda name: name == installer_name
+                    or name == "AgentCompass-tray-setup.exe"
+                    or name.endswith("-setup.exe"),
+                )
+                if installer_asset is None:
+                    raise RuntimeError(_tr("发布版本中未找到安装包 AgentCompass-tray-setup.exe"))
+                installer_exe = _download_verified_installer(
+                    installer_asset,
+                    dl_dir,
+                    opener=opener,
+                    fallback_sha256=installer_sha,
+                )
+                is_live_frozen_self = (
+                    runner is None
+                    and bool(frozen if frozen is not None else component_launch.frozen())
+                    and Path(sys.executable).name.lower() == "agentcompass.exe"
+                )
+                if is_live_frozen_self:
+                    # Inno Setup PrepareToInstall terminates AgentCompass.exe (`taskkill /F /IM AgentCompass.exe`)
+                    # and [Run] launches the new AgentCompass.exe at the end of installation. Update any separate
+                    # wheels first, then record pending_installer before launching setup.exe so update-status.json
+                    # stays running=True until the installer actually finishes and reports its real exit code.
+                    for wheel_info in installs["wheel_installs"]:
+                        report("component", _tr("更新独立 Router wheel"))
+                        w_msg = _upgrade_wheel_install(wheel_info, release_info or {}, exec_run=exec_run, opener=opener)
+                        steps.append(w_msg)
+                        report("result", w_msg)
+                    target_ver = str(
+                        (release_info or {}).get("version")
+                        or (release_info or {}).get("tag_name")
+                        or ""
+                    ).strip().lstrip("vV")
+                    tag_label = str(
+                        (release_info or {}).get("tag_name")
+                        or (f"v{target_ver}" if target_ver else installer_exe.name)
+                    )
+                    try:
+                        import deploy
+                        deploy.write_restart_marker(version=target_ver or local_version(), state_dir=state_dir)
+                        deploy.stop_resident_components()
+                    except Exception:
+                        pass
+                    started_at = time.time()
+                    report(
+                        "progress",
+                        _tr("正在运行安装包 {0}").format(installer_exe.name),
+                        pending_installer={
+                            "target_version": target_ver,
+                            "started_at": started_at,
+                            "tag_label": tag_label,
+                            "install_root": str(inst_root),
+                        },
+                    )
+                    proc = subprocess.Popen(
+                        [str(installer_exe), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+                        cwd=str(installer_exe.parent),
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=services.CREATE_NO_WINDOW | services.CREATE_NEW_PROCESS_GROUP,
+                        close_fds=True,
+                    )
+                    proc_pid = getattr(proc, "pid", None)
+                    if isinstance(proc_pid, int) and proc_pid > 0:
+                        report(
+                            "progress",
+                            _tr("正在运行安装包 {0}").format(installer_exe.name),
+                            pending_installer={
+                                "pid": proc_pid,
+                                "target_version": target_ver,
+                                "started_at": started_at,
+                                "tag_label": tag_label,
+                                "install_root": str(inst_root),
+                            },
+                        )
+                    wait_fn = getattr(proc, "wait", None)
+                    wait_rc = wait_fn() if callable(wait_fn) else 0
+                    rc = getattr(proc, "returncode", None)
+                    if not isinstance(rc, int):
+                        rc = wait_rc if isinstance(wait_rc, int) else 0
+                    if rc != 0:
+                        try:
+                            import deploy
+                            deploy.consume_restart_marker(state_dir=state_dir)
+                        except Exception:
+                            pass
+                        raise RuntimeError(
+                            _tr("{0} 失败（退出码 {1}）").format(installer_exe.name, rc)
+                        )
+                    report("component", _tr("刷新公共路由数据"))
+                    refresh_msg = _refresh_public_data_step(installs, exec_run=exec_run)
+                    steps.append(refresh_msg)
+                    report("result", refresh_msg)
+                    msg = _tr("已完成安装包静默更新（{0}）").format(tag_label)
+                    steps.append(msg)
+                    report("result", msg)
+                    summary = "；".join(steps)
+                    report("finish", _tr("AgentCompass 更新结束"), "", pending_installer=None)
+                    return summary
+
+                exec_run([str(installer_exe), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], installer_exe.parent)
+                msg = _tr("已完成安装包静默更新（{0}）").format((release_info or {}).get("tag_name") or installer_exe.name)
+                steps.append(msg)
+                report("result", msg)
+                updated_any = True
             for wheel_info in installs["wheel_installs"]:
                 report("component", _tr("更新独立 Router wheel"))
                 w_msg = _upgrade_wheel_install(wheel_info, release_info or {}, exec_run=exec_run, opener=opener)
@@ -1191,7 +1914,7 @@ def update_agentcompass(
             report("result", refresh_msg)
 
             report("component", _tr("重启托盘"))
-            restart_msg = restart_fn() if restart_fn is not None else _restart_tray_step()
+            restart_msg = restart_fn() if restart_fn is not None else _restart_tray_step(state_dir=state_dir)
             if restart_msg:
                 steps.append(restart_msg)
                 report("result", restart_msg)
@@ -1202,7 +1925,7 @@ def update_agentcompass(
     except Exception as error:
         err_msg = _tr("AgentCompass 更新失败：{0}").format(error)
         report("result", err_msg)
-        report("finish", _tr("AgentCompass 更新结束"), "")
+        report("finish", _tr("AgentCompass 更新结束"), "", pending_installer=None)
         raise
     finally:
         _progress.callback = None
@@ -1274,15 +1997,51 @@ def dev_checkout_line(root: Path | None = None) -> str:
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        reconf = getattr(stream, "reconfigure", None)
+        if callable(reconf):
+            try:
+                reconf(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=("check", "build", "update"))
-    action = parser.parse_args().action
+    parser.add_argument("action", choices=("check", "build", "update", "update-agentcompass"))
+    parser.add_argument("--release-file", type=Path, default=None)
+    parser.add_argument("--state-dir", type=Path, default=None)
+    parser.add_argument("--home", type=Path, default=None)
+    parser.add_argument("--which-path", type=str, default=None)
+    args = parser.parse_args()
+    action = args.action
     if action == "build":
         build()
         print(_tr("已构建"))
     elif action == "update":
         from update_status import record
         print(update_all(progress=record))
+    elif action == "update-agentcompass":
+        from update_status import record
+        release_data = None
+        if args.release_file is not None:
+            release_data = json.loads(args.release_file.read_text(encoding="utf-8-sig"))
+        state_dir = args.state_dir
+        progress_cb = (lambda ev: record(ev, directory=Path(state_dir))) if state_dir is not None else record
+        which_arg: str | Path | bool | None = False
+        if args.which_path is not None:
+            which_arg = None if args.which_path == "" else Path(args.which_path)
+        try:
+            print(
+                update_agentcompass(
+                    progress=progress_cb,
+                    home=args.home,
+                    state_dir=state_dir,
+                    which_path=which_arg,
+                    release=release_data,
+                ),
+                flush=True,
+            )
+        except Exception as exc:
+            print(str(exc), file=sys.stderr, flush=True)
+            return 1
     else:
         root = Path(__file__).resolve().parents[1]
         if (root / ".git").exists():

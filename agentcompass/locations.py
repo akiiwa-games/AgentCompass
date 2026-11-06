@@ -23,10 +23,10 @@ def skill_root() -> Path:
     checkout = checkout_root()
     if checkout is not None:
         return checkout / "skills"
-    bundled = package_dir() / "data" / "skills"
-    marker = bundled / "agent-compass" / "scripts" / "route_judge.py"
-    if marker.is_file():
-        return bundled
+    for bundled in (package_dir() / "data" / "skills", package_dir().parent / "skills"):
+        marker = bundled / "agent-compass" / "scripts" / "route_judge.py"
+        if marker.is_file():
+            return bundled
     raise FileNotFoundError(
         "the agent-compass skill directory was not found next to this install "
         "or under agentcompass/data/skills"
@@ -39,5 +39,7 @@ def setup_script(name: str) -> Path | None:
         path = checkout / "setup" / name
         if path.is_file():
             return path
-    bundled = package_dir() / "data" / "setup" / name
-    return bundled if bundled.is_file() else None
+    for bundled in (package_dir() / "data" / "setup" / name, package_dir().parent / "setup" / name):
+        if bundled.is_file():
+            return bundled
+    return None

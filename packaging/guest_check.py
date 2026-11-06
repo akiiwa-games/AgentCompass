@@ -779,8 +779,13 @@ def g_installer():
 
     installed = run([setup_exe, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={LOGS / 'agentcompass-install.log'}"], label="agentcompass-setup", timeout=600)
     exe = INSTALL_DIR / "AgentCompass.exe"
+    cli_exe = INSTALL_DIR / "cli" / "agentcompass.exe"
     check("silent install exits 0 and puts AgentCompass.exe under %LOCALAPPDATA%\\AgentCompass (no admin)", installed.returncode == 0 and exe.is_file(), (installed.stdout + installed.stderr)[-300:])
     check("the uninstaller (unins000.exe) is next to it", (INSTALL_DIR / "unins000.exe").is_file())
+    check("runtime-info.json and app\\current\\app-manifest.json were installed",
+          (INSTALL_DIR / "runtime-info.json").is_file() and (INSTALL_DIR / "app" / "current" / "app-manifest.json").is_file())
+    cli_ver_a = run([cli_exe, "--version"], label="cli-version-a")
+    check(f"installed cli\\agentcompass.exe --version reports {version}", cli_ver_a.returncode == 0 and version in cli_ver_a.stdout, cli_ver_a.stdout + cli_ver_a.stderr)
     check("a Start menu 'AgentCompass' shortcut launches the tray again after it is quit", START_MENU_LINK.is_file())
     try:
         winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY))
@@ -803,7 +808,8 @@ def g_installer():
     gui_session(exe, "installed", router_only=False)
 
     if (IN / "inno" / "tray" / "updates.py").is_file():
-        section("Inno Setup: one-click installer self-update in Windows Sandbox")
+        section("Inno Setup: incremental code-package update (A -> B=0.4.0) and runtime-change full installer fallback")
+        import zipfile
         sys.path.insert(0, str(IN / "inno"))  # agentcompass and psutil staged beside tray/
         sys.path.insert(0, str(IN / "inno" / "tray"))
         import updates as tray_updates
@@ -815,30 +821,409 @@ def g_installer():
         old_pids = wait_for(tray_processes, 40)
         check("installed tray is running before self-update", bool(old_pids), old_pids)
         check("detect_install_shape identifies the installed tray as 'installer'", tray_updates.detect_install_shape(INSTALL_DIR, frozen=True) == "installer")
-        refused = False
-        try:
-            tray_updates.update_agentcompass(
-                root=INSTALL_DIR, home=HOME, state_dir=HOME / ".agent-compass", which_path=None, frozen=True,
-                release={"tag_name": f"v{version}", "assets": [{"name": setup_exe.name, "url": setup_exe.as_uri(), "digest": "sha256:" + "0" * 64}]},
-                restart_fn=lambda: "",
-            )
-        except RuntimeError:
-            refused = True
-        check("update_agentcompass refuses an installer asset with a mismatched sha256 digest", refused)
-        os.environ["AGENTCOMPASS_PUBLIC_DATA"] = "off"
-        # A real release carries the wheel too; the separate wheel install from g_setup upgrades from it.
-        staged_wheel = next((IN / "wheel").glob("agentcompass-*.whl"))
-        wheel_asset = {"name": staged_wheel.name, "url": staged_wheel.as_uri(),
-                       "digest": "sha256:" + hashlib.sha256(staged_wheel.read_bytes()).hexdigest()}
-        summary = tray_updates.update_agentcompass(
-            root=INSTALL_DIR, home=HOME, state_dir=HOME / ".agent-compass", which_path=None, frozen=True,
-            release={"tag_name": f"v{version}", "assets": [{"name": setup_exe.name, "url": setup_exe.as_uri(), "digest": f"sha256:{digest}"}, wheel_asset]},
-            restart_fn=lambda: "",
+        check("non-frozen local_version(INSTALL_DIR) reads version A from disk (not 0.0.0)", tray_updates.local_version(INSTALL_DIR) == version, tray_updates.local_version(INSTALL_DIR))
+
+        installer_home = BUILD / "installer-home"
+        installer_home.mkdir(parents=True, exist_ok=True)
+        bad_release_file = BUILD / "release-bad-digest.json"
+        bad_release_file.write_text(
+            json.dumps({"tag_name": "v0.4.0", "assets": [{"name": setup_exe.name, "url": setup_exe.as_uri(), "digest": "sha256:" + "0" * 64}]}),
+            encoding="utf-8",
         )
-        new_pids = wait_for(lambda: [p for p in tray_processes() if p not in (old_pids or [])] or tray_processes(), 45)
-        check("update_agentcompass runs the verified installer silently and starts the tray again", bool(new_pids) and f"v{version}" in summary, (summary, old_pids, new_pids))
+        bad_upd = run(
+            [exe, "--run-component", "updates", "update-agentcompass", "--release-file", bad_release_file, "--state-dir", HOME / ".agent-compass", "--home", installer_home, "--which-path", cli_exe],
+            label="frozen-update-bad-digest",
+        )
+        check("frozen AgentCompass.exe update_agentcompass refuses an asset with a mismatched sha256 digest", bad_upd.returncode != 0, bad_upd.stdout + bad_upd.stderr)
+        os.environ["AGENTCOMPASS_PUBLIC_DATA"] = "off"
+
+        # Build version B (0.4.0) code package (app-0.4.0.zip) with the SAME runtime_fingerprint
+        rt_info = json.loads((INSTALL_DIR / "runtime-info.json").read_text(encoding="utf-8"))
+        rt_fp = rt_info["runtime_fingerprint"]
+        pkg_b_tree = BUILD / "app-0.4.0-tree"
+        if pkg_b_tree.exists():
+            shutil.rmtree(pkg_b_tree)
+        shutil.copytree(INSTALL_DIR / "app" / "current", pkg_b_tree)
+        init_py = pkg_b_tree / "agentcompass" / "__init__.py"
+        init_text = re.sub(
+            r'^(__version__\s*=\s*[\'"])([^\'"]+)([\'"])',
+            r'\g<1>0.4.0\g<3>',
+            init_py.read_text(encoding="utf-8"),
+            count=1,
+            flags=re.M,
+        )
+        init_py.write_bytes(init_text.replace("\r\n", "\n").encode("utf-8"))
+        manifest_b_file = pkg_b_tree / "app-manifest.json"
+        manifest_b = json.loads(manifest_b_file.read_text(encoding="utf-8"))
+        manifest_b["version"] = "0.4.0"
+        manifest_b["required_runtime_fingerprint"] = rt_fp
+        manifest_b["files"]["agentcompass/__init__.py"] = hashlib.sha256(init_py.read_bytes()).hexdigest()
+        manifest_b_file.write_bytes((json.dumps(manifest_b, indent=2) + "\n").encode("utf-8"))
+
+        app_b_zip = BUILD / "dist" / "app-0.4.0.zip"
+        with zipfile.ZipFile(app_b_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for fpath in sorted(pkg_b_tree.rglob("*")):
+                if fpath.is_file():
+                    zf.write(fpath, fpath.relative_to(pkg_b_tree).as_posix())
+        app_b_sha = hashlib.sha256(app_b_zip.read_bytes()).hexdigest()
+        shutil.copy2(app_b_zip, OUT / "release" / app_b_zip.name)
+
+        release_manifest_b = {
+            "schema_version": 1,
+            "version": "0.4.0",
+            "tag_name": "v0.4.0",
+            "runtime_fingerprint": rt_fp,
+            "app_package": {
+                "name": "app-0.4.0.zip",
+                "size": app_b_zip.stat().st_size,
+                "sha256": app_b_sha,
+                "digest": f"sha256:{app_b_sha}",
+                "required_runtime_fingerprint": rt_fp,
+            },
+            "installer": {
+                "name": setup_exe.name,
+                "size": setup_exe.stat().st_size,
+                "sha256": digest,
+                "digest": f"sha256:{digest}",
+                "runtime_fingerprint": rt_fp,
+            },
+        }
+        release_manifest_path = BUILD / "dist" / "manifest.json"
+        release_manifest_path.write_bytes((json.dumps(release_manifest_b, indent=2) + "\n").encode("utf-8"))
+        shutil.copy2(release_manifest_path, OUT / "release" / "manifest.json")
+        release_manifest_sha = hashlib.sha256(release_manifest_path.read_bytes()).hexdigest()
+
+        # Path 2 & Path 7: Same runtime_fingerprint -> real frozen AgentCompass.exe updates via app-0.4.0.zip,
+        # visible old router_window stays open, releases Local\AgentCompassWindowShow, and new tray opens new router_window (R3-3)
+        def _warm_show_event_open():
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenEventW.restype = ctypes.c_void_p
+            k32.OpenEventW.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
+            k32.CloseHandle.argtypes = [ctypes.c_void_p]
+            h = k32.OpenEventW(0x00100000, False, "Local\\AgentCompassWindowShow")
+            if h:
+                k32.CloseHandle(h)
+            return bool(h)
+
+        rw_proc = subprocess.Popen(
+            [str(exe), "--run-component", "router_window", "--parent", str(old_pids[0])],
+            cwd=str(HOME), env=base_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        wait_for(_warm_show_event_open, 15)
+        time.sleep(1)
+        release_code_file = BUILD / "release-code-040.json"
+        release_code_file.write_text(
+            json.dumps({
+                "tag_name": "v0.4.0",
+                "assets": [
+                    {"name": "manifest.json", "url": release_manifest_path.as_uri(), "digest": f"sha256:{release_manifest_sha}"},
+                    {"name": "app-0.4.0.zip", "url": app_b_zip.as_uri(), "digest": f"sha256:{app_b_sha}"},
+                    {"name": setup_exe.name, "url": "file:///C:/nonexistent-installer-must-not-be-downloaded.exe", "digest": f"sha256:{digest}"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+        frozen_code_upd = run(
+            [exe, "--run-component", "updates", "update-agentcompass", "--release-file", release_code_file, "--state-dir", HOME / ".agent-compass", "--home", installer_home, "--which-path", cli_exe],
+            label="frozen-update-code-040",
+        )
+        summary_code = frozen_code_upd.stdout + frozen_code_upd.stderr
+        code_pids = wait_for(lambda: [p for p in tray_processes() if p not in (old_pids or [])], 45) or tray_processes()
+        time.sleep(2.5)
+        old_rw_stayed_open = rw_proc.poll() is None
+        new_rw_proc = subprocess.Popen(
+            [str(exe), "--run-component", "router_window", "--parent", str(code_pids[0] if code_pids else os.getpid())],
+            cwd=str(HOME), env=base_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        wait_for(_warm_show_event_open, 15)
+        time.sleep(2)
+        new_rw_opened = new_rw_proc.poll() is None and _warm_show_event_open()
+        for p_rw in (rw_proc, new_rw_proc):
+            try:
+                p_rw.terminate()
+                p_rw.wait(timeout=5)
+            except Exception:
+                pass
+        check("code-only update (A -> 0.4.0, same runtime fingerprint) via real frozen AgentCompass.exe uses app-0.4.0.zip and restarts tray",
+              frozen_code_upd.returncode == 0 and "已完成代码包增量更新" in summary_code and "v0.4.0" in summary_code and bool(code_pids),
+              (frozen_code_upd.returncode, summary_code, code_pids))
+        check("during incremental update, visible old router_window stays open while releasing Local\\AgentCompassWindowShow so the new tray opens the new router_window panel (R3-3)",
+              bool(old_rw_stayed_open) and bool(new_rw_opened),
+              (old_rw_stayed_open, new_rw_opened))
+        cli_ver_b = run([cli_exe, "--version"], label="cli-version-b")
+        check("after code-only update, cli\\agentcompass.exe --version reports 0.4.0",
+              cli_ver_b.returncode == 0 and "0.4.0" in cli_ver_b.stdout, cli_ver_b.stdout + cli_ver_b.stderr)
+        inspected_b = tray_updates.inspect_installs(root=INSTALL_DIR, home=installer_home, which_path=cli_exe, frozen=False)
+        check("after code-only update, both tray and CLI report 0.4.0 with no version mismatch",
+              inspected_b["tray"]["version"] == "0.4.0" and not inspected_b["version_mismatch"] and inspected_b["display_version"] == "AgentCompass 0.4.0",
+              inspected_b)
+        check("app\\previous retained version A for rollback",
+              tray_updates.local_version(INSTALL_DIR / "app" / "previous") == version,
+              tray_updates.local_version(INSTALL_DIR / "app" / "previous"))
+
+        # Path 4: Startup crash in app\current (after single_instance mutex) automatically rolls back to app\previous in a new process and tray stays alive
+        kill_trays()
+        wait_for(lambda: not tray_processes(), 15)
+        app_pyw_cur = INSTALL_DIR / "app" / "current" / "tray" / "app.pyw"
+        crashing_pyw = app_pyw_cur.read_text(encoding="utf-8").replace(
+            "PLUGINS = plugins.load()",
+            "raise RuntimeError('simulated startup crash after single_instance mutex')",
+            1,
+        )
+        app_pyw_cur.write_bytes(crashing_pyw.replace("\r\n", "\n").encode("utf-8"))
+        cur_manifest_file = INSTALL_DIR / "app" / "current" / "app-manifest.json"
+        cur_manifest = json.loads(cur_manifest_file.read_text(encoding="utf-8"))
+        cur_manifest["files"]["tray/app.pyw"] = hashlib.sha256(app_pyw_cur.read_bytes()).hexdigest()
+        cur_manifest_file.write_bytes((json.dumps(cur_manifest, indent=2) + "\n").encode("utf-8"))
+        subprocess.Popen([str(exe)], cwd=str(HOME), env=base_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        rolled_back_ver = wait_for(lambda: tray_updates.local_version(INSTALL_DIR) == version and tray_processes(), 40)
+        time.sleep(3)
+        alive_after_rollback = tray_processes()
+        rb_state = json.loads((INSTALL_DIR / "app" / "state.json").read_text(encoding="utf-8"))
+        check("when app\\current crashes during startup after acquiring single_instance mutex, AgentCompass.exe rolls back to app\\previous in a new process and tray stays alive",
+              bool(rolled_back_ver) and bool(alive_after_rollback) and rb_state.get("current_version") == version and rb_state.get("rolled_back_from") == "0.4.0",
+              (rolled_back_ver, alive_after_rollback, rb_state))
+
+        # Path 4b: Real frozen cli\agentcompass.exe python-shim (`-I -X utf8 <script.py> --help`) rolls back cleanly without losing sys.argv (NEW-3)
+        shutil.rmtree(INSTALL_DIR / "app" / "previous", ignore_errors=True)
+        shutil.copytree(INSTALL_DIR / "app" / "current", INSTALL_DIR / "app" / "previous")
+        shutil.rmtree(INSTALL_DIR / "app" / "current", ignore_errors=True)
+        shutil.copytree(pkg_b_tree, INSTALL_DIR / "app" / "current")
+        rj_cur = INSTALL_DIR / "app" / "current" / "skills" / "agent-compass" / "scripts" / "route_judge.py"
+        rj_cur.write_bytes(b"import nonexistent_broken_module_040\n")
+        cur_m_file = INSTALL_DIR / "app" / "current" / "app-manifest.json"
+        cur_m = json.loads(cur_m_file.read_text(encoding="utf-8"))
+        cur_m["files"]["skills/agent-compass/scripts/route_judge.py"] = hashlib.sha256(rj_cur.read_bytes()).hexdigest()
+        cur_m_file.write_bytes((json.dumps(cur_m, indent=2) + "\n").encode("utf-8"))
+        cli_rb = run([cli_exe, "-I", "-X", "utf8", rj_cur, "--help"], label="cli-shim-rollback")
+        cli_rb_state = json.loads((INSTALL_DIR / "app" / "state.json").read_text(encoding="utf-8"))
+        check("when a script under app\\current raises ImportError via cli\\agentcompass.exe -I -X utf8 <script> --help, run_cli rolls back to app\\previous and preserves argv",
+              cli_rb.returncode == 0 and "unknown command" not in (cli_rb.stdout + cli_rb.stderr).lower() and cli_rb_state.get("current_version") == version,
+              (cli_rb.returncode, (cli_rb.stdout + cli_rb.stderr)[-300:], cli_rb_state))
+
+        # Path 3: Runtime fingerprint changed -> real frozen AgentCompass.exe falls back to full AgentCompass-tray-setup.exe installer
+        # Build a 0.4.0 full installer with a new runtime_fingerprint in a separate directory so BUILD/dist/AgentCompass-tray-setup.exe remains at version A for g_product
+        new_rt_fp = "f" * 64
+        pkg_c_tree = BUILD / "app-0.4.0-newrt-tree"
+        if pkg_c_tree.exists():
+            shutil.rmtree(pkg_c_tree)
+        shutil.copytree(pkg_b_tree, pkg_c_tree)
+        manifest_c_file = pkg_c_tree / "app-manifest.json"
+        manifest_c = json.loads(manifest_c_file.read_text(encoding="utf-8"))
+        manifest_c["required_runtime_fingerprint"] = new_rt_fp
+        if isinstance(manifest_c.get("runtime_requirements"), dict):
+            manifest_c["runtime_requirements"]["runtime_fingerprint"] = new_rt_fp
+        manifest_c_file.write_bytes((json.dumps(manifest_c, indent=2) + "\n").encode("utf-8"))
+
+        build_040 = BUILD / "build-040"
+        (build_040 / "packaging").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(IN / "inno" / "packaging" / "agentcompass.iss", build_040 / "packaging" / "agentcompass.iss")
+        shutil.copytree(IN / "frozen" / "AgentCompass", build_040 / "dist" / "AgentCompass", dirs_exist_ok=True)
+        shutil.rmtree(build_040 / "dist" / "AgentCompass" / "app" / "current", ignore_errors=True)
+        shutil.copytree(pkg_c_tree, build_040 / "dist" / "AgentCompass" / "app" / "current")
+        shutil.rmtree(build_040 / "dist" / "AgentCompass" / "app" / "packages", ignore_errors=True)
+        (build_040 / "dist" / "AgentCompass" / "app" / "packages").mkdir(parents=True, exist_ok=True)
+        app_c_zip = build_040 / "dist" / "AgentCompass" / "app" / "packages" / "app-0.4.0.zip"
+        with zipfile.ZipFile(app_c_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for fpath in sorted(pkg_c_tree.rglob("*")):
+                if fpath.is_file():
+                    zf.write(fpath, fpath.relative_to(pkg_c_tree).as_posix())
+        app_c_sha = hashlib.sha256(app_c_zip.read_bytes()).hexdigest()
+        (build_040 / "dist" / "AgentCompass" / "app" / "state.json").write_bytes(
+            (json.dumps({"current_version": "0.4.0", "active_version": "0.4.0", "runtime_fingerprint": new_rt_fp}, indent=2) + "\n").encode("utf-8")
+        )
+        rt_040_file = build_040 / "dist" / "AgentCompass" / "runtime-info.json"
+        rt_040_doc = json.loads(rt_040_file.read_text(encoding="utf-8"))
+        rt_040_doc["runtime_version"] = "0.4.0"
+        rt_040_doc["runtime_fingerprint"] = new_rt_fp
+        rt_040_file.write_bytes((json.dumps(rt_040_doc, indent=2) + "\n").encode("utf-8"))
+        built_040 = run([iscc, "/DMyAppVersion=0.4.0", build_040 / "packaging" / "agentcompass.iss"], cwd=build_040, label="iscc-040", timeout=900)
+        setup_040_exe = build_040 / "dist" / "AgentCompass-tray-setup.exe"
+        setup_040_digest = hashlib.sha256(setup_040_exe.read_bytes()).hexdigest() if setup_040_exe.is_file() else ""
+        check("ISCC built 0.4.0 full installer for runtime-change fallback check", built_040.returncode == 0 and setup_040_exe.is_file())
+
+        # Local runtime still has rt_fp (from version A rollback), while 0.4.0 release requires new_rt_fp
+        release_manifest_b["runtime_fingerprint"] = new_rt_fp
+        release_manifest_b["app_package"]["sha256"] = app_c_sha
+        release_manifest_b["app_package"]["digest"] = f"sha256:{app_c_sha}"
+        release_manifest_b["app_package"]["required_runtime_fingerprint"] = new_rt_fp
+        release_manifest_b["installer"]["sha256"] = setup_040_digest
+        release_manifest_b["installer"]["digest"] = f"sha256:{setup_040_digest}"
+        release_manifest_b["installer"]["runtime_fingerprint"] = new_rt_fp
+        release_manifest_path.write_bytes((json.dumps(release_manifest_b, indent=2) + "\n").encode("utf-8"))
+        release_manifest_sha = hashlib.sha256(release_manifest_path.read_bytes()).hexdigest()
+
+        before_full_pids = tray_processes()
+        release_full_file = BUILD / "release-full-040.json"
+        release_full_file.write_text(
+            json.dumps({
+                "tag_name": "v0.4.0",
+                "assets": [
+                    {"name": "manifest.json", "url": release_manifest_path.as_uri(), "digest": f"sha256:{release_manifest_sha}"},
+                    {"name": "app-0.4.0.zip", "url": "file:///C:/nonexistent-code-pkg-must-not-be-used.zip", "digest": f"sha256:{app_c_sha}"},
+                    {"name": setup_040_exe.name, "url": setup_040_exe.as_uri(), "digest": f"sha256:{setup_040_digest}"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+        run(
+            [exe, "--run-component", "updates", "update-agentcompass", "--release-file", release_full_file, "--state-dir", HOME / ".agent-compass", "--home", installer_home, "--which-path", cli_exe],
+            label="frozen-update-full-040",
+            timeout=600,
+        )
+        import update_status as tray_update_status
+        def _full_installer_done():
+            try:
+                rt = json.loads((INSTALL_DIR / "runtime-info.json").read_text(encoding="utf-8"))
+                if rt.get("runtime_fingerprint") != new_rt_fp:
+                    return []
+                pids = [p for p in tray_processes() if p not in (before_full_pids or [])]
+                if not pids:
+                    return []
+                tray_update_status.read_status(HOME / ".agent-compass")
+                return pids
+            except Exception:
+                return []
+
+        new_pids = wait_for(_full_installer_done, 90)
+        restored_rt = json.loads((INSTALL_DIR / "runtime-info.json").read_text(encoding="utf-8"))
+        upd_status_file = HOME / ".agent-compass" / "update-status.json"
+        upd_status_text = upd_status_file.read_text(encoding="utf-8") if upd_status_file.is_file() else ""
+        cli_ver_full = run([cli_exe, "--version"], label="cli-version-full")
+        check("when runtime fingerprint differs, real frozen AgentCompass.exe runs the full installer and restores runtime-info.json + 0.4.0",
+              "已完成安装包静默更新" in upd_status_text and bool(new_pids) and restored_rt.get("runtime_fingerprint") == new_rt_fp and "0.4.0" in cli_ver_full.stdout,
+              (upd_status_text[-400:], restored_rt.get("runtime_fingerprint"), cli_ver_full.stdout))
         after_override = json.loads(override_file.read_text(encoding="utf-8")) if override_file.is_file() else {}
         check("user settings in ~/.agent-compass/accounts-override.json are untouched by installer upgrade", after_override.get("self_update_preserved") is True, after_override)
+
+        # Path 5: Editing packaging/agentcompass.iss changes iss_sha256 and triggers full installer (NEW-2)
+        iss_040 = build_040 / "packaging" / "agentcompass.iss"
+        old_iss_sha = hashlib.sha256(iss_040.read_bytes()).hexdigest()
+        iss_040.write_text(iss_040.read_text(encoding="utf-8") + "\n; modified installer action for 0.4.1\n", encoding="utf-8")
+        new_iss_sha = hashlib.sha256(iss_040.read_bytes()).hexdigest()
+        rt_now = json.loads((INSTALL_DIR / "runtime-info.json").read_text(encoding="utf-8"))
+        rt_now["iss_sha256"] = old_iss_sha
+        (INSTALL_DIR / "runtime-info.json").write_bytes((json.dumps(rt_now, indent=2) + "\n").encode("utf-8"))
+        can_pkg_iss, iss_reason = tray_updates.can_use_code_package(
+            tray_updates.read_local_runtime_info(INSTALL_DIR),
+            {
+                "runtime_fingerprint": new_rt_fp,
+                "iss_sha256": new_iss_sha,
+                "app_package": {
+                    "name": "app-0.4.0.zip",
+                    "sha256": app_c_sha,
+                    "required_runtime_fingerprint": new_rt_fp,
+                },
+            },
+        )
+        release_manifest_b["runtime_fingerprint"] = new_rt_fp
+        release_manifest_b["iss_sha256"] = new_iss_sha
+        release_manifest_path.write_bytes((json.dumps(release_manifest_b, indent=2) + "\n").encode("utf-8"))
+        release_manifest_sha = hashlib.sha256(release_manifest_path.read_bytes()).hexdigest()
+        release_iss_file = BUILD / "release-iss-040.json"
+        release_iss_file.write_text(
+            json.dumps({
+                "tag_name": "v0.4.0",
+                "assets": [
+                    {"name": "manifest.json", "url": release_manifest_path.as_uri(), "digest": f"sha256:{release_manifest_sha}"},
+                    {"name": "app-0.4.0.zip", "url": "file:///C:/nonexistent-code-pkg-when-iss-changed.zip", "digest": f"sha256:{app_c_sha}"},
+                    {"name": setup_040_exe.name, "url": setup_040_exe.as_uri(), "digest": f"sha256:{setup_040_digest}"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+        before_iss_pids = tray_processes()
+        run(
+            [exe, "--run-component", "updates", "update-agentcompass", "--release-file", release_iss_file, "--state-dir", HOME / ".agent-compass", "--home", installer_home, "--which-path", cli_exe],
+            label="frozen-update-iss-040",
+            timeout=600,
+        )
+        iss_new_pids = wait_for(lambda: [p for p in tray_processes() if p not in (before_iss_pids or [])], 90)
+        tray_update_status.read_status(HOME / ".agent-compass")
+        check("modifying agentcompass.iss (iss_sha256 change) rejects code package and triggers full installer via real frozen AgentCompass.exe",
+              old_iss_sha != new_iss_sha and not can_pkg_iss and iss_reason.startswith("iss_sha256_mismatch:") and bool(iss_new_pids),
+              (old_iss_sha[:12], new_iss_sha[:12], can_pkg_iss, iss_reason, iss_new_pids))
+
+        # Path 6: Full installer failure (non-zero exit code / target version not installed) truthfully reports failure in update-status.json (R3-1/R3-2)
+        fail_iss = build_040 / "packaging" / "agentcompass-fail.iss"
+        fail_iss.write_text(
+            "[Setup]\n"
+            "AppName=AgentCompass\n"
+            "AppVersion=0.4.1\n"
+            "DefaultDirName={localappdata}\\AgentCompass\n"
+            "PrivilegesRequired=lowest\n"
+            "OutputDir=..\\dist-fail\n"
+            "OutputBaseFilename=AgentCompass-tray-setup\n"
+            "[Code]\n"
+            "function InitializeSetup(): Boolean;\n"
+            "begin\n"
+            "  Result := False;\n"
+            "end;\n",
+            encoding="utf-8",
+        )
+        built_fail = run([iscc, fail_iss], cwd=build_040, label="iscc-fail-041", timeout=180)
+        fail_setup_exe = build_040 / "dist-fail" / "AgentCompass-tray-setup.exe"
+        fail_setup_sha = hashlib.sha256(fail_setup_exe.read_bytes()).hexdigest() if fail_setup_exe.is_file() else ""
+        fail_rt_fp = "e" * 64
+        fail_manifest = dict(release_manifest_b)
+        fail_manifest["version"] = "0.4.1"
+        fail_manifest["tag_name"] = "v0.4.1"
+        fail_manifest["runtime_fingerprint"] = fail_rt_fp
+        fail_manifest["installer"] = {
+            "name": fail_setup_exe.name,
+            "size": fail_setup_exe.stat().st_size if fail_setup_exe.is_file() else 0,
+            "sha256": fail_setup_sha,
+            "digest": f"sha256:{fail_setup_sha}",
+            "runtime_fingerprint": fail_rt_fp,
+        }
+        fail_manifest_path = build_040 / "dist-fail" / "manifest.json"
+        fail_manifest_path.write_bytes((json.dumps(fail_manifest, indent=2) + "\n").encode("utf-8"))
+        fail_manifest_sha = hashlib.sha256(fail_manifest_path.read_bytes()).hexdigest()
+        release_fail_file = BUILD / "release-fail-041.json"
+        release_fail_file.write_text(
+            json.dumps({
+                "tag_name": "v0.4.1",
+                "assets": [
+                    {"name": "manifest.json", "url": fail_manifest_path.as_uri(), "digest": f"sha256:{fail_manifest_sha}"},
+                    {"name": fail_setup_exe.name, "url": fail_setup_exe.as_uri(), "digest": f"sha256:{fail_setup_sha}"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+        fail_run = run(
+            [exe, "--run-component", "updates", "update-agentcompass", "--release-file", release_fail_file, "--state-dir", HOME / ".agent-compass", "--home", installer_home, "--which-path", cli_exe],
+            label="frozen-update-fail-041",
+            timeout=180,
+        )
+        fail_status_1 = tray_update_status.read_status(HOME / ".agent-compass")
+        # Also verify post-kill reconciliation when pending_installer was recorded for 0.4.1 and installer aborted after killing tray
+        (HOME / ".agent-compass" / "update-status.json").write_bytes(
+            (json.dumps({
+                "running": True,
+                "started": time.time() - 5.0,
+                "owner_pid": 999998,
+                "title": "AgentCompass",
+                "targets": ["AgentCompass"],
+                "pending_installer": {
+                    "pid": 999999,
+                    "target_version": "0.4.1",
+                    "started_at": time.time() - 5.0,
+                    "install_root": str(INSTALL_DIR),
+                    "tag_label": "v0.4.1",
+                },
+                "results": {},
+                "events": [],
+            }, indent=2) + "\n").encode("utf-8")
+        )
+        fail_status_2 = tray_update_status.read_status(HOME / ".agent-compass")
+        check("when full installer fails (non-zero exit code or aborts before installing target version), update-status.json truthfully reports failure (R3-1/R3-2)",
+              built_fail.returncode == 0
+              and fail_run.returncode != 0
+              and not fail_status_1.get("running")
+              and "更新失败" in str((fail_status_1.get("results") or {}).get("AgentCompass") or "")
+              and not fail_status_2.get("running")
+              and "更新失败" in str((fail_status_2.get("results") or {}).get("AgentCompass") or ""),
+              (fail_run.returncode, fail_status_1.get("results"), fail_status_2.get("results")))
         kill_trays()
 
     section("Inno Setup: silent uninstall")
@@ -966,7 +1351,8 @@ def g_product():
     log = HOME / ".agent-compass" / "installer-setup.log"
     log_text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
     check("/SETUP=hooks ran setup and logged it to ~/.agent-compass/installer-setup.log", bool(log_text.strip()), log_text[-400:])
-    bundle = (cli_dir / "_internal" / "agentcompass" / "data" / "skills" / "agent-compass").resolve()
+    bundle_candidate = INSTALL_DIR / "app" / "current" / "skills" / "agent-compass"
+    bundle = (bundle_candidate if bundle_candidate.exists() else (cli_dir / "_internal" / "agentcompass" / "data" / "skills" / "agent-compass")).resolve()
     links = {name: (HOME / name / "skills" / "agent-compass") for name in (".codex", ".claude")}
     check("the router skill is linked from ~/.codex and ~/.claude into the installed bundle",
           all(p.exists() and p.resolve() == bundle for p in links.values()), {k: str(v.resolve()) if v.exists() else "missing" for k, v in links.items()})
@@ -985,6 +1371,7 @@ def g_product():
           rules_text[:300])
 
     # The hook exactly as a host runs it (argv from the stored command), a sub-agent launch on stdin.
+    (HOME / ".agent-compass" / "router-ledger.jsonl").unlink(missing_ok=True)
     import shlex
     argv = shlex.split(gate) if gate else [str(cli_exe), "gate-hook"]
     payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "product-session",
@@ -994,7 +1381,9 @@ def g_product():
         done = run(argv, env=env, stdin=payload, label="gate-hook")
         return ((parse(done.stdout) or {}).get("hookSpecificOutput") or {}).get("permissionDecision"), done
     first, done = verdict()
-    check("an unrouted sub-agent launch is denied by the installed gate hook (no Python)", done.returncode == 0 and first == "deny", done.stdout[:300] + done.stderr[-300:])
+    check("an unrouted sub-agent launch is denied by the installed gate hook (no Python, router_command is 'agentcompass')",
+          done.returncode == 0 and first == "deny" and "agentcompass roll" in done.stdout and "app\\current\\agentcompass" not in done.stdout,
+          done.stdout[:300] + done.stderr[-300:])
     rec = shell('agentcompass record --provider claude --account claude --model claude-sonnet-5-5 --effort high --constraint user_override --basis W02-gate-test',
                 env, label="record")
     second, done = verdict()

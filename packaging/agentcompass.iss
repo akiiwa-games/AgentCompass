@@ -51,7 +51,11 @@ Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 
 [InstallDelete]
 ; Files a newer build dropped must not linger in the bundle; the folder itself keeps its path (skill links point into it).
+Type: filesandordirs; Name: "{app}\_internal"
 Type: filesandordirs; Name: "{app}\cli\_internal"
+Type: filesandordirs; Name: "{app}\app\current"
+Type: filesandordirs; Name: "{app}\app\previous"
+Type: filesandordirs; Name: "{app}\app\packages"
 
 [Dirs]
 ; The /SETUP log goes here. [Run] entries run before ssPostInstall, so the folder must exist by then; the user's state stays on uninstall.
@@ -61,6 +65,7 @@ Name: "{%USERPROFILE}\.agent-compass"; Flags: uninsneveruninstall
 Source: "..\dist\AgentCompass\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
+Filename: "{cmd}"; Parameters: "/D /C ""if not exist ""{app}\cli\_internal\agentcompass\data"" mkdir ""{app}\cli\_internal\agentcompass\data"" & if exist ""{app}\cli\_internal\agentcompass\data\skills"" (rmdir ""{app}\cli\_internal\agentcompass\data\skills"" >nul 2>&1 & if exist ""{app}\cli\_internal\agentcompass\data\skills"" rmdir /S /Q ""{app}\cli\_internal\agentcompass\data\skills"" >nul 2>&1) & mklink /J ""{app}\cli\_internal\agentcompass\data\skills"" ""{app}\app\current\skills"" >nul 2>&1 & if exist ""{app}\cli\_internal\agentcompass\data\setup"" (rmdir ""{app}\cli\_internal\agentcompass\data\setup"" >nul 2>&1 & if exist ""{app}\cli\_internal\agentcompass\data\setup"" rmdir /S /Q ""{app}\cli\_internal\agentcompass\data\setup"" >nul 2>&1) & mklink /J ""{app}\cli\_internal\agentcompass\data\setup"" ""{app}\app\current\setup"" >nul 2>&1"""; Flags: runhidden waituntilterminated
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName 'AgentCompass' -Description 'AgentCompass tray' -Action (New-ScheduledTaskAction -Execute '{app}\{#MyAppExeName}') -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null; Unregister-ScheduledTask -TaskName 'Route Manager' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated
 Filename: "{cmd}"; Parameters: "/D /C """"{app}\cli\agentcompass.exe"" setup --yes {code:SetupHookFlag} >> ""{%USERPROFILE}\.agent-compass\installer-setup.log"" 2>&1"""; Check: SetupRequested; Flags: runhidden waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait
@@ -167,3 +172,7 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Com
 [UninstallDelete]
 Type: files; Name: "{userstartup}\Route Manager.lnk"
 Type: files; Name: "{userstartup}\AgentCompass.lnk"
+Type: filesandordirs; Name: "{app}\app"
+Type: filesandordirs; Name: "{app}\cli\_internal\agentcompass"
+Type: files; Name: "{app}\manifest.json"
+Type: files; Name: "{app}\runtime-info.json"

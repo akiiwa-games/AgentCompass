@@ -45,13 +45,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.13.7"
       - uses: actions/download-artifact@v4
         with:
           name: wheel
           path: dist
       - name: Install the tray extra and PyInstaller (the tray scenarios and the frozen-tray scenario need both)
-        run: python -m pip install --upgrade pip pyinstaller ".[tray]"
+        run: python -m pip install --upgrade pip pyinstaller==6.18.0 pillow==12.3.0 psutil==7.2.1 pystray==0.19.5 pywin32==311 tzdata==2026.2 ".[tray]"
       - name: Run the installed wheel through the user operations
         shell: bash
         run: python -X utf8 packaging/sandbox_check.py --wheel dist/*.whl --report sandbox-report
@@ -76,9 +76,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.13.7"
       - name: Install the tray extra and PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller ".[tray]"
+        run: python -m pip install --upgrade pip pyinstaller==6.18.0 pillow==12.3.0 psutil==7.2.1 pystray==0.19.5 pywin32==311 tzdata==2026.2 ".[tray]"
       - name: Install Inno Setup
         run: choco install innosetup -y
       - name: Build the tray installer
@@ -86,12 +86,18 @@ jobs:
         run: ./packaging/build.ps1
         env:
           ISCC: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
-      - name: Check that the tray bundle holds only tracked repository files
-        run: python packaging/check_payload.py --toc packaging/.build/agentcompass-tray/Analysis-00.toc
+      - name: Check that the tray bundle and code package hold only tracked repository files
+        shell: pwsh
+        run: |
+          $appZip = @(Get-ChildItem -Path dist/app-*.zip -ErrorAction Stop)[0].FullName
+          python packaging/check_payload.py --toc packaging/.build/agentcompass-tray/Analysis-00.toc --app-zip "$appZip"
       - uses: actions/upload-artifact@v4
         with:
           name: tray-installer
-          path: dist/AgentCompass-tray-setup.exe
+          path: |
+            dist/AgentCompass-tray-setup.exe
+            dist/app-*.zip
+            dist/manifest.json
           if-no-files-found: error
 
   release:
@@ -115,3 +121,5 @@ jobs:
           files: |
             artifacts/wheel/*
             artifacts/tray-installer/AgentCompass-tray-setup.exe
+            artifacts/tray-installer/app-*.zip
+            artifacts/tray-installer/manifest.json

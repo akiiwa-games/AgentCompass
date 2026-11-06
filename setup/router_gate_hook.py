@@ -25,10 +25,17 @@ DEFAULT_USAGE_CACHE = HOME / ".agent-compass" / "usage-cache.json"
 LEGACY_USAGE_CACHE = HOME / ".usage-float" / "usage-cache.json"
 def router_command() -> str:
     """What the deny messages tell the agent to run: the console script when installed, else this checkout's package directory."""
-    here = Path(__file__).resolve()
-    if "site-packages" in here.parts or not (here.parents[1] / "agentcompass" / "__main__.py").is_file():
+    if getattr(sys, "frozen", False):
         return "agentcompass"
-    return f"python -X utf8 {(here.parents[1] / 'agentcompass').as_posix()}"
+    here = Path(__file__).resolve()
+    root = here.parents[1]
+    if (
+        "site-packages" in here.parts
+        or not (root / "pyproject.toml").is_file()
+        or not (root / "agentcompass" / "__main__.py").is_file()
+    ):
+        return "agentcompass"
+    return f"python -X utf8 {(root / 'agentcompass').as_posix()}"
 
 
 ROUTER_CMD = router_command()

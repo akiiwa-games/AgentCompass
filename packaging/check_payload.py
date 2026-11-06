@@ -1,10 +1,10 @@
 """Fail when a release payload holds a file git does not track.
 
-    python packaging/check_payload.py [--wheel X.whl] [--sdist X.tar.gz] [--toc Analysis-00.toc]
+    python packaging/check_payload.py [--wheel X.whl] [--sdist X.tar.gz] [--toc Analysis-00.toc] [--app-zip app-X.zip]
 
 ``--toc`` is the PyInstaller analysis table under ``packaging/.build``: every module it took from
-the repository (tray scripts, the agentcompass package) must be tracked. The one-folder tray that
-Inno Setup packs is built from that table, so a clean table means a clean installer payload.
+the repository (boot loaders, packaging scripts) must be tracked. ``--app-zip`` checks the versioned
+application code package ``app-<version>.zip``.
 Run it against a build made from a clean checkout; the exit code is the number of problems found.
 """
 
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import glob
 import subprocess
 import sys
 import tarfile
@@ -82,21 +83,61 @@ def toc_problems(toc: Path, files: set[str], root: Path = ROOT) -> list[str]:
     return problems
 
 
+def app_zip_problems(app_zip: Path, files: set[str]) -> list[str]:
+    """Repository files packed into ``app-<version>.zip``."""
+    problems = []
+    for name in zipfile.ZipFile(app_zip).namelist():
+        if name.endswith("/") or name == "app-manifest.json":
+            continue
+        if name not in files:
+            problems.append(f"{Path(app_zip).name}: {name} is not tracked in git")
+    return problems
+
+
+def _resolve_cli_paths(item: Path | None) -> tuple[list[Path], list[str]]:
+    if item is None:
+        return [], []
+    raw = str(item)
+    if any(ch in raw for ch in ("*", "?", "[")):
+        matches = sorted(Path(p) for p in glob.glob(raw))
+        if not matches:
+            return [], [f"{raw}: no matching file found"]
+        return matches, []
+    if not item.is_file():
+        return [], [f"{raw}: file not found"]
+    return [item], []
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel", type=Path)
     parser.add_argument("--sdist", type=Path)
     parser.add_argument("--toc", type=Path)
+    parser.add_argument("--app-zip", type=Path)
     parser.add_argument("--root", type=Path, default=ROOT, help="the checkout the build came from")
     args = parser.parse_args(argv)
     files = tracked(args.root)
     problems: list[str] = []
     if args.wheel:
-        problems += wheel_problems(args.wheel, files)
+        wheels, missing = _resolve_cli_paths(args.wheel)
+        problems.extend(missing)
+        for wheel in wheels:
+            problems += wheel_problems(wheel, files)
     if args.sdist:
-        problems += sdist_problems(args.sdist, files)
+        sdists, missing = _resolve_cli_paths(args.sdist)
+        problems.extend(missing)
+        for sdist in sdists:
+            problems += sdist_problems(sdist, files)
     if args.toc:
-        problems += toc_problems(args.toc, files, args.root)
+        tocs, missing = _resolve_cli_paths(args.toc)
+        problems.extend(missing)
+        for toc in tocs:
+            problems += toc_problems(toc, files, args.root)
+    if args.app_zip:
+        app_zips, missing = _resolve_cli_paths(args.app_zip)
+        problems.extend(missing)
+        for app_zip in app_zips:
+            problems += app_zip_problems(app_zip, files)
     for line in problems:
         print(line)
     print(f"{len(problems)} problem(s)")

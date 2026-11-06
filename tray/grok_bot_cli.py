@@ -31,7 +31,12 @@ _probe_lock = threading.Lock()
 
 
 def _run(argv, timeout):
-    return subprocess.run(argv, cwd=PACKAGE, capture_output=True, text=True,
+    work_dir = PACKAGE
+    for parent in (work_dir, *work_dir.parents):
+        if parent.name.lower() in ("current", "previous") and parent.parent.name.lower() == "app":
+            work_dir = parent.parent.parent
+            break
+    return subprocess.run(argv, cwd=work_dir, capture_output=True, text=True,
                           encoding='utf-8', errors='replace', timeout=timeout,
                           creationflags=0x08000000 if os.name == 'nt' else 0)
 

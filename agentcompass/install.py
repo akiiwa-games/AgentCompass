@@ -33,6 +33,14 @@ def frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def _is_installer_root(path: Path) -> bool:
+    if path.name.lower() == CLI_DIR_NAME and (
+        (path.parent / "AgentCompass.exe").is_file() or (path.parent / "unins000.exe").is_file()
+    ):
+        return False
+    return (path / "AgentCompass.exe").is_file() or (path / "unins000.exe").is_file()
+
+
 def shape(module_file: str | Path | None = None) -> str:
     """'installer', 'wheel' or 'checkout' for the code that is running (or for ``module_file``)."""
     if module_file is None and frozen():
@@ -40,6 +48,11 @@ def shape(module_file: str | Path | None = None) -> str:
     path = Path(module_file or __file__).resolve()
     if "site-packages" in path.parts or "dist-packages" in path.parts:
         return "wheel"
+    for current in (path, *path.parents):
+        if (current / ".git").exists():
+            return "checkout"
+        if _is_installer_root(current):
+            return "installer"
     return "checkout"
 
 

@@ -253,7 +253,7 @@ def skill_links() -> list[tuple[Path, Path]]:
 
     Only a checkout has skills/ beside tray/. A packaged tray has none; there `agentcompass setup` links the skills
     from the installed wheel, so there is nothing for the tray to link."""
-    if not SKILLS.is_dir():
+    if component_launch.frozen() or not SKILLS.is_dir():
         return []
     pairs = []
     for skill in sorted(path for path in SKILLS.iterdir() if (path / "SKILL.md").is_file()):
@@ -335,7 +335,7 @@ def check() -> list[tuple[str, bool, str]]:
         rows.append((_tr('旧开机项 {0} 已移除').format(f'{old.name}'), not old.exists(), _tr("仍在启动文件夹") if old.exists() else ""))
     for name, value in wanted_env().items():
         rows.append((_tr('环境变量 {0}').format(f'{name}'), user_env(name) == value, user_env(name) or _tr("未设置")))
-    if SKILLS.is_dir():
+    if not component_launch.frozen() and SKILLS.is_dir():
         missing = [str(link) for link, target in skill_links() if not skill_linked(link, target)]
         rows.append((_tr('skill 链接（{0} → ~/.codex/skills → ~/.claude/skills）').format(f'{SKILLS}'), not missing, "、".join(missing)))
     state = easytier.snapshot()
@@ -455,28 +455,29 @@ RESTART_MUTEX_NAME = "Local\\AgentCompassTrayRestart"
 RESTART_MARKER_MAX_AGE = 120.0
 
 
-def restart_marker_path() -> Path:
-    return services.STATE_DIR / "tray-restarted.json"
+def restart_marker_path(state_dir: Path | None = None) -> Path:
+    base = Path(state_dir) if state_dir is not None else services.STATE_DIR
+    return base / "tray-restarted.json"
 
 
-def write_restart_marker(version: str | None = None) -> Path:
+def write_restart_marker(version: str | None = None, state_dir: Path | None = None) -> Path:
     import json
 
-    path = restart_marker_path()
+    path = restart_marker_path(state_dir=state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"at": time.time(), "version": version or updates.local_version()}
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return path
 
 
-def consume_restart_marker(now: float | None = None) -> dict | None:
+def consume_restart_marker(now: float | None = None, state_dir: Path | None = None) -> dict | None:
     import json
 
-    path = restart_marker_path()
+    path = restart_marker_path(state_dir=state_dir)
     if not path.is_file():
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         data = None
     try:
@@ -518,7 +519,132 @@ def restart_in_progress() -> bool:
     return False
 
 
-def restart() -> list[str]:
+def _resident_component_kind(proc: psutil.Process, arguments: list[str], name: str) -> str | None:
+    if not arguments:
+        return None
+    if component_launch.frozen():
+        try:
+            same_exe = Path(arguments[0]).resolve() == Path(sys.executable).resolve()
+        except OSError:
+            same_exe = Path(arguments[0]) == Path(sys.executable)
+        if (
+            len(arguments) >= 3
+            and same_exe
+            and arguments[1] == component_launch.FLAG
+            and arguments[2] in ("router_window", "usage_float_host")
+        ):
+            return str(arguments[2])
+        return None
+    if name.lower() not in ("pythonw.exe", "python.exe"):
+        return None
+    proc_cwd: Path | None = None
+    tray_resolved = TRAY_DIR.resolve()
+    for part in arguments[1:]:
+        part_name = Path(part).name
+        if part_name not in ("router_window.py", "usage_float_host.py"):
+            continue
+        cand = Path(part)
+        if not cand.is_absolute():
+            if proc_cwd is None:
+                try:
+                    proc_cwd = Path(proc.cwd())
+                except (psutil.Error, OSError, AttributeError):
+                    proc_cwd = None
+            if proc_cwd is None:
+                continue
+            cand = proc_cwd / cand
+        try:
+            if cand.resolve().parent == tray_resolved:
+                return Path(part_name).stem
+        except OSError:
+            continue
+    return None
+
+
+def _process_has_visible_window(pid: int) -> bool:
+    try:
+        import win32gui
+        import win32process
+    except Exception:
+        return False
+    visible = False
+
+    def visit(hwnd, _):
+        nonlocal visible
+        try:
+            if win32process.GetWindowThreadProcessId(hwnd)[1] == pid and win32gui.IsWindowVisible(hwnd):
+                cls_name = win32gui.GetClassName(hwnd)
+                if cls_name == "TkTopLevel" or win32gui.GetWindowText(hwnd):
+                    visible = True
+                    return False
+        except Exception:
+            pass
+        return True
+
+    try:
+        win32gui.EnumWindows(visit, None)
+    except Exception:
+        pass
+    return visible
+
+
+def resident_component_processes(include_visible_windows: bool = True) -> list[psutil.Process]:
+    """Resident UI helper processes (router_window, usage_float_host) belonging to this installation."""
+    found = []
+    for proc in psutil.process_iter(["name", "cmdline"]):
+        if getattr(proc, "pid", None) == os.getpid():
+            continue
+        info = getattr(proc, "info", None) or {}
+        arguments = info.get("cmdline") or []
+        kind = _resident_component_kind(proc, arguments, str(info.get("name") or ""))
+        if not kind:
+            continue
+        if kind == "router_window" and not include_visible_windows:
+            if "--hidden" not in arguments or _process_has_visible_window(getattr(proc, "pid", 0)):
+                continue
+        found.append(proc)
+    return found
+
+
+def stop_resident_components(wait: float = 3.0, *, restart_usage_float: bool = False) -> list[int]:
+    stopped = []
+    usage_float_was_running = False
+    try:
+        import local_controls
+
+        if local_controls.read_snapshot("usage-float") is not None:
+            usage_float_was_running = True
+            services.stop_component_ui("usage-float", timeout=min(wait, 3.0))
+    except Exception:
+        pass
+    procs = resident_component_processes(include_visible_windows=False)
+    for proc in procs:
+        try:
+            info = getattr(proc, "info", None) or {}
+            args = info.get("cmdline") or []
+            if _resident_component_kind(proc, args, str(info.get("name") or "")) == "usage_float_host":
+                usage_float_was_running = True
+            stopped.append(proc.pid)
+            proc.terminate()
+        except psutil.Error:
+            continue
+    for proc in procs:
+        try:
+            proc.wait(wait)
+        except psutil.Error:
+            try:
+                proc.kill()
+            except psutil.Error:
+                pass
+    if restart_usage_float and usage_float_was_running:
+        try:
+            services.start_usage_float()
+        except Exception:
+            pass
+    return stopped
+
+
+def restart(refresh_components: bool = False) -> list[str]:
     handle = acquire_restart_mutex()
     if handle is None:
         return [_tr("托盘正在重启中，已忽略重复请求")]
@@ -527,6 +653,8 @@ def restart() -> list[str]:
         write_restart_marker()
         for proc in tray_processes():
             done.append(_tr('托盘 {0} {1}').format(f'{proc.pid}', f'{close_tray(proc)}'))
+        if refresh_components:
+            stop_resident_components(restart_usage_float=True)
         services.STATE_DIR.mkdir(parents=True, exist_ok=True)
         if not _on_default_desktop() and startup_ok(startup_fields()):
             subprocess.run(
@@ -571,6 +699,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=("check", "install", "restart", "all", "icons", "startup", "migrate-plugins"))
     parser.add_argument("--dry-run", action="store_true", help="migrate-plugins: print the plan only")
+    parser.add_argument("--refresh-components", action="store_true", help="restart: also stop resident UI helpers so they reload")
     parser.add_argument("--from", dest="checkout", type=Path, default=services.ROOT,
                         help="migrate-plugins: the checkout that holds the clones (default: this one)")
     parser.add_argument("--plugin", action="append", choices=("usage-float", "chatgpt-web", "gemini-web", "dot2api"),
@@ -589,7 +718,7 @@ def main() -> int:
         for line in install():
             print(line)
     if action in ("restart", "all"):
-        for line in restart():
+        for line in restart(refresh_components=args.refresh_components):
             print(line)
     if action in ("check", "all"):
         for name, ok, detail in check():

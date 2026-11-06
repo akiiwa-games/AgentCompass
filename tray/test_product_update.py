@@ -455,5 +455,729 @@ class OneClickUpdateTests(unittest.TestCase):
             self.assertIn("pip", summary2)
 
 
+def _make_code_package_zip(
+    dest_zip: Path,
+    *,
+    version: str = "0.4.0",
+    runtime_fp: str = "a" * 64,
+    min_runtime_version: str = "0.3.18",
+    extra_files: dict[str, str] | None = None,
+    corrupt_manifest_hash_for: str | None = None,
+) -> tuple[bytes, str]:
+    import io
+    import zipfile
+
+    files = {
+        "agentcompass/__init__.py": f'__version__ = "{version}"\n',
+        "agentcompass/cli.py": "def main(argv=None):\n    return 0\n",
+        "tray/app.pyw": f"# tray version {version}\n",
+        "tray/component_launch.py": "def dispatch():\n    return False\n",
+        "tray/easytier_supervisor.ps1": "Write-Output 'ok'\n",
+        "skills/agent-compass/SKILL.md": "---\nname: agent-compass\n---\n",
+        "setup/onboard.py": "def setup_main(argv=None):\n    return 0\n",
+        "setup/setup_agent_compass.py": "print('setup')\n",
+    }
+    if extra_files:
+        files.update(extra_files)
+    file_entries = {}
+    for rel, content in sorted(files.items()):
+        raw = content.encode("utf-8")
+        sha = hashlib.sha256(raw).hexdigest()
+        if corrupt_manifest_hash_for == rel:
+            sha = "f" * 64
+        file_entries[rel] = {"size": len(raw), "sha256": sha}
+    app_manifest = {
+        "schema_version": 1,
+        "version": version,
+        "required_runtime_fingerprint": runtime_fp,
+        "min_runtime_version": min_runtime_version,
+        "file_count": len(file_entries),
+        "files": file_entries,
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for rel, content in sorted(files.items()):
+            zf.writestr(rel, content.encode("utf-8"))
+        zf.writestr("app-manifest.json", (json.dumps(app_manifest, indent=2) + "\n").encode("utf-8"))
+    payload = buf.getvalue()
+    dest_zip.parent.mkdir(parents=True, exist_ok=True)
+    dest_zip.write_bytes(payload)
+    return payload, hashlib.sha256(payload).hexdigest()
+
+
+def _make_modular_installer_dir(
+    base: Path,
+    *,
+    version: str = "0.3.18",
+    runtime_fp: str = "a" * 64,
+    runtime_version: str = "0.3.18",
+    iss_sha256: str = "",
+) -> Path:
+    import zipfile
+
+    inst_root = base / f"AgentCompass-{version}"
+    (inst_root / "cli").mkdir(parents=True, exist_ok=True)
+    (inst_root / "AgentCompass.exe").write_bytes(b"MZ-tray-boot")
+    (inst_root / "cli" / "agentcompass.exe").write_bytes(b"MZ-cli-boot")
+    rt_payload = {
+        "schema_version": 1,
+        "runtime_fingerprint": runtime_fp,
+        "runtime_version": runtime_version,
+    }
+    if iss_sha256:
+        rt_payload["iss_sha256"] = iss_sha256
+    (inst_root / "runtime-info.json").write_text(
+        json.dumps(rt_payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    pkg_dir = inst_root / "app" / "packages"
+    current_dir = inst_root / "app" / "current"
+    current_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = pkg_dir / f"app-{version}.zip"
+    _make_code_package_zip(
+        zip_path,
+        version=version,
+        runtime_fp=runtime_fp,
+        min_runtime_version=runtime_version,
+    )
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(current_dir)
+    return inst_root
+
+
+class IncrementalCodePackageUpdateTests(unittest.TestCase):
+    def test_non_frozen_installer_version_reads_app_current_without_false_0_0_0_mismatch(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            home = base / "home"
+            home.mkdir()
+            inst_root = _make_modular_installer_dir(base, version="0.4.0")
+            cli_exe = inst_root / "cli" / "agentcompass.exe"
+
+            # Direct version lookup from non-frozen process reads 0.4.0 instead of 0.0.0
+            self.assertEqual(updates.local_version(inst_root), "0.4.0")
+            self.assertEqual(updates._installer_version(inst_root), "0.4.0")
+
+            # Inspecting when both tray root and PATH cli point to the installer reports no version mismatch
+            info = updates.inspect_installs(
+                root=inst_root / "app" / "current",
+                home=home,
+                which_path=cli_exe,
+                frozen=False,
+            )
+            self.assertEqual(info["tray"]["shape"], "installer")
+            self.assertEqual(info["tray"]["version"], "0.4.0")
+            self.assertFalse(info["version_mismatch"])
+            self.assertEqual(info["display_version"], "AgentCompass 0.4.0")
+
+    def test_matching_runtime_fingerprint_downloads_only_code_package_and_retains_previous(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            state_dir = base / "state"
+            home = base / "home"
+            home.mkdir()
+            runtime_fp = "b" * 64
+            inst_root = _make_modular_installer_dir(
+                base,
+                version="0.3.18",
+                runtime_fp=runtime_fp,
+                runtime_version="0.3.18",
+            )
+            zip_file = base / "release" / "app-0.4.0.zip"
+            zip_bytes, zip_sha = _make_code_package_zip(
+                zip_file,
+                version="0.4.0",
+                runtime_fp=runtime_fp,
+                min_runtime_version="0.3.18",
+            )
+            setup_bytes = b"MZ-full-installer-should-not-be-downloaded"
+            setup_sha = hashlib.sha256(setup_bytes).hexdigest()
+            manifest_payload = {
+                "schema_version": 1,
+                "version": "0.4.0",
+                "runtime_fingerprint": runtime_fp,
+                "app_package": {
+                    "name": "app-0.4.0.zip",
+                    "size": len(zip_bytes),
+                    "sha256": zip_sha,
+                    "required_runtime_fingerprint": runtime_fp,
+                    "min_runtime_version": "0.3.18",
+                },
+                "installer": {
+                    "name": "AgentCompass-tray-setup.exe",
+                    "size": len(setup_bytes),
+                    "sha256": setup_sha,
+                    "runtime_fingerprint": runtime_fp,
+                },
+            }
+            manifest_bytes = json.dumps(manifest_payload).encode("utf-8")
+            manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+
+            downloaded_urls = []
+            ran_commands = []
+
+            def opener(request, timeout=300):
+                url = request.full_url
+                downloaded_urls.append(url)
+                if url.endswith("manifest.json"):
+                    return _Body(manifest_bytes)
+                if url.endswith("app-0.4.0.zip"):
+                    return _Body(zip_bytes)
+                raise AssertionError(f"Unexpected download URL: {url}")
+
+            summary = updates.update_agentcompass(
+                root=inst_root,
+                home=home,
+                state_dir=state_dir,
+                which_path=None,
+                frozen=False,
+                release={
+                    "tag_name": "v0.4.0",
+                    "assets": [
+                        {
+                            "name": "manifest.json",
+                            "url": "https://example.com/manifest.json",
+                            "digest": f"sha256:{manifest_sha}",
+                        },
+                        {
+                            "name": "app-0.4.0.zip",
+                            "url": "https://example.com/app-0.4.0.zip",
+                            "digest": f"sha256:{zip_sha}",
+                        },
+                        {
+                            "name": "AgentCompass-tray-setup.exe",
+                            "url": "https://example.com/AgentCompass-tray-setup.exe",
+                            "digest": f"sha256:{setup_sha}",
+                        },
+                    ],
+                },
+                opener=opener,
+                runner=lambda args, cwd=None, env=None: ran_commands.append(list(args)) or "",
+                restart_fn=lambda: "托盘已重启",
+            )
+            self.assertIn("已完成代码包增量更新", summary)
+            self.assertEqual(
+                downloaded_urls,
+                ["https://example.com/manifest.json", "https://example.com/app-0.4.0.zip"],
+            )
+            self.assertFalse(any("AgentCompass-tray-setup.exe" in cmd[0] for cmd in ran_commands))
+            self.assertEqual(len(ran_commands), 1)
+            self.assertEqual(ran_commands[0][-2:], ["data", "--refresh"])
+            self.assertEqual(updates.local_version(inst_root), "0.4.0")
+            self.assertEqual(updates.local_version(inst_root / "app" / "previous"), "0.3.18")
+            self.assertTrue((inst_root / "app" / "packages" / "app-0.4.0.zip").is_file())
+
+    def test_mismatched_runtime_fingerprint_or_legacy_install_falls_back_to_full_installer(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            state_dir = base / "state"
+            home = base / "home"
+            home.mkdir()
+            old_fp = "1" * 64
+            new_fp = "2" * 64
+            inst_root = _make_modular_installer_dir(base, version="0.3.18", runtime_fp=old_fp)
+            zip_file = base / "release" / "app-0.4.0.zip"
+            zip_bytes, zip_sha = _make_code_package_zip(zip_file, version="0.4.0", runtime_fp=new_fp)
+            setup_bytes = b"MZ-new-runtime-full-installer"
+            setup_sha = hashlib.sha256(setup_bytes).hexdigest()
+            manifest_payload = {
+                "schema_version": 1,
+                "version": "0.4.0",
+                "runtime_fingerprint": new_fp,
+                "app_package": {
+                    "name": "app-0.4.0.zip",
+                    "size": len(zip_bytes),
+                    "sha256": zip_sha,
+                    "required_runtime_fingerprint": new_fp,
+                },
+                "installer": {
+                    "name": "AgentCompass-tray-setup.exe",
+                    "size": len(setup_bytes),
+                    "sha256": setup_sha,
+                    "runtime_fingerprint": new_fp,
+                },
+            }
+            manifest_bytes = json.dumps(manifest_payload).encode("utf-8")
+
+            downloaded_urls = []
+            ran_commands = []
+
+            def opener(request, timeout=300):
+                url = request.full_url
+                downloaded_urls.append(url)
+                if url.endswith("manifest.json"):
+                    return _Body(manifest_bytes)
+                if url.endswith("AgentCompass-tray-setup.exe"):
+                    return _Body(setup_bytes)
+                raise AssertionError(f"Should not download code package when runtime differs: {url}")
+
+            summary = updates.update_agentcompass(
+                root=inst_root,
+                home=home,
+                state_dir=state_dir,
+                which_path=None,
+                frozen=False,
+                release={
+                    "tag_name": "v0.4.0",
+                    "assets": [
+                        {"name": "manifest.json", "url": "https://example.com/manifest.json"},
+                        {
+                            "name": "app-0.4.0.zip",
+                            "url": "https://example.com/app-0.4.0.zip",
+                            "digest": f"sha256:{zip_sha}",
+                        },
+                        {
+                            "name": "AgentCompass-tray-setup.exe",
+                            "url": "https://example.com/AgentCompass-tray-setup.exe",
+                            "digest": f"sha256:{setup_sha}",
+                        },
+                    ],
+                },
+                opener=opener,
+                runner=lambda args, cwd=None, env=None: ran_commands.append(list(args)) or "",
+                restart_fn=lambda: "托盘已重启",
+            )
+            self.assertIn("已完成安装包静默更新", summary)
+            self.assertIn("https://example.com/AgentCompass-tray-setup.exe", downloaded_urls)
+            self.assertNotIn("https://example.com/app-0.4.0.zip", downloaded_urls)
+            self.assertEqual(ran_commands[0][1:], ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+
+            # Legacy <=0.3.18 client (no runtime-info.json at all) also upgrades to 0.4.0 via AgentCompass-tray-setup.exe
+            legacy_root = base / "legacy-0.3.18"
+            legacy_root.mkdir()
+            (legacy_root / "AgentCompass.exe").write_bytes(b"MZ-legacy")
+            legacy_cmds = []
+            summary_legacy = updates.update_agentcompass(
+                root=legacy_root,
+                home=home,
+                state_dir=state_dir,
+                which_path=None,
+                frozen=False,
+                release={
+                    "tag_name": "v0.4.0",
+                    "assets": [
+                        {"name": "manifest.json", "url": "https://example.com/manifest.json"},
+                        {
+                            "name": "app-0.4.0.zip",
+                            "url": "https://example.com/app-0.4.0.zip",
+                            "digest": f"sha256:{zip_sha}",
+                        },
+                        {
+                            "name": "AgentCompass-tray-setup.exe",
+                            "url": "https://example.com/AgentCompass-tray-setup.exe",
+                            "digest": f"sha256:{setup_sha}",
+                        },
+                    ],
+                },
+                opener=opener,
+                runner=lambda args, cwd=None, env=None: legacy_cmds.append(list(args)) or "",
+                restart_fn=lambda: "托盘已重启",
+            )
+            self.assertIn("已完成安装包静默更新", summary_legacy)
+            self.assertTrue(legacy_cmds[0][0].endswith("AgentCompass-tray-setup.exe"))
+
+            # NEW-2: When iss_sha256 differs between local runtime-info.json and remote manifest,
+            # can_use_code_package returns False so .iss changes always trigger the full installer.
+            inst_iss = _make_modular_installer_dir(
+                base,
+                version="0.4.0",
+                runtime_fp=old_fp,
+                iss_sha256="1" * 64,
+            )
+            ok_iss, reason_iss = updates.can_use_code_package(
+                updates.read_local_runtime_info(inst_iss),
+                {
+                    "runtime_fingerprint": old_fp,
+                    "iss_sha256": "2" * 64,
+                    "app_package": {
+                        "name": "app-0.4.1.zip",
+                        "sha256": zip_sha,
+                        "required_runtime_fingerprint": old_fp,
+                    },
+                },
+            )
+            self.assertFalse(ok_iss)
+            self.assertTrue(reason_iss.startswith("iss_sha256_mismatch:"))
+
+    def test_code_package_sha256_mismatch_or_corrupt_replacement_refuses_and_rolls_back(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            state_dir = base / "state"
+            home = base / "home"
+            home.mkdir()
+            runtime_fp = "c" * 64
+            inst_root = _make_modular_installer_dir(base, version="0.3.18", runtime_fp=runtime_fp)
+            zip_file = base / "release" / "app-0.4.0.zip"
+            zip_bytes, zip_sha = _make_code_package_zip(zip_file, version="0.4.0", runtime_fp=runtime_fp)
+            wrong_sha = "9" * 64
+
+            # 1. Outer zip SHA-256 mismatch is refused before touching app/current
+            with self.assertRaisesRegex(RuntimeError, "校验不匹配"):
+                updates.update_agentcompass(
+                    root=inst_root,
+                    home=home,
+                    state_dir=state_dir,
+                    which_path=None,
+                    frozen=False,
+                    release={
+                        "tag_name": "v0.4.0",
+                        "manifest": {
+                            "version": "0.4.0",
+                            "runtime_fingerprint": runtime_fp,
+                            "app_package": {
+                                "name": "app-0.4.0.zip",
+                                "size": len(zip_bytes),
+                                "sha256": wrong_sha,
+                                "required_runtime_fingerprint": runtime_fp,
+                            },
+                        },
+                        "assets": [
+                            {
+                                "name": "app-0.4.0.zip",
+                                "url": "https://example.com/app-0.4.0.zip",
+                                "digest": f"sha256:{wrong_sha}",
+                            }
+                        ],
+                    },
+                    opener=lambda req, timeout=300: _Body(zip_bytes),
+                    runner=lambda args, cwd=None, env=None: "",
+                    restart_fn=lambda: "restarted",
+                )
+            self.assertEqual(updates.local_version(inst_root), "0.3.18")
+
+            # 2. Failure during atomic swap after moving current -> previous rolls back current to 0.3.18
+            orig_validate = updates._validate_extracted_app_dir
+            calls = {"count": 0}
+
+            def fail_on_second_validate(app_dir, **kwargs):
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    raise RuntimeError("simulated post-swap validation failure")
+                return orig_validate(app_dir, **kwargs)
+
+            with mock.patch.object(updates, "_validate_extracted_app_dir", side_effect=fail_on_second_validate):
+                with self.assertRaisesRegex(RuntimeError, "simulated post-swap validation failure"):
+                    updates._apply_code_package(
+                        inst_root,
+                        zip_file,
+                        expected_runtime_fingerprint=runtime_fp,
+                    )
+            self.assertEqual(updates.local_version(inst_root), "0.3.18")
+            self.assertTrue((inst_root / "app" / "current" / "tray" / "app.pyw").is_file())
+
+            # 3. When Windows holds a handle on app/current (PermissionError on directory rename),
+            # _apply_code_package falls back to in-place sync while preserving app/previous.
+            orig_replace = Path.replace
+
+            def locked_current_replace(path_self: Path, target: Path):
+                if path_self.name == "current":
+                    raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+                return orig_replace(path_self, target)
+
+            with mock.patch.object(Path, "replace", autospec=True, side_effect=locked_current_replace):
+                applied = updates._apply_code_package(
+                    inst_root,
+                    zip_file,
+                    expected_runtime_fingerprint=runtime_fp,
+                )
+            self.assertEqual(applied["version"], "0.4.0")
+            self.assertEqual(updates.local_version(inst_root), "0.4.0")
+            self.assertEqual(updates.local_version(inst_root / "app" / "previous"), "0.3.18")
+
+    def test_unverified_manifest_cannot_authorize_code_package_and_safe_cwd_escapes_app_current(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            state_dir = base / "state"
+            home = base / "home"
+            home.mkdir()
+            runtime_fp = "d" * 64
+            inst_root = _make_modular_installer_dir(base, version="0.3.18", runtime_fp=runtime_fp)
+            zip_file = base / "release" / "app-0.4.0.zip"
+            zip_bytes, zip_sha = _make_code_package_zip(zip_file, version="0.4.0", runtime_fp=runtime_fp)
+            manifest_payload = {
+                "schema_version": 1,
+                "version": "0.4.0",
+                "runtime_fingerprint": runtime_fp,
+                "app_package": {
+                    "name": "app-0.4.0.zip",
+                    "size": len(zip_bytes),
+                    "sha256": zip_sha,
+                    "required_runtime_fingerprint": runtime_fp,
+                },
+            }
+            manifest_bytes = json.dumps(manifest_payload).encode("utf-8")
+
+            # 1. Tampered manifest.json with mismatched digest raises RuntimeError
+            with self.assertRaisesRegex(RuntimeError, "manifest.json sha256"):
+                updates._load_release_manifest(
+                    {
+                        "assets": [
+                            {
+                                "name": "manifest.json",
+                                "url": "https://example.com/manifest.json",
+                                "digest": "sha256:" + ("0" * 64),
+                            }
+                        ]
+                    },
+                    opener=lambda req, timeout=60: _Body(manifest_bytes),
+                )
+
+            # 2. When manifest.json asset has NO digest and app-0.4.0.zip also has NO digest,
+            # update_agentcompass refuses to trust manifest_sha as fallback_sha256.
+            def opener(req, timeout=300):
+                if req.full_url.endswith("manifest.json"):
+                    return _Body(manifest_bytes)
+                return _Body(zip_bytes)
+
+            with self.assertRaisesRegex(RuntimeError, "缺少 sha256"):
+                updates.update_agentcompass(
+                    root=inst_root,
+                    home=home,
+                    state_dir=state_dir,
+                    which_path=None,
+                    frozen=False,
+                    release={
+                        "tag_name": "v0.4.0",
+                        "assets": [
+                            {"name": "manifest.json", "url": "https://example.com/manifest.json"},
+                            {"name": "app-0.4.0.zip", "url": "https://example.com/app-0.4.0.zip"},
+                        ],
+                    },
+                    opener=opener,
+                    runner=lambda args, cwd=None, env=None: "",
+                    restart_fn=lambda: "restarted",
+                )
+
+            # 3. services.safe_cwd never returns a path inside <inst_root>/app/current
+            import services
+
+            escaped = services.safe_cwd(inst_root / "app" / "current" / "tray")
+            self.assertEqual(escaped.resolve(), inst_root.resolve())
+
+            # 4. local_version reads active_version in state.json and runtime_version in runtime-info.json
+            import shutil
+
+            shutil.rmtree(inst_root / "app" / "current")
+            (inst_root / "app" / "state.json").write_text(
+                json.dumps({"active_version": "0.3.18"}), encoding="utf-8"
+            )
+            self.assertEqual(updates.local_version(inst_root), "0.3.18")
+            (inst_root / "app" / "state.json").unlink()
+            self.assertEqual(updates.local_version(inst_root), "0.3.18")
+
+    def test_live_frozen_installer_failure_is_reported_and_legacy_running_status_reconciles(self):
+        import deploy
+        import os
+        import update_status
+
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            state_dir = base / "state"
+            home = base / "home"
+            home.mkdir()
+            inst_root = _make_modular_installer_dir(base, version="0.3.18", runtime_fp="1" * 64)
+            setup_bytes = b"MZ-failing-full-installer"
+            setup_sha = hashlib.sha256(setup_bytes).hexdigest()
+
+            # 1. deploy.write_restart_marker respects custom state_dir (NEW-4)
+            deploy.write_restart_marker(version="0.4.0", state_dir=state_dir)
+            self.assertTrue((state_dir / "tray-restarted.json").is_file())
+            consumed = deploy.consume_restart_marker(state_dir=state_dir)
+            self.assertIsNotNone(consumed)
+            self.assertEqual(consumed["version"], "0.4.0")
+
+            # 2. _spawn_installer_watcher is gone; when frozen live tray launches AgentCompass-tray-setup.exe
+            # and the installer exits non-zero, update_agentcompass raises RuntimeError and records failure (R3-1/R3-2)
+            self.assertFalse(hasattr(updates, "_spawn_installer_watcher"))
+            events = []
+            fake_proc = mock.Mock()
+            fake_proc.pid = 999999
+            fake_proc.wait.return_value = 5
+            with (
+                mock.patch.object(sys, "executable", str(inst_root / "AgentCompass.exe")),
+                mock.patch.object(updates.subprocess, "Popen", return_value=fake_proc),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "退出码 5"):
+                    updates.update_agentcompass(
+                        progress=events.append,
+                        root=inst_root,
+                        home=home,
+                        state_dir=state_dir,
+                        which_path=None,
+                        frozen=True,
+                        release={
+                            "tag_name": "v0.4.0",
+                            "assets": [
+                                {
+                                    "name": "AgentCompass-tray-setup.exe",
+                                    "url": "https://example.com/AgentCompass-tray-setup.exe",
+                                    "digest": f"sha256:{setup_sha}",
+                                }
+                            ],
+                        },
+                        opener=lambda req, timeout=300: _Body(setup_bytes),
+                        runner=None,
+                        restart_fn=lambda: "restarted",
+                    )
+            self.assertFalse(any("已完成安装包静默更新" in str(e.get("message") or "") for e in events))
+            self.assertTrue(any("更新失败" in str(e.get("message") or "") for e in events))
+            self.assertFalse((state_dir / "tray-restarted.json").is_file())
+
+            # 3. reconcile_status works without psutil, never finalizes while installer PID is alive,
+            # judges pending_installer by target_version == installed_version, and marks records without
+            # pending_installer as "已结束，结果未知" rather than fabricating success (R3-1/R3-2)
+            state_dir.mkdir(parents=True, exist_ok=True)
+            with mock.patch.dict(sys.modules, {"psutil": None}):
+                # 3a. While installer process is still alive (pid=os.getpid()), never finalize early even if version matches
+                live_pending = {
+                    "running": True,
+                    "started": 1700000000.0,
+                    "owner_pid": 999998,
+                    "title": "AgentCompass",
+                    "targets": ["AgentCompass"],
+                    "pending_installer": {
+                        "pid": os.getpid(),
+                        "target_version": "0.4.0",
+                        "started_at": 1700000000.0,
+                        "install_root": str(inst_root),
+                        "tag_label": "v0.4.0",
+                    },
+                    "results": {},
+                    "events": [],
+                }
+                (state_dir / "update-status.json").write_text(json.dumps(live_pending), encoding="utf-8")
+                still_running = update_status.reconcile_status(state_dir, current_version="0.4.0")
+                self.assertTrue(still_running["running"])
+
+                # 3b. Once installer PID has exited and installed version == target_version -> success
+                done_pending = dict(live_pending)
+                done_pending["pending_installer"] = dict(live_pending["pending_installer"], pid=999997)
+                (state_dir / "update-status.json").write_text(json.dumps(done_pending), encoding="utf-8")
+                reconciled_ok = update_status.reconcile_status(state_dir, current_version="0.4.0")
+                self.assertFalse(reconciled_ok["running"])
+                self.assertIn("已完成安装包静默更新", reconciled_ok["results"]["AgentCompass"])
+
+                # 3c. Once installer PID has exited and installed version != target_version -> failure
+                (state_dir / "update-status.json").write_text(json.dumps(done_pending), encoding="utf-8")
+                reconciled_fail = update_status.reconcile_status(state_dir)  # inst_root is at 0.3.18 != 0.4.0
+                self.assertFalse(reconciled_fail["running"])
+                self.assertIn("更新失败", reconciled_fail["results"]["AgentCompass"])
+
+                # 3d. Record without pending_installer (e.g. <=0.3.18 upgrade or interrupted check) -> "已结束，结果未知", never fabricated success
+                stale_status = {
+                    "running": True,
+                    "started": 1700000000.0,
+                    "owner_pid": 999998,
+                    "title": "AgentCompass",
+                    "targets": ["AgentCompass"],
+                    "results": {},
+                    "events": ["[15:00:00] AgentCompass · 正在运行安装包 AgentCompass-tray-setup.exe…"],
+                }
+                (state_dir / "update-status.json").write_text(json.dumps(stale_status), encoding="utf-8")
+                reconciled_unknown = update_status.reconcile_status(state_dir, current_version="0.4.0")
+                self.assertFalse(reconciled_unknown["running"])
+                self.assertEqual(reconciled_unknown["results"]["AgentCompass"], "已结束，结果未知")
+
+    def test_resident_component_processes_scopes_by_proc_cwd_and_spares_visible_router_window(self):
+        import deploy
+
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            our_root = base / "our-install"
+            other_root = base / "other-checkout"
+            (our_root / "tray").mkdir(parents=True)
+            (other_root / "tray").mkdir(parents=True)
+            (our_root / "tray" / "router_window.py").write_text("# ours\n", encoding="utf-8")
+            (our_root / "tray" / "usage_float_host.py").write_text("# ours\n", encoding="utf-8")
+            (other_root / "tray" / "router_window.py").write_text("# other\n", encoding="utf-8")
+
+            other_proc = mock.Mock()
+            other_proc.pid = 41001
+            other_proc.info = {"pid": 41001, "name": "pythonw.exe", "cmdline": ["pythonw.exe", "tray/router_window.py"]}
+            other_proc.cwd.return_value = str(other_root)
+
+            our_window_proc = mock.Mock()
+            our_window_proc.pid = 41002
+            our_window_proc.info = {"pid": 41002, "name": "pythonw.exe", "cmdline": ["pythonw.exe", "tray/router_window.py"]}
+            our_window_proc.cwd.return_value = str(our_root)
+
+            our_float_proc = mock.Mock()
+            our_float_proc.pid = 41003
+            our_float_proc.info = {
+                "pid": 41003,
+                "name": "pythonw.exe",
+                "cmdline": ["pythonw.exe", "tray/usage_float_host.py"],
+            }
+            our_float_proc.cwd.return_value = str(our_root)
+
+            with (
+                mock.patch.object(deploy, "TRAY_DIR", our_root / "tray"),
+                mock.patch.object(
+                    deploy.psutil,
+                    "process_iter",
+                    return_value=[other_proc, our_window_proc, our_float_proc],
+                ),
+            ):
+                # With include_visible_windows=False, only usage_float_host is returned, sparing visible router_window
+                # and never matching other_proc whose proc.cwd() is other_root (NEW-6)
+                non_visible_procs = deploy.resident_component_processes(include_visible_windows=False)
+                self.assertEqual([p.pid for p in non_visible_procs], [41003])
+
+                # With include_visible_windows=True, our_window_proc is included, but other_proc is still excluded
+                all_our_procs = deploy.resident_component_processes(include_visible_windows=True)
+                self.assertEqual([p.pid for p in all_our_procs], [41002, 41003])
+
+    def test_superseded_or_closing_router_window_immediately_releases_show_event(self):
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        patches = [
+            mock.patch.object(router_window.Panel, "run"),
+            mock.patch.object(router_window.Panel, "prefill"),
+            mock.patch.object(router_window.theme, "set_window_icon"),
+            mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()),
+            mock.patch.object(router_window, "log_error"),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        panel = router_window.Panel(root)
+        self.addCleanup(lambda: panel._poll_id and root.after_cancel(panel._poll_id))
+
+        panel.show_event = 424242
+        panel.resident = True
+        fake_kernel = mock.Mock()
+        with (
+            mock.patch.object(router_window, "_kernel32", return_value=fake_kernel),
+            mock.patch.object(panel, "hidden", return_value=False),
+            mock.patch.object(panel, "parent_alive", return_value=True),
+            mock.patch.object(panel, "version_superseded", return_value=True),
+        ):
+            panel.poll()
+        fake_kernel.CloseHandle.assert_called_once_with(424242)
+        self.assertIsNone(panel.show_event)
+        self.assertFalse(panel.resident)
+        self.assertEqual(panel.status.get(), "AgentCompass 已更新到新版本，关闭后重新打开即为新版")
+
+        # Also verify close() releases show_event immediately when entering closing state with a running long_job
+        panel.show_event = 535353
+        panel.resident = False
+        fake_kernel.reset_mock()
+        alive_thread = mock.Mock()
+        alive_thread.is_alive.return_value = True
+        panel.long_jobs = [alive_thread]
+        with (
+            mock.patch.object(router_window, "_kernel32", return_value=fake_kernel),
+            mock.patch.object(router_window.os, "_exit") as exit_,
+        ):
+            panel.close()
+        exit_.assert_not_called()
+        self.assertTrue(panel.closing)
+        fake_kernel.CloseHandle.assert_called_once_with(535353)
+        self.assertIsNone(panel.show_event)
+
+
 if __name__ == "__main__":
     unittest.main()

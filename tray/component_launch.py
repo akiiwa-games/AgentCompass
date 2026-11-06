@@ -26,6 +26,7 @@ COMPONENTS = (
     "router_setup",
     "router_window",
     "update_status",
+    "updates",
     "usage_collect",
     "usage_float_host",
 )

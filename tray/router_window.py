@@ -617,6 +617,10 @@ class Panel:
         self.auto_replayed = False
         self._generation = 0
         self._cards_cache = None
+        self._startup_version = self._read_disk_version()
+        self._version_checked_at = time.monotonic()
+        self._version_superseded = False
+        self._superseded_notified = False
         self.stale = set()  # built pages to read again when next raised, after the window was hidden
         root.bind("<<PanelResult>>", lambda e: self.drain_results())
         root.bind("<Button-1>", lambda e: self.close_model_menu(), add="+")
@@ -724,8 +728,42 @@ class Panel:
         except queue.Empty:
             pass
 
+    def _read_disk_version(self) -> str:
+        try:
+            import updates
+
+            return str(updates.local_version() or "")
+        except Exception:
+            return ""
+
+    def version_superseded(self) -> bool:
+        if getattr(self, "_version_superseded", False):
+            return True
+        now = time.monotonic()
+        if now - getattr(self, "_version_checked_at", 0.0) < 2.0:
+            return False
+        self._version_checked_at = now
+        startup_ver = getattr(self, "_startup_version", "")
+        if not startup_ver or startup_ver == "0.0.0":
+            return False
+        cur_ver = self._read_disk_version()
+        if cur_ver and cur_ver != "0.0.0" and cur_ver != startup_ver:
+            self._version_superseded = True
+            return True
+        return False
+
+    def _release_show_event(self) -> None:
+        if getattr(self, "show_event", None):
+            try:
+                _kernel32().CloseHandle(self.show_event)
+            except Exception:
+                pass
+            self.show_event = None
+        self.resident = False
+
     def poll(self):
         if self.closing:
+            self._release_show_event()
             if not any(t.is_alive() for t in self.long_jobs):
                 os._exit(0)
             self._poll_id = self.root.after(30, self.poll)
@@ -734,8 +772,21 @@ class Panel:
         if self.show_requested():
             self.reveal()
         hidden = self.hidden()
-        if hidden and not self.parent_alive() and not any(t.is_alive() for t in self.long_jobs):
-            os._exit(0)  # the tray that kept this window warm is gone
+        parent_ok = self.parent_alive()
+        if not parent_ok:
+            self._version_checked_at = 0.0
+        superseded = self.version_superseded()
+        if not parent_ok or superseded:
+            self._release_show_event()
+        if hidden and (not parent_ok or superseded) and not any(t.is_alive() for t in self.long_jobs):
+            os._exit(0)  # the tray that kept this window warm is gone or code package was upgraded
+        if not hidden and superseded and not getattr(self, "_superseded_notified", False):
+            self._superseded_notified = True
+            self.status.set(_tr("AgentCompass 已更新到新版本，关闭后重新打开即为新版"))
+            try:
+                self.root.title(f"{TITLE} ({_tr('旧版本')})")
+            except Exception:
+                pass
         if hidden and self.trim_due and not self.busy_jobs and not (self.prebuild and not self.prebuild_finished):
             self.trim_due = False
             self.trim_memory()
@@ -808,10 +859,11 @@ class Panel:
         psapi.EmptyWorkingSet(kernel.GetCurrentProcess())
 
     def close(self):
-        if self.resident and self.parent_alive():
+        if self.resident and self.parent_alive() and not self.version_superseded():
             self.hide()
             return
         self.closing = True
+        self._release_show_event()
         if getattr(self, "_poll_id", None) is not None:
             try:
                 self.root.after_cancel(self._poll_id)

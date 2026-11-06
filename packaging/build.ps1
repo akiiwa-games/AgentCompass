@@ -16,12 +16,15 @@ if ($Text -notmatch '__version__\s*=\s*[''"]([^''"]+)[''"]') {
 $Version = $Matches[1]
 Write-Host "AgentCompass $Version"
 
+$Dist = Join-Path $Root "dist"
 if (-not $SkipPyInstaller) {
     $Spec = Join-Path $PSScriptRoot "agentcompass-tray.spec"
     $Work = Join-Path $PSScriptRoot ".build"
-    $Dist = Join-Path $Root "dist"
     & $Python -m PyInstaller --noconfirm --clean --distpath $Dist --workpath $Work $Spec
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed ($LASTEXITCODE)" }
+} elseif (Test-Path -LiteralPath (Join-Path $Dist "AgentCompass")) {
+    & $Python -X utf8 (Join-Path $PSScriptRoot "app_bundle.py") stage --root $Root --dist $Dist --version $Version
+    if ($LASTEXITCODE -ne 0) { throw "app_bundle.py stage failed ($LASTEXITCODE)" }
 }
 
 function Find-Iscc {
@@ -69,3 +72,6 @@ if ($SignTool -and (Test-Path -LiteralPath $SignTool) -and ($Thumb -or $Pfx)) {
 } else {
     Write-Host "Unsigned build. Windows SmartScreen will warn on first launch. See packaging/SIGNING.md."
 }
+
+& $Python -X utf8 (Join-Path $PSScriptRoot "app_bundle.py") build-manifest --root $Root --dist $Dist --version $Version
+if ($LASTEXITCODE -ne 0) { throw "app_bundle.py build-manifest failed ($LASTEXITCODE)" }

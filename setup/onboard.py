@@ -236,8 +236,13 @@ def collect_usage_once(home: Path, dry_run: bool = False, run=subprocess.run) ->
     if dry_run:
         return {"ran": False, "cache": str(cache), "ok": cache.is_file(), "detail": f"would run: {sys.executable} {script} --once"}
     env = {**detection_environ(home), "PYTHONUTF8": "1"}
+    work_dir = script.parent
+    for parent in (work_dir, *work_dir.parents):
+        if parent.name.lower() in ("current", "previous") and parent.parent.name.lower() == "app":
+            work_dir = parent.parent.parent
+            break
     try:
-        res = run([sys.executable, "-I", "-X", "utf8", str(script), "--once"], cwd=str(script.parent), env=env,
+        res = run([sys.executable, "-I", "-X", "utf8", str(script), "--once"], cwd=str(work_dir), env=env,
                   capture_output=True, text=True, timeout=240)
         detail = (res.stdout.strip() or res.stderr.strip())[:400]
     except (OSError, subprocess.SubprocessError) as exc:

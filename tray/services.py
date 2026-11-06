@@ -44,6 +44,22 @@ LOG_DIR = Path.home() / ".dot2api"
 TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 
+def safe_cwd(cwd: Path | str | None = None) -> Path:
+    """Return a working directory that never sits inside ``<install_root>/app``."""
+    default_dir = Path(sys.executable).resolve().parent if component_launch.frozen() else ROOT
+    try:
+        target = Path(cwd or default_dir).resolve()
+    except OSError:
+        target = default_dir
+    for parent in (target, *target.parents):
+        if parent.name.lower() in ("current", "previous") and parent.parent.name.lower() == "app":
+            inst_root = parent.parent.parent
+            return inst_root if inst_root.is_dir() else Path.home()
+        if parent.name.lower() == "app" and (parent.parent / "runtime-info.json").is_file():
+            return parent.parent
+    return target if target.is_dir() else default_dir
+
+
 def hidden_popen(args: list[str], env: dict[str, str], cwd: Path, log_path: Path, extra_flags: int = 0) -> subprocess.Popen:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log = open(log_path, "ab", buffering=0)
@@ -54,7 +70,7 @@ def hidden_popen(args: list[str], env: dict[str, str], cwd: Path, log_path: Path
         startup.wShowWindow = 0
     return subprocess.Popen(
         args,
-        cwd=str(cwd),
+        cwd=str(safe_cwd(cwd)),
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=log,
@@ -847,10 +863,11 @@ def capacity_tick(force: bool = False) -> bool:
     if not force and started is not None and time.monotonic() - started < CAPACITY_INTERVAL:
         return False
     _capacity["started"] = time.monotonic()
+    child_cwd = Path(sys.executable).resolve().parent if component_launch.frozen() else ROOT
     _capacity["proc"] = hidden_popen(
         component_launch.command(CAPACITY_SCRIPT, "--once", "--quiet", windowed=False),
         os.environ.copy(),
-        ROOT,
+        child_cwd,
         STATE_DIR / "capacity.log",
         BELOW_NORMAL_PRIORITY_CLASS,
     )
@@ -878,10 +895,11 @@ def usage_collect_tick(force: bool = False) -> bool:
     if not force and started is not None and time.monotonic() - started < USAGE_COLLECT_INTERVAL:
         return False
     _usage_collect["started"] = time.monotonic()
+    child_cwd = Path(sys.executable).resolve().parent if component_launch.frozen() else ROOT
     _usage_collect["proc"] = hidden_popen(
         component_launch.command(USAGE_COLLECT_SCRIPT, windowed=False),
         os.environ.copy(),
-        ROOT,
+        child_cwd,
         STATE_DIR / "usage-collect.log",
         BELOW_NORMAL_PRIORITY_CLASS,
     )

@@ -147,8 +147,8 @@ class PackagingTests(unittest.TestCase):
         spec = (ROOT / "packaging" / "agentcompass-tray.spec").read_text(encoding="utf-8")
         self.assertIn('name="agentcompass"', spec)
         self.assertIn("console=True", spec)
-        self.assertIn('"AgentCompass" / "cli"', spec)
-        self.assertIn('"agentcompass/data/skills"', spec)
+        self.assertIn('dist_app / "cli"', spec)
+        self.assertIn("app_bundle.stage_installed_app", spec)
         self.assertIn('("X utf8", None, "OPTION")', spec)
         iss = (ROOT / "packaging" / "agentcompass.iss").read_text(encoding="utf-8")
         self.assertIn("ChangesEnvironment=yes", iss)
@@ -166,6 +166,398 @@ class PackagingTests(unittest.TestCase):
         icons = iss.split("[Icons]", 1)[1].split("\n[", 1)[0] if "[Icons]" in iss else ""
         self.assertIn(r'Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"', icons)
         self.assertIn("Tasks: desktopicon", icons)                  # the desktop icon stays opt-in
+
+    @staticmethod
+    def _load_packaging_module(name: str):
+        path = ROOT / "packaging" / f"{name}.py"
+        spec = importlib.util.spec_from_file_location(f"agentcompass_{name}", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @classmethod
+    def _make_mini_repo(cls, base: Path, version: str = "0.4.0") -> Path:
+        repo = base / f"repo-{version}"
+        files = {
+            "agentcompass/__init__.py": f'__version__ = "{version}"\n',
+            "agentcompass/cli.py": "def main(argv=None):\n    return 0\n",
+            "tray/app.pyw": "# tray app\n",
+            "tray/component_launch.py": "def dispatch(argv=None):\n    return None\n",
+            "tray/updates.py": "# updates\n",
+            "tray/easytier_supervisor.ps1": "Write-Output 'ok'\n",
+            "skills/agent-compass/SKILL.md": "---\nname: agent-compass\n---\n",
+            "skills/agent-compass/scripts/route_judge.py": "print('judge')\n",
+            "setup/setup_agent_compass.py": "print('setup')\n",
+            "setup/onboard.py": "def setup_main(argv=None):\n    return 0\n",
+            "packaging/agentcompass-tray.spec": "# spec v1\n",
+            "packaging/agentcompass.iss": "; iss v1\n",
+            "packaging/app_bootstrap.py": (ROOT / "packaging" / "app_bootstrap.py").read_text(encoding="utf-8"),
+            "packaging/cli_entry.py": (ROOT / "packaging" / "cli_entry.py").read_text(encoding="utf-8"),
+            "packaging/tray_entry.py": (ROOT / "packaging" / "tray_entry.py").read_text(encoding="utf-8"),
+            "packaging/stage_data.py": (ROOT / "packaging" / "stage_data.py").read_text(encoding="utf-8"),
+            "packaging/build.ps1": "# build v1\n",
+        }
+        for rel, content in files.items():
+            target = repo / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8", newline="\n")
+        frozen_dll = repo / "dist" / "AgentCompass" / "_internal" / "python313.dll"
+        frozen_dll.parent.mkdir(parents=True, exist_ok=True)
+        frozen_dll.write_bytes(b"MZ-frozen-runtime-dll-v1")
+        return repo
+
+    def test_runtime_fingerprint_tracks_runtime_inputs_and_ignores_app_code_edits(self):
+        from tempfile import TemporaryDirectory
+
+        app_bundle = self._load_packaging_module("app_bundle")
+        if (ROOT / "dist" / "AgentCompass" / "_internal").is_dir():
+            self.assertTrue(app_bundle.collect_runtime_asset_hashes(ROOT))
+        with TemporaryDirectory() as tmp:
+            repo = self._make_mini_repo(Path(tmp), version="0.4.0")
+            base_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertEqual(len(base_fp["runtime_fingerprint"]), 64)
+            self.assertEqual(
+                set(base_fp["bundled_runtime_assets_sha256"].keys()),
+                {"_internal/python313.dll"},
+            )
+
+            # 1. Editing application code (tray/, agentcompass/, skills/, setup/) or build scripts (build.ps1, stage_data.py)
+            # does NOT change runtime_fingerprint (R3-4)
+            (repo / "tray" / "app.pyw").write_text("# modified tray code\nprint(123)\n", encoding="utf-8", newline="\n")
+            (repo / "agentcompass" / "cli.py").write_text("def main(argv=None):\n    return 42\n", encoding="utf-8", newline="\n")
+            (repo / "skills" / "agent-compass" / "scripts" / "route_judge.py").write_text("print('v2')\n", encoding="utf-8", newline="\n")
+            (repo / "packaging" / "build.ps1").write_text("# build script log tweak\n", encoding="utf-8", newline="\n")
+            (repo / "packaging" / "stage_data.py").write_text(
+                (repo / "packaging" / "stage_data.py").read_text(encoding="utf-8") + "\n# comment\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            same_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertEqual(same_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+
+            # 2. Editing .spec changes runtime_fingerprint
+            (repo / "packaging" / "agentcompass-tray.spec").write_text("# spec v2\n", encoding="utf-8", newline="\n")
+            spec_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertNotEqual(spec_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+            (repo / "packaging" / "agentcompass-tray.spec").write_text("# spec v1\n", encoding="utf-8", newline="\n")
+
+            # 3. Editing .iss updates iss_sha256 AND invalidates runtime_fingerprint so installer changes trigger full setup
+            (repo / "packaging" / "agentcompass.iss").write_text("; iss v2\n", encoding="utf-8", newline="\n")
+            iss_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertNotEqual(iss_fp["iss_sha256"], base_fp["iss_sha256"])
+            self.assertNotEqual(iss_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+            (repo / "packaging" / "agentcompass.iss").write_text("; iss v1\n", encoding="utf-8", newline="\n")
+
+            # 4. Editing boot loader entry (app_bootstrap.py / tray_entry.py) changes runtime_fingerprint
+            (repo / "packaging" / "tray_entry.py").write_text("# boot loader v2\n", encoding="utf-8", newline="\n")
+            boot_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertNotEqual(boot_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+            (repo / "packaging" / "tray_entry.py").write_text(
+                (ROOT / "packaging" / "tray_entry.py").read_text(encoding="utf-8"),
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            # 5. Changing third-party package version, bundled modules, or frozen _internal runtime binary assets changes runtime_fingerprint
+            pkg_fp = app_bundle.compute_runtime_fingerprint(
+                repo,
+                third_party_packages={"Pillow": "1.0.0", "psutil": "99.0.0", "pystray": "1.0.0", "pywin32": "1.0.0"},
+            )
+            self.assertNotEqual(pkg_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+
+            mod_fp = app_bundle.compute_runtime_fingerprint(
+                repo,
+                bundled_modules={"tray": ["os", "sys"], "cli": ["os", "sys"]},
+            )
+            self.assertNotEqual(mod_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+
+            (repo / "dist" / "AgentCompass" / "_internal" / "python313.dll").write_bytes(b"MZ-frozen-runtime-dll-v2")
+            asset_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertNotEqual(asset_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+
+    def test_bundled_stdlib_covers_all_standard_modules_and_excludes_bloat(self):
+        app_bundle = self._load_packaging_module("app_bundle")
+        tray_mods = set(app_bundle.tray_hidden_imports())
+        cli_mods = set(app_bundle.cli_hidden_imports())
+        required_stdlib = {
+            "configparser",
+            "asyncio",
+            "socketserver",
+            "wsgiref",
+            "plistlib",
+            "venv",
+            "unittest",
+            "unittest.mock",
+            "xml.etree.ElementTree",
+            "xml.dom.minidom",
+            "http.server",
+            "logging.handlers",
+            "logging.config",
+            "email.mime.text",
+            "email.mime.multipart",
+        }
+        self.assertTrue(required_stdlib.issubset(tray_mods), required_stdlib - tray_mods)
+        self.assertTrue(required_stdlib.issubset(cli_mods), required_stdlib - cli_mods)
+        self.assertIn("tkinter.scrolledtext", tray_mods)
+        self.assertIn("win32job", tray_mods)
+        self.assertIn("numpy", app_bundle.NON_RUNTIME_EXCLUDES)
+        self.assertIn("Pythonwin", app_bundle.NON_RUNTIME_EXCLUDES)
+        self.assertIn("PIL._avif", app_bundle.NON_RUNTIME_EXCLUDES)
+
+    def test_build_app_package_stage_and_release_manifest(self):
+        import json
+        import zipfile
+        from tempfile import TemporaryDirectory
+
+        app_bundle = self._load_packaging_module("app_bundle")
+        check = self._load_packaging_module("check_payload")
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            repo = self._make_mini_repo(base, version="0.4.0")
+            dist_dir = base / "dist"
+            install_root = dist_dir / "AgentCompass"
+            (install_root / "cli").mkdir(parents=True)
+            (install_root / "AgentCompass.exe").write_bytes(b"MZ-tray-boot")
+            (install_root / "cli" / "agentcompass.exe").write_bytes(b"MZ-cli-boot")
+
+            staged = app_bundle.stage_installed_app(repo, install_root, dist_dir=dist_dir, version="0.4.0")
+            app_zip = Path(staged["app_package"]["path"])
+            self.assertEqual(app_zip.name, "app-0.4.0.zip")
+            self.assertTrue(app_zip.is_file())
+            self.assertTrue((install_root / "runtime-info.json").is_file())
+            self.assertTrue((install_root / "app" / "current" / "app-manifest.json").is_file())
+            self.assertTrue((install_root / "app" / "current" / "tray" / "easytier_supervisor.ps1").is_file())
+            self.assertTrue((install_root / "app" / "packages" / "app-0.4.0.zip").is_file())
+
+            with zipfile.ZipFile(app_zip, "r") as zf:
+                names = set(zf.namelist())
+                self.assertIn("app-manifest.json", names)
+                self.assertIn("agentcompass/__init__.py", names)
+                self.assertIn("tray/app.pyw", names)
+                self.assertIn("tray/easytier_supervisor.ps1", names)
+                self.assertIn("skills/agent-compass/SKILL.md", names)
+                self.assertIn("setup/onboard.py", names)
+                app_manifest = json.loads(zf.read("app-manifest.json").decode("utf-8"))
+            self.assertEqual(app_manifest["version"], "0.4.0")
+            self.assertEqual(app_manifest["required_runtime_fingerprint"], staged["runtime_info"]["runtime_fingerprint"])
+
+            setup_exe = dist_dir / "AgentCompass-tray-setup.exe"
+            setup_exe.write_bytes(b"MZ-full-installer-setup")
+            manifest = app_bundle.build_release_manifest(
+                repo,
+                dist_dir,
+                version="0.4.0",
+                app_zip=app_zip,
+                installer_exe=setup_exe,
+            )
+            manifest_path = dist_dir / "manifest.json"
+            self.assertTrue(manifest_path.is_file())
+            self.assertEqual(manifest["version"], "0.4.0")
+            self.assertEqual(manifest["runtime_fingerprint"], staged["runtime_info"]["runtime_fingerprint"])
+            self.assertEqual(manifest["app_package"]["name"], "app-0.4.0.zip")
+            self.assertEqual(manifest["app_package"]["sha256"], staged["app_package"]["sha256"])
+            self.assertEqual(manifest["installer"]["name"], "AgentCompass-tray-setup.exe")
+            self.assertEqual(len(manifest["installer"]["sha256"]), 64)
+
+            # Verify check_payload.app_zip_problems accepts tracked files + app-manifest.json and flags untracked files
+            tracked = {
+                "agentcompass/__init__.py",
+                "agentcompass/cli.py",
+                "tray/app.pyw",
+                "tray/component_launch.py",
+                "tray/updates.py",
+                "tray/easytier_supervisor.ps1",
+                "skills/agent-compass/SKILL.md",
+                "skills/agent-compass/scripts/route_judge.py",
+                "setup/setup_agent_compass.py",
+                "setup/onboard.py",
+            }
+            self.assertEqual(check.app_zip_problems(app_zip, tracked), [])
+            # Verify check_payload._resolve_cli_paths expands pwsh literal glob patterns like dist/app-*.zip
+            resolved_zips, glob_problems = check._resolve_cli_paths(dist_dir / "app-*.zip")
+            self.assertEqual(glob_problems, [])
+            self.assertEqual(resolved_zips, [app_zip])
+            _, missing_problems = check._resolve_cli_paths(dist_dir / "app-nonexistent-*.zip")
+            self.assertEqual(len(missing_problems), 1)
+            self.assertIn("no matching file found", missing_problems[0])
+
+            bad_zip = dist_dir / "app-bad.zip"
+            with zipfile.ZipFile(bad_zip, "w") as zf:
+                zf.writestr("app-manifest.json", "{}")
+                zf.writestr("tray/untracked_secret.py", "x = 1\n")
+            self.assertEqual(
+                check.app_zip_problems(bad_zip, tracked),
+                ["app-bad.zip: tray/untracked_secret.py is not tracked in git"],
+            )
+
+    def test_app_bootstrap_rolls_back_to_previous_when_current_is_corrupted(self):
+        import json
+        import shutil
+        from tempfile import TemporaryDirectory
+
+        app_bundle = self._load_packaging_module("app_bundle")
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            repo_v1 = self._make_mini_repo(base, version="0.4.0")
+            repo_v2 = self._make_mini_repo(base, version="0.4.1")
+            dist_dir = base / "dist"
+            install_root = dist_dir / "AgentCompass"
+            install_root.mkdir(parents=True)
+
+            # Stage 0.4.0 as current, then copy it to previous and stage 0.4.1 as current
+            app_bundle.stage_installed_app(repo_v1, install_root, dist_dir=dist_dir, version="0.4.0")
+            prev_copy = base / "prev-0.4.0"
+            shutil.copytree(install_root / "app" / "current", prev_copy)
+            app_bundle.stage_installed_app(repo_v2, install_root, dist_dir=dist_dir, version="0.4.1")
+            shutil.copytree(prev_copy, install_root / "app" / "previous")
+
+            # Healthy current activates 0.4.1
+            active = app_bootstrap.activate_app_dir(install_root)
+            self.assertEqual(
+                json.loads((active / "app-manifest.json").read_text(encoding="utf-8"))["version"],
+                "0.4.1",
+            )
+
+            # Corrupt a core file in app/current -> activate_app_dir detects sha256 mismatch and rolls back to 0.4.0
+            (install_root / "app" / "current" / "tray" / "app.pyw").write_text("# corrupted!\n", encoding="utf-8")
+            recovered = app_bootstrap.activate_app_dir(install_root)
+            self.assertEqual(
+                json.loads((recovered / "app-manifest.json").read_text(encoding="utf-8"))["version"],
+                "0.4.0",
+            )
+            state = json.loads((install_root / "app" / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["current_version"], "0.4.0")
+            self.assertEqual(state["active_version"], "0.4.0")
+            self.assertIn("mismatch", state["rollback_reason"])
+
+            # Runtime fingerprint mismatch in app/current is also rejected by validate_app_dir
+            rt_info = json.loads((install_root / "runtime-info.json").read_text(encoding="utf-8"))
+            rt_info["runtime_fingerprint"] = "f" * 64
+            (install_root / "runtime-info.json").write_text(json.dumps(rt_info), encoding="utf-8")
+            ok_fp, reason_fp = app_bootstrap.validate_app_dir(install_root / "app" / "current", install_root=install_root)
+            self.assertFalse(ok_fp)
+            self.assertIn("runtime_fingerprint mismatch", reason_fp)
+
+    def test_run_tray_and_cli_rollback_after_startup_crash_and_sort_packages_semantically(self):
+        import ctypes
+        import json
+        import shutil
+        import sys
+        import uuid
+        from tempfile import TemporaryDirectory
+
+        app_bundle = self._load_packaging_module("app_bundle")
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            repo_v9 = self._make_mini_repo(base, version="0.3.9")
+            repo_v18 = self._make_mini_repo(base, version="0.3.18")
+            repo_v40 = self._make_mini_repo(base, version="0.4.0")
+            marker_file = base / "started-version.txt"
+            cli_marker = base / "cli-version.txt"
+            mutex_name = f"Local\\AgentCompassTrayTest_{uuid.uuid4().hex}"
+            (repo_v18 / "tray" / "app.pyw").write_text(
+                f"from pathlib import Path\nPath({str(marker_file)!r}).write_text('0.3.18', encoding='utf-8')\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            real_frozen_py = (ROOT / "agentcompass" / "frozen_python.py").read_text(encoding="utf-8")
+            shim_cli = (
+                "import sys\n"
+                "from . import frozen_python\n"
+                "def main(argv=None):\n"
+                "    args = list(sys.argv[1:] if argv is None else argv)\n"
+                "    if frozen_python.looks_like_python(args):\n"
+                "        return frozen_python.run(args)\n"
+                "    raise SystemExit(f'unknown command {args!r}')\n"
+            )
+            (repo_v18 / "agentcompass" / "cli.py").write_text(shim_cli, encoding="utf-8", newline="\n")
+            (repo_v18 / "agentcompass" / "frozen_python.py").write_text(real_frozen_py, encoding="utf-8", newline="\n")
+            (repo_v18 / "skills" / "agent-compass" / "scripts" / "route_judge.py").write_text(
+                f"import sys\nfrom pathlib import Path\nPath({str(cli_marker)!r}).write_text('0.3.18:' + ' '.join(sys.argv[1:]), encoding='utf-8')\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            # 0.4.0 acquires a real Windows named mutex into _SINGLE_INSTANCE_MUTEX and crashes outside try/except
+            (repo_v40 / "tray" / "app.pyw").write_text(
+                f"import ctypes, sys\n"
+                f"_SINGLE_INSTANCE_MUTEX = ctypes.windll.kernel32.CreateMutexW(None, False, {mutex_name!r})\n"
+                f"sys._agentcompass_tray_mutex = _SINGLE_INSTANCE_MUTEX\n"
+                f"raise RuntimeError('simulated 0.4.0 startup crash after mutex')\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            (repo_v40 / "agentcompass" / "cli.py").write_text(shim_cli, encoding="utf-8", newline="\n")
+            (repo_v40 / "agentcompass" / "frozen_python.py").write_text(real_frozen_py, encoding="utf-8", newline="\n")
+            (repo_v40 / "skills" / "agent-compass" / "scripts" / "route_judge.py").write_text(
+                "import nonexistent_subcommand_module\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            dist_dir = base / "dist"
+            install_root = dist_dir / "AgentCompass"
+            install_root.mkdir(parents=True)
+
+            app_bundle.stage_installed_app(repo_v9, install_root, dist_dir=dist_dir, version="0.3.9")
+            app_bundle.stage_installed_app(repo_v18, install_root, dist_dir=dist_dir, version="0.3.18")
+            shutil.copy2(dist_dir / "app-0.3.9.zip", install_root / "app" / "packages" / "app-0.3.9.zip")
+            app_bundle.stage_installed_app(repo_v40, install_root, dist_dir=dist_dir, version="0.4.0")
+            shutil.copy2(dist_dir / "app-0.3.9.zip", install_root / "app" / "packages" / "app-0.3.9.zip")
+            shutil.copy2(dist_dir / "app-0.3.18.zip", install_root / "app" / "packages" / "app-0.3.18.zip")
+
+            # Even without app/previous directory, run_tray rolls back to app-0.3.18.zip (not 0.3.9!),
+            # releases the Windows mutex acquired by 0.4.0, and succeeds
+            self.assertFalse((install_root / "app" / "previous").exists())
+            saved_path = list(sys.path)
+            saved_modules = dict(sys.modules)
+            try:
+                rc = app_bootstrap.run_tray(install_root, argv=["AgentCompass.exe"])
+            finally:
+                sys.path[:] = saved_path
+                sys.modules.clear()
+                sys.modules.update(saved_modules)
+            self.assertEqual(rc, 0)
+            self.assertEqual(marker_file.read_text(encoding="utf-8"), "0.3.18")
+            # Verify the named mutex acquired by 0.4.0 was closed by _release_tray_mutex()
+            test_handle = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+            last_err = ctypes.windll.kernel32.GetLastError()
+            if test_handle:
+                ctypes.windll.kernel32.CloseHandle(test_handle)
+            self.assertNotEqual(last_err, 183)
+            state = json.loads((install_root / "app" / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["current_version"], "0.3.18")
+            self.assertEqual(state["active_version"], "0.3.18")
+            self.assertEqual(state["rolled_back_from"], "0.4.0")
+
+            # Also verify run_cli rolls back when invoked as python-shim (`-I -X utf8 <script.py> --once`)
+            # without losing sys.argv / script path during frozen_python.run() mutation (NEW-3)
+            app_bundle.stage_installed_app(repo_v40, install_root, dist_dir=dist_dir, version="0.4.0")
+            shutil.copy2(dist_dir / "app-0.3.18.zip", install_root / "app" / "packages" / "app-0.3.18.zip")
+            script_arg = str(install_root / "app" / "current" / "skills" / "agent-compass" / "scripts" / "route_judge.py")
+            saved_argv = list(sys.argv)
+            try:
+                sys.argv = ["agentcompass.exe", "-I", "-X", "utf8", script_arg, "--once"]
+                cli_rc = app_bootstrap.run_cli(install_root, argv=None)
+            finally:
+                sys.argv = saved_argv
+                sys.path[:] = saved_path
+                sys.modules.clear()
+                sys.modules.update(saved_modules)
+            self.assertEqual(cli_rc, 0)
+            self.assertEqual(cli_marker.read_text(encoding="utf-8"), "0.3.18:--once")
+
+            # Verify setup/router_gate_hook.py under app/current is recognized as installed product (NEW-5)
+            import importlib.util
+
+            gate_src = (ROOT / "setup" / "router_gate_hook.py").read_text(encoding="utf-8")
+            gate_dst = install_root / "app" / "current" / "setup" / "router_gate_hook.py"
+            gate_dst.parent.mkdir(parents=True, exist_ok=True)
+            gate_dst.write_text(gate_src, encoding="utf-8", newline="\n")
+            spec = importlib.util.spec_from_file_location("_test_installed_gate_hook", gate_dst)
+            gate_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(gate_mod)
+            self.assertEqual(gate_mod.router_command(), "agentcompass")
 
 
 if __name__ == "__main__":
