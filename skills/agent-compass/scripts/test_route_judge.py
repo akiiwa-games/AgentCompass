@@ -1180,6 +1180,36 @@ class ScorerAccountTests(unittest.TestCase):
             self.assertEqual(router.subscription_env('codex-2')['CODEX_HOME'], 'C:/u/.codex-2')
             self.assertEqual(router.subscription_env('claude-2')['CLAUDE_CONFIG_DIR'], 'C:/u/.claude-2')
 
+    def test_compact_rubric_column_union_and_windows_cmdline_margin(self):
+        import subprocess
+
+        rubric_het = {
+            'calibration_cases': [
+                {'id': 'a', 'objective': 'o1', 'expected_profile': {'work_kind': 'general_implementation', 'reasoning_depth': 2}},
+                {'id': 'b', 'objective': 'o2', 'expected_profile': {'work_kind': 'computer_use', 'reasoning_depth': 1, 'realtime_loop': True}},
+            ]
+        }
+        compact = router._compact_rubric_for_prompt(rubric_het)
+        self.assertEqual(compact['calibration_columns'][2], ['work_kind', 'reasoning_depth', 'realtime_loop'])
+        self.assertEqual(compact['calibration_cases'][0][2], ['general_implementation', 2, None])
+        self.assertEqual(compact['calibration_cases'][1][2], ['computer_use', 1, True])
+
+        allocator = router.load_allocator()
+        capabilities = reference_capabilities(allocator)
+        schema = router.scorer_schema(allocator, capabilities)
+        prompt = router.scorer_prompt({
+            'objective': 'Implement a live order-book dashboard and run unit tests',
+            'context': 'Frontend React + WebSocket module',
+            'environment': 'Windows 11, Python 3.13',
+        })
+        cmd = router.scorer_command(['agy.cmd'], schema, prompt)
+        cmdline_len = len(subprocess.list2cmdline(cmd))
+        margin = router.ARGV_LIMIT_CHARS - cmdline_len
+        self.assertGreaterEqual(
+            margin, 2000,
+            f'Windows command line length {cmdline_len} leaves only {margin} chars (< 2000) below ARGV_LIMIT_CHARS={router.ARGV_LIMIT_CHARS}',
+        )
+
 
 @unittest.skipUnless(router.os.environ.get('ROUTER_LIVE_AGY') == '1', 'set ROUTER_LIVE_AGY=1 to call the real agy CLI')
 class LiveSystemOneSmokeTests(unittest.TestCase):

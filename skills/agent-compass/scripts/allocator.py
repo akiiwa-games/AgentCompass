@@ -26,6 +26,7 @@ import antigravity_telemetry
 import provider_inventory
 import public_data
 import accounts_override
+import auto_bundles
 import cwd_policy
 from model_resolution import generic_model_spec, resolve_canonical_model
 
@@ -980,10 +981,15 @@ PROFILE_INTEGERS = {'reasoning_depth': (1, 4), 'code_complexity': (0, 3), 'conte
                     'divergence': (1, 3), 'hallucination_risk': (1, 3), 'error_cost': (1, 3)}
 PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop')
 REALTIME_LOOP_QUESTION = (
-    'True when the worker itself stays in a live external system\'s observe-act loop across turns where slow turns '
-    'hurt results (live game play/dailies/dungeons/AFK, ticket/course/appointment/flash-sale sniping, live order-book '
-    'trading, polling a page/app to click immediately, live-stream chat). False for writing/fixing a ticket/game/'
-    'automation script or bot, analyzing game/AFK logs, fixing automation code, or a one-off GUI click.')
+    'True ONLY when the worker agent itself must stay inside a running external system\'s continuous observe-act loop '
+    'across turns where slow per-turn model latency directly degrades the live outcome (e.g. personally playing a live '
+    'game / dailies / dungeons / AFK loop, sniping tickets / courses / appointments / flash sales live, watching a live '
+    'order book or API stream and placing orders in real time, polling a live page / app / API to act immediately when a '
+    'state appears, interacting with live-stream chat). False for ALL software engineering, design, debugging, or analysis '
+    'tasks—even when the subject matter is real-time, polling, games, dashboards, or flash sales (e.g. writing or fixing a '
+    'ticket/game/automation script or bot, implementing real-time page refresh or message push, fixing page polling logic, '
+    'designing a live trading dashboard frontend, diagnosing client loop waits or refresh latency, adding a countdown modal '
+    'or live chat component, fixing flash-sale page CSS, analyzing game/AFK logs, or a one-off GUI click/setting toggle).')
 DEPTH_BY_DIFFICULTY = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 4}
 DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
 HARD_BY_DEFAULT = ('debug_review', 'general_implementation', 'frontend_implementation', 'computer_use',
@@ -1158,83 +1164,6 @@ def infer_divergence(objective, kind=None, style=None):
     return 1
 
 
-# Heuristic realtime_loop fallback when a classifier omits the field or runs offline. Three feature groups—
-# (1) loop/continuous, (2) live external target, (3) time pressure—with any two groups sufficient unless an
-# engineering/log-analysis counterexample applies without explicit direct-operation-by-worker wording.
-REALTIME_LOOP_CONTINUOUS_WORDS = (
-    '持续', '循环', '反复', '一直', '挂机', '轮询', '每隔', '蹲守', '蹲点', '蹲', '守着', '守候', '守', '盯着', '盯盘', '盯',
-    '直到', '日常', '刷本', '对局', '打怪', '连打', '不间断',
-    'keep ', 'poll ', 'polling', 'until ', 'watch ', 'watching', 'in a loop', 'looping', 'loop ', 'repeatedly',
-    'continuously', 'every few seconds', 'farm ', 'farming', 'grind ', 'grinding', 'afk ', 'auto-battle',
-)
-REALTIME_LOOP_TARGET_WORDS = (
-    '游戏', '手游', '端游', '客户端', '模拟器', 'adb', '网页', '页面', '浏览器', '窗口', '直播间', '弹幕', '票务',
-    '盘口', '行情', '看盘', '界面', '屏幕', '选课系统', '预约系统',
-    'game', 'client', 'emulator', 'browser', 'webpage', 'web page', 'page', 'window', 'livestream', 'live stream',
-    'stream chat', 'ticket', 'order book', 'orderbook', 'trading terminal', 'market', 'screen', ' mobile app', ' app ',
-)
-REALTIME_LOOP_PRESSURE_WORDS = (
-    '抢票', '抢购', '秒杀', '抢课', '抢号', '放号', '放票', '捡漏', '开售', '限时', '倒计时', '第一时间', '立刻', '立即',
-    '马上', '实时', '盯盘', '下单', '抢位', '抢单', '抢',
-    'asap', 'immediately', 'instantly', 'real-time', 'real time', 'realtime', 'flash sale', 'snipe', 'sniping',
-    'grab ', 'countdown', 'as soon as', 'right away', 'time-critical', 'live ',
-)
-REALTIME_DIRECT_EXECUTION_PHRASES = (
-    '由你执行', '由你亲自', '亲自操作', '你直接操作', '直接操作游戏', '唯一执行子', '进入游戏执行', '进入游戏操作',
-    '不要写脚本', '不写脚本', '禁止写脚本',
-    'operate it yourself', 'play the game yourself', 'execute the loop yourself', 'you directly operate',
-    'do not write a script', 'without writing a script', 'sole execution subagent',
-)
-REALTIME_ENGINEERING_ACTION_WORDS = (
-    '写', '编写', '实现', '修复', '修改', '开发', '重构', '调试', '排查', '分析', '统计', '审阅', '审查', '构建',
-    'write ', 'writing ', 'implement', 'fix ', 'fixing ', 'develop', 'refactor', 'debug', 'diagnos', 'analyz',
-    'analyse', 'review ', 'build a ', 'create a ',
-)
-REALTIME_ENGINEERING_ARTIFACT_WORDS = (
-    '脚本', '代码', '工具', '模块', '函数', '插件', '机器人', '框架', '服务', '接口', '日志', '报错', '崩溃', '回测',
-    '单元测试', '测试用例', '自动化代码',
-    'script', 'code', 'tool', 'bot', 'module', 'function', 'plugin', 'framework', 'service', 'daemon', 'log', 'logs',
-    'crash', 'traceback', 'backtest', 'unit test', 'scraper', 'automation code',
-)
-REALTIME_GUI_TARGET_WORDS = (
-    '游戏', '手游', '端游', '客户端', '模拟器', 'adb', '网页', '页面', '浏览器', '窗口', '桌面', '界面', '屏幕', '直播间',
-    '点击', '截图', '鼠标', '键鼠', '票务', '盘口', '看盘', '盯盘',
-    'game', 'client', 'emulator', 'browser', 'webpage', 'web page', 'page', 'window', 'desktop', 'gui', 'screen',
-    'livestream', 'live stream', 'click', 'tap ', 'screenshot', 'mouse', ' mobile app', ' app ',
-)
-
-
-def infer_realtime_loop(objective, context='', environment=''):
-    """Heuristic fallback for `realtime_loop`: True when >=2 of (continuous/loop, live target, time pressure) match
-    and no code/script/log-analysis counterexample overrides it."""
-    raw = ' '.join(str(part or '') for part in (objective, context, environment)).strip()
-    if not raw:
-        return False
-    text = f' {raw.lower()} '
-    direct_live = any(p in text for p in REALTIME_DIRECT_EXECUTION_PHRASES)
-    if not direct_live:
-        if is_readonly_review_task(raw) or CODE_FILE_RE.search(text):
-            return False
-        has_eng_action = any(w in text for w in REALTIME_ENGINEERING_ACTION_WORDS)
-        has_eng_artifact = any(w in text for w in REALTIME_ENGINEERING_ARTIFACT_WORDS)
-        if has_eng_action and has_eng_artifact:
-            return False
-    has_loop = any(w in text for w in REALTIME_LOOP_CONTINUOUS_WORDS)
-    has_target = any(w in text for w in REALTIME_LOOP_TARGET_WORDS)
-    has_pressure = any(w in text for w in REALTIME_LOOP_PRESSURE_WORDS)
-    return (int(has_loop) + int(has_target) + int(has_pressure)) >= 2
-
-
-def realtime_loop_needs_gui(objective, profile=None, context='', environment=''):
-    """True when a `realtime_loop` task operates a live interface (game, page, App, emulator, desktop window)."""
-    if isinstance(profile, dict) and (profile.get('needs_gui') or profile.get('needs_visual')
-                                      or profile.get('work_kind') == 'computer_use'):
-        return True
-    raw = ' '.join(str(part or '') for part in (objective, context, environment)).strip()
-    text = f' {raw.lower()} '
-    return any(w in text for w in REALTIME_GUI_TARGET_WORDS)
-
-
 def validate_profile(raw):
     """A task profile with every field checked, or ValueError. `reason`, `work_kind`, `divergence`, and `realtime_loop` may be omitted in legacy fixtures."""
     if not isinstance(raw, dict):
@@ -1350,13 +1279,7 @@ def infer_task_profile(task, capabilities):
     gui = kind == 'computer_use' or (kind == 'other_or_mixed' and any(w in f' {objective.lower()}' for w in GUI_WORDS))
     realtime_loop = (bool(needs['realtime_loop']) if 'realtime_loop' in needs and needs.get('realtime_loop') is not None
                      else bool(task['realtime_loop']) if 'realtime_loop' in task and task.get('realtime_loop') is not None
-                     else infer_realtime_loop(objective, task.get('context'), task.get('environment')))
-    if realtime_loop and realtime_loop_needs_gui(objective, None, task.get('context'), task.get('environment')):
-        gui = True
-        if task.get('work_kind') not in routes and kind in GENERIC_CALLER_KINDS:
-            kind = 'computer_use'
-            implies = routes[kind].get('implies') or {}
-            code, context, risk, cost, style = KIND_TRAITS['computer_use']
+                     else False)
     if depth >= 3:
         context = max(context, 2)
         if style == 'engineering' and code:
@@ -1385,7 +1308,7 @@ def infer_task_profile(task, capabilities):
         'work_kind': kind,
         'reasoning_depth': depth, 'code_complexity': code, 'context_scale': context, 'divergence': divergence,
         'hallucination_risk': risk, 'error_cost': cost,
-        'needs_visual': bool(needs.get('visual') or implies.get('visual') or gui), 'needs_gui': gui,
+        'needs_visual': bool(implies.get('visual') or gui or needs.get('visual')), 'needs_gui': gui,
         'local_only': local_only, 'realtime_loop': realtime_loop, 'interaction_style': style, 'reason': reason,
         # Offline the only evidence of separate tasks is headings that number them (交付物 1, Deliverable 2, Task 3).
         **multi_task_marks(objective)})
@@ -1659,25 +1582,37 @@ def _lookup_curve_responsiveness(curves_resp, effort, default_effort='high'):
     return None
 
 
-def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None, effort=None):
+def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None, effort=None, harness=None):
     """`(responsiveness_0_to_1, source)` for `bundle` at `effort` (or its scoring effort).
     `source` is `'measured'`, `'local_blended'`, `'default'` (when community speed data is absent),
     or `'not_applicable'` (for special web/packet channels such as `grok-bot` and `dot`)."""
+    if isinstance(info, dict) and isinstance(info.get('spec'), dict):
+        info = info['spec']
+    if isinstance(policy, dict) and ('models' in policy or 'accounts' in policy) and 'scoring' in policy:
+        accounts_arg = policy
+        policy = (curves if isinstance(curves, dict) and ('ability_gate' in curves or 'responsiveness' in curves)
+                  else accounts_arg.get('scoring'))
+        model_id = str((bundle or {}).get('model') or '')
+        curves = (accounts_arg.get('effort_curves') or {}).get(model_id)
     cfg = responsiveness_config(policy)
     info = info if isinstance(info, dict) else {}
     info_resp = info.get('responsiveness')
     if info_resp == 'not_applicable' or info.get('responsiveness_status') == 'not_applicable':
         return None, 'not_applicable'
     eff = effort or scoring_effort(bundle or {}, info) or info.get('default_effort') or 'high'
-    harness = (bundle or {}).get('harness') or bundle_harness(bundle or {}, (bundle or {}).get('account'), (bundle or {}).get('id'))
+    harness = harness or (bundle or {}).get('harness') or bundle_harness(
+        bundle or {}, (bundle or {}).get('account'), (bundle or {}).get('id'))
     curves_resp = (curves or {}).get('responsiveness') if isinstance(curves, dict) else None
-    measured = _lookup_curve_responsiveness(curves_resp, eff, info.get('default_effort') or 'high')
+    default_eff = info.get('default_effort') or 'high'
+    measured = _lookup_curve_responsiveness(curves_resp, eff, default_eff)
     if measured is None:
         if isinstance(info_resp, dict):
-            measured = _lookup_curve_responsiveness(info_resp, eff, info.get('default_effort') or 'high')
-        elif isinstance(info_resp, (int, float)) and not isinstance(info_resp, bool) and not isnan(float(info_resp)):
+            measured = _lookup_curve_responsiveness(info_resp, eff, default_eff)
+        elif (isinstance(info_resp, (int, float)) and not isinstance(info_resp, bool)
+              and not isnan(float(info_resp)) and not info.get('score_estimated')
+              and eff == default_eff):
             measured = float(info_resp)
-    if measured is None and isinstance(info.get('speed_metrics'), dict):
+    if measured is None and isinstance(info.get('speed_metrics'), dict) and eff == default_eff:
         sm = info['speed_metrics']
         ttft = sm.get('ttft_s')
         tps = sm.get('output_tps')
@@ -1702,16 +1637,49 @@ def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None
     return round(base_val, 4), source
 
 
-def resolve_realtime_effort(bundle, task, ctx, model, info, policy, curves, gate=0.0):
+def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or_policy=None,
+                            info=None, policy=None, curves=None, gate=0.0, *,
+                            harness=None, all_bundles=None, task=None):
     """Evaluate `bundle` at its configured effort on a `realtime_loop` task, stepping down to a faster effort in
-    `curves['responsiveness']` when its configured effort is below `floor` and no lower-effort sibling bundle on the
-    same `(account, harness, canonical_model)` already clears `floor`.
+    `curves['responsiveness']` when its configured effort is below `floor`, the bundle's provider/harness supports
+    that effort in `dispatch_efforts`, and no lower-effort sibling bundle on the same `(account, harness,
+    canonical_model)` already clears both `floor` and `gate`.
 
     Returns `(effective_effort, resp_val, resp_source, stepped_from)`."""
+    if info is None and (
+        (isinstance(ctx_or_accounts, dict) and ('models' in ctx_or_accounts or 'accounts' in ctx_or_accounts))
+        or (isinstance(model_or_policy, dict) and ('models' in model_or_policy or 'accounts' in model_or_policy))
+    ):
+        if isinstance(ctx_or_accounts, dict) and ('models' in ctx_or_accounts or 'accounts' in ctx_or_accounts):
+            accounts = ctx_or_accounts
+            policy = model_or_policy if isinstance(model_or_policy, dict) else (accounts.get('scoring') or {})
+        else:
+            accounts = model_or_policy
+            policy = ctx_or_accounts if isinstance(ctx_or_accounts, dict) else (accounts.get('scoring') or {})
+        info = (task_or_info.get('spec') if isinstance(task_or_info, dict) and isinstance(task_or_info.get('spec'), dict)
+                else task_or_info)
+        model = canonical((bundle or {}).get('model') or '', accounts)
+        curves = (accounts.get('effort_curves') or {}).get(model, {})
+        if isinstance(all_bundles, dict):
+            bundles_map = {bid: ({**b, 'id': b.get('id') or bid} if isinstance(b, dict) else b)
+                           for bid, b in all_bundles.items()}
+        elif isinstance(all_bundles, (list, tuple)):
+            bundles_map = {b.get('id', f'b{i}'): b for i, b in enumerate(all_bundles) if isinstance(b, dict)}
+        else:
+            bundles_map = bundles(accounts)
+        ctx = {'accounts': accounts, 'policy': policy, 'bundles': bundles_map}
+        task = task if isinstance(task, dict) else {'realtime_loop': True}
+    else:
+        task = task_or_info if isinstance(task_or_info, dict) else {}
+        ctx = ctx_or_accounts if isinstance(ctx_or_accounts, dict) else {}
+        accounts = ctx.get('accounts') or {}
+        model = model_or_policy
+
     state_dir = ctx.get('state_dir')
     raw_effort = scoring_effort(bundle, info)
+    eff_harness = harness or bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
     resp_val, resp_source = bundle_responsiveness(
-        bundle, info, policy, curves, state_dir=state_dir, effort=raw_effort)
+        bundle, info, policy, curves, state_dir=state_dir, effort=raw_effort, harness=eff_harness)
     if resp_source == 'not_applicable' or resp_val is None:
         return raw_effort, resp_val, resp_source, None
     resp_floor = float(responsiveness_config(policy)['floor'])
@@ -1721,42 +1689,68 @@ def resolve_realtime_effort(bundle, task, ctx, model, info, policy, curves, gate
     if not isinstance(curves_resp, dict) or not curves_resp:
         return raw_effort, resp_val, resp_source, None
 
-    pinned = (task.get('pinned_bundle') == bundle.get('id')
-              or task.get('constraint_model') == bundle.get('id'))
+    provider = bundle.get('provider') or bundle.get('account')
+    if eff_harness in ('antigravity', 'antigravity-resilient') or provider in ('antigravity', 'antigravity-resilient'):
+        return raw_effort, resp_val, resp_source, None
+    raw_launch_id = str(bundle.get('launch_model') or bundle.get('model') or '')
+    if auto_bundles.split_effort(raw_launch_id, accounts if isinstance(accounts, dict) and 'models' in accounts else {'models': {}})[1] is not None:
+        return raw_effort, resp_val, resp_source, None
+
+    pinned = (task.get('pinned_bundle') and task.get('pinned_bundle') == bundle.get('id')) or (
+        task.get('constraint_model') and task.get('constraint_model') == bundle.get('id'))
     if not pinned:
-        harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
         siblings = []
-        for b in (ctx.get('bundles') or {}).values():
+        for bid, b in (ctx.get('bundles') or {}).items():
+            if not isinstance(b, dict):
+                continue
             if b.get('account') != bundle.get('account'):
                 continue
-            if (b.get('harness') or bundle_harness(b, b.get('account'), b.get('id'))) != harness:
+            if (b.get('harness') or bundle_harness(b, b.get('account'), b.get('id') or bid)) != eff_harness:
                 continue
-            if canonical(b.get('model') or '', ctx['accounts']) != model:
+            if canonical(b.get('model') or '', accounts) != model:
                 continue
             if b.get('disabled') or b.get('discovery_unavailable') or not bundle_applies(b, task):
                 continue
-            siblings.append(b)
+            siblings.append({**b, 'id': b.get('id') or bid})
+        self_id = bundle.get('id')
         for sib in siblings:
-            if sib.get('id') == bundle.get('id'):
+            if (self_id and sib.get('id') == self_id) or (not self_id and sib.get('effort') == bundle.get('effort')):
                 continue
             sib_eff = scoring_effort(sib, info)
             sib_resp, sib_src = bundle_responsiveness(
-                sib, info, policy, curves, state_dir=state_dir, effort=sib_eff)
-            if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor:
+                sib, info, policy, curves, state_dir=state_dir, effort=sib_eff, harness=eff_harness)
+            sib_ab = effort_ability(policy, curves, info, sib_eff)
+            if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor and sib_ab >= gate:
                 return raw_effort, resp_val, resp_source, None
         if siblings:
-            min_rank = min(_effort_rank(scoring_effort(s, info)) for s in siblings)
+            step_down_peers = [
+                s for s in siblings
+                if effort_ability(policy, curves, info, scoring_effort(s, info)) >= gate
+            ] or siblings
+            min_rank = min(_effort_rank(scoring_effort(s, info)) for s in step_down_peers)
             if _effort_rank(raw_effort) > min_rank:
                 return raw_effort, resp_val, resp_source, None
 
+    dispatch_table = (accounts.get('dispatch_efforts') or {}).get(provider) if isinstance(accounts, dict) else None
+    allowed_efforts = None
+    if isinstance(dispatch_table, dict):
+        raw_model_key = bundle.get('model') or model
+        allowed_efforts = dispatch_table.get(raw_model_key) or dispatch_table.get(model)
+    ability_curve = (curves or {}).get('ability') if isinstance(curves, dict) else None
     raw_rank = _effort_rank(raw_effort)
-    faster = [eff for eff in REALTIME_EFFORT_ORDER if eff in curves_resp and _effort_rank(eff) < raw_rank]
+    faster = [
+        eff for eff in REALTIME_EFFORT_ORDER
+        if eff in curves_resp
+        and _effort_rank(eff) < raw_rank
+        and (not (isinstance(ability_curve, dict) and ability_curve) or eff in ability_curve)
+        and (allowed_efforts is None or eff in allowed_efforts)
+    ]
     faster.sort(key=_effort_rank, reverse=True)
     best_clearing_both = None
     best_clearing_resp = None
     for cand_eff in faster:
         cand_resp, cand_src = bundle_responsiveness(
-            bundle, info, policy, curves, state_dir=state_dir, effort=cand_eff)
+            bundle, info, policy, curves, state_dir=state_dir, effort=cand_eff, harness=eff_harness)
         if cand_src == 'not_applicable' or cand_resp is None or cand_resp < resp_floor:
             continue
         if best_clearing_resp is None:
@@ -2401,6 +2395,7 @@ def evaluate_bundle(bundle, task, ctx):
             bundle, task, ctx, model, info, policy, curves, gate)
         if stepped_from is not None:
             result['bundle']['effort'] = eff
+            result['bundle']['realtime_stepped_from'] = stepped_from
             result['components']['effort_stepped_down_from'] = stepped_from
             result['notes'].append(f'effort stepped down from {stepped_from} to {eff} for realtime_loop')
     # Model ability x this model's own thinking coefficient at this effort (accounts `effort_curves`). The task side is
@@ -3018,7 +3013,7 @@ def resolve_modality_needs(needs, profile, implies):
 
     An explicit caller true or false wins, including false. A profile value fills a flag the caller
     left unset (a missing profile key stays unset). Route implies fill only what both left unset.
-    needs_gui still forces visual, which is the GUI requirement and not a work_kind rewrite.
+    needs_gui still forces visual unless the caller explicitly set visual=false.
     """
     needs = needs if isinstance(needs, dict) else {}
     profile = profile if isinstance(profile, dict) else None
@@ -3029,7 +3024,7 @@ def resolve_modality_needs(needs, profile, implies):
         visual = bool(profile.get('needs_visual') or profile.get('needs_gui'))
     else:
         visual = bool(implies.get('visual'))
-    if profile is not None and profile.get('needs_gui'):
+    if profile is not None and profile.get('needs_gui') and not _flag_present(needs, 'visual'):
         visual = True
     if _flag_present(needs, 'local_only'):
         local_only = bool(needs.get('local_only'))
@@ -3059,6 +3054,12 @@ def normalize_task(raw, policy, capabilities, accounts):
     task = dict(raw or {})
     profile = validate_profile(task['profile']) if task.get('profile') is not None else None
     needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
+    if not _flag_present(needs, 'gui') and _flag_present(task, 'needs_gui'):
+        needs['gui'] = bool(task['needs_gui'])
+    if not _flag_present(needs, 'visual') and _flag_present(task, 'needs_visual'):
+        needs['visual'] = bool(task['needs_visual'])
+    if not _flag_present(needs, 'local_only') and _flag_present(task, 'local_only'):
+        needs['local_only'] = bool(task['local_only'])
     if _flag_present(needs, 'realtime_loop'):
         realtime_loop = bool(needs['realtime_loop'])
     elif _flag_present(task, 'realtime_loop'):
@@ -3066,18 +3067,9 @@ def normalize_task(raw, policy, capabilities, accounts):
     elif profile is not None and 'realtime_loop' in profile:
         realtime_loop = bool(profile['realtime_loop'])
     else:
-        realtime_loop = infer_realtime_loop(task.get('objective'), task.get('context'), task.get('environment'))
+        realtime_loop = False
     if profile is not None and 'realtime_loop' not in profile:
         profile = {**profile, 'realtime_loop': realtime_loop}
-    rt_gui = bool(realtime_loop and realtime_loop_needs_gui(
-        task.get('objective'), profile, task.get('context'), task.get('environment')))
-    if rt_gui:
-        if profile is not None:
-            profile = {**profile, 'needs_gui': True, 'needs_visual': True, 'local_only': True, 'realtime_loop': True}
-        if not _flag_present(needs, 'visual'):
-            needs['visual'] = True
-        if not _flag_present(needs, 'local_only'):
-            needs['local_only'] = True
     kind = task_kind({**task, 'profile': profile}, capabilities, policy)
     derived = profile_difficulty(profile, policy) if profile else None
     difficulty = task.get('difficulty') or derived or default_difficulty(kind)
@@ -3119,7 +3111,14 @@ def normalize_task(raw, policy, capabilities, accounts):
                 worker[k] = max(worker.get(k) or 0, v)
             else:
                 worker.setdefault(k, v)
-    needs_gui = bool((profile or {}).get('needs_gui') or needs.get('gui') or kind == 'computer_use' or rt_gui)
+    if _flag_present(needs, 'gui'):
+        needs_gui = bool(needs['gui'])
+    elif _flag_present(task, 'needs_gui'):
+        needs_gui = bool(task['needs_gui'])
+    elif profile is not None and _flag_present(profile, 'needs_gui'):
+        needs_gui = bool(profile['needs_gui'])
+    else:
+        needs_gui = bool(kind == 'computer_use')
     return {'kind': kind, 'difficulty': difficulty, 'difficulty_source': source, 'hours': hours,
             'profile': profile, 'profile_difficulty': derived, 'divergence': div,
             'realtime_loop': realtime_loop, 'needs_gui': needs_gui,

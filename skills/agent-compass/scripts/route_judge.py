@@ -75,30 +75,22 @@ SCORER_TYPES = {
 }
 CLASSIFIER_CASES_PATH = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
 SCORER_PROMPT = (
-    'You are a System-One task classifier. Do NOT call any tools, do NOT run commands, do NOT read files. '
-    'Evaluate the task description and return ONLY the structured JSON options.\n'
-    'Score what the task itself demands, not who should do it: never name, choose or rank a model, agent or provider. '
-    'Choose the canonical `work_kind` route and rate each dimension at the lowest level that honestly covers the work. '
-    'Briefs are long Markdown documents: ignore their length, section headers, communication rules and boilerplate '
-    'paths (role docs, AGENTS.md, skill/README docs, reports to read, receipt/output paths, a module\'s unit-test file) '
-    'when scoring `reasoning_depth` and `context_scale`; score the functional work only.\n'
+    'You are a System-One task classifier. Do NOT call tools, run commands, or read files. Return ONLY structured JSON.\n'
+    'Score what the task itself demands (never name a model/provider) at the lowest honest level. Ignore Markdown length, '
+    'headers, and dispatch boilerplate (role/AGENTS/SKILL docs, prior reports, output paths, paired unit-test files).\n'
     'CRITICAL RULES:\n'
-    '1. `local_only`: Set `true` when the task explicitly depends on existing files, directories, or repositories on '
-    'this machine (reading, copying, searching, editing, building, or testing un-inlined local files) or on local '
-    'processes/GUI/environment. Set `false` when all required inputs are inlined in the prompt or fetched from the public '
-    'web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, `complex_build_plan`)—a '
-    'coordinator workspace header or a local target path where the caller will save the returned text/code does not make '
-    'a self-contained task `local_only`.\n'
-    '2. `code_complexity`: ANY read-only code/release/diff review, independent audit, or diagnosis that writes no production '
-    'code MUST have `code_complexity` 0 (even when reviewing complex code) and `hallucination_risk` 3.\n'
-    '3. `context_scale`: 1 = one functional module/script (+ its paired unit test and brief/output boilerplate) or a '
-    'self-contained research/text/algorithm task; 2 = 2..5 coupled functional modules interacting; 3 = repo/system-wide.\n'
-    '4. `divergence`: 1 = convergent spec/fix/review/checklist; 2 = multi-hypothesis root-cause diagnosis or bounded option '
-    'comparison; 3 = open-ended creative ideation, cultural/gameplay motif proposals, or first-principles paradigm design.\n'
-    '5. `realtime_loop`: `true` ONLY when the worker itself stays in a live observe-act loop across turns where slow '
-    'turns hurt results (playing/farming a live game, ticket/flash-sale/course/appointment sniping, live order-book '
-    'trading, polling a live page/app to click immediately, live-stream chat). `false` for writing/fixing a ticket/'
-    'game/automation script, analyzing logs, or a one-off GUI click.\n'
+    '1. `local_only`: `true` only when depending on un-inlined local files/repos/processes/GUI; `false` when inputs are '
+    'inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, '
+    '`complex_build_plan`), even if a local output path is named.\n'
+    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis.\n'
+    '3. `context_scale`: 1 = single module/script or self-contained task; 2 = 2..5 coupled modules; 3 = repo/system-wide.\n'
+    '4. `divergence`: 1 = convergent spec/fix/review; 2 = multi-hypothesis diagnosis/comparison; 3 = open-ended creative.\n'
+    '5. `realtime_loop`: `true` ONLY when the worker agent itself stays inside a live external system\'s continuous '
+    'observe-act loop across turns where turn latency hurts live results (personally playing/farming a game, live ticket/'
+    'flash-sale/course/appointment sniping, live order-book/API watching & trading, polling a live page/app/API to act '
+    'immediately, live-stream chat). `false` for ALL coding, UI design, bug fixing, optimization, diagnosis, or log '
+    'analysis—even on real-time/polling/game/dashboard/flash-sale features—and for one-off GUI clicks. Set `needs_gui` '
+    'by whether the worker operates a GUI (`true`) vs pure CLI/API/WebSocket (`false`).\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
@@ -974,10 +966,23 @@ def scorer_prefix():
     return [command]
 
 
+def _compact_schema_for_argv(schema):
+    """Strip redundant prose `description` strings from `--json-schema` on the CLI argv (the prompt already carries the
+    full field definitions and dimension rubric), keeping ~6,000+ chars of Windows command-line headroom."""
+    if not isinstance(schema, dict) or not isinstance(schema.get('properties'), dict):
+        return schema
+    props = {
+        k: {pk: pv for pk, pv in v.items() if pk != 'description'} if isinstance(v, dict) else v
+        for k, v in schema['properties'].items()
+    }
+    return {**schema, 'properties': props}
+
+
 def scorer_command(prefix, schema, prompt):
     # --print takes the prompt and must come last: agy reads anything after --print as prompt text.
+    compact_schema = _compact_schema_for_argv(schema)
     return prefix + ['--disable-slash-commands', '--model', SCORER['model'], '--output-format', 'json',
-                     '--json-schema', json.dumps(schema, separators=(',', ':')), '--print', prompt]
+                     '--json-schema', json.dumps(compact_schema, separators=(',', ':')), '--print', prompt]
 
 
 # agy takes --print's prompt only as an argument, so a long task cannot ride the command line; its stream-json mode
@@ -986,8 +991,9 @@ ARGV_LIMIT_CHARS = 30000 if os.name == 'nt' else 100000
 
 
 def scorer_stream_command(prefix, schema):
+    compact_schema = _compact_schema_for_argv(schema)
     return prefix + ['--disable-slash-commands', '--model', SCORER['model'], '--input-format', 'stream-json',
-                     '--output-format', 'stream-json', '--json-schema', json.dumps(schema, separators=(',', ':')), '--print', '']
+                     '--output-format', 'stream-json', '--json-schema', json.dumps(compact_schema, separators=(',', ':')), '--print', '']
 
 
 def parse_scorer_stream(stdout):
@@ -1026,10 +1032,16 @@ def _compact_rubric_for_prompt(rubric):
     if not isinstance(rubric, dict) or not isinstance(rubric.get('calibration_cases'), list):
         return rubric
     cases = rubric['calibration_cases']
-    sample = next((c.get('expected_profile') for c in cases if isinstance(c, dict) and isinstance(c.get('expected_profile'), dict)), None)
-    if not sample:
+    fields = []
+    seen = set()
+    for c in cases:
+        if isinstance(c, dict) and isinstance(c.get('expected_profile'), dict):
+            for k in c['expected_profile']:
+                if k not in seen:
+                    seen.add(k)
+                    fields.append(k)
+    if not fields:
         return rubric
-    fields = list(sample.keys())
     compact_cases = [
         [c.get('id'), c.get('task'), [c['expected_profile'].get(f) for f in fields]]
         if isinstance(c, dict) and isinstance(c.get('expected_profile'), dict) else c
@@ -1510,7 +1522,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 8  # 8: realtime_loop flag in task profile schema and rubric
+SCORE_CACHE_VERSION = 9  # 9: semantic-only realtime_loop rubric and contrastive hard cases
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 
@@ -2357,11 +2369,7 @@ def plan_stage(document, args):
         if profile is None:
             return scorer_unavailable_result(task, scorer, started), 2
         if 'realtime_loop' not in profile:
-            profile = {**profile, 'realtime_loop': allocator.infer_realtime_loop(
-                task.get('objective'), task.get('context'), task.get('environment'))}
-        if profile.get('realtime_loop') and allocator.realtime_loop_needs_gui(
-                task.get('objective'), profile, task.get('context'), task.get('environment')):
-            profile = {**profile, 'needs_gui': True, 'needs_visual': True, 'local_only': True}
+            profile = {**profile, 'realtime_loop': False}
         classified_kind = allocator.profile_kind(profile, policy)
         derived = allocator.profile_difficulty(profile, policy)
         order = list(policy['ability_floor'])

@@ -108,9 +108,10 @@ def expire(connection, now):
             save(connection, row)
 
 
-def resolve_bundle(bundle, accounts, explicit_override=False):
+def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_stepdown=False):
     """Catalog defaults are not the complete supported explicit-effort contract."""
     import allocator
+    import auto_bundles
     model = allocator.canonical(bundle.get('model'), accounts)
     if bundle.get('fast'):
         allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle.get('account')), model,
@@ -120,15 +121,29 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
     exact = next((b for b in siblings if b.get('effort') == bundle.get('effort')), None)
     if exact:
         return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
+    raw_model = bundle.get('model') or model
+    provider_contracts = (accounts.get('dispatch_efforts') or {}).get(bundle.get('provider')) or {}
+    contract = provider_contracts.get(raw_model) or provider_contracts.get(model) or []
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
     resp_curves = ((accounts.get('effort_curves') or {}).get(model) or {}).get('responsiveness') or {}
-    if by_id and isinstance(resp_curves, dict) and bundle.get('effort') in resp_curves:
-        return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'],
-                    **({'fast': True} if bundle.get('fast') else {}))
+    stepped_from = bundle.get('realtime_stepped_from')
+    if (by_id and (allow_realtime_stepdown or (stepped_from and stepped_from == by_id.get('effort')))
+            and bundle.get('effort') in contract
+            and provider_inventory.launcher_family(bundle.get('provider')) not in ('antigravity', 'antigravity-resilient')
+            and auto_bundles.split_effort(str(by_id.get('launch_model') or by_id.get('model') or ''), accounts)[1] is None
+            and isinstance(resp_curves, dict) and bundle.get('effort') in resp_curves
+            and allocator._effort_rank(bundle.get('effort')) < allocator._effort_rank(by_id.get('effort'))):
+        resp_floor = float(allocator.responsiveness_config(accounts.get('scoring'))['floor'])
+        orig_resp = resp_curves.get(by_id.get('effort'))
+        new_resp = resp_curves.get(bundle.get('effort'))
+        if (isinstance(orig_resp, (int, float)) and isinstance(new_resp, (int, float))
+                and orig_resp < resp_floor <= new_resp):
+            return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'],
+                        realtime_stepped_from=by_id.get('effort'),
+                        **({'fast': True} if bundle.get('fast') else {}))
     if not explicit_override:
         return None
-    contract = accounts.get('dispatch_efforts', {}).get(bundle.get('provider'), {}).get(model, [])
     if not siblings or bundle.get('effort') not in contract:
         raise ValueError('Explicit override has no known provider/account/model/effort contract; refresh discovery and the local contract')
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
@@ -173,7 +188,9 @@ def issue(result, task, now=None, path=None, allocation_task=None):
     import allocator
     accounts = allocator.load_accounts()
     explicit = result.get('stage') == 'record' and result.get('constraint') == 'user_override' and bool(result.get('basis'))
-    resolved = resolve_bundle(bundle, accounts, explicit)
+    is_realtime = bool(((result.get('decision') or {}).get('task') or {}).get('realtime_loop')
+                       or (result.get('task_profile') or {}).get('realtime_loop'))
+    resolved = resolve_bundle(bundle, accounts, explicit, allow_realtime_stepdown=is_realtime)
     if resolved:
         bundle = {**bundle, **resolved}
     parent = task.get('parent_agent_id')

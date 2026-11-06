@@ -425,6 +425,7 @@ def step_accounts_and_usage(z: Zero):
         "task": {
             "objective": "REALTIME-LOOP: Keep watching the live game emulator window in a continuous loop and click immediately when the match starts",
             "expected_hours": 0.5,
+            "realtime_loop": True,
         }
     }), encoding="utf-8")
     rt_res = z.call(op, "plan", "--dry-run", "--input", str(rt_input))

@@ -82,8 +82,9 @@ def _shrink(spec):
 
 def _name_candidates(raw_model, accounts):
     """(base, ids to look up most specific first): raw, effort-stripped, alias-resolved, vendor-tag-stripped."""
-    aliases = accounts.get('aliases') or {}
-    base, _ = split_effort(str(raw_model).rsplit('/', 1)[-1], accounts)
+    aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
+    acct_for_split = accounts if isinstance(accounts, dict) and 'models' in accounts else {'models': accounts if isinstance(accounts, dict) else {}}
+    base, _ = split_effort(str(raw_model).rsplit('/', 1)[-1], acct_for_split)
     name = base
     seen = set()
     while name in aliases and name not in seen:
@@ -120,13 +121,20 @@ def small_model_spec(accounts):
 
 def default_profile(raw_model, accounts):
     """Default score row for a model name, with its source. Never mutates accounts."""
-    known = {k: v for k, v in (accounts.get('models') or {}).items() if isinstance(v, dict)}
-    aliases = accounts.get('aliases') or {}
+    raw_models = (accounts.get('models') if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict)
+                  else (accounts if isinstance(accounts, dict) else {}))
+    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict) and ('tier' in v or 'capabilities' in v)}
+    aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
     base, candidates = _name_candidates(raw_model, accounts)
+    raw_leaf = str(raw_model).rsplit('/', 1)[-1]
     for candidate in candidates:
         if candidate in known:
+            spec = copy.deepcopy(known[candidate])
+            if candidate != raw_leaf and candidate != base:
+                for key in ('responsiveness', 'responsiveness_basis', 'responsiveness_status', 'speed_metrics'):
+                    spec.pop(key, None)
             return {'model': candidate, 'source': 'calibrated', 'target': candidate,
-                    'spec': copy.deepcopy(known[candidate]), 'basis': 'Calibrated row in accounts.models.'}
+                    'spec': spec, 'basis': 'Calibrated row in accounts.models.'}
     target = resolve_canonical_model(base, known, aliases)
     small = bool(SMALL_NAME.search(base))
     small_default = small_model_spec(accounts)

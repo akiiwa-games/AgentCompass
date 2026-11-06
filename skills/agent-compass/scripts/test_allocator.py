@@ -2098,7 +2098,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         self.assertIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['required'])
         desc = allocator.TASK_PROFILE_SCHEMA['properties']['realtime_loop']['description']
         self.assertIn('observe-act loop', desc)
-        self.assertIn('False for writing', desc)
+        self.assertIn('False for ALL software engineering', desc)
 
         good = {
             'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1,
@@ -2125,37 +2125,90 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         for case in doc['calibration_cases']:
             self.assertIsInstance(allocator.validate_profile(case['expected_profile'])['realtime_loop'], bool)
 
-    def test_heuristic_infer_realtime_loop_positive_and_negative_cases(self):
-        positives = [
-            '你是该游戏的唯一执行子 Agent，持续在模拟器里操作游戏完成日常刷本与挂机对局',
-            'Operate the mobile game client in the emulator in a continuous loop until daily dungeons are cleared',
-            '守着浏览器里的票务页面，12点放票时第一时间点击抢票下单',
-            'Keep watching the flash sale webpage and click checkout immediately when the countdown hits zero',
-            '在本地行情客户端持续实时盯盘，盘口价差触及阈值时立刻点击下单',
-            'Continuously watch the live order book in the trading terminal and place the order immediately',
-            '每隔3秒轮询刷新选课页面，一旦出现空位马上点击选课',
-            '一直守在直播间盯着实时弹幕并第一时间互动回复观众',
-            '通过 adb 守着手机 App 的放号预约界面，状态变为可预约后马上点击抢号',
-        ]
-        for text in positives:
-            with self.subTest(positive=text):
-                self.assertTrue(allocator.infer_realtime_loop(text), f'Expected True for: {text}')
+    def test_realtime_loop_is_classifier_and_caller_only_with_zero_keyword_heuristics(self):
+        # 1. No keyword heuristics or word lists exist on allocator
+        for banned_attr in (
+            'infer_realtime_loop',
+            'infer_realtime_gui',
+            'realtime_loop_needs_gui',
+            'REALTIME_LOOP_CONTINUOUS_WORDS',
+            'REALTIME_LOOP_TARGET_WORDS',
+            'REALTIME_LOOP_PRESSURE_WORDS',
+            'REALTIME_DIRECT_EXECUTION_PHRASES',
+            'REALTIME_ENGINEERING_ACTION_WORDS',
+            'REALTIME_ENGINEERING_ARTIFACT_WORDS',
+            'REALTIME_GUI_TARGET_WORDS',
+        ):
+            self.assertFalse(hasattr(allocator, banned_attr), f'Banned heuristic symbol still present: {banned_attr}')
 
-        negatives = [
-            '写一个抢票脚本 `ticket_bot.py`，轮询票务页面并在放票时立刻下单',
-            'Write a Python automation script to poll the flash-sale webpage in a loop and grab tickets',
-            '实现游戏自动挂机刷本工具模块并补齐单元测试',
-            '分析昨晚模拟器游戏挂机刷本的报错日志，统计掉线原因',
-            'Analyze the live order-book watcher logs to diagnose latency spikes during market open',
-            '修复游戏挂机脚本 `auto_farm.py` 里轮询窗口卡死的 bug',
-            'Fix the race condition in the flash-sale sniping bot',
-            '打开桌面客户端设置窗口，点击保存按钮并截图验证',
-            'Open the browser settings page, toggle dark mode, click Save, and take one screenshot',
-            '开发直播间弹幕自动回复机器人代码',
+        base_accounts = copy.deepcopy(allocator.load_accounts())
+        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        policy = base_accounts['scoring']
+
+        # 2. All 11 review-report false-positive prompts + 4 brief engineering prompts default to realtime_loop=False
+        # when neither the classifier nor the caller sets realtime_loop=True.
+        engineering_prompts = [
+            '实现一个实时刷新页面的前端组件',
+            '修复客户端页面跳转时的卡死问题',
+            '给后台管理系统加上实时数据轮询',
+            '排查浏览器页面每隔几秒自动刷新的 bug',
+            '写一个盯盘看板前端页面，展示盘口深度',
+            '修复行情终端里的毫秒级时间戳格式化问题',
+            '打开浏览器页面立刻点击保存按钮',
+            '在客户端窗口里马上切换一下夜间模式',
+            '抓取网页上的实时票房数据并保存为 CSV',
+            '测试选课系统的并发抢课接口性能',
+            '优化直播弹幕渲染组件的内存占用',
+            '实现实时刷新页面',
+            '修复页面轮询逻辑',
+            '设计盯盘看板前端',
+            '排查客户端循环等待',
         ]
-        for text in negatives:
-            with self.subTest(negative=text):
-                self.assertFalse(allocator.infer_realtime_loop(text), f'Expected False for: {text}')
+        for text in engineering_prompts:
+            with self.subTest(prompt=text):
+                inferred = allocator.infer_task_profile({'objective': text}, capabilities)
+                self.assertIs(inferred['realtime_loop'], False, f'infer_task_profile guessed realtime_loop for: {text}')
+                norm = allocator.normalize_task({'objective': text}, policy, capabilities, base_accounts)
+                self.assertIs(norm['realtime_loop'], False, f'normalize_task guessed realtime_loop for: {text}')
+
+        # 3. Explicit caller / classifier values pass through; omitted defaults to False
+        self.assertIs(
+            allocator.normalize_task({'objective': 'task', 'realtime_loop': True}, policy, capabilities, base_accounts)['realtime_loop'],
+            True,
+        )
+        self.assertIs(
+            allocator.normalize_task({'objective': 'task', 'needs': {'realtime_loop': True}}, policy, capabilities, base_accounts)['realtime_loop'],
+            True,
+        )
+        self.assertIs(
+            allocator.infer_task_profile({'objective': 'task', 'realtime_loop': True}, capabilities)['realtime_loop'],
+            True,
+        )
+
+        # 4. Existing non-realtime classifier-cases route identically whether realtime_loop is omitted or False
+        cases_path = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
+        doc = json.loads(cases_path.read_text(encoding='utf-8-sig'))
+        usage = self.healthy_usage()
+        for case in doc['calibration_cases']:
+            prof = dict(case['expected_profile'])
+            if prof.get('realtime_loop') is True:
+                continue
+            prof_without = {k: v for k, v in prof.items() if k != 'realtime_loop'}
+            task_obj = case.get('task') if isinstance(case.get('task'), dict) else case
+            task_base = {
+                'objective': task_obj.get('objective', ''),
+                'context': task_obj.get('context', ''),
+                'expected_hours': 0.5,
+            }
+            plan_false = allocator.plan(
+                {**task_base, 'profile': {**prof_without, 'realtime_loop': False}},
+                usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
+            )
+            plan_omitted = allocator.plan(
+                {**task_base, 'profile': prof_without},
+                usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
+            )
+            self.assertEqual(plan_false['choice'], plan_omitted['choice'], case['id'])
 
     def test_parse_aa_rsc_html_offline_fixture(self):
         import refresh_speed_data
@@ -2213,15 +2266,15 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         self.assertEqual(sol_curve['high'], 0.0)
 
         # 2. Test on shipped references/accounts.json (which carries full speed-data.json numbers):
-        # On a realtime_loop game task (even if misclassified as general_implementation + needs_gui=False,
-        # like the lajishouyou ledger case), needs_gui is promoted, Argon High (only high) and grok-bot/dot (not_applicable)
-        # are excluded, multi-effort bundles whose configured effort is high (e.g. astra_high, flash_high, grok47_high)
-        # step down to a faster supported effort that clears floor=0.50, and a fast GUI-capable model wins.
+        # On a realtime_loop GUI game task (classified as computer_use + needs_gui=True, realtime_loop=True),
+        # Argon High (only high) and grok-bot/dot (not_applicable) are excluded, multi-effort bundles whose configured
+        # effort is high (e.g. astra_high, flash_high, grok47_high) step down to a faster supported effort that clears
+        # floor=0.50, and a fast GUI-capable model wins.
         lajishouyou_profile = {
-            'work_kind': 'general_implementation',
-            'reasoning_depth': 2, 'code_complexity': 1, 'context_scale': 1, 'divergence': 1,
+            'work_kind': 'computer_use',
+            'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
             'hallucination_risk': 2, 'error_cost': 2,
-            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': True,
+            'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
             'interaction_style': 'engineering',
         }
         rt_plan = allocator.plan(
@@ -2261,8 +2314,11 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         )
         self.assertEqual(stepped_bundle['effort'], 'medium')
 
-        # On a routine non-GUI realtime_loop task, flash_high steps down to medium (0.813), grok47_high steps down to low (0.744),
-        # and grok-bot / dot (not_applicable) are excluded.
+        # On a routine non-GUI realtime_loop task:
+        # - flash38_medium (0.813 >= 0.50) passes directly, while flash_high (antigravity-resilient, effort fixed in
+        #   model ID `gemini-3.8-flash-high`, responsiveness 0.49 < 0.50) is NOT allowed to step down and is excluded;
+        # - grok47_high (CLI harness accepts effort) steps down to low (0.744);
+        # - grok-bot / dot (not_applicable) are excluded.
         routine_rt = allocator.plan(
             {
                 'objective': '持续轮询命令行行情接口，价差触及阈值时立刻调用下单命令',
@@ -2279,8 +2335,10 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
         )
         routine_by_id = {c['id']: c for c in routine_rt['ranking']}
-        self.assertEqual(routine_by_id['flash_high']['excluded'], [])
-        self.assertEqual(routine_by_id['flash_high']['bundle']['effort'], 'medium')
+        self.assertTrue(
+            any('below the realtime_loop floor' in r for r in routine_by_id['flash_high']['excluded']),
+            routine_by_id['flash_high']['excluded'],
+        )
         self.assertEqual(routine_by_id['grok47_high']['excluded'], [])
         self.assertEqual(routine_by_id['grok47_high']['bundle']['effort'], 'low')
         for na_id in ('grok_bot', 'dot_text'):
@@ -2411,6 +2469,139 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                 self.assertGreaterEqual(low_sample_val - blended_val, 0.01)
                 self.assertLessEqual(low_sample_val - blended_val,
                                      fresh_accounts['scoring']['responsiveness']['local_telemetry']['max_shift'] + 1e-6)
+
+    def test_realtime_effort_step_down_respects_dispatch_efforts_and_fixed_effort_harnesses(self):
+        import dispatch_registry
+
+        accounts = copy.deepcopy(allocator.load_accounts())
+        policy = accounts['scoring']
+        bundles_map = allocator.bundles(accounts)
+
+        # 1. antigravity-resilient bundle (`flash_high`, model `gemini-3.8-flash-high` with effort in model ID,
+        # responsiveness 0.49 < floor 0.50) does not accept an effort flag at launch and must NEVER step down.
+        b_flash_high = dict(bundles_map['flash_high'], id='flash_high')
+        eff, val, src, stepped_from = allocator.resolve_realtime_effort(
+            b_flash_high, accounts['models']['gemini-3.8-flash-high'], policy, accounts,
+            all_bundles=bundles_map, gate=2.6,
+        )
+        self.assertEqual((eff, stepped_from), ('high', None))
+        self.assertAlmostEqual(val, 0.486, places=2)
+
+        # 2. Step-down only considers efforts present in dispatch_efforts[provider][model] and effort_curves[model]['ability']
+        accounts_restricted = copy.deepcopy(accounts)
+        accounts_restricted['dispatch_efforts']['codex']['gpt-6-astra'] = ['high']
+        b_astra = dict(bundles_map['astra_high'], id='astra_high')
+        eff_r, _, _, stepped_r = allocator.resolve_realtime_effort(
+            b_astra, accounts_restricted['models']['gpt-6-astra'], policy, accounts_restricted,
+            all_bundles={'astra_high': b_astra}, gate=3.1,
+        )
+        self.assertEqual((eff_r, stepped_r), ('high', None))
+
+        # 3. dispatch_registry.resolve_bundle rejects tampered non-realtime effort changes, rejects unsupported
+        # dispatch_efforts, rejects antigravity-resilient step-down, and permits valid realtime step-down.
+        tampered = dict(bundles_map['astra_high'], bundle_id='astra_high', effort='medium')
+        self.assertIsNone(dispatch_registry.resolve_bundle(tampered, accounts=accounts, explicit_override=False))
+        self.assertIsNone(dispatch_registry.resolve_bundle(
+            dict(bundles_map['astra_high'], bundle_id='astra_high', effort='minimal', realtime_stepped_from='high'),
+            accounts=accounts, explicit_override=False,
+        ))
+        self.assertIsNone(dispatch_registry.resolve_bundle(
+            dict(bundles_map['flash_high'], bundle_id='flash_high', effort='medium', realtime_stepped_from='high'),
+            accounts=accounts, explicit_override=False,
+        ))
+        valid_stepdown = dispatch_registry.resolve_bundle(
+            dict(bundles_map['astra_high'], bundle_id='astra_high', effort='medium', realtime_stepped_from='high'),
+            accounts=accounts, explicit_override=False,
+        )
+        self.assertIsNotNone(valid_stepdown)
+        self.assertEqual(valid_stepdown['effort'], 'medium')
+
+    def test_realtime_sibling_deference_requires_sibling_to_clear_both_ability_gate_and_responsiveness_floor(self):
+        accounts = copy.deepcopy(allocator.load_accounts())
+        bundles_map = allocator.bundles(accounts)
+        non_astra_ids = [bid for bid in bundles_map if not bid.startswith('astra_')]
+        capabilities = allocator.load_capabilities(accounts=accounts)
+        usage = self.healthy_usage()
+
+        # On a coupled + critical realtime_loop task (gate = 3.6 + 0.3 = 3.9):
+        # - `astra_low` has responsiveness 0.777 >= 0.50, but ability 3.61 < 3.9 (fails ability gate)
+        # - `astra_high` has high responsiveness 0.0 < 0.50, and must NOT defer to `astra_low`;
+        #   instead it steps down to `medium` (ability 4.05 >= 3.9, responsiveness 0.719 >= 0.50).
+        res = allocator.plan(
+            {
+                'objective': '实时循环任务',
+                'difficulty': 'coupled',
+                'needs': {'critical': True},
+                'realtime_loop': True,
+            },
+            usage, now=self.now, unavailable=non_astra_ids, accounts=accounts, capabilities=capabilities, overrides=[],
+        )
+        self.assertEqual(res['choice'], 'astra_high')
+        by_id = {c['id']: c for c in res['ranking']}
+        self.assertEqual(by_id['astra_high']['excluded'], [])
+        self.assertEqual(by_id['astra_high']['bundle']['effort'], 'medium')
+        self.assertEqual(by_id['astra_high']['components']['effort_stepped_down_from'], 'high')
+
+    def test_realtime_loop_does_not_auto_promote_gui_visual_or_local_only(self):
+        accounts = copy.deepcopy(allocator.load_accounts())
+        capabilities = allocator.load_capabilities(accounts=accounts)
+        policy = accounts['scoring']
+
+        norm_top = allocator.normalize_task(
+            {
+                'objective': '连接本地交易所 WebSocket 行情流持续盯盘，价差触发时用 REST API 下单',
+                'work_kind': 'tool_execution',
+                'realtime_loop': True,
+                'needs_gui': False,
+                'needs_visual': False,
+                'local_only': False,
+            },
+            policy, capabilities, accounts,
+        )
+        self.assertTrue(norm_top['realtime_loop'])
+        self.assertFalse(norm_top['needs_gui'])
+        self.assertFalse(norm_top['needs_visual'])
+        self.assertFalse(norm_top['local_only'])
+
+        norm_prof = allocator.normalize_task(
+            {
+                'objective': '连接交易所 WebSocket 行情流持续盯盘，价差触发时用 REST API 下单',
+                'profile': {
+                    'work_kind': 'tool_execution',
+                    'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
+                    'hallucination_risk': 2, 'error_cost': 3,
+                    'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
+                    'interaction_style': 'engineering',
+                },
+            },
+            policy, capabilities, accounts,
+        )
+        self.assertTrue(norm_prof['realtime_loop'])
+        self.assertFalse(norm_prof['needs_gui'])
+        self.assertFalse(norm_prof['needs_visual'])
+        self.assertFalse(norm_prof['local_only'])
+
+    def test_discovered_family_and_date_variants_do_not_inherit_single_effort_measured_responsiveness(self):
+        import auto_bundles
+
+        accounts = copy.deepcopy(allocator.load_accounts())
+        policy = accounts['scoring']
+        for variant_id in (
+            'claude-opus-5-5-20260901',
+            'gpt-6.1-sol-20260901',
+            'gpt-6-astra-preview',
+            'grok-4.7-latest',
+            'claude-opus-5-6',
+        ):
+            with self.subTest(variant=variant_id):
+                prof = auto_bundles.default_profile(variant_id, accounts)
+                self.assertIsNone(prof['spec'].get('responsiveness'))
+                self.assertIsNone(prof['spec'].get('speed_metrics'))
+                b = {'id': f'auto_{variant_id}', 'account': 'claude', 'model': variant_id, 'effort': 'medium'}
+                val, src = allocator.bundle_responsiveness(b, prof, accounts)
+                self.assertEqual(src, 'default')
+                self.assertAlmostEqual(val, policy['responsiveness']['default'])
+                self.assertGreaterEqual(val, policy['responsiveness']['floor'])
 
 
 if __name__ == '__main__':
