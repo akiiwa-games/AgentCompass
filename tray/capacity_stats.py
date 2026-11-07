@@ -129,9 +129,9 @@ def list_usd(model: str, fresh: int = 0, write_5m: int = 0, write_1h: int = 0, r
 
 def sources() -> dict[str, dict]:
     """Accounts whose logs can be read. capacity-sources.json may add or replace entries (e.g. a second Codex home)."""
-    # Primary homes follow the same overrides the CLIs and provider discovery honour.
-    codex_home = Path(os.environ.get("CODEX_HOME") or HOME / ".codex").expanduser()
-    claude_home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or HOME / ".claude").expanduser()
+    # An account's home comes from its configuration below, as in provider discovery, never from this process's environment.
+    codex_home = HOME / ".codex"
+    claude_home = HOME / ".claude"
     found = {
         "codex": {"kind": "codex", "roots": [str(codex_home / "sessions"), str(codex_home / "archived_sessions")]},
         "claude": {"kind": "claude", "roots": [str(claude_home / "projects")]},
@@ -559,12 +559,32 @@ def sample_usage_cache(state: dict) -> None:
         fetched = parse_ts((row or {}).get("fetched_at"))
         if fetched is None:
             continue
+        note_plan(state, account, row.get("plan_label"), fetched)
         for window in row.get("windows") or []:
             used, resets = window.get("used_pct"), parse_ts(window.get("resets_at"))
             wid = "usage" if account.startswith("codex") and window.get("id") == "seven_day" else window.get("id")
             if isinstance(used, (int, float)) and resets is not None and wid:
                 series = state["usage_samples"].setdefault(account, {}).setdefault(wid, [])
                 add_reading(series, fetched, float(used), resets)
+
+
+def note_plan(state: dict, account: str, label, at: float) -> None:
+    """Remember when an account's reported plan changed: a percentage is of the plan's allowance, so a rate measured
+    across the change is not demand."""
+    if not isinstance(label, str) or not label.strip():
+        return
+    history = state.setdefault("plan_history", {}).setdefault(account, [])
+    label = label.strip().lower()
+    if history and at < history[-1][0]:
+        return
+    if not history or history[-1][1] != label:
+        history.append([at, label])
+
+
+def plan_changed_at(state: dict, account: str) -> float | None:
+    """When the account's current plan began, or None when no change has been seen."""
+    history = (state.get("plan_history") or {}).get(account) or []
+    return history[-1][0] if len(history) > 1 else None
 
 
 def prune(state: dict, cutoff: float) -> None:
@@ -639,8 +659,11 @@ def usage_by_hour(state: dict, account: str) -> dict[str, dict[str, list[float]]
     return table
 
 
-def rate_in(series: list[list[float]], now: float, hours: float):
-    """Percent per hour over the last `hours` inside the current reset period, or None when it cannot be known."""
+def rate_in(series: list[list[float]], now: float, hours: float, plan_changed: float | None = None):
+    """Percent per hour over the last `hours` inside the current reset period and the current plan, or None when it
+    cannot be known. A rate is not carried across a plan change: the same percentage is a different amount of work."""
+    if plan_changed is not None and now - hours * 3600 < plan_changed:
+        return None
     times = [s[0] for s in series]
     latest = reading_at(series, times, now)
     if latest is None or latest[2] <= now or now - latest[3] > STALE_SAMPLE_SECONDS:
@@ -663,10 +686,11 @@ def measure(state: dict, now: float, days: int = LOOKBACK_DAYS) -> dict:
             document["worker_hours"][account] = {"24h": round(spans[24], 2), "7d": round(spans[168], 2)}
         for window, series in account_series(state, account).items():
             latest = series[-1]
+            changed = plan_changed_at(state, account)
             document["observed"].setdefault(account, {})[window] = {
                 "used_pct": latest[1], "resets_at": iso(latest[2]), "confirmed_at": iso(latest[3]),
-                "pct_per_hour_3h": rate_in(series, now, OBSERVE_SHORT_HOURS),
-                "pct_per_hour_24h": rate_in(series, now, OBSERVE_LONG_HOURS)}
+                "pct_per_hour_3h": rate_in(series, now, OBSERVE_SHORT_HOURS, changed),
+                "pct_per_hour_24h": rate_in(series, now, OBSERVE_LONG_HOURS, changed)}
     # The usage collector owns live activity. These log scans still measure costs and
     # worker-hours, but must not maintain a second definition of running/idle.
     activity_path = Path((os.environ.get('AGENTCOMPASS_ACTIVITY_FILE') or os.environ.get('ROUTE_MANAGER_ACTIVITY_FILE')) or STATE_DIR / 'usage-activity.json')

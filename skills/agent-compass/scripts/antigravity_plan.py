@@ -6,8 +6,9 @@ agy's own signed-in token (the OS keyring entry service "gemini", user "antigrav
 in <state dir>/antigravity-plan.json. Discovery reads only that file; routing commands refresh it beside the
 run (refresh_in_background), never on the routing thread. Nothing is stored except the tier id and name.
 
-A missing agy sign-in, an expired token (agy renews it on its next start) or a failed request leaves the last
-good answer in place and is retried after RETRY_MINUTES.
+An expired token (agy renews it on its next start) or a failed request leaves the last good answer in place and is
+retried after RETRY_MINUTES, but that answer stops counting once it is PLAN_MAX_AGE_HOURS old: an old tier is no longer
+evidence of the tier. A lost sign-in drops it at once. A tier with no paid plan behind it (`free-tier`) reads as `Free`.
 """
 from datetime import datetime, timedelta, timezone
 import atexit
@@ -25,6 +26,7 @@ ENDPOINT = 'https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist'
 KEYRING_SERVICE, KEYRING_USER = 'gemini', 'antigravity'
 CACHE_FILE = 'antigravity-plan.json'
 INTERVAL_HOURS = 12
+PLAN_MAX_AGE_HOURS = 48
 RETRY_MINUTES = 30
 TIMEOUT_SECONDS = 8
 EXIT_GRACE_SECONDS = 2
@@ -63,10 +65,16 @@ def read_cache(state_dir):
     return document if isinstance(document, dict) else {}
 
 
-def cached_plan(state_dir):
-    """The tier name last read from Google ("Google AI Ultra"), or None."""
-    plan = read_cache(state_dir).get('plan')
-    return plan if isinstance(plan, str) and plan else None
+def cached_plan(state_dir, now=None):
+    """The tier name last read from Google ("Google AI Ultra"), or None when there is none or it has expired."""
+    document = read_cache(state_dir)
+    plan = document.get('plan')
+    read_at = _parse(document.get('read_at'))
+    if not isinstance(plan, str) or not plan or read_at is None:
+        return None
+    if (now or _now()) - read_at >= timedelta(hours=PLAN_MAX_AGE_HOURS):
+        return None
+    return 'Free' if document.get('source') == 'currentTier' and document.get('tier_id') == 'free-tier' else plan
 
 
 def _write_cache(state_dir, document):
@@ -167,6 +175,8 @@ def refresh(state_dir, read_blob=None, fetch=None, now=None, timeout=TIMEOUT_SEC
     keep = {k: previous[k] for k in ('plan', 'tier_id', 'source', 'read_at') if k in previous}
     document = {**keep, 'checked_at': _stamp(now)}
     token, reason = read_token(read_blob)
+    if reason == 'agy_not_signed_in':
+        document = {'checked_at': _stamp(now)}
     if token is None:
         document['error'] = reason
     else:

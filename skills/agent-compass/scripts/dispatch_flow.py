@@ -140,6 +140,9 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
             if launch_error == 'host_creation_failed':
                 import launch_failures
                 launch_failures.record(row['bundle'], response.get('failure_class') or 'unknown')
+                import account_state
+                account_state.record_launch_error(row['bundle']['account'], None, code=response.get('failure_class'),
+                                                  source=dispatch_id)
         # Ambiguous errors retain the single-use claim; reconcile locates any created agent by labels.
     elif row['state'] == 'expired' and row.get('launched_at'):
         observations = reconcile(dispatch_id, host=host, path=path)

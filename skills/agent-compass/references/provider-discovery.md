@@ -151,11 +151,14 @@ advertised launch ID. Unknown model IDs get the generic 3.3-tier text-only basel
 Saved CC Switch profiles remain metadata until bound to a real launcher; discovery
 never switches the active product account or contacts a gateway.
 
-Plan labels come from current credentials or a matching local collector snapshot.
-Known plans reuse policy capacity estimates; unknown plans discard stale estimates.
-OAuth expiry and next billing dates do not prove subscription cancellation. Remote
-closure that has not yet reached the local product/collector cannot be detected by
-this read-only local scan. Existing host cooldown policy covers runtime failures.
+Plan labels come from current credentials or a matching local collector snapshot; for
+Codex the snapshot's usage API `plan_type` outranks the id_token claim, and a
+disagreement is a warning. Known plans reuse policy capacity estimates; unknown plans
+are priced at the family's smallest paid plan with a warning. OAuth expiry and next
+billing dates do not prove subscription cancellation. Remote closure that has not yet
+reached the local product/collector cannot be detected by this read-only local scan;
+once a reading or a launch reports it the account is `plan_inactive`
+(`scripts/account_state.py`), and a reading that keeps failing makes it `usage_failing`.
 
 ## Verification
 

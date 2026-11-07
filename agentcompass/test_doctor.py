@@ -68,6 +68,27 @@ class DoctorTests(unittest.TestCase):
         })
         self.assertIn("opencode: installed, sign-in unverified", text)
 
+    def test_render_lists_an_accounts_state_reason_and_last_good_reading(self):
+        text = doctor.render({
+            "version": "0.1.0",
+            "python": "3.11.0 (python)",
+            "install": "package test",
+            "skill": "missing",
+            "clis": [],
+            "tools": [],
+            "accounts": [{"name": "codex", "family": "codex", "status": "usage_failing", "plan": "plus", "home": "x",
+                          "reason": "read_failed: 更新失败", "last_success_at": "2026-11-07T01:00:00+00:00"}],
+            "cache": "missing",
+            "plugins": [],
+            "ports": {"ports": {}, "problems": []},
+            "listeners": {},
+            "conflicts": [],
+            "hooks": [],
+        })
+        self.assertIn("codex: usage_failing", text)
+        self.assertIn("reason=read_failed: 更新失败", text)
+        self.assertIn("last_good_reading=2026-11-07T01:00:00+00:00", text)
+
     def test_doctor_names_the_active_install_and_an_agentcompass_that_hides_the_installer(self):
         import os
         from unittest import mock

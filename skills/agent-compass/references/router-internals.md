@@ -122,9 +122,10 @@ subscription bundle. The free-usage bonus is declared per account in public data
 (OpenCode free models) compete on their zero opportunity cost alone.
 
 A discovered plan supplies capacity and burn priors; a family whose product does not
-report its tier locally uses the documented `<family>.default` plan (Antigravity: Ultra
-20x), never no capacity. Claude/Codex without a discovered plan stay unknown. Unknown
-quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
+report its tier locally uses the documented `<family>.default` plan (Antigravity: Pro,
+the smallest paid tier), never no capacity. A plan no template names, or a Claude/Codex
+account with no plan, is priced at the family's smallest paid plan with a warning
+(`plan_unknown`, `plan_priced_as`). Unknown quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
 free models, Dot, the ChatGPT Pro web bridge) are marked so in the template; observed
 telemetry retains its source and freshness. Optional account `cadence` state
 (`window_seconds`, `limit`) measures dispatch frequency and never proves remaining quota.

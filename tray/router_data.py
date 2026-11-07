@@ -389,11 +389,25 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     status = row.get("status")
     if status == 'quota_exhausted':
         return _tr('额度已耗尽，等待刷新恢复'), 'warn'
+    if status == 'plan_inactive':
+        return _tr('套餐失效，已排除派发：{0}').format(row.get('reason') or status), 'warn'
+    if status == 'auth_failed':
+        return _tr('登录被拒绝，已排除派发：{0}').format(row.get('reason') or status), 'warn'
+    if status == 'usage_failing':
+        last = read_time_text(row.get('last_success_at'))
+        text = _tr('读数失败，已排除派发：{0}（上次成功 {1}）') if row.get('usage_excluded') else _tr('读数失败：{0}（上次成功 {1}）')
+        return text.format(row.get('reason') or status, last), 'warn'
     if status == "ready":
         return _tr("就绪"), "ok"
     if status is None:
         return _tr("未发现"), "idle"
     return _tr('已暂停：{0}').format(f"{row.get('reason') or status}"), "warn"
+
+
+def read_time_text(value) -> str:
+    """A reading's time in local time; '从未' when there has been no good reading."""
+    moment = _iso_datetime(value)
+    return moment.astimezone().strftime('%m-%d %H:%M') if moment else _tr('从未')
 
 
 def countdown(seconds) -> str:
@@ -559,6 +573,8 @@ def account_cards() -> list[dict]:
             bundle_pills.append({"id": bid, "label": b_label, "enabled": not bool(bspec.get("disabled"))})
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,
+                      "status": (row or {}).get("status"), "status_reason": (row or {}).get("reason"),
+                      "last_success_at": (row or {}).get("last_success_at"),
                       "plan": (row or {}).get("plan") or spec.get("plan"),
                       "usage_status": 'quota_exhausted' if (row or {}).get('status') == 'quota_exhausted' else usage_row.get("status"),
                       "usage_age_seconds": usage_row.get("observation_age_seconds"),
@@ -1219,7 +1235,7 @@ def harness_model_rows() -> list[dict]:
     for owner, spec in table.items():
         for bid, bundle in (spec.get("bundles") or {}).items():
             account = allocator.accounts_override.preference_account(bundle, owner, accounts)
-            if inventory and (inventory.get(account) or {}).get("status") != "ready":
+            if inventory and not allocator.provider_inventory.account_state.dispatchable(inventory.get(account)):
                 continue
             provider = bundle.get("provider") or owner
             launcher = ((accounts.get("_discovery") or {}).get("launchers") or {}).get(provider)
@@ -1258,7 +1274,7 @@ def harness_model_rows() -> list[dict]:
     present = {row['account'] for row in rows}
     for account, spec in table.items():
         inv = inventory.get(account) or {}
-        if account not in present and inv.get('models') and inv.get('status') == 'ready':
+        if account not in present and inv.get('models') and allocator.provider_inventory.account_state.dispatchable(inv):
             family = inv.get('family') or account
             rows.append({'account': account, 'account_label': account_label(account), 'harness': family,
                 'harness_label': HARNESS_LABELS.get(family, family), 'plan': spec.get('plan'),

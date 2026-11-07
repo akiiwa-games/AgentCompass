@@ -219,8 +219,19 @@ async function watch(dispatchId, parentId, agentId = dispatchId) {
 
 // A fixed vocabulary for a definitive create failure. The SDK error text stays private; the class tells the
 // router whether the whole account (its provider never came up) or only this model failed.
+// A provider's own fields decide; the text is only for a report without them. Text never leaves the bridge.
+const INACTIVE_CODES = new Set(['subscription_inactive', 'subscription_expired', 'subscription_canceled',
+  'subscription_cancelled', 'plan_expired', 'plan_inactive', 'payment_required', 'payment_failed']);
+const INACTIVE_TEXT = /subscription(?:_| (?:has |is |was )?)(?:expired|cancel+ed|inactive|lapsed)|plan (?:has |is )?(?:expired|cancel+ed|inactive)|payment[_ ](?:required|failed)|past[_ ]due|订阅(?:已)?(?:过期|到期|失效|取消)/i;
+
+export function subscriptionLapsed(code, status, text) {
+  if (code || status) return status === 402 || INACTIVE_CODES.has(String(code ?? '').trim().toLowerCase());
+  return typeof text === 'string' && INACTIVE_TEXT.test(text);
+}
+
 export function creationFailureClass(creation) {
   const text = typeof creation?.error === 'string' ? creation.error : '';
+  if (subscriptionLapsed(creation?.errorCode, creation?.statusCode, text)) return 'subscription_inactive';
   if (/timed out refreshing|refresh(?:ing)? timed out/i.test(text)) return 'provider_refresh_timeout';
   if (/unavailable provider|provider (?:is )?unavailable|not (?:installed|signed in)|sign in/i.test(text)) return 'provider_unavailable';
   if (/quota|usage limit|rate.?limit/i.test(text)) return 'quota';
@@ -235,6 +246,7 @@ export function project(agent) {
     'currentModeId', 'thinkingOptionId', 'effectiveThinkingOptionId', 'labels']
     .filter(k => agent[k] !== undefined).map(k => [k, agent[k]]));
   if (Array.isArray(agent.pendingPermissions)) result.pendingPermissionCount = agent.pendingPermissions.length;
+  if (subscriptionLapsed(agent.lastErrorCode, agent.lastErrorStatus, agent.lastError)) result.lastErrorClass = 'subscription_inactive';
   return result;
 }
 

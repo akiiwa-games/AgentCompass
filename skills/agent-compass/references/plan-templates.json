@@ -33,10 +33,10 @@
     "plus": {
       "provenance": "community_benchmark",
       "price_usd_per_month": 20,
-      "basis": "Community panel: 27 full weekly cycles, median $67 per week (range $61-$81). Burn assumes about $10 per worker-hour.",
-      "windows": {"usage": {"hours": 168}},
-      "capacity_usd": {"usage": 67},
-      "burn_pct_per_worker_hour": {"usage": 15.0}
+      "basis": "Community panel: 27 full weekly cycles, median $67 per week (range $61-$81). Burn assumes about $10 per worker-hour. five_hour (restored for Plus 2026-08-25): OpenAI publishes no ratio; community estimates run from about 10% to 25% of the week ($7-$17), so $10 is a rough prior, not a measurement. Re-measure from this account's readings.",
+      "windows": {"usage": {"hours": 168}, "five_hour": {"hours": 5, "launch_min_remaining_pct": 25}},
+      "capacity_usd": {"usage": 67, "five_hour": 10},
+      "burn_pct_per_worker_hour": {"usage": 15.0, "five_hour": 100.0}
     },
     "team": {
       "alias": "plus",
@@ -104,8 +104,8 @@
       "basis": "Ultra tier not reported as 5x or 20x; falls back to the Ultra 20x prior."
     },
     "default": {
-      "alias": "ultra20",
-      "basis": "Used until the tier is known. `agy -p /usage` returns only bucket fractions; discovery reads the tier from Google's loadCodeAssist with agy's own sign-in (scripts/antigravity_plan.py, cached in <state dir>/antigravity-plan.json, refreshed beside routing runs), so this prior covers a first run, an expired agy token or a failed read. A plan can also be named in the account document's `plan` (for example \"Google AI Pro\") or in `plan_templates`."
+      "alias": "pro",
+      "basis": "Used until the tier is known: the smallest paid tier, with a warning, never the largest. `agy -p /usage` returns only bucket fractions; discovery reads the tier from Google's loadCodeAssist with agy's own sign-in (scripts/antigravity_plan.py, cached in <state dir>/antigravity-plan.json, refreshed beside routing runs), so this prior covers a first run, an expired agy token or a failed read. A plan can also be named in the account document's `plan` (for example \"Google AI Pro\") or in `plan_templates`."
     }
   },
   "chatgpt-web": {

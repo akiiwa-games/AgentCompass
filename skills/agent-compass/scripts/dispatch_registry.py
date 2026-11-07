@@ -618,6 +618,9 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
                 import quota_exhaustion
                 quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
                                         windows=bundle_windows(row['bundle']), at=updated_error, source=agent_id)
+                import account_state
+                account_state.record_launch_error(row['bundle']['account'], snapshot.get('lastError'),
+                                                  code=snapshot.get('lastErrorClass'), at=updated_error, source=agent_id)
         if row['state'] in TERMINAL and row['state'] != 'expired':
             return row
         if row['state'] == 'prepared':

@@ -127,7 +127,9 @@ def _tr(zh: str, en: str, lang: str | None = None) -> str:
 HOME = Path.home()
 CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", HOME / ".claude"))
 CLAUDE_HOME_2 = Path(os.environ.get("CLAUDE_HOME_2", HOME / ".claude-2"))
-CODEX_HOME = Path(os.environ.get("CODEX_HOME", HOME / ".codex"))
+# Not the CODEX_HOME variable: a worker running on another account has it set, and `codex` must stay `codex` there. An
+# account's directory comes from its configuration (the Paseo provider's env, read in discover_codex_accounts).
+CODEX_HOME = HOME / ".codex"
 CODEX_HOME_2 = Path(os.environ.get("CODEX_HOME_2", HOME / ".codex-2"))
 GROK_HOME = Path(os.environ.get("GROK_HOME", HOME / ".grok"))
 STATE_DIR = usage_cache.state_dir(HOME)
@@ -342,12 +344,12 @@ def discover_codex_accounts() -> dict[str, CodexAccount]:
         if pid == "codex" or acc.home != HOME / f".{pid}" or acc.home.is_dir()
     }
     for pid, spec in _read_paseo_providers().items():
-        if spec.get("enabled") is False or pid in accounts:
+        env = spec.get("env") if isinstance(spec.get("env"), dict) else {}
+        cfg = str(env.get("CODEX_HOME") or "").strip()
+        if spec.get("enabled") is False or (pid in accounts and not (pid == "codex" and cfg)):
             continue
         extends = str(spec.get("extends") or "").strip().lower()
         if pid == "codex" or extends == "codex" or (not extends and pid.startswith("codex-")):
-            env = spec.get("env") if isinstance(spec.get("env"), dict) else {}
-            cfg = str(env.get("CODEX_HOME") or "").strip()
             home = Path(cfg).expanduser() if cfg else (HOME / (".codex" if pid == "codex" else f".{pid}"))
             accounts[pid] = CodexAccount(pid, pid, home)
             PROVIDER_LABELS.setdefault(pid, str(spec.get("label") or pid.replace("-", " ").title()).strip())
@@ -690,7 +692,20 @@ def display_snapshot(provider_id: str) -> ProviderUsage | None:
     return item
 
 
-def mark_provider_stale(provider_id: str, error: str) -> None:
+def provider_error_code(payload: Any) -> str | None:
+    """A provider's machine-readable error code. Its free-form text is never kept."""
+    if not isinstance(payload, dict):
+        return None
+    candidates = [payload.get('error'), payload.get('code')]
+    for block in (payload.get('error'), payload.get('detail')):
+        if isinstance(block, dict):
+            candidates[:0] = [block.get('code'), block.get('type')]
+    return next((value.lower() for value in candidates
+                 if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', value)), None)
+
+
+def mark_provider_stale(provider_id: str, error: str, status: int | None = None, code: str | None = None,
+                        plan: str | None = None) -> None:
     def update(cache):
         row = (cache.get('providers') or {}).get(provider_id)
         if isinstance(row, dict):
@@ -699,6 +714,10 @@ def mark_provider_stale(provider_id: str, error: str) -> None:
                 return
             row['stale'] = True
             row['error'] = error
+            # What the provider itself said, for provider_inventory; a good reading replaces the whole row.
+            row['error_status'], row['error_code'] = status or None, code
+            if plan:
+                row['plan_label'] = plan
     update_usage_cache(update)
 
 
@@ -902,10 +921,11 @@ def display_fallback(
 
 def stale_provider_usage(
     provider_id: str, error: str, previous: Iterable[ProviderUsage] = (),
+    status: int | None = None, code: str | None = None, plan: str | None = None,
 ) -> ProviderUsage:
     cached = display_fallback(provider_id, error, previous)
     try:
-        mark_provider_stale(provider_id, error)
+        mark_provider_stale(provider_id, error, status, code, plan)
     except Exception:
         pass  # Cache contention must not defeat presentation fallback.
     return cached
@@ -995,7 +1015,7 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
 
     if status != 200 or not isinstance(payload, dict):
         error = _tr("登录凭据需由 Claude Code 更新", 'Login credentials must be updated by Claude Code') if status in (401, 403) else "更新失败"
-        return stale_provider_usage(provider_id, error)
+        return stale_provider_usage(provider_id, error, status=status, code=provider_error_code(payload))
 
     windows: list[UsageWindow] = []
     five = payload.get("five_hour") or {}
@@ -1154,7 +1174,7 @@ def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
         return stale_provider_usage(account.provider_id, _tr('登录凭据已变化，等待下次更新', 'Login credentials changed; waiting for the next update'))
     if status != 200 or not isinstance(payload, dict):
         error = _tr("登录凭据需由 Codex 更新", 'Login credentials must be updated by Codex') if status in (401, 403) else "更新失败"
-        return stale_provider_usage(account.provider_id, error)
+        return stale_provider_usage(account.provider_id, error, status=status, code=provider_error_code(payload))
 
     rate = payload.get("rate_limit") or {}
     # Preserve both constraints for the router; primary is not always weekly.
@@ -1171,7 +1191,7 @@ def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
             used_pct=float(used), resets_at=_iso_timestamp(window.get('reset_at')),
         ))
     if not windows:
-        return stale_provider_usage(account.provider_id, "更新失败")
+        return stale_provider_usage(account.provider_id, "更新失败", plan=str(payload.get("plan_type") or "") or None)
     result = ProviderUsage(
         provider_id=account.provider_id,
         display_name=account.display_name,
@@ -2380,7 +2400,7 @@ def fetch_api_proxy_usage(provider_id: str = "api-proxy") -> ProviderUsage:
 
 
 def _pi_agent_home() -> Path:
-    return Path(os.environ.get("PI_CODING_AGENT_DIR") or HOME / ".pi" / "agent")
+    return Path(claude_account_paseo_env("pi").get("PI_CODING_AGENT_DIR") or HOME / ".pi" / "agent")
 
 
 def read_pi_codex_auth(pi_home: Path | None = None) -> tuple[dict[str, Any] | None, Path | None]:

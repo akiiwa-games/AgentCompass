@@ -63,17 +63,18 @@ class CleanInstallParityTests(unittest.TestCase):
 
     def test_antigravity_without_a_reported_tier_routes_on_the_documented_default(self):
         agy = self.specs['antigravity']
-        self.assertEqual(agy['capacity_usd'], {'gemini-weekly': 625, 'gemini-5h': 182, '3p-weekly': 88, '3p-5h': 17.6})
-        self.assertEqual((agy['burn_pct_per_worker_hour']['gemini-weekly'], agy['burn_pct_per_worker_hour']['gemini-5h']),
-                         (0.08, 0.27))
+        # The smallest paid tier with a warning, never the largest.
+        self.assertEqual(agy['capacity_usd'], {'gemini-weekly': 31, 'gemini-5h': 9.1, '3p-weekly': 4.4, '3p-5h': 0.9})
+        self.assertEqual(agy['plan_priced_as'], 'pro')
         self.assertTrue(agy['verified'])  # a quota reading is the sign-in proof
         self.assertTrue(all(allocator.capacity_usd(agy, wid, datetime.now(timezone.utc)) for wid in agy['windows']))
 
-    def test_a_named_smaller_antigravity_plan_beats_the_default(self):
+    def test_a_named_antigravity_plan_beats_the_default(self):
         template = shipped_template()
-        template['accounts']['antigravity']['plan'] = 'Google AI Pro'
+        template['accounts']['antigravity']['plan'] = 'Google AI Ultra'
         agy = inventory.apply(template, snapshot())['accounts']['antigravity']
-        self.assertEqual(agy['capacity_usd']['gemini-weekly'], 31)
+        self.assertEqual(agy['capacity_usd']['gemini-weekly'], 625)
+        self.assertNotIn('plan_priced_as', agy)
 
     def test_intrinsic_unmetered_accounts_and_the_pro_web_cadence(self):
         for name in ('opencode', 'dot'):

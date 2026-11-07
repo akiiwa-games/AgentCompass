@@ -150,7 +150,7 @@ def apply(accounts, document):
             spec = {**spec, 'bundles': rows}
         if spec.get('verified') is False:
             target['verified'] = False
-        elif spec.get('verified') is True and target.get('discovery_status') in (None, 'ready'):
+        elif spec.get('verified') is True and target.get('discovery_status') in (None, 'ready', 'usage_failing'):
             target['verified'] = True
         if 'allowed_cwd' in spec:
             target['allowed_cwd'] = spec['allowed_cwd']

@@ -210,7 +210,8 @@ def summary(decision):
             'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast', 'fast_billing') if bundle.get(k)},
             'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
                        (decision.get('decision') or {}).get('reason') or '')[:300] or None,
-            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn']}
+            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn'],
+            **({'warnings': warnings} if (warnings := (decision.get('decision') or {}).get('warnings')) else {})}
 
 
 def python(script, *argv):

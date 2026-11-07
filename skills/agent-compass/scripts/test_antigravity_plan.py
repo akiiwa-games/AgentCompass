@@ -43,7 +43,6 @@ class AntigravityPlanTests(unittest.TestCase):
             raise urllib.error.HTTPError(plan.ENDPOINT, 401, 'unauthorized', {}, None)
         document = plan.refresh(self.state, read_blob=self.fresh, fetch=rejected)
         self.assertEqual((document['plan'], document['error']), ('Google AI Ultra', 'http_401'))
-        self.assertEqual(plan.refresh(self.state, read_blob=lambda: None)['error'], 'agy_not_signed_in')
         self.assertEqual(plan.cached_plan(self.state), 'Google AI Ultra')
 
         checked = datetime.now(timezone.utc)
@@ -54,6 +53,24 @@ class AntigravityPlanTests(unittest.TestCase):
         self.assertFalse(plan.due(good, checked + timedelta(hours=plan.INTERVAL_HOURS - 1)))
         self.assertTrue(plan.due(good, checked + timedelta(hours=plan.INTERVAL_HOURS)))
         self.assertTrue(plan.due({}))
+
+    def test_a_lost_sign_in_drops_the_old_tier_at_once(self):
+        plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_: ULTRA)
+        self.assertEqual(plan.refresh(self.state, read_blob=lambda: None)['error'], 'agy_not_signed_in')
+        self.assertIsNone(plan.cached_plan(self.state))
+
+    def test_a_tier_expires_when_it_cannot_be_read_again(self):
+        now = datetime(2026, 11, 7, tzinfo=timezone.utc)
+        plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_: ULTRA, now=now)
+        inside, outside = timedelta(hours=plan.PLAN_MAX_AGE_HOURS - 1), timedelta(hours=plan.PLAN_MAX_AGE_HOURS)
+        self.assertEqual(plan.cached_plan(self.state, now + inside), 'Google AI Ultra')
+        self.assertIsNone(plan.cached_plan(self.state, now + outside))
+
+    def test_a_tier_with_no_paid_plan_reads_as_free(self):
+        (self.state / plan.CACHE_FILE).write_text(json.dumps({
+            'plan': 'Antigravity', 'tier_id': 'free-tier', 'source': 'currentTier', 'read_at': plan._stamp(plan._now())}),
+            encoding='utf-8')
+        self.assertEqual(plan.cached_plan(self.state), 'Free')
 
     def test_background_refresh_needs_agy_and_honours_the_switch(self):
         self.assertIsNone(plan.refresh_in_background(self.state, {'PATH': ''}))

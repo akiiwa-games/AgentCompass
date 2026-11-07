@@ -103,7 +103,7 @@ def detect(home: Path, environ: dict | None = None) -> dict:
         if family not in CLI_ACCOUNTS:
             continue
         status = row.get("status")
-        if status == "ready":
+        if status in ("ready", "usage_failing", "plan_inactive"):  # signed in: the trouble is its reading or its plan
             signed_in = None if family in UNVERIFIABLE_FAMILIES else True
         else:
             signed_in = False

@@ -85,6 +85,8 @@ def account_rows(home: Path, environ: dict | None) -> list | str:
             "status": status,
             "plan": row.get("plan"),
             "home": row.get("home"),
+            "reason": row.get("reason"),
+            "last_success_at": row.get("last_success_at"),
         })
     return rows
 
@@ -297,8 +299,10 @@ def render(report: dict) -> str:
     else:
         for row in accounts:
             plan = f" plan={row.get('plan')}" if row.get("plan") else ""
+            reason = f" reason={row.get('reason')}" if row.get("reason") else ""
+            read = f" last_good_reading={row.get('last_success_at')}" if row.get("last_success_at") else ""
             lines.append(
-                f"  {row.get('name')}: {row.get('status')} family={row.get('family')}{plan} home={row.get('home')}"
+                f"  {row.get('name')}: {row.get('status')} family={row.get('family')}{plan}{reason}{read} home={row.get('home')}"
             )
     lines.append(f"Usage cache: {report.get('cache', '')}")
     lines.append(f"Reference data: {report.get('public_data', '')}")
