@@ -71,7 +71,14 @@ class ModelResolutionTests(unittest.TestCase):
         for raw, expected in cases.items():
             with self.subTest(raw=raw):
                 self.assertEqual(allocator.canonical(raw, self.accounts), expected)
-                self.assertEqual(allocator.model_spec(self.accounts, raw), self.accounts['models'][expected])
+                resolved = allocator.resolve_model(raw, self.accounts)
+                row = self.accounts['models'][expected]
+                spec = allocator.model_spec(self.accounts, raw)
+                if resolved['source'] == 'family':
+                    self.assertTrue(spec['score_estimated'])
+                    self.assertLess(spec['tier'], row['tier'])     # a family guess never scores as the flagship itself
+                else:
+                    self.assertEqual(spec, row)
 
     def test_exact_custom_models_aliases_and_existing_calibrations_win(self):
         for name, spec in self.accounts['models'].items():

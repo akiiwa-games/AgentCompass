@@ -1015,12 +1015,13 @@ MINIMAL_SOURCE = ("tray/", "agentcompass/", "skills/", "setup/", "packaging/", "
 
 
 def build_fixture_repo(base: Path, minimal: bool = False) -> Path:
-    """Copy the working tree (tracked + untracked, not ignored) into a throw-away git repo so a build sees uncommitted work.
+    """Copy the tracked files as they stand in the working tree into a throw-away git repo: a build sees uncommitted edits, while
+    a stray untracked file stays out of the fixture and check_payload can still catch it. `git add` a new file to include it.
 
     ``minimal`` is the copy used when the product comes from a given wheel: only what the tray, helper and source-entry scenarios
     need. Either way the copy never holds a usage-float directory and never aliases the real checkout.
     """
-    listing = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-co", "--exclude-standard", "-z"], capture_output=True, check=True).stdout
+    listing = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-c", "-z"], capture_output=True, check=True).stdout
     repo = base / ("source" if minimal else "repo")
     for raw in filter(None, listing.split(b"\0")):
         rel = raw.decode("utf-8")

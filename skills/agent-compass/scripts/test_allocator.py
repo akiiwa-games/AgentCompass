@@ -806,10 +806,10 @@ class AllocatorTests(unittest.TestCase):
         p = self.profile
         for prof_kw, expected_kind in (
             ({'needs_gui': True, 'needs_visual': True, 'reasoning_depth': 1}, 'computer_use'),
-            ({'interaction_style': 'exploration', 'code_complexity': 0}, 'exploration_analysis'),
-            ({'interaction_style': 'text_only', 'code_complexity': 0}, 'text_in_text_out'),
-            ({'interaction_style': 'advisory', 'code_complexity': 0}, 'direction_reasoning'),
-            ({'interaction_style': 'engineering', 'code_complexity': 0}, 'tool_execution'),
+            ({'interaction_style': 'exploration', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'exploration_analysis'),
+            ({'interaction_style': 'text_only', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'text_in_text_out'),
+            ({'interaction_style': 'advisory', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'direction_reasoning'),
+            ({'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'tool_execution'),
         ):
             self.assertEqual(self.plan({'profile': p(**prof_kw)})['decision']['task']['kind'], expected_kind)
         for depth, difficulty in ((1, 'routine'), (2, 'hard'), (3, 'coupled'), (4, 'frontier')):
@@ -2621,13 +2621,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
 
         accounts = copy.deepcopy(allocator.load_accounts())
         policy = accounts['scoring']
-        for variant_id in (
-            'claude-opus-5-5-20260901',
-            'gpt-6.1-sol-20260901',
-            'gpt-6-astra-preview',
-            'grok-4.7-latest',
-            'claude-opus-5-6',
-        ):
+        # A family guess has no measured speed of its own.
+        for variant_id in ('claude-opus-5-6', 'gpt-6-experimental', 'gemini-2.5-pro'):
             with self.subTest(variant=variant_id):
                 prof = auto_bundles.default_profile(variant_id, accounts)
                 self.assertIsNone(prof['spec'].get('responsiveness'))
@@ -2637,8 +2632,17 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                 self.assertEqual(src, 'default')
                 self.assertAlmostEqual(val, policy['responsiveness']['default'])
                 self.assertGreaterEqual(val, policy['responsiveness']['floor'])
+        # A date or -latest/-preview spelling is the model itself, so its measured curve answers (R1 `alias`).
+        for variant_id, exact_id in (('claude-opus-5-5-20260901', 'claude-opus-5-5'), ('gpt-6.1-sol-20260901', 'gpt-6.1-sol'),
+                                     ('gpt-6-astra-preview', 'gpt-6-astra'), ('grok-4.7-latest', 'grok-4.7')):
+            with self.subTest(variant=variant_id):
+                prof = auto_bundles.default_profile(variant_id, accounts)
+                self.assertEqual(prof['source'], 'calibrated')
+                self.assertEqual(
+                    allocator.bundle_responsiveness({'model': variant_id, 'effort': 'medium'}, prof, accounts),
+                    allocator.bundle_responsiveness({'model': exact_id, 'effort': 'medium'}, prof, accounts))
 
-    def test_issue1_resolve_bundle_requires_realtime_flag_highest_qualifying_effort_and_survives_disabled_sibling(self):
+    def test_issue1_resolve_bundle_requires_realtime_flag_a_qualifying_effort_and_survives_disabled_sibling(self):
         import dispatch_registry
         import router_test_support
 
@@ -2652,11 +2656,16 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             forged_non_rt, accounts, explicit_override=False, allow_realtime_stepdown=False,
         ))
 
-        # 1b. Skipping over a higher qualifying effort (`sol_high` -> `low` when `medium` clears the floor) is rejected.
-        forged_skip_tier = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
+        # 1b. The plan chooses among qualifying efforts by score, so a lower qualifying one stands; one below the floor does not.
+        lower_qualifying = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
                                 effort='low', realtime_stepped_from='high')
+        self.assertEqual(dispatch_registry.resolve_bundle(
+            lower_qualifying, accounts, explicit_override=False, allow_realtime_stepdown=True,
+        )['effort'], 'low')
+        too_slow = copy.deepcopy(accounts)
+        too_slow['effort_curves'][bundles_map['sol_high']['model']]['responsiveness']['low'] = 0.1
         self.assertIsNone(dispatch_registry.resolve_bundle(
-            forged_skip_tier, accounts, explicit_override=False, allow_realtime_stepdown=True,
+            lower_qualifying, too_slow, explicit_override=False, allow_realtime_stepdown=True,
         ))
         valid_sol = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
                          effort='medium', realtime_stepped_from='high')
@@ -2681,8 +2690,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         self.assertFalse(norm['realtime_loop'])
         self.assertFalse(norm['profile']['realtime_loop'])
 
-        # 1d. When `opus55_medium` is disabled in model management and `opus55_high` steps down to `medium`,
-        # `resolve_bundle`, `issue()`, and `prepare()` preserve `bundle_id='opus55_high'` (not disabled `opus55_medium`).
+        # 1d. When `opus55_medium` is disabled in model management, `opus55_high` steps past it to `low`, and
+        # `resolve_bundle`, `issue()`, and `prepare()` keep that effort on `bundle_id='opus55_high'`.
         acc_disabled_sib = copy.deepcopy(accounts)
         for k, v in acc_disabled_sib['accounts'].items():
             if isinstance(v, dict):
@@ -2705,7 +2714,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             allocator.load_accounts = lambda *a, **kw: acc_disabled_sib
             plan_res = allocator.plan(task, usage, now=self.now, accounts=acc_disabled_sib, capabilities=caps, overrides=[])
             self.assertEqual(plan_res['choice'], 'opus55_high')
-            self.assertEqual(plan_res['selected_bundle']['effort'], 'medium')
+            self.assertEqual(plan_res['selected_bundle']['effort'], 'low')
             with tempfile.TemporaryDirectory() as td:
                 db = os.path.join(td, 'reg.sqlite')
                 issued = dispatch_registry.issue(plan_res, task, now=self.now, path=db, allocation_task=task)
@@ -2714,7 +2723,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     usage, accounts=acc_disabled_sib, now=self.now, path=db,
                 )
                 self.assertEqual(prepared['bundle']['bundle_id'], 'opus55_high')
-                self.assertEqual(prepared['bundle']['effort'], 'medium')
+                self.assertEqual(prepared['bundle']['effort'], 'low')
                 self.assertFalse(prepared['bundle'].get('disabled'))
         finally:
             allocator.host_policy.load_policy = orig_hp

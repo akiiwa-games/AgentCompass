@@ -25,16 +25,34 @@ def bundle_windows(bundle):
         return None
 
 ACTIVE = ('prepared', 'launching', 'launched', 'started')
-TERMINAL = ('completed', 'failed', 'canceled', 'expired')
+TERMINAL = ('completed', 'failed', 'create_failed', 'canceled', 'expired')
 DECISION_TTL = 900
 PREPARE_LEASE = 300
 RUN_LEASE = 600
+# A bridge sends a create only within this window after the claim, so a request the daemon has not admitted by the
+# (later) create deadline can never arrive. The deadline leaves room for the daemon's own provider timeouts (120 s
+# refresh, 60 s run start, then the prompt); Antigravity's cold start needs longer. Both stay inside RUN_LEASE.
+CREATE_SEND_WINDOW = 60
+CREATE_DEADLINE = 240
+CREATE_DEADLINES = {'antigravity-resilient': 480}
 MAX_LIFETIME = 86400
 # A worker idle longer than this is not resumed: its runtime and prompt cache are gone.
 REUSE_MAX_IDLE_HOURS = 24
 LABELS = ('router.decision_id', 'router.dispatch_id', 'router.parent_id',
           'router.task_id', 'router.account', 'router.bundle_id', 'router.request_hash')
 BOUND = ('provider', 'settings')
+
+
+class NotBound(ValueError):
+    """Paseo answered, and this worker does not carry this dispatch's labels."""
+
+
+class WorkspaceBusy(ValueError):
+    """The workspace already has a writer; `holders` names each one."""
+
+    def __init__(self, workspace, holders):
+        super().__init__(f'Workspace {workspace} already has a writer')
+        self.workspace, self.holders = workspace, holders
 
 
 def utcnow():
@@ -116,10 +134,16 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
     if bundle.get('fast'):
         allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle.get('account')), model,
                                       allocator.model_spec(accounts, model))
+    own_model = allocator.row_key(bundle.get('model') or '', accounts)
     siblings = [b for b in allocator.bundles(accounts).values()
-                if allocator.canonical(b.get('model'), accounts) == model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+                if allocator.row_key(b.get('model') or '', accounts) == own_model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
+    carrier = next((b for b in siblings if bundle.get('pin_carrier') and b.get('id') == bundle['pin_carrier']), None)
+    if carrier and bundle.get('effort') in (allocator.dispatch_allowed_efforts(carrier, accounts, model) or ()):
+        # The plan already matched the effort the user named to the launch contract; the row exists only for this task.
+        return dict(carrier, id=bid, bundle_id=bid, effort=bundle['effort'], pin_carrier=bundle['pin_carrier'],
+                    **({'fast': True} if bundle.get('fast') else {}))
     if by_id and by_id.get('effort') == bundle.get('effort'):
         return dict(by_id, bundle_id=by_id['id'], **({'fast': True} if bundle.get('fast') else {}))
     if not by_id:
@@ -127,10 +151,9 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
                  or next((b for b in siblings if b.get('effort') == bundle.get('effort')), None))
         if exact:
             return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
-    raw_model = bundle.get('model') or model
-    provider_contracts = (accounts.get('dispatch_efforts') or {}).get(bundle.get('provider')) or {}
-    contract = provider_contracts.get(raw_model) or provider_contracts.get(model) or []
-    model_curves = (accounts.get('effort_curves') or {}).get(model) or {}
+    # A named level with no row of its own arrives without the row's list, so every row of the model speaks for what it offers.
+    contract = {eff for row in (bundle, *siblings) for eff in allocator.dispatch_allowed_efforts(row, accounts, model) or ()}
+    model_curves = allocator.model_curves(accounts, bundle.get('model') or model)
     resp_curves = model_curves.get('responsiveness') or {}
     ability_curve = model_curves.get('ability') if isinstance(model_curves.get('ability'), dict) else {}
     stepped_from = bundle.get('realtime_stepped_from')
@@ -141,33 +164,43 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
             and isinstance(resp_curves, dict) and bundle.get('effort') in resp_curves
             and allocator._effort_rank(bundle.get('effort')) < allocator._effort_rank(by_id.get('effort'))):
         policy = accounts.get('scoring') or {}
-        info = allocator.model_spec(accounts, model)
+        info = allocator.model_spec(accounts, by_id.get('model') or model)
         eff_harness = by_id.get('harness') or allocator.bundle_harness(by_id, by_id.get('account'), by_id.get('id'))
         resp_floor = float(allocator.responsiveness_config(policy)['floor'])
         orig_resp, orig_src = allocator.bundle_responsiveness(
-            by_id, info, policy, model_curves, effort=by_id.get('effort'), harness=eff_harness)
+            by_id, info, policy, model_curves, effort=by_id.get('effort'), harness=eff_harness, accounts=accounts)
         new_resp, new_src = allocator.bundle_responsiveness(
-            by_id, info, policy, model_curves, effort=bundle.get('effort'), harness=eff_harness)
+            by_id, info, policy, model_curves, effort=bundle.get('effort'), harness=eff_harness, accounts=accounts)
         orig_rank = allocator._effort_rank(by_id.get('effort'))
+        # The plan chose this level by score, which needs the task; here only its admissibility can be checked again.
         qualifying = []
+        unchecked = {b.get('effort') for b in siblings
+                     if b.get('disabled') and not b.get('disabled_by_default') and b.get('harness') == eff_harness}
+        own_efforts = by_id.get('efforts') if isinstance(by_id.get('efforts'), (list, tuple)) else None
         for eff in allocator.REALTIME_EFFORT_ORDER:
             if (eff not in resp_curves
                     or eff not in contract
+                    or eff in unchecked
+                    or (own_efforts is not None and eff not in own_efforts)
                     or (ability_curve and eff not in ability_curve)
                     or allocator._effort_rank(eff) >= orig_rank):
                 continue
             eff_resp, eff_src = allocator.bundle_responsiveness(
-                by_id, info, policy, model_curves, effort=eff, harness=eff_harness)
+                by_id, info, policy, model_curves, effort=eff, harness=eff_harness, accounts=accounts)
             if eff_src != 'not_applicable' and isinstance(eff_resp, (int, float)) and eff_resp >= resp_floor:
                 qualifying.append(eff)
-        highest_qualifying = max(qualifying, key=allocator._effort_rank) if qualifying else None
         if (orig_src != 'not_applicable' and new_src != 'not_applicable'
                 and isinstance(orig_resp, (int, float)) and isinstance(new_resp, (int, float))
                 and orig_resp < resp_floor <= new_resp
-                and bundle.get('effort') == highest_qualifying):
+                and bundle.get('effort') in qualifying):
             return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'],
                         realtime_stepped_from=by_id.get('effort'),
                         **({'fast': True} if bundle.get('fast') else {}))
+    if (by_id and allow_realtime_stepdown and bundle.get('named_fastest') and stepped_from == by_id.get('effort')
+            and bundle.get('effort') in contract):
+        # Nothing clears the floor on the model the user named; the plan chose its fastest level and warned.
+        return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'], realtime_stepped_from=stepped_from,
+                    named_fastest=True, **({'fast': True} if bundle.get('fast') else {}))
     if not explicit_override:
         return None
     exact = (next((b for b in siblings if b.get('effort') == bundle.get('effort') and not b.get('disabled')), None)
@@ -178,9 +211,12 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
         raise ValueError('Explicit override has no known provider/account/model/effort contract; refresh discovery and the local contract')
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
     identity = {k: bundle.get(k) for k in ('provider', 'account', 'effort')}
-    identity['model'] = model
+    identity['model'] = own_model
     key = 'user_override_' + digest(identity)[:24]
-    return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'fast': True} if bundle.get('fast') else {}))
+    mode = base.get('modeId') or auto_bundles.HARNESS_MODE.get(base.get('harness'))
+    return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'modeId': mode} if mode else {}),
+                **({'launch_model': bundle['launch_model']} if bundle.get('launch_model') else {}),
+                **({'fast': True} if bundle.get('fast') else {}))
 
 
 def check_launch_quota(bundle, accounts, usage, now):
@@ -431,7 +467,51 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
     return candidates
 
 
-def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None):
+def unresolved(row, now):
+    """A launch whose worker may be alive or may still appear; an expired lease stays open until a later observation."""
+    return row['state'] in ACTIVE or (row['state'] == 'expired' and bool(row.get('launched_at')) and parse(row['hard_until']) > now)
+
+
+def holder(row):
+    return {'dispatch_id': row['dispatch_id'], 'state': row['state'], 'agent_id': row.get('agent_id'),
+            'task_id': row.get('task_id'), 'title': (row.get('request') or {}).get('title')}
+
+
+def is_writer(row, now, caller):
+    # A row from before dispatches recorded their access counts as a writer. The caller is not its own conflict.
+    return row.get('access') != 'read_only' and not (caller and row.get('agent_id') == caller) and unresolved(row, now)
+
+
+def writers_in(connection, workspace, now, caller=None):
+    return [holder(r) for r in rows(connection, 'dispatches')
+            if (r.get('request') or {}).get('workspaceId') == workspace and is_writer(r, now, caller)]
+
+
+def workspace_writers(workspace, caller=None, now=None, path=None):
+    now = now or utcnow()
+    if not Path(path or db_path()).exists():
+        return []
+    with transaction(path) as connection:
+        expire(connection, now)
+        return writers_in(connection, workspace, now, caller)
+
+
+def writers_at(cwd, caller=None, other_than=None, now=None, path=None):
+    """Unsettled writers recorded in a directory, leaving out workspace `other_than`, whose writers the writer rule has
+    already dealt with. A roll records where it will land, and an observation where the worker is."""
+    now = now or utcnow()
+    if not Path(path or db_path()).exists():
+        return []
+    place = os.path.normcase(os.path.normpath(cwd))
+    with transaction(path) as connection:
+        expire(connection, now)
+        return [holder(r) for r in rows(connection, 'dispatches') if r.get('cwd')
+                and os.path.normcase(os.path.normpath(r['cwd'])) == place and is_writer(r, now, caller)
+                and not (other_than and (r.get('request') or {}).get('workspaceId') == other_than)]
+
+
+def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
+            access='write', allow_concurrent=None, new_worker=False, cwd=None):
     require_parent_id(task.get('parent_agent_id'))
     import allocator
     now = now or utcnow()
@@ -454,12 +534,19 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             return row
         if parse(decision['valid_until']) <= now or not decision['dispatchable']:
             raise ValueError('Decision expired, deferred or requires a new route; run plan/select/record again')
+        workspace = request.get('workspaceId')
+        if workspace and access != 'read_only' and not allow_concurrent:
+            # Same transaction as the insert: of two concurrent rolls only the first becomes the writer.
+            holders = writers_in(connection, workspace, now, task['parent_agent_id'])
+            if holders:
+                raise WorkspaceBusy(workspace, holders)
         busy_agents = set()
         for old in rows(connection, 'dispatches'):
-            unresolved = old['state'] in ACTIVE or (old['state'] == 'expired' and old.get('launched_at'))
-            if unresolved and (old['parent_id'], old['task_id']) == (decision['parent_id'], decision['task_id']):
+            if not unresolved(old, now):
+                continue
+            if not new_worker and (old['parent_id'], old['task_id']) == (decision['parent_id'], decision['task_id']):
                 raise ValueError('This parent/task already has an active dispatch; reconcile it first')
-            if unresolved and old.get('agent_id'):
+            if old.get('agent_id'):
                 busy_agents.add(old['agent_id'])
         bundle = decision['bundle']
         check_launch_quota(bundle, accounts, usage, now)
@@ -499,7 +586,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             raise ValueError('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
         if decision.get('constraint') == 'user_override':
-            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'responsiveness '))]
+            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint'))
+                          and ': responsiveness ' not in e]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
         if exclusions or candidate.get('available_in_hours'):
@@ -528,7 +616,9 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                'created_at': stamp(now), 'lease_until': stamp(now + timedelta(seconds=PREPARE_LEASE)),
                'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
                'operation': 'resume' if resume_agent_id else 'create',
-               'agent_id': resume_agent_id,
+               'agent_id': resume_agent_id, 'access': access,
+               **({'allow_concurrent': allow_concurrent} if allow_concurrent else {}),
+               **({'cwd': cwd} if cwd else {}),
                'fallback_prompt': fallback_prompt if resume_agent_id else None,
                'read_only_review': read_only_review,
                **({'profile': profile} if isinstance(profile, dict) else {}),
@@ -556,6 +646,48 @@ def fallback_to_create(dispatch_id, now=None, path=None):
 def inspect(dispatch_id, path=None):
     with transaction(path) as connection:
         return get(connection, 'dispatches', dispatch_id)
+
+
+def create_deadline(row):
+    """When a create the daemon never admitted is settled as failed; a claim is what starts the clock."""
+    seconds = CREATE_DEADLINES.get(provider_inventory.launcher_family(row['bundle']['provider']), CREATE_DEADLINE)
+    return parse(row['launched_at']) + timedelta(seconds=seconds)
+
+
+def resolve_creation(dispatch_id, creation, now=None, path=None):
+    """Settle a create no agent has appeared for, from the daemon's durable record of it (None: never admitted).
+
+    `failed` means the daemon's run is over and it never reruns a key by itself, so nothing can appear later. Neither
+    can a request never admitted once the bridge's send window has passed. An admitted create still in flight has no
+    cancel on the host and can still produce a worker, so it stays open however late it is.
+
+    Returns (row, whether this call ended it), so that of several processes settling one row only one acts on it. An
+    unknown outcome says nothing against the provider, so it carries no failure_class and cools nothing down."""
+    now = now or utcnow()
+    with transaction(path) as connection:
+        row = get(connection, 'dispatches', dispatch_id)
+        if row['state'] not in ('launching', 'expired') or row.get('agent_id') or row.get('operation') != 'create':
+            return row, False
+        phase = creation.get('phase') if creation else None
+        transitioned = True
+        if phase == 'completed' or (phase == 'failed' and creation.get('agent_created')):
+            # A worker existed, so it may have run: not the same as a create that never got that far.
+            event(row, 'canceled', now, 'host_confirmed_agent_removed')
+            row['creation'] = {'phase': phase, 'removed': True}
+        elif phase == 'failed':
+            cause = 'outcome_unknown' if creation.get('outcome_unknown') else creation.get('failure_class') or 'unknown'
+            event(row, 'create_failed', now, 'host_creation_failed:' + cause)
+            if not creation.get('outcome_unknown'):
+                row['failure_class'] = creation.get('failure_class') or 'unknown'
+            row['creation'] = {'phase': phase}
+        elif creation is None and now >= create_deadline(row):
+            event(row, 'create_failed', now, 'host_never_admitted_create')
+            row['creation'] = {'phase': 'not_admitted'}
+        else:
+            row['creation'] = {'phase': phase or 'not_admitted', 'in_flight': bool(phase)}
+            transitioned = False
+        save(connection, row)
+        return row, transitioned
 
 
 def missing_agent(dispatch_id, agent_id, now=None, path=None):
@@ -620,7 +752,7 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         row = get(connection, 'dispatches', dispatch_id)
         labels = snapshot.get('labels') or {}
         if any(labels.get(k) != row['request']['labels'][k] for k in LABELS):
-            raise ValueError('Host snapshot belongs to another dispatch/parent/task')
+            raise NotBound('Host snapshot belongs to another dispatch/parent/task')
         agent_id = snapshot.get('id')
         if not isinstance(agent_id, str) or not agent_id or row.get('agent_id') not in (None, agent_id):
             raise ValueError('Host agent ID mismatch')
@@ -639,8 +771,11 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             updated_error = snapshot.get('updatedAt')
             if isinstance(updated_error, str) and parse(updated_error) >= parse(row['launched_at']):
                 import quota_exhaustion
-                quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
-                                        windows=bundle_windows(row['bundle']), at=updated_error, source=agent_id)
+                try:
+                    quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
+                                            windows=bundle_windows(row['bundle']), at=updated_error, source=agent_id)
+                except OSError:
+                    pass  # Best effort: a busy store must not stop this observation or the reconcile that made it.
         if row['state'] in TERMINAL and row['state'] != 'expired':
             return row
         if row['state'] == 'prepared':
@@ -650,6 +785,8 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             raise ValueError('Host snapshot predates this launch')
         row['agent_id'] = agent_id
         row['observed_at'] = stamp(now)
+        if isinstance(snapshot.get('cwd'), str):
+            row['cwd'] = snapshot['cwd']
         status = snapshot.get('status')
         reason = snapshot.get('attentionReason')
         # A resumed worker carries this dispatch's labels before its turn starts, so its idle/finished state may
@@ -659,7 +796,8 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             delivered = isinstance(last_message, str) and parse(last_message) >= parse(row['launched_at'])
         except ValueError:
             delivered = False
-        if row.get('operation') == 'resume' and not row.get('started_at') and not delivered and status != 'running':
+        undelivered = row.get('operation') == 'resume' and not row.get('started_at') and not delivered and status != 'running'
+        if undelivered:
             reason = None
         target = None
         if finished_before(terminal, row['launched_at']) and status != 'running':
@@ -683,15 +821,23 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         # A fresh host observation can recover an expired lease, but never outlive the hard bound.
         if target in ACTIVE and now >= parse(row['hard_until']):
             target = 'expired'
+        # The same state read again is no sign of life, so only a turn that landed renews or recovers a resume's lease.
+        # Without this every observation restored it, and release could never end one whose turn never came.
+        if target in ACTIVE and undelivered and (row['state'] == 'expired' or now >= parse(row['lease_until'])):
+            target = 'expired'
         if target in ACTIVE:
             row.pop('released_at', None)
-            row['lease_until'] = stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until'])))
+            if not undelivered:
+                row['lease_until'] = stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until'])))
         if row['state'] != target:
             event(row, target, now)
         save(connection, row)
     if target in ('started', 'completed'):
         import launch_failures
-        launch_failures.clear(row['bundle'].get('account'))
+        try:
+            launch_failures.clear(row['bundle'].get('account'))
+        except OSError:
+            pass  # Best effort, and this observation is already saved.
     return row
 
 
@@ -704,6 +850,8 @@ def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):
             raise ValueError('Dispatch belongs to another parent')
         if row['state'] in ('launching', 'launched', 'started') and not failed:
             raise ValueError('Observe terminal status before releasing a launched dispatch; release does not cancel an agent')
+        if row['state'] == 'expired' and (row.get('creation') or {}).get('in_flight') and not failed:
+            raise ValueError('Paseo is still creating this worker and cannot cancel a create; release does not stop it')
         if row['state'] not in TERMINAL or row['state'] == 'expired':
             event(row, 'failed' if failed else 'canceled', now, reason)
             save(connection, row)
@@ -715,5 +863,4 @@ def pending(path=None):
         return []
     with transaction(path) as connection:
         # Include expired started/uncertain launches so a later observation can repair them.
-        return [r for r in rows(connection, 'dispatches') if r['state'] in ACTIVE
-                or (r['state'] == 'expired' and r.get('launched_at') and parse(r['hard_until']) > utcnow())]
+        return [r for r in rows(connection, 'dispatches') if unresolved(r, utcnow())]

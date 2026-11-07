@@ -2189,9 +2189,9 @@ def ability_floor_chart_data(accounts: dict | None = None, floors_override: dict
         if bspec.get("discovery_unavailable"):
             continue
         raw_model = bspec.get("model") or bid
-        model = allocator.canonical(raw_model, accounts)
-        info = allocator.model_spec(accounts, model)
-        curves = curves_table.get(model)
+        model = allocator.row_key(raw_model, accounts)
+        info = allocator.model_spec(accounts, raw_model)
+        curves = allocator.model_curves(accounts, raw_model)
         scored_effort = allocator.scoring_effort(bspec, info) if hasattr(allocator, "scoring_effort") else (
             bspec.get("effort") or (info or {}).get("fixed_effort")
         )

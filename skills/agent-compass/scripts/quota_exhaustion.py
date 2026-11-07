@@ -23,7 +23,7 @@ def store_path():
 
 def _read(path):
     try:
-        return json.loads(path.read_text(encoding='utf-8'))
+        return json.loads(override_store.retry_denied(lambda: path.read_text(encoding='utf-8')))
     except FileNotFoundError:
         return {'accounts': {}}
 

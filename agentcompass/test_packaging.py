@@ -1,6 +1,8 @@
 import importlib.util
+import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -167,6 +169,49 @@ class PackagingTests(unittest.TestCase):
         self.assertIn(r'Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"', icons)
         self.assertIn("Tasks: desktopicon", icons)                  # the desktop icon stays opt-in
 
+    def test_release_gate_profiles_pass_validation(self):
+        """The release gate plans with these literals; an invalid one stops the release, and no unit suite runs them."""
+        import ast
+        import sys
+        sys.path.insert(0, str(ROOT / "skills" / "agent-compass" / "scripts"))
+        import allocator
+        for name in ("sandbox_check.py", "guest_check.py"):
+            tree = ast.parse((ROOT / "packaging" / name).read_text(encoding="utf-8"))
+            literals = [ast.literal_eval(node) for node in ast.walk(tree) if isinstance(node, ast.Dict)
+                        and any(isinstance(k, ast.Constant) and k.value == "interaction_style" for k in node.keys)]
+            self.assertTrue(literals, name)
+            for literal in literals:
+                with self.subTest(file=name):
+                    allocator.validate_caller_profile(literal)
+
+    def test_fixture_repos_hold_tracked_files_only(self):
+        """An untracked file must stay out of the fixture, or `git add -A` there hides it from check_payload."""
+        def git(repo, *args):
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+                           check=True, capture_output=True)
+
+        from tempfile import TemporaryDirectory
+        sandbox = self._load_packaging_module("sandbox_check")
+        foreign = self._load_packaging_module("foreign_machine_check")
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            source = base / "source-tree"
+            source.mkdir()
+            (source / "tracked.txt").write_text("committed", encoding="utf-8")
+            git(source, "init", "-q")
+            git(source, "add", "tracked.txt")
+            git(source, "commit", "-qm", "seed")
+            (source / "tracked.txt").write_text("edited", encoding="utf-8")
+            (source / "stray.txt").write_text("not tracked", encoding="utf-8")
+            with mock.patch.object(sandbox, "ROOT", source):
+                sandbox_repo = sandbox.build_fixture_repo(base / "sandbox")
+            with mock.patch.object(foreign, "USAGE_FLOAT_SRC", source):
+                foreign_repo = foreign.build_usage_float_fixture_repo(base / "foreign")
+            for repo in (sandbox_repo, foreign_repo):
+                with self.subTest(repo=repo.parent.name):
+                    self.assertEqual((repo / "tracked.txt").read_text(encoding="utf-8"), "edited")
+                    self.assertFalse((repo / "stray.txt").exists())
+
     @staticmethod
     def _load_packaging_module(name: str):
         path = ROOT / "packaging" / f"{name}.py"
@@ -234,6 +279,14 @@ class PackagingTests(unittest.TestCase):
             )
             same_fp = app_bundle.compute_runtime_fingerprint(repo)
             self.assertEqual(same_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+
+            # 1b. Universal CRT / API-set DLLs that only the CI runner image bundles do not change it either
+            internal = repo / "dist" / "AgentCompass" / "_internal"
+            for name in ("api-ms-win-core-file-l1-1-0.dll", "API-MS-WIN-CRT-heap-l1-1-0.dll", "ucrtbase.dll"):
+                (internal / name).write_bytes(b"MZ-runner-image")
+            crt_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertEqual(crt_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+            self.assertEqual(set(crt_fp["bundled_runtime_assets_sha256"]), {"_internal/python313.dll"})
 
             # 2. Editing .spec changes runtime_fingerprint
             (repo / "packaging" / "agentcompass-tray.spec").write_text("# spec v2\n", encoding="utf-8", newline="\n")

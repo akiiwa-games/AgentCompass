@@ -196,6 +196,14 @@ _FROZEN_SKIP_DIRS = frozenset({"__pycache__", "agentcompass"})
 _FROZEN_CODE_SUFFIXES = frozenset({".py", ".pyc", ".pyo", ".pyw"})
 
 
+def _is_windows_api_set_dll(name: str) -> bool:
+    """Universal CRT and API-set forwarders come from the build machine's Windows image, not from us: GitHub's
+    runner bundles them, a desktop build does not, and Windows supplies them anyway. Counting them would split
+    local and CI fingerprints and push one full reinstall whenever the runner image refreshes."""
+    lower = name.lower()
+    return lower.endswith(".dll") and (lower.startswith(("api-ms-win-", "ext-ms-win-")) or lower == "ucrtbase.dll")
+
+
 def _directory_tree_sha256(folder: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(folder.rglob("*")):
@@ -222,7 +230,8 @@ def collect_runtime_asset_hashes(
         if not internal_dir.is_dir():
             continue
         for child in sorted(internal_dir.iterdir()):
-            if child.name == "base_library.zip" or child.name in _FROZEN_SKIP_DIRS or child.is_symlink():
+            if (child.name == "base_library.zip" or child.name in _FROZEN_SKIP_DIRS or child.is_symlink()
+                    or _is_windows_api_set_dll(child.name)):
                 continue
             if child.is_file():
                 if child.suffix.lower() not in _FROZEN_CODE_SUFFIXES:
