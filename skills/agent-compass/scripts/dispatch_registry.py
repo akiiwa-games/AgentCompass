@@ -116,10 +116,16 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
     if bundle.get('fast'):
         allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle.get('account')), model,
                                       allocator.model_spec(accounts, model))
+    own_model = allocator.row_key(bundle.get('model') or '', accounts)
     siblings = [b for b in allocator.bundles(accounts).values()
-                if allocator.canonical(b.get('model'), accounts) == model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+                if allocator.row_key(b.get('model') or '', accounts) == own_model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
+    carrier = next((b for b in siblings if bundle.get('pin_carrier') and b.get('id') == bundle['pin_carrier']), None)
+    if carrier and bundle.get('effort') in (allocator.dispatch_allowed_efforts(carrier, accounts, model) or ()):
+        # The plan already matched the effort the user named to the launch contract; the row exists only for this task.
+        return dict(carrier, id=bid, bundle_id=bid, effort=bundle['effort'], pin_carrier=bundle['pin_carrier'],
+                    **({'fast': True} if bundle.get('fast') else {}))
     if by_id and by_id.get('effort') == bundle.get('effort'):
         return dict(by_id, bundle_id=by_id['id'], **({'fast': True} if bundle.get('fast') else {}))
     if not by_id:
@@ -127,10 +133,9 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
                  or next((b for b in siblings if b.get('effort') == bundle.get('effort')), None))
         if exact:
             return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
-    raw_model = bundle.get('model') or model
-    provider_contracts = (accounts.get('dispatch_efforts') or {}).get(bundle.get('provider')) or {}
-    contract = provider_contracts.get(raw_model) or provider_contracts.get(model) or []
-    model_curves = (accounts.get('effort_curves') or {}).get(model) or {}
+    # A named level with no row of its own arrives without the row's list, so every row of the model speaks for what it offers.
+    contract = {eff for row in (bundle, *siblings) for eff in allocator.dispatch_allowed_efforts(row, accounts, model) or ()}
+    model_curves = allocator.model_curves(accounts, bundle.get('model') or model)
     resp_curves = model_curves.get('responsiveness') or {}
     ability_curve = model_curves.get('ability') if isinstance(model_curves.get('ability'), dict) else {}
     stepped_from = bundle.get('realtime_stepped_from')
@@ -141,33 +146,43 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
             and isinstance(resp_curves, dict) and bundle.get('effort') in resp_curves
             and allocator._effort_rank(bundle.get('effort')) < allocator._effort_rank(by_id.get('effort'))):
         policy = accounts.get('scoring') or {}
-        info = allocator.model_spec(accounts, model)
+        info = allocator.model_spec(accounts, by_id.get('model') or model)
         eff_harness = by_id.get('harness') or allocator.bundle_harness(by_id, by_id.get('account'), by_id.get('id'))
         resp_floor = float(allocator.responsiveness_config(policy)['floor'])
         orig_resp, orig_src = allocator.bundle_responsiveness(
-            by_id, info, policy, model_curves, effort=by_id.get('effort'), harness=eff_harness)
+            by_id, info, policy, model_curves, effort=by_id.get('effort'), harness=eff_harness, accounts=accounts)
         new_resp, new_src = allocator.bundle_responsiveness(
-            by_id, info, policy, model_curves, effort=bundle.get('effort'), harness=eff_harness)
+            by_id, info, policy, model_curves, effort=bundle.get('effort'), harness=eff_harness, accounts=accounts)
         orig_rank = allocator._effort_rank(by_id.get('effort'))
+        # The plan chose this level by score, which needs the task; here only its admissibility can be checked again.
         qualifying = []
+        unchecked = {b.get('effort') for b in siblings
+                     if b.get('disabled') and not b.get('disabled_by_default') and b.get('harness') == eff_harness}
+        own_efforts = by_id.get('efforts') if isinstance(by_id.get('efforts'), (list, tuple)) else None
         for eff in allocator.REALTIME_EFFORT_ORDER:
             if (eff not in resp_curves
                     or eff not in contract
+                    or eff in unchecked
+                    or (own_efforts is not None and eff not in own_efforts)
                     or (ability_curve and eff not in ability_curve)
                     or allocator._effort_rank(eff) >= orig_rank):
                 continue
             eff_resp, eff_src = allocator.bundle_responsiveness(
-                by_id, info, policy, model_curves, effort=eff, harness=eff_harness)
+                by_id, info, policy, model_curves, effort=eff, harness=eff_harness, accounts=accounts)
             if eff_src != 'not_applicable' and isinstance(eff_resp, (int, float)) and eff_resp >= resp_floor:
                 qualifying.append(eff)
-        highest_qualifying = max(qualifying, key=allocator._effort_rank) if qualifying else None
         if (orig_src != 'not_applicable' and new_src != 'not_applicable'
                 and isinstance(orig_resp, (int, float)) and isinstance(new_resp, (int, float))
                 and orig_resp < resp_floor <= new_resp
-                and bundle.get('effort') == highest_qualifying):
+                and bundle.get('effort') in qualifying):
             return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'],
                         realtime_stepped_from=by_id.get('effort'),
                         **({'fast': True} if bundle.get('fast') else {}))
+    if (by_id and allow_realtime_stepdown and bundle.get('named_fastest') and stepped_from == by_id.get('effort')
+            and bundle.get('effort') in contract):
+        # Nothing clears the floor on the model the user named; the plan chose its fastest level and warned.
+        return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'], realtime_stepped_from=stepped_from,
+                    named_fastest=True, **({'fast': True} if bundle.get('fast') else {}))
     if not explicit_override:
         return None
     exact = (next((b for b in siblings if b.get('effort') == bundle.get('effort') and not b.get('disabled')), None)
@@ -178,9 +193,12 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
         raise ValueError('Explicit override has no known provider/account/model/effort contract; refresh discovery and the local contract')
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
     identity = {k: bundle.get(k) for k in ('provider', 'account', 'effort')}
-    identity['model'] = model
+    identity['model'] = own_model
     key = 'user_override_' + digest(identity)[:24]
-    return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'fast': True} if bundle.get('fast') else {}))
+    mode = base.get('modeId') or auto_bundles.HARNESS_MODE.get(base.get('harness'))
+    return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'modeId': mode} if mode else {}),
+                **({'launch_model': bundle['launch_model']} if bundle.get('launch_model') else {}),
+                **({'fast': True} if bundle.get('fast') else {}))
 
 
 def check_launch_quota(bundle, accounts, usage, now):
@@ -481,7 +499,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             raise ValueError('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
         if decision.get('constraint') == 'user_override':
-            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'responsiveness '))]
+            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint'))
+                          and ': responsiveness ' not in e]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
         if exclusions or candidate.get('available_in_hours'):

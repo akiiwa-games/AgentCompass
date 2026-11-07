@@ -192,7 +192,8 @@ def match_reusable_worker(args, task, text, parent, workers=None):
     return max(eligible, key=lambda item: item[0])[1]
 
 
-def _bundle_matches_worker(bundle, worker):
+def _bundle_matches_worker(bundle, worker, same_model=None):
+    """`same_model` compares resolved keys, so one model under two spellings is still this worker's."""
     if not isinstance(bundle, dict) or not isinstance(worker, dict) or worker.get('worn'):
         return False
     w_bundle = worker.get('bundle') or {}
@@ -201,7 +202,16 @@ def _bundle_matches_worker(bundle, worker):
     b_id = bundle.get('bundle_id') or bundle.get('id')
     if b_id and worker.get('bundle_id') == b_id and not str(b_id).startswith('user_override_'):
         return True
-    return all(bundle.get(k) and bundle.get(k) == w_bundle.get(k) for k in ('provider', 'account', 'model', 'effort'))
+    if not all(bundle.get(k) and bundle.get(k) == w_bundle.get(k) for k in ('provider', 'account', 'effort')):
+        return False
+    theirs, ours = w_bundle.get('model'), bundle.get('model')
+    return bool(ours) and (ours == theirs or bool(same_model and theirs and same_model(ours, theirs)))
+
+
+def model_comparison(fleet):
+    """Do two names run the same model? A spelling does, a family guess at its target does not."""
+    import allocator
+    return lambda a, b: allocator.row_key(a, fleet) == allocator.row_key(b, fleet)
 
 
 def summary(decision):
@@ -210,7 +220,8 @@ def summary(decision):
             'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast', 'fast_billing') if bundle.get(k)},
             'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
                        (decision.get('decision') or {}).get('reason') or '')[:300] or None,
-            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn']}
+            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn'],
+            **({'warnings': warnings} if (warnings := decision.get('warnings') or (decision.get('decision') or {}).get('warnings')) else {})}
 
 
 def python(script, *argv):
@@ -339,8 +350,10 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     if not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
         excluded = set(getattr(args, '_exclude_agents', None) or ())
+        import allocator
+        fleet = allocator.load_accounts()
         compatible = [w for w in registry.reusable_workers(parent)
-                      if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w)]
+                      if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w, model_comparison(fleet))]
         if is_review_title(args.title or title_of(text)):
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
@@ -651,6 +664,8 @@ def compact(result, status, detail_path):
     cause = result.get('error') or worker.get('error') or worker.get('read_error')
     if cause and status in ('error', 'blocked', 'pending', 'scorer_unavailable'):
         out['cause'] = str(cause)[:300]
+    if (result.get('route') or {}).get('warnings'):
+        out['warnings'] = result['route']['warnings'][:4]
     if argv and (status == 'pending' or (status == 'launched' and 'next_argv' in (nxt or ''))):
         out['next_argv'] = argv
     if status == 'launched' and result.get('dispatch_mode') == 'cli':

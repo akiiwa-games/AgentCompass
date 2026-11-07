@@ -2,6 +2,7 @@
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import copy
 import importlib.util
 from datetime import datetime, timedelta, timezone
 import json
@@ -682,8 +683,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
             pol = accts['scoring']
             spec = accts['accounts'].get(bundle['account']) or {}
             c_model = alloc.canonical(bundle['model'], accts)
-            m_info = alloc.model_spec(accts, c_model)
-            m_curves = accts.get('effort_curves', {}).get(c_model, {})
+            m_info = alloc.model_spec(accts, bundle['model'])
+            m_curves = alloc.model_curves(accts, bundle['model'])
             eff_hours = float(hours_val or pol['default_hours'].get(diff_val if diff_val in pol['default_hours'] else 'hard', 1.5))
             if spec.get('billing') != 'unknown':
                 expected_usd = round(alloc.bundle_task_usd(spec, c_model, bundle.get('effort') or 'high', eff_hours, pol, m_curves, m_info, fast=bool(bundle.get('fast'))), 2)
@@ -1366,7 +1367,6 @@ def parse_jev_response(response, allocator):
                 profile['expected_hours'] = table[choice][0]
             else:
                 profile['urgency'] = choice
-    # Optional like the effort band: a Jev answer without them leaves the brief unsplit.
     rt = answers.get('realtime_loop')
     rt = rt.get('noul') if isinstance(rt, dict) else rt
     if isinstance(rt, (int, float)) and not isinstance(rt, bool) and math.isfinite(rt):
@@ -1377,8 +1377,9 @@ def parse_jev_response(response, allocator):
         profile['multi_task'] = float(multi) >= 0.5
     count = answers.get('task_count')
     count = count.get('choice') if isinstance(count, dict) else count
-    if count in allocator.TASK_COUNTS:
+    if count is not None:
         profile['task_count'] = count
+    # A missing or contradictory split answer fails here: the cascade moves on rather than guessing.
     return allocator.validate_profile(profile)
 
 
@@ -1622,7 +1623,7 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
     fail, returns `(None, meta)` with `source: 'scorer_unavailable'` so the parent session chooses autonomously;
     never falls back to mechanical keyword guessing."""
     if isinstance(task.get('profile'), dict):
-        return allocator.validate_profile(task['profile']), {'source': 'caller_profile', 'model': None}
+        return allocator.validate_caller_profile(task['profile']), {'source': 'caller_profile', 'model': None}
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
     reason, attempts, skipped = 'model_call_skipped', [], []
@@ -1631,7 +1632,10 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         cache_key = score_cache_key(task, allocator, capabilities, order, config)
         cached = score_cache_get(cache_key)
         if cached:
-            return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
+            try:
+                return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
+            except ValueError:
+                pass        # written under an older schema, or damaged: a miss, not a failure
         input_error = None
         for scorer_type in order:
             # Every usable account of the family in turn; none (no account, client or key) skips it without an error.
@@ -1941,15 +1945,40 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
 
 
 def match_bundle(allocator, accounts, args, include_disabled=False):
-    """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle."""
-    model = allocator.canonical(args.model, accounts)
+    """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
+
+    A name that only a family guess could place matches its own rows, never the flagship's. With no effort named, the
+    model's default effort (else High) leads, not whichever row the document lists first."""
+    matches = []
     for bundle in allocator.bundles(accounts).values():
         if not include_disabled and bundle.get('disabled'):
             continue
-        if (bundle['account'] == args.account and bundle['provider'] == args.provider and allocator.canonical(bundle['model'], accounts) == model
+        same = allocator.row_key(bundle['model'], accounts) == allocator.row_key(args.model, accounts)
+        if (bundle['account'] == args.account and bundle['provider'] == args.provider and same
                 and (args.effort is None or bundle.get('effort') == args.effort)):
-            return bundle['id']
-    return None
+            matches.append(bundle)
+    if not matches:
+        return None
+    default = allocator.model_spec(accounts, args.model).get('default_effort') or 'high'
+    return next((b for b in matches if b.get('effort') == default), matches[0])['id']
+
+
+NAMED_ROW_FIELDS = ('modeId', 'draws', 'launch_model', 'harness', 'billing')
+
+
+def named_effort_review(allocator, accounts, pin, task, usage, now, records):
+    """(effort, warnings) for a route the user named on realtime work: the plan on exactly that account and model,
+    so a named model chooses its level like any other candidate and a slow named effort is warned about."""
+    other = [bid for bid, b in allocator.bundles(accounts).items()
+             if b['account'] != pin.account or b['provider'] != pin.provider]
+    named = {'model': pin.model, **({'effort': pin.effort} if pin.effort else {})}
+    plan = allocator.plan({**task, 'constraints': named}, usage, now, unavailable=other, records=records)
+    decision = plan.get('decision') or {}
+    if plan.get('choice') == 'none':
+        return None, list(decision.get('warnings') or [])
+    row = next((c for c in plan['ranking'] if c['id'] == plan['choice']), {})
+    slow = (row.get('components') or {}).get('realtime_slow_pin_warning')
+    return (plan.get('selected_bundle') or {}).get('effort'), [slow] if slow else []
 
 
 def record_constraint(args, task=None):
@@ -1980,16 +2009,45 @@ def record_constraint(args, task=None):
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, args.account, args.provider)
     if unavailable:
         raise ValueError(unavailable)
-    chosen = match_bundle(allocator, accounts, args)
+    # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
+    pin = copy.copy(args)
+    pin.model, named_effort = allocator.split_model_effort(args.model)
+    resolved = allocator.resolve_model(pin.model, accounts)
+    pin.effort = args.effort or named_effort or resolved['effort']
+    direct = resolved['source'] in allocator.DIRECT_SOURCES
+    own_model = allocator.row_key(pin.model, accounts)
+    own_rows = [b for b in allocator.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
+                and allocator.row_key(b['model'], accounts) == own_model]
+    if not direct and (not own_rows or (pin.effort and pin.effort not in {b.get('effort') for b in own_rows}
+                                        and not any(pin.effort in (allocator.dispatch_allowed_efforts(b, accounts) or ())
+                                                    for b in own_rows))):
+        # What it resembles is another model. The same answer the plan gives: blocked, never a substitute.
+        raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no configured route on "
+                         f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")
+    chosen = match_bundle(allocator, accounts, pin)
+    disabled_match = match_bundle(allocator, accounts, pin, include_disabled=True) if chosen is None else None
+    if disabled_match is not None:
+        if allocator.bundles(accounts)[disabled_match].get('disabled_by_default'):
+            chosen = disabled_match     # off by default, not by the user: naming the model reaches it
+        else:
+            raise ValueError(
+                f"Bundle {disabled_match!r} ({args.account}/{pin.model}) is disabled. "
+                f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
+            )
+    if own_rows and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows):
+        # Every level unchecked is the model unchecked, also at a level with no row of its own.
+        raise ValueError(
+            f"Bundle {own_rows[0]['id']!r} ({args.account}/{pin.model}) is disabled. "
+            f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
+        )
     discovered = allocator.bundles(accounts).get(chosen) or {}
     if discovered.get('discovery_unavailable'):
         raise ValueError(discovered['discovery_unavailable'])
-    disabled_match = match_bundle(allocator, accounts, args, include_disabled=True) if chosen is None else None
-    if disabled_match is not None:
-        raise ValueError(
-            f"Bundle {disabled_match!r} ({args.account}/{args.model}) is disabled. "
-            f"Do not dispatch {args.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
-        )
+    # The account's other row of this model supplies the launch fields of an effort it has no row for.
+    sibling_id = (chosen or match_bundle(allocator, accounts, _with_effort(pin, None))
+                  or match_bundle(allocator, accounts, _with_effort(pin, None), include_disabled=True))
+    sibling = allocator.bundles(accounts).get(sibling_id) or {}
+    inherited = {k: sibling[k] for k in NAMED_ROW_FIELDS if k in sibling}
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
     if not allocator.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
         raise ValueError(
@@ -1998,7 +2056,8 @@ def record_constraint(args, task=None):
         )
     # External runners dispatch directly after record; apply the same registered
     # window protection used by prepared dispatches.
-    quota_bundle = {**discovered, 'account': args.account, 'provider': args.provider, 'model': args.model, 'effort': args.effort}
+    quota_bundle = {**discovered, **inherited, 'account': args.account, 'provider': args.provider, 'model': pin.model,
+                    'effort': pin.effort or discovered.get('effort')}
     if chosen:
         quota_bundle['id'] = chosen
         quota_bundle.setdefault('bundle_id', chosen)
@@ -2013,21 +2072,46 @@ def record_constraint(args, task=None):
                 f"Account {args.account!r} window {wid!r} is exhausted or below safety floor ({reason}). "
                 f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
             )
-    c_model = allocator.canonical(args.model, accounts)
+    cooling = (allocator.cooling_reason(quota_bundle, allocator.launch_failures.active(), accounts)
+               if allocator.launch_failures.enabled() else None)
+    if cooling:
+        raise ValueError(f"{args.account}/{pin.model} is cooling down ({cooling}). Tell the user; do not substitute another model.")
+    c_model = resolved['key'] if direct else allocator.model_leaf(pin.model)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:
         allocator.fast_modes.validate(allocator.bundle_harness(discovered or {'provider': args.provider}, args.account),
-                                      c_model, allocator.model_spec(accounts, c_model))
+                                      c_model, allocator.model_spec(accounts, pin.model))
+    warnings = []
+    effort = pin.effort or discovered.get('effort')
+    profile = task.get('profile') if isinstance(task.get('profile'), dict) else None
+    realtime = bool((task.get('needs') or {}).get('realtime_loop') or task.get('realtime_loop') or (profile or {}).get('realtime_loop'))
+    records = None
+    if task and realtime:
+        records = read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES)
+        try:
+            reviewed, warnings = named_effort_review(allocator, accounts, pin, task, usage, now, records)
+        except (ValueError, KeyError, TypeError):
+            reviewed, warnings = None, []
+        if reviewed and not pin.effort and reviewed != effort:
+            effort, chosen = reviewed, match_bundle(allocator, accounts, _with_effort(pin, reviewed))
+    if effort is None and not sibling:
+        effort = allocator.auto_bundles.HARNESS_DEFAULT_EFFORT.get(allocator.bundle_harness({'provider': args.provider, 'model': c_model}, args.account))
     base_b = allocator.bundles(accounts).get(chosen) or {}
-    bundle = {**base_b, 'provider': args.provider, 'account': args.account, 'model': c_model,
-              'effort': args.effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
+    bundle = {**inherited, **base_b, 'provider': args.provider, 'account': args.account, 'model': c_model,
+              'effort': effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
+    if not direct:
+        bundle.setdefault('launch_model', pin.model)
     bundle['harness'] = allocator.bundle_harness(bundle, args.account, chosen)
+    if 'modeId' not in bundle and bundle['harness'] in allocator.auto_bundles.HARNESS_MODE:
+        bundle['modeId'] = allocator.auto_bundles.HARNESS_MODE[bundle['harness']]
     if fast_requested and bundle['harness'] == 'claude':
         bundle['fast_billing'] = allocator.fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
+    if warnings:
+        result['warnings'] = warnings
     if fast_requested:
         result['_allocation_task'] = {**(task or {}), 'force_fast': True}
     # Account loading may enroll a newly discovered account; check the resulting policy.
@@ -2039,7 +2123,7 @@ def record_constraint(args, task=None):
     if task:
         try:
             plan_task = {**task, 'force_fast': True} if fast_requested else task
-            plan = allocator.plan(plan_task, usage, now, records=read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
+            plan = allocator.plan(plan_task, usage, now, records=records if records is not None else read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
@@ -2054,6 +2138,12 @@ def record_constraint(args, task=None):
                            'override_cost': None if row is None else {'excluded': row['excluded'], 'score': row['score'],
                                                                       'notes': row['notes']}})
     return finalize(result, None, 'auto', started, task)
+
+
+def _with_effort(pin, effort):
+    other = copy.copy(pin)
+    other.effort = effort
+    return other
 
 
 def manage_overrides(args, now=None):
@@ -2406,9 +2496,9 @@ def plan_stage(document, args):
                 task['expected_hours'] = profile['expected_hours']
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
                                   'confidence': profile.get('hours_confidence', 'unknown')}
-    task_profile = task.get('profile') or {}
+    task_profile = allocator.validate_caller_profile(task['profile']) if task.get('profile') else {}
     if task_profile.get('multi_task') is True:
-        count = task_profile.get('task_count') or '>1'
+        count = task_profile['task_count']
         keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
         if not keep_whole:
             return split_result(task, count, scorer, started), 2

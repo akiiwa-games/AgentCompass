@@ -200,6 +200,35 @@ def now_utc() -> datetime:
 
 # ---------- decisions ----------
 
+LEGACY_REPLAY_NOTE = "旧记录缺字段，无法重放"
+
+
+class LegacyProfile(ValueError):
+    """A recorded profile that never answered the split question: it can be neither validated nor reclassified."""
+
+
+def lacks_split_answer(profile) -> bool:
+    """Invalid only for its multi_task/task_count. The filled-in copy is a test of that, never what gets replayed."""
+    allocator, _ = modules()
+    if not isinstance(profile, dict):
+        return False
+    try:
+        allocator.validate_profile(profile)
+        return False
+    except ValueError:
+        pass
+    try:
+        allocator.validate_profile({**profile, "multi_task": False, "task_count": "1"})
+        return True
+    except ValueError:
+        return False
+
+
+def unreplayable(row: dict) -> bool:
+    from decision_theatre import snapshot_result
+    return snapshot_result(row) is None and lacks_split_answer(row.get("profile"))
+
+
 def recent_ledger(limit: int = 30, path: Path | None = None) -> list[dict]:
     """The latest plan decisions, newest first."""
     _, router = modules()
@@ -217,9 +246,11 @@ def ledger_summary(row: dict) -> dict:
     objective = " ".join(str(row.get("objective") or row.get("task_id") or "").split())
     if objective.startswith("#"):
         objective = objective.lstrip("# ")
-    return {"at": local, "objective": objective[:48], "kind": row.get("kind") or "—", "choice": row.get("choice") or "—",
+    legacy = unreplayable(row)
+    return {"at": local, "objective": (f"{_tr(LEGACY_REPLAY_NOTE)} · {objective}" if legacy else objective)[:48],
+            "kind": row.get("kind") or "—", "choice": row.get("choice") or "—",
             "kind_label": display_names.kind_label(row.get("kind")), "choice_label": display_names.choice_label(row),
-            "margin": row.get("margin")}
+            "margin": row.get("margin"), "unreplayable": legacy}
 
 
 def build_task(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
@@ -237,6 +268,8 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
     if difficulty:
         task["difficulty"] = difficulty
     valid = None
+    if lacks_split_answer(profile):
+        raise LegacyProfile(_tr(LEGACY_REPLAY_NOTE))
     if isinstance(profile, dict):
         try:
             valid = allocator.validate_profile(profile)
@@ -298,6 +331,8 @@ def replay(row: dict) -> dict:
     snapshot = snapshot_result(row)
     if snapshot is not None:
         return snapshot
+    if lacks_split_answer(row.get("profile")):
+        return {"choice": None, "ranking": [], "theatre_source": "unreplayable", "replay_note": _tr(LEGACY_REPLAY_NOTE)}
     task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
                       bool((row.get("profile") or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
                       row.get("profile"), row.get("local_only_reason"))
@@ -2147,9 +2182,9 @@ def ability_floor_chart_data(accounts: dict | None = None, floors_override: dict
         if bspec.get("discovery_unavailable"):
             continue
         raw_model = bspec.get("model") or bid
-        model = allocator.canonical(raw_model, accounts)
-        info = allocator.model_spec(accounts, model)
-        curves = curves_table.get(model)
+        model = allocator.row_key(raw_model, accounts)
+        info = allocator.model_spec(accounts, raw_model)
+        curves = allocator.model_curves(accounts, raw_model)
         scored_effort = allocator.scoring_effort(bspec, info) if hasattr(allocator, "scoring_effort") else (
             bspec.get("effort") or (info or {}).get("fixed_effort")
         )

@@ -28,7 +28,7 @@ import public_data
 import accounts_override
 import auto_bundles
 import cwd_policy
-from model_resolution import generic_model_spec, resolve_canonical_model
+from model_resolution import DIRECT_SOURCES, generic_model_spec, resolve_canonical_model, resolve_model as _resolve_model, split_model_effort
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
 WINDOW_ALIASES = {'seven_day': 'usage', 'usage-10080m': 'usage', 'usage-5h': 'five_hour', 'usage-300m': 'five_hour'}
@@ -875,15 +875,56 @@ def models_table(accounts):
     return {k: v for k, v in accounts['models'].items() if isinstance(v, dict)}
 
 
+def resolve_model(model, accounts):
+    """model_resolution.resolve_model against this document: {'key', 'source', 'effort', 'bare'}."""
+    return _resolve_model(model, accounts.get('models', {}), accounts.get('aliases', {}))
+
+
 def canonical(model, accounts):
     return resolve_canonical_model(model, accounts.get('models', {}), accounts.get('aliases', {})) or model
 
 
 def model_spec(accounts, model):
-    """Score advertised names using calibrated rows, family priors, then a baseline."""
-    name = canonical(model, accounts)
-    value = accounts.get('models', {}).get(name)
+    """The score row for a name, by how it resolved: `exact`/`alias` read the row itself, `family` the target shrunk by
+    auto_bundles (tier -0.3) exactly as a discovered family model is, `unknown` the baseline."""
+    resolved = resolve_model(model, accounts)
+    if resolved['source'] == 'family':
+        return {**auto_bundles.default_profile(model, accounts)['spec'], 'usd_per_hour': auto_bundles.ESTIMATED_USD_PER_HOUR,
+                'usd_estimated': True, 'score_estimated': True}
+    value = accounts.get('models', {}).get(resolved['key'])
     return value if isinstance(value, dict) else generic_model_spec(accounts)
+
+
+def model_curves(accounts, model):
+    """This name's `effort_curves` row. A family guess has none: the flagship's speed and curve are not measured on it."""
+    resolved = resolve_model(model, accounts)
+    if resolved['source'] not in DIRECT_SOURCES:
+        return {}
+    return (accounts.get('effort_curves') or {}).get(resolved['key']) or {}
+
+
+def model_leaf(model):
+    return split_model_effort(model)[0].rsplit('/', 1)[-1]
+
+
+def row_key(model, accounts):
+    """Which model a row runs: the resolved key for its calibrated id or another spelling of it, its own name for a family
+    guess or an unknown model. `canonical` folds a family guess to its target for scoring; two rows are the same model
+    only when this says so."""
+    resolved = resolve_model(model, accounts)
+    return resolved['key'] if resolved['source'] in DIRECT_SOURCES else model_leaf(model).lower()
+
+
+def lookup_names(model, accounts=None):
+    """Names a table may hold this model under: its resolved key, then its raw spellings. A family guess never answers
+    for the flagship it folded to, so its key is left out."""
+    raw = split_model_effort(model)[0]
+    names = [raw, model_leaf(model)]
+    if accounts:
+        resolved = resolve_model(model, accounts)
+        if resolved['source'] in DIRECT_SOURCES:
+            names.insert(0, resolved['key'])
+    return list(dict.fromkeys(name for name in names if name))
 
 
 def bundle_harness(bundle, account=None, bundle_id=None, *, family=None):
@@ -920,10 +961,14 @@ def bundles(accounts):
             row = ((inventory.get('launchers') or {}).get(provider)
                    or (inventory.get('accounts') or {}).get(provider)
                    or ((accounts.get('accounts') or {}).get(provider) or {}))
+            # `model:effort` is a fixed effort: the name is the model, the suffix the only level this row runs at.
+            model_name, fixed = split_model_effort(bundle['model'])
             out[bundle_id] = {'id': bundle_id, 'account': account, 'provider': provider,
                               'harness': bundle_harness(bundle, account, bundle_id, family=row.get('family')),
-                              'model': bundle['model'], 'effort': bundle.get('effort'),
-                              **{k: bundle[k] for k in ('modeId', 'disabled', 'launch_model', 'when', 'discovery_unavailable', 'draws',
+                              'model': model_name, 'effort': bundle.get('effort') or fixed,
+                              **({'effort_fixed': True} if fixed else {}),
+                              **{k: bundle[k] for k in ('modeId', 'disabled', 'disabled_by_default', 'efforts', 'launch_model', 'when',
+                                                        'discovery_unavailable', 'draws',
                                                         'auto', 'billing', 'score_source', 'score_basis', 'cost_estimated',
                                                         'availability', 'compatibility', 'compatibility_reason') if k in bundle}}
     return out
@@ -1191,7 +1236,11 @@ def validate_profile(raw):
     # The hours/urgency estimate is optional: legacy fixtures and scorers that cannot produce it (Jev) leave it out.
     hours = raw.get('expected_hours')
     if hours is not None:
-        if isinstance(hours, bool) or not isinstance(hours, (int, float)) or not math.isfinite(hours):
+        try:
+            finite = not isinstance(hours, bool) and isinstance(hours, (int, float)) and math.isfinite(hours)
+        except OverflowError:
+            finite = False
+        if not finite:
             raise ValueError('task.profile.expected_hours must be a finite number')
         profile['expected_hours'] = round(min(max(float(hours), HOURS_RANGE[0]), HOURS_RANGE[1]), 2)
     for name, levels in (('hours_confidence', CONFIDENCE_LEVELS), ('urgency', URGENCY_LEVELS)):
@@ -1204,12 +1253,37 @@ def validate_profile(raw):
     profile['interaction_style'] = raw['interaction_style']
     reason = raw.get('reason')
     if isinstance(reason, str) and reason.strip():
-        profile['reason'] = reason.strip()[:300]
-    if isinstance(raw.get('multi_task'), bool):
-        profile['multi_task'] = raw['multi_task']
-    if raw.get('task_count') in TASK_COUNTS:
-        profile['task_count'] = raw['task_count']
+        profile['reason'] = reason.strip()[:300].rstrip()
+    if not isinstance(raw.get('multi_task'), bool):
+        raise ValueError('task.profile.multi_task must be true or false')
+    profile['multi_task'] = raw['multi_task']
+    profile['task_count'] = task_count_bucket(raw.get('task_count'))
+    if profile['multi_task'] != (profile['task_count'] != '1'):
+        raise ValueError(f"task.profile.multi_task {str(profile['multi_task']).lower()} contradicts "
+                         f"task.profile.task_count {profile['task_count']!r}")
     return profile
+
+
+class InvalidCallerProfile(ValueError):
+    """A profile the caller wrote failed validation; the classifier's own failures retry or block instead."""
+
+
+def validate_caller_profile(raw):
+    try:
+        return validate_profile(raw)
+    except ValueError as exc:
+        raise InvalidCallerProfile(f'invalid_caller_profile: {exc}') from None
+
+
+def task_count_bucket(value):
+    """The schema's task-count band for a band or a positive whole number; anything else is an invalid profile."""
+    if isinstance(value, str) and value in TASK_COUNTS:
+        return value
+    whole = value if isinstance(value, int) and not isinstance(value, bool) else (
+        int(value) if isinstance(value, float) and value.is_integer() else None)
+    if whole is not None and whole >= 1:
+        return TASK_COUNTS[min(whole, 4) - 1]
+    raise ValueError('task.profile.task_count must be one of ' + ', '.join(TASK_COUNTS) + ' or a positive whole number')
 
 
 def infer_kind_from_objective(objective):
@@ -1531,7 +1605,8 @@ def local_speed_telemetry(model, effort, base_responsiveness, policy=None, state
     except (OSError, ValueError):
         return base_responsiveness, False
     models = doc.get('models') if isinstance(doc, dict) else None
-    row = models.get(model) if isinstance(models, dict) else None
+    names = [model] if isinstance(model, str) else list(model or ())
+    row = next((models[name] for name in names if isinstance(models.get(name), dict)), None) if isinstance(models, dict) else None
     if not isinstance(row, dict):
         return base_responsiveness, False
     by_effort = row.get('by_effort') if isinstance(row.get('by_effort'), dict) else {}
@@ -1582,18 +1657,157 @@ def _lookup_curve_responsiveness(curves_resp, effort, default_effort='high'):
     return None
 
 
-def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None, effort=None, harness=None):
+def dispatch_table(provider, accounts):
+    """`dispatch_efforts` row for a launch provider. A second account reads its main family's row (claude-2 -> claude)."""
+    tables = accounts.get('dispatch_efforts') if isinstance(accounts, dict) else None
+    if not isinstance(tables, dict):
+        return None
+    name = str(provider or '')
+    inventory = accounts.get('_discovery') if isinstance(accounts.get('_discovery'), dict) else {}
+    spec = (accounts.get('accounts') or {}).get(name)
+    for candidate in (name, ((inventory.get('launchers') or {}).get(name) or {}).get('family'),
+                      ((inventory.get('accounts') or {}).get(name) or {}).get('family'),
+                      account_family(spec) if isinstance(spec, dict) else None,
+                      re.sub(r'[-_]\d+$', '', name)):
+        if candidate and isinstance(tables.get(candidate), dict):
+            return tables[candidate]
+    return None
+
+
+def dispatch_allowed_efforts(bundle, accounts, model=None):
+    """Efforts the launch contract offers this bundle's model: None when the provider has no table at all (a gateway).
+    A table that does not list the model leaves what the row itself lists, and nothing when it lists none, so a step-down
+    never lands on an unverified flag."""
+    table = dispatch_table((bundle or {}).get('provider') or (bundle or {}).get('account'), accounts)
+    if table is None:
+        return None
+    raw = (bundle or {}).get('model')
+    for name in (lookup_names(raw, accounts) if raw else [model]):
+        if table.get(name):
+            return tuple(table[name])
+    own = (bundle or {}).get('efforts')
+    return tuple(own) if isinstance(own, (list, tuple)) else ()
+
+
+def model_pin_matches(task, bundle, model):
+    """Does the task's named model (or bundle id) name this bundle? Compares the resolved key and the raw spelling."""
+    named = task.get('constraint_model')
+    if not named:
+        return False
+    raw = str((bundle or {}).get('model') or '')
+    return (named in ((bundle or {}).get('id'), model, raw)
+            or model_leaf(named).lower() == model_leaf(raw).lower())
+
+
+def exact_pin(task, bundle, model):
+    """The user named this bundle, or its model and effort: it keeps that effort and is only warned about when slow."""
+    bid = (bundle or {}).get('id')
+    if bid and bid in (task.get('pinned_bundle'), task.get('constraint_bundle'), task.get('constraint_model')):
+        return True
+    return bool(task.get('constraint_effort')) and model_pin_matches(task, bundle, model)
+
+
+def bundle_named(task, bundle, model):
+    return exact_pin(task, bundle, model) or model_pin_matches(task, bundle, model)
+
+
+def has_fixed_effort(bundle, accounts):
+    """`model:effort` and `model-effort` launch ids run at that level only."""
+    if (bundle or {}).get('effort_fixed'):
+        return True
+    launch_id = str((bundle or {}).get('launch_model') or (bundle or {}).get('model') or '')
+    known = accounts if isinstance(accounts, dict) and 'models' in accounts else {'models': {}}
+    return split_model_effort(launch_id)[1] is not None or auto_bundles.split_effort(launch_id, known)[1] is not None
+
+
+def can_step_down(bundle, info, accounts):
+    """A row fixed at its level, or listing no level below its own, has nowhere to step."""
+    if has_fixed_effort(bundle, accounts):
+        return False
+    own = bundle.get('efforts')
+    if not isinstance(own, (list, tuple)):
+        return True
+    rank = _effort_rank(scoring_effort(bundle, info))
+    return any(_effort_rank(level) < rank for level in own)
+
+
+def named_effort_bundles(task, ctx):
+    """Rows for levels the user's pin reaches on a model the account has no row at that level for: the effort they named,
+    or, for a model named alone on `realtime_loop` work, every level that clears the floor, so the score decides among
+    them exactly as it does among written rows. The launch contract is what offers a level; each row is the model's own
+    carrier with a distinct id, so it never passes for the carrier itself."""
+    effort = task.get('constraint_effort')
+    level_choice = not effort and bool(task.get('realtime_loop') and task.get('constraint_model'))
+    if (not effort and not level_choice) or task.get('constraint_bundle'):
+        return {}
+    accounts, groups = ctx['accounts'], {}
+    for bundle in ctx['bundles'].values():
+        model = row_key(bundle['model'], accounts)
+        if task.get('constraint_model') and not model_pin_matches(task, bundle, model):
+            continue
+        if level_choice and exact_pin(task, bundle, model):
+            continue
+        groups.setdefault((bundle['account'], bundle.get('harness'), model), []).append(bundle)
+    found = {}
+    for (_, _, model), rows in groups.items():
+        written = {str(scoring_effort(r, model_spec(accounts, r['model'])) or '').lower() for r in rows}
+        carriers = [r for r in rows if (not r.get('disabled') or r.get('disabled_by_default'))
+                    and not r.get('discovery_unavailable') and not has_fixed_effort(r, accounts)]
+        # Each level goes to the first row that offers it, so the answer does not depend on the order of the rows.
+        for carrier in carriers:
+            allowed = dispatch_allowed_efforts(carrier, accounts, model)
+            if effort:
+                levels = [effort]
+                if (effort not in allowed) if allowed is not None else not task.get('constraint_model'):
+                    levels = []
+            else:
+                levels = [e for e in clearing_levels(carrier, ctx) if allowed is None or e in allowed]
+            for level in levels:
+                if level in written or (isinstance(carrier.get('efforts'), list) and level not in carrier['efforts']):
+                    continue
+                written.add(level)
+                row_id = f"{carrier['id']}@{level}"
+                found[row_id] = {**{k: v for k, v in carrier.items() if k != 'when'}, 'id': row_id, 'effort': level,
+                                 'pin_carrier': carrier['id']}
+    return found
+
+
+def clearing_levels(bundle, ctx):
+    """The levels in this model's speed curve at or above the realtime floor. A level has no curve to clear on a harness
+    that does not step, or on a name with no measured curve of its own."""
+    accounts, policy = ctx['accounts'], ctx['policy']
+    harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
+    provider = bundle.get('provider') or bundle.get('account')
+    if harness in ('antigravity', 'antigravity-resilient') or provider in ('antigravity', 'antigravity-resilient'):
+        return []
+    curves, info = model_curves(accounts, bundle['model']), model_spec(accounts, bundle['model'])
+    speeds = curves.get('responsiveness')
+    if not isinstance(speeds, dict):
+        return []
+    floor = float(responsiveness_config(policy)['floor'])
+    ability = curves.get('ability')
+    levels = []
+    for level in REALTIME_EFFORT_ORDER:
+        if level not in speeds or (isinstance(ability, dict) and ability and level not in ability):
+            continue
+        value, source = bundle_responsiveness(bundle, info, policy, curves, state_dir=ctx.get('state_dir'), effort=level,
+                                              harness=harness, accounts=accounts)
+        if source != 'not_applicable' and value is not None and value >= floor:
+            levels.append(level)
+    return levels
+
+
+def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None, effort=None, harness=None, accounts=None):
     """`(responsiveness_0_to_1, source)` for `bundle` at `effort` (or its scoring effort).
     `source` is `'measured'`, `'local_blended'`, `'default'` (when community speed data is absent),
     or `'not_applicable'` (for special web/packet channels such as `grok-bot` and `dot`)."""
     if isinstance(info, dict) and isinstance(info.get('spec'), dict):
         info = info['spec']
     if isinstance(policy, dict) and ('models' in policy or 'accounts' in policy) and 'scoring' in policy:
-        accounts_arg = policy
+        accounts = policy
         policy = (curves if isinstance(curves, dict) and ('ability_gate' in curves or 'responsiveness' in curves)
-                  else accounts_arg.get('scoring'))
-        model_id = str((bundle or {}).get('model') or '')
-        curves = (accounts_arg.get('effort_curves') or {}).get(model_id)
+                  else accounts.get('scoring'))
+        curves = model_curves(accounts, str((bundle or {}).get('model') or ''))
     cfg = responsiveness_config(policy)
     info = info if isinstance(info, dict) else {}
     info_resp = info.get('responsiveness')
@@ -1630,11 +1844,25 @@ def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None
     else:
         base_val = clamp(measured, 0.0, 1.0)
         source = 'measured'
-    model_name = str((bundle or {}).get('model') or '')
-    adjusted, blended = local_speed_telemetry(model_name, eff, base_val, policy=policy, state_dir=state_dir)
+    names = lookup_names(str((bundle or {}).get('model') or ''), accounts)
+    adjusted, blended = local_speed_telemetry(names, eff, base_val, policy=policy, state_dir=state_dir)
     if blended:
         return adjusted, 'local_blended'
     return round(base_val, 4), source
+
+
+def cooling_reason(bundle, entries, accounts, now=None):
+    """launch_failures.reason for this row or any entry recorded under another spelling of its model: one model has one
+    cooldown, and a family guess is its own model."""
+    found = launch_failures.reason(bundle, entries, now=now)
+    if found or not entries:
+        return found
+    own = row_key(bundle.get('model') or '', accounts)
+    prefix = launch_failures.key(bundle.get('account'), '')
+    for entry in entries:
+        if entry.startswith(prefix) and row_key(entry[len(prefix):], accounts) == own:
+            return launch_failures.reason({**bundle, 'model': entry[len(prefix):]}, entries, now=now)
+    return None
 
 
 def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or_policy=None,
@@ -1659,7 +1887,7 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
         info = (task_or_info.get('spec') if isinstance(task_or_info, dict) and isinstance(task_or_info.get('spec'), dict)
                 else task_or_info)
         model = canonical((bundle or {}).get('model') or '', accounts)
-        curves = (accounts.get('effort_curves') or {}).get(model, {})
+        curves = model_curves(accounts, (bundle or {}).get('model') or '')
         if isinstance(all_bundles, dict):
             bundles_map = {bid: ({**b, 'id': b.get('id') or bid} if isinstance(b, dict) else b)
                            for bid, b in all_bundles.items()}
@@ -1679,7 +1907,7 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
     raw_effort = scoring_effort(bundle, info)
     eff_harness = harness or bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
     resp_val, resp_source = bundle_responsiveness(
-        bundle, info, policy, curves, state_dir=state_dir, effort=raw_effort, harness=eff_harness)
+        bundle, info, policy, curves, state_dir=state_dir, effort=raw_effort, harness=eff_harness, accounts=accounts)
     if resp_source == 'not_applicable' or resp_val is None:
         return raw_effort, resp_val, resp_source, None
     resp_floor = float(responsiveness_config(policy)['floor'])
@@ -1692,63 +1920,63 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
     provider = bundle.get('provider') or bundle.get('account')
     if eff_harness in ('antigravity', 'antigravity-resilient') or provider in ('antigravity', 'antigravity-resilient'):
         return raw_effort, resp_val, resp_source, None
-    raw_launch_id = str(bundle.get('launch_model') or bundle.get('model') or '')
-    if auto_bundles.split_effort(raw_launch_id, accounts if isinstance(accounts, dict) and 'models' in accounts else {'models': {}})[1] is not None:
+    if has_fixed_effort(bundle, accounts):
         return raw_effort, resp_val, resp_source, None
-
-    pinned = bool(
-        (task.get('pinned_bundle') and task.get('pinned_bundle') == bundle.get('id'))
-        or (task.get('constraint_bundle') and task.get('constraint_bundle') == bundle.get('id'))
-        or (task.get('constraint_model') and task.get('constraint_model') in (bundle.get('id'), model))
-    )
-    if pinned:
+    own_model = row_key(bundle.get('model') or model or '', accounts)
+    # A named effort stays as named. A named model alone still chooses among its efforts like any other candidate.
+    if exact_pin(task, bundle, own_model):
         return raw_effort, resp_val, resp_source, None
+    slowest_pass = bool(task.get('slow_pin_fallback')) and model_pin_matches(task, bundle, own_model)
 
     unavailable_ids = set(ctx.get('unavailable') or ())
     failures_map = ctx.get('launch_failures')
     siblings = []
+    user_disabled = set()
     for bid, b in (ctx.get('bundles') or {}).items():
         if not isinstance(b, dict):
             continue
         sib_id = b.get('id') or bid
-        if sib_id in unavailable_ids:
-            continue
         if b.get('account') != bundle.get('account'):
             continue
         if (b.get('harness') or bundle_harness(b, b.get('account'), sib_id)) != eff_harness:
             continue
-        if canonical(b.get('model') or '', accounts) != model:
+        if row_key(b.get('model') or '', accounts) != own_model:
+            continue
+        if b.get('disabled') and not b.get('disabled_by_default'):
+            user_disabled.add(str(scoring_effort(b, info) or '').lower())
+        if sib_id in unavailable_ids:
             continue
         if b.get('disabled') or b.get('discovery_unavailable') or not bundle_applies(b, task):
             continue
         sib_bundle = {**b, 'id': sib_id}
-        if launch_failures.reason(sib_bundle, failures_map, now=ctx.get('now')):
+        if cooling_reason(sib_bundle, failures_map, accounts, now=ctx.get('now')):
             continue
         siblings.append(sib_bundle)
     self_id = bundle.get('id')
-    for sib in siblings:
-        if (self_id and sib.get('id') == self_id) or (not self_id and sib.get('effort') == bundle.get('effort')):
-            continue
-        sib_eff = scoring_effort(sib, info)
-        sib_resp, sib_src = bundle_responsiveness(
-            sib, info, policy, curves, state_dir=state_dir, effort=sib_eff, harness=eff_harness)
-        sib_ab = effort_ability(policy, curves, info, sib_eff)
-        if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor and sib_ab >= gate:
-            return raw_effort, resp_val, resp_source, None
-    if siblings:
-        step_down_peers = [
-            s for s in siblings
-            if effort_ability(policy, curves, info, scoring_effort(s, info)) >= gate
-        ] or siblings
-        min_rank = min(_effort_rank(scoring_effort(s, info)) for s in step_down_peers)
-        if _effort_rank(raw_effort) > min_rank:
-            return raw_effort, resp_val, resp_source, None
+    if not slowest_pass:
+        for sib in siblings:
+            if (self_id and sib.get('id') == self_id) or (not self_id and sib.get('effort') == bundle.get('effort')):
+                continue
+            sib_eff = scoring_effort(sib, info)
+            sib_resp, sib_src = bundle_responsiveness(
+                sib, info, policy, curves, state_dir=state_dir, effort=sib_eff, harness=eff_harness, accounts=accounts)
+            sib_ab = effort_ability(policy, curves, info, sib_eff)
+            if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor and sib_ab >= gate:
+                return raw_effort, resp_val, resp_source, None
+        # A row that cannot step does not stand in for the rows that can.
+        steppable = [s for s in siblings if can_step_down(s, info, accounts)]
+        if steppable:
+            step_down_peers = [
+                s for s in steppable
+                if effort_ability(policy, curves, info, scoring_effort(s, info)) >= gate
+            ] or steppable
+            min_rank = min(_effort_rank(scoring_effort(s, info)) for s in step_down_peers)
+            if _effort_rank(raw_effort) > min_rank:
+                return raw_effort, resp_val, resp_source, None
 
-    dispatch_table = (accounts.get('dispatch_efforts') or {}).get(provider) if isinstance(accounts, dict) else None
-    allowed_efforts = None
-    if isinstance(dispatch_table, dict):
-        raw_model_key = bundle.get('model') or model
-        allowed_efforts = dispatch_table.get(raw_model_key) or dispatch_table.get(model)
+    # The levels this candidate can run at: the launch contract, what the row itself offers, minus what the user unchecked.
+    allowed_efforts = dispatch_allowed_efforts(bundle, accounts, model)
+    own_efforts = bundle.get('efforts') if isinstance(bundle.get('efforts'), (list, tuple)) else None
     ability_curve = (curves or {}).get('ability') if isinstance(curves, dict) else None
     raw_rank = _effort_rank(raw_effort)
     faster = [
@@ -1757,14 +1985,20 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
         and _effort_rank(eff) < raw_rank
         and (not (isinstance(ability_curve, dict) and ability_curve) or eff in ability_curve)
         and (allowed_efforts is None or eff in allowed_efforts)
+        and (own_efforts is None or eff in own_efforts)
+        and eff not in user_disabled
     ]
     faster.sort(key=_effort_rank, reverse=True)
     best_clearing_both = None
     best_clearing_resp = None
+    timed = []
     for cand_eff in faster:
         cand_resp, cand_src = bundle_responsiveness(
-            bundle, info, policy, curves, state_dir=state_dir, effort=cand_eff, harness=eff_harness)
-        if cand_src == 'not_applicable' or cand_resp is None or cand_resp < resp_floor:
+            bundle, info, policy, curves, state_dir=state_dir, effort=cand_eff, harness=eff_harness, accounts=accounts)
+        if cand_src == 'not_applicable' or cand_resp is None:
+            continue
+        timed.append((cand_resp, cand_eff, cand_src))
+        if cand_resp < resp_floor:
             continue
         if best_clearing_resp is None:
             best_clearing_resp = (cand_eff, cand_resp, cand_src)
@@ -1774,6 +2008,12 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
     chosen = best_clearing_both or best_clearing_resp
     if chosen is not None:
         return chosen[0], chosen[1], chosen[2], raw_effort
+    if slowest_pass and timed:
+        # Nothing clears the floor on the model the user named: its fastest level, warned about by the caller.
+        able = [row for row in timed if effort_ability(policy, curves, info, row[1]) >= gate] or timed
+        best = max(able, key=lambda row: row[0])
+        if best[0] > resp_val:
+            return best[1], best[0], best[2], raw_effort
     return raw_effort, resp_val, resp_source, None
 
 
@@ -2018,8 +2258,8 @@ def bundle_pools(bundle, accounts, observed_windows=None):
             declared = _explicit_draws(catalog)
     if declared is not None:
         return [wid for wid in declared if wid in windows]
-    model = canonical(bundle.get('model') or '', accounts)
-    return [wid for wid, wspec in windows.items() if window_scope.binds(model, wspec, observed_windows.get(wid))]
+    names = (canonical(bundle.get('model') or '', accounts), bundle.get('model') or '')
+    return [wid for wid, wspec in windows.items() if window_scope.binds_any(names, wspec, observed_windows.get(wid))]
 
 
 def applicable_windows(account_spec, model, usage_row, bundle=None, accounts=None):
@@ -2321,16 +2561,19 @@ def account_cwd_allowed(spec, cwd=None):
 def evaluate_bundle(bundle, task, ctx):
     policy, accounts, capabilities = ctx['policy'], ctx['accounts'], ctx['capabilities']
     spec = accounts['accounts'][bundle['account']]
+    # Tables read by the name's own resolution. `model` is its key, for the matching that follows; `own_model` is which
+    # model the row runs, for what the user named.
     model = canonical(bundle['model'], accounts)
-    info = model_spec(accounts, model)
-    curves = accounts.get('effort_curves', {}).get(model, {})
+    own_model = row_key(bundle['model'], accounts)
+    info = model_spec(accounts, bundle['model'])
+    curves = model_curves(accounts, bundle['model'])
     kind = task['kind']
     dur_mult = model_duration_multiplier(model, info)
     base_hours = task['hours']
     base_chain_hours = task['chain_hours']
     hours = base_hours * dur_mult
     chain_hours = base_chain_hours * dur_mult
-    result = {'id': bundle['id'], 'bundle': {k: bundle.get(k) for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'draws')
+    result = {'id': bundle['id'], 'bundle': {k: bundle.get(k) for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'draws', 'pin_carrier')
                                               if bundle.get(k) is not None},
               'excluded': [], 'notes': [],
               'components': {**subjective_vector(info), 'capability': vision_tools_score(info)}, 'score': None}
@@ -2353,14 +2596,15 @@ def evaluate_bundle(bundle, task, ctx):
 
     if not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude('excluded by host policy')
-    if bundle.get('disabled'):
+    # Off by default (superseded in public data) is not the user's checkbox: naming the model still reaches it.
+    if bundle.get('disabled') and not (bundle.get('disabled_by_default') and bundle_named(task, bundle, own_model)):
         exclude('unchecked in model management')
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
                 else 'model not detected by discovery for 7+ days')
     if bundle['id'] in ctx['unavailable']:
         exclude('marked unavailable by the parent')
-    cooling = launch_failures.reason(bundle, ctx.get('launch_failures'))
+    cooling = cooling_reason(bundle, ctx.get('launch_failures'), accounts)
     if cooling:
         exclude(cooling)
     # Only subscription accounts join automatic routing. A checked metered (API) bundle is a last resort:
@@ -2368,7 +2612,7 @@ def evaluate_bundle(bundle, task, ctx):
     # Unknown billing stays explicit selection only.
     billing = accounts_override.manual_only_billing(bundle['account'], accounts)
     if billing and not task['metered_ok'] and not (billing == 'metered' and task.get('metered_fallback')):
-        if (task['constraint_model'] not in (bundle['id'], model) and task.get('pinned_bundle') != bundle['id']
+        if (not model_pin_matches(task, bundle, own_model) and task.get('pinned_bundle') != bundle['id']
                 and not any(o.get('account') == bundle['account'] for o in ctx['overrides'])):
             exclude(METERED_LAST_RESORT if billing == 'metered'
                     else f'{billing} billing: explicit selection only')
@@ -2393,8 +2637,10 @@ def evaluate_bundle(bundle, task, ctx):
     harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
     if task['needs_visual'] and not harness_accepts_visual(harness, model):
         exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
-    if task['constraint_model'] and task['constraint_model'] not in (bundle['id'], model):
+    if task['constraint_model'] and not model_pin_matches(task, bundle, own_model):
         exclude('explicit model constraint')
+    if task.get('constraint_effort') and str(scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
+        exclude('explicit effort constraint')
     demand = task['demand']
     target = demand['required_ability']
     floor = demand['floor']
@@ -2409,6 +2655,8 @@ def evaluate_bundle(bundle, task, ctx):
         if stepped_from is not None:
             result['bundle']['effort'] = eff
             result['bundle']['realtime_stepped_from'] = stepped_from
+            if task.get('slow_pin_fallback') and model_pin_matches(task, bundle, own_model):
+                result['bundle']['named_fastest'] = True
             result['components']['effort_stepped_down_from'] = stepped_from
             result['notes'].append(f'effort stepped down from {stepped_from} to {eff} for realtime_loop')
     # Model ability x this model's own thinking coefficient at this effort (accounts `effort_curves`). The task side is
@@ -2420,15 +2668,13 @@ def evaluate_bundle(bundle, task, ctx):
     if ability < gate:
         result['below_floor'] = True
         exclude(f'ability {ability:.1f} below the {task["difficulty"]} floor {floor}'
-                + (f' plus the {headroom:g} headroom critical work needs' if task['critical'] else ''))
+                + (f' plus the {headroom:g} headroom critical work needs' if task['critical'] else '')
+                + (f' after the realtime step-down from {stepped_from} to {eff}' if stepped_from else ''))
     if task.get('realtime_loop'):
         resp_cfg = responsiveness_config(policy)
         result['components']['responsiveness_source'] = resp_source
-        pinned_choice = bool(
-            (task.get('pinned_bundle') and task.get('pinned_bundle') == bundle.get('id'))
-            or (task.get('constraint_bundle') and task.get('constraint_bundle') == bundle.get('id'))
-            or (task.get('constraint_model') and task.get('constraint_model') in (bundle.get('id'), model))
-        )
+        pinned_choice = exact_pin(task, bundle, own_model) or (
+            bool(task.get('slow_pin_fallback')) and model_pin_matches(task, bundle, own_model))
         if resp_source == 'not_applicable' or resp_val is None:
             result['components']['responsiveness'] = None
             if pinned_choice:
@@ -2438,7 +2684,8 @@ def evaluate_bundle(bundle, task, ctx):
                 result['notes'].append(warn)
             else:
                 result['below_floor'] = True
-                exclude('responsiveness not_applicable for this channel (too slow per turn for a live loop)')
+                result['too_slow'] = True
+                exclude(f"{bundle['model']}@{eff}: responsiveness not_applicable for this channel (too slow per turn for a live loop)")
         else:
             result['components']['responsiveness'] = round(resp_val, 3)
             if resp_source == 'default':
@@ -2453,7 +2700,8 @@ def evaluate_bundle(bundle, task, ctx):
                     result['notes'].append(warn)
                 else:
                     result['below_floor'] = True
-                    exclude(f'responsiveness {resp_val:.2f} below the realtime_loop floor {resp_floor:g} '
+                    result['too_slow'] = True
+                    exclude(f"{bundle['model']}@{eff}: responsiveness {resp_val:.2f} below the realtime_loop floor {resp_floor:g} "
                             f'(too slow per turn for a live loop)')
     expires = parse_time(spec.get('expires_at'))
     if expires is not None and (expires - now).total_seconds() < hours * 3600:
@@ -2884,7 +3132,7 @@ def opportunity_exchange(policy):
                          'is the one with the highest opportunity cost; capacity, expected percent and reset bonus follow it.'}
 
 
-def harness_quality_factor(bundle, kind, policy):
+def harness_quality_factor(bundle, kind, policy, accounts=None):
     """Absolute harness quality multiplied into weighted fit and ability. Default 1.0.
 
     Most specific match wins: by_model[model][harness], by_work_kind[kind][harness], by_harness[harness],
@@ -2893,12 +3141,13 @@ def harness_quality_factor(bundle, kind, policy):
     """
     table = policy.get('harness_factors') if isinstance(policy.get('harness_factors'), dict) else {}
     harness = (bundle or {}).get('harness') or bundle_harness(bundle, (bundle or {}).get('account'), (bundle or {}).get('id'))
-    model = str((bundle or {}).get('model') or '')
+    names = lookup_names(str((bundle or {}).get('model') or ''), accounts)
 
     def as_factor(value):
         return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
-    found = as_factor(((table.get('by_model') or {}).get(model) or {}).get(harness))
+    by_model = table.get('by_model') or {}
+    found = next((as_factor((by_model.get(name) or {}).get(harness)) for name in names if name in by_model), None)
     if found is None:
         found = as_factor(((table.get('by_work_kind') or {}).get(kind) or {}).get(harness))
     if found is None:
@@ -2911,10 +3160,10 @@ def harness_quality_factor(bundle, kind, policy):
                 continue
             if rule.get('work_kind') and rule.get('work_kind') != kind:
                 continue
-            if rule.get('model') and rule.get('model') != model:
+            if rule.get('model') and rule.get('model') not in names:
                 continue
             prefix = rule.get('model_prefix')
-            if prefix and not model.startswith(str(prefix)):
+            if prefix and not any(name.lower().startswith(str(prefix)) for name in names):
                 continue
             found = as_factor(rule.get('factor'))
             if found is not None:
@@ -2943,7 +3192,9 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
            'host_policy': host_policy.load_policy() if host_policy_config is None else host_policy_config,
            'overrides': list(overrides), 'records': list(records or ()),
            'launch_failures': launch_failures.active() if launch_failures.enabled() else {}}
-    candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values() if bundle_applies(b, task)]
+    ctx['bundles'].update(named_effort_bundles(task, ctx))
+    candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()
+                  if bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
     eligible = [c for c in candidates if not c['excluded']]
     # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
     # that value only. Opportunity cost is already in score units at the opportunity_exchange rate, so it is
@@ -2953,7 +3204,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     kind = task['kind']
     for c in eligible:
         parts = {k: c['components'][k] for k in weights}
-        quality = harness_quality_factor(c['bundle'], kind, policy)
+        quality = harness_quality_factor(c['bundle'], kind, policy, accounts)
         c['components']['harness_factor'] = round(quality, 4)
         value = fit_ability_value(parts, weights)
         score = (sum(weights[k] * parts[k] for k in weights) + c['components'].get('free_usage', 0)
@@ -3081,9 +3332,24 @@ def dot_may_take(kind, needs, capabilities, profile=None):
     return True
 
 
+def named_pin(constraints, task, accounts):
+    """(model the user named, effort the user named) from the constraints or the pinned_* request fields.
+
+    The effort comes from its own field, else from the name (`model:effort`). A name that only a family guess could
+    place stays itself: naming gemini-2.5-pro never launches the flagship the family folds to."""
+    effort = constraints.get('effort') or task.get('pinned_effort')
+    effort = effort.strip().lower() if isinstance(effort, str) and effort.strip() else None
+    raw = constraints.get('model') or task.get('pinned_model')
+    if not raw:
+        return constraints.get('bundle') or None, effort
+    resolved = resolve_model(raw, accounts)
+    name = resolved['key'] if resolved['source'] in DIRECT_SOURCES else split_model_effort(raw)[0]
+    return name, effort or resolved['effort']
+
+
 def normalize_task(raw, policy, capabilities, accounts):
     task = dict(raw or {})
-    profile = validate_profile(task['profile']) if task.get('profile') is not None else None
+    profile = validate_caller_profile(task['profile']) if task.get('profile') is not None else None
     needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
     if not _flag_present(needs, 'gui') and _flag_present(task, 'needs_gui'):
         needs['gui'] = bool(task['needs_gui'])
@@ -3113,6 +3379,7 @@ def normalize_task(raw, policy, capabilities, accounts):
         raise ValueError('chain.coupling must be low, medium or high')
     hours = float(task.get('expected_hours') or policy['default_hours'][difficulty])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
+    constraint_model, constraint_effort = named_pin(constraints, task, accounts)
     if profile and needs.get('critical') is None:
         needs['critical'] = profile['error_cost'] >= 3
     implies = capabilities['routes'][kind].get('implies') or {}
@@ -3171,10 +3438,24 @@ def normalize_task(raw, policy, capabilities, accounts):
             'local_only': bool(needs.get('local_only')), 'critical': critical,
             'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
             'constraint_bundle': constraints.get('bundle') if isinstance(constraints.get('bundle'), str) else None,
-            'constraint_model': canonical(constraints.get('model') or constraints.get('bundle') or '', accounts) or None,
+            'constraint_model': constraint_model, 'constraint_effort': constraint_effort,
             'metered_ok': bool(task.get('metered_ok')), 'include_unverified': bool(task.get('include_unverified')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),
             'cwd': task.get('cwd')}
+
+
+def named_pin_block(task, candidates):
+    """Why what the user named cannot run, one line per row; [] when the task names nothing."""
+    if not (task.get('constraint_model') or task.get('constraint_effort') or task.get('pinned_bundle')):
+        return []
+    off_pin = ('explicit model constraint', 'explicit effort constraint')
+    rows = [c for c in candidates if c['id'] == task.get('pinned_bundle')
+            or (not task.get('pinned_bundle') and not any(r in off_pin for r in c['excluded']))]
+    named = task.get('pinned_bundle') or ':'.join(x for x in (task.get('constraint_model'), task.get('constraint_effort')) if x)
+    rows = [c for c in rows if 'marked unavailable by the parent' not in c['excluded']] or rows
+    if not rows:
+        return [f'{named}: no configured bundle offers it']
+    return [f"{named} via {c['id']}: {'; '.join(c['excluded'])}" for c in rows if c['excluded']][:4]
 
 
 def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None, capabilities=None, overrides=None,
@@ -3210,6 +3491,18 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         task['metered_fallback'] = True
         candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied,
                                             records, host_policy_config)
+    # A model named without an effort, too slow at every level it can run: its fastest level, with a warning.
+    if (not eligible and task.get('realtime_loop') and task['constraint_model']
+            and not task.get('constraint_effort') and not task.get('constraint_bundle')
+            and any(c.get('too_slow') and len(c['excluded']) == 1 for c in candidates)):
+        task['slow_pin_fallback'] = True
+        candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied,
+                                            records, host_policy_config)
+        speeds = [c['components'].get('responsiveness') or 0.0 for c in eligible]
+        for c in list(eligible):
+            if (c['components'].get('responsiveness') or 0.0) < max(speeds):
+                c['excluded'].append('a faster effort of the named model is available')
+                eligible.remove(c)
     worker_id = (task['worker'] or {}).get('bundle')
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'critical', 'hours', 'chain_hours', 'coupling')}, 'system': system,
@@ -3239,6 +3532,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
               'ranking': sorted(candidates, key=lambda c: (c['score'] is None, -(c['score'] or 0))), 'usage': usage}
     if not eligible:
         closest = sorted((c for c in candidates if c['excluded']), key=lambda c: (len(c['excluded']), -c['components']['fit']))[:2]
+        named_block = named_pin_block(task, candidates)
         decision.update({'action': 'none', 'needs_user_decision': True,
                          'reason': 'No eligible bundle. Closest: ' + ' | '.join(
                              f"{c['id']}: {'; '.join(c['excluded'])}" for c in closest)})
@@ -3255,6 +3549,13 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                                       'at': (now + timedelta(hours=hours)).isoformat()}
             decision['reason'] += (f'. Nothing below the {task["difficulty"]} floor is offered instead; {bundle_id} clears it '
                                    f'and its quota returns in {hours:.1f}h: wait, or decide otherwise.')
+        if named_block:
+            # What the user named cannot run. Say why and stop; nothing else stands in for it.
+            decision['blocked'] = 'named_model_unavailable'
+            decision.setdefault('warnings', []).extend(named_block)
+            decision['reason'] = named_block[0]
+            result['next'] = ('The model the user named cannot run now: ' + '; '.join(named_block)[:300]
+                              + '. Tell the user; do not substitute another model.')
         result['choice'] = 'none'
         return result
     can_wait = task['can_wait_hours']
@@ -3280,14 +3581,19 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                          'reason': (f"The chain owner {top['id']} can resume in {top['available_in_hours']:.1f}h"
                                     if forced else f"Nothing eligible can start within {can_wait:g}h; the best, {top['id']}, can start in {top['available_in_hours']:.1f}h")
                          + '. Wait, allow a longer wait, or mark it unavailable and replan.'})
+    # A worker held only by the old route gives way when the user names something else.
+    pin_moved = resume is not None and (
+        ('explicit model constraint' in resume['excluded'] or 'explicit effort constraint' in resume['excluded'])
+        or bool(task.get('pinned_bundle') and task['pinned_bundle'] != resume['id']))
     if (task['worker'] and not worker_worn(task['worker'], policy) and task['coupling'] == 'high'
-            and resume is not None and resume['excluded']):
+            and resume is not None and resume['excluded'] and not pin_moved):
         decision.update({'needs_user_decision': True, 'drift_risk': 'high',
                          'resume_blocked_by': resume['excluded'],
                          'wait_hours': resume.get('wait_until_hours'),
                          'reason': 'The chain owner cannot continue now. Waiting keeps one owner; switching delivers sooner with handoff and drift risk.'})
     # The judge weighs models, not efforts, harnesses or accounts of one model: the margin is to the best other model.
-    rival = next((c for c in pool if c is not top and c['bundle']['model'] != top['bundle']['model']), None)
+    rival = next((c for c in pool if c is not top
+                  and row_key(c['bundle']['model'], accounts) != row_key(top['bundle']['model'], accounts)), None)
     margin = round(top['score'] - rival['score'], 4) if rival is not None and not forced else None
     decision['margin'] = margin
     decision['needs_judgment'] = bool(margin is not None and margin < policy['needs_judgment_margin'])
@@ -3305,10 +3611,10 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         warn_msg = top['components']['realtime_slow_pin_warning']
         if warn_msg not in (decision.get('reason') or ''):
             decision['reason'] = f"{decision['reason']}; {warn_msg}"
-    top_model = canonical(top['bundle']['model'], accounts)
-    offered = sorted({c['bundle'].get('effort') for c in candidates if canonical(c['bundle']['model'], accounts) == top_model
+    top_model = row_key(top['bundle']['model'], accounts)
+    offered = sorted({c['bundle'].get('effort') for c in candidates if row_key(c['bundle']['model'], accounts) == top_model
                       and c['bundle'].get('effort') in EFFORT_ORDER}, key=EFFORT_ORDER.index) or EFFORT_ORDER
-    saturating = saturating_effort(policy, accounts.get('effort_curves', {}).get(top_model, {}), model_spec(accounts, top_model),
+    saturating = saturating_effort(policy, model_curves(accounts, top['bundle']['model']), model_spec(accounts, top['bundle']['model']),
                                    task['demand']['required_ability'], offered)
     # The ceiling past which more thinking buys nothing for this task on the chosen model: High unless the task's
     # required ability needs more, None when even the model's top effort falls short.

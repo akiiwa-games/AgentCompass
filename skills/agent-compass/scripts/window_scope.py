@@ -56,3 +56,20 @@ def binds(model, *sources):
         return True
     declared = [source for source in sources if declares_scope(source)]
     return not declared or any(_source_binds(source, model) for source in declared)
+
+
+def binds_any(models, *sources):
+    """`binds` for a model known by several names (its resolved key and its raw spelling): a tag on any name counts."""
+    names = [name for name in models if _token_form(name)]
+    if not names:
+        return True
+    declared = [source for source in sources if declares_scope(source)]
+    if not declared:
+        return True
+
+    def source_binds(source):
+        include, exclude = _tags(source.get('models')), _tags(source.get('models_except'))
+        if include and not any(tag_matches(tag, name) for tag in include for name in names):
+            return False
+        return not any(tag_matches(tag, name) for tag in exclude for name in names)
+    return any(source_binds(source) for source in declared)

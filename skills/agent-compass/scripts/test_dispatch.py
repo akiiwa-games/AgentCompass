@@ -203,7 +203,7 @@ class DispatchTests(unittest.TestCase):
                 self.prepare(self.override_decision(**changes))
         with self.assertRaisesRegex(ValueError, 'no known'):
             self.override_decision(effort='turbo')
-        for changes in ({'account': 'claude-lab'}, {'provider': 'pi'}, {'model': 'unknown-model'}):
+        for changes in ({'account': 'claude-lab'}, {'provider': 'grok'}, {'model': 'unknown-model'}):
             bundle = dict(provider='codex', account='codex', model='gpt-6-astra', effort='low')
             bundle.update(changes)
             with self.assertRaisesRegex(ValueError, 'no known'):
@@ -1458,7 +1458,7 @@ class RollTests(unittest.TestCase):
         codex_task = {**self.task, 'task_id': 'task-normal-1', 'work_kind': 'general_implementation',
                       'profile': {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                                   'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': False, 'needs_gui': False,
-                                  'local_only': True, 'interaction_style': 'engineering', 'reason': 'test'}}
+                                  'local_only': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reason': 'test'}}
         normal_plan = allocator.plan(codex_task, codex_usage, self.now, accounts=self.accounts)
         self.assertEqual(normal_plan['choice'], 'sol_high')
         normal_dec = registry.issue(dict(normal_plan, stage='plan'), codex_task, self.now)

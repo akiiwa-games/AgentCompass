@@ -26,6 +26,8 @@ class UpdateProgressTests(unittest.TestCase):
     def test_progress_survives_component_failure_and_can_be_reopened(self):
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.object(update_status, "DIRECTORY", Path(directory)), \
+                mock.patch.object(plugins, "PATH", Path(directory) / "plugins.json"), \
+                mock.patch.object(updates, "product_notice", return_value=""), \
                 mock.patch.object(updates, "update_dot2api", return_value="Dot2API 已是最新"), \
                 mock.patch.object(updates, "update_chatgpt_web", side_effect=RuntimeError("offline")), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已更新"), \

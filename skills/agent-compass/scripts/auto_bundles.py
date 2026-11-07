@@ -18,7 +18,7 @@ import copy
 import hashlib
 import re
 
-from model_resolution import generic_model_spec, resolve_canonical_model
+from model_resolution import DIRECT_SOURCES, generic_model_spec, resolve_canonical_model, resolve_model
 
 AUTO_PREFIX = 'auto:'
 STALE_LIMIT_SECONDS = 7 * 24 * 3600
@@ -106,7 +106,11 @@ def superseded_by(raw_model, accounts):
     to {'by': newer id, 'basis': ...}. Efforts and harnesses of one model share its entry.
     """
     table = accounts.get('superseded') if isinstance(accounts.get('superseded'), dict) else {}
-    for candidate in _name_candidates(raw_model, accounts)[1]:
+    resolved = resolve_model(raw_model, accounts.get('models') or {}, accounts.get('aliases') or {})
+    names = [*_name_candidates(raw_model, accounts)[1], resolved['bare']]
+    if resolved['source'] in DIRECT_SOURCES:
+        names.append(resolved['key'])
+    for candidate in names:
         entry = table.get(candidate)
         if isinstance(entry, dict) and entry.get('by'):
             return entry['by']
@@ -125,17 +129,12 @@ def default_profile(raw_model, accounts):
                   else (accounts if isinstance(accounts, dict) else {}))
     known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict) and ('tier' in v or 'capabilities' in v)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
-    base, candidates = _name_candidates(raw_model, accounts)
-    raw_leaf = str(raw_model).rsplit('/', 1)[-1]
-    for candidate in candidates:
-        if candidate in known:
-            spec = copy.deepcopy(known[candidate])
-            if candidate != raw_leaf and candidate != base:
-                for key in ('responsiveness', 'responsiveness_basis', 'responsiveness_status', 'speed_metrics'):
-                    spec.pop(key, None)
-            return {'model': candidate, 'source': 'calibrated', 'target': candidate,
-                    'spec': spec, 'basis': 'Calibrated row in accounts.models.'}
-    target = resolve_canonical_model(base, known, aliases)
+    base = _name_candidates(raw_model, accounts)[0]
+    resolved = resolve_model(raw_model, known, aliases)
+    if resolved['source'] in DIRECT_SOURCES:
+        return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
+                'spec': copy.deepcopy(known[resolved['key']]), 'basis': 'Calibrated row in accounts.models.'}
+    target = resolved['key']
     small = bool(SMALL_NAME.search(base))
     small_default = small_model_spec(accounts)
     if target and small and not SMALL_NAME.search(target):
@@ -203,7 +202,7 @@ def _draws(spec, model, accounts):
     import window_scope
     windows = spec.get('windows') if isinstance(spec.get('windows'), dict) else {}
     canonical = resolve_canonical_model(model, accounts.get('models') or {}, accounts.get('aliases') or {}) or model
-    return [wid for wid, w in windows.items() if window_scope.binds(canonical, w)]
+    return [wid for wid, w in windows.items() if window_scope.binds_any((canonical, model), w)]
 
 
 def _availability(entry, raw, now, seen_at):
@@ -288,6 +287,8 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                 # The checkbox default is public data alone: checked unless superseded there. The user's
                 # model-management checkbox (pref) overrides it. Metered stays a last resort in routing.
                 default_disabled = superseded_by(raw, accounts) is not None or superseded_by(key, accounts) is not None
+                # Unchecked only by default, not by the user: naming this model still reaches it.
+                by_default = default_disabled and 'disabled' not in pref and availability != 'expired'
                 bundle = {
                     'provider': provider, 'harness': harness, 'model': model_name, 'launch_model': raw,
                     **({'effort': effort} if effort else {}),
@@ -295,6 +296,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                     'draws': [] if metered and 'spend' not in (spec.get('windows') or {}) else
                              (['spend'] if metered else _draws(spec, key, accounts)),
                     'disabled': bool(pref.get('disabled', default_disabled)) or availability == 'expired',
+                    **({'disabled_by_default': True} if by_default else {}),
                     'auto': True, 'billing': 'metered' if metered else 'subscription',
                     'score_source': profile['source'], 'score_basis': profile['basis'],
                     'availability': availability, 'last_detected_at': last,

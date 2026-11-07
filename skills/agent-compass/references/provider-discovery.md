@@ -146,7 +146,8 @@ Grok executable (bare names resolve through PATH) fails the launch (native hando
 instead of picking another install. `grok-bot` is separate.
 
 Normalization strips provider prefixes, dated/version tags and known suffixes,
-then tries longest known prefixes and family defaults. Scores never replace the
+then tries longest known prefixes and family defaults; the result says which of these
+matched ([rules](router-internals.md#model-names-efforts-and-pins)). Scores never replace the
 advertised launch ID. Unknown model IDs get the generic 3.3-tier text-only baseline.
 Saved CC Switch profiles remain metadata until bound to a real launcher; discovery
 never switches the active product account or contacts a gateway.
