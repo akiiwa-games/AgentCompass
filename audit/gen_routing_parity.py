@@ -20,7 +20,7 @@ import sys
 import tarfile
 import tempfile
 
-PINNED_SHA = '7f83f141783bee70002e08191f16cde09276a5df'
+PINNED_SHA = 'ede07be1512d6138458af382bf948e46cb325fdc'
 REPOSITORY = Path(__file__).resolve().parents[1]
 SCRIPTS = 'skills/agent-compass/scripts'
 NOW = datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc)
