@@ -2518,7 +2518,7 @@ def main():
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
     parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session.')
     parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')
-    parser.add_argument('--access', choices=('read-only', 'write'), help='roll: what this brief does to its workspace, overriding the classifier. Only a writer is held to one per --workspace.')
+    parser.add_argument('--access', choices=('read-only', 'write'), help='roll: what this brief does to its workspace (default write). Only a writer is held to one per --workspace.')
     parser.add_argument('--allow-concurrent', metavar='REASON', help='roll: launch into a --workspace that already has a writer, with the concrete reason (kept in the ledger).')
     parser.add_argument('--wait', type=float, default=0, help='roll: seconds to wait for the worker (default 0: launch and return).')
     parser.add_argument('--score', action='store_true',

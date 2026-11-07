@@ -451,23 +451,40 @@ def holder(row):
             'task_id': row.get('task_id'), 'title': (row.get('request') or {}).get('title')}
 
 
-def writers_in(connection, workspace, now):
-    # A row from before dispatches recorded their access counts as a writer.
+def is_writer(row, now, caller):
+    # A row from before dispatches recorded their access counts as a writer. The caller is not its own conflict.
+    return row.get('access') != 'read_only' and not (caller and row.get('agent_id') == caller) and unresolved(row, now)
+
+
+def writers_in(connection, workspace, now, caller=None):
     return [holder(r) for r in rows(connection, 'dispatches')
-            if (r.get('request') or {}).get('workspaceId') == workspace and r.get('access') != 'read_only' and unresolved(r, now)]
+            if (r.get('request') or {}).get('workspaceId') == workspace and is_writer(r, now, caller)]
 
 
-def workspace_writers(workspace, now=None, path=None):
+def workspace_writers(workspace, caller=None, now=None, path=None):
     now = now or utcnow()
     if not Path(path or db_path()).exists():
         return []
     with transaction(path) as connection:
         expire(connection, now)
-        return writers_in(connection, workspace, now)
+        return writers_in(connection, workspace, now, caller)
+
+
+def writers_at(cwd, caller=None, now=None, path=None):
+    """Unsettled writers recorded in a directory: a roll without --workspace records its parent's, an observation the
+    worker's own. A --workspace dispatch no worker has been observed for is not known here."""
+    now = now or utcnow()
+    if not Path(path or db_path()).exists():
+        return []
+    place = os.path.normcase(os.path.normpath(cwd))
+    with transaction(path) as connection:
+        expire(connection, now)
+        return [holder(r) for r in rows(connection, 'dispatches') if r.get('cwd')
+                and os.path.normcase(os.path.normpath(r['cwd'])) == place and is_writer(r, now, caller)]
 
 
 def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
-            access='write', allow_concurrent=None, new_worker=False):
+            access='write', allow_concurrent=None, new_worker=False, cwd=None):
     require_parent_id(task.get('parent_agent_id'))
     import allocator
     now = now or utcnow()
@@ -493,7 +510,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         workspace = request.get('workspaceId')
         if workspace and access != 'read_only' and not allow_concurrent:
             # Same transaction as the insert: of two concurrent rolls only the first becomes the writer.
-            holders = writers_in(connection, workspace, now)
+            holders = writers_in(connection, workspace, now, task['parent_agent_id'])
             if holders:
                 raise WorkspaceBusy(workspace, holders)
         busy_agents = set()
@@ -556,6 +573,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                'operation': 'resume' if resume_agent_id else 'create',
                'agent_id': resume_agent_id, 'access': access,
                **({'allow_concurrent': allow_concurrent} if allow_concurrent else {}),
+               **({'cwd': cwd} if cwd else {}),
                'fallback_prompt': fallback_prompt if resume_agent_id else None,
                **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
                **({'chain_id': chain_id} if chain_id else {})}
@@ -594,17 +612,22 @@ def resolve_creation(dispatch_id, creation, now=None, path=None):
 
     `failed` means the daemon's run is over and it never reruns a key by itself, so nothing can appear later. Neither
     can a request never admitted once the bridge's send window has passed. An admitted create still in flight has no
-    cancel on the host and can still produce a worker, so it stays open however late it is."""
+    cancel on the host and can still produce a worker, so it stays open however late it is.
+
+    Returns (row, whether this call ended it), so that of several processes settling one row only one acts on it. An
+    unknown outcome says nothing against the provider, so it carries no failure_class and cools nothing down."""
     now = now or utcnow()
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)
         if row['state'] not in ('launching', 'expired') or row.get('agent_id') or row.get('operation') != 'create':
-            return row
+            return row, False
         phase = creation.get('phase') if creation else None
+        transitioned = True
         if phase == 'failed':
             cause = 'outcome_unknown' if creation.get('outcome_unknown') else creation.get('failure_class') or 'unknown'
             event(row, 'create_failed', now, 'host_creation_failed:' + cause)
-            row['failure_class'] = creation.get('failure_class') or 'unknown'
+            if not creation.get('outcome_unknown'):
+                row['failure_class'] = creation.get('failure_class') or 'unknown'
             row['creation'] = {'phase': phase}
         elif phase == 'completed':
             event(row, 'canceled', now, 'host_confirmed_agent_removed')
@@ -614,8 +637,9 @@ def resolve_creation(dispatch_id, creation, now=None, path=None):
             row['creation'] = {'phase': 'not_admitted'}
         else:
             row['creation'] = {'phase': phase or 'not_admitted', 'in_flight': bool(phase)}
+            transitioned = False
         save(connection, row)
-        return row
+        return row, transitioned
 
 
 def missing_agent(dispatch_id, agent_id, now=None, path=None):
@@ -710,6 +734,8 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             raise ValueError('Host snapshot predates this launch')
         row['agent_id'] = agent_id
         row['observed_at'] = stamp(now)
+        if isinstance(snapshot.get('cwd'), str):
+            row['cwd'] = snapshot['cwd']
         status = snapshot.get('status')
         reason = snapshot.get('attentionReason')
         # A resumed worker carries this dispatch's labels before its turn starts, so its idle/finished state may

@@ -13,6 +13,8 @@ const CREATE_LIMIT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
 const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed']);
 const CREATE_FAILED = 'creation failed';
+const WORKER_REMOVED = 'worker removed before it was observed';
+const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
@@ -90,6 +92,7 @@ export function notificationEvents(agent, record, now, creation) {
     if (record.seen) return [{key: 'terminal', reason: 'worker unavailable'}];
     if (record.agent_id) return now >= record.creation_deadline
       ? [{key: 'terminal', reason: 'creation outcome unavailable'}] : [];
+    if (creation?.phase === 'completed' && !creation.agent_id) return [{key: 'terminal', reason: WORKER_REMOVED}];
     return creation?.phase === 'failed' || (creation === null && now >= record.creation_deadline)
       ? [{key: 'terminal', reason: CREATE_FAILED}] : [];
   }
@@ -124,8 +127,11 @@ export async function notificationStep(client, record, persist, now = Date.now()
   const targetId = record.agent_id ?? record.dispatch_id;
   if (!record.pending) {
     const agent = (await client.fetchAgent(targetId))?.agent;
-    const creation = !agent && !record.seen && !record.agent_id ? await creationRecord(client, record.dispatch_id) : undefined;
-    const events = now >= record.deadline
+    const expired = now >= record.deadline;
+    // Past the watch there is nothing left to decide from it, and a record that cannot be read must not hold back the notice.
+    const creation = !expired && !agent && !record.seen && !record.agent_id
+      ? await creationRecord(client, record.dispatch_id) : undefined;
+    const events = expired
       ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
       : notificationEvents(agent, record, now, creation);
     event = events.find(event => !record.delivered.includes(event.key));
@@ -146,6 +152,8 @@ export async function notificationStep(client, record, persist, now = Date.now()
       text: `[AgentCompass worker notification]\nDispatch: ${record.dispatch_id}\n` +
         `Worker: ${targetId}\nState: ${event.reason}\n` + (event.reason === CREATE_FAILED
           ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'
+          : event.reason === WORKER_REMOVED
+          ? 'Paseo created this worker and it was removed before this dispatch observed it. It may have done part of the work: check that before rolling this brief again.'
           : `Read the worker's final response and details with get_agent_activity ` +
             `(agentId: ${targetId}); use get_agent_status for pending permissions.`)};
     }
@@ -245,6 +253,8 @@ export async function creationRecord(client, key) {
   const response = await client.sendCorrelatedSessionRequest({
     message: {type: 'creation.subscribe.request', kind: 'agent', idempotencyKey: key, subscribe: false},
     responseType: 'creation.subscribe.response', timeout: 10000});
+  // The daemon reports a completed record whose agent is gone only as this error, never as phase `completed`.
+  if (response.error === AGENT_REMOVED_ERROR) return {phase: 'completed', outcome_unknown: false, agent_id: null};
   if (response.error) throw new Error('creation_unobservable');
   const snapshot = response.snapshot;
   if (!snapshot) return null;
@@ -263,7 +273,7 @@ function stopWatcher(input, reason) {
 
 export function project(agent) {
   if (!agent) return null;
-  const result = Object.fromEntries(['id', 'provider', 'model', 'status', 'updatedAt', 'createdAt',
+  const result = Object.fromEntries(['id', 'provider', 'model', 'status', 'cwd', 'updatedAt', 'createdAt',
     'lastUserMessageAt', 'attentionReason', 'archivedAt', 'providerUnavailable',
     'currentModeId', 'thinkingOptionId', 'effectiveThinkingOptionId', 'labels']
     .filter(k => agent[k] !== undefined).map(k => [k, agent[k]]));

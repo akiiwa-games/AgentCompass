@@ -49,6 +49,8 @@ STALLED_NEXT = ('Paseo still reports this create as running past its deadline an
                 'appear. Keep observing with next_argv; restarting the Paseo daemon settles it. Do not roll again.')
 CREATE_FAILED_NEXT = ('Paseo confirms it created no worker for this dispatch and none can appear later. '
                       'It is safe to roll this brief again.')
+REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispatch observed it. The dispatch is over and '
+                'holds nothing. The worker may have done part of the work: check that before rolling this brief again.')
 
 
 def host_call(payload):
@@ -66,6 +68,7 @@ def host_call(payload):
                 process.wait(timeout)
             except subprocess.TimeoutExpired:
                 process.kill()
+                process.wait()
                 return {'ok': False, 'sent': payload['operation'] in ('create', 'resume'), 'error': 'host_timeout'}
             stdout.seek(0)
             output = stdout.read().decode('utf-8', 'replace')
@@ -88,6 +91,8 @@ def public(row, now=None):
         out['resumed'] = True
     if row['state'] == 'create_failed':
         out['next_action'] = CREATE_FAILED_NEXT
+    elif row['state'] == 'canceled' and (row.get('creation') or {}).get('phase') == 'completed':
+        out['next_action'] = REMOVED_NEXT
     elif creating(row):
         # Nothing here reads as a failure: the worker simply does not exist yet.
         out.update(creating=True, creation_phase=(row.get('creation') or {}).get('phase', 'unknown'),
@@ -111,8 +116,8 @@ def require_actual_parent(parent_id):
 
 
 def settle_create(row, creation, now, path):
-    settled = registry.resolve_creation(row['dispatch_id'], creation, now=now, path=path)
-    if settled['state'] == 'create_failed' and row['state'] != 'create_failed' and settled.get('failure_class'):
+    settled, transitioned = registry.resolve_creation(row['dispatch_id'], creation, now=now, path=path)
+    if transitioned and settled.get('failure_class'):
         import launch_failures
         launch_failures.record(settled['bundle'], settled['failure_class'])
     return settled
@@ -152,7 +157,7 @@ def workspace_holders(workspace, parent_id, host=None, path=None):
     dispatch says (a worker can be sent a follow-up after it completed). The caller itself is not its own conflict.
     Returns (holders, error); a host that cannot be read leaves the recorded dispatches as the whole answer."""
     host = host or host_call
-    holders = registry.workspace_writers(workspace, path=path)
+    holders = registry.workspace_writers(workspace, caller=parent_id, path=path)
     response = host({'operation': 'workspace_agents', 'workspace_id': workspace})
     if not response.get('ok'):
         return holders, response.get('error') or 'host_unavailable'
@@ -190,21 +195,23 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     # watch_seconds is a hard limit on waiting: a bridge call is cut at what is left of it. Sending a create is not
     # waiting: it runs to HOST_TIMEOUT whatever the watch, and the daemon carries on when it is cut.
     deadline = time.monotonic() + watch_seconds
+    observed = False
+
+    def left():
+        return deadline - time.monotonic()
 
     def budget():
-        left = deadline - time.monotonic()
-        return min(HOST_TIMEOUT, left) if left >= 1 else OBSERVE_FLOOR
+        return min(HOST_TIMEOUT, left()) if left() >= 1 else OBSERVE_FLOOR
 
     if row['parent_id'] != parent_id:
         raise ValueError('Dispatch belongs to another parent')
     if row['state'] == 'prepared':
         row = registry.claim(row['request'], parent_id, now=registry.utcnow(), path=path)
 
-        def create():
-            # A resume that falls back here has used part of the deadline, which outlasts any such send window.
+        def create(window_from):
+            send_by = min(window_from + timedelta(seconds=registry.CREATE_SEND_WINDOW), registry.create_deadline(row))
             return host({'operation': 'create', 'dispatch_id': dispatch_id, 'parent_id': parent_id, 'request': row['request'],
-                         'send_by': registry.stamp(registry.utcnow() + timedelta(seconds=registry.CREATE_SEND_WINDOW)),
-                         'create_deadline': registry.stamp(registry.create_deadline(row))})
+                         'send_by': registry.stamp(send_by), 'create_deadline': registry.stamp(registry.create_deadline(row))})
         if row.get('operation') == 'resume' and row.get('agent_id'):
             response = host({'operation': 'resume', 'dispatch_id': dispatch_id,
                              'parent_id': parent_id, 'agent_id': row['agent_id'], 'request': row['request']})
@@ -212,9 +219,11 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
                 'addressable_parent_required', 'parent_agent_not_found', 'notification_start_failed'
             ):
                 row = registry.fallback_to_create(dispatch_id, now=registry.utcnow(), path=path)
-                response = create()
+                # The failed resume used up part of the window, so this gets a fresh one, still inside the deadline.
+                response = create(registry.utcnow())
         else:
-            response = create()
+            # From the claim: a process paused before sending cannot stretch the window past the deadline.
+            response = create(registry.parse(row['launched_at']))
         queried_host = True
         notification = response.get('completion_notification')
         if response.get('ok') and response.get('agent'):
@@ -230,21 +239,22 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         # Ambiguous errors retain the single-use claim; reconcile locates any created agent by labels.
     elif row['state'] == 'expired' and row.get('launched_at'):
         observations = reconcile(dispatch_id, host=host, path=path, timeout=budget())
-        queried_host = True
+        queried_host = observed = True
         notification = next((item['completion_notification'] for item in observations
                              if item.get('completion_notification')), notification)
         row = registry.inspect(dispatch_id, path)
     observe_error = None
-    while row['state'] not in registry.TERMINAL:
+    while row['state'] not in registry.TERMINAL and (not observed or left() >= OBSERVE_FLOOR):
         observations = reconcile(dispatch_id, host=host, path=path, timeout=budget())
-        queried_host = True
+        queried_host = observed = True
         notification = next((item['completion_notification'] for item in observations
                              if item.get('completion_notification')), notification)
         observe_error = next((item['error'] for item in observations if item.get('error')), None)
         row = registry.inspect(dispatch_id, path)
-        if row['state'] in registry.TERMINAL or time.monotonic() + OBSERVE_FLOOR >= deadline:
+        if row['state'] in registry.TERMINAL or left() < OBSERVE_FLOOR:
             break
-        time.sleep(min(poll_seconds, max(0, deadline - time.monotonic())))
+        # Wake with at least the floor left, so the next observation is cut at what remains rather than given more.
+        time.sleep(min(poll_seconds, left() - OBSERVE_FLOOR))
     result = public(row)
     if launch_error:
         result['error'] = launch_error

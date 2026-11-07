@@ -333,17 +333,30 @@ def grok_bot(args, out, prompt_file, task, bundle):
     return result, 1 if receipt['state'] == 'failed' else 0
 
 
-# The classifier's interaction_style: only `engineering` is defined as writing or changing software.
-READ_ONLY_STYLES = ('exploration', 'text_only', 'advisory')
-
-
-def task_access(args, decision):
-    """read_only or write, from the caller's explicit --access, else the classifier's own field; never the text."""
+def task_access(args, read_only_review=None):
+    """--access wins, then the classifier's read_only_review, and anything else writes: a wrong block is loud and has a
+    way out, a wrong exemption silently lets a second writer in. interaction_style says nothing about writing."""
     explicit = getattr(args, 'access', None)
     if explicit:
         return 'read_only' if explicit == 'read-only' else 'write'
-    style = (decision.get('task_profile') or {}).get('interaction_style')
-    return 'read_only' if style in READ_ONLY_STYLES else 'write'
+    return 'read_only' if read_only_review is True else 'write'
+
+
+def parent_cwd():
+    # Paseo starts a worker without --workspace in its parent's cwd, which Paseo gives its agents here.
+    return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
+
+
+def same_cwd_warning(out, parent):
+    """A roll without --workspace lands in its parent's directory. Too many of these run in parallel on purpose to
+    block them, so other unsettled writers there are only named."""
+    cwd = parent_cwd()
+    others = registry.writers_at(cwd, parent)
+    if not others:
+        return out
+    named = '; '.join(f"{h.get('state')} dispatch {h.get('dispatch_id')} ({h.get('title')})" for h in others)
+    note = f'{cwd} already has unsettled writer dispatches and this worker will also write there: {named}.'
+    return dict(out, assumptions=[*out.get('assumptions', []), note], warnings=[*out.get('warnings', []), note])
 
 
 def workspace_blocked(out, workspace, holders):
@@ -357,7 +370,8 @@ def workspace_blocked(out, workspace, holders):
 
 def paseo(args, out, decision, task, text, parent, usage, judge=None):
     dispatch_flow.reconcile()
-    access = task_access(args, decision)
+    # The classifier has no read_only_review field yet; when it does, pass it here as the second argument.
+    access = task_access(args)
     allow_concurrent = (getattr(args, 'allow_concurrent', None) or '').strip()
     workspace = args.workspace
     if workspace and access == 'write':
@@ -371,6 +385,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             judge.append_ledger({'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': 'allow_concurrent', 'parent_id': parent,
                                  'task_id': task.get('task_id'), 'workspace': workspace, 'reason': allow_concurrent[:300],
                                  'holders': holders})
+    if not workspace and access == 'write':
+        out = same_cwd_warning(out, parent)
     resume_agent_id = None
     if not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
@@ -396,7 +412,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         row = registry.prepare(decision['decision_id'], task, launch, usage,
                                resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None,
                                access=access, allow_concurrent=allow_concurrent or None,
-                               new_worker=bool(getattr(args, 'new_worker', False)))
+                               new_worker=bool(getattr(args, 'new_worker', False)),
+                               cwd=None if workspace else parent_cwd())
     except registry.WorkspaceBusy as busy:
         return workspace_blocked(out, busy.workspace, busy.holders)
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=args.wait)
@@ -412,7 +429,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     # validated host observation binds agent_id/observed_at to this dispatch.
     confirmed = bool(receipt.get('agent_id') and receipt.get('observed_at'))
     ended_before_send = (receipt.get('state') in ('canceled', 'expired') and not receipt.get('launched_at'))
-    uncertain = not failed and not confirmed and not ended_before_send
+    removed = receipt.get('state') == 'canceled' and bool(receipt.get('next_action'))
+    uncertain = not failed and not confirmed and not ended_before_send and not removed
     if uncertain:
         receipt = dict(receipt)
         receipt.setdefault('continuation_argv', entry.argv(
@@ -425,6 +443,9 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     if ended_before_send:
         return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error',
                     next=f"Dispatch {receipt['state']} before a launch was sent; inspect its receipt before scheduling new work.",
+                    worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 2
+    if removed:
+        return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error', next=receipt['next_action'],
                     worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 2
     if receipt.get('state') == 'create_failed':
         return dict(out, launched=False, dispatch_mode='paseo', caller_action='roll_again_safe', next=receipt['next_action'],
@@ -708,6 +729,8 @@ def compact(result, status, detail_path):
         out['blocked_by'] = result['blocked_by']
     if result.get('assumptions'):
         out['assumptions'] = result['assumptions']
+    if result.get('warnings'):
+        out['warnings'] = result['warnings']
     out['details'] = detail_path
     return {k: v for k, v in out.items() if v is not None}
 

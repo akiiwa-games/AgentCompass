@@ -34,21 +34,27 @@ The bridge's `create` call is cut off after 25 s, and the daemon carries on rega
 | Daemon's record, no agent exists | Result | Why it is final |
 | :--- | :--- | :--- |
 | `accepted` ... `prompt_started` | Stays `launching` (`creating: true`), `next_action` says so | The worker can still appear. |
-| same, past the create deadline | Stays open, `next_action` says it is overdue | The daemon has no cancel, so calling it failed could release a worker about to start. A daemon restart settles it (`failed`, outcome unknown). |
+| same, past the create deadline | Stays open, `next_action` says it is overdue, and `release` refuses | The daemon has no cancel, so calling it failed could release a worker about to start. The only way out is restarting the daemon, which settles it (`failed`, outcome unknown). The real records hold no create stuck like this so far (967 agent creates read on 2026-11-07). |
 | `failed` | `create_failed` at once | The run is over and the daemon never reruns a key by itself; only a new request could, and `launching` never sends one. |
 | none, before the deadline | Stays `launching` | The request may still be on its way. |
 | none, at the deadline | `create_failed` | The bridge refuses to send after the send window (60 s after the claim), so nothing can arrive any more. |
-| `completed` | `canceled` | Created, then removed. |
+| agent gone (the daemon answers `Previously created agent no longer exists`, not a phase) | `canceled`, `next_action` says to check what the worker did before rolling again | Created, then removed before this dispatch observed it. |
 
 The create deadline runs from the claim: 240 s by default, 480 s for `antigravity-resilient` (`CREATE_DEADLINES` in `dispatch_registry.py`), leaving room for the daemon's own provider timeouts. A host that cannot be read settles nothing (`observe_error`).
 
-While `launching`, Paseo's `get_agent_status` answers "not found": the agent does not exist yet, and that is not a failure. Do not roll again; run `next_argv`. The worker notification goes out only at an end: `finished`, `error`, or `creation failed`, which says the brief can be rolled again. A slow create sends nothing.
+An outcome-unknown failure (a daemon restart ended the run) still settles `create_failed`, but cools nothing down in `launch_failures`, because it says nothing against the provider. Only the process that ended the row records a cooldown, so two settling one row count once.
+
+Known residual risks: a request the daemon has not admitted by the deadline is settled as `create_failed` on the assumption that it can no longer arrive. Its send window closes at 60 s, so that would take a frame delayed by minutes on loopback, which could not be produced in review. If one did arrive, the settled row is not observed again: the worker would run unbound, seen only by the writer rule on a later `roll --workspace`. A tombstone create under the same key would close this and is not done. Separately, a restart in the milliseconds between the daemon admitting a create and starting its run leaves the record at `accepted` for good.
+
+While `launching`, Paseo's `get_agent_status` answers "not found": the agent does not exist yet, and that is not a failure. Do not roll again; run `next_argv`. The worker notification goes out only at an end: `finished`, `error`, `creation failed`, which says the brief can be rolled again, or `worker removed before it was observed`. A slow create sends nothing. A record that cannot be read keeps the watcher polling, and its watch limit still ends with a notice.
 
 ### One writer per workspace
 
-`roll --workspace W` refuses a second writer: `status: blocked`, `cause: workspace_has_active_writer`, nothing launched. W is held by any unsettled dispatch recorded against it (`prepared`, `launching`, `launched`, `started`, or `expired` after launch) and by any router-launched agent running there, even after its dispatch completed (a worker can be sent a follow-up). A dispatch recorded before this rule counts as a writer; the caller itself never does. The check is repeated in the transaction that inserts the row, so of two concurrent rolls one wins. If running agents cannot be read, the recorded dispatches decide and `assumptions` says so. A roll without `--workspace` is not checked.
+`roll --workspace W` refuses a second writer: `status: blocked`, `cause: workspace_has_active_writer`, nothing launched. W is held by any unsettled dispatch recorded against it (`prepared`, `launching`, `launched`, `started`, or `expired` after launch) and by any router-launched agent running there, even after its dispatch completed (a worker can be sent a follow-up). A dispatch recorded before this rule counts as a writer; the caller itself never does, so a coordinator can roll into its own workspace. The check is repeated in the transaction that inserts the row, so of two concurrent rolls one wins. If running agents cannot be read, the recorded dispatches decide and `assumptions` says so: a dispatch that completed and whose worker is running a follow-up can then be missed.
 
-Read-only work coexists with a writer. It is read-only when `--access read-only` says so, otherwise when the classifier's `interaction_style` is not `engineering`; `--access write` overrides the classifier the other way. Titles and task text are never matched. Nothing enforces read-only on the worker, so `--access read-only` is the caller's statement.
+A roll without `--workspace` is never blocked, because many normal parallel dispatches have none. If its directory, the parent's cwd, has other unsettled writer dispatches, `assumptions` and `warnings` name them. A `--workspace` dispatch counts there once its worker has been observed in that directory.
+
+Read-only work coexists with a writer. A brief is a writer unless `--access read-only` says otherwise. `interaction_style` does not decide this: it does not separate reading from writing. Titles and task text are never matched. Nothing enforces read-only on the worker, so `--access read-only` is the caller's statement.
 
 `blocked_by` lists each holder (`dispatch_id`, `state`, `agent_id`, `task_id`, `title`). `next_action` gives the three ways out: wait for it and roll again; `--access read-only` if the brief only reads; `--allow-concurrent "<why>"` to run both anyway, which writes a ledger row (`stage: allow_concurrent`, with the reason and the holders) and keeps the reason on the dispatch.
 
@@ -58,7 +64,7 @@ A repeated `roll` of an open brief hands back that dispatch (`pending`, `next_ar
 
 ### Watching
 
-`launch --watch-seconds N` returns the current state (`pending` or `started`) within N seconds: each bridge call is cut at what is left, and it starts no further observation with under 5 s left, so it can return up to 5 s early. A watch under 1 s, such as 0, gets one observation of up to 5 s so it still reads the host. `roll --wait` is the same watch, except that sending a create may take its full 25 s whatever the wait. `poll-seconds` only spaces the observations.
+`launch --watch-seconds N` returns the current state (`pending` or `started`) within N seconds: each bridge call is cut at what is left, and it starts no further observation with under 5 s left, so it can return up to 5 s early. Only the first observation can exceed that limit: under 1 s of watch, such as 0, it gets up to 5 s so it still reads the host. `roll --wait` is the same watch, except that sending a create may take its full 25 s whatever the wait. `poll-seconds` only spaces the observations.
 
 ## 2. In-Flight Quota Deduction
 

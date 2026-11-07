@@ -305,6 +305,44 @@ test('observe reports the creation record when no agent exists, and finds an age
   assert.equal('creation' in await execute(bound, {operation: 'observe', dispatch_id: 'observe-creation', agent_id: 'gone'}), false);
 });
 
+// What the daemon answers for a completed record whose agent is gone (real run against a real record, 2026-11-07).
+const agentRemoved = async () => ({snapshot: null, error: 'Previously created agent no longer exists'});
+
+test('a worker removed before it was observed reads as a completed record with no agent, not an unreadable host', async () => {
+  assert.deepEqual(await creationRecord({sendCorrelatedSessionRequest: agentRemoved}, 'd'),
+    {phase: 'completed', outcome_unknown: false, agent_id: null});
+  const gone = {fetchAgents: async () => ({entries: []}), fetchAgent: async () => null, sendCorrelatedSessionRequest: agentRemoved};
+  const observed = await execute(gone, {operation: 'observe', dispatch_id: 'observe-removed', agent_id: null});
+  assert.deepEqual([observed.ok, observed.agent, observed.creation.phase, observed.creation.agent_id], [true, null, 'completed', null]);
+});
+
+test('the watcher reports a removed worker once and stops', async () => {
+  const f = watchFixture();
+  const fetchAgent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : null;
+  f.client.sendCorrelatedSessionRequest = agentRemoved;
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /removed before this dispatch observed it/);
+  assert(!f.calls[0][1].includes('get_agent_activity'));
+  assert.equal(f.record.status, 'delivered');
+});
+
+test('a record that cannot be read waits inside the watch and never holds back its limit', async () => {
+  const f = watchFixture();
+  const fetchAgent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : null;
+  f.client.sendCorrelatedSessionRequest = async () => ({snapshot: null, error: 'boom'});
+  await assert.rejects(notificationStep(f.client, f.record, f.persist, 10), /creation_unobservable/);
+  assert.equal(f.calls.length, 0);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, f.record.deadline), true);
+  assert.match(f.calls[0][1], /watch expired/);
+});
+
+test('project carries where the worker runs', () => {
+  assert.equal(project({id: 'a', cwd: 'E:/fixture'}).cwd, 'E:/fixture');
+});
+
 test('a create past its send window is never sent', async () => {
   let created = 0;
   const fake = {fetchAgent: async () => ({agent: {cwd: 'E:/fixture'}}), createAgent: async () => {created++; return {};}};
