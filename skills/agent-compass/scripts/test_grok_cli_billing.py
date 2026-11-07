@@ -192,6 +192,21 @@ class GrokCliBillingTests(unittest.TestCase):
         self.assertIsNone(result.error_status)
         self.assertNotIn("grok", usage.load_usage_cache().get("providers", {}))
 
+    def test_auth_json_takes_precedence_over_env_in_token_and_credential_key(self):
+        self.write_login(datetime.now(timezone.utc) + timedelta(hours=1))
+        with patch.dict(usage.os.environ, {"GROK_API_KEY": "", "GROK_TOKEN": ""}, clear=False):
+            key_file_only = usage.provider_credential_key("grok")
+            tok_file_only = usage.read_grok_token()
+        self.assertEqual(tok_file_only, "access")
+        with patch.dict(usage.os.environ, {"GROK_API_KEY": "env-override-key", "GROK_TOKEN": "env-token"}, clear=False):
+            self.assertEqual(usage.read_grok_token(), "access")
+            self.assertEqual(usage.provider_credential_key("grok"), key_file_only)
+        (self.home / "auth.json").write_text("{}", encoding="utf-8")
+        with patch.dict(usage.os.environ, {"GROK_API_KEY": "env-override-key", "GROK_TOKEN": ""}, clear=False):
+            self.assertEqual(usage.read_grok_token(), "env-override-key")
+            self.assertIsNotNone(usage.provider_credential_key("grok"))
+            self.assertNotEqual(usage.provider_credential_key("grok"), key_file_only)
+
 
 if __name__ == "__main__":
     unittest.main()

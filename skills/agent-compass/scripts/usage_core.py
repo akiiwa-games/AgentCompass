@@ -1310,31 +1310,21 @@ def extract_grok_token(auth: Any) -> str | None:
     return oidc or legacy
 
 
-def _grok_credential_material() -> str | None:
-    file_tok = None
+def read_grok_token() -> str | None:
     path = GROK_HOME / "auth.json"
     if path.exists():
         try:
             file_tok = extract_grok_token(json.loads(path.read_text(encoding="utf-8")))
+            if file_tok:
+                return file_tok
         except Exception:
-            file_tok = None
-    env_tok = (os.environ.get("GROK_API_KEY") or os.environ.get("GROK_TOKEN") or "").strip() or None
-    if file_tok and env_tok and file_tok != env_tok:
-        return f"{file_tok}:{env_tok}"
-    return file_tok or env_tok
+            pass
+    env = (os.environ.get("GROK_API_KEY") or os.environ.get("GROK_TOKEN") or "").strip()
+    return env or None
 
 
-def read_grok_token() -> str | None:
-    env = os.environ.get("GROK_API_KEY") or os.environ.get("GROK_TOKEN")
-    if env:
-        return env
-    path = GROK_HOME / "auth.json"
-    if not path.exists():
-        return None
-    try:
-        return extract_grok_token(json.loads(path.read_text(encoding="utf-8")))
-    except Exception:
-        return None
+def _grok_credential_material() -> str | None:
+    return read_grok_token()
 
 
 def _read_varint(buf: bytes, index: int) -> tuple[int | None, int]:

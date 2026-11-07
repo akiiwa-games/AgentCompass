@@ -272,6 +272,81 @@ class DiscoveryTests(unittest.TestCase):
         self.assertFalse(inventory.sign_in_proven(snap_no_creds['accounts']['grok']))
         self.assertFalse(self.apply(snap_no_creds)['accounts']['grok']['verified'])
 
+    def test_grok_auth_json_ignores_paseo_def_env_and_shell_env_keeping_windows_and_401_auth_failed(self):
+        from datetime import timedelta
+        import io
+        import usage_core as usage
+        (self.home / '.grok').mkdir(exist_ok=True)
+        self.write('.agent-compass/grok-bot/config.json', {'bot_id': 'bot-1'})
+        exp = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat().replace('+00:00', 'Z')
+        self.write('.grok/auth.json', {'https://auth.x.ai::client': {'key': 'tok-A', 'user_id': 'u1', 'expires_at': exp}})
+        cache_file = self.home / '.agent-compass/usage-cache.json'
+        payload = {'config': {'currentPeriod': {'end': '2026-11-03T08:26:58.149+00:00'}, 'creditUsagePercent': 40.0}}
+
+        class _Resp(io.BytesIO):
+            status = 200
+            headers = {}
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        # Collector runs without GROK_API_KEY in its environment and writes a fresh reading
+        with patch.object(usage, 'GROK_HOME', self.home / '.grok'), \
+                patch.object(usage, 'HOME', self.home), \
+                patch.object(usage, 'CACHE_PATH', cache_file), \
+                patch.dict(usage.os.environ, {'GROK_API_KEY': '', 'GROK_TOKEN': ''}, clear=False), \
+                patch.object(usage.urllib.request, 'urlopen', return_value=_Resp(json.dumps(payload).encode())):
+            usage.collect_local_usage(['grok'], force=True)
+
+        # Case 1: Paseo grok definition has env GROK_API_KEY
+        self.paseo({'codex': {'enabled': True}, 'grok': {'enabled': True, 'env': {'GROK_API_KEY': 'def-K'}}})
+        snap_paseo_env = self._grok_bot_discover()
+        self.assertEqual(snap_paseo_env['accounts']['grok'].get('usage_binding'), 'matches')
+        self.assertEqual(snap_paseo_env['accounts']['grok'].get('usage_windows'), ['credits'])
+        merged_paseo = inventory.merge_usage(
+            {'accounts': {'grok': {'status': 'fresh', 'windows': [{'id': 'credits', 'used_pct': 40.0}]}}},
+            {'_discovery': snap_paseo_env, 'accounts': {}},
+            self.now,
+        )
+        self.assertEqual(len(merged_paseo['accounts']['grok']['windows']), 1)
+
+        # Case 2: Caller shell has GROK_API_KEY while collector did not
+        self.paseo({'codex': {'enabled': True}, 'grok': {'enabled': True}})
+        self.env = {'PATH': '', 'GROK_API_KEY': 'shell-K'}
+        snap_shell_env = self._grok_bot_discover()
+        self.assertEqual(snap_shell_env['accounts']['grok'].get('usage_binding'), 'matches')
+        self.assertEqual(snap_shell_env['accounts']['grok'].get('usage_windows'), ['credits'])
+        merged_shell = inventory.merge_usage(
+            {'accounts': {'grok': {'status': 'fresh', 'windows': [{'id': 'credits', 'used_pct': 40.0}]}}},
+            {'_discovery': snap_shell_env, 'accounts': {}},
+            self.now,
+        )
+        self.assertEqual(len(merged_shell['accounts']['grok']['windows']), 1)
+
+        # Collector gets 401: both Paseo definition env and caller shell env still settle to auth_failed (not ready/changed)
+        http_401 = usage.urllib.error.HTTPError(usage.GROK_CLI_BILLING_URL, 401, 'Unauthorized', {}, io.BytesIO(b'{}'))
+        with patch.object(usage, 'GROK_HOME', self.home / '.grok'), \
+                patch.object(usage, 'HOME', self.home), \
+                patch.object(usage, 'CACHE_PATH', cache_file), \
+                patch.dict(usage.os.environ, {'GROK_API_KEY': '', 'GROK_TOKEN': ''}, clear=False), \
+                patch.object(usage.urllib.request, 'urlopen', side_effect=[http_401, http_401]):
+            usage.collect_local_usage(['grok'], force=True)
+
+        self.paseo({'codex': {'enabled': True}, 'grok': {'enabled': True, 'env': {'GROK_API_KEY': 'def-K'}}})
+        self.env = {'PATH': ''}
+        snap_401_paseo = self._grok_bot_discover()
+        self.assertEqual(snap_401_paseo['accounts']['grok'].get('usage_binding'), 'matches')
+        self.assertEqual(snap_401_paseo['accounts']['grok']['status'], 'auth_failed')
+        self.assertEqual(snap_401_paseo['accounts']['grok-bot']['status'], 'auth_failed')
+
+        self.paseo({'codex': {'enabled': True}, 'grok': {'enabled': True}})
+        self.env = {'PATH': '', 'GROK_API_KEY': 'shell-K'}
+        snap_401_shell = self._grok_bot_discover()
+        self.assertEqual(snap_401_shell['accounts']['grok'].get('usage_binding'), 'matches')
+        self.assertEqual(snap_401_shell['accounts']['grok']['status'], 'auth_failed')
+        self.assertEqual(snap_401_shell['accounts']['grok-bot']['status'], 'auth_failed')
+
     def test_active_grokbuild_official_binds_health_and_disable(self):
         dbpath = self.cc([('official', 'grokbuild', 'Grok Official', {}, 1)])
         before = dbpath.read_bytes()

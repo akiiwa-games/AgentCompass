@@ -251,10 +251,9 @@ def auth_facts(family, auth, home, profile=None):
 def _extract_grok_auth_token(auth):
     if not isinstance(auth, dict):
         return None
-    for key in ('access_token', 'accessToken', 'token', 'api_key'):
-        val = auth.get(key)
-        if isinstance(val, str) and val:
-            return val
+    top = auth.get('access_token')
+    if isinstance(top, str) and top:
+        return top
     oidc = None
     legacy = None
     for scope, value in auth.items():
@@ -271,17 +270,14 @@ def _extract_grok_auth_token(auth):
     return oidc or legacy
 
 
-def grok_auth_facts(grok_home, environ=None, grok_env=None):
+def grok_auth_facts(grok_home, environ=None):
     auth_doc, _ = read_json(Path(grok_home) / 'auth.json')
     file_tok = _extract_grok_auth_token(auth_doc)
-    environ = environ or {}
-    grok_env = grok_env or {}
-    env_tok = str(grok_env.get('GROK_API_KEY') or grok_env.get('GROK_TOKEN')
-                  or environ.get('GROK_API_KEY') or environ.get('GROK_TOKEN') or '').strip() or None
-    if file_tok and env_tok and file_tok != env_tok:
-        token = f'{file_tok}:{env_tok}'
+    if file_tok:
+        token = file_tok
     else:
-        token = file_tok or env_tok
+        environ = environ or {}
+        token = str(environ.get('GROK_API_KEY') or environ.get('GROK_TOKEN') or '').strip() or None
     return {
         'present': bool(token),
         'identity': digest('grok', token) if token else None,
@@ -947,8 +943,8 @@ def _discover(home=None, environ=None, now=None):
     grok_home = home / '.grok'
     grok_native = bool(_which('grok', environ.get('PATH'))) or grok_home.is_dir()
     grok_defined = 'grok' in definitions
-    _, grok_def_env, grok_enabled = resolve_definition('grok', definitions)
-    grok_facts = grok_auth_facts(grok_home, environ, grok_def_env)
+    _, _, grok_enabled = resolve_definition('grok', definitions)
+    grok_facts = grok_auth_facts(grok_home, environ)
     grok_windows = [w for w in array(grok_cached.get('windows')) if isinstance(w, dict) and w.get('id')]
     grok_has_failure = bool(
         grok_cached.get('error_status') is not None
