@@ -9,7 +9,8 @@ from router_test_support import isolated_router_state, usage_windows
 
 NOW = datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc)
 WORKING = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'hallucination_risk': 2, 'error_cost': 2,
-           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
+           'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering',
            'reason': 'test profile'}
 LIGHT = dict(WORKING, reasoning_depth=1, code_complexity=1, hallucination_risk=1, error_cost=1)
 HEAVY_FRONTIER = dict(WORKING, reasoning_depth=4, code_complexity=3, context_scale=3, hallucination_risk=3, error_cost=3)

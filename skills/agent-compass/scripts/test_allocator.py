@@ -117,7 +117,8 @@ class AllocatorTests(unittest.TestCase):
 
     def profile(self, **fields):
         base = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'hallucination_risk': 2, 'error_cost': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1'}
+                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                'read_only_review': False, 'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering'}
         return dict(base, **fields)
 
     def unsubscribed(self, account):
@@ -850,35 +851,52 @@ class AllocatorTests(unittest.TestCase):
     def test_heuristic_profile_and_schema_contract(self):
         capabilities = reference_capabilities()
         policy = allocator.load_accounts()['scoring']
+        accounts = allocator.load_accounts()
+        for banned in (
+            'infer_task_profile', 'infer_kind_from_objective', 'infer_fast_preference',
+            'is_readonly_review_task', 'infer_divergence', 'multi_task_marks',
+            'DIVERGENT_WORDS', 'FAST_REQUEST_WORDS', 'READONLY_REVIEW_PHRASES',
+            'GUI_WORDS', 'COMPUTER_USE_PHRASES', 'CODE_FILE_RE',
+            'OBJECTIVE_LOCAL_RUNTIME_RE', 'LOCAL_MACHINE_RE', 'MULTI_TASK_MARK_RE',
+        ):
+            self.assertFalse(hasattr(allocator, banned), f'{banned} must be removed')
         for kind in capabilities['routes']:
             for difficulty in (None, 'routine', 'hard', 'coupled', 'frontier'):
                 task = {'work_kind': kind, **({'difficulty': difficulty} if difficulty else {})}
-                prof = allocator.infer_task_profile(task, capabilities)
-                self.assertEqual(prof, allocator.validate_profile(prof))
-                normalized = allocator.normalize_task(task, policy, capabilities, allocator.load_accounts())
-                self.assertEqual(allocator.profile_difficulty(prof, policy), normalized['difficulty'], task)
+                normalized = allocator.normalize_task(task, policy, capabilities, accounts)
+                expected_diff = difficulty or allocator.default_difficulty(kind)
+                self.assertEqual(normalized['difficulty'], expected_diff, task)
         good = self.profile()
         for bad in (dict(good, reasoning_depth=5), dict(good, code_complexity=True), dict(good, error_cost='2'),
-                    dict(good, needs_gui='yes'), dict(good, interaction_style='coding'), 'deep'):
+                    dict(good, needs_gui='yes'), dict(good, wants_fast='yes'), dict(good, read_only_review=1),
+                    dict(good, interaction_style='coding'), 'deep'):
             with self.assertRaises(ValueError):
                 allocator.validate_profile(bad)
         schema = allocator.TASK_PROFILE_SCHEMA
         self.assertEqual(set(schema['required']), set(schema['properties']))
+        self.assertIn('wants_fast', schema['properties'])
+        self.assertIn('read_only_review', schema['properties'])
         for name, prop in schema['properties'].items():
             if prop['type'] == 'integer':
                 self.assertNotIn('enum', prop, name)
                 self.assertEqual((prop['minimum'], prop['maximum']), allocator.PROFILE_INTEGERS[name])
-        # The heuristic infers local_only from a local runtime or path, and a caller false wins over that hit.
-        # Exploration's route implies fill the flag only when the objective did not match and the caller left it unset.
-        hit = allocator.infer_task_profile({'objective': 'Run pytest', 'cwd': r'E:\PROJECTS\AgentCompass'}, capabilities)
-        self.assertTrue(hit['local_only'])
-        self.assertIn('local runtime', hit['reason'])
-        caller_false = allocator.infer_task_profile({'objective': 'Run pytest', 'needs': {'local_only': False}}, capabilities)
+        # local_only is resolved strictly from caller needs -> profile.local_only -> route implies -> False, never from objective/cwd text.
+        prof_local = allocator.normalize_task(
+            {'objective': 'Pure text', 'profile': self.profile(local_only=True)},
+            policy, capabilities, accounts,
+        )
+        self.assertTrue(prof_local['local_only'])
+        caller_false = allocator.normalize_task(
+            {'objective': 'Run pytest', 'cwd': r'E:\PROJECTS\AgentCompass', 'needs': {'local_only': False},
+             'profile': self.profile(local_only=True)},
+            policy, capabilities, accounts,
+        )
         self.assertFalse(caller_false['local_only'])
-        self.assertNotIn('local runtime', caller_false['reason'])
-        explore = allocator.infer_task_profile({'objective': 'Explore local logs', 'work_kind': 'exploration_analysis'}, capabilities)
+        explore = allocator.normalize_task(
+            {'objective': 'Explore local logs', 'work_kind': 'exploration_analysis'},
+            policy, capabilities, accounts,
+        )
         self.assertTrue(explore['local_only'])
-        self.assertNotIn('local runtime', explore['reason'])
 
     def test_subjective_model_ratings_without_route_expansion(self):
         usage = self.usage(**self.PLENTY, antigravity=[('gemini-5h', 95, 3), ('gemini-weekly', 95, 100), ('3p-5h', 95, 3), ('3p-weekly', 95, 100)])
@@ -983,44 +1001,30 @@ class AllocatorTests(unittest.TestCase):
         return usage
 
     def test_cross_domain_offline_routes(self):
-        # Fallback follows the requested operation, including bilingual routes and competing incidental nouns.
+        # Route selection follows the classified profile work_kind regardless of incidental keywords in objective.
+        capabilities = reference_capabilities()
+        policy = allocator.load_accounts()['scoring']
         for objective, kind in (
-            ('Click the Save button in the desktop settings', 'computer_use'),
-            ('Compare screenshots with the UI mockup', 'visual_analysis'),
+            ('Click the Save button in the desktop settings', 'debug_review'),
+            ('Compare screenshots with the UI mockup', 'general_implementation'),
             ('检查截图并列出布局差异', 'visual_analysis'),
             ('Implement the desktop UI component in React', 'frontend_implementation'),
-            ('实现前端组件样式', 'frontend_implementation'),
             ('Batch rename i18n keys uniformly', 'bounded_bulk_work'),
-            ('批量替换翻译键', 'bounded_bulk_work'),
             ('Search the web for public documentation', 'web_research'),
-            ('搜索官网完成厂商调研', 'web_research'),
             ('Translate the deployment runbook without executing it', 'text_in_text_out'),
-            ('撰写文档并翻译术语', 'text_in_text_out'),
             ('Write a multi-phase system migration spec', 'complex_build_plan'),
-            ('设计系统迁移方案', 'complex_build_plan'),
             ('Prove or refute this mathematical bound', 'direction_reasoning'),
-            ('开展数学推导和架构批判', 'direction_reasoning'),
             ('Run a quantitative experiment and benchmark suite, report metrics', 'research_packet'),
-            ('运行仿真并报告统计检验结果', 'research_packet'),
             ('Follow the CI release runbook and health check', 'tool_execution'),
-            ('执行发布流程和巡检', 'tool_execution'),
             ('Diagnose the memory leak in frontend rendering', 'debug_review'),
-            ('排查内存泄漏', 'debug_review'),
             ('Explore the repository architecture', 'exploration_analysis'),
-            ('梳理仓库依赖', 'exploration_analysis'),
             ('Implement a standalone algorithm', 'self_contained_code'),
-            ('实现独立算法并验证', 'self_contained_code'),
-            ('Implement API pagination in the backend service', 'general_implementation'),
-            # Device nouns and "translation" inside code work are not GUI operation or text translation.
             ('Fix the keyboard shortcuts in editor.py.', 'debug_review'),
-            ('Fix mouse event handler in app.ts', 'debug_review'),
-            ('Fix translation.py.', 'debug_review'),
-            ('Debug translation pipeline', 'debug_review'),
-            ('修复翻译模块的 bug', 'debug_review'),
             ('用鼠标点击设置里的保存', 'computer_use'),
         ):
-            with self.subTest(objective=objective):
-                self.assertEqual(allocator.infer_kind_from_objective(objective), kind)
+            with self.subTest(objective=objective, kind=kind):
+                prof = self.profile(work_kind=kind)
+                self.assertEqual(allocator.task_kind({'objective': objective, 'profile': prof}, capabilities, policy), kind)
 
     def test_frontend_quality_order_and_profiled_routine_sink(self):
         usage = self.healthy_quota()
@@ -1195,9 +1199,20 @@ class AllocatorTests(unittest.TestCase):
         self.assertNotIn('fast_bonus', pi_fast['components'])
         self.assertEqual(pi_fast['capacity']['expected_usd'], pi_normal['capacity']['expected_usd'])
 
-        urgent_obj = self.plan({**task_base, 'objective': '请尽快完成单模块接口修复，比较急'}, self.healthy_quota())
-        self.assertTrue(urgent_obj['decision']['task'].get('wants_fast'))
-        self.assertTrue(urgent_obj['selected_bundle'].get('fast'))
+        urgent_prof = self.plan(
+            {**task_base, 'profile': dict(task_base['profile'], wants_fast=True), 'objective': '普通任务描述'},
+            self.healthy_quota(),
+        )
+        self.assertTrue(urgent_prof['decision']['task'].get('wants_fast'))
+        self.assertTrue(urgent_prof['selected_bundle'].get('fast'))
+
+        negated_obj = self.plan(
+            {**task_base, 'profile': dict(task_base['profile'], wants_fast=False),
+             'objective': 'Do NOT use fast mode; 请尽快完成单模块接口修复，比较急'},
+            self.healthy_quota(),
+        )
+        self.assertFalse(negated_obj['decision']['task'].get('wants_fast', False))
+        self.assertFalse(negated_obj['selected_bundle'].get('fast', False))
 
         sprint_usage = self.usage(codex=[('usage', 50, 12)])
         sprint = self.plan(task_base, sprint_usage)
@@ -1271,13 +1286,17 @@ class AllocatorTests(unittest.TestCase):
         self.assertNotIn('overqualification', gui_rows['astra_high']['components'])
         self.assertGreater(gui_rows['opus55_high']['components'].get('overqualification', 0), 0)
 
-        # 4) Offline heuristic infer_task_profile includes work_kind and calibrated default_hours / duration_multiplier
-        heur_prof = allocator.infer_task_profile(
-            {'objective': 'Independent review (read-only) of the authentication module'},
+        # 4) Classified read_only_review profile and calibrated default_hours / duration_multiplier
+        ro_prof = self.profile(work_kind='debug_review', code_complexity=0, hallucination_risk=3, read_only_review=True)
+        ro_norm = allocator.normalize_task(
+            {'objective': 'Independent review (read-only) of the authentication module', 'profile': ro_prof},
+            allocator.load_accounts()['scoring'],
             reference_capabilities(),
+            allocator.load_accounts(),
         )
-        self.assertEqual(heur_prof['work_kind'], 'debug_review')
-        self.assertEqual(heur_prof['code_complexity'], 0)
+        self.assertEqual(ro_norm['kind'], 'debug_review')
+        self.assertEqual(ro_norm['profile']['code_complexity'], 0)
+        self.assertTrue(ro_norm['read_only_review'])
         scoring = allocator.load_accounts()['scoring']
         self.assertEqual(scoring['default_hours'], {'routine': 0.4, 'hard': 1.0, 'coupled': 2.0, 'frontier': 3.5})
         self.assertEqual(gui_rows['argon_high']['components'].get('duration_multiplier'), 1.35)
@@ -1811,8 +1830,9 @@ class RouterIntegrationTests(unittest.TestCase):
                 'work_kind': 'frontend_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
                 'profile': {'work_kind': 'frontend_implementation', 'reasoning_depth': 1, 'code_complexity': 2,
                             'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
-                            'needs_visual': False, 'needs_gui': False, 'local_only': True,
-                            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reason': 'caller profile'}}}), encoding='utf-8')
+                            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                            'read_only_review': False, 'multi_task': False, 'task_count': '1',
+                            'interaction_style': 'engineering', 'reason': 'caller profile'}}}), encoding='utf-8')
             profiled = record('User: Flash', 'antigravity-resilient', 'antigravity', 'gemini-3.8-flash-high', 'high')
             self.assertEqual((profiled['classifier_skipped'], profiled['agrees'], profiled['router_choice']),
                              (False, True, 'flash_high'))
@@ -2104,7 +2124,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1,
             'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
             'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+            'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+            'interaction_style': 'engineering',
         }
         validated = allocator.validate_profile(good)
         self.assertIs(validated['realtime_loop'], True)
@@ -2166,8 +2187,6 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         ]
         for text in engineering_prompts:
             with self.subTest(prompt=text):
-                inferred = allocator.infer_task_profile({'objective': text}, capabilities)
-                self.assertIs(inferred['realtime_loop'], False, f'infer_task_profile guessed realtime_loop for: {text}')
                 norm = allocator.normalize_task({'objective': text}, policy, capabilities, base_accounts)
                 self.assertIs(norm['realtime_loop'], False, f'normalize_task guessed realtime_loop for: {text}')
 
@@ -2181,7 +2200,16 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             True,
         )
         self.assertIs(
-            allocator.infer_task_profile({'objective': 'task', 'realtime_loop': True}, capabilities)['realtime_loop'],
+            allocator.normalize_task(
+                {'objective': 'task', 'profile': {
+                    'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1,
+                    'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
+                    'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+                    'interaction_style': 'engineering',
+                }},
+                policy, capabilities, base_accounts,
+            )['realtime_loop'],
             True,
         )
 
@@ -2275,7 +2303,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
             'hallucination_risk': 2, 'error_cost': 2,
             'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+            'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+            'interaction_style': 'engineering',
         }
         rt_plan = allocator.plan(
             {
@@ -2330,7 +2359,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 1,
                     'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
-                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+                    'interaction_style': 'engineering',
                 },
             },
             usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
@@ -2373,7 +2403,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 2,
                     'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+                    'interaction_style': 'engineering',
                 },
             },
             {
@@ -2384,7 +2415,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 2,
                     'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+                    'interaction_style': 'engineering',
                 },
             },
         ]
@@ -2418,7 +2450,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                         'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                         'hallucination_risk': 2, 'error_cost': 2,
                         'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-                        'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                        'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+                        'interaction_style': 'engineering',
                     },
                 }
                 res = allocator.plan(rt_task, usage, now=self.now, accounts=fresh_accounts, capabilities=capabilities, overrides=[])
@@ -2572,7 +2605,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 2, 'error_cost': 3,
                     'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
-                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+                    'interaction_style': 'engineering',
                 },
             },
             policy, capabilities, accounts,
@@ -2646,7 +2680,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         prof_rt = {
             'work_kind': 'computer_use', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
             'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
-            'realtime_loop': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+            'realtime_loop': True, 'wants_fast': False, 'read_only_review': False,
+            'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering',
         }
         norm = allocator.normalize_task(
             {'objective': 'implement polling', 'realtime_loop': False, 'profile': prof_rt},
@@ -2822,6 +2857,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
 
     def test_issue4_infer_task_profile_local_only_matches_origin_main_without_gui_expansion(self):
         caps = allocator.load_capabilities()
+        accounts = allocator.load_accounts()
+        policy = accounts['scoring']
         for task in (
             {'objective': 'Click the Save button in the dialog'},
             {'work_kind': 'computer_use', 'objective': 'Operate the application'},
@@ -2829,8 +2866,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             {'objective': 'Design a browser dashboard UI layout in React'},
         ):
             with self.subTest(task=task):
-                prof = allocator.infer_task_profile(task, caps)
-                self.assertFalse(prof['local_only'])
+                norm = allocator.normalize_task(task, policy, caps, accounts)
+                self.assertFalse(norm['local_only'])
 
 
 if __name__ == '__main__':

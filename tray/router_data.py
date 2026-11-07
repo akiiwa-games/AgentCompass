@@ -208,7 +208,7 @@ class LegacyProfile(ValueError):
 
 
 def lacks_split_answer(profile) -> bool:
-    """Invalid only for its multi_task/task_count. The filled-in copy is a test of that, never what gets replayed."""
+    """Invalid only for its multi_task/task_count (or legacy flags). The filled-in copy is a test of that, never what gets replayed."""
     allocator, _ = modules()
     if not isinstance(profile, dict):
         return False
@@ -218,7 +218,7 @@ def lacks_split_answer(profile) -> bool:
     except ValueError:
         pass
     try:
-        allocator.validate_profile({**profile, "multi_task": False, "task_count": "1"})
+        allocator.validate_profile({"wants_fast": False, "read_only_review": False, **profile, "multi_task": False, "task_count": "1"})
         return True
     except ValueError:
         return False
@@ -257,10 +257,11 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
                work_kind: str | None = None, difficulty: str | None = None, profile: dict | None = None,
                local_only_reason: str | None = None) -> dict:
     allocator, _ = modules()
-    accounts = _cached_accounts(allocator)
-    capabilities = _load_capabilities(allocator, accounts)
-    needs = {"visual": bool(needs_visual), "local_only": bool(local_only)}
+    needs = {}
+    if needs_visual:
+        needs["visual"] = True
     if local_only:
+        needs["local_only"] = True
         needs["local_only_reason"] = local_only_reason or _tr("主面板干跑：模拟需要本机资源的任务")
     task = {"objective": objective or "", "expected_hours": float(hours), "needs": needs}
     if work_kind:
@@ -275,7 +276,8 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
             valid = allocator.validate_profile(profile)
         except ValueError:
             valid = None
-    task["profile"] = valid or allocator.infer_task_profile(task, capabilities)
+    if valid is not None:
+        task["profile"] = valid
     return task
 
 
@@ -304,20 +306,25 @@ def plan_task(task: dict) -> dict:
 
 
 def simulate(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
-             live_scorer: bool = False) -> dict:
-    """Plan a typed task. live_scorer profiles it with the configured System-One scorer (as route_judge plan does)
-    instead of the instant offline inference; the scorer metadata comes back under "scorer"."""
-    if not live_scorer:
-        return plan_task(build_task(objective, hours, local_only, needs_visual))
+             live_scorer: bool = True) -> dict:
+    """Plan a typed task. Profiles it with the configured System-One scorer; when the classifier is unavailable,
+    returns blocked / scorer_unavailable rather than guessing from keywords."""
     allocator, router = modules()
     accounts = _cached_accounts(allocator)
     capabilities = _load_capabilities(allocator, accounts)
     policy = accounts["scoring"]
     task = build_task(objective, hours, local_only, needs_visual)
-    task.pop("profile", None)
-    profile, scorer = router.score_task(task, allocator, capabilities)
+    profile, scorer = router.score_task(task, allocator, capabilities, use_model=bool(live_scorer))
     if profile is None:
-        return {"stage": "plan", "choice": "none", "error": "scorer_unavailable", "ranking": [], "task": task, "scorer": scorer}
+        return {
+            "stage": "plan",
+            "status": "blocked",
+            "choice": "none",
+            "error": "scorer_unavailable",
+            "ranking": [],
+            "task": task,
+            "scorer": scorer,
+        }
     task["profile"] = profile
     if scorer.get("source") == "system_one":
         task["work_kind"] = allocator.profile_kind(profile, policy)

@@ -13,7 +13,8 @@ from router_test_support import isolated_router_state
 LEGACY = {"reasoning_depth": 4, "code_complexity": 3, "context_scale": 3, "hallucination_risk": 3, "error_cost": 3,
           "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering",
           "work_kind": "debug_review"}
-CURRENT = dict(LEGACY, multi_task=False, task_count="1")
+CURRENT = dict(LEGACY, multi_task=False, task_count="1", wants_fast=False, read_only_review=False)
+MISSING_NEW_FLAGS = {k: v for k, v in CURRENT.items() if k not in ("wants_fast", "read_only_review")}
 
 
 def row_of(profile, objective="fix the flaky lock in worker pool"):
@@ -31,9 +32,15 @@ class LegacyReplayTests(unittest.TestCase):
 
     def test_no_keyword_inference_and_no_invented_answer(self):
         allocator, _ = router_data.modules()
-        for profile in (LEGACY, dict(LEGACY, multi_task=False), dict(LEGACY, task_count="1"), dict(LEGACY, multi_task="yes", task_count="2")):
+        for profile in (
+            LEGACY,
+            MISSING_NEW_FLAGS,
+            dict(LEGACY, multi_task=False),
+            dict(LEGACY, task_count="1"),
+            dict(LEGACY, multi_task="yes", task_count="2"),
+        ):
             with self.subTest(profile=profile), \
-                    mock.patch.object(allocator, "infer_task_profile") as infer, \
+                    mock.patch.object(allocator, "infer_task_profile", create=True) as infer, \
                     mock.patch.object(allocator, "plan") as plan:
                 result = router_data.replay(row_of(profile))
                 infer.assert_not_called()
@@ -46,18 +53,22 @@ class LegacyReplayTests(unittest.TestCase):
     def test_the_row_is_marked_in_the_ledger_list(self):
         self.assertIn(router_data.LEGACY_REPLAY_NOTE, router_data.ledger_summary(row_of(LEGACY))["objective"])
         self.assertTrue(router_data.ledger_summary(row_of(LEGACY))["unreplayable"])
+        self.assertTrue(router_data.ledger_summary(row_of(MISSING_NEW_FLAGS))["unreplayable"])
         self.assertFalse(router_data.ledger_summary(row_of(CURRENT))["unreplayable"])
 
     def test_build_task_refuses_rather_than_reclassifies(self):
         allocator, _ = router_data.modules()
-        with mock.patch.object(allocator, "infer_task_profile") as infer, self.assertRaises(router_data.LegacyProfile):
-            router_data.build_task("open the GUI and click the button", 1.0, profile=LEGACY)
-        infer.assert_not_called()
+        for legacy_profile in (LEGACY, MISSING_NEW_FLAGS):
+            with self.subTest(profile=legacy_profile), \
+                    mock.patch.object(allocator, "infer_task_profile", create=True) as infer, \
+                    self.assertRaises(router_data.LegacyProfile):
+                router_data.build_task("open the GUI and click the button", 1.0, profile=legacy_profile)
+            infer.assert_not_called()
 
     def test_a_row_that_answered_still_replays(self):
         allocator, _ = router_data.modules()
         with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"choice": "x", "task": task}) as plan, \
-                mock.patch.object(allocator, "infer_task_profile") as infer:
+                mock.patch.object(allocator, "infer_task_profile", create=True) as infer:
             result = router_data.replay(row_of(CURRENT))
         infer.assert_not_called()
         plan.assert_called_once()

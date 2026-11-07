@@ -444,6 +444,8 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
         brief_paths = list(dict.fromkeys(r.get('brief_path') for r in reversed(history) if r.get('brief_path')))
         titles = list(dict.fromkeys((r.get('request') or {}).get('title') or '' for r in reversed(history)
                                     if (r.get('request') or {}).get('title')))
+        profiles = [r['profile'] for r in reversed(history) if isinstance(r.get('profile'), dict)]
+        read_only_review = bool(history and all(bool(r.get('read_only_review')) for r in history))
         candidates.append({
             'agent_id': agent_id,
             'bundle': bundle,
@@ -455,6 +457,8 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
             'brief_paths': brief_paths,
             'title': titles[0] if titles else '',
             'titles': titles,
+            'profiles': profiles,
+            'read_only_review': read_only_review,
             'updated_at': latest.get('updated_at') or latest.get('created_at') or '',
             'session_state': state,
             'worn': worn,
@@ -556,6 +560,20 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             accounts['accounts'][bundle['account']]['bundles'][bundle['bundle_id']] = resolved
         # Capacity check and insertion share the same transaction across concurrent parents.
         alloc_task = dict(decision['allocation_task'])
+        profile = (
+            alloc_task.get('profile')
+            if isinstance(alloc_task.get('profile'), dict)
+            else (task.get('profile') if isinstance(task.get('profile'), dict) else None)
+        )
+        read_only_review = (
+            bool(profile.get('read_only_review'))
+            if isinstance(profile, dict) and 'read_only_review' in profile
+            else bool(isinstance(profile, dict) and profile.get('work_kind') == 'debug_review' and profile.get('code_complexity') == 0)
+        )
+        if read_only_review and isinstance(alloc_task.get('chain'), dict):
+            cw = alloc_task['chain'].get('worker')
+            if not resume_agent_id or (isinstance(cw, dict) and cw.get('read_only_review') is False):
+                alloc_task.pop('chain', None)
         if bundle.get('fast') and decision.get('constraint') == 'user_override':
             alloc_task['force_fast'] = True
         elif not bundle.get('fast'):
@@ -587,7 +605,10 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                   'router.account': bundle['account'], 'router.bundle_id': bundle['bundle_id'],
                   'router.request_hash': request_hash}
         request['labels'].update(labels)
-        chain_id = (task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else None
+        chain_source = alloc_task if isinstance(alloc_task.get('chain'), dict) else (
+            task if not read_only_review and isinstance(task.get('chain'), dict) else {}
+        )
+        chain_id = (chain_source.get('chain') or {}).get('id') if (resume_agent_id or not read_only_review) else None
         row = {'dispatch_id': dispatch_id, 'decision_id': decision_id,
                'parent_id': decision['parent_id'], 'task_id': decision['task_id'], 'task_hash': decision['task_hash'],
                'request_hash': request_hash, 'request': request, 'bundle': bundle,
@@ -599,6 +620,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                **({'allow_concurrent': allow_concurrent} if allow_concurrent else {}),
                **({'cwd': cwd} if cwd else {}),
                'fallback_prompt': fallback_prompt if resume_agent_id else None,
+               'read_only_review': read_only_review,
+               **({'profile': profile} if isinstance(profile, dict) else {}),
                **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
                **({'chain_id': chain_id} if chain_id else {})}
         event(row, 'prepared', now)

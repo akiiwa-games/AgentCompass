@@ -83,7 +83,8 @@ SCORER_PROMPT = (
     '1. `local_only`: `true` only when depending on un-inlined local files/repos/processes/GUI; `false` when inputs are '
     'inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, '
     '`complex_build_plan`), even if a local output path is named.\n'
-    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis.\n'
+    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis '
+    '(even if saving a review report file to a specified path).\n'
     '3. `context_scale`: 1 = single module/script or self-contained task; 2 = 2..5 coupled modules; 3 = repo/system-wide.\n'
     '4. `divergence`: 1 = convergent spec/fix/review; 2 = multi-hypothesis diagnosis/comparison; 3 = open-ended creative.\n'
     '5. `realtime_loop`: `true` ONLY when the worker agent itself stays inside a live external system\'s continuous '
@@ -92,6 +93,13 @@ SCORER_PROMPT = (
     'immediately, live-stream chat). `false` for ALL coding, UI design, bug fixing, optimization, diagnosis, or log '
     'analysis—even on real-time/polling/game/dashboard/flash-sale features—and for one-off GUI clicks. Set `needs_gui` '
     'by whether the worker operates a GUI (`true`) vs pure CLI/API/WebSocket (`false`).\n'
+    '6. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
+    'pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") without negation (e.g. '
+    '"do not use fast mode" -> `false`; runtime step adverbs like "click immediately" -> `false`; ordinary quota mentions '
+    'without requesting fast execution -> `false`).\n'
+    '7. `read_only_review`: `true` ONLY for read-only code/diff/branch/security/release reviews or audits (`code_complexity` 0) '
+    'that write no repo production/test code (even if saving a review report file to a specified output path); `false` '
+    'when implementing/fixing code (even from a prior review), running ops commands, or doing general exploration/research.\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
@@ -698,6 +706,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
     append_ledger({
         'v': 1, 'at': now.isoformat(), 'stage': result.get('stage'), 'source': result.get('source'),
         'choice': result.get('choice'), 'specialty': result.get('specialty'),
+        **({'task_id': task['task_id']} if task.get('task_id') else {}),
+        **({'request_hash': task.get('request_hash') or _task_request_hash(task)} if isinstance(task, dict) else {}),
         **{k: result[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound') if k in result},
         **({'host_session_id': task['host_session_id']} if task.get('host_session_id') else {}),
         'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
@@ -1322,6 +1332,8 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
         questions[name] = {'type': 'noul', 'instructions': instructions}
     allocator = load_allocator()
     questions['realtime_loop'] = {'type': 'noul', 'instructions': allocator.REALTIME_LOOP_QUESTION}
+    questions['wants_fast'] = {'type': 'noul', 'instructions': allocator.WANTS_FAST_QUESTION}
+    questions['read_only_review'] = {'type': 'noul', 'instructions': allocator.READ_ONLY_REVIEW_QUESTION}
     questions['multi_task'] = {'type': 'noul', 'instructions': allocator.MULTI_TASK_QUESTION}
     questions['task_count'] = {'type': 'choice', 'instructions': allocator.TASK_COUNT_QUESTION,
                                'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
@@ -1367,14 +1379,11 @@ def parse_jev_response(response, allocator):
                 profile['expected_hours'] = table[choice][0]
             else:
                 profile['urgency'] = choice
-    rt = answers.get('realtime_loop')
-    rt = rt.get('noul') if isinstance(rt, dict) else rt
-    if isinstance(rt, (int, float)) and not isinstance(rt, bool) and math.isfinite(rt):
-        profile['realtime_loop'] = float(rt) >= 0.5
-    multi = answers.get('multi_task')
-    multi = multi.get('noul') if isinstance(multi, dict) else multi
-    if isinstance(multi, (int, float)) and not isinstance(multi, bool) and math.isfinite(multi):
-        profile['multi_task'] = float(multi) >= 0.5
+    for opt_flag in ('realtime_loop', 'wants_fast', 'read_only_review', 'multi_task'):
+        ans = answers.get(opt_flag)
+        ans = ans.get('noul') if isinstance(ans, dict) else ans
+        if isinstance(ans, (int, float)) and not isinstance(ans, bool) and math.isfinite(ans):
+            profile[opt_flag] = float(ans) >= 0.5
     count = answers.get('task_count')
     count = count.get('choice') if isinstance(count, dict) else count
     if count is not None:
@@ -1523,7 +1532,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 9  # 9: semantic-only realtime_loop rubric and contrastive hard cases
+SCORE_CACHE_VERSION = 10  # 10: semantic wants_fast and read_only_review classifier fields
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 
@@ -1889,45 +1898,24 @@ def evaluate(payload, requested='auto', timeout=120):
             'next': 'Check runtime/model/login availability; continue feasible parent work. Never use Jev as a judge.'}
 
 
-BOGUS_LOCAL_ONLY_RE = re.compile(
-    r'^\s*(?:need[s]?\s+)?(?:to\s+)?(?:in[- ]place\s+|direct(?:ly)?\s+|local(?:ly)?\s+)*'
-    r'(?:edit|modify|write|update|patch|change|create)(?:ing|s)?'
-    r'(?:\s+(?:of|in|on|to|for|within|local|the|in[- ]place|workspace|repo|repository|project|code|source|file|files))*\s*\.?\s*$',
-    re.I,
-)
-OBJECTIVE_LOCAL_RUNTIME_RE = re.compile(
-    r'\b(?:ssh|ssh-agent|vps|localhost|127\.0\.0\.1|pytest|unittest|sqlite|daemon|worktree|adb|emulator|intranet|webhook|credentials?)\b',
-    re.I,
-)
-LOCAL_UI_OR_HOST_ROUTES = frozenset({'frontend_implementation', 'computer_use', 'exploration_analysis', 'research_packet'})
-
-
-def valid_local_only_reason(needs, kind=None, task=None):
-    """True when needs.local_only is not set, is on a UI/local-host route, is backed by browser/gui/AdvisorMode,
-    or gives a concrete local dependency rather than bare 'in-place edit'."""
-    if not isinstance(needs, dict) or not needs.get('local_only'):
-        return True
-    if kind in LOCAL_UI_OR_HOST_ROUTES or needs.get('browser') or needs.get('gui') or needs.get('AdvisorMode'):
-        return True
-    reason = str(needs.get('local_only_reason') or '').strip()
-    if BOGUS_LOCAL_ONLY_RE.match(reason):
-        return False
-    if len(reason) >= 8:
-        return True
-    if not reason and isinstance(task, dict):
-        text = f"{task.get('objective') or ''} {task.get('environment') or ''}"
-        if OBJECTIVE_LOCAL_RUNTIME_RE.search(text):
-            return True
-    return False
+def _task_request_hash(task):
+    if not isinstance(task, dict):
+        return ''
+    existing = task.get('request_hash') or task.get('task_hash')
+    if isinstance(existing, str) and existing.strip():
+        return existing.strip()
+    payload = {k: v for k, v in scorer_task_fields(task).items() if k in ('objective', 'context', 'environment')}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()[:24] if payload else ''
 
 
 def recent_route_lock(task, records, now, bundle_id, window_seconds):
     """Find a matching recent route only for an explicitly configured reroute guard."""
     if not isinstance(task, dict) or not records:
         return None
-    obj = (task.get('objective') or '').strip()
     chain_id = (task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else None
-    if not obj and not chain_id:
+    task_id = (task.get('task_id') or '').strip() if isinstance(task.get('task_id'), str) else None
+    req_hash = _task_request_hash(task)
+    if not chain_id and not task_id and not req_hash:
         return None
     for row in reversed(records):
         if not isinstance(row, dict) or row.get('stage') != 'plan' or row.get('choice') != bundle_id:
@@ -1938,8 +1926,10 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
             continue
         if (now - at).total_seconds() > window_seconds:
             break
-        row_obj = (row.get('objective') or '').strip()
-        if (chain_id and row.get('chain') == chain_id) or (obj and row_obj and obj[:180] == row_obj[:180]):
+        row_hash = row.get('request_hash') or row.get('task_hash')
+        if ((chain_id and row.get('chain') == chain_id)
+                or (task_id and row.get('task_id') == task_id)
+                or (req_hash and row_hash == req_hash)):
             return row
     return None
 
@@ -2393,7 +2383,7 @@ def scorer_unavailable_result(task, scorer, started):
     reason = f'System-One classifier unavailable ({why}); mechanical fallback is disabled so the parent session chooses autonomously.'
     objective = task.get('objective')
     result = {
-        'stage': 'plan', 'choice': 'none', 'error': 'scorer_unavailable',
+        'stage': 'plan', 'status': 'blocked', 'choice': 'none', 'error': 'scorer_unavailable',
         'caller_action': 'parent_autonomous_choice',
         'scorer': scorer, 'task_profile': None, 'reason': reason,
         'decision': {'action': 'parent_choice', 'reason': reason, 'needs_user_decision': False},
@@ -2444,7 +2434,6 @@ def plan_stage(document, args):
     loaded_accounts = allocator.load_accounts()
     policy = loaded_accounts['scoring']
     extra_alerts, scorer = [], None
-    profile_local_only_applied = False
     hours_estimate = None
     live_disabled = os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1'
     has_caller_spec = bool(task.get('work_kind') and task.get('difficulty'))
@@ -2454,6 +2443,13 @@ def plan_stage(document, args):
         or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)
             and not (live_disabled and has_caller_spec))
     )
+    if not fatal_gap and getattr(args, 'stage', None) == 'roll' and not args.dry_run and args.no_score and not isinstance(task.get('profile'), dict):
+        return scorer_unavailable_result(
+            task,
+            {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
+             'fallback_detail': 'roll --no-score requires a complete caller-supplied task.profile.'},
+            started,
+        ), 2
     if should_score:
         profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
         if profile is None:
@@ -2482,7 +2478,6 @@ def plan_stage(document, args):
             # still lets the classifier win over a caller-supplied difficulty.
         if profile['local_only'] and needs.get('local_only') is None:
             # Trust the classifier; explicit caller needs still take precedence.
-            profile_local_only_applied = True
             needs['local_only'] = True
             needs['local_only_reason'] = profile.get('reason') or 'Task profile requires execution on this machine.'
             task = {**task, 'needs': needs}
@@ -2497,6 +2492,13 @@ def plan_stage(document, args):
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
                                   'confidence': profile.get('hours_confidence', 'unknown')}
     task_profile = allocator.validate_caller_profile(task['profile']) if task.get('profile') else {}
+    if task_profile:
+        task = {**task, 'profile': task_profile}
+    is_ro_review = bool(task_profile.get('read_only_review'))
+    if is_ro_review and isinstance(task.get('chain'), dict):
+        chain_worker = task['chain'].get('worker')
+        if isinstance(chain_worker, dict) and chain_worker.get('read_only_review') is False:
+            task = {k: v for k, v in task.items() if k != 'chain'}
     if task_profile.get('multi_task') is True:
         count = task_profile['task_count']
         keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
@@ -2507,14 +2509,6 @@ def plan_stage(document, args):
                              'message': f'The classifier found {count} separate tasks; the caller kept them as one '
                                         'assignment: ' + keep_whole[:300]})
     kind = allocator.task_kind(task, capabilities, policy)
-    if needs.get('local_only') and not profile_local_only_applied and not valid_local_only_reason(needs, kind, task):
-        needs['local_only'] = False
-        task = {**task, 'needs': needs}
-        extra_alerts.append({
-            'code': 'local_only_ignored_without_reason', 'severity': 'info', 'account': 'dot',
-            'message': 'needs.local_only was ignored because needs.local_only_reason was missing or only cited ordinary file editing. '
-                       'Pass files to Dot with `run_dot_task.py run --prompt-file ... --file <path> --apply-to .`, or provide a concrete '
-                       'needs.local_only_reason (e.g. local git/daemon/pytest/hardware/intranet/credentials).'})
     guard = capabilities.get('remote_reroute_guard') or {}
     guarded_bundle = guard.get('bundle_id')
     locked_route = (recent_route_lock(task, records, now, guarded_bundle, guard.get('window_seconds', 600))
@@ -2565,6 +2559,13 @@ def plan_stage(document, args):
             'confidence': 'unknown', 'limit': 'no usable classifier estimate; the policy default for the difficulty was used'}
     if scorer is not None:
         planned['scorer'], planned['task_profile'] = scorer, task['profile']
+    if not isinstance(task.get('profile'), dict):
+        planned['unclassified'] = True
+        planned['unclassified_reason'] = (
+            'no_score_without_profile' if args.no_score else 'dry_run' if args.dry_run
+            else 'live_scorer_disabled' if (live_disabled and has_caller_spec)
+            else 'no_task_profile'
+        )
     planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
     result = finalize(planned, None, 'auto', started, reviewed_task)
     return result, 0 if result.get('choice') != 'none' else 2
@@ -2614,7 +2615,7 @@ def main():
     parser.add_argument('--score', action='store_true',
                         help='plan: profile the task first with the System-One scorer (default on plan when objective is present).')
     parser.add_argument('--no-score', action='store_true',
-                        help='plan: skip the System-One scorer model call and use deterministic inference.')
+                        help='plan: skip the System-One scorer model call and use only caller-supplied task fields/profile.')
     parser.add_argument('--score-timeout', type=int, default=SCORER_TIMEOUT_SECONDS,
                         help='score/plan/scorer: scorer time limit in seconds (1-120); a CLI process tree is stopped on timeout.')
     parser.add_argument('--action', choices=('show', 'set', 'test'), default='show',
@@ -2703,8 +2704,8 @@ def main():
             policy = allocator.load_accounts()['scoring']
             profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
             if profile is None:
-                result = {'stage': 'score', 'source': scorer['source'], 'task_profile': None, 'scorer': scorer,
-                          'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
+                result = {'stage': 'score', 'status': 'blocked', 'source': scorer['source'], 'task_profile': None,
+                          'scorer': scorer, 'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
                 print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
                 return 2
             derived = allocator.profile_difficulty(profile, policy)

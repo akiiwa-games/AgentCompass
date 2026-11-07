@@ -1024,7 +1024,7 @@ SUBJECTIVE_DIMENSIONS = ('divergence', 'global_rigor', 'module_precision')
 INTERACTION_STYLES = ('engineering', 'exploration', 'text_only', 'advisory')
 PROFILE_INTEGERS = {'reasoning_depth': (1, 4), 'code_complexity': (0, 3), 'context_scale': (1, 3),
                     'divergence': (1, 3), 'hallucination_risk': (1, 3), 'error_cost': (1, 3)}
-PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop')
+PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop', 'wants_fast', 'read_only_review')
 REALTIME_LOOP_QUESTION = (
     'True ONLY when the worker agent itself must stay inside a running external system\'s continuous observe-act loop '
     'across turns where slow per-turn model latency directly degrades the live outcome (e.g. personally playing a live '
@@ -1035,13 +1035,22 @@ REALTIME_LOOP_QUESTION = (
     'ticket/game/automation script or bot, implementing real-time page refresh or message push, fixing page polling logic, '
     'designing a live trading dashboard frontend, diagnosing client loop waits or refresh latency, adding a countdown modal '
     'or live chat component, fixing flash-sale page CSS, analyzing game/AFK logs, or a one-off GUI click/setting toggle).')
+WANTS_FAST_QUESTION = (
+    'True ONLY when the assignment affirmatively requests fast mode, priority service tier, urgent/ASAP turnaround, '
+    'or a pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") for the task itself, '
+    'and does not negate or opt out of fast mode (e.g. "do not use fast mode", "no fast mode", or "not urgent" -> '
+    'false). False for action adverbs inside runtime steps (e.g. "click Save immediately when the button appears"), '
+    'ordinary mentions of quota/reset without requesting fast execution, or ordinary tasks without an explicit speed/fast request.')
+READ_ONLY_REVIEW_QUESTION = (
+    'True ONLY when the assignment is a read-only code, diff, branch, security, or release review/audit that inspects '
+    'existing material and reports findings without writing or modifying repository production/test code (code_complexity = 0, '
+    'even if the reviewer saves its review report file to a specified output path). False when the worker implements, '
+    'fixes, or refactors code (including fixing issues found by a prior review), runs operational/release commands, '
+    'or performs general exploration/research that is not a code/diff/release audit.')
 DEPTH_BY_DIFFICULTY = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 4}
 DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
 HARD_BY_DEFAULT = ('debug_review', 'general_implementation', 'frontend_implementation', 'computer_use',
                    'exploration_analysis', 'research_packet')
-DIVERGENT_WORDS = ('brainstorm', 'creative', 'novel', 'innovat', 'propose', 'formulate', 'scheme', 'roadmap',
-                   'hypothesis', 'ideat', 'divergent', '制定方案', '设计方案', '新方案', '创造性', '发散', '创新',
-                   '新方向', '提出假设', '路线图', '架构创新')
 # The System-One task profile (spec 2026-10-19). Integers carry minimum/maximum, never an integer enum: Gemini's
 # protobuf schema rejects integer enums ("enum[0] cannot be empty").
 HOURS_RANGE = (0.05, 24.0)
@@ -1057,7 +1066,6 @@ MULTI_TASK_QUESTION = (
     'tests, a review plus its report, the remaining steps of a handoff, a brief that already assigns one share of a '
     'larger task, or a sequence where each part needs the previous part\'s output.')
 TASK_COUNT_QUESTION = 'How many separate tasks, in the sense of multi_task, the brief holds: 1 when multi_task is false.'
-MULTI_TASK_MARK_RE = re.compile(r'^#{1,6}[ \t]*(?:交付物|deliverable|task)\s*\d', re.I | re.M)
 TASK_PROFILE_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -1071,10 +1079,11 @@ TASK_PROFILE_SCHEMA = {
             'line; 4 = frontier mathematical, strategic or architectural critique and formulation.')},
         'code_complexity': {'type': 'integer', 'minimum': 0, 'maximum': 3, 'description': (
             'Production code the worker itself writes or modifies (NOT the complexity of code being read or reviewed). '
-            '0 = none: ANY read-only code/release/diff review, independent audit, diagnosis that only proposes, running '
-            'existing CLI/release/test commands, log or data exploration, text drafting; 1 = a small script, config/constant '
-            'tweak, localized helper, or analysis scripts inside a research packet; 2 = a production module implemented, '
-            'fixed or refactored with its unit tests; 3 = complex multi-module, concurrency, protocol or core-library changes.')},
+            '0 = none: ANY read-only code/release/diff review or independent audit (even when saving a review report file '
+            'to a specified path), diagnosis that only proposes, running existing CLI/release/test commands, log or data '
+            'exploration, text drafting; 1 = a small script, config/constant tweak, localized helper, or analysis scripts '
+            'inside a research packet; 2 = a production module implemented, fixed or refactored with its unit tests; '
+            '3 = complex multi-module, concurrency, protocol or core-library changes.')},
         'context_scale': {'type': 'integer', 'minimum': 1, 'maximum': 3, 'description': (
             'Functional scope of the code or system that must be understood, NOT the number of paths the brief mentions. '
             'Ignore boilerplate: role docs, AGENTS.md, skill/README/runbook docs, prior reports or reviews to read, receipt/'
@@ -1102,6 +1111,8 @@ TASK_PROFILE_SCHEMA = {
             '(web_research, self_contained_code, text_in_text_out, direction_reasoning, complex_build_plan)—even if the '
             'brief has a workspace header or names a local target path where the finished output will be saved.')},
         'realtime_loop': {'type': 'boolean', 'description': REALTIME_LOOP_QUESTION},
+        'wants_fast': {'type': 'boolean', 'description': WANTS_FAST_QUESTION},
+        'read_only_review': {'type': 'boolean', 'description': READ_ONLY_REVIEW_QUESTION},
         'interaction_style': {'type': 'string', 'enum': list(INTERACTION_STYLES), 'description': (
             'engineering = write or change software; exploration = explore a codebase, run experiments or backtests, '
             'analyze logs or data; text_only = pure text in and out or public web lookup; advisory = direction '
@@ -1115,14 +1126,14 @@ TASK_PROFILE_SCHEMA = {
             'are not; low = guess.')},
         'urgency': {'type': 'string', 'enum': list(URGENCY_LEVELS), 'description': (
             'unknown unless the text itself states a deadline, an incident or "asap"; then high/normal/low. Never infer urgency '
-            'from topic or tone. Shown in the result so the caller can see it; it never changes the owner, the effort or fast mode.')},
+            'from topic or tone. Shown in the result so the caller can see it; fast mode is controlled by wants_fast or --fast, not urgency.')},
         'multi_task': {'type': 'boolean', 'description': MULTI_TASK_QUESTION},
         'task_count': {'type': 'string', 'enum': list(TASK_COUNTS), 'description': TASK_COUNT_QUESTION},
     },
     'required': list(PROFILE_INTEGERS) + list(PROFILE_FLAGS) + ['expected_hours', 'hours_confidence', 'urgency', 'interaction_style',
                                                                  'multi_task', 'task_count'],
 }
-# kind -> (code_complexity, context_scale, hallucination_risk, error_cost, interaction_style) for the heuristic profile
+# kind -> (code_complexity, context_scale, hallucination_risk, error_cost, interaction_style) for the profile schema
 KIND_TRAITS = {
     'general_implementation': (2, 1, 2, 2, 'engineering'),
     'frontend_implementation': (2, 1, 2, 2, 'engineering'),
@@ -1141,70 +1152,18 @@ KIND_TRAITS = {
     'complex_build_plan': (0, 3, 3, 2, 'advisory'),
     'other_or_mixed': (1, 1, 2, 2, 'engineering'),
 }
-GUI_WORDS = ('click', 'screenshot', ' gui', 'desktop app', 'mouse', '点击', '截图', '桌面', '鼠标')
-# Operating a GUI, as an action. Bare device nouns ("keyboard shortcuts", "mouse event handler") name code as often.
-COMPUTER_USE_PHRASES = ('click the', 'click save', 'use the mouse', 'with the mouse', 'mouse and keyboard',
-                        'keyboard and mouse', 'operate the browser', 'operate the desktop', '点击', '用鼠标', '键鼠',
-                        '鼠标键盘', '操作浏览器', '操作桌面')
-CODE_FILE_RE = re.compile(r'[\w-]\.(?:py|pyw|ts|tsx|js|jsx|mjs|cjs|go|rs|java|kt|cs|cpp|cc|c|h|hpp|rb|php|swift|lua|sh|ps1)(?!\w)(?!\.\w)')
-# Same pattern as route_judge.OBJECTIVE_LOCAL_RUNTIME_RE. Kept here so the allocator does not import route_judge
-# (route_judge.load_allocator execs this file). A caller true/false still wins over both patterns.
-OBJECTIVE_LOCAL_RUNTIME_RE = re.compile(
-    r'\b(?:ssh|ssh-agent|vps|localhost|127\.0\.0\.1|pytest|unittest|sqlite|daemon|worktree|adb|emulator|intranet|webhook|credentials?)\b',
-    re.I,
-)
-LOCAL_MACHINE_RE = re.compile(
-    r'(?:[A-Za-z]:[\\/]|~/|\\\\)|\b(?:working tree|git checkout|local repo|this repo|local daemon|local git)\b',
-    re.I,
-)
 GENERIC_CALLER_KINDS = (None, 'general_implementation', 'tool_execution', 'debug_review', 'other_or_mixed')
-FAST_REQUEST_WORDS = (
-    'use fast mode', 'enable fast mode', 'in fast mode', 'with fast mode',
-    'complete quickly', 'finish quickly', 'as quickly as possible', 'quick turnaround', 'fast turnaround',
-    'urgent task', 'urgently', 'time-sensitive', 'time sensitive', 'asap',
-    'pre-reset sprint', 'before quota resets', 'before the reset',
-    '较快完成', '快速完成', '尽快完成', '尽早完成', '尽快出结果', '快速出结果',
-    '加急', '赶时间', '时间紧', '火速', '重置前冲刺', '重置前消纳', '临期冲刺',
-    '开启fast', '开启 fast', '使用fast', '使用 fast', '用fast', '用 fast', '允许使用fast', '允许使用 fast',
-)
-
-
-def infer_fast_preference(objective):
-    """True when the objective explicitly asks for fast turnaround, pre-reset sprint, or fast mode."""
-    text = f' {(objective or "").lower()} '
-    return any(w in text for w in FAST_REQUEST_WORDS)
 
 
 def default_difficulty(kind):
     return 'hard' if kind in HARD_BY_DEFAULT else 'routine'
 
 
-READONLY_REVIEW_PHRASES = (
-    '(read-only)', 'read-only review', 'read-only investigation', 'read-only code', 'read-only audit',
-    'read-only release', 'read-only diff', 'read-only diagnostic', 'read-only inspection',
-    'independent review', 'independent code and', 'independent audit',
-    'no repo code edits', 'write no application code', 'write no production code',
-    'do not edit repo', 'do not modify repo', 'do not change repo',
-    '只读审阅', '只读代码审查', '只读审查', '只读排查', '独立代码审查', '独立审查', '不修改仓库代码',
-)
-
-
-def is_readonly_review_task(objective, profile=None):
-    """True when the objective or scorer reason explicitly states a read-only code/release review or audit."""
-    if isinstance(profile, dict) and profile.get('needs_gui'):
-        return False
-    text = f" {(objective or '').lower()} {((profile or {}).get('reason') or '').lower()} "
-    return any(p in text for p in READONLY_REVIEW_PHRASES)
-
-
-def infer_divergence(objective, kind=None, style=None):
-    """Heuristic divergence level (1..3) when omitted by a legacy fixture or offline fallback."""
+def default_divergence(kind=None, style=None):
+    """Default divergence level (1..3) from structured route/style when omitted by a legacy fixture."""
     if kind == 'computer_use':
         return 1
     if kind in ('complex_build_plan', 'direction_reasoning') or style == 'advisory':
-        return 3
-    text = f' {(objective or "").lower()} '
-    if any(w in text for w in DIVERGENT_WORDS):
         return 3
     return 1
 
@@ -1233,6 +1192,10 @@ def validate_profile(raw):
         if not isinstance(raw.get(name), bool):
             raise ValueError(f'task.profile.{name} must be true or false')
         profile[name] = raw[name]
+    if profile.get('read_only_review') is True and profile.get('code_complexity') != 0:
+        raise ValueError(
+            f"task.profile.read_only_review true contradicts task.profile.code_complexity {profile.get('code_complexity')!r} (must be 0)"
+        )
     # The hours/urgency estimate is optional: legacy fixtures and scorers that cannot produce it (Jev) leave it out.
     hours = raw.get('expected_hours')
     if hours is not None:
@@ -1284,113 +1247,6 @@ def task_count_bucket(value):
     if whole is not None and whole >= 1:
         return TASK_COUNTS[min(whole, 4) - 1]
     raise ValueError('task.profile.task_count must be one of ' + ', '.join(TASK_COUNTS) + ' or a positive whole number')
-
-
-def infer_kind_from_objective(objective):
-    """Offline route fallback: prefer explicit deliverable/action phrases over incidental domain nouns."""
-    text = f' {(objective or "").lower()} '
-    # A named source file means the words are about code: "fix the keyboard shortcuts in editor.py" or "fix
-    # translation.py" is engineering work, not operating a desktop or translating text.
-    names_code = bool(CODE_FILE_RE.search(text))
-    if not names_code and any(w in text for w in COMPUTER_USE_PHRASES):
-        return 'computer_use'
-    rules = (
-        ('direction_reasoning', ('formal proof', 'mathematical critique', 'optimal-stopping', 'frontier reasoning',
-                                 'critique the architecture', 'prove or refute', '形式化证明', '数学推导', '架构批判', '战略权衡')),
-        ('complex_build_plan', ('migration plan', 'migration spec', 'implementation specification', 'multi-phase',
-                                'system architecture plan', '迁移方案', '迁移计划', '分阶段设计', '系统建设方案')),
-        ('bounded_bulk_work', ('bulk ', 'batch rename', 'mechanical refactor', 'uniform rule', 'codemod',
-                               '批量', '机械替换', '统一替换')),
-        ('web_research', ('web survey', 'web research', 'vendor survey', 'public documentation', 'search the web', 'search public', 'open-web',
-                          'literature survey', '网页调研', '文献综述', '厂商调研', '搜索官网', '公开文档')),
-        ('text_in_text_out', ('translate', 'translation of', 'draft a document', 'draft documentation', 'rewrite the text',
-                             'summarize the text', '翻译', '撰写文档', '文案', '润色', '摘要')),
-        ('visual_analysis', ('visual diff', 'design diff', 'inspect screenshot', 'compare screenshot', 'inspect the image',
-                             'inspect the screenshot', 'inspect the supplied screenshot', 'compare the screenshots',
-                             'design inspection', '视觉对比', '截图对比', '检查截图', '设计稿检查', '看图分析')),
-        ('debug_review', ('bug', 'fix ', 'deadlock', 'race condition', 'regression', 'review the diff', 'code review',
-                          'diff review', 'read-only review', '(read-only)', 'independent review', 'invariant audit',
-                          'security audit', 'memory leak', 'diagnos', 'rendering glitch', 'intermittent failure',
-                          '报错', '排查', '修复', '死锁', '代码审查', '只读审阅', '只读审查', '安全审计', '内存泄漏')),
-        ('frontend_implementation', ('frontend', 'react', 'css', 'tailwind', 'mockup', 'desktop ui', 'game ui',
-                                     '界面', '前端', '样式', '组件')),
-        ('research_packet', ('backtest', 'quantitative experiment', 'benchmark suite', 'statistical evaluation',
-                             'research packet', 'simulation', 'data analysis pipeline', '回测', '定量实验', '评测', '仿真', '统计检验')),
-        ('tool_execution', ('runbook', 'checklist', 'deploy', 'release commands', 'health check', 'run the test suite',
-                            '巡检', '发版', '运行测试', '操作手册', '发布流程')),
-        ('exploration_analysis', ('explore', 'investigate', 'trace', 'map the codebase', 'architecture exploration',
-                                  '调研', '分析', '梳理', '探索仓库', '架构追踪')),
-        ('self_contained_code', ('standalone', 'self-contained', 'algorithm', 'isolated module',
-                                 '独立算法', '独立脚本', '自包含', '实现算法')),
-    )
-    debugging = any(word in text for word in dict(rules)['debug_review'])
-    for kind, keywords in rules:
-        if kind == 'text_in_text_out' and (names_code or debugging):
-            continue    # "debug the translation pipeline" / "修复翻译模块" is a bug to fix, not text to translate
-        if any(word in text for word in keywords):
-            return kind
-    return 'general_implementation' if objective and objective.strip() else 'other_or_mixed'
-
-
-def infer_task_profile(task, capabilities):
-    """Deterministic task profile from what the caller already said (work kind, difficulty, needs, objective).
-
-    The offline twin of the System-One scorer: same schema, no model call, so tests, --dry-run and an unavailable agy
-    still produce a profile. It sees only what the caller wrote, so it mostly restates the route defaults."""
-    task = task if isinstance(task, dict) else {}
-    routes = capabilities['routes']
-    objective = task.get('objective') if isinstance(task.get('objective'), str) else ''
-    kind = task.get('work_kind') if task.get('work_kind') in routes else infer_kind_from_objective(objective)
-    needs = task.get('needs') if isinstance(task.get('needs'), dict) else {}
-    implies = routes[kind].get('implies') or {}
-    difficulty = task.get('difficulty') if task.get('difficulty') in DEPTH_BY_DIFFICULTY else default_difficulty(kind)
-    depth = DEPTH_BY_DIFFICULTY[difficulty]
-    code, context, risk, cost, style = KIND_TRAITS.get(kind, KIND_TRAITS['other_or_mixed'])
-    if is_readonly_review_task(objective):
-        code = 0
-        if kind == 'general_implementation':
-            kind = 'debug_review'
-    gui = kind == 'computer_use' or (kind == 'other_or_mixed' and any(w in f' {objective.lower()}' for w in GUI_WORDS))
-    realtime_loop = (bool(needs['realtime_loop']) if 'realtime_loop' in needs and needs.get('realtime_loop') is not None
-                     else bool(task['realtime_loop']) if 'realtime_loop' in task and task.get('realtime_loop') is not None
-                     else False)
-    if depth >= 3:
-        context = max(context, 2)
-        if style == 'engineering' and code:
-            code = 3
-    if needs.get('critical'):
-        cost = 3
-    divergence = infer_divergence(objective, kind, style)
-    caller_set_local = 'local_only' in needs and needs.get('local_only') is not None
-    evidence = ' '.join(str(task.get(key) or '') for key in ('objective', 'context', 'environment', 'cwd'))
-    local_hit = OBJECTIVE_LOCAL_RUNTIME_RE.search(evidence) or LOCAL_MACHINE_RE.search(evidence)
-    if caller_set_local:
-        local_only = bool(needs.get('local_only'))
-        local_note = ''
-    elif local_hit:
-        local_only = True
-        local_note = '; objective names a local runtime, path, or machine dependency'
-    elif implies.get('local_only'):
-        local_only = True
-        local_note = ''
-    else:
-        local_only = False
-        local_note = ''
-    reason = (f'heuristic from work_kind={kind}, difficulty={difficulty}'
-              + ('' if task.get('difficulty') else ' (route default)') + local_note)
-    return validate_profile({
-        'work_kind': kind,
-        'reasoning_depth': depth, 'code_complexity': code, 'context_scale': context, 'divergence': divergence,
-        'hallucination_risk': risk, 'error_cost': cost,
-        'needs_visual': bool(implies.get('visual') or gui or needs.get('visual')), 'needs_gui': gui,
-        'local_only': local_only, 'realtime_loop': realtime_loop, 'interaction_style': style, 'reason': reason,
-        # Offline the only evidence of separate tasks is headings that number them (交付物 1, Deliverable 2, Task 3).
-        **multi_task_marks(objective)})
-
-
-def multi_task_marks(objective):
-    count = len(MULTI_TASK_MARK_RE.findall(objective or ''))
-    return {'multi_task': count > 1, 'task_count': TASK_COUNTS[min(max(count, 1), 4) - 1]}
 
 
 def profile_difficulty(profile, policy):
@@ -2709,7 +2565,11 @@ def evaluate_bundle(bundle, task, ctx):
 
     worker = task['worker']
     worn = worker_worn(worker, policy)
-    resumes = bool(worker) and worker.get('bundle') == bundle['id']
+    resumes = (
+        bool(worker)
+        and worker.get('bundle') == bundle['id']
+        and not (task.get('read_only_review') and worker.get('read_only_review') is False)
+    )
     context_extra = 0.0
     if resumes:
         carried = worker_historical_tokens(worker)
@@ -3365,8 +3225,31 @@ def normalize_task(raw, policy, capabilities, accounts):
         realtime_loop = bool(profile['realtime_loop'])
     else:
         realtime_loop = False
+    if _flag_present(needs, 'fast'):
+        wants_fast = bool(needs['fast'])
+    elif _flag_present(task, 'fast'):
+        wants_fast = bool(task['fast'])
+    elif _flag_present(task, 'wants_fast'):
+        wants_fast = bool(task['wants_fast'])
+    elif profile is not None and 'wants_fast' in profile:
+        wants_fast = bool(profile['wants_fast'])
+    else:
+        wants_fast = False
+    if _flag_present(needs, 'read_only_review'):
+        read_only_review = bool(needs['read_only_review'])
+    elif _flag_present(task, 'read_only_review'):
+        read_only_review = bool(task['read_only_review'])
+    elif profile is not None and 'read_only_review' in profile:
+        read_only_review = bool(profile['read_only_review'])
+    else:
+        read_only_review = False
     if profile is not None:
-        profile = {**profile, 'realtime_loop': realtime_loop}
+        profile = {
+            **profile,
+            'realtime_loop': realtime_loop,
+            'wants_fast': wants_fast,
+            'read_only_review': read_only_review,
+        }
     kind = task_kind({**task, 'profile': profile}, capabilities, policy)
     derived = profile_difficulty(profile, policy) if profile else None
     difficulty = task.get('difficulty') or derived or default_difficulty(kind)
@@ -3387,8 +3270,8 @@ def normalize_task(raw, policy, capabilities, accounts):
     needs.update(resolve_modality_needs(needs, profile, implies))
     critical = bool(needs.get('critical'))
     depth = profile['reasoning_depth'] if profile else None
-    div = (profile.get('divergence') if profile else None) or infer_divergence(
-        task.get('objective'), kind, profile['interaction_style'] if profile else None)
+    div = (profile.get('divergence') if profile else None) or default_divergence(
+        kind, profile['interaction_style'] if profile else None)
     mechanical_runbook = bool(profile and depth == 1 and profile['code_complexity'] == 0 and div == 1)
     unlocked = ((difficulty in policy.get('effort_unlock_difficulties', ('coupled', 'frontier'))
                  or (critical and not mechanical_runbook)
@@ -3429,7 +3312,8 @@ def normalize_task(raw, policy, capabilities, accounts):
             'minimum_sufficient': bool(profile and depth <= 2 and profile['code_complexity'] < 3
                                        and div == 1 and (profile['error_cost'] <= 2 or mechanical_runbook)
                                        and (not critical or mechanical_runbook)),
-            'wants_fast': bool(needs.get('fast') or task.get('fast') or infer_fast_preference(task.get('objective'))),
+            'wants_fast': wants_fast,
+            'read_only_review': read_only_review,
             'force_fast': bool(task.get('force_fast') or needs.get('force_fast')),
             'disable_fast': bool(task.get('disable_fast') or needs.get('disable_fast')),
             'pinned_bundle': task.get('pinned_bundle'),
@@ -3519,6 +3403,8 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                             demand=task['demand'], max_recommended_effort=None)
     if task.get('wants_fast'):
         decision['task']['wants_fast'] = True
+    if task.get('read_only_review'):
+        decision['task']['read_only_review'] = True
     if task.get('realtime_loop'):
         decision['task']['realtime_loop'] = True
     if task.get('metered_fallback'):

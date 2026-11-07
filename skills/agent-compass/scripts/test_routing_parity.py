@@ -20,7 +20,8 @@ import window_scope
 
 NOW = datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc)
 PROFILE = {'reasoning_depth': 2, 'code_complexity': 1, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
-           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering',
+           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
+           'interaction_style': 'engineering',
            'multi_task': False, 'task_count': '1', 'reason': 'test profile', 'work_kind': 'general_implementation'}
 LIVE = dict(PROFILE, realtime_loop=True)
 FULL_QUOTA = {

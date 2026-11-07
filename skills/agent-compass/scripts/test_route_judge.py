@@ -90,11 +90,25 @@ class RoutingTests(unittest.TestCase):
         allocator = router.load_allocator()
         self.assertEqual({k: v for k, v in allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count='>3')).items()
                           if k in ('multi_task', 'task_count')}, {'multi_task': True, 'task_count': '>3'})
-        with self.assertRaisesRegex(ValueError, 'multi_task'):
-            allocator.validate_profile(dict(GUI_PROFILE, multi_task='yes', task_count='2'))
-        marks = allocator.infer_task_profile({'objective': '### 交付物 1' + chr(10) + 'a' + chr(10) + '### 交付物 2' + chr(10) + 'b' + chr(10) + '### 交付物 3'},
-                                             allocator.load_capabilities())
-        self.assertEqual((marks['multi_task'], marks['task_count']), (True, '3'))
+        self.assertEqual(allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count=5))['task_count'], '>3')
+        for bad in (
+            dict(GUI_PROFILE, multi_task='yes', task_count='5'),
+            dict(GUI_PROFILE, multi_task='yes', task_count='2'),
+            dict(GUI_PROFILE, multi_task=True, task_count='5'),
+            dict(GUI_PROFILE, multi_task=False, task_count='2'),
+            dict(GUI_PROFILE, multi_task=True, task_count='1'),
+            {k: v for k, v in GUI_PROFILE.items() if k != 'multi_task'},
+            {k: v for k, v in GUI_PROFILE.items() if k != 'task_count'},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                allocator.validate_profile(bad)
+        for missing_flag in ('wants_fast', 'read_only_review'):
+            with self.subTest(missing_flag=missing_flag), self.assertRaises(allocator.InvalidCallerProfile):
+                allocator.validate_caller_profile({k: v for k, v in GUI_PROFILE.items() if k != missing_flag})
+        self.assertFalse(hasattr(allocator, 'multi_task_marks'))
+        self.assertFalse(hasattr(allocator, 'MULTI_TASK_MARK_RE'))
+        checked = allocator.validate_profile(dict(GUI_PROFILE, wants_fast=True, read_only_review=False))
+        self.assertEqual((checked['wants_fast'], checked['read_only_review']), (True, False))
 
     def test_usage_snapshot_discovery_freshness_projection_and_window_math(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -321,9 +335,10 @@ class RoutingTests(unittest.TestCase):
             cases = [
                 ('remote', {}, None, True, True, 'dot_handoff'),
                 ('local runtime', {'local_only': True, 'local_only_reason': 'runs local pytest'}, None, False, False, None),
-                ('missing reason', {'local_only': True}, None, True, True, 'local_only_ignored_without_reason'),
-                ('edit-only reason', {'local_only': True, 'local_only_reason': 'in-place edits of workspace files'},
-                 None, True, True, 'local_only_ignored_without_reason'),
+                ('missing reason respected', {'local_only': True}, None, False, False, None),
+                ('edit-only reason respected', {'local_only': True, 'local_only_reason': 'in-place edits of workspace files'},
+                 None, False, False, None),
+                ('explicit false', {'local_only': False}, None, True, True, 'dot_handoff'),
                 ('credentials', {'local_only': True, 'local_only_reason': 'Needs local ssh-agent VPS credentials'},
                  None, False, False, None),
                 ('unreachable', {}, 'URLError on /readyz', False, True, 'dot_unreachable'),
@@ -338,8 +353,7 @@ class RoutingTests(unittest.TestCase):
                     codes = {a['code'] for a in result['alerts']}
                     if alert:
                         self.assertIn(alert, codes)
-                    else:
-                        self.assertNotIn('local_only_ignored_without_reason', codes)
+                    self.assertNotIn('local_only_ignored_without_reason', codes)
             ssh, _ = self.run_plan(directory, {'objective': 'Read-only checklist over SSH and the repository',
                 'work_kind': 'tool_execution', 'difficulty': 'hard', 'needs': {'local_only': True}})
             self.assertNotIn(ssh['choice'], ('dot_text', 'none'))
@@ -349,25 +363,36 @@ class RoutingTests(unittest.TestCase):
     def test_recent_dot_reroll_requires_local_evidence_or_failed_health(self):
         allocator = router.load_allocator()
         capabilities = reference_capabilities(allocator)
-        task = {'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
+        task = {'task_id': 't-dot-1', 'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
         recent = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan',
-                  'choice': 'dot_text', 'objective': task['objective']}
-        for reason, down, enabled, dot, blocked in (
-            ('in-place edits of workspace files', None, True, True, True),
-            ('Needs local ssh-agent VPS credentials', None, True, False, False),
-            ('in-place edits of workspace files', 'endpoint down', True, False, False),
-            ('in-place edits of workspace files', None, False, False, False),
+                  'choice': 'dot_text', 'task_id': 't-dot-1', 'request_hash': router._task_request_hash(task)}
+        for local_only, down, enabled, dot, blocked in (
+            (False, None, True, True, True),
+            (True, None, True, False, False),
+            (False, 'endpoint down', True, False, False),
+            (False, None, False, False, False),
         ):
-            with self.subTest(reason=reason, down=down, enabled=enabled), \
+            with self.subTest(local_only=local_only, down=down, enabled=enabled), \
                     tempfile.TemporaryDirectory() as directory, \
                     patch.object(router, 'load_allocator', return_value=allocator), \
                     patch.object(allocator, 'load_capabilities', return_value={**capabilities,
                         'remote_reroute_guard': {'enabled': enabled, 'bundle_id': 'dot_text', 'window_seconds': 600}}):
-                result, _ = self.run_plan(directory, dict(task, needs={'local_only': True, 'local_only_reason': reason}),
+                result, _ = self.run_plan(directory, dict(task, needs={'local_only': local_only}),
                                            down, unavailable=['dot_text'], records=[recent])
                 self.assertEqual(result['choice'] == 'dot_text', dot)
                 self.assertNotEqual(result['choice'], 'none')
                 self.assertEqual('dot_reroll_blocked' in {a['code'] for a in result['alerts']}, blocked)
+        # m1: sharing an objective prefix (>180 chars) without matching task_id/chain_id/request_hash never locks
+        prefix = 'Shared preamble ' * 15
+        rec_prefix = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan', 'choice': 'dot_text',
+                      'objective': prefix + 'task one',
+                      'request_hash': router._task_request_hash({'objective': prefix + 'task one'})}
+        self.assertIsNone(router.recent_route_lock(
+            {'objective': prefix + 'task two'}, [rec_prefix],
+            datetime.now(timezone.utc), 'dot_text', 600))
+        self.assertIsNotNone(router.recent_route_lock(
+            {'objective': prefix + 'task one'}, [rec_prefix],
+            datetime.now(timezone.utc), 'dot_text', 600))
 
     def test_timeout_stops_owned_process(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -376,7 +401,8 @@ class RoutingTests(unittest.TestCase):
 
 
 GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1'}
+               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
+               'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering'}
 
 
 class ReadinessGapTests(unittest.TestCase):
@@ -429,8 +455,11 @@ class ReadinessGapTests(unittest.TestCase):
                     patch.object(router, 'dot_unreachable', return_value='down'), \
                     patch.object(router, 'read_ledger', return_value=[]), contextlib.redirect_stdout(out):
                 router.main()
-        alerts = {a['code']: a['severity'] for a in json.loads(out.getvalue())['alerts']}
+        parsed_out = json.loads(out.getvalue())
+        alerts = {a['code']: a['severity'] for a in parsed_out['alerts']}
         self.assertEqual(alerts.get('no_usage_data'), 'warn')
+        self.assertTrue(parsed_out.get('unclassified'))
+        self.assertEqual(parsed_out.get('unclassified_reason'), 'no_score_without_profile')
 
 
 class CliPrefixTests(unittest.TestCase):
@@ -688,6 +717,27 @@ class SystemOneScorerTests(unittest.TestCase):
         prof_skipped, meta, calls = self.score(bug_task, use_model=False)
         self.assertEqual((prof_skipped, meta['source'], meta['fallback_reason'], calls), (None, 'scorer_unavailable', 'model_call_skipped', []))
 
+    def test_legacy_or_corrupted_score_cache_is_treated_as_cache_miss(self):
+        old_entry = {k: v for k, v in GUI_PROFILE.items() if k not in ('wants_fast', 'read_only_review')}
+        contradictory_entry = dict(GUI_PROFILE, code_complexity=2, read_only_review=True)
+        config = {'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}
+        _, order = router.scorer_attempt_order(config)
+        for bad_cached in (old_entry, contradictory_entry):
+            with self.subTest(bad_cached=bad_cached), tempfile.TemporaryDirectory() as directory:
+                cache_file = Path(directory) / 'score-cache.json'
+                task = {'objective': 'Click Save and take a screenshot', 'expected_hours': 0.5}
+                with patch.dict(router.os.environ, {'ROUTER_SCORE_CACHE': str(cache_file)}):
+                    key = router.score_cache_key(task, self.allocator, self.capabilities, order, config)
+                    cache_file.write_text(
+                        json.dumps({'entries': {key: {'saved_at': time.time(), 'profile': bad_cached,
+                                                      'scorer': {'source': 'system_one', 'model': 'old'}}}}),
+                        encoding='utf-8',
+                    )
+                    profile, meta, calls = self.score(task)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(profile, GUI_PROFILE)
+                self.assertFalse(meta.get('cached', False))
+
     def test_score_and_plan_with_score_cli_contracts(self):
         with tempfile.TemporaryDirectory() as directory:
             code, res, calls = self.run_cli(directory, 'score', {'objective': 'Click Save and take a screenshot'})
@@ -815,14 +865,17 @@ JEV_RESPONSE = {
         'needs_visual': {'type': 'noul', 'noul': 0.1},
         'needs_gui': {'type': 'noul', 'noul': 0.8},
         'local_only': {'type': 'noul', 'noul': 0.7},
+        'wants_fast': {'type': 'noul', 'noul': 0.05},
+        'read_only_review': {'type': 'noul', 'noul': 0.05},
         'multi_task': {'type': 'noul', 'noul': 0.1},
         'task_count': {'type': 'choice', 'choice': '1'},
     },
     'usage': {'input_tokens': 900, 'output_tokens': 40},
 }
-JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reasoning_depth': 2, 'code_complexity': 0,
-               'context_scale': 2, 'divergence': 1, 'hallucination_risk': 3, 'error_cost': 2,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True}
+JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+               'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 2, 'divergence': 1, 'hallucination_risk': 3,
+               'error_cost': 2, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
+               'wants_fast': False, 'read_only_review': False}
 SECRET = 'test-key-0000000000000000'
 
 
@@ -922,7 +975,7 @@ class SelectableScorerTests(unittest.TestCase):
         questions = request['questions']
         self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'context_scale',
                                           'divergence', 'hallucination_risk', 'error_cost', 'needs_visual', 'needs_gui', 'local_only',
-                                          'realtime_loop', 'effort_band', 'urgency', 'multi_task', 'task_count'})
+                                          'realtime_loop', 'wants_fast', 'read_only_review', 'effort_band', 'urgency', 'multi_task', 'task_count'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
@@ -931,7 +984,7 @@ class SelectableScorerTests(unittest.TestCase):
             q = questions[name]
             self.assertEqual((q['type'], len(q['criteria']), isinstance(q['criteria'], list)), ('score', high - low + 1, True), name)
             self.assertLessEqual(len(q['criteria']), 10)
-        for name in ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop'):
+        for name in ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop', 'wants_fast', 'read_only_review'):
             self.assertEqual(questions[name]['type'], 'noul')
             self.assertNotIn('criteria', questions[name])
 
@@ -953,10 +1006,20 @@ class SelectableScorerTests(unittest.TestCase):
         for broken in ({'answers': {**answers, 'work_kind': {'choice': 'make_coffee'}}},
                        {'answers': {**answers, 'interaction_style': {'choice': 'vibes'}}},
                        {'answers': {k: v for k, v in answers.items() if k != 'error_cost'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'wants_fast'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'read_only_review'}},
+                       {'answers': {**answers, 'read_only_review': {'noul': 0.9}, 'code_complexity': {'score': 2.0}}},
                        {'answers': {**answers, 'divergence': {'score': float('nan')}}},
                        {'error': 'x'}):
             with self.assertRaises(ValueError):
                 router.parse_jev_response(broken, self.allocator)
+        for bad_prof in (
+            {k: v for k, v in GUI_PROFILE.items() if k != 'wants_fast'},
+            {k: v for k, v in GUI_PROFILE.items() if k != 'read_only_review'},
+            {**GUI_PROFILE, 'read_only_review': True, 'code_complexity': 1},
+        ):
+            with self.assertRaises(ValueError):
+                self.allocator.validate_profile(bad_prof)
 
     def test_jev_answers_effort_band_and_urgency_in_the_same_request(self):
         answers = {**JEV_RESPONSE['answers'], 'effort_band': {'choice': 'multi_file'}, 'urgency': {'choice': 'high'}}

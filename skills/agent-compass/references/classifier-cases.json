@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-06",
+  "version": "2026-11-07",
   "route_definitions": {
     "computer_use": "Operate a live desktop, browser, or application GUI via screenshots, mouse clicks, keyboard input, or window automation.",
     "visual_analysis": "Read-only inspection or comparison of images, screenshots, UI mockups, or design frames without writing UI code or clicking a live GUI.",
@@ -17,14 +17,15 @@
     "direction_reasoning": "High-depth mathematical proof/derivation, formal critique, or first-principles strategic/architectural paradigm design."
   },
   "dimension_rubric": {
-    "anti_inflation_rule": "Score ONLY the functional work the worker must perform, never the length or Markdown structure of the brief. Coordinator headers (`Parent session agent ID`, `工作目录: E:/...`), role docs, `AGENTS.md`/`SKILL.md` references, communication rules, and output/receipt file paths (`docs/.../report.md`, `output.json`) are dispatch boilerplate—ignore them when scoring `context_scale`, `reasoning_depth`, and `code_complexity`.",
-    "local_only_positive_vs_negative": "CRITICAL CONTRAST RULE for `local_only`:\n- Set `local_only: true` when the task explicitly depends on existing files, directories, or repositories on THIS machine (reading, copying, searching, editing, building, or running tests against un-inlined local files/directories) or on local processes/daemons/GUI/environment.\n- Set `local_only: false` whenever all required inputs are self-contained in the brief or fetched from the public internet: (a) `web_research` (public web/vendor/cultural/motif research, even if the brief specifies a local path like `docs/research/xxx.md` where the finished report will be saved); (b) `self_contained_code` (writing a standalone script/algorithm whose spec or input snippet is inlined in the brief, even if a target filename is named); (c) `text_in_text_out`, `direction_reasoning`, or `complex_build_plan` when all required background context is already included in the brief text.",
-    "read_only_review": "Any read-only code review, PR/diff inspection, release-readiness audit, or diagnostic report that writes NO production code MUST have `code_complexity: 0` (even when reviewing complex systems code), `work_kind: \"debug_review\"` (or `exploration_analysis`), and `hallucination_risk: 3`.",
-    "context_scale": "Count coupled functional modules the worker must reason across, NOT the number of file paths mentioned in the prompt:\n- `1` (Single unit): Modifying/reviewing ONE primary functional module/script (plus its paired unit test file and any role/brief/output paths), OR any self-contained research/text/algorithm task, OR running a uniform command/checklist.\n- `2` (Multi-module): Modifying or tracing interactions across 2 to 5 distinct coupled functional modules or datasets.\n- `3` (System-wide): Whole-repository architecture, cross-subsystem refactoring (>5 modules), or multi-stage orchestrator lifecycle.",
-    "divergence": "Measure how open-ended the solution space is:\n- `1` (Convergent): Known target, concrete feature spec, deterministic runbook, factual diff review, or fixing an already-isolated bug.\n- `2` (Multi-hypothesis): Diagnosing an unknown root cause with 2+ competing hypotheses (intermittent bug, race condition, memory/CPU anomaly) or comparing bounded technical alternatives.\n- `3` (Divergent / Creative): Open-ended creative ideation, cultural/motif research with gameplay/narrative/product scheme proposals, inventing a new architecture or scoring paradigm from first principles, or open-ended brainstorming with no single predetermined answer.",
-    "reasoning_depth": "Rate the cognitive depth required by the core problem:\n- `1` (Routine): Executing an explicit command/checklist/runbook, trivial constant/config tweak, mechanical bulk replacement, or simple smoke check (even inside a long Markdown brief).\n- `2` (Standard/Hard): Standard single- or multi-module feature implementation, bug diagnosis & fix, read-only PR/module review, or structured research synthesis.\n- `3` (Coupled/Deep): Cross-module refactoring of an existing system with strict invariants, deep concurrency/state root-cause forensics across subsystems, or a migration/implementation plan inside an architecture that already exists.\n- `4` (Frontier): Open-ended design that decides a whole product or system and has no reference solution, which the user always gives to the newest top-tier model: a new game's overall technical architecture, detailed game-system design (progression, combat, economy rules and formulas), ultra-low-latency network/VPS architecture, a new system's first-principles architecture; also formal mathematical proof/derivation, algorithmic lower-bound analysis, or frontier theoretical critique.",
-    "multi_task_vs_single_task": "Set `multi_task: true` ONLY when the brief bundles 2+ independent deliverables that could be assigned to separate workers in parallel (e.g., fixing a backend bug AND translating unrelated docs). A single deliverable with sequential steps (`diagnose -> fix -> test -> report`) or a single research report covering multiple sub-questions is ONE task (`multi_task: false, task_count: \"1\"`).",
-    "realtime_loop": "Set `realtime_loop: true` ONLY when the worker agent itself must stay inside a running external system's continuous observe-act loop across turns where slow per-turn model latency directly degrades the live outcome (e.g., personally operating a live game / dailies / dungeons / AFK loop, sniping tickets / courses / appointments / flash sales live, watching a live order book or API stream and placing orders in real time, polling a live page / App / API to act immediately when a target state appears, interacting with live-stream chat). Set `needs_gui` independently based on whether the loop operates a graphical interface (`needs_gui: true, needs_visual: true, work_kind: \"computer_use\"` for GUI/browser/emulator/window loops; `needs_gui: false, needs_visual: false, work_kind: \"tool_execution\"` for pure CLI/REST/WebSocket API loops). Set `realtime_loop: false` for ALL software engineering, frontend/backend implementation, bug fixing, UI design, performance optimization, root-cause diagnosis, log analysis, or one-off GUI actions—even when the task mentions real-time, polling, games, order books, dashboards, or flash sales (e.g., writing/fixing a ticket/game/automation script, implementing real-time page refresh or message push, fixing page polling logic, designing a live trading dashboard frontend, diagnosing client loop waits or refresh latency, adding a countdown modal or live-stream chat component, fixing flash-sale page CSS, analyzing game/AFK logs, or a one-shot GUI click/setting toggle)."
+    "anti_inflation_rule": "Score ONLY functional work the worker performs, never brief length or Markdown structure. Coordinator headers (`Parent session agent ID`, `工作目录`), role/AGENTS/SKILL docs, communication rules, and output/receipt paths are boilerplate—ignore them for `context_scale`, `reasoning_depth`, and `code_complexity`.",
+    "local_only_positive_vs_negative": "CONTRAST RULE for `local_only`: `true` when depending on un-inlined files/dirs/repos on THIS machine (reading, copying, searching, editing, building, or testing local files) or local processes/daemons/GUI/env. `false` when all required inputs are inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, `complex_build_plan`), even if a local output path is named.",
+    "read_only_review": "CONTRAST RULE for `read_only_review`: `true` ONLY for read-only code/PR/diff/branch/security/release reviews or independent audits that write NO repo production/test code (`code_complexity: 0`, `work_kind: debug_review`, `hallucination_risk: 3`, even when saving a review report file to a specified path). `false` when fixing issues from a prior review (`Fix the review findings`), implementing/modifying code, diagnosing live runtime/log symptoms without a diff/code audit, or running ops commands.",
+    "wants_fast": "CONTRAST RULE for `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation. `false` when negated (`Do NOT use fast mode`, `no rush`, `不用开启fast`), when fast/immediate only describes an in-task runtime step (`click Save immediately`), when merely mentioning quota/reset without requesting fast execution, or when unmentioned.",
+    "context_scale": "Count coupled functional modules reasoned across, NOT paths mentioned: `1` = one module/script (+ paired test & boilerplate) or self-contained task; `2` = 2..5 coupled modules/datasets; `3` = repo/system-wide (>5 modules) or multi-stage orchestrator.",
+    "divergence": "`1` (Convergent): known target/spec/runbook/diff review/isolated bug fix; `2` (Multi-hypothesis): unknown root cause with 2+ competing hypotheses or comparing technical options; `3` (Divergent/Creative): open-ended creative ideation, motif/gameplay/narrative proposals, or first-principles architecture redesign.",
+    "reasoning_depth": "`1` (Routine): explicit command/checklist/runbook, trivial config tweak, or mechanical bulk edit; `2` (Standard/Hard): single/multi-module feature, bug diagnosis/fix, read-only PR review, or structured research; `3` (Coupled): cross-module refactor with strict invariants, deep concurrency forensics, or migration plan in an existing system; `4` (Frontier): whole-product/system architecture or detailed game-system/economy/combat math from scratch, ultra-low-latency network design, or formal mathematical proof/critique.",
+    "multi_task_vs_single_task": "`multi_task: true` ONLY when bundling 2+ independent deliverables assignable to separate workers in parallel. Sequential steps (`diagnose -> fix -> test -> report`) or one report covering sub-questions is ONE task (`multi_task: false, task_count: 1`).",
+    "realtime_loop": "`realtime_loop: true` ONLY when the worker agent itself stays inside a live external system continuous observe-act loop across turns where turn latency degrades live results (personally playing/farming a live game, live ticket/course/appointment/flash-sale sniping, live order-book/API watching & trading, polling a live page/App/API to act immediately, live-stream chat). Set `needs_gui` by whether the loop uses a GUI (`computer_use`) vs pure CLI/API (`tool_execution`). `realtime_loop: false` for ALL coding, frontend/backend work, bug fixes, UI design, optimization, diagnosis, log analysis, or one-shot GUI clicks—even on real-time/polling/game/dashboard/flash-sale features."
   },
   "calibration_cases": [
     {
@@ -47,7 +48,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -70,7 +73,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -93,7 +98,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -116,7 +123,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -139,7 +148,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -162,7 +173,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -185,7 +198,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -208,7 +223,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -231,7 +248,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": true
       }
     },
     {
@@ -254,7 +273,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -277,7 +298,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -300,7 +323,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -323,7 +348,9 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -346,7 +373,9 @@
         "urgency": "unknown",
         "multi_task": true,
         "task_count": "2",
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -369,7 +398,9 @@
         "context_scale": 3,
         "divergence": 3,
         "expected_hours": 2.5,
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -392,7 +423,9 @@
         "context_scale": 2,
         "divergence": 3,
         "expected_hours": 2.0,
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -415,7 +448,9 @@
         "context_scale": 3,
         "divergence": 2,
         "expected_hours": 2.0,
-        "realtime_loop": false
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -438,7 +473,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -461,7 +498,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -484,7 +523,9 @@
         "hours_confidence": "high",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -507,7 +548,9 @@
         "hours_confidence": "high",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -530,7 +573,9 @@
         "hours_confidence": "medium",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -553,7 +598,9 @@
         "hours_confidence": "medium",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -576,7 +623,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -599,7 +648,9 @@
         "hours_confidence": "high",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -622,7 +673,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -645,7 +698,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -668,7 +723,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -691,7 +748,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -714,7 +773,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -737,7 +798,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -760,7 +823,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -783,7 +848,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -806,7 +873,9 @@
         "hours_confidence": "medium",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -829,7 +898,9 @@
         "hours_confidence": "high",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -852,7 +923,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -875,7 +948,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -898,7 +973,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -921,7 +998,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -944,7 +1023,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -967,7 +1048,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -990,7 +1073,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -1013,7 +1098,9 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -1036,7 +1123,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -1059,7 +1148,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -1082,7 +1173,9 @@
         "hours_confidence": "medium",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
       }
     },
     {
@@ -1103,6 +1196,158 @@
         "realtime_loop": false,
         "expected_hours": 1.0,
         "hours_confidence": "medium",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1",
+        "wants_fast": false,
+        "read_only_review": false
+      }
+    },
+    {
+      "id": "fast_mode_requested_positive",
+      "task": "Enable fast mode for urgent turnaround: fix the off-by-one pagination slice in `api/items.py` and run unit tests.",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "wants_fast": true,
+        "read_only_review": false,
+        "expected_hours": 0.4,
+        "hours_confidence": "high",
+        "urgency": "high",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "fast_mode_negated_negative",
+      "task": "Do NOT use fast mode or priority tier (no rush): fix the off-by-one pagination slice in `api/items.py` and run unit tests.",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false,
+        "expected_hours": 0.4,
+        "hours_confidence": "high",
+        "urgency": "low",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "readonly_branch_review_positive",
+      "task": "按 interrogate 技能对 `origin/main...feature/auth-session` 做独立对抗审查，只读不改仓库代码，把审查报告落盘到 `.route-briefs/review-auth.md`。",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "exploration",
+        "reasoning_depth": 2,
+        "code_complexity": 0,
+        "context_scale": 2,
+        "divergence": 1,
+        "hallucination_risk": 3,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": true,
+        "expected_hours": 0.6,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "fix_review_findings_negative",
+      "task": "Fix the two defects reported in the adversarial review of `feature/auth-session` in `src/session.py` and run pytest.",
+      "expected_profile": {
+        "work_kind": "debug_review",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "unknown",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "fast_quota_sprint_positive",
+      "task": "Pre-reset sprint before weekly quota resets in 2 hours (重置前冲刺): implement the CSV export filter in `reports/export.py` and run unit tests.",
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "interaction_style": "engineering",
+        "reasoning_depth": 2,
+        "code_complexity": 2,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 2,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "wants_fast": true,
+        "read_only_review": false,
+        "expected_hours": 0.5,
+        "hours_confidence": "high",
+        "urgency": "high",
+        "multi_task": false,
+        "task_count": "1"
+      }
+    },
+    {
+      "id": "normal_quota_mention_negative",
+      "task": "Update the unit test in `tests/test_quota_window.py` that checks how weekly reset timestamps are formatted when a window resets.",
+      "expected_profile": {
+        "work_kind": "general_implementation",
+        "interaction_style": "engineering",
+        "reasoning_depth": 1,
+        "code_complexity": 1,
+        "context_scale": 1,
+        "divergence": 1,
+        "hallucination_risk": 1,
+        "error_cost": 1,
+        "needs_visual": false,
+        "needs_gui": false,
+        "local_only": true,
+        "realtime_loop": false,
+        "wants_fast": false,
+        "read_only_review": false,
+        "expected_hours": 0.2,
+        "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1"

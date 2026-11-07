@@ -497,8 +497,15 @@ def fixture_which(name, *args, **kwargs):
 def accept(text, parent, task):
     return {'provider': 'grok-bot', 'task_id': 'a' * 32, 'state': 'accepted',
             'delivery': 'accepted', 'message_id': 'fixture-message', 'mocked_send': True}
+fixture_profile = {
+    'work_kind': 'web_research', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1,
+    'divergence': 1, 'hallucination_risk': 2, 'error_cost': 1, 'needs_visual': False, 'needs_gui': False,
+    'local_only': False, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': False,
+    'interaction_style': 'exploration', 'multi_task': False, 'task_count': '1', 'reason': 'fixture',
+}
 with patch.object(runner, 'submit', side_effect=accept), patch.object(
         inventory, 'GROK_BOT_CLI', fake_cli), patch.object(runner.shutil, 'which', side_effect=fixture_which), patch.object(
+        route_judge, 'score_task', return_value=(fixture_profile, {'source': 'system_one', 'model': 'fixture-scorer'})), patch.object(
         route_judge.dispatch_flow, 'launch', side_effect=AssertionError('unexpected external provider launch')):
     raise SystemExit(route_judge.main())
 '''
@@ -536,7 +543,11 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
             index = automatic.index(flag)
             del automatic[index:index + 2]
         automatic[automatic.index('--hours') + 1] = '0.2'
-        automatic += ['--no-score', '--task-id', 'fixture-automatic']
+        blocked_no_score = subprocess.run(automatic + ['--no-score', '--task-id', 'fixture-no-score'],
+                                          capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
+        self.assertEqual(blocked_no_score.returncode, 2, blocked_no_score.stdout + blocked_no_score.stderr)
+        self.assertEqual(json.loads(blocked_no_score.stdout)['status'], 'blocked')
+        automatic += ['--task-id', 'fixture-automatic']
         proc = subprocess.run(automatic, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         auto_result = json.loads(proc.stdout)

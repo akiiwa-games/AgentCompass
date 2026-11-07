@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "version": "270e08974e5a",
-  "published_at": "2026-11-07T09:33:16Z",
+  "version": "122387e8e34d",
+  "published_at": "2026-11-07T15:33:32Z",
   "files": {
     "accounts.json": {
       "sha256": "1e2e86d3de1887b50d84cbe973e65307dd097989206e185431ca1abf8de3016c",
@@ -12,8 +12,8 @@
       "bytes": 7143
     },
     "classifier-cases.json": {
-      "sha256": "70028609bcbfeb9313d54df3099ec52cee802ac141f3052e8e29b9d681910cd6",
-      "bytes": 49486
+      "sha256": "c86f654947fd75d0254e9b8144a2022b3e1217f1295d8259d30deffd854ce1b3",
+      "bytes": 55575
     }
   }
 }

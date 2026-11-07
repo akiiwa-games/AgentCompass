@@ -145,6 +145,10 @@ def verdict_summary(result: dict, pair: list[dict]) -> tuple[list[tuple[str, str
     decision = (result or {}).get("decision") or {}
     reason = " ".join(str(decision.get("reason") or "").split())
     if not pair:
+        if (result or {}).get("status") == "blocked" or (result or {}).get("error") == "scorer_unavailable":
+            scorer = (result or {}).get("scorer") or {}
+            detail = scorer.get("fallback_detail") or scorer.get("fallback_reason") or (result or {}).get("error") or "scorer_unavailable"
+            return [("", _tr("未完成评分：小模型分类器不可用（{0}）").format(detail))], ""
         return [("", reason or _tr("没有可用候选"))], ""
     first = pair[0]
     rows = [(_tr("胜出"), f"{decision_summary.candidate_label(first)}  {fmt(first['score'])}")]
@@ -1160,10 +1164,9 @@ class Panel:
         ttk.Label(hours_box, text="h", style="Card.TLabel").pack(side="left", padx=(3, 2))
         self.local_only = tk.BooleanVar()
         self.needs_visual = tk.BooleanVar()
-        self.live_scorer = tk.BooleanVar()
+        self.live_scorer = tk.BooleanVar(value=True)
         self._option_items = [hours_box] + [ttk.Checkbutton(flow, text=_tr(text), variable=variable) for text, variable in
-                                            (("仅本机", self.local_only), ("需视觉", self.needs_visual),
-                                             ("小模型打分", self.live_scorer))]
+                                            (("仅本机", self.local_only), ("需视觉", self.needs_visual))]
         self._option_rows, self._option_layout = [], None
         flow.bind("<Configure>", lambda event: self.reflow_options(flow, event.width))
         self.reflow_options(flow, 10 ** 6)
@@ -1463,14 +1466,18 @@ class Panel:
             self.render_radar()
         choice = self.plan_result.get("choice")
         winner = next((label for label, row in zip(self.breakdown_labels, rows) if row["id"] == choice), choice or "—")
-        message = _tr('评分完成：{0} 个候选，胜出 {1}').format(f'{len(rows)}', f"{winner}")
-        if self.plan_result.get("theatre_source") == "recomputed":
-            message += tr("（按当前额度重算）", " (recomputed with current quota)")
         scorer = self.plan_result.get("scorer") or {}
-        if scorer:
-            source = scorer.get("source")
-            message += (_tr('（小模型 {0} · {1}ms）').format(f"{scorer.get('model')}", f"{scorer.get('duration_ms')}") if source == "system_one"
-                        else _tr('（小模型不可用：{0}，请主会话自主选择）').format(f"{scorer.get('fallback_detail') or scorer.get('fallback_reason')}"))
+        if self.plan_result.get("status") == "blocked" or self.plan_result.get("error") == "scorer_unavailable":
+            detail = scorer.get("fallback_detail") or scorer.get("fallback_reason") or self.plan_result.get("error") or "scorer_unavailable"
+            message = _tr('未完成评分：小模型分类器不可用（{0}）').format(f"{detail}")
+        else:
+            message = _tr('评分完成：{0} 个候选，胜出 {1}').format(f'{len(rows)}', f"{winner}")
+            if self.plan_result.get("theatre_source") == "recomputed":
+                message += tr("（按当前额度重算）", " (recomputed with current quota)")
+            if scorer:
+                source = scorer.get("source")
+                message += (_tr('（小模型 {0} · {1}ms）').format(f"{scorer.get('model')}", f"{scorer.get('duration_ms')}") if source == "system_one"
+                            else _tr('（小模型不可用：{0}，请主会话自主选择）').format(f"{scorer.get('fallback_detail') or scorer.get('fallback_reason')}"))
         self.status.set(message)
         self.replay_theatre()
 
