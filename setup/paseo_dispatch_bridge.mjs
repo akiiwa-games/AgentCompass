@@ -87,11 +87,10 @@ export async function ensureNotification(input) {
 
 // `creation` is the daemon's durable record for a created worker: an object, null when the daemon never admitted the
 // request, undefined when it was not read. Nothing is sent while a create can still succeed, however long it takes.
+// No agent means the daemon answered that it has none, in memory or in storage: a host that cannot answer throws.
 export function notificationEvents(agent, record, now, creation) {
   if (!agent) {
-    if (record.seen) return [{key: 'terminal', reason: 'worker unavailable'}];
-    if (record.agent_id) return now >= record.creation_deadline
-      ? [{key: 'terminal', reason: 'creation outcome unavailable'}] : [];
+    if (record.seen || record.agent_id) return [{key: 'terminal', reason: 'worker unavailable'}];
     if ((creation?.phase === 'completed' && !creation.agent_id) || (creation?.phase === 'failed' && creation.agent_created))
       return [{key: 'terminal', reason: WORKER_REMOVED}];
     return creation?.phase === 'failed' || (creation === null && now >= record.creation_deadline)
@@ -99,8 +98,8 @@ export function notificationEvents(agent, record, now, creation) {
   }
   if (record.agent_id && record.agent_id !== record.dispatch_id
       && agent.labels?.['router.dispatch_id'] !== record.dispatch_id)
-    return now >= record.creation_deadline
-      ? [{key: 'terminal', reason: 'creation outcome unavailable'}] : [];
+    // Not bound to this dispatch yet, so its state is the previous turn's. Only its removal says anything about this one.
+    return agent.archivedAt ? [{key: 'terminal', reason: 'worker unavailable'}] : [];
   if (agent.status === 'running') record.started = true;
   record.seen = true;
   if (agent.status === 'error' || agent.attentionReason === 'error' || agent.providerUnavailable)
@@ -127,9 +126,11 @@ export async function notificationStep(client, record, persist, now = Date.now()
   let event;
   const targetId = record.agent_id ?? record.dispatch_id;
   if (!record.pending) {
-    const agent = (await client.fetchAgent(targetId))?.agent;
     const expired = now >= record.deadline;
-    // Past the watch there is nothing left to decide from it, and a record that cannot be read must not hold back the notice.
+    // Past the watch there is nothing left to decide from these, and one that cannot be read must not hold back the notice.
+    const agent = expired
+      ? await client.fetchAgent(targetId).then(found => found?.agent, () => null)
+      : (await client.fetchAgent(targetId))?.agent;
     const creation = !expired && !agent && !record.seen && !record.agent_id
       ? await creationRecord(client, record.dispatch_id) : undefined;
     const events = expired

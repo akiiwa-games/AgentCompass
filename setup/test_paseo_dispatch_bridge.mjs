@@ -384,6 +384,60 @@ test('a create still running when an old watcher limit passes sends nothing, and
   assert.match(f.calls[0][1], /State: finished/);
 });
 
+function resumeFixture() {
+  const f = watchFixture();
+  // creation_deadline is what the fixed 2 minute limit was read from.
+  Object.assign(f.record, {dispatch_id: 'new-dispatch', agent_id: 'worker', created_at: 0, creation_deadline: 120000, deadline: 7 * 24 * 3600 * 1000});
+  const parent = f.client.fetchAgent;
+  f.target = async () => null;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? parent(id) : f.target(id);
+  return f;
+}
+
+test('a resume target that answers late, past the old 2 minute limit, sends nothing until it is read', async () => {
+  const f = resumeFixture();
+  const step = now => notificationStep(f.client, f.record, f.persist, now);
+  f.target = async () => {throw new Error('timeout');};
+  for (const now of [60000, 120000, 121000, 200000]) await assert.rejects(step(now), /timeout/);
+  // Readable, and still carrying the previous dispatch: the relabel has not landed yet.
+  f.target = async id => ({agent: {id, status: 'idle', attentionReason: 'finished', labels: {'router.dispatch_id': 'old-dispatch'}}});
+  for (const now of [240000, 600000]) assert.equal(await step(now), false, `unbound at ${now}`);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.terminal, undefined);
+  f.target = async id => ({agent: {id, status: 'running', labels: {'router.dispatch_id': 'new-dispatch'}}});
+  assert.equal(await step(610000), false);
+  assert.equal(f.calls.length, 0);
+  f.target = async id => ({agent: {id, status: 'idle', attentionReason: 'finished', labels: {'router.dispatch_id': 'new-dispatch'}}});
+  assert.equal(await step(900000), true);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /State: finished/);
+});
+
+test('a resume target the host reports gone or archived ends the watch at once, whatever the clock says', async () => {
+  const record = {dispatch_id: 'new-dispatch', agent_id: 'worker', creation_deadline: 120000};
+  const unavailable = [{key: 'terminal', reason: 'worker unavailable'}];
+  for (const now of [10, 120000, 500000]) {
+    assert.deepEqual(notificationEvents(null, record, now), unavailable, `gone at ${now}`);
+    assert.deepEqual(notificationEvents({id: 'worker', archivedAt: '2026-11-07T00:00:00Z', labels: {'router.dispatch_id': 'old-dispatch'}}, record, now), unavailable, `archived at ${now}`);
+  }
+  const f = resumeFixture();
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.match(f.calls[0][1], /State: worker unavailable/);
+});
+
+test('an unbound resume target that is merely closed is no evidence it is gone', () => {
+  const record = {dispatch_id: 'new-dispatch', agent_id: 'worker', creation_deadline: 100};
+  assert.deepEqual(notificationEvents({id: 'worker', status: 'closed', labels: {'router.dispatch_id': 'old-dispatch'}}, record, 500), []);
+});
+
+test('a resume target that never becomes readable still gets its watch-limit notice', async () => {
+  const f = resumeFixture();
+  f.target = async () => {throw new Error('timeout');};
+  await assert.rejects(notificationStep(f.client, f.record, f.persist, f.record.deadline - 1), /timeout/);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, f.record.deadline), true);
+  assert.match(f.calls[0][1], /watch expired/);
+});
+
 test('a resume never lands in a workspace other than the one asked for', async () => {
   let notified = 0, updated = 0;
   const fake = {
