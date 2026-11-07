@@ -25,16 +25,30 @@ def bundle_windows(bundle):
         return None
 
 ACTIVE = ('prepared', 'launching', 'launched', 'started')
-TERMINAL = ('completed', 'failed', 'canceled', 'expired')
+TERMINAL = ('completed', 'failed', 'create_failed', 'canceled', 'expired')
 DECISION_TTL = 900
 PREPARE_LEASE = 300
 RUN_LEASE = 600
+# A bridge sends a create only within this window after the claim, so a request the daemon has not admitted by the
+# (later) create deadline can never arrive. The deadline leaves room for the daemon's own provider timeouts (120 s
+# refresh, 60 s run start, then the prompt); Antigravity's cold start needs longer. Both stay inside RUN_LEASE.
+CREATE_SEND_WINDOW = 60
+CREATE_DEADLINE = 240
+CREATE_DEADLINES = {'antigravity-resilient': 480}
 MAX_LIFETIME = 86400
 # A worker idle longer than this is not resumed: its runtime and prompt cache are gone.
 REUSE_MAX_IDLE_HOURS = 24
 LABELS = ('router.decision_id', 'router.dispatch_id', 'router.parent_id',
           'router.task_id', 'router.account', 'router.bundle_id', 'router.request_hash')
 BOUND = ('provider', 'settings')
+
+
+class WorkspaceBusy(ValueError):
+    """The workspace already has a writer; `holders` names each one."""
+
+    def __init__(self, workspace, holders):
+        super().__init__(f'Workspace {workspace} already has a writer')
+        self.workspace, self.holders = workspace, holders
 
 
 def utcnow():
@@ -427,7 +441,33 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
     return candidates
 
 
-def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None):
+def unresolved(row, now):
+    """A launch whose worker may be alive or may still appear; an expired lease stays open until a later observation."""
+    return row['state'] in ACTIVE or (row['state'] == 'expired' and bool(row.get('launched_at')) and parse(row['hard_until']) > now)
+
+
+def holder(row):
+    return {'dispatch_id': row['dispatch_id'], 'state': row['state'], 'agent_id': row.get('agent_id'),
+            'task_id': row.get('task_id'), 'title': (row.get('request') or {}).get('title')}
+
+
+def writers_in(connection, workspace, now):
+    # A row from before dispatches recorded their access counts as a writer.
+    return [holder(r) for r in rows(connection, 'dispatches')
+            if (r.get('request') or {}).get('workspaceId') == workspace and r.get('access') != 'read_only' and unresolved(r, now)]
+
+
+def workspace_writers(workspace, now=None, path=None):
+    now = now or utcnow()
+    if not Path(path or db_path()).exists():
+        return []
+    with transaction(path) as connection:
+        expire(connection, now)
+        return writers_in(connection, workspace, now)
+
+
+def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
+            access='write', allow_concurrent=None, new_worker=False):
     require_parent_id(task.get('parent_agent_id'))
     import allocator
     now = now or utcnow()
@@ -450,12 +490,19 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             return row
         if parse(decision['valid_until']) <= now or not decision['dispatchable']:
             raise ValueError('Decision expired, deferred or requires a new route; run plan/select/record again')
+        workspace = request.get('workspaceId')
+        if workspace and access != 'read_only' and not allow_concurrent:
+            # Same transaction as the insert: of two concurrent rolls only the first becomes the writer.
+            holders = writers_in(connection, workspace, now)
+            if holders:
+                raise WorkspaceBusy(workspace, holders)
         busy_agents = set()
         for old in rows(connection, 'dispatches'):
-            unresolved = old['state'] in ACTIVE or (old['state'] == 'expired' and old.get('launched_at'))
-            if unresolved and (old['parent_id'], old['task_id']) == (decision['parent_id'], decision['task_id']):
+            if not unresolved(old, now):
+                continue
+            if not new_worker and (old['parent_id'], old['task_id']) == (decision['parent_id'], decision['task_id']):
                 raise ValueError('This parent/task already has an active dispatch; reconcile it first')
-            if unresolved and old.get('agent_id'):
+            if old.get('agent_id'):
                 busy_agents.add(old['agent_id'])
         bundle = decision['bundle']
         check_launch_quota(bundle, accounts, usage, now)
@@ -507,7 +554,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                'created_at': stamp(now), 'lease_until': stamp(now + timedelta(seconds=PREPARE_LEASE)),
                'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
                'operation': 'resume' if resume_agent_id else 'create',
-               'agent_id': resume_agent_id,
+               'agent_id': resume_agent_id, 'access': access,
+               **({'allow_concurrent': allow_concurrent} if allow_concurrent else {}),
                'fallback_prompt': fallback_prompt if resume_agent_id else None,
                **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
                **({'chain_id': chain_id} if chain_id else {})}
@@ -533,6 +581,41 @@ def fallback_to_create(dispatch_id, now=None, path=None):
 def inspect(dispatch_id, path=None):
     with transaction(path) as connection:
         return get(connection, 'dispatches', dispatch_id)
+
+
+def create_deadline(row):
+    """When a create the daemon never admitted is settled as failed; a claim is what starts the clock."""
+    seconds = CREATE_DEADLINES.get(provider_inventory.launcher_family(row['bundle']['provider']), CREATE_DEADLINE)
+    return parse(row['launched_at']) + timedelta(seconds=seconds)
+
+
+def resolve_creation(dispatch_id, creation, now=None, path=None):
+    """Settle a create no agent has appeared for, from the daemon's durable record of it (None: never admitted).
+
+    `failed` means the daemon's run is over and it never reruns a key by itself, so nothing can appear later. Neither
+    can a request never admitted once the bridge's send window has passed. An admitted create still in flight has no
+    cancel on the host and can still produce a worker, so it stays open however late it is."""
+    now = now or utcnow()
+    with transaction(path) as connection:
+        row = get(connection, 'dispatches', dispatch_id)
+        if row['state'] not in ('launching', 'expired') or row.get('agent_id') or row.get('operation') != 'create':
+            return row
+        phase = creation.get('phase') if creation else None
+        if phase == 'failed':
+            cause = 'outcome_unknown' if creation.get('outcome_unknown') else creation.get('failure_class') or 'unknown'
+            event(row, 'create_failed', now, 'host_creation_failed:' + cause)
+            row['failure_class'] = creation.get('failure_class') or 'unknown'
+            row['creation'] = {'phase': phase}
+        elif phase == 'completed':
+            event(row, 'canceled', now, 'host_confirmed_agent_removed')
+            row['creation'] = {'phase': phase}
+        elif creation is None and now >= create_deadline(row):
+            event(row, 'create_failed', now, 'host_never_admitted_create')
+            row['creation'] = {'phase': 'not_admitted'}
+        else:
+            row['creation'] = {'phase': phase or 'not_admitted', 'in_flight': bool(phase)}
+        save(connection, row)
+        return row
 
 
 def missing_agent(dispatch_id, agent_id, now=None, path=None):
@@ -681,6 +764,8 @@ def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):
             raise ValueError('Dispatch belongs to another parent')
         if row['state'] in ('launching', 'launched', 'started') and not failed:
             raise ValueError('Observe terminal status before releasing a launched dispatch; release does not cancel an agent')
+        if row['state'] == 'expired' and (row.get('creation') or {}).get('in_flight') and not failed:
+            raise ValueError('Paseo is still creating this worker and cannot cancel a create; release does not stop it')
         if row['state'] not in TERMINAL or row['state'] == 'expired':
             event(row, 'failed' if failed else 'canceled', now, reason)
             save(connection, row)
@@ -692,5 +777,4 @@ def pending(path=None):
         return []
     with transaction(path) as connection:
         # Include expired started/uncertain launches so a later observation can repair them.
-        return [r for r in rows(connection, 'dispatches') if r['state'] in ACTIVE
-                or (r['state'] == 'expired' and r.get('launched_at') and parse(r['hard_until']) > utcnow())]
+        return [r for r in rows(connection, 'dispatches') if unresolved(r, utcnow())]

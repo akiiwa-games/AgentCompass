@@ -12,6 +12,7 @@ const WATCH_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 const CREATE_LIMIT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
 const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed']);
+const CREATE_FAILED = 'creation failed';
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
@@ -51,8 +52,8 @@ export async function ensureNotification(input) {
   const existing = readRecord(file);
   if (existing && existing.parent_id !== input.parent_id) throw new Error('notification_parent_mismatch');
   if (existing && (DONE.has(existing.status) || alive(existing.pid))) return notificationReceipt(file);
-  const args = [fileURLToPath(import.meta.url), '--watch', input.dispatch_id, input.parent_id];
-  if (input.agent_id && input.agent_id !== input.dispatch_id) args.push(input.agent_id);
+  const args = [fileURLToPath(import.meta.url), '--watch', input.dispatch_id, input.parent_id,
+    input.agent_id && input.agent_id !== input.dispatch_id ? input.agent_id : '', input.create_deadline ?? ''];
   const child = spawn(process.execPath, args, {detached: true, windowsHide: true,
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: process.env});
   try {
@@ -82,9 +83,16 @@ export async function ensureNotification(input) {
   throw new Error('notification_not_ready');
 }
 
-export function notificationEvents(agent, record, now) {
-  if (!agent) return record.seen || now >= record.creation_deadline
-    ? [{key: 'terminal', reason: record.seen ? 'worker unavailable' : 'creation outcome unavailable'}] : [];
+// `creation` is the daemon's durable record for a created worker: an object, null when the daemon never admitted the
+// request, undefined when it was not read. Nothing is sent while a create can still succeed, however long it takes.
+export function notificationEvents(agent, record, now, creation) {
+  if (!agent) {
+    if (record.seen) return [{key: 'terminal', reason: 'worker unavailable'}];
+    if (record.agent_id) return now >= record.creation_deadline
+      ? [{key: 'terminal', reason: 'creation outcome unavailable'}] : [];
+    return creation?.phase === 'failed' || (creation === null && now >= record.creation_deadline)
+      ? [{key: 'terminal', reason: CREATE_FAILED}] : [];
+  }
   if (record.agent_id && record.agent_id !== record.dispatch_id
       && agent.labels?.['router.dispatch_id'] !== record.dispatch_id)
     return now >= record.creation_deadline
@@ -100,7 +108,7 @@ export function notificationEvents(agent, record, now) {
   // A resumed worker is relabeled before its turn is sent: until the turn is seen running or its message lands,
   // idle/finished is still the previous turn's.
   const resumed = record.agent_id && record.agent_id !== record.dispatch_id;
-  const created = (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
+  const created = record.created_at ?? (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
   const turnSeen = record.started || (typeof agent.lastUserMessageAt === 'string'
     && Date.parse(agent.lastUserMessageAt) >= created);
   if (agent.status === 'idle' && (resumed ? turnSeen : (agent.attentionReason === 'finished' || record.started)))
@@ -116,9 +124,10 @@ export async function notificationStep(client, record, persist, now = Date.now()
   const targetId = record.agent_id ?? record.dispatch_id;
   if (!record.pending) {
     const agent = (await client.fetchAgent(targetId))?.agent;
+    const creation = !agent && !record.seen && !record.agent_id ? await creationRecord(client, record.dispatch_id) : undefined;
     const events = now >= record.deadline
       ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
-      : notificationEvents(agent, record, now);
+      : notificationEvents(agent, record, now, creation);
     event = events.find(event => !record.delivered.includes(event.key));
     // The first terminal sighting is the outcome. The registry reads it, because Paseo later closes an
     // idle finished worker or fails it on a plugin reload, and a late observation would see only that.
@@ -135,9 +144,10 @@ export async function notificationStep(client, record, persist, now = Date.now()
       record.pending = {...event, messageId: createHash('sha256')
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
       text: `[AgentCompass worker notification]\nDispatch: ${record.dispatch_id}\n` +
-        `Worker: ${targetId}\nState: ${event.reason}\n` +
-        `Read the worker's final response and details with get_agent_activity ` +
-        `(agentId: ${targetId}); use get_agent_status for pending permissions.`};
+        `Worker: ${targetId}\nState: ${event.reason}\n` + (event.reason === CREATE_FAILED
+          ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'
+          : `Read the worker's final response and details with get_agent_activity ` +
+            `(agentId: ${targetId}); use get_agent_status for pending permissions.`)};
     }
     persist();
   }
@@ -152,7 +162,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
   return terminal;
 }
 
-async function watch(dispatchId, parentId, agentId = dispatchId) {
+async function watch(dispatchId, parentId, agentId, createDeadline) {
   const file = notificationFile(dispatchId), lock = `${file}.lock`;
   fs.mkdirSync(path.dirname(file), {recursive: true});
   let lockFd;
@@ -180,7 +190,8 @@ async function watch(dispatchId, parentId, agentId = dispatchId) {
   try {
     const record = readRecord(file) ?? {dispatch_id: dispatchId, parent_id: parentId,
       ...(agentId && agentId !== dispatchId ? {agent_id: agentId} : {}),
-      deadline: Date.now() + WATCH_LIMIT_MS, creation_deadline: Date.now() + CREATE_LIMIT_MS,
+      deadline: Date.now() + WATCH_LIMIT_MS, created_at: Date.now(),
+      creation_deadline: Date.parse(createDeadline) || Date.now() + CREATE_LIMIT_MS,
       status: 'watching', delivered: [], pending: null};
     if (agentId && agentId !== dispatchId && !record.agent_id) record.agent_id = agentId;
     if (record.parent_id !== parentId) throw new Error('notification_parent_mismatch');
@@ -228,6 +239,28 @@ export function creationFailureClass(creation) {
   return 'unknown';
 }
 
+// The daemon owns a create across socket lifetimes and keeps its outcome under the idempotency key, so the answer the
+// creating bridge was killed before receiving can still be read. Only a fixed vocabulary leaves this adapter.
+export async function creationRecord(client, key) {
+  const response = await client.sendCorrelatedSessionRequest({
+    message: {type: 'creation.subscribe.request', kind: 'agent', idempotencyKey: key, subscribe: false},
+    responseType: 'creation.subscribe.response', timeout: 10000});
+  if (response.error) throw new Error('creation_unobservable');
+  const snapshot = response.snapshot;
+  if (!snapshot) return null;
+  return {phase: snapshot.phase, outcome_unknown: Boolean(snapshot.outcomeUnknown), agent_id: snapshot.agentId ?? null,
+    ...(snapshot.phase === 'failed' ? {failure_class: creationFailureClass(snapshot)} : {})};
+}
+
+// The creator knows the outcome: stop only this dispatch's watcher, without replacing its receipt.
+function stopWatcher(input, reason) {
+  const file = notificationFile(input.dispatch_id);
+  const record = readRecord(file);
+  if (record?.parent_id !== input.parent_id) return;
+  fs.writeFileSync(`${file}.creation-failed`, reason, {mode: 0o600});
+  saveRecord(file, {...record, status: 'creation_failed'});
+}
+
 export function project(agent) {
   if (!agent) return null;
   const result = Object.fromEntries(['id', 'provider', 'model', 'status', 'updatedAt', 'createdAt',
@@ -250,6 +283,12 @@ export async function execute(client, input, notify = ensureNotification) {
     catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
     const cwd = parent.agent.cwd, workspaceId = r.workspaceId ?? parent.agent.workspaceId;
     const slash = r.provider.indexOf('/');
+    // The caller stops waiting for a create it never sent and may settle it as failed, so sending later is forbidden.
+    if (input.send_by && Date.now() > Date.parse(input.send_by)) {
+      stopWatcher(input, 'create_send_window_elapsed');
+      return {ok: false, sent: false, error: 'create_send_window_elapsed',
+        completion_notification: {...completion_notification, status: 'creation_failed'}};
+    }
     let creation;
     const options = {
       provider: r.provider.slice(0, slash), model: r.provider.slice(slash + 1),
@@ -268,12 +307,7 @@ export async function execute(client, input, notify = ensureNotification) {
           && creation.phase === 'failed' && creation.outcomeUnknown === false) {
         // Keep arbitrary SDK error text private; only structured, definitive
         // failure authorizes reservation release. Timeouts remain ambiguous.
-        const file = notificationFile(input.dispatch_id);
-        const record = readRecord(file);
-        if (record?.parent_id === input.parent_id) {
-          fs.writeFileSync(`${file}.creation-failed`, 'host_creation_failed', {mode: 0o600});
-          saveRecord(file, {...record, status: 'creation_failed'});
-        }
+        stopWatcher(input, 'host_creation_failed');
         return {ok: false, sent: false, error: 'host_creation_failed', failure_class: creationFailureClass(creation),
           completion_notification: {...completion_notification, status: 'creation_failed'}};
       }
@@ -340,17 +374,27 @@ export async function execute(client, input, notify = ensureNotification) {
           try { await client.updateAgent(input.agent_id, {name: existing.title, labels}); }
           catch { return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification}; }
         }
-        const file = notificationFile(input.dispatch_id);
-        const record = readRecord(file);
-        if (record?.parent_id === input.parent_id) {
-          fs.writeFileSync(`${file}.creation-failed`, 'host_resume_failed', {mode: 0o600});
-          saveRecord(file, {...record, status: 'creation_failed'});
-        }
+        stopWatcher(input, 'host_resume_failed');
         return {ok: false, sent: false, error: 'host_resume_failed',
           completion_notification: {...completion_notification, status: 'creation_failed'}};
       }
       return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification};
     }
+  }
+  if (input.operation === 'workspace_agents') {
+    const agents = [];
+    let cursor;
+    do {
+      const page = await client.fetchAgents({filter: {statuses: ['initializing', 'running']},
+        page: {limit: 200, ...(cursor ? {cursor} : {})}});
+      for (const entry of page.entries ?? []) {
+        const agent = entry.agent ?? entry;
+        if (agent.workspaceId === input.workspace_id && agent.labels?.['router.dispatch_id'])
+          agents.push({id: agent.id, status: agent.status, dispatch_id: agent.labels['router.dispatch_id']});
+      }
+      cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
+    } while (cursor);
+    return {ok: true, agents};
   }
   if (input.operation !== 'observe') throw new Error('unsupported_operation');
   let agent = input.agent_id ? (await client.fetchAgent(input.agent_id))?.agent : null;
@@ -365,10 +409,14 @@ export async function execute(client, input, notify = ensureNotification) {
       if (id) agent = (await client.fetchAgent(id))?.agent;
     }
   }
+  // Read the record, then the agent it names: a create that completes between the two lookups is not "removed".
+  const creation = !agent && !input.agent_id ? await creationRecord(client, input.dispatch_id) : undefined;
+  if (creation?.agent_id) agent = (await client.fetchAgent(creation.agent_id))?.agent;
   const file = notificationFile(input.dispatch_id);
   const record = readRecord(file);
   const completion_notification = record ? await notify(record) : notificationReceipt(file);
-  return {ok: true, agent: project(agent), missing: Boolean(input.agent_id && !agent), completion_notification};
+  return {ok: true, agent: project(agent), missing: Boolean(input.agent_id && !agent),
+    ...(creation !== undefined ? {creation} : {}), completion_notification};
 }
 
 async function createClient() {
@@ -405,7 +453,7 @@ async function createClient() {
 }
 
 async function main() {
-  if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4], process.argv[5]);
+  if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4], process.argv[5], process.argv[6]);
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
   const client = await createClient();
   let connected = false;

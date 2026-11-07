@@ -1,6 +1,7 @@
 """Dispatch lifecycle tests: isolated DB, fake host, no live creation or services."""
 import copy
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import hashlib
 import json
@@ -8,6 +9,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -76,6 +79,7 @@ class DispatchTests(unittest.TestCase):
             'ROUTER_OVERRIDES': str(self.root / 'overrides.json'),
             'ROUTER_CAPACITY': str(self.root / 'capacity.json'),
             'ROUTER_LEDGER': str(self.root / 'ledger.jsonl'),
+            'ROUTER_LAUNCH_FAILURES': str(self.root / 'launch-failures.json'),
             'ROUTER_USAGE_CACHE': str(self.root / 'usage.json'),
             'ROUTER_HOST_POLICY': str(self.root / 'host.json'), 'PYTHONDONTWRITEBYTECODE': '1',
             'ROUTER_DISABLE_LIVE_SCORER': '1',
@@ -97,7 +101,7 @@ class DispatchTests(unittest.TestCase):
              'resets_at': (self.now + timedelta(hours=hours)).isoformat(), 'seconds_until_reset': hours * 3600}
             for wid, rem, hours in [('five_hour', 40, 2.5), ('seven_day', 61, 130)]]}}}
         self.bundle = dict(allocator.bundles(self.accounts)['lab_sonnet55_high'], bundle_id='lab_sonnet55_high')
-        self.launch = {'title': 'Fixture task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'workspace-fixture'}
+        self.launch = {'title': 'Fixture task', 'initialPrompt': 'Only fixture work'}
 
     def issue(self, task=None, **changes):
         result = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle,
@@ -518,10 +522,10 @@ class DispatchTests(unittest.TestCase):
             refused = {'ok': False, 'sent': False, 'error': 'host_creation_failed',
                        'failure_class': 'provider_refresh_timeout'}
             result = flow.launch(row['dispatch_id'], 'parent-a', host=lambda _: refused, watch_seconds=0)
-            self.assertEqual(result['state'], 'failed')
+            self.assertEqual(result['state'], 'create_failed')
             self.assertEqual(result['error'], 'host_creation_failed')
             events = registry.inspect(row['dispatch_id'])['events']
-            self.assertEqual(events[-1]['reason'], 'host_rejected_before_create:host_creation_failed:provider_refresh_timeout')
+            self.assertEqual(events[-1]['reason'], 'host_creation_failed:provider_refresh_timeout')
             plan = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
             for candidate in plan['ranking']:
                 if candidate['bundle'].get('account') == 'claude-lab':
@@ -718,7 +722,8 @@ except ValueError as e:
         self.assertEqual((first['state'], first['agent_id']), ('launching', None))
         again = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
         self.assertEqual(again['state'], 'launching')
-        self.assertEqual(again['observe_error'], 'agent_not_observed')
+        self.assertTrue(again['creating'])
+        self.assertNotIn('observe_error', again)
         self.assertIn('continuation', again)
         self.assertEqual(calls, ['create', 'observe', 'observe'])
 
@@ -1670,6 +1675,423 @@ class RollTests(unittest.TestCase):
             self.assertEqual(c2, 0)
             self.assertEqual([(op, aid) for op, aid, _ in operations], [('resume', 'worker-1a'), ('resume', 'worker-1b')])
             self.assertTrue(all(item['worker'].get('resumed') for item in r2['results']))
+
+
+class CreateLifecycleTests(unittest.TestCase):
+    """A create nobody has seen finish: the daemon's durable record decides, and only an ended one is terminal."""
+    setUp, snapshot, issue, prepare = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue, DispatchTests.prepare
+
+    def claimed(self, provider=None):
+        row = self.prepare()
+        if provider:
+            with registry.transaction() as connection:
+                stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+                stored['bundle']['provider'] = provider
+                registry.save(connection, stored)
+        import route_judge
+        with patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+                patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
+            return registry.claim(registry.inspect(row['dispatch_id'])['request'], parent_id='parent-a', now=self.now)
+
+    def observe_only(self, creation):
+        def host(request):
+            self.assertEqual(request['operation'], 'observe')
+            return {'ok': True, 'agent': None, 'missing': False, 'creation': creation}
+        return host
+
+    def test_daemon_failure_after_the_bridge_gave_up_is_terminal_releasable_and_rerollable(self):
+        # dispatch 32e17e1b: the daemon recorded a definitive failure 131 s in, long after the bridge's 25 s cut-off.
+        import launch_failures
+        store = self.root / 'launch-failures.json'
+        with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)}):
+            row = self.claimed()
+            host = self.observe_only({'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'model_unavailable'})
+            result = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+            self.assertEqual(result['state'], 'create_failed')
+            self.assertEqual(result['error'], 'create_failed')
+            self.assertIn('safe to roll', result['next_action'])
+            self.assertNotIn('continuation_argv', result)
+            self.assertEqual(registry.reservations(), [])
+            self.assertEqual(registry.release(row['dispatch_id'], 'parent-a', 'give up')['state'], 'create_failed')
+            self.assertTrue(json.loads(store.read_text(encoding='utf-8')))
+            launch_failures.clear('claude-lab')
+            self.assertEqual(self.prepare(self.issue())['state'], 'prepared')
+
+    def test_a_request_never_admitted_fails_only_after_its_provider_deadline(self):
+        for provider, seconds in (('claude-lab', registry.CREATE_DEADLINE),
+                                  ('antigravity-resilient', registry.CREATE_DEADLINES['antigravity-resilient'])):
+            with self.subTest(provider=provider):
+                row = self.claimed(provider)
+                launched = registry.parse(row['launched_at'])
+                self.assertEqual(registry.create_deadline(row), launched + timedelta(seconds=seconds))
+                self.assertGreater(seconds, registry.CREATE_SEND_WINDOW + flow.HOST_TIMEOUT)
+                before = flow.reconcile(row['dispatch_id'], self.observe_only(None), now=launched + timedelta(seconds=seconds - 1))
+                self.assertEqual(before[0]['state'], 'launching')
+                self.assertTrue(before[0]['creating'])
+                after = flow.reconcile(row['dispatch_id'], self.observe_only(None), now=launched + timedelta(seconds=seconds))
+                self.assertEqual(after[0]['state'], 'create_failed')
+                self.assertEqual(registry.inspect(row['dispatch_id'])['events'][-1]['reason'], 'host_never_admitted_create')
+                registry.reservations()
+                with registry.transaction() as connection:
+                    connection.execute('DELETE FROM dispatches')
+
+    def test_an_admitted_create_stays_open_past_its_deadline_because_the_host_cannot_cancel_it(self):
+        row = self.claimed()
+        late = registry.parse(row['launched_at']) + timedelta(seconds=registry.CREATE_DEADLINE + 5)
+        observed = flow.reconcile(row['dispatch_id'], self.observe_only({'phase': 'accepted'}), now=late)
+        self.assertEqual(observed[0]['state'], 'launching')
+        self.assertIn('no cancel', observed[0]['next_action'])
+        with self.assertRaisesRegex(ValueError, 'Observe terminal status'):
+            registry.release(row['dispatch_id'], 'parent-a', 'give up')
+        # The lease lapses, but the expired row still refuses a release that would free a worker about to appear.
+        registry.reservations(now=late + timedelta(seconds=registry.RUN_LEASE))
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
+        with self.assertRaisesRegex(ValueError, 'still creating'):
+            registry.release(row['dispatch_id'], 'parent-a', 'give up')
+        # When it does arrive, the same dispatch binds it.
+        agent = self.snapshot(row, updatedAt=(late + timedelta(seconds=1)).isoformat())
+        recovered = flow.reconcile(row['dispatch_id'], lambda _: {'ok': True, 'agent': agent}, now=late + timedelta(seconds=2))
+        self.assertEqual(recovered[0]['state'], 'started')
+
+    def test_a_completed_create_with_no_agent_left_was_removed(self):
+        row = self.claimed()
+        settled = flow.reconcile(row['dispatch_id'], self.observe_only({'phase': 'completed'}), now=self.now)
+        self.assertEqual(settled[0]['state'], 'canceled')
+
+    def test_a_resume_is_never_settled_from_the_create_record(self):
+        row = self.claimed()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['operation'] = 'resume'
+            registry.save(connection, stored)
+        much_later = registry.parse(row['launched_at']) + timedelta(seconds=registry.CREATE_DEADLINE + 5)
+        self.assertEqual(registry.resolve_creation(row['dispatch_id'], None, now=much_later)['state'], 'launching')
+
+    def test_the_create_carries_its_send_window_and_deadline(self):
+        row = self.prepare()
+        sent = {}
+
+        def host(request):
+            if request['operation'] == 'create':
+                sent.update(request)
+                return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+            return {'ok': True, 'agent': None, 'creation': None}
+        flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+        launched = registry.parse(registry.inspect(row['dispatch_id'])['launched_at'])
+        self.assertLess(abs((registry.parse(sent['send_by']) - launched).total_seconds() - registry.CREATE_SEND_WINDOW), 5)
+        self.assertEqual(registry.parse(sent['create_deadline']), launched + timedelta(seconds=registry.CREATE_DEADLINE))
+
+    def test_a_resume_falling_back_to_create_gets_a_fresh_send_window_inside_the_deadline(self):
+        self.assertLess(flow.RESUME_TIMEOUT + registry.CREATE_SEND_WINDOW, registry.CREATE_DEADLINE)
+
+    def test_inside_the_window_nothing_reads_as_a_failure(self):
+        import roll
+        from types import SimpleNamespace
+        row = self.prepare()
+
+        def host(request):
+            if request['operation'] == 'create':
+                return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+            return {'ok': True, 'agent': None, 'missing': False, 'creation': {'phase': 'accepted'},
+                    'completion_notification': {'status': 'watching'}}
+        args = SimpleNamespace(title='fixture', workspace=None, wait=0)
+        decision = {'decision_id': row['decision_id'], 'selected_bundle': self.bundle}
+        with patch.object(flow, 'host_call', host), patch.object(registry, 'prepare', return_value=row):
+            result, code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
+        status = roll.status_of(result, code)
+        self.assertEqual((status, code), ('pending', 0))
+        worker = result['worker']
+        self.assertEqual((worker['state'], worker['creating'], worker['creation_phase']), ('launching', True, 'accepted'))
+        self.assertNotIn('observe_error', worker)
+        self.assertNotIn('error', worker)
+        compact = roll.compact(result, status, 'detail.json')
+        self.assertIn('not a failure', compact['next_action'])
+        self.assertIn('Do not roll again', compact['next_action'])
+        self.assertNotIn('cause', compact)
+        self.assertTrue(compact['next_argv'])
+
+    def test_a_host_that_cannot_be_read_says_so_without_settling(self):
+        row = self.claimed()
+        late = registry.parse(row['launched_at']) + timedelta(hours=1)
+        observed = flow.reconcile(row['dispatch_id'], lambda _: {'ok': False, 'error': 'host_timeout'}, now=late)
+        self.assertEqual(observed[0]['error'], 'host_timeout')
+        self.assertIsNone(registry.inspect(row['dispatch_id']).get('creation'))
+
+    def test_release_settles_a_finished_create_first(self):
+        row = self.claimed()
+        args = SimpleNamespace(stage='dispatch', dispatch_action='release', dispatch_id=row['dispatch_id'],
+                               parent_id='parent-a', basis='cancel')
+        with patch.object(flow, 'host_call', self.observe_only({'phase': 'failed', 'failure_class': 'unknown'})):
+            self.assertEqual(flow.cli(args)['state'], 'create_failed')
+
+
+class WatchLimitTests(unittest.TestCase):
+    """--watch-seconds against the real host_call: a real process that never answers, whose child keeps stdout open."""
+    setUp, snapshot, issue, prepare = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue, DispatchTests.prepare
+    claimed = CreateLifecycleTests.claimed
+
+    def test_watch_seconds_is_a_hard_limit_on_a_hung_bridge(self):
+        bridge = self.root / 'hung_bridge.mjs'
+        bridge.write_text("import {spawn} from 'node:child_process';\n"
+                          "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 40000)'], {stdio: 'inherit', detached: true}).unref();\n"
+                          "setTimeout(() => {}, 60000);\n", encoding='utf-8')
+        row = self.claimed()
+        with patch.dict(os.environ, {'ROUTER_PASEO_BRIDGE': str(bridge)}):
+            started = time.monotonic()
+            result = flow.launch(row['dispatch_id'], 'parent-a', watch_seconds=2, poll_seconds=1)
+            elapsed = time.monotonic() - started
+            self.assertEqual(result['state'], 'launching')
+            self.assertEqual(result['observe_error'], 'host_timeout')
+            self.assertTrue(result['continuation_argv'])
+            self.assertLess(elapsed, 3.5)
+            started = time.monotonic()
+            flow.launch(row['dispatch_id'], 'parent-a', watch_seconds=0, poll_seconds=1)
+            self.assertLess(time.monotonic() - started, flow.OBSERVE_FLOOR + 1.5)
+
+    def test_each_observation_is_cut_at_what_is_left_of_the_watch(self):
+        row = self.claimed()
+        timeouts = []
+
+        def host(request):
+            timeouts.append(request['timeout_seconds'])
+            return {'ok': False, 'error': 'host_timeout'}
+        with patch.object(flow, 'OBSERVE_FLOOR', 0.1):
+            flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=2, poll_seconds=1)
+        self.assertGreater(len(timeouts), 1)
+        self.assertLessEqual(timeouts[0], 2)
+        self.assertEqual(timeouts, sorted(timeouts, reverse=True))
+
+
+class WorkspaceWriterTests(unittest.TestCase):
+    """One writer per workspace, decided from recorded dispatches, the host's running agents and the classifier field."""
+    setUp, snapshot, issue = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue
+
+    def prepare_in(self, workspace='W', task_id='writer', **options):
+        task = dict(self.task, task_id=task_id, expected_hours=0.001)
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': workspace}
+        return registry.prepare(self.issue(task)['decision_id'], task, launch, self.usage,
+                                accounts=self.accounts, now=self.now, **options)
+
+    def test_each_open_state_of_a_writer_holds_the_workspace_and_terminal_ones_do_not(self):
+        first = self.prepare_in()
+        for state in ('prepared', 'launching', 'launched', 'started'):
+            with self.subTest(state=state):
+                with registry.transaction() as connection:
+                    row = registry.get(connection, 'dispatches', first['dispatch_id'])
+                    row['state'] = state
+                    registry.save(connection, row)
+                with self.assertRaises(registry.WorkspaceBusy) as caught:
+                    self.prepare_in(task_id='second')
+                self.assertEqual(caught.exception.holders[0]['dispatch_id'], first['dispatch_id'])
+        for state in ('completed', 'failed', 'create_failed', 'canceled'):
+            with self.subTest(state=state):
+                with registry.transaction() as connection:
+                    row = registry.get(connection, 'dispatches', first['dispatch_id'])
+                    row['state'] = state
+                    registry.save(connection, row)
+                other = self.prepare_in(task_id='third-' + state)
+                with registry.transaction() as connection:
+                    connection.execute('DELETE FROM dispatches WHERE id=?', (other['dispatch_id'],))
+
+    def test_other_workspaces_and_no_workspace_are_unaffected(self):
+        self.prepare_in()
+        self.assertEqual(self.prepare_in('other', task_id='elsewhere')['state'], 'prepared')
+
+    def test_read_only_coexists_both_ways(self):
+        reader = self.prepare_in(task_id='reader', access='read_only')
+        writer = self.prepare_in(task_id='writer')
+        self.assertEqual(self.prepare_in(task_id='reader-2', access='read_only')['state'], 'prepared')
+        self.assertEqual(registry.workspace_writers('W', now=self.now)[0]['dispatch_id'], writer['dispatch_id'])
+        self.assertEqual(reader['access'], 'read_only')
+
+    def test_a_row_recorded_before_access_existed_counts_as_a_writer(self):
+        row = self.prepare_in()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            del stored['access']
+            registry.save(connection, stored)
+        with self.assertRaises(registry.WorkspaceBusy):
+            self.prepare_in(task_id='second')
+
+    def test_allow_concurrent_is_recorded_on_the_dispatch(self):
+        self.prepare_in()
+        row = self.prepare_in(task_id='second', allow_concurrent='different directories')
+        self.assertEqual(row['allow_concurrent'], 'different directories')
+
+    def test_access_comes_from_the_classifier_field_or_the_flag_never_the_text(self):
+        import roll
+        from types import SimpleNamespace
+        cases = (
+            ('exploration', None, 'read_only'), ('text_only', None, 'read_only'), ('advisory', None, 'read_only'),
+            ('engineering', None, 'write'), (None, None, 'write'),
+            ('engineering', 'read-only', 'read_only'), ('exploration', 'write', 'write'),
+        )
+        for style, flag, expected in cases:
+            with self.subTest(style=style, flag=flag):
+                decision = {'task_profile': {'interaction_style': style} if style else {}}
+                # A title and brief full of review words change nothing.
+                args = SimpleNamespace(access=flag, title='Read-only independent code review 只读审查', brief=None)
+                self.assertEqual(roll.task_access(args, decision), expected)
+
+    def holders(self, agents, parent='parent-a'):
+        return flow.workspace_holders('W', parent, host=lambda _: {'ok': True, 'agents': agents})
+
+    def test_a_running_router_agent_holds_the_workspace_even_after_its_dispatch_completed(self):
+        row = self.prepare_in()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['state'] = 'completed'
+            registry.save(connection, stored)
+        holders, error = self.holders([{'id': 'a1', 'status': 'running', 'dispatch_id': row['dispatch_id']}])
+        self.assertIsNone(error)
+        self.assertEqual([(h['agent_id'], h['agent_status']) for h in holders], [('a1', 'running')])
+
+    def test_running_read_only_agents_and_the_caller_itself_do_not_hold_it(self):
+        reader = self.prepare_in(task_id='reader', access='read_only')
+        holders, _ = self.holders([{'id': 'a1', 'status': 'running', 'dispatch_id': reader['dispatch_id']},
+                                   {'id': 'parent-a', 'status': 'running', 'dispatch_id': 'unknown-dispatch'}])
+        self.assertEqual(holders, [])
+        holders, _ = self.holders([{'id': 'a2', 'status': 'running', 'dispatch_id': 'unknown-dispatch'}])
+        self.assertEqual(holders[0]['agent_id'], 'a2')
+
+    def test_an_unreadable_host_leaves_recorded_writers_in_force(self):
+        row = self.prepare_in()
+        holders, error = flow.workspace_holders('W', 'parent-a', host=lambda _: {'ok': False, 'error': 'host_timeout'})
+        self.assertEqual(error, 'host_timeout')
+        self.assertEqual(holders[0]['dispatch_id'], row['dispatch_id'])
+
+    def test_concurrent_prepare_lets_exactly_one_writer_in(self):
+        decisions = []
+        for index in range(2):
+            task = dict(self.task, task_id=f'racer-{index}', expected_hours=0.001)
+            decisions.append((self.issue(task)['decision_id'], task))
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'W'}
+        with ThreadPoolExecutor(2) as pool:
+            def attempt(item):
+                try:
+                    return registry.prepare(item[0], item[1], dict(launch), self.usage, accounts=self.accounts, now=self.now)['state']
+                except registry.WorkspaceBusy:
+                    return 'busy'
+            self.assertEqual(sorted(pool.map(attempt, decisions)), ['busy', 'prepared'])
+
+
+class RollLifecycleTests(unittest.TestCase):
+    """roll end to end against a fake host and a fake judge."""
+    setUp, snapshot, issue = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue
+    roll = RollTests.roll
+    brief = RollTests.brief
+
+    def setUp(self):
+        DispatchTests.setUp(self)
+        self.creates = []
+        self.running = []
+
+    def host(self, request):
+        operation = request['operation']
+        if operation == 'workspace_agents':
+            return {'ok': True, 'agents': list(self.running)}
+        if operation == 'create':
+            self.creates.append(request['dispatch_id'])
+            return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+        return {'ok': True, 'agent': None, 'creation': {'phase': 'accepted'}}
+
+    def decision(self):
+        return {'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
+                'decision': {'action': 'start'}, 'task_profile': {'interaction_style': 'engineering'}}
+
+    def fresh_decision(self):
+        decision = self.decision()
+        decision.pop('decision_id', None)
+        return decision
+
+    def go(self, **flags):
+        flags.setdefault('hours', 0.001)
+        flags.setdefault('task', None)
+        flags.setdefault('task_id', None)
+        flags.setdefault('new_worker', False)
+        flags.setdefault('resume', None)
+        flags.setdefault('fast', False)
+        flags.setdefault('keep_whole', None)
+        flags.setdefault('access', None)
+        flags.setdefault('allow_concurrent', None)
+        flags.setdefault('account', None)
+        flags.setdefault('verbose', True)
+        with patch.object(flow, 'host_call', self.host), patch.object(flow, 'launch', wraps=flow.launch):
+            (result, _), _ = self.roll(self.fresh_decision(), reachable=True, **flags)
+        return result
+
+    def test_new_worker_beats_the_open_dispatch_of_the_same_brief(self):
+        first = self.go()
+        again = self.go()
+        self.assertEqual(again['worker']['dispatch_id'], first['worker']['dispatch_id'])
+        self.assertEqual(len(self.creates), 1)
+        fresh = self.go(new_worker=True)
+        self.assertNotEqual(fresh['worker']['dispatch_id'], first['worker']['dispatch_id'])
+        self.assertEqual(len(self.creates), 2)
+
+    def test_second_writer_in_a_workspace_is_blocked_even_with_new_worker(self):
+        first = self.go(workspace='W')
+        self.assertEqual(first['status'], 'pending')
+        result = self.go(workspace='W', new_worker=True)
+        self.assertEqual(result['status'], 'blocked')
+        self.assertEqual(result['error'], 'workspace_has_active_writer')
+        self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
+        for needle in (first['worker']['dispatch_id'], '--access read-only', '--allow-concurrent'):
+            self.assertIn(needle, result['next'])
+        self.assertEqual(len(self.creates), 1)
+
+    def test_compact_blocked_names_the_holder_and_the_way_out(self):
+        first = self.go(workspace='W')
+        compact = self.go(workspace='W', new_worker=True, verbose=False)
+        self.assertEqual(compact['status'], 'blocked')
+        self.assertEqual(compact['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
+        self.assertIn('--allow-concurrent', compact['next_action'])
+        self.assertEqual(compact['cause'], 'workspace_has_active_writer')
+
+    def test_a_running_router_agent_blocks_a_workspace_with_no_open_dispatch(self):
+        self.running = [{'id': 'old-worker', 'status': 'running', 'dispatch_id': 'unknown'}]
+        result = self.go(workspace='W')
+        self.assertEqual(result['status'], 'blocked')
+        self.assertEqual(result['blocked_by'][0]['agent_id'], 'old-worker')
+        self.assertEqual(self.creates, [])
+
+    def test_read_only_flag_and_allow_concurrent_get_through_and_the_reason_reaches_the_ledger(self):
+        self.go(workspace='W')
+        reader = self.go(workspace='W', new_worker=True, access='read-only')
+        self.assertEqual(reader['status'], 'pending')
+        self.assertEqual(reader['worker']['access'], 'read_only')
+        ledger = []
+        forced = self.roll_forced(ledger.append)
+        self.assertEqual(forced['status'], 'pending')
+        self.assertEqual(ledger[0]['stage'], 'allow_concurrent')
+        self.assertEqual(ledger[0]['reason'], 'separate directories')
+        self.assertEqual(ledger[0]['workspace'], 'W')
+
+    def roll_forced(self, append_ledger):
+        import roll
+        args = SimpleNamespace(title='fixture', workspace='W', wait=0, new_worker=True, access=None,
+                               allow_concurrent='separate directories')
+        task = dict(self.task, task_id='forced', expected_hours=0.001)
+        decision = dict(self.decision(), **registry.issue(self.decision(), task, self.now))
+        judge = SimpleNamespace(append_ledger=append_ledger)
+        with patch.object(flow, 'host_call', self.host):
+            result, code = roll.paseo(args, {}, decision, task, 'fixture', 'parent-a', self.usage, judge=judge)
+        return dict(result, status=roll.status_of(result, code))
+
+    def test_exit_status_of_a_settled_create_is_an_error_with_a_safe_next_step(self):
+        import roll
+        first = self.go()
+
+        def settled(request):
+            return {'ok': True, 'agent': None, 'creation': {'phase': 'failed', 'failure_class': 'unknown'}}
+        args = SimpleNamespace(title='fixture', workspace=None, wait=0)
+        decision = {'decision_id': 'unused', 'selected_bundle': self.bundle}
+        with patch.object(flow, 'host_call', settled), \
+                patch.object(registry, 'prepare', return_value=registry.inspect(first['worker']['dispatch_id'])):
+            result, code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
+        self.assertEqual((roll.status_of(result, code), code), ('error', 1))
+        self.assertEqual(result['caller_action'], 'roll_again_safe')
+        self.assertIn('safe to roll', roll.compact(result, 'error', 'x')['next_action'])
 
 
 if __name__ == '__main__':

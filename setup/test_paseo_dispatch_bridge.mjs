@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
-  creationFailureClass} from './paseo_dispatch_bridge.mjs';
+  creationFailureClass, creationRecord} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -258,6 +258,80 @@ test('initial idle and delayed creation do not falsely finish; vanished workers 
   assert.equal(notificationEvents(null, record, 30)[0].reason, 'worker unavailable');
 });
 
+test('a create only notifies once it has ended: never for slowness, whatever the deadline', () => {
+  const record = {dispatch_id: 'd', creation_deadline: 100};
+  for (const phase of ['accepted', 'workspace_ready', 'agent_ready', 'prompt_started'])
+    assert.deepEqual(notificationEvents(null, record, 10_000, {phase}), [], phase);
+  assert.deepEqual(notificationEvents(null, record, 99, null), [], 'not admitted, inside the deadline');
+  assert.equal(notificationEvents(null, record, 100, null)[0].reason, 'creation failed');
+  assert.equal(notificationEvents(null, record, 10, {phase: 'failed'})[0].reason, 'creation failed');
+  assert.deepEqual(notificationEvents(null, record, 10_000), [], 'a record not read decides nothing');
+});
+
+test('a failed create tells the parent the brief can be rolled again', async () => {
+  const f = watchFixture();
+  const fetchAgent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : null;
+  f.client.sendCorrelatedSessionRequest = async () => ({snapshot: {phase: 'failed', error: 'secret-sdk-canary'}});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.match(f.calls[0][1], /safe to roll this brief again/);
+  assert(!f.calls[0][1].includes('get_agent_activity'));
+  assert(!JSON.stringify(f.record).includes('canary'));
+});
+
+test('the creation record is read through a schema-valid one-shot request, keeping only fixed fields', async () => {
+  const seen = [];
+  const client = {sendCorrelatedSessionRequest: async request => {
+    seen.push(request);
+    SessionInboundMessageSchema.parse({...request.message, requestId: 'fixture-request'});
+    return {snapshot: seen.length === 1 ? null : {phase: 'failed', outcomeUnknown: false, agentId: 'd', error: 'Timed out refreshing x secret-canary'}};
+  }};
+  assert.equal(await creationRecord(client, 'd'), null);
+  const failed = await creationRecord(client, 'd');
+  assert.deepEqual(failed, {phase: 'failed', outcome_unknown: false, agent_id: 'd', failure_class: 'provider_refresh_timeout'});
+  assert.equal(seen[0].message.subscribe, false);
+  await assert.rejects(creationRecord({sendCorrelatedSessionRequest: async () => ({snapshot: null, error: 'boom'})}, 'd'), /creation_unobservable/);
+});
+
+test('observe reports the creation record when no agent exists, and finds an agent created meanwhile', async () => {
+  const none = {fetchAgents: async () => ({entries: []}), fetchAgent: async () => null,
+    sendCorrelatedSessionRequest: async () => ({snapshot: {phase: 'accepted', agentId: 'd'}})};
+  const pending = await execute(none, {operation: 'observe', dispatch_id: 'observe-creation', agent_id: null});
+  assert.deepEqual([pending.ok, pending.agent, pending.creation.phase], [true, null, 'accepted']);
+  const raced = {...none, fetchAgent: async id => ({agent: {id, status: 'running', labels: {}}}),
+    sendCorrelatedSessionRequest: async () => ({snapshot: {phase: 'completed', agentId: 'd'}})};
+  assert.equal((await execute(raced, {operation: 'observe', dispatch_id: 'observe-creation', agent_id: null})).agent.id, 'd');
+  const bound = {...none, sendCorrelatedSessionRequest: async () => assert.fail('a bound agent has no create to read')};
+  assert.equal('creation' in await execute(bound, {operation: 'observe', dispatch_id: 'observe-creation', agent_id: 'gone'}), false);
+});
+
+test('a create past its send window is never sent', async () => {
+  let created = 0;
+  const fake = {fetchAgent: async () => ({agent: {cwd: 'E:/fixture'}}), createAgent: async () => {created++; return {};}};
+  const request = {provider: 'claude/x', labels: {}};
+  const input = {operation: 'create', dispatch_id: 'send-window', parent_id: 'parent', request};
+  const late = await execute(fake, {...input, send_by: new Date(Date.now() - 1000).toISOString()}, notifier);
+  assert.deepEqual([late.ok, late.sent, late.error, created], [false, false, 'create_send_window_elapsed', 0]);
+  await execute(fake, {...input, send_by: new Date(Date.now() + 60000).toISOString()}, notifier);
+  assert.equal(created, 1);
+});
+
+test('workspace_agents lists only router agents of that workspace, across pages', async () => {
+  const filters = [];
+  const fake = {fetchAgents: async ({filter, page}) => {
+    filters.push(filter);
+    return page.cursor
+      ? {entries: [{agent: {id: 'c', status: 'initializing', workspaceId: 'W', labels: {'router.dispatch_id': 'dc'}}}], pageInfo: {hasMore: false, nextCursor: null}}
+      : {entries: [{agent: {id: 'a', status: 'running', workspaceId: 'W', labels: {'router.dispatch_id': 'da'}}},
+          {agent: {id: 'b', status: 'running', workspaceId: 'other', labels: {'router.dispatch_id': 'db'}}},
+          {agent: {id: 'h', status: 'running', workspaceId: 'W', labels: {}}}], pageInfo: {hasMore: true, nextCursor: 'next'}};
+  }};
+  const result = await execute(fake, {operation: 'workspace_agents', workspace_id: 'W'});
+  assert.deepEqual(result.agents.map(a => [a.id, a.dispatch_id]), [['a', 'da'], ['c', 'dc']]);
+  assert.deepEqual(filters[0].statuses, ['initializing', 'running']);
+  SessionInboundMessageSchema.parse({type: 'fetch_agents_request', requestId: 'fixture-request', filter: filters[0], page: {limit: 200}});
+});
+
 test('expired observation reports its limit and missing parents terminate without a send', async () => {
   const f = watchFixture();
   f.setAgent({status: 'running'});
@@ -265,6 +339,7 @@ test('expired observation reports its limit and missing parents terminate withou
   assert.match(f.calls[0][1], /watch expired/);
   const absent = watchFixture();
   absent.client.fetchAgent = async () => null;
+  absent.client.sendCorrelatedSessionRequest = async () => ({snapshot: null});
   assert.equal(await notificationStep(absent.client, absent.record, absent.persist, 10), true);
   assert.equal(absent.calls.length, 0);
   assert.equal(absent.record.status, 'parent_unavailable');
