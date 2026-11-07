@@ -148,9 +148,11 @@ def apply(accounts, document):
                 if old in rows and new not in rows:
                     rows[new] = rows[old]
             spec = {**spec, 'bundles': rows}
+        discovery = ((accounts.get('_discovery') or {}).get('accounts') or {}).get(name) or {}
         if spec.get('verified') is False:
             target['verified'] = False
-        elif spec.get('verified') is True and target.get('discovery_status') in (None, 'ready', 'usage_failing'):
+        elif (spec.get('verified') is True and target.get('discovery_status') in (None, 'ready', 'usage_failing')
+              and not discovery.get('usage_excluded')):
             target['verified'] = True
         if 'allowed_cwd' in spec:
             target['allowed_cwd'] = spec['allowed_cwd']

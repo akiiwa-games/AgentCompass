@@ -310,6 +310,137 @@ class StateTests(Machine):
             usage_core.cache_put_provider(good)
             self.assertNotIn('error_status', usage_core.load_usage_cache()['providers']['codex'])
 
+    def test_collect_local_usage_preserves_error_status_code_and_records_failures_without_prior_cache(self):
+        self.codex_login('plus')
+        self.cache(age_hours=0.2, codex={})
+        path = self.state / 'usage-cache.json'
+        cacc = usage_core.CodexAccount('codex', 'codex', self.home / '.codex')
+        with (patch.object(usage_core, 'CACHE_PATH', path),
+              patch.object(usage_core, 'STATE_DIR', self.state),
+              patch.object(usage_core, 'HOME', self.home),
+              patch.object(usage_core, 'CODEX_HOME', self.home / '.codex'),
+              patch.dict(usage_core.CODEX_ACCOUNT_BY_ID, {'codex': cacc})):
+            with patch.object(usage_core, 'codex_authorized_json',
+                              return_value=(402, {'detail': {'code': 'deactivated_workspace'}})):
+                usage_core.collect_local_usage(['codex'], force=True)
+            row_402 = usage_core.load_usage_cache()['providers']['codex']
+            self.assertEqual((row_402.get('error_status'), row_402.get('error_code')), (402, 'deactivated_workspace'))
+            self.assertEqual(self.row('codex')['status'], account_state.PLAN_INACTIVE)
+
+            # Credential rotation with no prior cache for the new credential: 401 -> auth_failed
+            self.write('.codex/auth.json', {'tokens': {
+                'access_token': 'fake-access-rotated', 'account_id': 'fake-account',
+                'id_token': jwt({'https://api.openai.com/auth': {'chatgpt_plan_type': 'plus'}})}})
+            with patch.object(usage_core, 'codex_authorized_json',
+                              return_value=(401, {'error': {'code': 'invalid_token'}})):
+                usage_core.collect_local_usage(['codex'], force=True)
+            self.assertEqual(self.row('codex')['status'], account_state.AUTH_FAILED)
+
+            # Credential with 200 plan_type='free' and empty windows -> plan_inactive
+            with patch.object(usage_core, 'codex_authorized_json',
+                              return_value=(200, {'plan_type': 'free', 'rate_limit': {}})):
+                usage_core.collect_local_usage(['codex'], force=True)
+            inv_free = self.row('codex')
+            self.assertEqual((inv_free['status'], inv_free['plan']), (account_state.PLAN_INACTIVE, 'free'))
+
+    def test_antigravity_and_pi_failed_polls_mark_stale_and_exclude_after_six_hours(self):
+        self.write('.pi/agent/auth.json', {'openai-codex': {'type': 'oauth', 'access': 'tok-pi', 'accountId': 'acct-pi'}})
+        path = self.state / 'usage-cache.json'
+        self.write('.agent-compass/usage-cache.json', {
+            'fetched_at': (self.now - timedelta(minutes=10)).isoformat(),
+            'providers': {
+                'antigravity': {
+                    'provider_id': 'antigravity', 'display_name': 'agy', 'available': True, 'stale': False,
+                    'fetched_at': (self.now - timedelta(minutes=10)).isoformat(),
+                    'windows': [{'id': 'claude', 'label': 'Claude', 'used_pct': 20.0,
+                                 'resets_at': (self.now + timedelta(hours=5)).isoformat()}],
+                },
+                'pi': {
+                    'provider_id': 'pi', 'display_name': 'pi', 'available': True, 'stale': False,
+                    'fetched_at': (self.now - timedelta(minutes=10)).isoformat(),
+                    'windows': [{'id': 'five_hour', 'label': '5h', 'used_pct': 20.0,
+                                 'resets_at': (self.now + timedelta(hours=5)).isoformat()}],
+                },
+            },
+        })
+        with (patch.object(usage_core, 'CACHE_PATH', path),
+              patch.object(usage_core, 'STATE_DIR', self.state),
+              patch.object(usage_core, 'HOME', self.home),
+              patch.object(usage_core, 'find_antigravity_cli', return_value='agy'),
+              patch.object(usage_core, '_run_antigravity_cli',
+                           side_effect=['1.1.12', RuntimeError('agy timeout'), RuntimeError('agy timeout')]),
+              patch.object(usage_core, 'ANTIGRAVITY_USAGE_RETRY_SECONDS', 0),
+              patch.object(usage_core, 'http_json', return_value=(500, None)),
+              patch.object(inventory, '_which', side_effect=lambda cmd, *_: 'agy' if cmd in ('agy', 'pi') else None)):
+            usage_core.collect_local_usage(['antigravity', 'pi'], force=True)
+            providers = usage_core.load_usage_cache()['providers']
+            self.assertEqual((providers['antigravity'].get('error'), providers['antigravity'].get('stale')), ('更新失败', True))
+            self.assertEqual((providers['pi'].get('error'), providers['pi'].get('stale')), ('更新失败', True))
+            discovered = inventory.discover(now=self.now)['accounts']
+            self.assertEqual(discovered['antigravity']['status'], account_state.USAGE_FAILING)
+            self.assertEqual(discovered['pi']['status'], account_state.USAGE_FAILING)
+
+            # 10-day-old Antigravity error with verified override must be excluded from dispatch
+            self.write('.agent-compass/accounts-override.json', {
+                'accounts': {'antigravity': {'enabled': True, 'verified': True, 'plan': 'pro'}}})
+            providers['antigravity']['fetched_at'] = (self.now - timedelta(days=10)).isoformat()
+            self.write('.agent-compass/usage-cache.json', {'providers': providers})
+            agy_row = inventory.discover(now=self.now)['accounts']['antigravity']
+            self.assertEqual((agy_row['status'], agy_row['usage_excluded']), (account_state.USAGE_FAILING, True))
+            self.assertIn('usage-cache', agy_row['sources'])
+            agy_spec = allocator.load_accounts()['accounts']['antigravity']
+            self.assertFalse(agy_spec['verified'])
+            self.assertTrue(all(b.get('discovery_unavailable') for b in agy_spec['bundles'].values()))
+
+    def test_shared_subscription_propagates_402_and_same_credential_401_without_shifting_quota_account(self):
+        self.codex_login('plus', 'codex', 'acct-shared')
+        self.codex_login('plus', 'codex-2', 'acct-shared')
+        self.write('.pi/agent/auth.json', {'openai-codex': {
+            'type': 'oauth', 'access': 'fake-access', 'accountId': 'acct-shared'}})
+        self.write('.paseo/config.json', {'agents': {'providers': {
+            'codex': {'type': 'codex', 'enabled': True},
+            'codex-2': {'type': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-2')}},
+            'pi': {'type': 'pi', 'enabled': True},
+        }}})
+        self.cache(codex={'error': '用量接口返回 HTTP 402', 'error_status': 402,
+                          'error_code': 'deactivated_workspace', 'windows': []})
+        rows = inventory.discover(now=self.now)['accounts']
+        for slot in ('codex', 'codex-2', 'pi'):
+            self.assertEqual(rows[slot]['quota_account'], 'codex')
+            self.assertEqual(rows[slot]['status'], account_state.PLAN_INACTIVE)
+        specs = allocator.load_accounts()['accounts']
+        self.assertFalse(specs['codex']['verified'])
+        self.assertFalse(specs['codex-2']['verified'])
+
+        # Same credential 401/403 propagates across slots sharing that credential
+        self.cache(codex={'error': '登录凭据需由 Codex 更新', 'error_status': 401,
+                          'error_code': 'invalid_token', 'windows': []})
+        rows_401 = inventory.discover(now=self.now)['accounts']
+        for slot in ('codex', 'codex-2', 'pi'):
+            self.assertEqual(rows_401[slot]['quota_account'], 'codex')
+            self.assertEqual(rows_401[slot]['status'], account_state.AUTH_FAILED)
+
+    def test_magpie_pooled_plan_labels_and_planless_failures_are_handled_as_subscriptions(self):
+        self.assertEqual(inventory.configured_plan('claude', 'max 20x ×2'), 'max20')
+        self.assertEqual(inventory.configured_plan('claude', 'max5'), 'max5')
+        self.assertTrue(account_state.plan_is_inactive('claude', 'free ×2'))
+        self.write('.claude/settings.json', {
+            'env': {'ANTHROPIC_BASE_URL': 'https://magpie.example.com', 'ANTHROPIC_AUTH_TOKEN': 'sk-magpie-1'}})
+        self.write('.claude/usage-float.json', {'source': 'magpie', 'provider': 'claude', 'account': ''})
+        self.cache(claude={'plan_label': 'free ×2', 'backend_kind': 'gateway',
+                           'windows': self.windows(window='seven_day')})
+        row_free = self.row('claude')
+        self.assertEqual((row_free['status'], row_free['plan']), (account_state.PLAN_INACTIVE, 'free'))
+        self.assertFalse(self.spec('claude')['verified'])
+
+        # Failing Magpie reading without plan_label (12h old) stays billing='subscription' and is excluded
+        self.cache(age_hours=12, claude={'error': 'VPS 暂未取得有效用量', 'backend_kind': 'gateway', 'windows': []})
+        row_fail = self.row('claude')
+        self.assertEqual((row_fail['status'], row_fail['billing'], row_fail['usage_excluded']),
+                         (account_state.USAGE_FAILING, 'subscription', True))
+        spec_fail = self.spec('claude')
+        self.assertEqual((spec_fail['billing'], spec_fail['verified']), ('subscription', False))
+
 
 class LaunchLatchTests(Machine):
     def test_only_a_subscription_failure_latches_and_structured_fields_decide(self):
@@ -335,8 +466,57 @@ class LaunchLatchTests(Machine):
         self.assertEqual(self.row()['status'], account_state.PLAN_INACTIVE)
         self.assertExcluded('codex', 'plan inactive')
         self.assertFalse(account_state.record_launch_error('codex', 'Your plan does not include this model'))
+        # A routine reading without an online plan or credential change must not unlock the latch.
         self.cache(age_hours=-0.1, codex={})
+        self.assertEqual(self.row()['status'], account_state.PLAN_INACTIVE)
+        self.assertIn('codex', account_state.latched())
+        # Once the online usage API confirms a paid plan newer than the latch, the latch clears.
+        self.cache(age_hours=-0.1, codex={'plan_label': 'pro'})
         self.assertEqual(self.row()['status'], account_state.READY)
+        self.assertEqual(account_state.latched(), {})
+
+    def test_launch_latch_unlocks_on_credential_rotation_or_worker_start(self):
+        self.claude_login()
+        self.cache(age_hours=0.1, claude={'windows': self.windows(window='seven_day')})
+        self.assertTrue(account_state.record_launch_error('claude', 'Your subscription has expired',
+                                                          at=self.now.isoformat()))
+        self.assertEqual(self.row('claude')['status'], account_state.PLAN_INACTIVE)
+        # Routine 5-minute poll on the same credential (Claude usage API has no plan_type) keeps the latch.
+        self.cache(age_hours=-0.1, claude={'windows': self.windows(window='seven_day')})
+        self.assertEqual(self.row('claude')['status'], account_state.PLAN_INACTIVE)
+        # Rotating the credential and getting a new good reading unlocks the latch.
+        self.write('.claude/.credentials.json', {'claudeAiOauth': {
+            'accessToken': 'fake-claude-rotated', 'refreshToken': 'fake-refresh',
+            'subscriptionType': 'max', 'rateLimitTier': 'default_claude_max_20x'}})
+        self.cache(age_hours=-0.2, claude={'windows': self.windows(window='seven_day')})
+        self.assertEqual(self.row('claude')['status'], account_state.READY)
+        self.assertEqual(account_state.latched(), {})
+        # Re-latch and verify that an observed started worker clears the latch.
+        self.assertTrue(account_state.record_launch_error('claude', 'Your subscription has expired',
+                                                          at=(self.now + timedelta(minutes=20)).isoformat()))
+        self.assertIn('claude', account_state.latched())
+        import dispatch_registry
+        db = self.state / 'dispatch.sqlite3'
+        launched_at = (self.now + timedelta(minutes=21)).isoformat()
+        updated_at = (self.now + timedelta(minutes=22)).isoformat()
+        labels = {k: f'v-{k}' for k in dispatch_registry.LABELS}
+        with dispatch_registry.transaction(db) as conn:
+            dispatch_registry.save(conn, {
+                'dispatch_id': 'd-1', 'decision_id': 'dec-1', 'parent_id': 'p-1', 'task_id': 't-1',
+                'task_hash': 'th', 'request_hash': 'rh', 'state': 'launching',
+                'created_at': launched_at, 'launched_at': launched_at,
+                'lease_until': (self.now + timedelta(hours=1)).isoformat(),
+                'hard_until': (self.now + timedelta(hours=2)).isoformat(),
+                'bundle': {'account': 'claude', 'bundle_id': 'claude__opus_high'},
+                'request': {'provider': 'claude/claude-opus-5-5', 'settings': {'modeId': 'bypassPermissions'},
+                            'labels': labels},
+                'events': [],
+            })
+        dispatch_registry.observe('d-1', {
+            'id': 'agent-1', 'provider': 'claude', 'model': 'claude-opus-5-5',
+            'status': 'running', 'currentModeId': 'bypassPermissions',
+            'updatedAt': updated_at, 'labels': labels,
+        }, now=self.now + timedelta(minutes=22), path=db)
         self.assertEqual(account_state.latched(), {})
 
     def test_the_latch_reaches_the_other_login_on_the_subscription(self):

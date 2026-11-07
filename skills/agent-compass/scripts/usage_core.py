@@ -518,6 +518,8 @@ class ProviderUsage:
     home: str | None = None
     # Sanitized native quota provenance/units, never credentials or account IDs.
     usage_details: dict[str, Any] | None = None
+    error_status: int | None = None
+    error_code: str | None = None
 
 
 def claude_magpie_source(provider_id: str):
@@ -588,6 +590,10 @@ def _provider_to_dict(p: ProviderUsage) -> dict[str, Any]:
         out["billing"] = p.billing
     if p.home:
         out["home"] = p.home
+    if p.error_status is not None:
+        out["error_status"] = p.error_status
+    if p.error_code is not None:
+        out["error_code"] = p.error_code
     return out
 
 
@@ -631,6 +637,8 @@ def _provider_from_dict(d: dict[str, Any]) -> ProviderUsage:
         billing=d.get("billing"),
         home=d.get("home"),
         usage_details=d.get("usage_details") if isinstance(d.get("usage_details"), dict) else None,
+        error_status=d.get("error_status") if isinstance(d.get("error_status"), int) and not isinstance(d.get("error_status"), bool) else None,
+        error_code=d.get("error_code") if isinstance(d.get("error_code"), str) else None,
     )
 
 
@@ -706,18 +714,34 @@ def provider_error_code(payload: Any) -> str | None:
 
 def mark_provider_stale(provider_id: str, error: str, status: int | None = None, code: str | None = None,
                         plan: str | None = None) -> None:
+    key = provider_credential_key(provider_id)
     def update(cache):
-        row = (cache.get('providers') or {}).get(provider_id)
-        if isinstance(row, dict):
-            if row.get('credential_key') != provider_credential_key(provider_id):
-                cache['providers'].pop(provider_id, None)
+        providers = cache.setdefault('providers', {})
+        row = providers.get(provider_id)
+        if isinstance(row, dict) and row.get('credential_key') != key:
+            providers.pop(provider_id, None)
+            row = None
+        if not isinstance(row, dict):
+            if status is None and code is None and plan is None:
                 return
-            row['stale'] = True
-            row['error'] = error
-            # What the provider itself said, for provider_inventory; a good reading replaces the whole row.
-            row['error_status'], row['error_code'] = status or None, code
-            if plan:
-                row['plan_label'] = plan
+            row = {
+                'provider_id': provider_id,
+                'display_name': provider_id,
+                'plan_label': plan,
+                'windows': [],
+                'error': error,
+                'available': False,
+                'stale': True,
+                'fetched_at': None,
+                'credential_key': key,
+            }
+            providers[provider_id] = row
+        row['stale'] = True
+        row['error'] = error
+        # What the provider itself said, for provider_inventory; a good reading replaces the whole row.
+        row['error_status'], row['error_code'] = (status if status and status != 200 else None), code
+        if plan:
+            row['plan_label'] = plan
     update_usage_cache(update)
 
 
@@ -924,6 +948,10 @@ def stale_provider_usage(
     status: int | None = None, code: str | None = None, plan: str | None = None,
 ) -> ProviderUsage:
     cached = display_fallback(provider_id, error, previous)
+    cached.error_status = status or None
+    cached.error_code = code
+    if plan:
+        cached.plan_label = plan
     try:
         mark_provider_stale(provider_id, error, status, code, plan)
     except Exception:
@@ -1821,7 +1849,7 @@ def fetch_antigravity_usage() -> ProviderUsage:
         if match is None or tuple(map(int, match.groups())) < (1, 1, 11):
             raise ValueError("Antigravity CLI 1.1.11 or later is required")
     except Exception:
-        return ProviderUsage("antigravity", "agy", available=False, error="更新失败")
+        return stale_provider_usage("antigravity", "更新失败")
 
     usage_args = ["-p", "/usage", "--output-format", "json"]
     for attempt in range(2):
@@ -1833,10 +1861,7 @@ def fetch_antigravity_usage() -> ProviderUsage:
             if attempt == 0:
                 time.sleep(ANTIGRAVITY_USAGE_RETRY_SECONDS)
                 continue
-            cached = cache_get_provider("antigravity")
-            if cached is not None:
-                return cached
-            return ProviderUsage("antigravity", "agy", available=False, error="更新失败")
+            return stale_provider_usage("antigravity", "更新失败")
     result = ProviderUsage(
         "antigravity", "agy", windows=windows,
         fetched_at=datetime.now(timezone.utc).isoformat(),
@@ -2450,12 +2475,12 @@ def fetch_pi_usage(provider_id: str = "pi") -> ProviderUsage:
     home = _pi_agent_home()
     pi_auth, auth_path = read_pi_codex_auth(home)
     if not pi_auth:
-        return ProviderUsage(provider_id, provider_id, available=False, error="更新失败")
+        return stale_provider_usage(provider_id, "更新失败")
     tokens = pi_auth.get("tokens") or {}
     access_token = str(tokens.get("access_token") or "").strip()
     account_id = str(tokens.get("account_id") or "").strip()
     if not access_token:
-        return ProviderUsage(provider_id, provider_id, available=False, error="更新失败")
+        return stale_provider_usage(provider_id, "更新失败")
     headers = {"Authorization": f"Bearer {access_token}"}
     if account_id:
         headers["ChatGPT-Account-Id"] = account_id
@@ -2476,10 +2501,8 @@ def fetch_pi_usage(provider_id: str = "pi") -> ProviderUsage:
             headers["Authorization"] = f"Bearer {access_token}"
             status, data = http_json(CODEX_USAGE_URL, headers=headers)
     if status != 200 or not isinstance(data, dict):
-        cached = cache_get_provider(provider_id)
-        if cached is not None:
-            return cached
-        return ProviderUsage(provider_id, provider_id, available=False, error="更新失败")
+        error = _tr("登录凭据需由 Pi 更新", "Login credentials must be updated by Pi") if status in (401, 403) else "更新失败"
+        return stale_provider_usage(provider_id, error, status=status, code=provider_error_code(data))
     rl = data.get("rate_limit") or {}
     windows: list[UsageWindow] = []
     if isinstance(rl.get("secondary_window"), dict):
@@ -2502,6 +2525,8 @@ def fetch_pi_usage(provider_id: str = "pi") -> ProviderUsage:
                 resets_at=_iso_timestamp(w.get("reset_at")),
             )
         )
+    if not windows:
+        return stale_provider_usage(provider_id, "更新失败", plan=str(data.get("plan_type") or "") or None)
     result = ProviderUsage(
         provider_id=provider_id,
         display_name=provider_id,
@@ -2862,7 +2887,10 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                     item.credential_key = key
                     cache_put_provider(item)
                 elif item.error or item.stale or not item.available:
-                    item = stale_provider_usage(pid, item.error or '更新失败', [item, cached])
+                    item = stale_provider_usage(
+                        pid, item.error or '更新失败', [item, cached],
+                        status=item.error_status, code=item.error_code, plan=item.plan_label,
+                    )
                 out.append(item)
         except TimeoutError:
             # The other process owns this fetch; don't overwrite its result.

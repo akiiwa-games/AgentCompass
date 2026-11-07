@@ -47,6 +47,9 @@ _LAUNCH_ERROR = re.compile(
     r'订阅(?:已)?(?:过期|到期|失效|取消)', re.I)
 
 
+ONLINE_PLAN_SOURCES = ('usage_api', 'usage_api_shared', 'account-tier', 'collector')
+
+
 def _time(value):
     try:
         moment = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
@@ -56,7 +59,8 @@ def _time(value):
 
 
 def plan_words(label):
-    return ' '.join(re.findall(r'[a-z0-9]+', str(label or '').lower()))
+    stripped = re.sub(r'(?:\s+x|\s*×)\s*\d+\s*$', '', str(label or ''), flags=re.I)
+    return ' '.join(re.findall(r'[a-z0-9]+', stripped.lower()))
 
 
 def plan_without_vendor(label):
@@ -103,10 +107,11 @@ def exclude_after_hours(environ=None, override_doc=None):
     return DEFAULT_EXCLUDE_AFTER_HOURS
 
 
-def failing(row, problem, last_success, previous, now, hours):
+def failing(row, problem, last_success, previous, now, hours, cached_at=None):
     """Set `usage_failing` on an inventory row. With no good reading on file the clock starts at the first failure seen."""
     since = previous.get('failing_since') if isinstance(previous, dict) and previous.get('status') == USAGE_FAILING else None
-    since = since if _time(since) else now.isoformat()
+    cached_time = _time(cached_at)
+    since = since if _time(since) else (cached_time.isoformat() if cached_time else now.isoformat())
     anchor = _time(last_success) or _time(since)
     row.update(status=USAGE_FAILING, reason=problem, failing_since=since, exclude_after_hours=hours,
                usage_excluded=(now - anchor).total_seconds() >= hours * 3600)
@@ -198,19 +203,62 @@ def usage_refused_credentials(row, collector_words=()):
     return status in (401, 403) if status else row.get('error') in collector_words
 
 
-def record_launch_error(account, error=None, *, code=None, status=None, at=None, source=None, state_dir=None):
+def _latch_credential_key(account, state_dir=None):
+    root = Path(state_dir or os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass')
+    for candidate, section in (
+        (os.environ.get('ROUTER_USAGE_CACHE'), 'providers'),
+        (root / 'usage-cache.json', 'providers'),
+        (root / 'provider-inventory.json', 'accounts'),
+    ):
+        if not candidate:
+            continue
+        try:
+            doc = json.loads(Path(candidate).read_text(encoding='utf-8'))
+            key = ((doc.get(section) or {}).get(account) or {}).get('credential_key')
+            if isinstance(key, str) and key:
+                return key
+        except (OSError, ValueError, AttributeError):
+            continue
+    return None
+
+
+def record_launch_error(account, error=None, *, code=None, status=None, at=None, source=None, state_dir=None,
+                        credential_key=None):
     """Latch `plan_inactive` when a launch reports the subscription has lapsed. Returns True when it did."""
     if not error_means_inactive(error, code, status):
         return False
     import override_store
     path = latch_path(state_dir)
     at = at or datetime.now(timezone.utc).isoformat()
+    key = credential_key or _latch_credential_key(account, state_dir)
     with override_store.locked(path):
         document = _read_latches(path)
         held = _time((document['accounts'].get(account) or {}).get('observed_at'))
         if held and _time(at) and held >= _time(at):
             return False
-        document['accounts'][account] = {'observed_at': at, 'source': source}
+        entry = {'observed_at': at, 'source': source}
+        if key:
+            entry['credential_key'] = key
+        document['accounts'][account] = entry
+        override_store.write(path, document)
+    return True
+
+
+def seal_latch_credential(account, credential_key, *, state_dir=None, expected_observed_at=None):
+    if not isinstance(account, str) or not account or not isinstance(credential_key, str) or not credential_key:
+        return False
+    import override_store
+    path = latch_path(state_dir)
+    if not path.exists():
+        return False
+    with override_store.locked(path):
+        document = _read_latches(path)
+        row = document['accounts'].get(account)
+        if not isinstance(row, dict) or row.get('credential_key'):
+            return False
+        if expected_observed_at is not None and row.get('observed_at') != expected_observed_at:
+            return False
+        row['credential_key'] = credential_key
         override_store.write(path, document)
     return True
 
@@ -220,8 +268,12 @@ def latched(state_dir=None):
 
 
 def clear_latch(account, *, state_dir=None, expected_observed_at=None):
+    if not isinstance(account, str) or not account:
+        return False
     import override_store
     path = latch_path(state_dir)
+    if not path.exists():
+        return False
     with override_store.locked(path):
         document = _read_latches(path)
         row = document['accounts'].get(account)
@@ -232,10 +284,21 @@ def clear_latch(account, *, state_dir=None, expected_observed_at=None):
     return True
 
 
-def latch_outlived(latch, last_good):
-    """A good reading newer than the launch failure ends the latch."""
+def latch_outlived(latch, last_good, row=None):
+    """A good reading newer than the launch failure ends the latch once the credential or online plan confirms recovery."""
     observed, fetched = _time((latch or {}).get('observed_at')), _time(last_good)
-    return bool(observed and fetched and fetched > observed)
+    if not (observed and fetched and fetched > observed):
+        return False
+    if not isinstance(row, dict):
+        return False
+    latched_key, current_key = (latch or {}).get('credential_key'), row.get('credential_key')
+    if latched_key and current_key and latched_key != current_key:
+        return True
+    family = row.get('quota_family') or row.get('family')
+    plan = row.get('plan')
+    plan_read = _time(row.get('plan_read_at'))
+    return bool(row.get('plan_source') in ONLINE_PLAN_SOURCES and plan
+                and not plan_is_inactive(family, plan) and plan_read and plan_read > observed)
 
 
 if __name__ == '__main__':

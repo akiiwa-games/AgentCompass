@@ -231,6 +231,7 @@ def auth_facts(family, auth, home, profile=None):
     except (ValueError, IndexError, UnicodeError, AttributeError):
         claims = {}
     return {'present': bool(token), 'identity': digest('codex', account or token) if token else None,
+            'credential_identity': digest('codex', token, account or '') if token else None,
             'credential_key': digest(_resolved(home), str(token) + ':' + str(account or '')) if token else None,
             'plan': plan_name(family, claims.get('chatgpt_plan_type'))}
 
@@ -830,6 +831,8 @@ def _discover(home=None, environ=None, now=None):
         if cached.get('credential_key') in magpie_candidates:
             row['credential_key'] = cached['credential_key']
         is_magpie = (source.get('source') == 'magpie') or (cached.get('credential_key') in magpie_candidates) or (cached.get('backend_kind') == 'gateway')
+        if is_api and is_magpie:
+            row['billing'] = 'subscription'
         if (cached.get('credential_key') and cached.get('credential_key') == row.get('credential_key')):
             row['usage_binding'] = 'matches'
             if row['status'] == 'ready' and account_state.usage_refused_plan(cached):
@@ -848,8 +851,6 @@ def _discover(home=None, environ=None, now=None):
                 row.update(plan=online, plan_source='usage_api', plan_read_at=cached.get('fetched_at'))
             elif not row.get('plan') and online:
                 row.update(plan=online, plan_source='collector', plan_read_at=cached.get('fetched_at'))
-                if is_api and is_magpie:
-                    row['billing'] = 'subscription'
         elif cached:
             row['usage_binding'] = 'changed'
         result['accounts'][name] = row
@@ -864,15 +865,18 @@ def _discover(home=None, environ=None, now=None):
     agy_present = bool(_which('agy', environ.get('PATH')))
     agy_cli = bool(agy_present or _which('gemini', environ.get('PATH')))
     # agy answers /usage only for a signed-in account, so a quota reading is the sign-in proof.
-    agy_read = bool(array(agy.get('windows'))) and not agy.get('error')
+    agy_read = bool(array(agy.get('windows')))
     # /usage carries no tier; the tier comes from Google with agy's own sign-in (antigravity_plan), which is also a sign-in proof.
     agy_tier = antigravity_plan.cached_plan(state_dir, now)
+    agy_tier_read_at = antigravity_plan.read_cache(state_dir).get('read_at') if agy_tier else None
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
         'home': str(home / '.gemini'), 'cli_installed': agy_cli,
         'sources': ['native'] + (['usage-cache'] if agy_read else []) + (['account-tier'] if agy_tier else []),
         'status': 'ready' if agy_present else 'missing_client',
         'plan': agy.get('plan_label') or agy_tier,
         'plan_source': 'usage_api' if agy.get('plan_label') else 'account-tier' if agy_tier else None,
+        **({'plan_read_at': agy.get('fetched_at') if agy.get('plan_label') else agy_tier_read_at}
+           if (agy.get('plan_label') or agy_tier_read_at) else {}),
         'billing': 'subscription'}
     opencode = result['launchers']['opencode']
     installed = bool(_which('opencode', environ.get('PATH')))
@@ -946,6 +950,8 @@ def _discover(home=None, environ=None, now=None):
             **({'omp_models': cached_models[provider]} if cached_models.get(provider) else {}),
             **({'quota_account': owner} if owner else {}),
         }
+        bindings[name] = {'identity': facts['identity'], 'credential_identity': facts.get('credential_identity'),
+                          'base': '', 'key': None}
     # Other Paseo built-in launchers are recognized from their Paseo entry alone. Their
     # billing is unknown and no model is invented, so they produce no bundle until the
     # user configures models; unknown billing then stays explicit-selection only.
@@ -988,9 +994,9 @@ def _discover(home=None, environ=None, now=None):
         )
         pi_cached = obj(cache_rows.get('pi'))
         # Pi's login carries no id_token; its plan is what the usage API or the account it signs in as reports.
-        pi_plan = (pi_facts['plan'] or configured_plan('codex', pi_cached.get('plan_label'))
-                   or (result['accounts'][matched_codex].get('plan') if matched_codex else None))
-        result['accounts']['pi'] = {
+        pi_online = configured_plan('codex', pi_cached.get('plan_label')) if pi_cached.get('plan_label') else None
+        pi_plan = pi_facts['plan'] or pi_online or (result['accounts'][matched_codex].get('plan') if matched_codex else None)
+        pi_row = {
             'family': 'pi',
             'quota_family': 'codex',
             'provider': 'pi',
@@ -1001,8 +1007,19 @@ def _discover(home=None, environ=None, now=None):
             'plan': pi_plan,
             'identity': pi_facts['identity'],
             'billing': 'subscription',
+            **({'plan_source': 'usage_api', 'plan_read_at': pi_cached.get('fetched_at')} if not pi_facts['plan'] and pi_online else {}),
             **({'quota_account': matched_codex} if matched_codex else {}),
         }
+        bindings['pi'] = {'identity': pi_facts['identity'], 'credential_identity': pi_facts.get('credential_identity'),
+                          'base': '', 'key': None}
+        if pi_cached:
+            pi_row['usage_binding'] = 'matches'
+            if pi_row['status'] == 'ready' and account_state.usage_refused_plan(pi_cached):
+                pi_row.update(status=account_state.PLAN_INACTIVE,
+                              reason=f"usage API refused: {pi_cached.get('error_code') or pi_cached.get('error_status')}")
+            elif pi_row['status'] == 'ready' and account_state.usage_refused_credentials(pi_cached, COLLECTOR_REJECTED['codex']):
+                pi_row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
+        result['accounts']['pi'] = pi_row
     elif pi_installed or pi_home.is_dir() or (home / '.pi').is_dir():
         result['accounts']['pi'] = {
             'family': 'pi',
@@ -1124,13 +1141,17 @@ def _discover(home=None, environ=None, now=None):
     # One subscription can be exposed through multiple launchers/products. Keep
     # its quota owner stable instead of giving each alias a full allowance.
     owners = {}
-    ordered = sorted(result['accounts'], key=lambda name: (result['accounts'][name]['status'] != 'ready',
-                                                          name != result['accounts'][name]['family'], name))
+    ordered = sorted(result['accounts'], key=lambda name: (result['accounts'][name]['status'] not in account_state.LISTED_STATES,
+                                                           name != result['accounts'][name]['family'], name))
     for name in ordered:
         row = result['accounts'][name]
         ident = row.get('identity')
         if ident and not row.get('quota_account'):
             row['quota_account'] = owners.setdefault((row['family'], ident), name)
+        elif ident and row.get('quota_account'):
+            qfam = row.get('quota_family') or row['family']
+            if (qfam, ident) in owners:
+                row['quota_account'] = owners[(qfam, ident)]
     import quota_exhaustion
     exhaustion_path = state_dir / 'quota-exhaustion.json'
     exhausted_accounts = obj(read_json(exhaustion_path)[0].get('accounts')) if exhaustion_path.is_file() else {}
@@ -1144,7 +1165,7 @@ def _discover(home=None, environ=None, now=None):
             # Only these windows are out; the account's other windows stay routable.
             row['exhausted_windows'] = sorted(latched)
     _share_online_plan(result['accounts'])
-    _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc)
+    _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc, bindings)
     return result
 
 
@@ -1165,7 +1186,7 @@ def _share_online_plan(rows):
             row.update(plan=plan, plan_source='usage_api_shared', plan_read_at=read_at)
 
 
-def _reads_usage(name, row):
+def _reads_usage(name, row, override_doc=None):
     """Subscription accounts the collector reads. An installed agy with no proven sign-in is not an account yet."""
     if row.get('billing') != 'subscription':
         return False
@@ -1173,13 +1194,14 @@ def _reads_usage(name, row):
     if family in ('claude', 'codex', 'pi'):
         return True
     if family == 'antigravity':
-        return sign_in_proven(row)
+        verified = obj(obj((override_doc or {}).get('accounts')).get(name)).get('verified') is True
+        return sign_in_proven(row) or verified
     if family == 'omp':
         return row.get('quota_account') not in (None, name)   # a login of its own has no collector
     return family == 'grok' and bool(row.get('usage_windows'))
 
 
-def _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc):
+def _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc, bindings=None):
     """Give each account its one state (account_state). A snapshot with no rows at all means no collector has run on
     this machine; route_judge.readiness_gap reports that, so accounts are not each marked as failing."""
     rows = result['accounts']
@@ -1190,11 +1212,11 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
     hours = account_state.exclude_after_hours(environ, override_doc)
     latches = account_state.latched(state_dir)
     for name, row in rows.items():
-        reads = _reads_usage(name, row)
+        reads = _reads_usage(name, row, override_doc)
+        group = sorted(members.get(row.get('quota_account') or name) or [name], key=lambda other: other != name)
         problem, last_good = None, None
         if reads:
             # Readings of the same subscription count for each other; a reading taken with another credential does not.
-            group = sorted(members.get(row.get('quota_account') or name) or [name], key=lambda other: other != name)
             found = [('credential_changed', None) if rows[other].get('usage_binding') == 'changed'
                      else account_state.reading(cache_rows.get(other), now) for other in group]
             good = [last for issue, last in found if issue is None]
@@ -1203,19 +1225,43 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
             row['last_success_at'] = last_good
         latch_name = name if name in latches else row.get('quota_account') if row.get('quota_account') in latches else None
         latch = latches.get(latch_name) if latch_name else None
-        if latch and problem is None and account_state.latch_outlived(latch, last_good):
+        if latch and not latch.get('credential_key'):
+            latch_row = rows.get(latch_name) or row
+            if latch_row.get('credential_key'):
+                account_state.seal_latch_credential(latch_name, latch_row['credential_key'], state_dir=state_dir,
+                                                    expected_observed_at=latch.get('observed_at'))
+                latch['credential_key'] = latch_row['credential_key']
+        if latch and problem is None and account_state.latch_outlived(latch, last_good, row):
             if account_state.clear_latch(latch_name, state_dir=state_dir, expected_observed_at=latch.get('observed_at')):
                 latches.pop(latch_name, None)
                 latch = None
         if row.get('status') != account_state.READY:
             continue
-        if account_state.plan_is_inactive(row.get('quota_family') or row.get('family'), row.get('plan')):
+        inactive_peer = next(
+            (rows[other] for other in group
+             if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.PLAN_INACTIVE),
+            None,
+        )
+        cred_id = (bindings or {}).get(name, {}).get('credential_identity') or row.get('credential_key')
+        auth_peer = next(
+            (rows[other] for other in group
+             if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.AUTH_FAILED
+             and cred_id and cred_id == ((bindings or {}).get(other, {}).get('credential_identity') or rows[other].get('credential_key'))),
+            None,
+        )
+        if inactive_peer is not None:
+            row.update(status=account_state.PLAN_INACTIVE, reason=inactive_peer.get('reason'))
+        elif auth_peer is not None:
+            row.update(status=account_state.AUTH_FAILED, reason=auth_peer.get('reason'))
+        elif account_state.plan_is_inactive(row.get('quota_family') or row.get('family'), row.get('plan')):
             row.update(status=account_state.PLAN_INACTIVE, reason=f"plan {row.get('plan')}")
         elif latch:
             row.update(status=account_state.PLAN_INACTIVE, reason='a launch reported the subscription inactive',
                        plan_inactive_at=latch.get('observed_at'))
         elif reads and problem and cache_rows:
-            account_state.failing(row, problem, last_good, previous_rows.get(name), now, hours)
+            cached_at = next((obj(cache_rows.get(o)).get('fetched_at') for o in group
+                              if obj(cache_rows.get(o)).get('fetched_at')), None)
+            account_state.failing(row, problem, last_good, previous_rows.get(name), now, hours, cached_at=cached_at)
         if name in result['launchers'] and not account_state.dispatchable(row):
             result['launchers'][name]['status'] = row['status']
 

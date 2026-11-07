@@ -672,6 +672,8 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     if target in ('started', 'completed'):
         import launch_failures
         launch_failures.clear(row['bundle'].get('account'))
+        import account_state
+        account_state.clear_latch(row['bundle'].get('account'))
     return row
 
 
