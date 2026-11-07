@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
+from unittest.mock import patch
 
 import gen_routing_parity as gen
 
@@ -16,6 +19,15 @@ class PinnedSourceTests(unittest.TestCase):
     def test_the_commit_comes_from_the_constant_unless_overridden(self):
         self.assertEqual(gen.pinned_sha({}), gen.PINNED_SHA)
         self.assertEqual(gen.pinned_sha({'AGENTCOMPASS_PARITY_SHA': 'abc123'}), 'abc123')
+
+    def test_a_caller_keeps_its_own_modules(self):
+        probe = subprocess.run(['git', '-C', str(gen.REPOSITORY), 'cat-file', '-e', f'{gen.pinned_sha()}^{{commit}}'], capture_output=True)
+        if probe.returncode:
+            self.skipTest('the pinned commit is not in this clone')
+        held = types.ModuleType('allocator')
+        with patch.dict(sys.modules, {'allocator': held}):
+            gen.generate(gen.pinned_sha())
+            self.assertIs(sys.modules['allocator'], held)
 
     def test_extract_reads_the_commit_not_the_working_tree(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
@@ -60,10 +72,11 @@ class GeneratedDataTests(unittest.TestCase):
         self.assertEqual(self.data['responsiveness']['gemini-2.5-pro']['high'], [0.52, 'default'])
 
     def test_profile_validation_and_pins_are_recorded(self):
-        verdicts = {(str(r['multi_task']), str(r['task_count'])): r for r in self.data['profile_validation']}
-        self.assertEqual(verdicts[('True', '4')]['bucket'], '>3')
-        self.assertFalse(verdicts[('True', 'nan')]['valid'])
-        self.assertFalse(verdicts[('True', '1')]['valid'])
+        verdicts = {(r['multi_task'], json.dumps(r['task_count'])): r for r in self.data['profile_validation']}
+        self.assertEqual(verdicts[(True, '4')]['bucket'], '>3')
+        self.assertFalse(verdicts[(True, '"4"')]['valid'])
+        self.assertFalse(verdicts[(True, '"nan"')]['valid'])
+        self.assertFalse(verdicts[(True, '"1"')]['valid'])
         pinned = next(p for p in self.data['pins'] if p['task'] == {'constraints': {'model': 'claude-opus-5-5:medium'}} and not p['realtime_loop'])
         self.assertEqual((pinned['model'], pinned['effort']), ('claude-opus-5-5', 'medium'))
 

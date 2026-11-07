@@ -91,7 +91,11 @@ def generate(sha, repository=REPOSITORY):
     with tempfile.TemporaryDirectory(prefix='routing-parity-', ignore_cleanup_errors=True) as directory:
         full = extract(sha, directory, repository)
         scripts = Path(directory) / SCRIPTS
+        # A caller may already hold the working tree's modules under the same names; put them back afterwards.
+        own = {path.stem for path in scripts.glob('*.py')}
+        held = {name: sys.modules.pop(name) for name in own if name in sys.modules}
         sys.path.insert(0, str(scripts))
+        importlib.invalidate_caches()
         cleanups = []
         try:
             support = importlib.import_module('router_test_support')
@@ -105,9 +109,9 @@ def generate(sha, repository=REPOSITORY):
             for cleanup in reversed(cleanups):
                 cleanup()
             sys.path.remove(str(scripts))
-            for name in [n for n, m in sys.modules.items()
-                         if str(getattr(m, '__file__', '') or '').startswith(str(scripts))]:
-                del sys.modules[name]
+            for name in own:
+                sys.modules.pop(name, None)
+            sys.modules.update(held)
 
 
 def build(allocator, auto_bundles, support, commit, root):
