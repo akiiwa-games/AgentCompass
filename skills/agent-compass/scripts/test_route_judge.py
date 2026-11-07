@@ -86,12 +86,25 @@ class RoutingTests(unittest.TestCase):
         self.assertIn('kept_whole', [a['code'] for a in whole['alerts']])
         self.assertNotEqual(single['choice'], 'split')
 
-    def test_multi_task_fields_are_optional_and_checked(self):
+    def test_multi_task_fields_are_required_and_checked(self):
         allocator = router.load_allocator()
         self.assertEqual({k: v for k, v in allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count='>3')).items()
                           if k in ('multi_task', 'task_count')}, {'multi_task': True, 'task_count': '>3'})
-        odd = allocator.validate_profile(dict(GUI_PROFILE, multi_task='yes', task_count='5'))
-        self.assertFalse({'multi_task', 'task_count'} & set(odd))
+        self.assertEqual(allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count=5))['task_count'], '>3')
+        for bad in (
+            dict(GUI_PROFILE, multi_task='yes', task_count='5'),
+            dict(GUI_PROFILE, multi_task='yes', task_count='2'),
+            dict(GUI_PROFILE, multi_task=True, task_count='5'),
+            dict(GUI_PROFILE, multi_task=False, task_count='2'),
+            dict(GUI_PROFILE, multi_task=True, task_count='1'),
+            {k: v for k, v in GUI_PROFILE.items() if k != 'multi_task'},
+            {k: v for k, v in GUI_PROFILE.items() if k != 'task_count'},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                allocator.validate_profile(bad)
+        for missing_flag in ('wants_fast', 'read_only_review'):
+            with self.subTest(missing_flag=missing_flag), self.assertRaises(allocator.InvalidCallerProfile):
+                allocator.validate_caller_profile({k: v for k, v in GUI_PROFILE.items() if k != missing_flag})
         self.assertFalse(hasattr(allocator, 'multi_task_marks'))
         self.assertFalse(hasattr(allocator, 'MULTI_TASK_MARK_RE'))
         checked = allocator.validate_profile(dict(GUI_PROFILE, wants_fast=True, read_only_review=False))
@@ -703,6 +716,27 @@ class SystemOneScorerTests(unittest.TestCase):
             self.assertEqual((prof, meta['source'], meta['fallback_reason']), (None, 'scorer_unavailable', reason))
         prof_skipped, meta, calls = self.score(bug_task, use_model=False)
         self.assertEqual((prof_skipped, meta['source'], meta['fallback_reason'], calls), (None, 'scorer_unavailable', 'model_call_skipped', []))
+
+    def test_legacy_or_corrupted_score_cache_is_treated_as_cache_miss(self):
+        old_entry = {k: v for k, v in GUI_PROFILE.items() if k not in ('wants_fast', 'read_only_review')}
+        contradictory_entry = dict(GUI_PROFILE, code_complexity=2, read_only_review=True)
+        config = {'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}
+        _, order = router.scorer_attempt_order(config)
+        for bad_cached in (old_entry, contradictory_entry):
+            with self.subTest(bad_cached=bad_cached), tempfile.TemporaryDirectory() as directory:
+                cache_file = Path(directory) / 'score-cache.json'
+                task = {'objective': 'Click Save and take a screenshot', 'expected_hours': 0.5}
+                with patch.dict(router.os.environ, {'ROUTER_SCORE_CACHE': str(cache_file)}):
+                    key = router.score_cache_key(task, self.allocator, self.capabilities, order, config)
+                    cache_file.write_text(
+                        json.dumps({'entries': {key: {'saved_at': time.time(), 'profile': bad_cached,
+                                                      'scorer': {'source': 'system_one', 'model': 'old'}}}}),
+                        encoding='utf-8',
+                    )
+                    profile, meta, calls = self.score(task)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(profile, GUI_PROFILE)
+                self.assertFalse(meta.get('cached', False))
 
     def test_score_and_plan_with_score_cli_contracts(self):
         with tempfile.TemporaryDirectory() as directory:

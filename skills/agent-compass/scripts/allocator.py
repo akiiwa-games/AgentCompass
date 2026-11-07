@@ -1154,7 +1154,11 @@ def validate_profile(raw):
     # The hours/urgency estimate is optional: legacy fixtures and scorers that cannot produce it (Jev) leave it out.
     hours = raw.get('expected_hours')
     if hours is not None:
-        if isinstance(hours, bool) or not isinstance(hours, (int, float)) or not math.isfinite(hours):
+        try:
+            finite = not isinstance(hours, bool) and isinstance(hours, (int, float)) and math.isfinite(hours)
+        except OverflowError:
+            finite = False
+        if not finite:
             raise ValueError('task.profile.expected_hours must be a finite number')
         profile['expected_hours'] = round(min(max(float(hours), HOURS_RANGE[0]), HOURS_RANGE[1]), 2)
     for name, levels in (('hours_confidence', CONFIDENCE_LEVELS), ('urgency', URGENCY_LEVELS)):
@@ -1167,12 +1171,37 @@ def validate_profile(raw):
     profile['interaction_style'] = raw['interaction_style']
     reason = raw.get('reason')
     if isinstance(reason, str) and reason.strip():
-        profile['reason'] = reason.strip()[:300]
-    if isinstance(raw.get('multi_task'), bool):
-        profile['multi_task'] = raw['multi_task']
-    if raw.get('task_count') in TASK_COUNTS:
-        profile['task_count'] = raw['task_count']
+        profile['reason'] = reason.strip()[:300].rstrip()
+    if not isinstance(raw.get('multi_task'), bool):
+        raise ValueError('task.profile.multi_task must be true or false')
+    profile['multi_task'] = raw['multi_task']
+    profile['task_count'] = task_count_bucket(raw.get('task_count'))
+    if profile['multi_task'] != (profile['task_count'] != '1'):
+        raise ValueError(f"task.profile.multi_task {str(profile['multi_task']).lower()} contradicts "
+                         f"task.profile.task_count {profile['task_count']!r}")
     return profile
+
+
+class InvalidCallerProfile(ValueError):
+    """A profile the caller wrote failed validation; the classifier's own failures retry or block instead."""
+
+
+def validate_caller_profile(raw):
+    try:
+        return validate_profile(raw)
+    except ValueError as exc:
+        raise InvalidCallerProfile(f'invalid_caller_profile: {exc}') from None
+
+
+def task_count_bucket(value):
+    """The schema's task-count band for a band or a positive whole number; anything else is an invalid profile."""
+    if isinstance(value, str) and value in TASK_COUNTS:
+        return value
+    whole = value if isinstance(value, int) and not isinstance(value, bool) else (
+        int(value) if isinstance(value, float) and value.is_integer() else None)
+    if whole is not None and whole >= 1:
+        return TASK_COUNTS[min(whole, 4) - 1]
+    raise ValueError('task.profile.task_count must be one of ' + ', '.join(TASK_COUNTS) + ' or a positive whole number')
 
 
 def profile_difficulty(profile, policy):

@@ -1378,7 +1378,6 @@ def parse_jev_response(response, allocator):
                 profile['expected_hours'] = table[choice][0]
             else:
                 profile['urgency'] = choice
-    # Optional like the effort band: a Jev answer without them leaves the brief unsplit.
     for opt_flag in ('realtime_loop', 'wants_fast', 'read_only_review', 'multi_task'):
         ans = answers.get(opt_flag)
         ans = ans.get('noul') if isinstance(ans, dict) else ans
@@ -1386,8 +1385,9 @@ def parse_jev_response(response, allocator):
             profile[opt_flag] = float(ans) >= 0.5
     count = answers.get('task_count')
     count = count.get('choice') if isinstance(count, dict) else count
-    if count in allocator.TASK_COUNTS:
+    if count is not None:
         profile['task_count'] = count
+    # A missing or contradictory split answer fails here: the cascade moves on rather than guessing.
     return allocator.validate_profile(profile)
 
 
@@ -1631,7 +1631,7 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
     fail, returns `(None, meta)` with `source: 'scorer_unavailable'` so the parent session chooses autonomously;
     never falls back to mechanical keyword guessing."""
     if isinstance(task.get('profile'), dict):
-        return allocator.validate_profile(task['profile']), {'source': 'caller_profile', 'model': None}
+        return allocator.validate_caller_profile(task['profile']), {'source': 'caller_profile', 'model': None}
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
     reason, attempts, skipped = 'model_call_skipped', [], []
@@ -1640,7 +1640,10 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         cache_key = score_cache_key(task, allocator, capabilities, order, config)
         cached = score_cache_get(cache_key)
         if cached:
-            return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
+            try:
+                return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
+            except ValueError:
+                pass        # written under an older schema, or damaged: a miss, not a failure
         input_error = None
         for scorer_type in order:
             # Every usable account of the family in turn; none (no account, client or key) skips it without an error.
@@ -2401,7 +2404,7 @@ def plan_stage(document, args):
                 task['expected_hours'] = profile['expected_hours']
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
                                   'confidence': profile.get('hours_confidence', 'unknown')}
-    task_profile = allocator.validate_profile(task['profile']) if isinstance(task.get('profile'), dict) else {}
+    task_profile = allocator.validate_caller_profile(task['profile']) if task.get('profile') else {}
     if task_profile:
         task = {**task, 'profile': task_profile}
     is_ro_review = bool(task_profile.get('read_only_review'))
@@ -2410,7 +2413,7 @@ def plan_stage(document, args):
         if isinstance(chain_worker, dict) and chain_worker.get('read_only_review') is False:
             task = {k: v for k, v in task.items() if k != 'chain'}
     if task_profile.get('multi_task') is True:
-        count = task_profile.get('task_count') or '>1'
+        count = task_profile['task_count']
         keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
         if not keep_whole:
             return split_result(task, count, scorer, started), 2

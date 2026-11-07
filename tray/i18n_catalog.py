@@ -816,4 +816,5 @@ EN = {
     '正在检查 AgentCompass 更新…': 'Checking for AgentCompass updates…',
     '正在更新 AgentCompass…': 'Updating AgentCompass…',
     '更新失败': 'Update failed',
+    '旧记录缺字段，无法重放': 'Old record is missing fields and cannot be replayed',
 }

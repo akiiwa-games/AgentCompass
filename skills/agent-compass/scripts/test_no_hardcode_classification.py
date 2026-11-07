@@ -149,6 +149,20 @@ SINK_STRING_METHODS = frozenset({
     'strip',
     'lstrip',
     'rstrip',
+    '__contains__',
+    'isupper',
+    'islower',
+    'isalpha',
+    'isalnum',
+    'isdigit',
+    'isdecimal',
+    'isnumeric',
+    'isascii',
+    'isspace',
+    'istitle',
+    'removeprefix',
+    'removesuffix',
+    'translate',
 })
 
 SINK_REGEX_METHODS = frozenset({
@@ -160,6 +174,25 @@ SINK_REGEX_METHODS = frozenset({
     'sub',
     'subn',
     'split',
+})
+
+SINK_STDLIB_ATTRS = frozenset({
+    'contains',
+    'fnmatch',
+    'fnmatchcase',
+    'SequenceMatcher',
+    'get_close_matches',
+    'Counter',
+})
+
+TAINT_WRAPPER_FUNCS = frozenset({
+    'str', 'repr', 'next', 'ord', 'chr', 'Path', 'PurePath', 'PosixPath', 'WindowsPath',
+    'dumps', 'SimpleNamespace', 'Counter', 'wrap', 'fill', 'sha256', 'hexdigest', 'encode',
+    'hash', 'list', 'tuple', 'set', 'map', 'filter', 'any', 'all', 'dict', 'pop', '__getitem__',
+})
+
+REASON_EXEMPT_CONTAINERS = frozenset({
+    'decision', 'result', 'row', 'event', 'alert', 'gap', 'terminal',
 })
 
 # Exact per-statement allowlist: (relative_path, function_name, exact_source_line).
@@ -174,13 +207,18 @@ ALLOWED_TAINT_SINK_STATEMENTS = {
     (
         'skills/agent-compass/scripts/allocator.py',
         'validate_profile',
-        "profile['reason'] = reason.strip()[:300]",
+        "profile['reason'] = reason.strip()[:300].rstrip()",
     ): 'trims and caps optional classifier reason string to 300 chars',
     (
         'skills/agent-compass/scripts/dispatch_registry.py',
         'launch_request',
         "if not isinstance(launch.get('title'), str) or not 0 < len(launch['title']) <= 60:",
     ): 'enforces Paseo launch title length bound (1..60 chars)',
+    (
+        'skills/agent-compass/scripts/roll.py',
+        'read_task_text',
+        "if args.task == '-':",
+    ): 'checks whether --task - requests reading brief from stdin',
     (
         'skills/agent-compass/scripts/roll.py',
         'title_of',
@@ -216,6 +254,11 @@ ALLOWED_TAINT_SINK_STATEMENTS = {
         'plan_stage',
         "or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)",
     ): 'checks whether task has non-empty objective to invoke System-One classifier',
+    (
+        'skills/agent-compass/scripts/route_judge.py',
+        'plan_stage',
+        "keep_whole = (getattr(args, 'keep_whole', None) or '').strip()",
+    ): 'trims optional --keep-whole CLI reason before checking non-empty override',
     (
         'tray/decision_theatre.py',
         'scene_from_result',
@@ -310,7 +353,10 @@ def scan_python_source_for_violations(rel: str, src: str) -> tuple[list[str], se
     tree = ast.parse(src, filename=rel)
     lines = src.splitlines()
 
-    # 1. Check banned symbols, dynamic globals()/vars()/locals() tricks, and banned route config lookups
+    re_imported_funcs = set()
+    sink_imported_funcs = set()
+
+    # 1. Check banned symbols, dynamic globals()/vars()/locals() tricks, imports, and banned route config lookups
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if node.name in BANNED_CLASSIFICATION_SYMBOLS:
@@ -324,6 +370,23 @@ def scan_python_source_for_violations(rel: str, src: str) -> tuple[list[str], se
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id in ('globals', 'locals', 'eval', 'exec') and is_routing_file:
                 violations.append(f'{rel}:{node.lineno}: dynamic symbol reflection {node.func.id}() is forbidden in routing modules')
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == 're':
+                for alias in node.names:
+                    re_imported_funcs.add(alias.asname or alias.name)
+            elif node.module in ('operator', 'fnmatch', 'difflib', 'collections'):
+                for alias in node.names:
+                    if alias.name in SINK_STDLIB_ATTRS:
+                        sink_imported_funcs.add(alias.asname or alias.name)
+            elif node.module and is_routing_file and (
+                node.module.startswith('test_') or f'{node.module}.py' in NON_PRODUCTION_FILES
+            ):
+                violations.append(f'{rel}:{node.lineno}: importing non-production module {node.module} in routing module')
+        elif isinstance(node, ast.Import) and is_routing_file:
+            for alias in node.names:
+                mod_name = alias.name.split('.')[0]
+                if mod_name.startswith('test_') or f'{mod_name}.py' in NON_PRODUCTION_FILES:
+                    violations.append(f'{rel}:{node.lineno}: importing non-production module {mod_name} in routing module')
         if is_routing_file and isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'get':
             if node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value in BANNED_ROUTE_CONFIG_KEYS:
                 violations.append(f'{rel}:{node.lineno}: route word-list lookup .get({node.args[0].value!r}) is forbidden')
@@ -351,39 +414,65 @@ def scan_python_source_for_violations(rel: str, src: str) -> tuple[list[str], se
                 if d_val:
                     const_map[name] = d_val
 
-    # 3. Collect all scopes: every FunctionDef / AsyncFunctionDef (including class methods & nested functions)
-    scopes: list[tuple[str, ast.AST, list[str]]] = []
+    # 3. Collect all scopes: module top-level, every FunctionDef / AsyncFunctionDef, and assigned Lambdas
+    scopes: list[tuple[str, ast.AST, list[str]]] = [('<module>', tree, [])]
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             param_names = [a.arg for a in node.args.posonlyargs + node.args.args + node.args.kwonlyargs]
             scopes.append((node.name, node, param_names))
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Lambda):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    param_names = [a.arg for a in node.value.args.posonlyargs + node.value.args.args + node.value.args.kwonlyargs]
+                    scopes.append((t.id, node.value, param_names))
 
     tainted_params: dict[str, set[str]] = {name: set() for name, _, _ in scopes}
+    tainted_return_funcs: set[str] = set()
+    tainted_class_attrs: set[str] = set()
     scope_const_maps: dict[str, dict] = {name: dict(const_map) for name, _, _ in scopes}
     if path_name == 'roll.py':
         for fn in ('title_of', 'build_task', 'prepare_worker_prompt', 'paseo', '_run', 'run',
                    'match_reusable_worker', 'strip_injected_contract'):
             if fn in tainted_params:
                 tainted_params[fn].add('text')
+        tainted_return_funcs.update({'title_of', 'read_brief', 'strip_injected_contract'})
 
-    def is_tainted(expr: ast.AST | None, tainted: set[str], tainted_dict_keys: set[tuple[str, str]], cmap: dict) -> bool:
+    def is_any_items_call(expr: ast.AST) -> bool:
+        return (
+            isinstance(expr, ast.Call)
+            and isinstance(expr.func, ast.Attribute)
+            and expr.func.attr == 'items'
+        )
+
+    def is_tainted(expr: ast.AST | None, tainted: set[str], tainted_dict_keys: set[tuple[str, str]], cmap: dict, scope_name: str = '') -> bool:
         if expr is None or isinstance(expr, ast.Dict):
             return False
         if isinstance(expr, ast.Name):
             return expr.id in tainted
         if isinstance(expr, ast.Attribute):
+            if is_routing_file and expr.attr in tainted_class_attrs:
+                return True
             if expr.attr in text_keys and isinstance(expr.value, ast.Name) and expr.value.id in ('args', 'task', 'row', 'record', 'r'):
                 return True
+            if isinstance(expr.value, ast.Name) and expr.value.id == 'args' and expr.attr == 'task':
+                return True
+            if expr.attr in text_keys and isinstance(expr.value, ast.Call):
+                callee = expr.value.func.attr if isinstance(expr.value.func, ast.Attribute) else (
+                    expr.value.func.id if isinstance(expr.value.func, ast.Name) else None
+                )
+                if callee == 'SimpleNamespace':
+                    return True
             if expr.attr in ('values', 'items') and isinstance(expr.value, ast.Name) and expr.value.id in ('task', 'raw', 'profile', 'needs', 'worker', 'w'):
                 return True
-            return is_tainted(expr.value, tainted, tainted_dict_keys, cmap)
+            return is_tainted(expr.value, tainted, tainted_dict_keys, cmap, scope_name)
         if isinstance(expr, ast.Subscript):
             if isinstance(expr.slice, ast.Slice):
-                return is_tainted(expr.value, tainted, tainted_dict_keys, cmap)
+                return is_tainted(expr.value, tainted, tainted_dict_keys, cmap, scope_name)
             k = _eval_static_str(expr.slice, cmap)
             if k in text_keys:
-                if k == 'reason' and isinstance(expr.value, ast.Name) and expr.value.id in (
-                    'decision', 'result', 'row', 'r', 's', 'd', 'event', 'alert', 'a', 'gap'
+                if k == 'reason' and (
+                    scope_name == 'usage_snapshot'
+                    or (isinstance(expr.value, ast.Name) and expr.value.id in REASON_EXEMPT_CONTAINERS)
                 ):
                     return False
                 return True
@@ -393,149 +482,288 @@ def scan_python_source_for_violations(rel: str, src: str) -> tuple[list[str], se
         if isinstance(expr, ast.Call):
             if isinstance(expr.func, ast.Attribute):
                 attr = expr.func.attr
-                if attr == 'get' and expr.args:
-                    k = _eval_static_str(expr.args[0], cmap)
+                if attr in ('get', '__getitem__', 'pop', 'setdefault') and expr.args:
+                    key_arg = expr.args[1] if (isinstance(expr.func.value, ast.Name) and expr.func.value.id == 'dict' and len(expr.args) >= 2) else expr.args[0]
+                    k = _eval_static_str(key_arg, cmap)
                     if k in text_keys:
-                        if k == 'reason' and isinstance(expr.func.value, ast.Name) and expr.func.value.id in (
-                            'decision', 'result', 'row', 'r', 's', 'd', 'event', 'alert', 'a', 'gap'
+                        if k == 'reason' and (
+                            scope_name == 'usage_snapshot'
+                            or (isinstance(expr.func.value, ast.Name) and expr.func.value.id in REASON_EXEMPT_CONTAINERS)
                         ):
                             return False
                         return True
-                    if len(expr.args) > 1 and is_tainted(expr.args[1], tainted, tainted_dict_keys, cmap):
+                    if attr == 'get' and len(expr.args) > 1 and is_tainted(expr.args[1], tainted, tainted_dict_keys, cmap, scope_name):
                         return True
                     return False
+                if attr == 'itemgetter' and any(_eval_static_str(a, cmap) in text_keys for a in expr.args):
+                    return True
                 if attr in ('values', 'items') and isinstance(expr.func.value, ast.Name) and expr.func.value.id in (
                     'task', 'raw', 'profile', 'needs', 'worker', 'w'
                 ):
                     return True
-                if is_tainted(expr.func.value, tainted, tainted_dict_keys, cmap):
+                if is_tainted(expr.func.value, tainted, tainted_dict_keys, cmap, scope_name):
                     return True
-                if attr == 'join' and any(is_tainted(a, tainted, tainted_dict_keys, cmap) for a in expr.args):
+                if attr in ('join', 'dumps', 'wrap', 'fill', 'sha256') and any(is_tainted(a, tainted, tainted_dict_keys, cmap, scope_name) for a in expr.args):
+                    return True
+                if attr == 'dumps' and any(isinstance(a, ast.Name) and a.id == 'task' for a in expr.args):
                     return True
                 return False
             if isinstance(expr.func, ast.Name):
                 fname = expr.func.id
-                if path_name == 'roll.py' and fname in ('title_of', 'read_brief', 'strip_injected_contract'):
+                if fname in tainted_return_funcs:
                     return True
-                if fname in ('str', 'repr', 'next', 'ord', 'chr') and any(
-                    is_tainted(a, tainted, tainted_dict_keys, cmap) for a in expr.args
+                if fname == 'getattr' and len(expr.args) >= 2:
+                    attr_name = _eval_static_str(expr.args[1], cmap)
+                    if isinstance(expr.args[0], ast.Name):
+                        if expr.args[0].id in ('args', 'task', 'row', 'record', 'r') and attr_name in text_keys:
+                            return True
+                        if expr.args[0].id == 'args' and attr_name == 'task':
+                            return True
+                if fname in ('str', 'repr') and any(isinstance(a, ast.Name) and a.id == 'task' for a in expr.args):
+                    return True
+                if fname in TAINT_WRAPPER_FUNCS and (
+                    any(is_tainted(a, tainted, tainted_dict_keys, cmap, scope_name) for a in expr.args)
+                    or any(is_tainted(kw.value, tainted, tainted_dict_keys, cmap, scope_name) for kw in expr.keywords)
                 ):
                     return True
-            if isinstance(expr.func, ast.Call) and isinstance(expr.func.func, ast.Name) and expr.func.func.id == 'getattr':
-                if any(is_tainted(a, tainted, tainted_dict_keys, cmap) for a in expr.args):
+            if isinstance(expr.func, ast.Call):
+                if is_tainted(expr.func, tainted, tainted_dict_keys, cmap, scope_name):
                     return True
+                if isinstance(expr.func.func, ast.Name) and expr.func.func.id == 'getattr':
+                    if any(is_tainted(a, tainted, tainted_dict_keys, cmap, scope_name) for a in expr.args):
+                        return True
             return False
         if isinstance(expr, (ast.BoolOp, ast.JoinedStr, ast.List, ast.Tuple, ast.Set)):
             children = expr.values if hasattr(expr, 'values') else expr.elts
-            return any(is_tainted(c, tainted, tainted_dict_keys, cmap) for c in children)
+            return any(is_tainted(c, tainted, tainted_dict_keys, cmap, scope_name) for c in children)
         if isinstance(expr, ast.FormattedValue):
-            return is_tainted(expr.value, tainted, tainted_dict_keys, cmap)
+            return is_tainted(expr.value, tainted, tainted_dict_keys, cmap, scope_name)
         if isinstance(expr, ast.BinOp):
-            return is_tainted(expr.left, tainted, tainted_dict_keys, cmap) or is_tainted(expr.right, tainted, tainted_dict_keys, cmap)
+            return is_tainted(expr.left, tainted, tainted_dict_keys, cmap, scope_name) or is_tainted(expr.right, tainted, tainted_dict_keys, cmap, scope_name)
         if isinstance(expr, ast.UnaryOp):
-            return is_tainted(expr.operand, tainted, tainted_dict_keys, cmap)
+            return is_tainted(expr.operand, tainted, tainted_dict_keys, cmap, scope_name)
         if isinstance(expr, ast.IfExp):
-            return is_tainted(expr.body, tainted, tainted_dict_keys, cmap) or is_tainted(expr.orelse, tainted, tainted_dict_keys, cmap)
+            return is_tainted(expr.body, tainted, tainted_dict_keys, cmap, scope_name) or is_tainted(expr.orelse, tainted, tainted_dict_keys, cmap, scope_name)
         if isinstance(expr, (ast.GeneratorExp, ast.ListComp, ast.SetComp)):
-            return is_tainted(expr.elt, tainted, tainted_dict_keys, cmap) or any(
-                is_tainted(g.iter, tainted, tainted_dict_keys, cmap) for g in expr.generators
+            return is_tainted(expr.elt, tainted, tainted_dict_keys, cmap, scope_name) or any(
+                is_tainted(g.iter, tainted, tainted_dict_keys, cmap, scope_name) and not is_any_items_call(g.iter) for g in expr.generators
             )
         return False
 
-    def compute_scope_taint(scope_node: ast.AST, seed_vars: set[str], cmap: dict) -> tuple[set[str], set[tuple[str, str]]]:
+    def mark_target(target: ast.AST, tainted: set[str]) -> bool:
+        added = False
+        if isinstance(target, ast.Name):
+            if target.id not in tainted:
+                tainted.add(target.id)
+                added = True
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                if mark_target(elt, tainted):
+                    added = True
+        elif is_routing_file and isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == 'self':
+            if target.attr not in tainted_class_attrs:
+                tainted_class_attrs.add(target.attr)
+                added = True
+        return added
+
+    def compute_scope_taint(scope_node: ast.AST, seed_vars: set[str], cmap: dict, scope_name: str = '') -> tuple[set[str], set[tuple[str, str]]]:
         tainted = set(seed_vars)
         tainted_dict_keys: set[tuple[str, str]] = set()
         changed = True
         while changed:
             changed = False
             for sub in ast.walk(scope_node):
-                if isinstance(sub, ast.Assign):
+                if isinstance(sub, ast.Lambda):
+                    l_pos = sub.args.posonlyargs + sub.args.args
+                    for arg_node, def_expr in zip(l_pos[-len(sub.args.defaults):], sub.args.defaults):
+                        if is_tainted(def_expr, tainted, tainted_dict_keys, cmap, scope_name) and arg_node.arg not in tainted:
+                            tainted.add(arg_node.arg)
+                            changed = True
+                elif isinstance(sub, ast.Call):
+                    if isinstance(sub.func, ast.Name) and sub.func.id in ('map', 'filter') and len(sub.args) >= 2:
+                        if isinstance(sub.args[0], ast.Lambda) and is_tainted(sub.args[1], tainted, tainted_dict_keys, cmap, scope_name):
+                            for a in sub.args[0].args.posonlyargs + sub.args[0].args.args:
+                                if a.arg not in tainted:
+                                    tainted.add(a.arg)
+                                    changed = True
+                elif isinstance(sub, ast.Assign):
                     if isinstance(sub.value, ast.Dict):
                         for t in sub.targets:
                             if isinstance(t, ast.Name):
                                 for k_node, v_node in zip(sub.value.keys, sub.value.values):
                                     ks = _eval_static_str(k_node, cmap) if k_node else None
-                                    if ks and is_tainted(v_node, tainted, tainted_dict_keys, cmap):
+                                    if ks and is_tainted(v_node, tainted, tainted_dict_keys, cmap, scope_name):
                                         if (t.id, ks) not in tainted_dict_keys:
                                             tainted_dict_keys.add((t.id, ks))
                                             changed = True
-                    elif is_tainted(sub.value, tainted, tainted_dict_keys, cmap):
+                    elif isinstance(sub.value, (ast.Tuple, ast.List)):
                         for t in sub.targets:
-                            if isinstance(t, ast.Name):
-                                if t.id not in tainted:
-                                    tainted.add(t.id)
+                            if isinstance(t, (ast.Tuple, ast.List)) and len(t.elts) == len(sub.value.elts):
+                                for t_elt, v_elt in zip(t.elts, sub.value.elts):
+                                    if is_tainted(v_elt, tainted, tainted_dict_keys, cmap, scope_name):
+                                        if mark_target(t_elt, tainted):
+                                            changed = True
+                            elif is_tainted(sub.value, tainted, tainted_dict_keys, cmap, scope_name):
+                                if mark_target(t, tainted):
                                     changed = True
+                    elif is_tainted(sub.value, tainted, tainted_dict_keys, cmap, scope_name):
+                        for t in sub.targets:
+                            if mark_target(t, tainted):
+                                changed = True
                             elif isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name):
                                 k = _eval_static_str(t.slice, cmap)
                                 if k and (t.value.id, k) not in tainted_dict_keys:
                                     tainted_dict_keys.add((t.value.id, k))
                                     changed = True
                 elif isinstance(sub, ast.NamedExpr):
-                    if is_tainted(sub.value, tainted, tainted_dict_keys, cmap) and isinstance(sub.target, ast.Name):
-                        if sub.target.id not in tainted:
-                            tainted.add(sub.target.id)
+                    if is_tainted(sub.value, tainted, tainted_dict_keys, cmap, scope_name):
+                        if mark_target(sub.target, tainted):
                             changed = True
                 elif isinstance(sub, (ast.For, ast.comprehension)):
-                    if is_tainted(sub.iter, tainted, tainted_dict_keys, cmap) and isinstance(sub.target, ast.Name):
-                        if sub.target.id not in tainted:
-                            tainted.add(sub.target.id)
+                    if isinstance(sub.iter, (ast.Tuple, ast.List, ast.Set)) and isinstance(sub.target, ast.Name):
+                        if any(_eval_static_str(elt, cmap) in text_keys for elt in sub.iter.elts):
+                            if cmap.get(sub.target.id) != 'objective':
+                                cmap[sub.target.id] = 'objective'
+                                changed = True
+                    if is_any_items_call(sub.iter) and isinstance(sub.target, (ast.Tuple, ast.List)) and len(sub.target.elts) == 2:
+                        if is_tainted(sub.iter, tainted, tainted_dict_keys, cmap, scope_name):
+                            if mark_target(sub.target.elts[1], tainted):
+                                changed = True
+                    elif isinstance(sub.iter, (ast.Tuple, ast.List, ast.Set)) and isinstance(sub.target, (ast.Tuple, ast.List)):
+                        for idx, t_elt in enumerate(sub.target.elts):
+                            if any(
+                                isinstance(pair, (ast.Tuple, ast.List))
+                                and idx < len(pair.elts)
+                                and is_tainted(pair.elts[idx], tainted, tainted_dict_keys, cmap, scope_name)
+                                for pair in sub.iter.elts
+                            ):
+                                if mark_target(t_elt, tainted):
+                                    changed = True
+                    elif is_tainted(sub.iter, tainted, tainted_dict_keys, cmap, scope_name):
+                        if mark_target(sub.target, tainted):
                             changed = True
         return tainted, tainted_dict_keys
 
-    # Inter-procedural propagation of tainted arguments & constant field-name arguments across functions in the module
-    scope_by_name = {name: (node, params) for name, node, params in scopes}
-    for _ in range(4):
-        for scope_name, scope_node, _ in scopes:
-            cmap = scope_const_maps[scope_name]
-            t_vars, t_dkeys = compute_scope_taint(scope_node, tainted_params[scope_name], cmap)
-            for sub in ast.walk(scope_node):
-                if isinstance(sub, ast.Call):
-                    callee = (
-                        sub.func.id if isinstance(sub.func, ast.Name)
-                        else sub.func.attr if isinstance(sub.func, ast.Attribute)
-                        else None
-                    )
-                    if callee in scope_by_name:
-                        _, target_params = scope_by_name[callee]
-                        for idx, arg in enumerate(sub.args):
-                            if idx < len(target_params):
-                                pname = target_params[idx]
-                                if is_tainted(arg, t_vars, t_dkeys, cmap):
-                                    tainted_params[callee].add(pname)
-                                s_val = _eval_static_str(arg, cmap)
-                                if s_val is not None:
-                                    scope_const_maps[callee][pname] = s_val
+    # Inter-procedural propagation of tainted arguments, return values, and constant field names across functions
+    cached_taint: dict[str, tuple[set[str], set[tuple[str, str]]]] = {}
+    if is_routing_file:
+        scope_by_name = {name: (node, params) for name, node, params in scopes}
+        dirty_scopes = {name for name, _, _ in scopes}
+        for _ in range(4):
+            if not dirty_scopes:
+                break
+            next_dirty = set()
+            for scope_name, scope_node, _ in scopes:
+                if scope_name not in dirty_scopes and scope_name in cached_taint:
+                    continue
+                cmap = scope_const_maps[scope_name]
+                t_vars, t_dkeys = compute_scope_taint(scope_node, tainted_params[scope_name], cmap, scope_name)
+                cached_taint[scope_name] = (t_vars, t_dkeys)
+                if scope_name != '<module>' and not tainted_params[scope_name] and scope_name not in tainted_return_funcs:
+                    ret_tainted = False
+                    if isinstance(scope_node, ast.Lambda) and is_tainted(scope_node.body, t_vars, t_dkeys, cmap, scope_name):
+                        ret_tainted = True
+                    else:
+                        for sub in ast.walk(scope_node):
+                            if isinstance(sub, ast.Return) and is_tainted(sub.value, t_vars, t_dkeys, cmap, scope_name):
+                                ret_tainted = True
+                                break
+                    if ret_tainted:
+                        tainted_return_funcs.add(scope_name)
+                        next_dirty.update(s for s, _, _ in scopes)
+                for sub in ast.walk(scope_node):
+                    if isinstance(sub, ast.Call):
+                        callee = (
+                            sub.func.id if isinstance(sub.func, ast.Name)
+                            else sub.func.attr if isinstance(sub.func, ast.Attribute)
+                            else None
+                        )
+                        if callee in scope_by_name:
+                            _, target_params = scope_by_name[callee]
+                            for idx, arg in enumerate(sub.args):
+                                if idx < len(target_params):
+                                    pname = target_params[idx]
+                                    if pname not in tainted_params[callee] and is_tainted(arg, t_vars, t_dkeys, cmap, scope_name):
+                                        tainted_params[callee].add(pname)
+                                        next_dirty.add(callee)
+                                    s_val = _eval_static_str(arg, cmap)
+                                    if s_val is not None and scope_const_maps[callee].get(pname) != s_val:
+                                        scope_const_maps[callee][pname] = s_val
+                                        next_dirty.add(callee)
+                            for kw in sub.keywords:
+                                if kw.arg and kw.arg in target_params:
+                                    if kw.arg not in tainted_params[callee] and is_tainted(kw.value, t_vars, t_dkeys, cmap, scope_name):
+                                        tainted_params[callee].add(kw.arg)
+                                        next_dirty.add(callee)
+                                    s_val = _eval_static_str(kw.value, cmap)
+                                    if s_val is not None and scope_const_maps[callee].get(kw.arg) != s_val:
+                                        scope_const_maps[callee][kw.arg] = s_val
+                                        next_dirty.add(callee)
+                                elif kw.arg is None and isinstance(kw.value, ast.Name) and kw.value.id in ('task', 'raw', 'profile'):
+                                    for pname in target_params:
+                                        if pname in text_keys and pname not in tainted_params[callee]:
+                                            tainted_params[callee].add(pname)
+                                            next_dirty.add(callee)
+            dirty_scopes = next_dirty
 
     # 4. Check sinks in every scope
     for scope_name, scope_node, _ in scopes:
-        if scope_name == '<module>':
-            continue
         cmap = scope_const_maps[scope_name]
-        t_vars, t_dkeys = compute_scope_taint(scope_node, tainted_params[scope_name], cmap)
-        for sub in ast.walk(scope_node):
+        t_vars, t_dkeys = cached_taint.get(scope_name) or compute_scope_taint(scope_node, tainted_params[scope_name], cmap, scope_name)
+        if scope_name == '<module>':
+            nodes_to_check = []
+            stack = list(tree.body)
+            while stack:
+                n = stack.pop()
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                nodes_to_check.append(n)
+                stack.extend(ast.iter_child_nodes(n))
+        else:
+            nodes_to_check = list(ast.walk(scope_node))
+
+        for sub in nodes_to_check:
             hit_kind = None
             if isinstance(sub, ast.Call):
                 if isinstance(sub.func, ast.Attribute):
-                    if sub.func.attr in SINK_STRING_METHODS and is_tainted(sub.func.value, t_vars, t_dkeys, cmap):
-                        hit_kind = f'str.{sub.func.attr}'
-                    elif sub.func.attr in SINK_REGEX_METHODS and any(is_tainted(a, t_vars, t_dkeys, cmap) for a in sub.args):
-                        hit_kind = f'regex.{sub.func.attr}'
+                    attr = sub.func.attr
+                    if attr in SINK_STRING_METHODS and (
+                        is_tainted(sub.func.value, t_vars, t_dkeys, cmap, scope_name)
+                        or (isinstance(sub.func.value, ast.Name) and sub.func.value.id == 'str' and any(is_tainted(a, t_vars, t_dkeys, cmap, scope_name) for a in sub.args))
+                    ):
+                        hit_kind = f'str.{attr}'
+                    elif attr in SINK_REGEX_METHODS and any(is_tainted(a, t_vars, t_dkeys, cmap, scope_name) for a in sub.args):
+                        hit_kind = f'regex.{attr}'
+                    elif attr in SINK_STDLIB_ATTRS and any(is_tainted(a, t_vars, t_dkeys, cmap, scope_name) for a in sub.args):
+                        hit_kind = f'stdlib.{attr}'
+                    elif attr == 'get' and sub.args and is_tainted(sub.args[0], t_vars, t_dkeys, cmap, scope_name):
+                        hit_kind = 'dict.get(tainted_key)'
                 elif isinstance(sub.func, ast.Name):
-                    if sub.func.id == 'len' and sub.args and is_tainted(sub.args[0], t_vars, t_dkeys, cmap):
-                        hit_kind = 'len()'
-                    elif sub.func.id == 'getattr' and (
-                        any(is_tainted(a, t_vars, t_dkeys, cmap) for a in sub.args)
+                    fname = sub.func.id
+                    if fname in ('len', 'sum', 'hash') and sub.args and is_tainted(sub.args[0], t_vars, t_dkeys, cmap, scope_name):
+                        hit_kind = f'{fname}()'
+                    elif fname in re_imported_funcs and any(is_tainted(a, t_vars, t_dkeys, cmap, scope_name) for a in sub.args):
+                        hit_kind = f're.{fname}()'
+                    elif fname in sink_imported_funcs and any(is_tainted(a, t_vars, t_dkeys, cmap, scope_name) for a in sub.args):
+                        hit_kind = f'sink.{fname}()'
+                    elif fname in t_vars:
+                        hit_kind = f'tainted_callable({fname})'
+                    elif fname == 'getattr' and (
+                        any(is_tainted(a, t_vars, t_dkeys, cmap, scope_name) for a in sub.args)
                         or (sub.args and isinstance(sub.args[0], ast.Name) and sub.args[0].id == 'str')
                     ):
                         hit_kind = 'getattr()'
                 elif isinstance(sub.func, ast.Call) and isinstance(sub.func.func, ast.Name) and sub.func.func.id == 'getattr':
-                    if any(is_tainted(a, t_vars, t_dkeys, cmap) for a in sub.args):
+                    if any(is_tainted(a, t_vars, t_dkeys, cmap, scope_name) for a in sub.args):
                         hit_kind = 'getattr_call()'
             elif isinstance(sub, ast.Compare):
-                if any(isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
+                if any(isinstance(op, (ast.In, ast.NotIn, ast.Eq, ast.NotEq)) for op in sub.ops):
                     operands = [sub.left] + list(sub.comparators)
-                    if any(is_tainted(o, t_vars, t_dkeys, cmap) for o in operands):
-                        hit_kind = 'in/not_in'
+                    if any(is_tainted(o, t_vars, t_dkeys, cmap, scope_name) for o in operands):
+                        hit_kind = 'compare'
+            elif isinstance(sub, ast.Match):
+                if is_tainted(sub.subject, t_vars, t_dkeys, cmap, scope_name):
+                    hit_kind = 'match'
             if hit_kind:
                 stmt_line = lines[sub.lineno - 1].strip()
                 allow_key = (rel, scope_name, stmt_line)
@@ -725,6 +953,92 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
                     "    if getattr(args, 'fast', False):\n        needs['fast'] = True\n",
                     "    if getattr(args, 'fast', False) or len(task.get('objective') or '') < 12:\n        needs['fast'] = True\n",
                 ),
+            ),
+        }
+
+        for name, (rel, mutated_src) in cases.items():
+            with self.subTest(mutant=name):
+                violations, _ = scan_python_source_for_violations(rel, mutated_src)
+                self.assertTrue(violations, f'Mutant {name} escaped static scanner!')
+
+    def test_round2_10_key_review_mutants_are_caught_by_static_scanner(self):
+        a_rel = 'skills/agent-compass/scripts/allocator.py'
+        r_rel = 'skills/agent-compass/scripts/roll.py'
+        a_src = (REPO_ROOT / a_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
+        r_src = (REPO_ROOT / r_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
+
+        anchor_mod = "GENERIC_CALLER_KINDS = (None, 'general_implementation', 'tool_execution', 'debug_review', 'other_or_mixed')\n"
+        anchor_fast = "    if _flag_present(needs, 'read_only_review'):\n"
+
+        def patch_src(base, old, new):
+            self.assertIn(old, base, f'Anchor missing: {old!r}')
+            return base.replace(old, new, 1)
+
+        def mut_a(mod_code='', fast_expr=''):
+            out = a_src
+            if mod_code:
+                out = patch_src(out, anchor_mod, anchor_mod + mod_code + '\n')
+            if fast_expr:
+                out = patch_src(out, anchor_fast, f'    wants_fast = wants_fast or ({fast_expr})\n' + anchor_fast)
+            return a_rel, out
+
+        def mut_a_block(stmt_block):
+            return a_rel, patch_src(a_src, anchor_fast, stmt_block + '\n' + anchor_fast)
+
+        cases = {
+            'V01_kwarg_call': mut_a(
+                "def _h(*, text=''):\n    return 'hurry up' in text",
+                "_h(text=task.get('objective') or '')",
+            ),
+            'V25_from_re_import': mut_a(
+                'from re import search as _rx_search',
+                "bool(_rx_search(r'hurry|赶紧', task.get('objective') or ''))",
+            ),
+            'V28_for_items_unpack': mut_a_block(
+                "    for _k, _v in task.items():\n"
+                "        if isinstance(_v, str) and 'hurry up' in _v:\n"
+                "            wants_fast = True"
+            ),
+            'V34_slice_eq': mut_a('', "(task.get('objective') or '')[:5] == 'hurry'"),
+            'V38_module_lambda': mut_a(
+                "_h = lambda task: 'hurry up' in (task.get('objective') or '')",
+                '_h(task)',
+            ),
+            'V39_exempt_d_reason': mut_a_block(
+                "    d = profile or {}\n"
+                "    if 'hurry up' in (d.get('reason') or ''):\n"
+                "        wants_fast = True"
+            ),
+            'V50_path_stem_startswith': (
+                r_rel,
+                patch_src(
+                    r_src,
+                    "    brief_path = task.get('brief_path')\n",
+                    "    brief_path = task.get('brief_path')\n    if brief_path and Path(brief_path).stem.startswith('review'):\n        return None\n",
+                ),
+            ),
+            'V51b_args_task_in': (
+                r_rel,
+                patch_src(
+                    r_src,
+                    "    if args.task == '-':\n",
+                    "    if args.task and 'hurry up' in args.task:\n        args.fast = True\n    if args.task == '-':\n",
+                ),
+            ),
+            'V52_eq_literal': mut_a('', "(task.get('objective') or '') == 'hurry up'"),
+            'V53_helper_return_taint': mut_a(
+                "def _get(t):\n    return t.get('objective') or ''",
+                "'hurry up' in _get(task)",
+            ),
+            'V54_exempt_r_reason': mut_a_block(
+                "    r = profile or {}\n"
+                "    if 'hurry up' in (r.get('reason') or ''):\n"
+                "        wants_fast = True"
+            ),
+            'V55_exempt_a_reason': mut_a_block(
+                "    a = profile or {}\n"
+                "    if 'hurry up' in (a.get('reason') or ''):\n"
+                "        wants_fast = True"
             ),
         }
 
@@ -987,6 +1301,49 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 self.assertEqual(dry_code, 0)
                 self.assertTrue(dry_res.get('unclassified'))
                 self.assertEqual(dry_res.get('unclassified_reason'), 'dry_run')
+
+    def test_source_string_literals_are_invariant_in_normalize_task_and_plan(self):
+        strings = set()
+        for rel in (
+            'skills/agent-compass/scripts/allocator.py',
+            'skills/agent-compass/scripts/route_judge.py',
+            'skills/agent-compass/scripts/roll.py',
+        ):
+            tree = ast.parse((REPO_ROOT / rel).read_text(encoding='utf-8-sig'))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str) and 1 <= len(node.value) <= 120:
+                    strings.add(node.value)
+        corpus = ['neutral task text', ' '.join(sorted(strings)), *sorted(strings)]
+        prof = self.make_profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2)
+
+        def snap_norm(text):
+            task = {
+                'objective': text,
+                'context': text,
+                'environment': text,
+                'expected_hours': 1.0,
+                'profile': dict(prof, reason=text[:200]),
+            }
+            norm = allocator.normalize_task(task, self.policy, self.capabilities, self.accounts)
+            return (
+                norm['kind'], norm['difficulty'], norm['divergence'], norm['wants_fast'],
+                norm['read_only_review'], norm['local_only'], norm['needs_gui'],
+                norm['needs_visual'], norm['realtime_loop'],
+            )
+
+        base_norm = snap_norm(corpus[0])
+        for s in corpus[1:]:
+            self.assertEqual(snap_norm(s), base_norm, f'normalize_task changed on source literal {s!r}')
+
+        base_plan = allocator.plan(
+            {'objective': corpus[0], 'context': corpus[0], 'environment': corpus[0], 'expected_hours': 1.0, 'profile': prof},
+            self.usage, self.now, accounts=self.accounts, capabilities=self.capabilities,
+        )['choice']
+        blob_plan = allocator.plan(
+            {'objective': corpus[1], 'context': corpus[1], 'environment': corpus[1], 'expected_hours': 1.0, 'profile': prof},
+            self.usage, self.now, accounts=self.accounts, capabilities=self.capabilities,
+        )['choice']
+        self.assertEqual(blob_plan, base_plan)
 
 
 if __name__ == '__main__':
