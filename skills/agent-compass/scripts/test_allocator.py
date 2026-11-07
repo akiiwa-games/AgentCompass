@@ -2608,7 +2608,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     allocator.bundle_responsiveness({'model': variant_id, 'effort': 'medium'}, prof, accounts),
                     allocator.bundle_responsiveness({'model': exact_id, 'effort': 'medium'}, prof, accounts))
 
-    def test_issue1_resolve_bundle_requires_realtime_flag_highest_qualifying_effort_and_survives_disabled_sibling(self):
+    def test_issue1_resolve_bundle_requires_realtime_flag_a_qualifying_effort_and_survives_disabled_sibling(self):
         import dispatch_registry
         import router_test_support
 
@@ -2622,11 +2622,16 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             forged_non_rt, accounts, explicit_override=False, allow_realtime_stepdown=False,
         ))
 
-        # 1b. Skipping over a higher qualifying effort (`sol_high` -> `low` when `medium` clears the floor) is rejected.
-        forged_skip_tier = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
+        # 1b. The plan chooses among qualifying efforts by score, so a lower qualifying one stands; one below the floor does not.
+        lower_qualifying = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
                                 effort='low', realtime_stepped_from='high')
+        self.assertEqual(dispatch_registry.resolve_bundle(
+            lower_qualifying, accounts, explicit_override=False, allow_realtime_stepdown=True,
+        )['effort'], 'low')
+        too_slow = copy.deepcopy(accounts)
+        too_slow['effort_curves'][bundles_map['sol_high']['model']]['responsiveness']['low'] = 0.1
         self.assertIsNone(dispatch_registry.resolve_bundle(
-            forged_skip_tier, accounts, explicit_override=False, allow_realtime_stepdown=True,
+            lower_qualifying, too_slow, explicit_override=False, allow_realtime_stepdown=True,
         ))
         valid_sol = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
                          effort='medium', realtime_stepped_from='high')

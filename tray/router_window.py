@@ -1440,6 +1440,11 @@ class Panel:
         self.plan_result = result or {}
         data = self.data_module()
         rows = data.candidate_rows(self.plan_result)
+        if self.plan_result.get("theatre_source") == "unreplayable":
+            self.breakdown_rows = rows
+            self.breakdown.delete(*self.breakdown.get_children())
+            self.status.set(self.plan_result["replay_note"])
+            return
         self.breakdown_rows = rows
         self.breakdown.delete(*self.breakdown.get_children())
         self.breakdown_labels = display_names.unique_labels(rows, data.account_label)

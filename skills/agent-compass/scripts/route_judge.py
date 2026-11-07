@@ -1949,14 +1949,11 @@ def match_bundle(allocator, accounts, args, include_disabled=False):
 
     A name that only a family guess could place matches its own rows, never the flagship's. With no effort named, the
     model's default effort (else High) leads, not whichever row the document lists first."""
-    resolved = allocator.resolve_model(args.model, accounts)
-    direct = resolved['source'] in allocator.DIRECT_SOURCES
     matches = []
     for bundle in allocator.bundles(accounts).values():
         if not include_disabled and bundle.get('disabled'):
             continue
-        same = (allocator.canonical(bundle['model'], accounts) == resolved['key'] if direct
-                else allocator.model_leaf(bundle['model']).lower() == allocator.model_leaf(args.model).lower())
+        same = allocator.row_key(bundle['model'], accounts) == allocator.row_key(args.model, accounts)
         if (bundle['account'] == args.account and bundle['provider'] == args.provider and same
                 and (args.effort is None or bundle.get('effort') == args.effort)):
             matches.append(bundle)
@@ -2012,12 +2009,20 @@ def record_constraint(args, task=None):
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, args.account, args.provider)
     if unavailable:
         raise ValueError(unavailable)
-    # `model:effort` names an effort; --effort, when given too, wins.
+    # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
     pin = copy.copy(args)
     pin.model, named_effort = allocator.split_model_effort(args.model)
-    pin.effort = args.effort or named_effort
     resolved = allocator.resolve_model(pin.model, accounts)
+    pin.effort = args.effort or named_effort or resolved['effort']
     direct = resolved['source'] in allocator.DIRECT_SOURCES
+    own_model = allocator.row_key(pin.model, accounts)
+    own_rows = [b for b in allocator.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
+                and allocator.row_key(b['model'], accounts) == own_model]
+    if not direct and (not own_rows or (pin.effort and pin.effort not in {b.get('effort') for b in own_rows}
+                                        and pin.effort not in (allocator.dispatch_allowed_efforts(own_rows[0], accounts) or ()))):
+        # What it resembles is another model. The same answer the plan gives: blocked, never a substitute.
+        raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no configured route on "
+                         f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")
     chosen = match_bundle(allocator, accounts, pin)
     disabled_match = match_bundle(allocator, accounts, pin, include_disabled=True) if chosen is None else None
     if disabled_match is not None:
@@ -2028,11 +2033,18 @@ def record_constraint(args, task=None):
                 f"Bundle {disabled_match!r} ({args.account}/{pin.model}) is disabled. "
                 f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
             )
+    if own_rows and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows):
+        # Every level unchecked is the model unchecked, also at a level with no row of its own.
+        raise ValueError(
+            f"Bundle {own_rows[0]['id']!r} ({args.account}/{pin.model}) is disabled. "
+            f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
+        )
     discovered = allocator.bundles(accounts).get(chosen) or {}
     if discovered.get('discovery_unavailable'):
         raise ValueError(discovered['discovery_unavailable'])
     # The account's other row of this model supplies the launch fields of an effort it has no row for.
-    sibling_id = chosen or match_bundle(allocator, accounts, _with_effort(pin, None))
+    sibling_id = (chosen or match_bundle(allocator, accounts, _with_effort(pin, None))
+                  or match_bundle(allocator, accounts, _with_effort(pin, None), include_disabled=True))
     sibling = allocator.bundles(accounts).get(sibling_id) or {}
     inherited = {k: sibling[k] for k in NAMED_ROW_FIELDS if k in sibling}
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
@@ -2483,9 +2495,9 @@ def plan_stage(document, args):
                 task['expected_hours'] = profile['expected_hours']
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
                                   'confidence': profile.get('hours_confidence', 'unknown')}
-    task_profile = task.get('profile') or {}
+    task_profile = allocator.validate_caller_profile(task['profile']) if task.get('profile') else {}
     if task_profile.get('multi_task') is True:
-        count = task_profile.get('task_count') or '>1'
+        count = task_profile['task_count']
         keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
         if not keep_whole:
             return split_result(task, count, scorer, started), 2

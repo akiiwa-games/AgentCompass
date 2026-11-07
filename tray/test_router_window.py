@@ -1194,7 +1194,8 @@ class ScorerConfigTests(unittest.TestCase):
             "work_kind": {"choice": "general_implementation"}, "interaction_style": {"choice": "engineering"},
             "reasoning_depth": {"score": 1.2}, "code_complexity": {"score": 2.1}, "context_scale": {"score": 0.1},
             "divergence": {"score": 0.0}, "hallucination_risk": {"score": 0.4}, "error_cost": {"score": 1.0},
-            "needs_visual": {"noul": 0.02}, "needs_gui": {"noul": 0.01}, "local_only": {"noul": 0.9}}}
+            "needs_visual": {"noul": 0.02}, "needs_gui": {"noul": 0.01}, "local_only": {"noul": 0.9},
+            "multi_task": {"noul": 0.05}, "task_count": {"choice": "1"}}}
         seen = []
         with mock.patch.object(self.router, "post_json", side_effect=lambda url, body, key, timeout: seen.append(key) or response):
             message = router_data.test_scorer_config()

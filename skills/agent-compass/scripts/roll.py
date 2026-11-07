@@ -208,6 +208,12 @@ def _bundle_matches_worker(bundle, worker, same_model=None):
     return bool(ours) and (ours == theirs or bool(same_model and theirs and same_model(ours, theirs)))
 
 
+def model_comparison(fleet):
+    """Do two names run the same model? A spelling does, a family guess at its target does not."""
+    import allocator
+    return lambda a, b: allocator.row_key(a, fleet) == allocator.row_key(b, fleet)
+
+
 def summary(decision):
     bundle = decision.get('selected_bundle') or {}
     return {'choice': decision.get('choice'),
@@ -346,9 +352,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         excluded = set(getattr(args, '_exclude_agents', None) or ())
         import allocator
         fleet = allocator.load_accounts()
-        same_model = lambda a, b: allocator.canonical(a, fleet) == allocator.canonical(b, fleet)
         compatible = [w for w in registry.reusable_workers(parent)
-                      if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w, same_model)]
+                      if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w, model_comparison(fleet))]
         if is_review_title(args.title or title_of(text)):
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')

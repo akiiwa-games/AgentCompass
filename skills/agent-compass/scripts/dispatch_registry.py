@@ -116,8 +116,9 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
     if bundle.get('fast'):
         allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle.get('account')), model,
                                       allocator.model_spec(accounts, model))
+    own_model = allocator.row_key(bundle.get('model') or '', accounts)
     siblings = [b for b in allocator.bundles(accounts).values()
-                if allocator.canonical(b.get('model'), accounts) == model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+                if allocator.row_key(b.get('model') or '', accounts) == own_model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
     carrier = next((b for b in siblings if bundle.get('pin_carrier') and b.get('id') == bundle['pin_carrier']), None)
@@ -152,13 +153,16 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
         new_resp, new_src = allocator.bundle_responsiveness(
             by_id, info, policy, model_curves, effort=bundle.get('effort'), harness=eff_harness, accounts=accounts)
         orig_rank = allocator._effort_rank(by_id.get('effort'))
+        # The plan chose this level by score, which needs the task; here only its admissibility can be checked again.
         qualifying = []
         unchecked = {b.get('effort') for b in siblings
                      if b.get('disabled') and not b.get('disabled_by_default') and b.get('harness') == eff_harness}
+        own_efforts = by_id.get('efforts') if isinstance(by_id.get('efforts'), (list, tuple)) else None
         for eff in allocator.REALTIME_EFFORT_ORDER:
             if (eff not in resp_curves
                     or eff not in contract
                     or eff in unchecked
+                    or (own_efforts is not None and eff not in own_efforts)
                     or (ability_curve and eff not in ability_curve)
                     or allocator._effort_rank(eff) >= orig_rank):
                 continue
@@ -166,11 +170,10 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
                 by_id, info, policy, model_curves, effort=eff, harness=eff_harness, accounts=accounts)
             if eff_src != 'not_applicable' and isinstance(eff_resp, (int, float)) and eff_resp >= resp_floor:
                 qualifying.append(eff)
-        highest_qualifying = max(qualifying, key=allocator._effort_rank) if qualifying else None
         if (orig_src != 'not_applicable' and new_src != 'not_applicable'
                 and isinstance(orig_resp, (int, float)) and isinstance(new_resp, (int, float))
                 and orig_resp < resp_floor <= new_resp
-                and bundle.get('effort') == highest_qualifying):
+                and bundle.get('effort') in qualifying):
             return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'],
                         realtime_stepped_from=by_id.get('effort'),
                         **({'fast': True} if bundle.get('fast') else {}))
@@ -189,7 +192,7 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
         raise ValueError('Explicit override has no known provider/account/model/effort contract; refresh discovery and the local contract')
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
     identity = {k: bundle.get(k) for k in ('provider', 'account', 'effort')}
-    identity['model'] = model
+    identity['model'] = own_model
     key = 'user_override_' + digest(identity)[:24]
     mode = base.get('modeId') or auto_bundles.HARNESS_MODE.get(base.get('harness'))
     return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'modeId': mode} if mode else {}),

@@ -169,6 +169,21 @@ class PackagingTests(unittest.TestCase):
         self.assertIn(r'Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"', icons)
         self.assertIn("Tasks: desktopicon", icons)                  # the desktop icon stays opt-in
 
+    def test_release_gate_profiles_pass_validation(self):
+        """The release gate plans with these literals; an invalid one stops the release, and no unit suite runs them."""
+        import ast
+        import sys
+        sys.path.insert(0, str(ROOT / "skills" / "agent-compass" / "scripts"))
+        import allocator
+        for name in ("sandbox_check.py", "guest_check.py"):
+            tree = ast.parse((ROOT / "packaging" / name).read_text(encoding="utf-8"))
+            literals = [ast.literal_eval(node) for node in ast.walk(tree) if isinstance(node, ast.Dict)
+                        and any(isinstance(k, ast.Constant) and k.value == "interaction_style" for k in node.keys)]
+            self.assertTrue(literals, name)
+            for literal in literals:
+                with self.subTest(file=name):
+                    allocator.validate_caller_profile(literal)
+
     def test_fixture_repos_hold_tracked_files_only(self):
         """An untracked file must stay out of the fixture, or `git add -A` there hides it from check_payload."""
         def git(repo, *args):

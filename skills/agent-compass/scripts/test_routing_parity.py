@@ -171,12 +171,9 @@ class ModelResolverTests(RouterCase):
         self.assertIn('weekly_fable', allocator.bundle_pools(allocator.bundles(accounts)['x'], accounts))
 
     def test_a_cooldown_on_the_key_stops_every_spelling(self):
-        entries = {'claude/claude-opus-5-5': {'until': '2099-01-01T00:00:00+00:00', 'reason': 'launch failed', 'kind': 'x'}}
-        bundle = {'account': 'claude', 'model': 'claude-opus-5'}
-        with patch.object(allocator.launch_failures, 'key', side_effect=lambda a, m=None: f'{a}/{m}' if m else a), \
-                patch.object(allocator.launch_failures, 'reason',
-                             side_effect=lambda b, e, now=None: 'cooling' if f"{b['account']}/{b['model']}" in e else None):
-            self.assertEqual(allocator.cooling_reason(bundle, entries, self.accounts), 'cooling')
+        entries = {'claude/claude-opus-5-5': {'until': '2099-01-01T00:00:00+00:00', 'failure_class': 'launch failed'}}
+        found = allocator.cooling_reason({'account': 'claude', 'model': 'claude-opus-5'}, entries, self.accounts, now=NOW)
+        self.assertIn('cooling down', found)
 
     def test_worker_continuity_compares_the_key(self):
         same = lambda a, b: allocator.canonical(a, self.accounts) == allocator.canonical(b, self.accounts)
@@ -308,7 +305,7 @@ class UserPinTests(RouterCase):
     def test_a_named_model_alone_steps_down_to_a_level_that_clears_the_floor(self):
         """3.3: naming only a model exempted its High and XHigh from the floor, at responsiveness 0."""
         plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra'}))
-        self.assertEqual(plan['selected_bundle']['effort'], 'medium')
+        self.assertEqual(plan['selected_bundle']['effort'], 'low')       # the best score among the levels that clear
         self.assertFalse(plan['decision'].get('warnings'))
         xhigh = self.row(plan, 'astra_xhigh')
         self.assertTrue(xhigh['excluded'], 'xhigh is not exempt from the floor for being named')
@@ -443,7 +440,7 @@ class RecordConstraintTests(RouterCase):
 
     def test_a_named_model_on_live_work_steps_to_a_level_that_clears(self):
         result = self.record(task=self.task(LIVE), model='gpt-6-astra', account='codex', provider='codex')
-        self.assertEqual(result['selected_bundle']['effort'], 'medium')
+        self.assertEqual(result['selected_bundle']['effort'], 'low')
         self.assertEqual(result.get('warnings', []), [])
 
     def test_the_router_comparison_stays_a_free_choice(self):
@@ -463,9 +460,11 @@ class RecordConstraintTests(RouterCase):
                 self.record(model='gpt-5.6-luna', account='codex', provider='codex', effort='high')
 
     def test_a_family_name_keeps_its_own_launch_id(self):
-        bundle = self.record(model='claude-opus-4-20250514', effort='high')['selected_bundle']
-        self.assertEqual((bundle['model'], bundle['launch_model']), ('claude-opus-4-20250514', 'claude-opus-4-20250514'))
-        self.assertNotIn('bundle_id', bundle)
+        accounts = self.only('claude', own={'model': 'claude-opus-4-20250514', 'effort': 'high', 'provider': 'claude'})
+        with patch.object(allocator, 'load_accounts', return_value=accounts):
+            bundle = self.record(model='claude-opus-4-20250514', effort='high')['selected_bundle']
+        self.assertEqual((bundle['model'], bundle['launch_model'], bundle['bundle_id']),
+                         ('claude-opus-4-20250514', 'claude-opus-4-20250514', 'own'))
 
 
 BAD_COUNTS = (0, -1, 1.5, float('nan'), float('inf'), 'many', None, '4', True)

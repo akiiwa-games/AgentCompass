@@ -68,6 +68,11 @@ class GeneratedDataTests(unittest.TestCase):
         self.assertEqual(rows['gemini-2.5-pro']['source'], 'family')
         self.assertEqual(rows['totally-unknown-model']['source'], 'unknown')
 
+    def test_the_reading_of_the_contract_travels_with_the_data(self):
+        self.assertIn('highest-scoring level that clears the floor', self.data['interpretations']['R3.best_level'])
+        self.assertEqual(self.data['row_keys']['claude-opus-4-20250514'], 'claude-opus-4-20250514')
+        self.assertEqual(self.data['row_keys']['claude-opus-5'], 'claude-opus-5-5')
+
     def test_a_family_guess_answers_with_the_default_speed(self):
         self.assertEqual(self.data['responsiveness']['gemini-2.5-pro']['high'], [0.52, 'default'])
 

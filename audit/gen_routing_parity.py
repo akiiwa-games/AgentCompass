@@ -57,6 +57,17 @@ PINS = [
     {'constraints': {'model': 'gpt-6-astra', 'effort': 'xhigh'}},
     {'constraints': {'model': 'claude-opus-5-5'}},
 ]
+# How this commit reads the contract where its wording leaves room. Ports follow these, as the parent ruled.
+INTERPRETATIONS = {
+    'R3.best_level': 'A model named alone on realtime_loop work runs at the highest-scoring level that clears the floor. '
+                     'Every level the launch contract offers competes as a candidate, written as a row or not.',
+    'R2.unnamed_step_down': 'Not a choice of best: an unnamed row below the floor takes the nearest faster level that clears the '
+                            'floor and the ability gate, then competes with other rows by score.',
+    'dispatch.prepare': 'Prepare accepts any level that clears the floor, is in the contract, is offered by the row and is not '
+                        'unchecked. It does not rank levels again; the score needs the task and the plan already used it.',
+    'R1.row_key': 'A family guess is its own model wherever a row, a pin, a cooldown, a worker or a rival is matched. '
+                  'It folds to its target only for its estimated score.',
+}
 QUOTA = {
     'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
     'claude-lab': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
@@ -171,6 +182,8 @@ def build(allocator, auto_bundles, support, commit, root):
         'variants': VARIANTS,
         'canonical': {name: allocator.canonical(name, document) for name in names},
         'resolutions': {name: {k: allocator.resolve_model(name, document)[k] for k in ('key', 'source', 'effort')} for name in names},
+        'row_keys': {name: allocator.row_key(name, document) for name in names},
+        'interpretations': INTERPRETATIONS,
         'family_shrink': {'tier': auto_bundles.FAMILY_TIER_SHRINK, 'vector': auto_bundles.FAMILY_VECTOR_SHRINK},
         'effort_curves': {k: v for k, v in document['effort_curves'].items() if isinstance(v, dict)},
         'dispatch_efforts': dispatch,

@@ -445,7 +445,7 @@ def scenario_clean_install(ctx):
         "needs": {"local_only": True},
         "profile": {"reasoning_depth": 3, "code_complexity": 2, "context_scale": 2, "hallucination_risk": 2, "error_cost": 2,
                     "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering",
-                    "reason": "sandbox fixture"}}}), encoding="utf-8")
+                    "multi_task": False, "task_count": "1", "reason": "sandbox fixture"}}}), encoding="utf-8")
     result = box.run_command(op, [box.agentcompass, "plan", "--input", task, "--dry-run"], ROUTER_LEDGER=str(box.state / "ledger.jsonl"))
     plan = parse_json(result.stdout) or {}
     bundle = plan.get("selected_bundle") or {}

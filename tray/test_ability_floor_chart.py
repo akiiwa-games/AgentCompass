@@ -29,6 +29,23 @@ def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     router_data._invalidate_accounts_cache()
 
 
+def test_a_family_row_shows_the_ability_the_router_scores_it_at(isolated_state: Path) -> None:
+    accounts = allocator.load_accounts(allocator.fleet_document_path())
+    family, flagship = "claude-opus-4-20250514", "claude-opus-5-5"
+    for spec in accounts["accounts"].values():
+        if isinstance(spec, dict):
+            spec["bundles"] = {}
+    accounts["accounts"]["claude"]["bundles"] = {"old": {"model": family, "effort": "high", "provider": "claude"},
+                                                 "top": {"model": flagship, "effort": "high", "provider": "claude"}}
+    chart = router_data.ability_floor_chart_data(accounts=accounts, include_manual_billing=True, include_superseded=True)
+    rows = chart["bundles"]
+    policy = accounts["scoring"]
+    expected = allocator.effort_ability(policy, allocator.model_curves(accounts, family), allocator.model_spec(accounts, family), "high")
+    assert rows["old"]["ability"] == round(expected, 2)
+    assert rows["old"]["ability"] < rows["top"]["ability"]
+    assert rows["old"]["model"] == family
+
+
 def test_chart_data_matches_allocator_bundle_positions_and_fixed_effort(isolated_state: Path) -> None:
     accounts = allocator.load_accounts(allocator.fleet_document_path())
     policy = accounts["scoring"]
