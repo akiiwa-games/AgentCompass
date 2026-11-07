@@ -500,13 +500,26 @@ class DispatchTests(unittest.TestCase):
 
     def test_a_review_never_goes_back_to_a_worker_that_wrote_the_code(self):
         import roll
-        implementer = {'agent_id': 'agent-fixer', 'titles': ['任务：修复"代码包增量更新"审查发现的问题',
-                                                             '任务：对抗审查 AgentCompass "代码包增量更新"']}
-        reviewer = {'agent_id': 'agent-review', 'titles': ['Independent review of the s01 telegram change']}
-        self.assertTrue(roll.is_review_title('任务：复审"代码包增量更新"修复后的未提交改动（只读）'))
-        self.assertTrue(roll.is_review_title('Adversarial code review of the update fix'))
-        self.assertFalse(roll.is_review_title('任务：修复"代码包增量更新"审查发现的问题'))
-        self.assertFalse(roll.is_review_title('Step 1-Rev: Address review comments'))
+        for banned in ('_REVIEW_RE', '_AUTHORING_RE', 'is_review_title'):
+            self.assertFalse(hasattr(roll, banned), f'{banned} must be removed from roll')
+        review_prof = {'work_kind': 'debug_review', 'code_complexity': 0, 'read_only_review': True}
+        fix_prof = {'work_kind': 'debug_review', 'code_complexity': 2, 'read_only_review': False}
+        self.assertTrue(roll.is_readonly_review_profile(review_prof))
+        self.assertTrue(roll.is_readonly_review_profile({'work_kind': 'debug_review', 'code_complexity': 0}))
+        self.assertFalse(roll.is_readonly_review_profile(fix_prof))
+        self.assertFalse(roll.is_readonly_review_profile({'work_kind': 'general_implementation', 'code_complexity': 0}))
+        implementer = {
+            'agent_id': 'agent-fixer',
+            'titles': ['Independent review of the s01 telegram change'],
+            'profiles': [fix_prof, review_prof],
+            'read_only_review': False,
+        }
+        reviewer = {
+            'agent_id': 'agent-review',
+            'titles': ['任务：修复"代码包增量更新"审查发现的问题'],
+            'profiles': [review_prof],
+            'read_only_review': True,
+        }
         self.assertEqual([w['agent_id'] for w in roll.independent_reviewers([implementer, reviewer])],
                          ['agent-review'])
 

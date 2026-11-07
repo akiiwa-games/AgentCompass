@@ -92,9 +92,10 @@ class RoutingTests(unittest.TestCase):
                           if k in ('multi_task', 'task_count')}, {'multi_task': True, 'task_count': '>3'})
         odd = allocator.validate_profile(dict(GUI_PROFILE, multi_task='yes', task_count='5'))
         self.assertFalse({'multi_task', 'task_count'} & set(odd))
-        marks = allocator.infer_task_profile({'objective': '### 交付物 1' + chr(10) + 'a' + chr(10) + '### 交付物 2' + chr(10) + 'b' + chr(10) + '### 交付物 3'},
-                                             allocator.load_capabilities())
-        self.assertEqual((marks['multi_task'], marks['task_count']), (True, '3'))
+        self.assertFalse(hasattr(allocator, 'multi_task_marks'))
+        self.assertFalse(hasattr(allocator, 'MULTI_TASK_MARK_RE'))
+        checked = allocator.validate_profile(dict(GUI_PROFILE, wants_fast=True, read_only_review=False))
+        self.assertEqual((checked['wants_fast'], checked['read_only_review']), (True, False))
 
     def test_usage_snapshot_discovery_freshness_projection_and_window_math(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -321,9 +322,10 @@ class RoutingTests(unittest.TestCase):
             cases = [
                 ('remote', {}, None, True, True, 'dot_handoff'),
                 ('local runtime', {'local_only': True, 'local_only_reason': 'runs local pytest'}, None, False, False, None),
-                ('missing reason', {'local_only': True}, None, True, True, 'local_only_ignored_without_reason'),
-                ('edit-only reason', {'local_only': True, 'local_only_reason': 'in-place edits of workspace files'},
-                 None, True, True, 'local_only_ignored_without_reason'),
+                ('missing reason respected', {'local_only': True}, None, False, False, None),
+                ('edit-only reason respected', {'local_only': True, 'local_only_reason': 'in-place edits of workspace files'},
+                 None, False, False, None),
+                ('explicit false', {'local_only': False}, None, True, True, 'dot_handoff'),
                 ('credentials', {'local_only': True, 'local_only_reason': 'Needs local ssh-agent VPS credentials'},
                  None, False, False, None),
                 ('unreachable', {}, 'URLError on /readyz', False, True, 'dot_unreachable'),
@@ -338,8 +340,7 @@ class RoutingTests(unittest.TestCase):
                     codes = {a['code'] for a in result['alerts']}
                     if alert:
                         self.assertIn(alert, codes)
-                    else:
-                        self.assertNotIn('local_only_ignored_without_reason', codes)
+                    self.assertNotIn('local_only_ignored_without_reason', codes)
             ssh, _ = self.run_plan(directory, {'objective': 'Read-only checklist over SSH and the repository',
                 'work_kind': 'tool_execution', 'difficulty': 'hard', 'needs': {'local_only': True}})
             self.assertNotIn(ssh['choice'], ('dot_text', 'none'))
@@ -352,18 +353,18 @@ class RoutingTests(unittest.TestCase):
         task = {'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
         recent = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan',
                   'choice': 'dot_text', 'objective': task['objective']}
-        for reason, down, enabled, dot, blocked in (
-            ('in-place edits of workspace files', None, True, True, True),
-            ('Needs local ssh-agent VPS credentials', None, True, False, False),
-            ('in-place edits of workspace files', 'endpoint down', True, False, False),
-            ('in-place edits of workspace files', None, False, False, False),
+        for local_only, down, enabled, dot, blocked in (
+            (False, None, True, True, True),
+            (True, None, True, False, False),
+            (False, 'endpoint down', True, False, False),
+            (False, None, False, False, False),
         ):
-            with self.subTest(reason=reason, down=down, enabled=enabled), \
+            with self.subTest(local_only=local_only, down=down, enabled=enabled), \
                     tempfile.TemporaryDirectory() as directory, \
                     patch.object(router, 'load_allocator', return_value=allocator), \
                     patch.object(allocator, 'load_capabilities', return_value={**capabilities,
                         'remote_reroute_guard': {'enabled': enabled, 'bundle_id': 'dot_text', 'window_seconds': 600}}):
-                result, _ = self.run_plan(directory, dict(task, needs={'local_only': True, 'local_only_reason': reason}),
+                result, _ = self.run_plan(directory, dict(task, needs={'local_only': local_only}),
                                            down, unavailable=['dot_text'], records=[recent])
                 self.assertEqual(result['choice'] == 'dot_text', dot)
                 self.assertNotEqual(result['choice'], 'none')
@@ -920,7 +921,7 @@ class SelectableScorerTests(unittest.TestCase):
         questions = request['questions']
         self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'context_scale',
                                           'divergence', 'hallucination_risk', 'error_cost', 'needs_visual', 'needs_gui', 'local_only',
-                                          'realtime_loop', 'effort_band', 'urgency', 'multi_task', 'task_count'})
+                                          'realtime_loop', 'wants_fast', 'read_only_review', 'effort_band', 'urgency', 'multi_task', 'task_count'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
@@ -929,7 +930,7 @@ class SelectableScorerTests(unittest.TestCase):
             q = questions[name]
             self.assertEqual((q['type'], len(q['criteria']), isinstance(q['criteria'], list)), ('score', high - low + 1, True), name)
             self.assertLessEqual(len(q['criteria']), 10)
-        for name in ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop'):
+        for name in ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop', 'wants_fast', 'read_only_review'):
             self.assertEqual(questions[name]['type'], 'noul')
             self.assertNotIn('criteria', questions[name])
 

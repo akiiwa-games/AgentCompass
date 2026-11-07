@@ -262,16 +262,16 @@ class DecisionBindingTests(unittest.TestCase):
 
     def test_dry_run_binds_the_profile_and_never_writes_the_ledger(self):
         allocator = mock.Mock()
-        allocator.infer_task_profile.return_value = {"reasoning_depth": 2}
         allocator.load_accounts.return_value = {"scoring": {}}
         allocator.dot_may_take.return_value = True
         allocator.plan.return_value = PLAN
         router = mock.Mock()
+        router.score_task.return_value = ({"reasoning_depth": 2}, {"source": "system_one", "model": "jev-latest"})
         router.read_ledger.return_value = []
         router.dot_unreachable.return_value = "refused"
         with mock.patch.object(router_data, "modules", return_value=(allocator, router)):
             result = router_data.simulate("修复竞态", 1.5, local_only=True, needs_visual=False)
-        self.assertEqual({k:v for k,v in result.items() if k != "task"}, PLAN)
+        self.assertEqual({k: v for k, v in result.items() if k not in ("task", "scorer")}, PLAN)
         self.assertEqual(result["task"]["objective"], "修复竞态")
         self.assertNotIn("task", PLAN)  # adding replay metadata must not mutate allocator output
         task = allocator.plan.call_args.args[0]
@@ -280,6 +280,7 @@ class DecisionBindingTests(unittest.TestCase):
         self.assertTrue(task["needs"]["local_only_reason"])
         self.assertEqual(task["profile"], {"reasoning_depth": 2})
         self.assertEqual(allocator.plan.call_args.args[3], ["dot_text"])
+        allocator.infer_task_profile.assert_not_called()
         router.append_ledger.assert_not_called()
 
     def test_replay_reuses_the_recorded_profile_when_valid(self):
@@ -1209,10 +1210,15 @@ class ScorerConfigTests(unittest.TestCase):
         self.assertIn("TypeSafe API key not configured", message)
 
     def test_simulate_can_profile_with_the_live_scorer(self):
-        with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"task": task}):
-            fast = router_data.simulate("修复解析器的 bug", 1.0)
-        self.assertNotIn("scorer", fast)
-        profile = dict(fast["task"]["profile"], work_kind="debug_review", reasoning_depth=3)
+        with mock.patch.object(router_data, "plan_task", side_effect=AssertionError("should not plan without scorer")):
+            no_model = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=False)
+        self.assertEqual((no_model["status"], no_model["choice"], no_model["error"]), ("blocked", "none", "scorer_unavailable"))
+        profile = {
+            "work_kind": "debug_review", "reasoning_depth": 3, "code_complexity": 2, "context_scale": 1,
+            "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
+            "needs_visual": False, "needs_gui": False, "local_only": True, "realtime_loop": False,
+            "wants_fast": False, "read_only_review": False, "interaction_style": "engineering",
+        }
         with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"task": task}), \
                 mock.patch.object(self.router, "score_task", return_value=(profile, {"source": "system_one", "model": "m"})):
             live = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
@@ -1221,7 +1227,7 @@ class ScorerConfigTests(unittest.TestCase):
         with mock.patch.object(router_data, "plan_task", side_effect=AssertionError("should not plan when scorer unavailable")), \
                 mock.patch.object(self.router, "score_task", return_value=(None, {"source": "scorer_unavailable", "fallback_detail": "timed out"})):
             unavail = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
-        self.assertEqual((unavail["choice"], unavail["error"]), ("none", "scorer_unavailable"))
+        self.assertEqual((unavail["status"], unavail["choice"], unavail["error"]), ("blocked", "none", "scorer_unavailable"))
 
 
 class ResetEditorTests(unittest.TestCase):

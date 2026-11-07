@@ -1160,7 +1160,7 @@ class Panel:
         ttk.Label(hours_box, text="h", style="Card.TLabel").pack(side="left", padx=(3, 2))
         self.local_only = tk.BooleanVar()
         self.needs_visual = tk.BooleanVar()
-        self.live_scorer = tk.BooleanVar()
+        self.live_scorer = tk.BooleanVar(value=True)
         self._option_items = [hours_box] + [ttk.Checkbutton(flow, text=_tr(text), variable=variable) for text, variable in
                                             (("仅本机", self.local_only), ("需视觉", self.needs_visual),
                                              ("小模型打分", self.live_scorer))]

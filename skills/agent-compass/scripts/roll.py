@@ -129,21 +129,28 @@ def _match_tokens(*texts):
     return tokens
 
 
-_REVIEW_RE = re.compile(r'review|audit|interrogate|blast.radius|审查|复审|审核|评审|核查', re.IGNORECASE)
-_AUTHORING_RE = re.compile(r'\bfix|address|implement|resolve|修复|实现|整改', re.IGNORECASE)
-
-
-def is_review_title(title):
-    """A brief whose job is to review: the review word leads. "Fix the review findings" leads with authoring;
-    "re-review the fixed changes" leads with review."""
-    review, authoring = _REVIEW_RE.search(title or ''), _AUTHORING_RE.search(title or '')
-    return bool(review) and (authoring is None or review.start() < authoring.start())
+def is_readonly_review_profile(profile):
+    """True when the classified profile describes a read-only review or audit that writes no repo code."""
+    if not isinstance(profile, dict):
+        return False
+    if 'read_only_review' in profile:
+        return bool(profile.get('read_only_review'))
+    return bool(profile.get('work_kind') == 'debug_review' and profile.get('code_complexity') == 0)
 
 
 def independent_reviewers(workers):
     """Workers that may take a review: only those that have never written code in their history. A worker that
     implemented or fixed the work would be reviewing itself, whatever brief overlap or chain points at it."""
-    return [w for w in workers if all(is_review_title(t) for t in w.get('titles') or ())]
+    out = []
+    for w in workers:
+        if 'read_only_review' in w:
+            if w.get('read_only_review') is True:
+                out.append(w)
+            continue
+        profiles = w.get('profiles') or ([w['profile']] if isinstance(w.get('profile'), dict) else [])
+        if profiles and all(is_readonly_review_profile(p) for p in profiles):
+            out.append(w)
+    return out
 
 
 def match_reusable_worker(args, task, text, parent, workers=None):
@@ -341,7 +348,12 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         excluded = set(getattr(args, '_exclude_agents', None) or ())
         compatible = [w for w in registry.reusable_workers(parent)
                       if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w)]
-        if is_review_title(args.title or title_of(text)):
+        decision_profile = (
+            decision.get('task_profile')
+            or ((decision.get('decision') or {}).get('task') or {}).get('profile')
+            or task.get('profile')
+        )
+        if is_readonly_review_profile(decision_profile):
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
                            if isinstance(task.get('chain'), dict) else None)
@@ -756,7 +768,10 @@ def _run(args, judge):
                             caller_action='run_next_argv', worker=dict(dispatch_flow.public(row), continuation_argv=argv),
                             next='This task already has a dispatch (state ' + row['state'] + '): run next_argv to observe it; '
                                  'it will not create a second worker.'), 0
-        matched_worker = match_reusable_worker(args, task, text, parent)
+        reusable_pool = None
+        if is_readonly_review_profile(task.get('profile')):
+            reusable_pool = independent_reviewers(registry.reusable_workers(parent))
+        matched_worker = match_reusable_worker(args, task, text, parent, workers=reusable_pool)
         if matched_worker and matched_worker.get('bundle_id'):
             task['chain'] = {
                 'id': matched_worker['chain_id'],
@@ -764,6 +779,7 @@ def _run(args, judge):
                 'worker': {
                     'agent_id': matched_worker['agent_id'],
                     'bundle': matched_worker['bundle_id'],
+                    'read_only_review': matched_worker.get('read_only_review'),
                     **matched_worker['session_state'],
                 },
             }

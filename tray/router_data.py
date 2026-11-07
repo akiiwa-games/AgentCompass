@@ -226,8 +226,6 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
                work_kind: str | None = None, difficulty: str | None = None, profile: dict | None = None,
                local_only_reason: str | None = None) -> dict:
     allocator, _ = modules()
-    accounts = _cached_accounts(allocator)
-    capabilities = _load_capabilities(allocator, accounts)
     needs = {"visual": bool(needs_visual), "local_only": bool(local_only)}
     if local_only:
         needs["local_only_reason"] = local_only_reason or _tr("主面板干跑：模拟需要本机资源的任务")
@@ -242,7 +240,8 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
             valid = allocator.validate_profile(profile)
         except ValueError:
             valid = None
-    task["profile"] = valid or allocator.infer_task_profile(task, capabilities)
+    if valid is not None:
+        task["profile"] = valid
     return task
 
 
@@ -271,20 +270,25 @@ def plan_task(task: dict) -> dict:
 
 
 def simulate(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
-             live_scorer: bool = False) -> dict:
-    """Plan a typed task. live_scorer profiles it with the configured System-One scorer (as route_judge plan does)
-    instead of the instant offline inference; the scorer metadata comes back under "scorer"."""
-    if not live_scorer:
-        return plan_task(build_task(objective, hours, local_only, needs_visual))
+             live_scorer: bool = True) -> dict:
+    """Plan a typed task. Profiles it with the configured System-One scorer; when the classifier is unavailable,
+    returns blocked / scorer_unavailable rather than guessing from keywords."""
     allocator, router = modules()
     accounts = _cached_accounts(allocator)
     capabilities = _load_capabilities(allocator, accounts)
     policy = accounts["scoring"]
     task = build_task(objective, hours, local_only, needs_visual)
-    task.pop("profile", None)
-    profile, scorer = router.score_task(task, allocator, capabilities)
+    profile, scorer = router.score_task(task, allocator, capabilities, use_model=bool(live_scorer))
     if profile is None:
-        return {"stage": "plan", "choice": "none", "error": "scorer_unavailable", "ranking": [], "task": task, "scorer": scorer}
+        return {
+            "stage": "plan",
+            "status": "blocked",
+            "choice": "none",
+            "error": "scorer_unavailable",
+            "ranking": [],
+            "task": task,
+            "scorer": scorer,
+        }
     task["profile"] = profile
     if scorer.get("source") == "system_one":
         task["work_kind"] = allocator.profile_kind(profile, policy)
