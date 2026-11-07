@@ -14,6 +14,7 @@ import threading
 
 # Also support the path-loaded allocator and python -I entrypoints.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import account_state
 import host_policy
 import override_store
 import dispatch_registry
@@ -1129,7 +1130,7 @@ def scorer_accounts(scorer_type, inventory=None, policy=None):
         return [None]
     rows = (inventory if inventory is not None else provider_inventory.current()).get('accounts') or {}
     usable = sorted((name for name, row in rows.items()
-                     if isinstance(row, dict) and row.get('family') == family and row.get('status') == 'ready'
+                     if isinstance(row, dict) and row.get('family') == family and account_state.dispatchable(row)
                      and row.get('billing', 'subscription') == 'subscription'
                      and (family == 'antigravity' or row.get('home')) and host_policy.account_allowed(policy, name)),
                     key=lambda name: (name != family, name))
@@ -2313,7 +2314,7 @@ def readiness_gap(accounts, usage):
     specs = accounts.get('accounts') if isinstance(accounts.get('accounts'), dict) else {}
 
     def launchable(name, row):
-        if not isinstance(row, dict) or row.get('status') != 'ready':
+        if not account_state.dispatchable(row):
             return False
         # A missing spec keeps the old contract: discovery status ready is enough.
         # verified false is an explicit "do not pick this confidently".

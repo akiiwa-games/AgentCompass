@@ -118,9 +118,12 @@ def require_actual_parent(parent_id):
 def settle_create(row, creation, now, path):
     settled, transitioned = registry.resolve_creation(row['dispatch_id'], creation, now=now, path=path)
     if transitioned and settled.get('failure_class'):
+        import account_state
         import launch_failures
         try:
             launch_failures.record(settled['bundle'], settled['failure_class'])
+            account_state.record_launch_error(settled['bundle']['account'], None, code=settled['failure_class'],
+                                              source=settled['dispatch_id'])
         except OSError:
             pass  # A cooldown is best effort: a busy store must not stop this observation or the roll that made it.
     return settled

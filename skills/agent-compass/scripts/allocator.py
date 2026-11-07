@@ -17,6 +17,7 @@ import sys
 
 # Also support the path-loaded allocator and python -I entrypoints.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import account_state
 import fast_modes
 import window_scope
 import host_policy
@@ -3398,6 +3399,11 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                     for name, spec in accounts['accounts'].items() if spec.get('cwd_regex') and spec.get('allowed_cwd')]
     if cwd_warnings:
         decision.setdefault('warnings', []).extend(cwd_warnings)
+    state_policy = host_policy.load_policy() if host_policy_config is None else host_policy_config
+    state_warnings = account_state.warnings(accounts.get('_discovery'), accounts['accounts'],
+                                            lambda name: host_policy.account_allowed(state_policy, name))
+    if state_warnings:
+        decision.setdefault('warnings', []).extend(state_warnings)
     decision['task'].update(difficulty_source=task['difficulty_source'],
                             high_precision=task['high_precision'],
                             demand=task['demand'], max_recommended_effort=None)

@@ -156,14 +156,15 @@ class DiscoveryTests(unittest.TestCase):
     def test_antigravity_tier_read_from_google_sets_the_plan_and_proves_sign_in(self):
         snapshot = self.discover()
         self.assertFalse(inventory.sign_in_proven(snapshot['accounts']['antigravity']))
-        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Pro', 'tier_id': 'g1-pro-tier'})
+        read_at = self.now.isoformat()
+        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Pro', 'tier_id': 'g1-pro-tier', 'read_at': read_at})
         row = self.discover()['accounts']['antigravity']
         self.assertEqual(row['plan'], 'Google AI Pro')
         self.assertIn('account-tier', row['sources'])
         self.assertTrue(inventory.sign_in_proven(row))
         spec = self.apply(self.discover())['accounts']['antigravity']
         self.assertEqual(spec['capacity_usd']['gemini-weekly'], 31)  # Pro, not the Ultra 20x default
-        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Ultra', 'tier_id': 'g1-ultra-tier'})
+        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Ultra', 'tier_id': 'g1-ultra-tier', 'read_at': read_at})
         spec = self.apply(self.discover())['accounts']['antigravity']
         self.assertEqual(spec['capacity_usd']['gemini-weekly'], 625)
 
@@ -333,7 +334,9 @@ class DiscoveryTests(unittest.TestCase):
         accounts = self.apply(snapshot)
         merged = inventory.merge_usage({'accounts': {'codex': {'status': 'fresh', 'windows': [1]}}}, accounts, self.now)
         self.assertEqual(merged['accounts']['codex']['windows'], [])
-        self.assertNotIn('capacity_usd', accounts['accounts']['codex'])
+        # An unknown plan is priced conservatively, not at what the old credential's plan allowed.
+        self.assertEqual(accounts['accounts']['codex']['capacity_usd'], {'usage': 67, 'five_hour': 10})
+        self.assertEqual(accounts['accounts']['codex']['plan_unknown'], 'unknown-plan')
         self.assertIsNone(accounts['accounts']['codex']['expires_at'])
 
     def test_corrupt_cc_db_and_magpie_config_do_not_remove_native_account(self):
@@ -550,16 +553,18 @@ class DiscoveryTests(unittest.TestCase):
         self.write('.config/magpie/logins.json', [login])
         self.assertEqual(self.discover()['accounts']['claude']['status'], 'paused')
 
-    def test_collector_auth_refusal_pauses_only_matching_credential_and_recovers(self):
+    def test_collector_auth_refusal_excludes_only_matching_credential_and_recovers(self):
         bound = self.discover()['accounts']['codex']['credential_key']
-        for error, status in (('登录凭据需由 Codex 更新', 'paused'), ('更新失败', 'ready'), (None, 'ready')):
+        reading = {'fetched_at': self.now.isoformat(), 'windows': [{'id': 'usage', 'used_pct': 10}]}
+        for error, status in (('登录凭据需由 Codex 更新', 'auth_failed'), ('更新失败', 'usage_failing'), (None, 'ready')):
             self.write('.usage-float/usage-cache.json', {'providers': {'codex': {
-                'credential_key': bound, 'error': error, 'stale': bool(error)}}})
+                'credential_key': bound, 'error': error, 'stale': bool(error), **reading}}})
             self.assertEqual(self.discover(publish=True)['accounts']['codex']['status'], status)
         self.write('.usage-float/usage-cache.json', {'providers': {'codex': {
             'credential_key': bound, 'error': '登录凭据需由 Codex 更新', 'stale': True}}})
         self.native_codex('codex', 'account-B')
-        self.assertEqual(self.discover(publish=True)['accounts']['codex']['status'], 'ready')
+        row = self.discover(publish=True)['accounts']['codex']
+        self.assertEqual((row['status'], row['reason']), ('usage_failing', 'credential_changed'))  # not the old refusal
 
     def test_unconfigured_fixed_slots_are_absent_and_custom_magpie_provider_is_synthesized(self):
         self.native_claude('claude', 'max')
@@ -800,13 +805,15 @@ class DiscoveryTests(unittest.TestCase):
                 }
             }
         })
+        pi_key = self.discover()['accounts']['pi']['credential_key']
         self.write('.usage-float/usage-cache.json', {
             'providers': {
                 'team-proxy': {
                     'plan_label': '$300',
                     'backend_kind': 'litellm',
                     'billing': 'metered',
-                }
+                },
+                'pi': {'credential_key': pi_key, 'fetched_at': self.now.isoformat(), 'windows': [{'id': 'usage', 'used_pct': 10}]},
             }
         })
         snapshot = self.discover()
@@ -864,8 +871,8 @@ class IsolationRecipeTests(unittest.TestCase):
     """Discovery under another home: which inherited environment variables still reach the real machine.
 
     Pointing HOME/USERPROFILE at an empty directory is not enough. `discover()` honours an explicit PASEO_HOME (the
-    Paseo daemon sets it for every agent it starts), and CLAUDE_CONFIG_DIR / CODEX_HOME for the unnamed claude/codex
-    slots. An isolated run must pass an explicit `environ` (or clear those variables) as `detection_environ` does.
+    Paseo daemon sets it for every agent it starts). An isolated run must pass an explicit `environ` (or clear it) as
+    `detection_environ` does. CLAUDE_CONFIG_DIR / CODEX_HOME never move a named account: they only describe the process.
     """
 
     def setUp(self):
@@ -882,7 +889,7 @@ class IsolationRecipeTests(unittest.TestCase):
     def test_discovery_uses_only_the_explicit_environment(self):
         for variables, expected_account in (
             ({'PASEO_HOME': str(self.real / '.paseo')}, 'codex-work'),
-            ({'CODEX_HOME': str(self.real / '.codex-work')}, 'codex'),
+            ({'CODEX_HOME': str(self.real / '.codex-work')}, None),
             ({}, None),
         ):
             with self.subTest(variables=variables):
@@ -964,7 +971,7 @@ class PlanTemplateTests(unittest.TestCase):
                 plan = inventory.configured_plan(family, label)
                 self.assertEqual(plan, expected)
                 self.assertTrue(inventory.plan_defaults({}, family, plan))
-        self.assertEqual(inventory.plan_defaults({}, 'codex', 'team')['capacity_usd'], {'usage': 67})
+        self.assertEqual(inventory.plan_defaults({}, 'codex', 'team')['capacity_usd'], {'usage': 67, 'five_hour': 10})
         self.assertEqual(inventory.plan_defaults({}, 'claude', 'max')['capacity_usd']['seven_day'], 1400)
         self.assertNotIn('alias', inventory.plan_defaults({}, 'antigravity', 'ultra'))
 

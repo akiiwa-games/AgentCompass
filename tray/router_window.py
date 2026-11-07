@@ -195,6 +195,13 @@ def short_badge(text: str) -> str:
     return (text or "").split("：", 1)[0].split(": ", 1)[0]
 
 
+def card_title(card: dict) -> str:
+    """A quota card's name; an account in trouble says so on the card itself, with the reason on the hover."""
+    if card.get("status") not in ("plan_inactive", "usage_failing", "auth_failed"):
+        return card["label"]
+    return f'{card["label"]} · {short_badge(card.get("badge")).split("，", 1)[0].split(", ", 1)[0]}'
+
+
 def clip(text, limit: int = 22) -> str:
     text = str(text or "—")
     return text if len(text) <= limit else text[:limit - 1] + "…"
@@ -1889,7 +1896,7 @@ class Panel:
         if "dot" in widgets:
             widgets["dot"].configure(fg=dot_fg)
         if "name" in widgets:
-            widgets["name"].configure(text=card["label"])
+            widgets["name"].configure(text=card_title(card))
         if not card.get("windows"):
             plan = card.get('usage_note') or clip(card.get("plan"), 14)
             badge = short_badge(card.get("badge"))

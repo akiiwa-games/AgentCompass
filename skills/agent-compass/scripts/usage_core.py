@@ -127,7 +127,9 @@ def _tr(zh: str, en: str, lang: str | None = None) -> str:
 HOME = Path.home()
 CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", HOME / ".claude"))
 CLAUDE_HOME_2 = Path(os.environ.get("CLAUDE_HOME_2", HOME / ".claude-2"))
-CODEX_HOME = Path(os.environ.get("CODEX_HOME", HOME / ".codex"))
+# Not the CODEX_HOME variable: a worker running on another account has it set, and `codex` must stay `codex` there. An
+# account's directory comes from its configuration (the Paseo provider's env, read in discover_codex_accounts).
+CODEX_HOME = HOME / ".codex"
 CODEX_HOME_2 = Path(os.environ.get("CODEX_HOME_2", HOME / ".codex-2"))
 GROK_HOME = Path(os.environ.get("GROK_HOME", HOME / ".grok"))
 STATE_DIR = usage_cache.state_dir(HOME)
@@ -342,12 +344,12 @@ def discover_codex_accounts() -> dict[str, CodexAccount]:
         if pid == "codex" or acc.home != HOME / f".{pid}" or acc.home.is_dir()
     }
     for pid, spec in _read_paseo_providers().items():
-        if spec.get("enabled") is False or pid in accounts:
+        env = spec.get("env") if isinstance(spec.get("env"), dict) else {}
+        cfg = str(env.get("CODEX_HOME") or "").strip()
+        if spec.get("enabled") is False or (pid in accounts and not (pid == "codex" and cfg)):
             continue
         extends = str(spec.get("extends") or "").strip().lower()
         if pid == "codex" or extends == "codex" or (not extends and pid.startswith("codex-")):
-            env = spec.get("env") if isinstance(spec.get("env"), dict) else {}
-            cfg = str(env.get("CODEX_HOME") or "").strip()
             home = Path(cfg).expanduser() if cfg else (HOME / (".codex" if pid == "codex" else f".{pid}"))
             accounts[pid] = CodexAccount(pid, pid, home)
             PROVIDER_LABELS.setdefault(pid, str(spec.get("label") or pid.replace("-", " ").title()).strip())
@@ -516,6 +518,8 @@ class ProviderUsage:
     home: str | None = None
     # Sanitized native quota provenance/units, never credentials or account IDs.
     usage_details: dict[str, Any] | None = None
+    error_status: int | None = None
+    error_code: str | None = None
 
 
 def claude_magpie_source(provider_id: str):
@@ -539,6 +543,13 @@ def provider_credential_key(provider_id: str) -> str | None:
         home = claude_account_home(provider_id)
         oauth, _ = read_claude_oauth(home)
         token = (oauth or {}).get("accessToken")
+    elif provider_id == "pi":
+        home = _pi_agent_home()
+        auth, _ = read_pi_codex_auth(home)
+        tokens = (auth or {}).get("tokens") or {}
+        token = str(tokens.get("access_token") or '') + ':' + str(tokens.get("account_id") or '')
+        if not tokens.get("access_token"):
+            token = None
     else:
         codex_accounts = discover_codex_accounts()
         if provider_id in codex_accounts:
@@ -586,6 +597,10 @@ def _provider_to_dict(p: ProviderUsage) -> dict[str, Any]:
         out["billing"] = p.billing
     if p.home:
         out["home"] = p.home
+    if p.error_status is not None:
+        out["error_status"] = p.error_status
+    if p.error_code is not None:
+        out["error_code"] = p.error_code
     return out
 
 
@@ -629,6 +644,8 @@ def _provider_from_dict(d: dict[str, Any]) -> ProviderUsage:
         billing=d.get("billing"),
         home=d.get("home"),
         usage_details=d.get("usage_details") if isinstance(d.get("usage_details"), dict) else None,
+        error_status=d.get("error_status") if isinstance(d.get("error_status"), int) and not isinstance(d.get("error_status"), bool) else None,
+        error_code=d.get("error_code") if isinstance(d.get("error_code"), str) else None,
     )
 
 
@@ -690,15 +707,52 @@ def display_snapshot(provider_id: str) -> ProviderUsage | None:
     return item
 
 
-def mark_provider_stale(provider_id: str, error: str) -> None:
+def provider_error_code(payload: Any) -> str | None:
+    """A provider's machine-readable error code. Its free-form text is never kept."""
+    if not isinstance(payload, dict):
+        return None
+    candidates = [payload.get('error'), payload.get('code')]
+    for block in (payload.get('error'), payload.get('detail')):
+        if isinstance(block, dict):
+            candidates[:0] = [block.get('code'), block.get('type')]
+    return next((value.lower() for value in candidates
+                 if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', value)), None)
+
+
+def mark_provider_stale(provider_id: str, error: str, status: int | None = None, code: str | None = None,
+                        plan: str | None = None) -> None:
+    key = provider_credential_key(provider_id)
+    now_iso = datetime.now(timezone.utc).isoformat()
     def update(cache):
-        row = (cache.get('providers') or {}).get(provider_id)
-        if isinstance(row, dict):
-            if row.get('credential_key') != provider_credential_key(provider_id):
-                cache['providers'].pop(provider_id, None)
+        providers = cache.setdefault('providers', {})
+        row = providers.get(provider_id)
+        if isinstance(row, dict) and row.get('credential_key') != key:
+            providers.pop(provider_id, None)
+            row = None
+        if not isinstance(row, dict):
+            if status is None and code is None and plan is None and key is not None:
                 return
-            row['stale'] = True
-            row['error'] = error
+            row = {
+                'provider_id': provider_id,
+                'display_name': provider_id,
+                'plan_label': plan,
+                'windows': [],
+                'error': error,
+                'available': False,
+                'stale': True,
+                'fetched_at': None,
+                'error_at': now_iso,
+                'credential_key': key,
+            }
+            providers[provider_id] = row
+        if not row.get('error_at') or not row.get('stale') or status in (401, 402, 403) or code:
+            row['error_at'] = now_iso
+        row['stale'] = True
+        row['error'] = error
+        # What the provider itself said, for provider_inventory; a good reading replaces the whole row.
+        row['error_status'], row['error_code'] = (status if status and status != 200 else None), code
+        if plan:
+            row['plan_label'] = plan
     update_usage_cache(update)
 
 
@@ -902,10 +956,15 @@ def display_fallback(
 
 def stale_provider_usage(
     provider_id: str, error: str, previous: Iterable[ProviderUsage] = (),
+    status: int | None = None, code: str | None = None, plan: str | None = None,
 ) -> ProviderUsage:
     cached = display_fallback(provider_id, error, previous)
+    cached.error_status = status or None
+    cached.error_code = code
+    if plan:
+        cached.plan_label = plan
     try:
-        mark_provider_stale(provider_id, error)
+        mark_provider_stale(provider_id, error, status, code, plan)
     except Exception:
         pass  # Cache contention must not defeat presentation fallback.
     return cached
@@ -995,7 +1054,7 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
 
     if status != 200 or not isinstance(payload, dict):
         error = _tr("登录凭据需由 Claude Code 更新", 'Login credentials must be updated by Claude Code') if status in (401, 403) else "更新失败"
-        return stale_provider_usage(provider_id, error)
+        return stale_provider_usage(provider_id, error, status=status, code=provider_error_code(payload))
 
     windows: list[UsageWindow] = []
     five = payload.get("five_hour") or {}
@@ -1154,7 +1213,7 @@ def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
         return stale_provider_usage(account.provider_id, _tr('登录凭据已变化，等待下次更新', 'Login credentials changed; waiting for the next update'))
     if status != 200 or not isinstance(payload, dict):
         error = _tr("登录凭据需由 Codex 更新", 'Login credentials must be updated by Codex') if status in (401, 403) else "更新失败"
-        return stale_provider_usage(account.provider_id, error)
+        return stale_provider_usage(account.provider_id, error, status=status, code=provider_error_code(payload))
 
     rate = payload.get("rate_limit") or {}
     # Preserve both constraints for the router; primary is not always weekly.
@@ -1171,7 +1230,7 @@ def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
             used_pct=float(used), resets_at=_iso_timestamp(window.get('reset_at')),
         ))
     if not windows:
-        return stale_provider_usage(account.provider_id, "更新失败")
+        return stale_provider_usage(account.provider_id, "更新失败", plan=str(payload.get("plan_type") or "") or None)
     result = ProviderUsage(
         provider_id=account.provider_id,
         display_name=account.display_name,
@@ -1801,7 +1860,7 @@ def fetch_antigravity_usage() -> ProviderUsage:
         if match is None or tuple(map(int, match.groups())) < (1, 1, 11):
             raise ValueError("Antigravity CLI 1.1.11 or later is required")
     except Exception:
-        return ProviderUsage("antigravity", "agy", available=False, error="更新失败")
+        return stale_provider_usage("antigravity", "更新失败")
 
     usage_args = ["-p", "/usage", "--output-format", "json"]
     for attempt in range(2):
@@ -1813,10 +1872,7 @@ def fetch_antigravity_usage() -> ProviderUsage:
             if attempt == 0:
                 time.sleep(ANTIGRAVITY_USAGE_RETRY_SECONDS)
                 continue
-            cached = cache_get_provider("antigravity")
-            if cached is not None:
-                return cached
-            return ProviderUsage("antigravity", "agy", available=False, error="更新失败")
+            return stale_provider_usage("antigravity", "更新失败")
     result = ProviderUsage(
         "antigravity", "agy", windows=windows,
         fetched_at=datetime.now(timezone.utc).isoformat(),
@@ -2380,7 +2436,7 @@ def fetch_api_proxy_usage(provider_id: str = "api-proxy") -> ProviderUsage:
 
 
 def _pi_agent_home() -> Path:
-    return Path(os.environ.get("PI_CODING_AGENT_DIR") or HOME / ".pi" / "agent")
+    return Path(claude_account_paseo_env("pi").get("PI_CODING_AGENT_DIR") or HOME / ".pi" / "agent")
 
 
 def read_pi_codex_auth(pi_home: Path | None = None) -> tuple[dict[str, Any] | None, Path | None]:
@@ -2430,12 +2486,12 @@ def fetch_pi_usage(provider_id: str = "pi") -> ProviderUsage:
     home = _pi_agent_home()
     pi_auth, auth_path = read_pi_codex_auth(home)
     if not pi_auth:
-        return ProviderUsage(provider_id, provider_id, available=False, error="更新失败")
+        return stale_provider_usage(provider_id, "更新失败")
     tokens = pi_auth.get("tokens") or {}
     access_token = str(tokens.get("access_token") or "").strip()
     account_id = str(tokens.get("account_id") or "").strip()
     if not access_token:
-        return ProviderUsage(provider_id, provider_id, available=False, error="更新失败")
+        return stale_provider_usage(provider_id, "更新失败")
     headers = {"Authorization": f"Bearer {access_token}"}
     if account_id:
         headers["ChatGPT-Account-Id"] = account_id
@@ -2456,10 +2512,8 @@ def fetch_pi_usage(provider_id: str = "pi") -> ProviderUsage:
             headers["Authorization"] = f"Bearer {access_token}"
             status, data = http_json(CODEX_USAGE_URL, headers=headers)
     if status != 200 or not isinstance(data, dict):
-        cached = cache_get_provider(provider_id)
-        if cached is not None:
-            return cached
-        return ProviderUsage(provider_id, provider_id, available=False, error="更新失败")
+        error = _tr("登录凭据需由 Pi 更新", "Login credentials must be updated by Pi") if status in (401, 403) else "更新失败"
+        return stale_provider_usage(provider_id, error, status=status, code=provider_error_code(data))
     rl = data.get("rate_limit") or {}
     windows: list[UsageWindow] = []
     if isinstance(rl.get("secondary_window"), dict):
@@ -2482,6 +2536,8 @@ def fetch_pi_usage(provider_id: str = "pi") -> ProviderUsage:
                 resets_at=_iso_timestamp(w.get("reset_at")),
             )
         )
+    if not windows:
+        return stale_provider_usage(provider_id, "更新失败", plan=str(data.get("plan_type") or "") or None)
     result = ProviderUsage(
         provider_id=provider_id,
         display_name=provider_id,
@@ -2842,7 +2898,10 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                     item.credential_key = key
                     cache_put_provider(item)
                 elif item.error or item.stale or not item.available:
-                    item = stale_provider_usage(pid, item.error or '更新失败', [item, cached])
+                    item = stale_provider_usage(
+                        pid, item.error or '更新失败', [item, cached],
+                        status=item.error_status, code=item.error_code, plan=item.plan_label,
+                    )
                 out.append(item)
         except TimeoutError:
             # The other process owns this fetch; don't overwrite its result.

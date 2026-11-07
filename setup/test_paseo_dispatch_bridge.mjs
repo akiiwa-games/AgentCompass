@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
-  creationFailureClass, creationRecord} from './paseo_dispatch_bridge.mjs';
+  creationFailureClass, creationRecord, subscriptionLapsed} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -821,6 +821,19 @@ test('the notifier keeps its first terminal sighting and the receipt reports it'
     if (previous === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = previous;
     fs.rmSync(stateDir, {recursive: true, force: true});
   }
+});
+
+test('a lapsed subscription gets its own class: structured fields decide, a model refusal does not lapse the account', () => {
+  assert.equal(creationFailureClass({error: 'Your subscription has expired'}), 'subscription_inactive');
+  assert.equal(creationFailureClass({error: 'whatever', errorCode: 'payment_required'}), 'subscription_inactive');
+  assert.equal(creationFailureClass({error: 'whatever', statusCode: 402}), 'subscription_inactive');
+  assert.notEqual(creationFailureClass({error: 'Your subscription has expired', errorCode: 'quota_exceeded'}), 'subscription_inactive');
+  assert.notEqual(creationFailureClass({error: 'Your plan does not include this model'}), 'subscription_inactive');
+  assert.equal(subscriptionLapsed(undefined, undefined, 'The model is not available on your plan'), false);
+  const projected = project({id: 'x', lastError: 'Your subscription has expired'});
+  assert.equal(projected.lastErrorClass, 'subscription_inactive');
+  assert.equal(JSON.stringify(projected).includes('expired'), false);
+  assert.equal(project({id: 'x', lastError: 'Your plan does not include this model'}).lastErrorClass, undefined);
 });
 
 test('a definitive create failure carries a fixed failure class, never the SDK text', () => {

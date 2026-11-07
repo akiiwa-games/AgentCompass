@@ -770,12 +770,18 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if snapshot.get('status') == 'error':
             updated_error = snapshot.get('updatedAt')
             if isinstance(updated_error, str) and parse(updated_error) >= parse(row['launched_at']):
+                import account_state
                 import quota_exhaustion
                 try:
                     quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
                                             windows=bundle_windows(row['bundle']), at=updated_error, source=agent_id)
                 except OSError:
                     pass  # Best effort: a busy store must not stop this observation or the reconcile that made it.
+                try:
+                    account_state.record_launch_error(row['bundle']['account'], snapshot.get('lastError'),
+                                                      code=snapshot.get('lastErrorClass'), at=updated_error, source=agent_id)
+                except OSError:
+                    pass
         if row['state'] in TERMINAL and row['state'] != 'expired':
             return row
         if row['state'] == 'prepared':
@@ -833,11 +839,16 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             event(row, target, now)
         save(connection, row)
     if target in ('started', 'completed'):
+        import account_state
         import launch_failures
         try:
             launch_failures.clear(row['bundle'].get('account'))
         except OSError:
             pass  # Best effort, and this observation is already saved.
+        try:
+            account_state.clear_latch(row['bundle'].get('account'), launched_at=row.get('launched_at') or row.get('created_at'))
+        except OSError:
+            pass
     return row
 
 

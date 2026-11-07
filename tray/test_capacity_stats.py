@@ -357,6 +357,42 @@ class MeasureTests(Fixture):
         series[-1][3] = T0 + 6 * HOUR                                          # re-confirmed since: still current
         self.assertEqual(cs.rate_in(series, T0 + 6 * HOUR + 60, 6), 1.0)
 
+    def test_a_rate_is_not_carried_across_a_plan_change(self):
+        """Pro at 89% became Plus at 100%: the jump is the allowance shrinking, not 0.46%/h of demand."""
+        state = {"usage_samples": {}}
+        series = []
+        cs.add_reading(series, T0, 89, T0 + 86400)
+        cs.note_plan(state, "codex", "pro", T0)
+        self.assertIsNone(cs.plan_changed_at(state, "codex"))
+        cs.note_plan(state, "codex", "Pro", T0 + HOUR)                         # the same plan, reported again
+        self.assertIsNone(cs.plan_changed_at(state, "codex"))
+        cs.add_reading(series, T0 + 2 * HOUR, 100, T0 + 86400)
+        cs.note_plan(state, "codex", "plus", T0 + 2 * HOUR)
+        changed = cs.plan_changed_at(state, "codex")
+        self.assertEqual(changed, T0 + 2 * HOUR)
+        now = T0 + 2 * HOUR + 60
+        self.assertAlmostEqual(cs.rate_in(series, now, 2), 5.5, places=1)      # what the old code reported
+        self.assertIsNone(cs.rate_in(series, now, 2, changed))
+        cs.add_reading(series, T0 + 8 * HOUR, 100, T0 + 86400)
+        self.assertEqual(cs.rate_in(series, T0 + 8 * HOUR + 60, 3, changed), 0.0)  # measured wholly on the new plan
+        self.assertIsNone(cs.rate_in(series, T0 + 8 * HOUR + 60, 24, changed))
+
+    def test_the_plan_is_sampled_from_the_usage_cache(self):
+        def cache(fetched, label):
+            cs.USAGE_CACHE.write_text(json.dumps({"providers": {"codex": {"fetched_at": stamp(fetched), "plan_label": label,
+                "windows": [{"id": "usage", "used_pct": 50.0, "resets_at": stamp(5 * 86400)}]}}}), encoding="utf-8")
+        state = {"schema": cs.SCHEMA, "files": {}, "usage_samples": {}}
+        for fetched, label in ((0, "pro"), (300, "pro"), (600, "plus")):
+            cache(fetched, label)
+            cs.sample_usage_cache(state)
+        self.assertEqual([label for _, label in state["plan_history"]["codex"]], ["pro", "plus"])
+
+    def test_primary_homes_do_not_follow_this_processes_environment(self):
+        with mock.patch.dict("os.environ", {"CODEX_HOME": "elsewhere-codex", "CLAUDE_CONFIG_DIR": "elsewhere-claude"}):
+            found = cs.sources()
+        self.assertEqual(found["codex"]["roots"][0], str(cs.HOME / ".codex" / "sessions"))
+        self.assertEqual(found["claude"]["roots"][0], str(cs.HOME / ".claude" / "projects"))
+
     def test_running_workers_come_from_usage_float_activity_not_another_log_heuristic(self):
         busy = cs.new_entry(Path('a'), 'codex')
         busy['last_t'], busy['last_bundle'] = T0 + 100, 'gpt-6.1-sol/max'
