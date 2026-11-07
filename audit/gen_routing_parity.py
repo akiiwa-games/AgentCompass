@@ -42,7 +42,7 @@ VARIANTS = [
 ]
 PROFILE = {'reasoning_depth': 2, 'code_complexity': 1, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering',
-           'multi_task': False, 'task_count': '1', 'reason': 'parity', 'work_kind': 'general_implementation'}
+           'multi_task': False, 'task_count': '1', 'wants_fast': False, 'read_only_review': False, 'reason': 'parity', 'work_kind': 'general_implementation'}
 TASK_COUNTS = [[False, 1], [True, 2], [True, 3], [True, 4], [True, 9], [True, 2.0], [False, '1'], [True, '>3'],
                [True, 1], [True, '1'], [False, 2], [False, '>3'], [True, 0], [True, -1], [True, 1.5], [True, 'nan'],
                [True, 'inf'], [True, 'many'], [True, None], [True, '4'], [True, True], ['yes', 2]]
