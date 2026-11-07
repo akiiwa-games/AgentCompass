@@ -489,14 +489,35 @@ class DispatchTests(unittest.TestCase):
     def test_reuse_needs_overlap_with_the_new_brief(self):
         import argparse
         import roll
-        worker = {'agent_id': 'agent-review', 'task_ids': ['roll-old'], 'brief_paths': [],
-                  'titles': ['Independent review: s01-telegram fix (b)'], 'updated_at': self.now.isoformat()}
+        for banned in ('_MATCH_STOP_WORDS', '_match_tokens'):
+            self.assertFalse(hasattr(roll, banned), f'{banned} must be removed from roll')
+        worker = {'agent_id': 'agent-review', 'task_ids': ['roll-old'], 'brief_paths': ['/tmp/step1.md'],
+                  'chain_ids': ['chain-1'], 'titles': ['Independent review: s01-telegram fix (b)'],
+                  'updated_at': self.now.isoformat()}
         args = argparse.Namespace(new_worker=False, resume=None, task_id='roll-new', title=None)
-        task = {'task_id': 'roll-new', 'brief_path': None}
-        self.assertIsNone(roll.match_reusable_worker(args, task, '# Weekly storage scan', 'parent-a', workers=[worker]))
-        matched = roll.match_reusable_worker(args, task, '# Telegram fix: second review round', 'parent-a',
-                                             workers=[worker])
-        self.assertEqual(matched['agent_id'], 'agent-review')
+        task = {'task_id': 'roll-new', 'brief_path': '/tmp/step1-rev.md'}
+        # Stem overlap ('step1' vs 'step1-rev') and title word overlap ('telegram', 'fix', 'review') never match
+        self.assertIsNone(roll.match_reusable_worker(args, task, '# Telegram fix: second review round', 'parent-a',
+                                                     workers=[worker]))
+        # Exact task_id matches
+        by_tid = roll.match_reusable_worker(
+            argparse.Namespace(new_worker=False, resume=None, task_id='roll-old', title=None),
+            {'task_id': 'roll-old', 'brief_path': None}, '# Any text', 'parent-a', workers=[worker])
+        self.assertEqual(by_tid['agent_id'], 'agent-review')
+        # Exact brief_path matches
+        by_brief = roll.match_reusable_worker(
+            args, {'task_id': 'roll-new', 'brief_path': '/tmp/step1.md'}, '# Any text', 'parent-a', workers=[worker])
+        self.assertEqual(by_brief['agent_id'], 'agent-review')
+        # Explicit dispatch chain matches
+        by_chain = roll.match_reusable_worker(
+            args, {'task_id': 'roll-new', 'brief_path': None, 'chain': 'chain-1'}, '# Any text', 'parent-a',
+            workers=[worker])
+        self.assertEqual(by_chain['agent_id'], 'agent-review')
+        # Explicit --resume matches
+        by_resume = roll.match_reusable_worker(
+            argparse.Namespace(new_worker=False, resume='agent-review', task_id='roll-new', title=None),
+            task, '# Any text', 'parent-a', workers=[worker])
+        self.assertEqual(by_resume['agent_id'], 'agent-review')
 
     def test_a_review_never_goes_back_to_a_worker_that_wrote_the_code(self):
         import roll
@@ -520,7 +541,12 @@ class DispatchTests(unittest.TestCase):
             'profiles': [review_prof],
             'read_only_review': True,
         }
-        self.assertEqual([w['agent_id'] for w in roll.independent_reviewers([implementer, reviewer])],
+        unclassified = {
+            'agent_id': 'agent-unknown',
+            'titles': ['Unclassified worker'],
+            'profiles': [],
+        }
+        self.assertEqual([w['agent_id'] for w in roll.independent_reviewers([implementer, reviewer, unclassified])],
                          ['agent-review'])
 
     def test_definitive_create_failure_cools_the_account_down_and_a_start_clears_it(self):
@@ -1471,7 +1497,9 @@ class RollTests(unittest.TestCase):
         codex_task = {**self.task, 'task_id': 'task-normal-1', 'work_kind': 'general_implementation',
                       'profile': {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                                   'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': False, 'needs_gui': False,
-                                  'local_only': True, 'interaction_style': 'engineering', 'reason': 'test'}}
+                                  'local_only': True, 'wants_fast': False, 'read_only_review': False,
+                                  'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                                  'reason': 'test'}}
         normal_plan = allocator.plan(codex_task, codex_usage, self.now, accounts=self.accounts)
         self.assertEqual(normal_plan['choice'], 'sol_high')
         normal_dec = registry.issue(dict(normal_plan, stage='plan'), codex_task, self.now)
@@ -1537,8 +1565,16 @@ class RollTests(unittest.TestCase):
             self.assertEqual((code1, res1['launched'], res1['worker']['state']), (0, True, 'completed'))
             self.assertEqual([op for op, _, _ in operations], ['create', 'observe'])
 
+            # A different brief path with stem/token overlap ('step1-rev.md') does NOT auto-resume without --resume
             operations.clear()
-            res2, code2 = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+            res_unmatched, code_unmatched = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+            self.assertEqual((code_unmatched, res_unmatched['launched']), (0, True))
+            self.assertEqual(operations[0][0], 'create')
+            self.assertFalse(res_unmatched['worker'].get('resumed', False))
+
+            # Explicit --resume (or exact brief_path/task_id) resumes the worker
+            operations.clear()
+            res2, code2 = roll.run(argparse.Namespace(brief=b2, **{**base_args, 'resume': 'agent-fixture'}), judge)
             self.assertEqual((code2, res2['launched'], res2['worker']['state']), (0, True, 'completed'))
             self.assertEqual(operations[0][:2], ('resume', 'agent-fixture'))
             self.assertTrue(res2['worker'].get('resumed'))
@@ -1555,9 +1591,9 @@ class RollTests(unittest.TestCase):
             self.assertEqual(once, twice)
             self.assertEqual(twice.count('Parent session agent ID: `parent-a`.'), 1)
 
-            # --new-worker forces a fresh create even when an idle worker is available
+            # --new-worker forces a fresh create even when brief_path matches
             operations.clear()
-            res3, code3 = roll.run(argparse.Namespace(brief=b3, **{**base_args, 'new_worker': True}), judge)
+            res3, code3 = roll.run(argparse.Namespace(brief=b1, **{**base_args, 'new_worker': True}), judge)
             self.assertEqual((code3, res3['launched']), (0, True))
             self.assertEqual(operations[0][0], 'create')
             self.assertFalse(res3['worker'].get('resumed', False))
@@ -1590,9 +1626,7 @@ class RollTests(unittest.TestCase):
         import argparse
         import roll
         b1 = self.root / 'turn1.md'
-        b2 = self.root / 'turn2.md'
         b1.write_text('# Turn 1: Heavy exploration\n', encoding='utf-8')
-        b2.write_text('# Turn 2: Continue exploration\n', encoding='utf-8')
         judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
                                    'usage_snapshot': staticmethod(lambda _: self.usage),
                                    'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
@@ -1611,7 +1645,11 @@ class RollTests(unittest.TestCase):
             roll.run(argparse.Namespace(brief=b1, **base_args), judge)
             operations.clear()
             with patch.object(allocator, 'session_state', return_value=worn_state):
-                res2, code2 = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+                # Explicit --resume on a worn worker must raise ValueError rather than silently creating a new worker
+                with self.assertRaisesRegex(ValueError, '--resume'):
+                    roll.run(argparse.Namespace(brief=b1, **{**base_args, 'resume': 'agent-worn'}), judge)
+                # Automatic reuse via exact brief_path rotates to a fresh worker
+                res2, code2 = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
             self.assertEqual((code2, res2['launched']), (0, True))
             self.assertEqual(operations[0][0], 'create')
             self.assertFalse(res2['worker'].get('resumed', False))
@@ -1653,12 +1691,8 @@ class RollTests(unittest.TestCase):
         import roll
         b1a = self.root / 'brief-step1a.md'
         b1b = self.root / 'brief-step1b.md'
-        b1a_rev = self.root / 'brief-step1a-rev.md'
-        b1b_rev = self.root / 'brief-step1b-rev.md'
         b1a.write_text('# Step 1A: Refactor auth module\n', encoding='utf-8')
         b1b.write_text('# Step 1B: Refactor storage module\n', encoding='utf-8')
-        b1a_rev.write_text('# Step 1A-Rev: Fix auth review findings\n', encoding='utf-8')
-        b1b_rev.write_text('# Step 1B-Rev: Fix storage review findings\n', encoding='utf-8')
         judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
                                    'prefetch_scores': staticmethod(lambda tasks, timeout: None),
                                    'usage_snapshot': staticmethod(lambda _: self.usage),
@@ -1678,11 +1712,94 @@ class RollTests(unittest.TestCase):
             self.assertEqual([(op, aid) for op, aid, _ in operations], [('create', 'worker-1a'), ('create', 'worker-1b')])
 
             operations.clear()
-            # Roll revision briefs in reverse order to prove matching by step tag rather than mere recency
-            r2, c2 = roll.run_batch(argparse.Namespace(brief=[b1a_rev, b1b_rev], **batch_args), judge)
+            # Re-rolling the exact brief_paths in reverse order resumes each matching worker without collision
+            r2, c2 = roll.run_batch(argparse.Namespace(brief=[b1b, b1a], **batch_args), judge)
             self.assertEqual(c2, 0)
-            self.assertEqual([(op, aid) for op, aid, _ in operations], [('resume', 'worker-1a'), ('resume', 'worker-1b')])
+            self.assertEqual([(op, aid) for op, aid, _ in operations], [('resume', 'worker-1b'), ('resume', 'worker-1a')])
             self.assertTrue(all(item['worker'].get('resumed') for item in r2['results']))
+
+    def test_review_independence_and_explicit_resume_and_blocked_status(self):
+        import argparse
+        import roll
+        # m9: empty --local-only is rejected
+        ns_empty = argparse.Namespace(brief=None, task='Do work', file=[], apply_to=None, local_only='   ',
+                                      keep_whole=None, hours=1.0, title=None, workspace=None, task_id='t-1',
+                                      fast=False, resume=None, new_worker=False)
+        with self.assertRaisesRegex(ValueError, '--local-only'):
+            roll.build_task(ns_empty, 'Do work', {'id': 'p-1'})
+
+        # m5: scorer_unavailable maps to status='blocked' and reason='scorer_unavailable' in both full and compact output
+        judge_blocked = type('Judge', (), {
+            'plan_stage': staticmethod(lambda doc, _: (
+                {'stage': 'plan', 'status': 'blocked', 'choice': 'none', 'error': 'scorer_unavailable',
+                 'scorer': {'source': 'scorer_unavailable', 'fallback_reason': 'no_classifier_available'}}, 2)),
+            'usage_snapshot': staticmethod(lambda _: self.usage),
+        })
+        ns = argparse.Namespace(brief=None, task='Do work', file=[], apply_to=None, local_only='local daemon',
+                                keep_whole=None, hours=1.0, title=None, workspace=None, task_id='t-blocked',
+                                wait=0, parent_id='parent-a', parent_host=None, parent_address=None,
+                                provider=None, account=None, model=None, effort=None, basis=None,
+                                usage_cache=None, dry_run=False, verbose=True, fast=False,
+                                resume=None, new_worker=False, no_score=False)
+        with patch.object(roll, 'resolve_parent', return_value=('parent-a', 'paseo', 'parent-a')):
+            res_b, code_b = roll.run(ns, judge_blocked)
+            self.assertEqual((code_b, res_b['status'], res_b['reason'], res_b['error']),
+                             (2, 'blocked', 'scorer_unavailable', 'scorer_unavailable'))
+            comp = roll.compact(res_b, res_b['status'], None)
+            self.assertEqual((comp['status'], comp['reason'], comp['error']),
+                             ('blocked', 'scorer_unavailable', 'scorer_unavailable'))
+
+        # m7: prepare() does not copy implementer chain_id onto a fresh read-only review worker
+        review_task = dict(self.task, task_id='t-review', chain={'id': 'chain-impl-1', 'worker': {'agent_id': 'agent-impl', 'bundle': 'lab_sonnet55_high', 'read_only_review': False}}, profile={
+            'work_kind': 'debug_review', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1,
+            'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': False, 'needs_gui': False,
+            'local_only': True, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': True,
+            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reason': 'review'})
+        review_dec = registry.issue({'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
+                                     'decision': {'action': 'start'}}, review_task, self.now)
+        rev_row = registry.prepare(review_dec['decision_id'], review_task, self.launch, self.usage,
+                                   accounts=self.accounts, now=self.now, resume_agent_id=None)
+        self.assertIsNone(rev_row.get('chain_id'))
+        registry.claim(rev_row['request'], now=self.now)
+        registry.observe(rev_row['dispatch_id'], self.snapshot(rev_row, 'idle', attentionReason='finished'), now=self.now)
+
+        # M1 & m6: named-model review rejects explicit --resume of an implementer worker
+        impl_worker = {'agent_id': 'agent-impl', 'task_ids': ['t-impl'], 'brief_paths': [],
+                       'chain_id': 'chain-impl-1', 'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
+                       'profiles': [{'work_kind': 'general_implementation', 'code_complexity': 2, 'read_only_review': False}],
+                       'read_only_review': False, 'bundle_id': 'lab_sonnet55_high',
+                       'bundle': self.bundle}
+        review_prof = dict(review_task['profile'])
+        def fake_record_constraint(a, t):
+            t['profile'] = review_prof
+            base_dec = {'stage': 'record', 'choice': 'lab_sonnet55_high', 'constraint': 'user_override',
+                        'basis': a.basis, 'task_profile': review_prof, 'selected_bundle': self.bundle}
+            return {**base_dec, **registry.issue(base_dec, t, self.now)}
+
+        judge_named = type('Judge', (), {
+            'record_constraint': staticmethod(fake_record_constraint),
+            'usage_snapshot': staticmethod(lambda _: self.usage),
+        })
+        ns_named_resume = argparse.Namespace(
+            brief=None, task='Review the diff only', file=[], apply_to=None, local_only='local daemon',
+            keep_whole=None, hours=0.5, title=None, workspace=None, task_id='t-impl',
+            wait=0, parent_id='parent-a', parent_host=None, parent_address=None,
+            provider='claude-lab', account='claude-lab', model='claude-sonnet-5-5', effort='high',
+            basis='User asked for Sonnet review', usage_cache=None, dry_run=False, verbose=True,
+            fast=False, resume='agent-impl', new_worker=False, no_score=False)
+        with patch.object(roll, 'resolve_parent', return_value=('parent-a', 'paseo', 'parent-a')), \
+                patch.object(registry, 'pending', return_value=[]), \
+                patch.object(registry, 'reusable_workers', return_value=[impl_worker]), \
+                patch.object(roll.dispatch_flow, 'paseo_reachable', return_value=True), \
+                patch.object(roll.dispatch_flow, 'reconcile'), \
+                patch.object(roll.dispatch_flow, 'launch', return_value={'state': 'running', 'agent_id': 'fresh-rev', 'observed_at': self.now.isoformat()}):
+            with self.assertRaisesRegex(ValueError, 'previously wrote or modified code and cannot be resumed'):
+                roll.run(ns_named_resume, judge_named)
+            # Without explicit --resume, even with matching task_id='t-impl', named-model review does not reuse implementer
+            ns_named_auto = argparse.Namespace(**{**vars(ns_named_resume), 'resume': None})
+            res_auto, code_auto = roll.run(ns_named_auto, judge_named)
+            self.assertEqual(code_auto, 0)
+            self.assertFalse(res_auto['worker'].get('resumed'))
 
 
 if __name__ == '__main__':

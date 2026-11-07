@@ -473,6 +473,20 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             accounts['accounts'][bundle['account']]['bundles'][bundle['bundle_id']] = resolved
         # Capacity check and insertion share the same transaction across concurrent parents.
         alloc_task = dict(decision['allocation_task'])
+        profile = (
+            alloc_task.get('profile')
+            if isinstance(alloc_task.get('profile'), dict)
+            else (task.get('profile') if isinstance(task.get('profile'), dict) else None)
+        )
+        read_only_review = (
+            bool(profile.get('read_only_review'))
+            if isinstance(profile, dict) and 'read_only_review' in profile
+            else bool(isinstance(profile, dict) and profile.get('work_kind') == 'debug_review' and profile.get('code_complexity') == 0)
+        )
+        if read_only_review and isinstance(alloc_task.get('chain'), dict):
+            cw = alloc_task['chain'].get('worker')
+            if not resume_agent_id or (isinstance(cw, dict) and cw.get('read_only_review') is False):
+                alloc_task.pop('chain', None)
         if bundle.get('fast') and decision.get('constraint') == 'user_override':
             alloc_task['force_fast'] = True
         elif not bundle.get('fast'):
@@ -503,17 +517,10 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                   'router.account': bundle['account'], 'router.bundle_id': bundle['bundle_id'],
                   'router.request_hash': request_hash}
         request['labels'].update(labels)
-        chain_id = (task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else None
-        profile = (
-            alloc_task.get('profile')
-            if isinstance(alloc_task.get('profile'), dict)
-            else (task.get('profile') if isinstance(task.get('profile'), dict) else None)
+        chain_source = alloc_task if isinstance(alloc_task.get('chain'), dict) else (
+            task if not read_only_review and isinstance(task.get('chain'), dict) else {}
         )
-        read_only_review = (
-            bool(profile.get('read_only_review'))
-            if isinstance(profile, dict) and 'read_only_review' in profile
-            else bool(isinstance(profile, dict) and profile.get('work_kind') == 'debug_review' and profile.get('code_complexity') == 0)
-        )
+        chain_id = (chain_source.get('chain') or {}).get('id') if (resume_agent_id or not read_only_review) else None
         row = {'dispatch_id': dispatch_id, 'decision_id': decision_id,
                'parent_id': decision['parent_id'], 'task_id': decision['task_id'], 'task_hash': decision['task_hash'],
                'request_hash': request_hash, 'request': request, 'bundle': bundle,

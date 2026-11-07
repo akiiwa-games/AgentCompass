@@ -991,15 +991,17 @@ REALTIME_LOOP_QUESTION = (
     'designing a live trading dashboard frontend, diagnosing client loop waits or refresh latency, adding a countdown modal '
     'or live chat component, fixing flash-sale page CSS, analyzing game/AFK logs, or a one-off GUI click/setting toggle).')
 WANTS_FAST_QUESTION = (
-    'True ONLY when the assignment affirmatively requests fast mode, priority service tier, or urgent/ASAP turnaround '
-    'for the task itself, and does not negate or opt out of fast mode (e.g. "do not use fast mode", "no fast mode", or '
-    '"not urgent" -> false). False for action adverbs inside runtime steps (e.g. "click Save immediately when the button '
-    'appears") or ordinary tasks without an explicit speed/fast request.')
+    'True ONLY when the assignment affirmatively requests fast mode, priority service tier, urgent/ASAP turnaround, '
+    'or a pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") for the task itself, '
+    'and does not negate or opt out of fast mode (e.g. "do not use fast mode", "no fast mode", or "not urgent" -> '
+    'false). False for action adverbs inside runtime steps (e.g. "click Save immediately when the button appears"), '
+    'ordinary mentions of quota/reset without requesting fast execution, or ordinary tasks without an explicit speed/fast request.')
 READ_ONLY_REVIEW_QUESTION = (
     'True ONLY when the assignment is a read-only code, diff, branch, security, or release review/audit that inspects '
-    'existing material and reports findings without writing or modifying repository code (code_complexity = 0). False '
-    'when the worker implements, fixes, or refactors code (including fixing issues found by a prior review), runs '
-    'operational/release commands, or performs general exploration/research that is not a code/diff/release audit.')
+    'existing material and reports findings without writing or modifying repository production/test code (code_complexity = 0, '
+    'even if the reviewer saves its review report file to a specified output path). False when the worker implements, '
+    'fixes, or refactors code (including fixing issues found by a prior review), runs operational/release commands, '
+    'or performs general exploration/research that is not a code/diff/release audit.')
 DEPTH_BY_DIFFICULTY = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 4}
 DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
 HARD_BY_DEFAULT = ('debug_review', 'general_implementation', 'frontend_implementation', 'computer_use',
@@ -1032,10 +1034,11 @@ TASK_PROFILE_SCHEMA = {
             'line; 4 = frontier mathematical, strategic or architectural critique and formulation.')},
         'code_complexity': {'type': 'integer', 'minimum': 0, 'maximum': 3, 'description': (
             'Production code the worker itself writes or modifies (NOT the complexity of code being read or reviewed). '
-            '0 = none: ANY read-only code/release/diff review, independent audit, diagnosis that only proposes, running '
-            'existing CLI/release/test commands, log or data exploration, text drafting; 1 = a small script, config/constant '
-            'tweak, localized helper, or analysis scripts inside a research packet; 2 = a production module implemented, '
-            'fixed or refactored with its unit tests; 3 = complex multi-module, concurrency, protocol or core-library changes.')},
+            '0 = none: ANY read-only code/release/diff review or independent audit (even when saving a review report file '
+            'to a specified path), diagnosis that only proposes, running existing CLI/release/test commands, log or data '
+            'exploration, text drafting; 1 = a small script, config/constant tweak, localized helper, or analysis scripts '
+            'inside a research packet; 2 = a production module implemented, fixed or refactored with its unit tests; '
+            '3 = complex multi-module, concurrency, protocol or core-library changes.')},
         'context_scale': {'type': 'integer', 'minimum': 1, 'maximum': 3, 'description': (
             'Functional scope of the code or system that must be understood, NOT the number of paths the brief mentions. '
             'Ignore boilerplate: role docs, AGENTS.md, skill/README/runbook docs, prior reports or reviews to read, receipt/'
@@ -1078,7 +1081,7 @@ TASK_PROFILE_SCHEMA = {
             'are not; low = guess.')},
         'urgency': {'type': 'string', 'enum': list(URGENCY_LEVELS), 'description': (
             'unknown unless the text itself states a deadline, an incident or "asap"; then high/normal/low. Never infer urgency '
-            'from topic or tone. Shown in the result so the caller can see it; it never changes the owner, the effort or fast mode.')},
+            'from topic or tone. Shown in the result so the caller can see it; fast mode is controlled by wants_fast or --fast, not urgency.')},
         'multi_task': {'type': 'boolean', 'description': MULTI_TASK_QUESTION},
         'task_count': {'type': 'string', 'enum': list(TASK_COUNTS), 'description': TASK_COUNT_QUESTION},
     },
@@ -1121,7 +1124,7 @@ def default_divergence(kind=None, style=None):
 
 
 def validate_profile(raw):
-    """A task profile with every field checked, or ValueError. `reason`, `work_kind`, `divergence`, `realtime_loop`, `wants_fast`, and `read_only_review` may be omitted in legacy fixtures."""
+    """A task profile with every field checked, or ValueError. `reason`, `work_kind`, `divergence`, and `realtime_loop` may be omitted in legacy fixtures."""
     if not isinstance(raw, dict):
         raise ValueError('task.profile must be an object')
     profile = {}
@@ -1139,11 +1142,15 @@ def validate_profile(raw):
             raise ValueError(f'task.profile.{name} must be an integer from {low} to {high}')
         profile[name] = value
     for name in PROFILE_FLAGS:
-        if name in ('realtime_loop', 'wants_fast', 'read_only_review') and name not in raw:
+        if name == 'realtime_loop' and name not in raw:
             continue
         if not isinstance(raw.get(name), bool):
             raise ValueError(f'task.profile.{name} must be true or false')
         profile[name] = raw[name]
+    if profile.get('read_only_review') is True and profile.get('code_complexity') != 0:
+        raise ValueError(
+            f"task.profile.read_only_review true contradicts task.profile.code_complexity {profile.get('code_complexity')!r} (must be 0)"
+        )
     # The hours/urgency estimate is optional: legacy fixtures and scorers that cannot produce it (Jev) leave it out.
     hours = raw.get('expected_hours')
     if hours is not None:
@@ -2310,7 +2317,11 @@ def evaluate_bundle(bundle, task, ctx):
 
     worker = task['worker']
     worn = worker_worn(worker, policy)
-    resumes = bool(worker) and worker.get('bundle') == bundle['id']
+    resumes = (
+        bool(worker)
+        and worker.get('bundle') == bundle['id']
+        and not (task.get('read_only_review') and worker.get('read_only_review') is False)
+    )
     context_extra = 0.0
     if resumes:
         carried = worker_historical_tokens(worker)

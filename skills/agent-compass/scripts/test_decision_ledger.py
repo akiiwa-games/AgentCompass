@@ -38,7 +38,8 @@ class DecisionLedgerTests(unittest.TestCase):
             'objective': 'Fix the pagination bug', 'work_kind': 'general_implementation', 'expected_hours': 1,
             'needs': {'local_only': True},
             'profile': {'reasoning_depth': 3, 'code_complexity': 2, 'context_scale': 2, 'hallucination_risk': 2, 'error_cost': 2,
-                        'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering',
+                        'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
+                        'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering',
                         'reason': 'private reasoning'}}}), encoding='utf-8')
 
     def run_plan(self, *extra):

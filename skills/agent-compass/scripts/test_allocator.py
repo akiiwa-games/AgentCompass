@@ -117,7 +117,8 @@ class AllocatorTests(unittest.TestCase):
 
     def profile(self, **fields):
         base = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'hallucination_risk': 2, 'error_cost': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering'}
+                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                'read_only_review': False, 'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering'}
         return dict(base, **fields)
 
     def unsubscribed(self, account):
@@ -1829,7 +1830,8 @@ class RouterIntegrationTests(unittest.TestCase):
                 'work_kind': 'frontend_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
                 'profile': {'work_kind': 'frontend_implementation', 'reasoning_depth': 1, 'code_complexity': 2,
                             'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
-                            'needs_visual': False, 'needs_gui': False, 'local_only': True,
+                            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                            'read_only_review': False, 'multi_task': False, 'task_count': '1',
                             'interaction_style': 'engineering', 'reason': 'caller profile'}}}), encoding='utf-8')
             profiled = record('User: Flash', 'antigravity-resilient', 'antigravity', 'gemini-3.8-flash-high', 'high')
             self.assertEqual((profiled['classifier_skipped'], profiled['agrees'], profiled['router_choice']),
@@ -2122,6 +2124,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1,
             'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
             'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+            'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
             'interaction_style': 'engineering',
         }
         validated = allocator.validate_profile(good)
@@ -2202,6 +2205,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1,
                     'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
                     'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                     'interaction_style': 'engineering',
                 }},
                 policy, capabilities, base_accounts,
@@ -2299,6 +2303,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
             'hallucination_risk': 2, 'error_cost': 2,
             'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+            'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
             'interaction_style': 'engineering',
         }
         rt_plan = allocator.plan(
@@ -2354,6 +2359,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 1,
                     'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                     'interaction_style': 'engineering',
                 },
             },
@@ -2397,6 +2403,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 2,
                     'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                     'interaction_style': 'engineering',
                 },
             },
@@ -2408,6 +2415,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 2,
                     'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                     'interaction_style': 'engineering',
                 },
             },
@@ -2442,6 +2450,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                         'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                         'hallucination_risk': 2, 'error_cost': 2,
                         'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+                        'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                         'interaction_style': 'engineering',
                     },
                 }
@@ -2596,6 +2605,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 2, 'error_cost': 3,
                     'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
+                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                     'interaction_style': 'engineering',
                 },
             },
@@ -2661,7 +2671,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         prof_rt = {
             'work_kind': 'computer_use', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
             'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
-            'realtime_loop': True, 'interaction_style': 'engineering',
+            'realtime_loop': True, 'wants_fast': False, 'read_only_review': False,
+            'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering',
         }
         norm = allocator.normalize_task(
             {'objective': 'implement polling', 'realtime_loop': False, 'profile': prof_rt},

@@ -226,8 +226,11 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
                work_kind: str | None = None, difficulty: str | None = None, profile: dict | None = None,
                local_only_reason: str | None = None) -> dict:
     allocator, _ = modules()
-    needs = {"visual": bool(needs_visual), "local_only": bool(local_only)}
+    needs = {}
+    if needs_visual:
+        needs["visual"] = True
     if local_only:
+        needs["local_only"] = True
         needs["local_only_reason"] = local_only_reason or _tr("主面板干跑：模拟需要本机资源的任务")
     task = {"objective": objective or "", "expected_hours": float(hours), "needs": needs}
     if work_kind:

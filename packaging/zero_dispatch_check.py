@@ -96,7 +96,8 @@ class ScorerServer:
                 profile = {"multi_task": False, "task_count": "1", "work_kind": "computer_use" if is_rt else "general_implementation",
                            "reasoning_depth": 2, "code_complexity": 0 if is_rt else 1, "context_scale": 1 if is_rt else 2,
                            "divergence": 1, "hallucination_risk": 2, "error_cost": 2, "needs_visual": is_rt, "needs_gui": is_rt,
-                           "local_only": is_rt, "realtime_loop": is_rt, "expected_hours": 0.5, "hours_confidence": "medium",
+                           "local_only": is_rt, "realtime_loop": is_rt, "wants_fast": False, "read_only_review": False,
+                           "expected_hours": 0.5, "hours_confidence": "medium",
                            "urgency": "normal", "interaction_style": "engineering",
                            "reason": "fixture classification of a small bounded edit"}
                 self._send(200, {"choices": [{"message": {"content": json.dumps(profile)}}]})
@@ -795,8 +796,8 @@ def step_quota_and_recovery(z: Zero):
         before_workers = len(z.workers())
         result = z.call(op, "roll", "--task", z.task("ok", marker) + marker + "\n", "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "30")
         doc = parse(result.stdout) or {}
-        op.check(f"[{marker}] it refuses mechanical fallback (status scorer_unavailable) and launches no worker",
-                 doc.get("status") == "scorer_unavailable" and len(z.workers()) == before_workers and "parent" in (doc.get("next_action") or "").lower(),
+        op.check(f"[{marker}] it refuses mechanical fallback (status blocked, reason scorer_unavailable) and launches no worker",
+                 doc.get("status") == "blocked" and doc.get("reason") == "scorer_unavailable" and len(z.workers()) == before_workers and "parent" in (doc.get("next_action") or "").lower(),
                  json.dumps(doc)[:500] + result.stderr[-200:])
 
 

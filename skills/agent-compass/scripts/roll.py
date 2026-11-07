@@ -96,37 +96,16 @@ def build_task(args, text, parent):
             task['brief_path'] = str(Path(args.brief).resolve())
         except OSError:
             task['brief_path'] = str(args.brief)
-    if args.local_only:
-        task['needs'] = {'local_only': True, 'local_only_reason': args.local_only}
+    if getattr(args, 'local_only', None) is not None:
+        local_only_reason = str(args.local_only).strip()
+        if not local_only_reason:
+            raise ValueError('--local-only requires a non-empty reason.')
+        task['needs'] = {'local_only': True, 'local_only_reason': local_only_reason}
     if getattr(args, 'file', None) or getattr(args, 'apply_to', None):
         task.setdefault('needs', {})['file_transfer'] = True
     if getattr(args, 'fast', False):
         task.setdefault('needs', {})['fast'] = True
     return task
-
-
-_MATCH_STOP_WORDS = frozenset({
-    'brief', 'task', 'md', 'txt', 'rev', 'revision', 'round', 'v1', 'v2', 'v3',
-    'followup', 'follow', 'up', 'part', 'the', 'and', 'for', 'in', 'to', 'of',
-    'with', 'on', 'by', 'from', 'new', 'update', 'fix', 'fixes',
-})
-
-
-def _match_tokens(*texts):
-    tokens = set()
-    for raw in texts:
-        if not isinstance(raw, str) or not raw:
-            continue
-        s = raw.lower()
-        for m in re.finditer(r'(?:step|worker|line|track|phase|stage|batch)[\s_-]*([0-9a-z]+)', s):
-            prefix = re.match(r'[a-z]+', m.group(0)).group(0)
-            ident = re.sub(r'(?:rev|v\d+|round\d+)$', '', m.group(1)).strip('_-')
-            if ident:
-                tokens.add(f'{prefix}:{ident}')
-        for tok in re.findall(r'[a-z0-9]{2,}|[\u4e00-\u9fff]{2,}', s):
-            if tok not in _MATCH_STOP_WORDS and not tok.isdigit():
-                tokens.add(tok)
-    return tokens
 
 
 def is_readonly_review_profile(profile):
@@ -143,57 +122,62 @@ def independent_reviewers(workers):
     implemented or fixed the work would be reviewing itself, whatever brief overlap or chain points at it."""
     out = []
     for w in workers:
-        if 'read_only_review' in w:
-            if w.get('read_only_review') is True:
-                out.append(w)
-            continue
         profiles = w.get('profiles') or ([w['profile']] if isinstance(w.get('profile'), dict) else [])
-        if profiles and all(is_readonly_review_profile(p) for p in profiles):
+        if profiles and not all(is_readonly_review_profile(p) for p in profiles):
+            continue
+        if isinstance(w.get('read_only_review'), bool):
+            if w['read_only_review'] is True:
+                out.append(w)
+        elif profiles:
             out.append(w)
     return out
 
 
-def match_reusable_worker(args, task, text, parent, workers=None):
-    """Select the best idle Paseo worker of `parent` for continuation or rotation."""
+def match_reusable_worker(args, task, text=None, parent=None, workers=None):
+    """Select an idle Paseo worker of `parent` only for structured continuation:
+    (1) explicit `--resume <agent_id>`, (2) exact `task_id` or `brief_path` equality, or (3) explicit `task['chain']`."""
+    del text
+    explicit_id = (getattr(args, 'resume', None) or '').strip()
+    if explicit_id and getattr(args, 'new_worker', False):
+        raise ValueError('Cannot combine --resume and --new-worker.')
     if not parent or getattr(args, 'new_worker', False):
         return None
     excluded = set(getattr(args, '_exclude_agents', None) or ())
     workers = [w for w in (registry.reusable_workers(parent) if workers is None else workers)
                if w.get('agent_id') not in excluded]
-    explicit_id = (getattr(args, 'resume', None) or '').strip()
     if explicit_id:
-        matched = next((w for w in workers if w['agent_id'] == explicit_id), None)
+        matched = next((w for w in workers if w.get('agent_id') == explicit_id), None)
         if matched is None:
             raise ValueError(f'Worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}.')
         return matched
-    if not workers:
+    if not workers or not isinstance(task, dict):
         return None
+    raw_chain = task.get('chain')
+    chain = raw_chain if isinstance(raw_chain, dict) else None
+    chain_agent_id = ''
+    chain_id = (task.get('chain_id') or (raw_chain if isinstance(raw_chain, str) else '') or '').strip()
+    if chain:
+        chain_worker = chain.get('worker') if isinstance(chain.get('worker'), dict) else {}
+        chain_agent_id = (chain_worker.get('agent_id') or '').strip()
+        chain_id = (chain.get('id') or chain_id or '').strip()
+    if chain_agent_id:
+        matched = next((w for w in workers if w.get('agent_id') == chain_agent_id), None)
+        if matched is not None:
+            return matched
+    if chain_id:
+        eligible = [((not w.get('worn', False), w.get('updated_at') or ''), w)
+                    for w in workers
+                    if w.get('chain_id') == chain_id or chain_id in (w.get('chain_ids') or ())]
+        if eligible:
+            return max(eligible, key=lambda item: item[0])[1]
     task_id = task.get('task_id')
     brief_path = task.get('brief_path')
-    if not brief_path and not getattr(args, 'task_id', None):
+    if not brief_path and not getattr(args, 'task_id', None) and not task_id:
         return None
-    title = getattr(args, 'title', None) or title_of(text)
-    stem = Path(brief_path).stem if brief_path else ''
-    query_tokens = _match_tokens(stem, title)
-    query_tags = {t for t in query_tokens if ':' in t}
     eligible = []
     for w in workers:
-        if (task_id and task_id in w.get('task_ids', ())) or (brief_path and brief_path in w.get('brief_paths', ())):
-            eligible.append(((not w.get('worn', False), 3, 1.0, w.get('updated_at') or ''), w))
-            continue
-        w_stems = [Path(p).stem for p in w.get('brief_paths', ()) if p]
-        w_tokens = _match_tokens(*w_stems, *w.get('titles', ()))
-        w_tags = {t for t in w_tokens if ':' in t}
-        if query_tags and w_tags:
-            if not (query_tags & w_tags):
-                continue
-            overlap = len(query_tokens & w_tokens) / max(1, len(query_tokens | w_tokens))
-            eligible.append(((not w.get('worn', False), 2, 1.0 + overlap, w.get('updated_at') or ''), w))
-            continue
-        overlap = len(query_tokens & w_tokens) / max(1, len(query_tokens | w_tokens)) if (query_tokens and w_tokens) else 0.0
-        if overlap <= 0:
-            continue  # Same bundle alone is not continuity: an unrelated worker brings only wrong context.
-        eligible.append(((not w.get('worn', False), 2, overlap, w.get('updated_at') or ''), w))
+        if (task_id and task_id in (w.get('task_ids') or ())) or (brief_path and brief_path in (w.get('brief_paths') or ())):
+            eligible.append(((not w.get('worn', False), w.get('updated_at') or ''), w))
     if not eligible:
         return None
     return max(eligible, key=lambda item: item[0])[1]
@@ -213,11 +197,15 @@ def _bundle_matches_worker(bundle, worker):
 
 def summary(decision):
     bundle = decision.get('selected_bundle') or {}
-    return {'choice': decision.get('choice'),
-            'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast', 'fast_billing') if bundle.get(k)},
-            'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
-                       (decision.get('decision') or {}).get('reason') or '')[:300] or None,
-            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn']}
+    out = {'choice': decision.get('choice'),
+           'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast', 'fast_billing') if bundle.get(k)},
+           'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
+                      (decision.get('decision') or {}).get('reason') or '')[:300] or None,
+           'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn']}
+    if decision.get('unclassified'):
+        out['unclassified'] = True
+        out['unclassified_reason'] = decision.get('unclassified_reason')
+    return out
 
 
 def python(script, *argv):
@@ -343,23 +331,48 @@ def grok_bot(args, out, prompt_file, task, bundle):
 def paseo(args, out, decision, task, text, parent, usage, judge=None):
     dispatch_flow.reconcile()
     resume_agent_id = None
-    if not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
+    explicit_id = (getattr(args, 'resume', None) or '').strip()
+    if explicit_id and getattr(args, 'new_worker', False):
+        raise ValueError('Cannot combine --resume and --new-worker.')
+    decision_profile = (
+        decision.get('task_profile')
+        or ((decision.get('decision') or {}).get('task') or {}).get('profile')
+        or task.get('profile')
+    )
+    is_ro_review = is_readonly_review_profile(decision_profile)
+    excluded = set(getattr(args, '_exclude_agents', None) or ())
+    all_reusable = [w for w in registry.reusable_workers(parent) if w.get('agent_id') not in excluded]
+    if explicit_id:
+        explicit_worker = next((w for w in all_reusable if w.get('agent_id') == explicit_id), None)
+        if explicit_worker is None:
+            raise ValueError(f'Worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}.')
+        if is_ro_review and not independent_reviewers([explicit_worker]):
+            raise ValueError(
+                f'Worker {explicit_id!r} previously wrote or modified code and cannot be resumed for an independent '
+                'read-only review; omit --resume to start a fresh reviewer.'
+            )
+        if explicit_worker.get('worn') or (decision.get('decision') or {}).get('action') == 'rotate':
+            raise ValueError(
+                f'Worker {explicit_id!r} reached the context rotation limit and cannot be resumed; '
+                'omit --resume to start a fresh worker.'
+            )
         selected_bundle = decision.get('selected_bundle') or {}
-        excluded = set(getattr(args, '_exclude_agents', None) or ())
-        compatible = [w for w in registry.reusable_workers(parent)
-                      if w.get('agent_id') not in excluded and _bundle_matches_worker(selected_bundle, w)]
-        decision_profile = (
-            decision.get('task_profile')
-            or ((decision.get('decision') or {}).get('task') or {}).get('profile')
-            or task.get('profile')
-        )
-        if is_readonly_review_profile(decision_profile):
+        if not _bundle_matches_worker(selected_bundle, explicit_worker):
+            raise ValueError(
+                f'Worker {explicit_id!r} uses bundle {explicit_worker.get("bundle_id")!r}, which does not match '
+                f'routed bundle {(selected_bundle.get("bundle_id") or selected_bundle.get("id"))!r}; cannot resume it.'
+            )
+        resume_agent_id = explicit_id
+    elif not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
+        selected_bundle = decision.get('selected_bundle') or {}
+        compatible = [w for w in all_reusable if _bundle_matches_worker(selected_bundle, w)]
+        if is_ro_review:
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
                            if isinstance(task.get('chain'), dict) else None)
         if chain_worker_id and any(w['agent_id'] == chain_worker_id for w in compatible):
             resume_agent_id = chain_worker_id
-        elif compatible and not getattr(args, 'resume', None):
+        elif compatible:
             matched = match_reusable_worker(args, task, text, parent, workers=compatible)
             if matched:
                 resume_agent_id = matched['agent_id']
@@ -612,7 +625,9 @@ def status_of(result, code):
         return 'launched'
     if result.get('launched') is None or action in ('check_delivery_do_not_resend', 'run_next_argv'):
         return 'pending'
-    if mode in ('self', 'split', 'scorer_unavailable'):
+    if mode == 'scorer_unavailable' or result.get('error') == 'scorer_unavailable':
+        return 'blocked'
+    if mode in ('self', 'split'):
         return mode
     if mode == 'native':
         return 'native'
@@ -658,10 +673,16 @@ def compact(result, status, detail_path):
         worker_summary['agent_id'] = worker['agent_id']
     if worker_summary and worker.get('resumed'):
         worker_summary['resumed'] = True
+    is_scorer_unavail = result.get('error') == 'scorer_unavailable' or result.get('dispatch_mode') == 'scorer_unavailable'
+    reason_val = 'scorer_unavailable' if is_scorer_unavail else (((result.get('route') or {}).get('reason') or '')[:160] or None)
     out = {'status': status, 'worker': worker_summary or None,
-           'reason': ((result.get('route') or {}).get('reason') or '')[:160] or None, 'next_action': nxt}
-    cause = result.get('error') or worker.get('error') or worker.get('read_error')
-    if cause and status in ('error', 'blocked', 'pending', 'scorer_unavailable'):
+           'reason': reason_val, 'next_action': nxt}
+    if is_scorer_unavail:
+        out['error'] = 'scorer_unavailable'
+        cause = result.get('cause') or ((result.get('route') or {}).get('reason')) or result.get('reason') or 'scorer_unavailable'
+    else:
+        cause = result.get('error') or worker.get('error') or worker.get('read_error')
+    if cause and status in ('error', 'blocked', 'pending'):
         out['cause'] = str(cause)[:300]
     if argv and (status == 'pending' or (status == 'launched' and 'next_argv' in (nxt or ''))):
         out['next_argv'] = argv
@@ -673,6 +694,9 @@ def compact(result, status, detail_path):
         out['task_count'] = result.get('task_count')
     if result.get('assumptions'):
         out['assumptions'] = result['assumptions']
+    if result.get('unclassified'):
+        out['unclassified'] = True
+        out['unclassified_reason'] = result.get('unclassified_reason')
     out['details'] = detail_path
     return {k: v for k, v in out.items() if v is not None}
 
@@ -768,10 +792,7 @@ def _run(args, judge):
                             caller_action='run_next_argv', worker=dict(dispatch_flow.public(row), continuation_argv=argv),
                             next='This task already has a dispatch (state ' + row['state'] + '): run next_argv to observe it; '
                                  'it will not create a second worker.'), 0
-        reusable_pool = None
-        if is_readonly_review_profile(task.get('profile')):
-            reusable_pool = independent_reviewers(registry.reusable_workers(parent))
-        matched_worker = match_reusable_worker(args, task, text, parent, workers=reusable_pool)
+        matched_worker = match_reusable_worker(args, task, text, parent)
         if matched_worker and matched_worker.get('bundle_id'):
             task['chain'] = {
                 'id': matched_worker['chain_id'],
@@ -790,17 +811,35 @@ def _run(args, judge):
             args.constraint = 'user_override'
             decision = judge.record_constraint(args, task)
         else:
+            args.stage = 'roll'
             decision, _ = judge.plan_stage({'task': task}, args)
+            if (getattr(args, 'no_score', False) and not getattr(args, 'dry_run', False)
+                    and not isinstance(task.get('profile'), dict)
+                    and decision.get('error') != 'no_ready_account'):
+                decision = judge.scorer_unavailable_result(
+                    task,
+                    {
+                        'source': 'scorer_unavailable',
+                        'model': None,
+                        'fallback_reason': 'no_score_without_profile',
+                        'fallback_detail': 'roll --no-score requires a complete caller-supplied task.profile.',
+                    },
+                    time.monotonic(),
+                )
     out = {'stage': 'roll', 'route': summary(decision), 'parent_id': parent,
            'parent_host': parent_host, 'parent_address': parent_address}
+    if decision.get('unclassified'):
+        out['unclassified'] = True
+        out['unclassified_reason'] = decision.get('unclassified_reason')
     if decision.get('choice') == 'split':
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
                     task_count=decision['task_count'], next=decision['next']), 2
     if decision.get('error') == 'scorer_unavailable':
-        out['route']['reason'] = decision.get('reason')
+        out['route']['reason'] = decision.get('reason') or 'scorer_unavailable'
         return dict(out, launched=False, dispatch_mode='scorer_unavailable',
-                    caller_action='parent_autonomous_choice', error=decision.get('reason'),
+                    caller_action='parent_autonomous_choice', error='scorer_unavailable',
+                    reason='scorer_unavailable', cause=decision.get('reason'),
                     scorer=decision.get('scorer'), next=decision.get('next')), 2
     if getattr(args, 'hours', None) is None:
         est = decision.get('hours_estimate') or {}
@@ -808,10 +847,10 @@ def _run(args, judge):
                   else 'the policy default for the classified difficulty (no usable classifier estimate)')
         out['assumptions'] = [f"--hours not given: budgeted {est.get('hours')}h from {origin}, confidence {est.get('confidence')}; "
                               'an estimate, not a measurement. Pass --hours for a large or unusually small task.']
-    if (decision.get('task_profile') or {}).get('urgency') == 'high':
+    if (decision.get('task_profile') or {}).get('urgency') == 'high' and not (decision.get('task_profile') or {}).get('wants_fast'):
         out.setdefault('assumptions', []).append(
-            'The task text states high urgency. This is reported only: fast mode needs --fast or an explicit request in the text, '
-            'and is used only when quota allows.')
+            'The task profile notes high urgency without wants_fast: fast mode uses task_profile.wants_fast or --fast, '
+            'and is enabled only when quota allows.')
     if args.dry_run:
         return dict(out, launched=False, dispatch_mode='dry_run', caller_action='none',
                     next='Dry run: nothing recorded or launched.'), 0

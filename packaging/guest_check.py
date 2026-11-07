@@ -588,7 +588,8 @@ def add_plan(objective):
     task.write_text(json.dumps({"task": {
         "objective": objective, "work_kind": "general_implementation", "expected_hours": 1, "needs": {"local_only": True},
         "profile": {"reasoning_depth": 3, "code_complexity": 2, "context_scale": 2, "hallucination_risk": 2, "error_cost": 2,
-                    "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering", "reason": "guest gui fixture"}}}), encoding="utf-8")
+                    "needs_visual": False, "needs_gui": False, "local_only": True, "wants_fast": False, "read_only_review": False,
+                    "interaction_style": "engineering", "multi_task": False, "task_count": "1", "reason": "guest gui fixture"}}}), encoding="utf-8")
     done = agentcompass("plan", "--input", task)
     ledger = HOME / ".agent-compass" / "router-ledger.jsonl"
     rows = 0

@@ -350,9 +350,9 @@ class RoutingTests(unittest.TestCase):
     def test_recent_dot_reroll_requires_local_evidence_or_failed_health(self):
         allocator = router.load_allocator()
         capabilities = reference_capabilities(allocator)
-        task = {'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
+        task = {'task_id': 't-dot-1', 'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
         recent = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan',
-                  'choice': 'dot_text', 'objective': task['objective']}
+                  'choice': 'dot_text', 'task_id': 't-dot-1', 'request_hash': router._task_request_hash(task)}
         for local_only, down, enabled, dot, blocked in (
             (False, None, True, True, True),
             (True, None, True, False, False),
@@ -369,6 +369,17 @@ class RoutingTests(unittest.TestCase):
                 self.assertEqual(result['choice'] == 'dot_text', dot)
                 self.assertNotEqual(result['choice'], 'none')
                 self.assertEqual('dot_reroll_blocked' in {a['code'] for a in result['alerts']}, blocked)
+        # m1: sharing an objective prefix (>180 chars) without matching task_id/chain_id/request_hash never locks
+        prefix = 'Shared preamble ' * 15
+        rec_prefix = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan', 'choice': 'dot_text',
+                      'objective': prefix + 'task one',
+                      'request_hash': router._task_request_hash({'objective': prefix + 'task one'})}
+        self.assertIsNone(router.recent_route_lock(
+            {'objective': prefix + 'task two'}, [rec_prefix],
+            datetime.now(timezone.utc), 'dot_text', 600))
+        self.assertIsNotNone(router.recent_route_lock(
+            {'objective': prefix + 'task one'}, [rec_prefix],
+            datetime.now(timezone.utc), 'dot_text', 600))
 
     def test_timeout_stops_owned_process(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -377,7 +388,8 @@ class RoutingTests(unittest.TestCase):
 
 
 GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'interaction_style': 'engineering'}
+               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
+               'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering'}
 
 
 class ReadinessGapTests(unittest.TestCase):
@@ -430,8 +442,11 @@ class ReadinessGapTests(unittest.TestCase):
                     patch.object(router, 'dot_unreachable', return_value='down'), \
                     patch.object(router, 'read_ledger', return_value=[]), contextlib.redirect_stdout(out):
                 router.main()
-        alerts = {a['code']: a['severity'] for a in json.loads(out.getvalue())['alerts']}
+        parsed_out = json.loads(out.getvalue())
+        alerts = {a['code']: a['severity'] for a in parsed_out['alerts']}
         self.assertEqual(alerts.get('no_usage_data'), 'warn')
+        self.assertTrue(parsed_out.get('unclassified'))
+        self.assertEqual(parsed_out.get('unclassified_reason'), 'no_score_without_profile')
 
 
 class CliPrefixTests(unittest.TestCase):
@@ -816,12 +831,17 @@ JEV_RESPONSE = {
         'needs_visual': {'type': 'noul', 'noul': 0.1},
         'needs_gui': {'type': 'noul', 'noul': 0.8},
         'local_only': {'type': 'noul', 'noul': 0.7},
+        'wants_fast': {'type': 'noul', 'noul': 0.05},
+        'read_only_review': {'type': 'noul', 'noul': 0.05},
+        'multi_task': {'type': 'noul', 'noul': 0.1},
+        'task_count': {'type': 'choice', 'choice': '1'},
     },
     'usage': {'input_tokens': 900, 'output_tokens': 40},
 }
-JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'reasoning_depth': 2, 'code_complexity': 0,
-               'context_scale': 2, 'divergence': 1, 'hallucination_risk': 3, 'error_cost': 2,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True}
+JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+               'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 2, 'divergence': 1, 'hallucination_risk': 3,
+               'error_cost': 2, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
+               'wants_fast': False, 'read_only_review': False}
 SECRET = 'test-key-0000000000000000'
 
 
@@ -952,10 +972,20 @@ class SelectableScorerTests(unittest.TestCase):
         for broken in ({'answers': {**answers, 'work_kind': {'choice': 'make_coffee'}}},
                        {'answers': {**answers, 'interaction_style': {'choice': 'vibes'}}},
                        {'answers': {k: v for k, v in answers.items() if k != 'error_cost'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'wants_fast'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'read_only_review'}},
+                       {'answers': {**answers, 'read_only_review': {'noul': 0.9}, 'code_complexity': {'score': 2.0}}},
                        {'answers': {**answers, 'divergence': {'score': float('nan')}}},
                        {'error': 'x'}):
             with self.assertRaises(ValueError):
                 router.parse_jev_response(broken, self.allocator)
+        for bad_prof in (
+            {k: v for k, v in GUI_PROFILE.items() if k != 'wants_fast'},
+            {k: v for k, v in GUI_PROFILE.items() if k != 'read_only_review'},
+            {**GUI_PROFILE, 'read_only_review': True, 'code_complexity': 1},
+        ):
+            with self.assertRaises(ValueError):
+                self.allocator.validate_profile(bad_prof)
 
     def test_jev_answers_effort_band_and_urgency_in_the_same_request(self):
         answers = {**JEV_RESPONSE['answers'], 'effort_band': {'choice': 'multi_file'}, 'urgency': {'choice': 'high'}}

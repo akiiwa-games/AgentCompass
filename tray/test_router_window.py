@@ -1195,7 +1195,9 @@ class ScorerConfigTests(unittest.TestCase):
             "work_kind": {"choice": "general_implementation"}, "interaction_style": {"choice": "engineering"},
             "reasoning_depth": {"score": 1.2}, "code_complexity": {"score": 2.1}, "context_scale": {"score": 0.1},
             "divergence": {"score": 0.0}, "hallucination_risk": {"score": 0.4}, "error_cost": {"score": 1.0},
-            "needs_visual": {"noul": 0.02}, "needs_gui": {"noul": 0.01}, "local_only": {"noul": 0.9}}}
+            "needs_visual": {"noul": 0.02}, "needs_gui": {"noul": 0.01}, "local_only": {"noul": 0.9},
+            "wants_fast": {"noul": 0.05}, "read_only_review": {"noul": 0.02},
+            "multi_task": {"noul": 0.05}, "task_count": {"choice": "1"}}}
         seen = []
         with mock.patch.object(self.router, "post_json", side_effect=lambda url, body, key, timeout: seen.append(key) or response):
             message = router_data.test_scorer_config()
@@ -1216,18 +1218,34 @@ class ScorerConfigTests(unittest.TestCase):
         profile = {
             "work_kind": "debug_review", "reasoning_depth": 3, "code_complexity": 2, "context_scale": 1,
             "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
-            "needs_visual": False, "needs_gui": False, "local_only": True, "realtime_loop": False,
+            "needs_visual": True, "needs_gui": False, "local_only": True, "realtime_loop": False,
             "wants_fast": False, "read_only_review": False, "interaction_style": "engineering",
+            "multi_task": False, "task_count": "1",
         }
         with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"task": task}), \
                 mock.patch.object(self.router, "score_task", return_value=(profile, {"source": "system_one", "model": "m"})):
             live = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
         self.assertEqual((live["task"]["work_kind"], live["task"]["difficulty"], live["scorer"]["model"]),
                          ("debug_review", "coupled", "m"))
+        self.assertEqual(live["task"]["needs"], {})
+        allocator, _ = router_data.modules()
+        self.assertEqual(allocator.resolve_modality_needs(live["task"]["needs"], live["task"]["profile"], {}),
+                         {"visual": True, "local_only": True})
         with mock.patch.object(router_data, "plan_task", side_effect=AssertionError("should not plan when scorer unavailable")), \
                 mock.patch.object(self.router, "score_task", return_value=(None, {"source": "scorer_unavailable", "fallback_detail": "timed out"})):
             unavail = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
         self.assertEqual((unavail["status"], unavail["choice"], unavail["error"]), ("blocked", "none", "scorer_unavailable"))
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        with mock.patch.object(router_window.Panel, "run"), mock.patch.object(router_window.Panel, "prefill"), \
+                mock.patch.object(router_window.theme, "set_window_icon"):
+            panel = router_window.Panel(root, "scoring")
+            option_labels = [w.cget("text") for w in panel._option_items[1:]]
+            self.assertNotIn("小模型打分", option_labels)
+            panel.plan_loaded(unavail)
+            self.assertIn("未完成评分：小模型分类器不可用（timed out）", panel.status.get())
+            self.assertNotIn("胜出 none", panel.status.get())
 
 
 class ResetEditorTests(unittest.TestCase):

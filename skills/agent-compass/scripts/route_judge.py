@@ -82,7 +82,8 @@ SCORER_PROMPT = (
     '1. `local_only`: `true` only when depending on un-inlined local files/repos/processes/GUI; `false` when inputs are '
     'inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, '
     '`complex_build_plan`), even if a local output path is named.\n'
-    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis.\n'
+    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis '
+    '(even if saving a review report file to a specified path).\n'
     '3. `context_scale`: 1 = single module/script or self-contained task; 2 = 2..5 coupled modules; 3 = repo/system-wide.\n'
     '4. `divergence`: 1 = convergent spec/fix/review; 2 = multi-hypothesis diagnosis/comparison; 3 = open-ended creative.\n'
     '5. `realtime_loop`: `true` ONLY when the worker agent itself stays inside a live external system\'s continuous '
@@ -91,11 +92,13 @@ SCORER_PROMPT = (
     'immediately, live-stream chat). `false` for ALL coding, UI design, bug fixing, optimization, diagnosis, or log '
     'analysis—even on real-time/polling/game/dashboard/flash-sale features—and for one-off GUI clicks. Set `needs_gui` '
     'by whether the worker operates a GUI (`true`) vs pure CLI/API/WebSocket (`false`).\n'
-    '6. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, or urgent/ASAP turnaround '
-    'without negation (e.g. "do not use fast mode" -> `false`; runtime step adverbs like "click immediately" -> `false`).\n'
+    '6. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
+    'pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") without negation (e.g. '
+    '"do not use fast mode" -> `false`; runtime step adverbs like "click immediately" -> `false`; ordinary quota mentions '
+    'without requesting fast execution -> `false`).\n'
     '7. `read_only_review`: `true` ONLY for read-only code/diff/branch/security/release reviews or audits (`code_complexity` 0) '
-    'that write no repo code; `false` when implementing/fixing code (even from a prior review), running ops commands, or '
-    'doing general exploration/research.\n'
+    'that write no repo production/test code (even if saving a review report file to a specified output path); `false` '
+    'when implementing/fixing code (even from a prior review), running ops commands, or doing general exploration/research.\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
@@ -702,6 +705,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
     append_ledger({
         'v': 1, 'at': now.isoformat(), 'stage': result.get('stage'), 'source': result.get('source'),
         'choice': result.get('choice'), 'specialty': result.get('specialty'),
+        **({'task_id': task['task_id']} if task.get('task_id') else {}),
+        **({'request_hash': task.get('request_hash') or _task_request_hash(task)} if isinstance(task, dict) else {}),
         **{k: result[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound') if k in result},
         **({'host_session_id': task['host_session_id']} if task.get('host_session_id') else {}),
         'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
@@ -1889,13 +1894,24 @@ def evaluate(payload, requested='auto', timeout=120):
             'next': 'Check runtime/model/login availability; continue feasible parent work. Never use Jev as a judge.'}
 
 
+def _task_request_hash(task):
+    if not isinstance(task, dict):
+        return ''
+    existing = task.get('request_hash') or task.get('task_hash')
+    if isinstance(existing, str) and existing.strip():
+        return existing.strip()
+    payload = {k: v for k, v in scorer_task_fields(task).items() if k in ('objective', 'context', 'environment')}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()[:24] if payload else ''
+
+
 def recent_route_lock(task, records, now, bundle_id, window_seconds):
     """Find a matching recent route only for an explicitly configured reroute guard."""
     if not isinstance(task, dict) or not records:
         return None
-    obj = (task.get('objective') or '').strip()
     chain_id = (task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else None
-    if not obj and not chain_id:
+    task_id = (task.get('task_id') or '').strip() if isinstance(task.get('task_id'), str) else None
+    req_hash = _task_request_hash(task)
+    if not chain_id and not task_id and not req_hash:
         return None
     for row in reversed(records):
         if not isinstance(row, dict) or row.get('stage') != 'plan' or row.get('choice') != bundle_id:
@@ -1906,8 +1922,10 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
             continue
         if (now - at).total_seconds() > window_seconds:
             break
-        row_obj = (row.get('objective') or '').strip()
-        if (chain_id and row.get('chain') == chain_id) or (obj and row_obj and obj[:180] == row_obj[:180]):
+        row_hash = row.get('request_hash') or row.get('task_hash')
+        if ((chain_id and row.get('chain') == chain_id)
+                or (task_id and row.get('task_id') == task_id)
+                or (req_hash and row_hash == req_hash)):
             return row
     return None
 
@@ -2335,13 +2353,19 @@ def plan_stage(document, args):
         or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)
             and not (live_disabled and has_caller_spec))
     )
+    if not fatal_gap and getattr(args, 'stage', None) == 'roll' and not args.dry_run and args.no_score and not isinstance(task.get('profile'), dict):
+        return scorer_unavailable_result(
+            task,
+            {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
+             'fallback_detail': 'roll --no-score requires a complete caller-supplied task.profile.'},
+            started,
+        ), 2
     if should_score:
         profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
         if profile is None:
             return scorer_unavailable_result(task, scorer, started), 2
-        for opt_flag in ('realtime_loop', 'wants_fast', 'read_only_review'):
-            if opt_flag not in profile:
-                profile = {**profile, opt_flag: False}
+        if 'realtime_loop' not in profile:
+            profile = {**profile, 'realtime_loop': False}
         classified_kind = allocator.profile_kind(profile, policy)
         derived = allocator.profile_difficulty(profile, policy)
         order = list(policy['ability_floor'])
@@ -2377,12 +2401,10 @@ def plan_stage(document, args):
                 task['expected_hours'] = profile['expected_hours']
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
                                   'confidence': profile.get('hours_confidence', 'unknown')}
-    task_profile = task.get('profile') or {}
-    is_ro_review = (
-        bool(task_profile.get('read_only_review'))
-        if 'read_only_review' in task_profile
-        else bool(task_profile.get('work_kind') == 'debug_review' and task_profile.get('code_complexity') == 0)
-    )
+    task_profile = allocator.validate_profile(task['profile']) if isinstance(task.get('profile'), dict) else {}
+    if task_profile:
+        task = {**task, 'profile': task_profile}
+    is_ro_review = bool(task_profile.get('read_only_review'))
     if is_ro_review and isinstance(task.get('chain'), dict):
         chain_worker = task['chain'].get('worker')
         if isinstance(chain_worker, dict) and chain_worker.get('read_only_review') is False:
@@ -2447,6 +2469,13 @@ def plan_stage(document, args):
             'confidence': 'unknown', 'limit': 'no usable classifier estimate; the policy default for the difficulty was used'}
     if scorer is not None:
         planned['scorer'], planned['task_profile'] = scorer, task['profile']
+    if not isinstance(task.get('profile'), dict):
+        planned['unclassified'] = True
+        planned['unclassified_reason'] = (
+            'no_score_without_profile' if args.no_score else 'dry_run' if args.dry_run
+            else 'live_scorer_disabled' if (live_disabled and has_caller_spec)
+            else 'no_task_profile'
+        )
     planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
     result = finalize(planned, None, 'auto', started, reviewed_task)
     return result, 0 if result.get('choice') != 'none' else 2

@@ -44,7 +44,6 @@ PRO_BURST = 5              # Pro web dispatches inside PRO_WINDOW_HOURS
 PRO_WINDOW_HOURS = 12
 PAIR_GAP_SECONDS = 15 * 60
 MARKERS = ("subscription_model_judgment", "judge_unavailable", "local_candidate_filter", "constraint_record")
-FIXED_WORDS = re.compile(r"explicit|required|retained|sole.?owner|authorized|honors|user-?named|指定|明确|授权", re.I)
 METERED = {"api-proxy"}
 CAPACITY = Path(os.environ.get("ROUTER_CAPACITY", HOME / ".agent-compass" / "capacity.json"))
 USAGE_STATS = Path(os.environ.get("ROUTER_USAGE_STATS", HOME / ".agent-compass" / "usage-stats.json"))
@@ -185,7 +184,10 @@ def classify(row: dict) -> str:
         return "specialist:pro"
     if "astra" in model:
         return "specialist:astra"
-    if FIXED_WORDS.search(row.get("reason") or "") or re.search(r"retained|same_", str(row.get("choice") or "")):
+    choice = str(row.get("choice") or "")
+    if (row.get("constraint") or row.get("pinned") is True or row.get("chain")
+            or row.get("action") in ("resume", "retained")
+            or choice.startswith("same_") or choice == "retained"):
         return "fixed:instruction"
     return "open"
 
