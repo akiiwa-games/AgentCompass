@@ -344,8 +344,58 @@ def grok_bot(args, out, prompt_file, task, bundle):
     return result, 1 if receipt['state'] == 'failed' else 0
 
 
+def task_access(args, read_only_review=None):
+    """--access wins, then the classifier's read_only_review, and anything else writes: a wrong block is loud and has a
+    way out, a wrong exemption silently lets a second writer in. interaction_style says nothing about writing."""
+    explicit = getattr(args, 'access', None)
+    if explicit:
+        return 'read_only' if explicit == 'read-only' else 'write'
+    return 'read_only' if read_only_review is True else 'write'
+
+
+def parent_cwd():
+    # Paseo starts a worker without --workspace in its parent's cwd, which Paseo gives its agents here.
+    return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
+
+
+def same_cwd_warning(out, cwd, parent, workspace):
+    """The writer rule goes by workspace ID. Too many rolls with no ID, or with several IDs on one checkout, run in
+    parallel on purpose to block them, so other unsettled writers in the directory this one lands in are only named."""
+    others = registry.writers_at(cwd, parent, other_than=workspace)
+    if not others:
+        return out
+    named = '; '.join(f"{h.get('state')} dispatch {h.get('dispatch_id')} ({h.get('title')})" for h in others)
+    note = f'{cwd} already has unsettled writer dispatches and this worker will also write there: {named}.'
+    return dict(out, assumptions=[*out.get('assumptions', []), note], warnings=[*out.get('warnings', []), note])
+
+
+def workspace_blocked(out, workspace, holders):
+    named = '; '.join(f"{h.get('state')} dispatch {h.get('dispatch_id')} (agent {h.get('agent_id') or 'not created yet'})" for h in holders)
+    return dict(out, launched=False, dispatch_mode='paseo', caller_action='resolve_workspace_writer',
+                error='workspace_has_active_writer', blocked_by=holders,
+                next=f'Nothing was launched: workspace {workspace} already has a writer: {named}. Wait for it to finish, then roll '
+                     'this brief again. If this brief only reads, roll it with --access read-only. To run both in one workspace '
+                     'anyway, roll it with --allow-concurrent "<why>"; the reason goes to the ledger.'), 2
+
+
 def paseo(args, out, decision, task, text, parent, usage, judge=None):
     dispatch_flow.reconcile()
+    # The classifier has no read_only_review field yet; when it does, pass it here as the second argument.
+    access = task_access(args)
+    allow_concurrent = (getattr(args, 'allow_concurrent', None) or '').strip()
+    workspace = args.workspace
+    landing = None
+    if workspace and access == 'write':
+        holders, unavailable, landing = dispatch_flow.workspace_holders(workspace, parent)
+        if unavailable:
+            out = dict(out, assumptions=[*out.get('assumptions', []),
+                                         f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
+        if holders and not allow_concurrent:
+            return workspace_blocked(out, workspace, holders)
+        if holders and judge is not None:
+            judge.append_ledger({'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': 'allow_concurrent', 'parent_id': parent,
+                                 'task_id': task.get('task_id'), 'workspace': workspace, 'reason': allow_concurrent[:300],
+                                 'holders': holders})
     resume_agent_id = None
     if not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
@@ -364,13 +414,24 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             matched = match_reusable_worker(args, task, text, parent, workers=compatible)
             if matched:
                 resume_agent_id = matched['agent_id']
+    if not workspace and access == 'write':
+        # A resumed worker stays where it lives, whatever the parent's directory.
+        landing = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
+    if landing:
+        out = same_cwd_warning(out, landing, parent, workspace)
     prompt_for_launch = (prepare_resume_prompt(text, parent, out.get('parent_host') or 'paseo', out.get('parent_address'))
                          if resume_agent_id else text)
     launch = {'title': args.title or title_of(text), 'initialPrompt': prompt_for_launch}
     if args.workspace:
         launch['workspaceId'] = args.workspace
-    row = registry.prepare(decision['decision_id'], task, launch, usage,
-                           resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None)
+    try:
+        row = registry.prepare(decision['decision_id'], task, launch, usage,
+                               resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None,
+                               access=access, allow_concurrent=allow_concurrent or None,
+                               new_worker=bool(getattr(args, 'new_worker', False)),
+                               cwd=landing)
+    except registry.WorkspaceBusy as busy:
+        return workspace_blocked(out, busy.workspace, busy.holders)
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=args.wait)
     if (
         receipt.get('state') == 'failed'
@@ -379,24 +440,32 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         and judge is not None
     ):
         return cli(args, out, decision['selected_bundle'], text, judge)
-    failed = receipt.get('state') == 'failed'
+    failed = receipt.get('state') in ('failed', 'create_failed')
     # launched_at records the single-use claim, before create is sent. Only a
     # validated host observation binds agent_id/observed_at to this dispatch.
     confirmed = bool(receipt.get('agent_id') and receipt.get('observed_at'))
     ended_before_send = (receipt.get('state') in ('canceled', 'expired') and not receipt.get('launched_at'))
-    uncertain = not failed and not confirmed and not ended_before_send
+    removed = receipt.get('state') == 'canceled' and bool(receipt.get('next_action'))
+    uncertain = not failed and not confirmed and not ended_before_send and not removed
     if uncertain:
         receipt = dict(receipt)
         receipt.setdefault('continuation_argv', entry.argv(
             'launch', '--dispatch-id', row['dispatch_id'], '--parent-id', parent, '--watch-seconds', '120'))
         return dict(out, launched=None, dispatch_mode='paseo', caller_action='check_delivery_do_not_resend',
-                    next='Paseo delivery is unconfirmed. Run worker.continuation_argv to observe this same dispatch; '
+                    next=receipt.get('next_action') or
+                         'Paseo delivery is unconfirmed. Run worker.continuation_argv to observe this same dispatch; '
                          'do not roll again or issue another create request.',
                     worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 0
     if ended_before_send:
         return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error',
                     next=f"Dispatch {receipt['state']} before a launch was sent; inspect its receipt before scheduling new work.",
                     worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 2
+    if removed:
+        return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error', next=receipt['next_action'],
+                    worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 2
+    if receipt.get('state') == 'create_failed':
+        return dict(out, launched=False, dispatch_mode='paseo', caller_action='roll_again_safe', next=receipt['next_action'],
+                    worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 1
     notification = receipt.get('completion_notification') or {}
     notice = ('A completion notification will be sent to the parent on finish/error/permission; '
               'the bounded watcher PID, deadline and durable receipt are in worker.completion_notification. '
@@ -649,7 +718,7 @@ def compact(result, status, detail_path):
     if status == 'launched':
         nxt = launched_next(result, worker, argv)
     elif status == 'pending' and argv:
-        nxt = 'Run next_argv to observe the same operation; do not roll again.'
+        nxt = worker.get('next_action') or 'Run next_argv to observe the same operation; do not roll again.'
     elif status == 'native':
         nxt = ('Launch one native worker with exactly route_bundle (its modeId is the permission mode) and the full contents of '
                'worker_prompt_file as its prompt; if the host cannot reproduce that provider/account/model/effort, tell the '
@@ -674,15 +743,19 @@ def compact(result, status, detail_path):
         out['route_bundle'], out['worker_prompt_file'] = bundle, result.get('worker_prompt_file')
     if status == 'split':
         out['task_count'] = result.get('task_count')
+    if result.get('blocked_by'):
+        out['blocked_by'] = result['blocked_by']
     if result.get('assumptions'):
         out['assumptions'] = result['assumptions']
+    if result.get('warnings'):
+        out['warnings'] = [*out.get('warnings', []), *result['warnings']]
     out['details'] = detail_path
     return {k: v for k, v in out.items() if v is not None}
 
 
 # Flags that describe one brief; a batch takes only the shared ones and each brief is rolled as written.
 BATCH_ONLY_ALONE = ('task_id', 'title', 'hours', 'local_only', 'keep_whole', 'file', 'apply_to', 'provider', 'account',
-                    'model', 'effort', 'basis', 'wait', 'resume')
+                    'model', 'effort', 'basis', 'wait', 'resume', 'allow_concurrent')
 
 
 def run_batch(args, judge):
@@ -765,7 +838,7 @@ def _run(args, judge):
                 pending_rows = [r for r in registry.pending() if r.get('parent_id') == parent]
         # The same task already dispatched by this parent: hand back that worker, without classifying or launching again.
         for row in pending_rows:
-            if (row['parent_id'], row['task_id']) == (parent, task['task_id']):
+            if not getattr(args, 'new_worker', False) and (row['parent_id'], row['task_id']) == (parent, task['task_id']):
                 argv = entry.argv('launch', '--dispatch-id', row['dispatch_id'], '--parent-id', parent, '--watch-seconds', '120')
                 return dict(stage='roll', parent_id=parent, launched=None, dispatch_mode='paseo',
                             caller_action='run_next_argv', worker=dict(dispatch_flow.public(row), continuation_argv=argv),
