@@ -24,6 +24,7 @@ from test_routing_parity import FULL_QUOTA, LIVE, NOW, PROFILE, RouterCase
 
 FAMILY = 'claude-opus-4-20250514'
 FLAGSHIP = 'claude-opus-5-5'
+FAMILY_9 = 'claude-opus-9'
 
 
 class RecordCase(RouterCase):
@@ -308,6 +309,97 @@ class MinorFindingTests(RecordCase):
                 launch_failures.record({'account': 'claude', 'model': recorded}, 'model_unavailable', now=NOW, path=path)
                 entries = launch_failures.active(now=NOW, path=path)
                 self.assertIsNotNone(allocator.cooling_reason({'account': 'claude', 'model': row}, entries, self.accounts, now=NOW))
+
+
+class PinIdentityTests(RecordCase):
+    """X1 and R4-r2, the cross-repo reading of contract R1: a family row is another model to a pin and to a checkbox."""
+
+    @staticmethod
+    def claude(model, **fields):
+        return {'model': model, 'provider': 'claude', **fields}
+
+    def test_a_pin_on_either_name_runs_that_name(self):
+        """Magpie's parity grid: 4436 rows where this side let the family row answer to a pin on the flagship."""
+        for pinned, other in ((FLAGSHIP, FAMILY_9), (FAMILY_9, FLAGSHIP)):
+            for efforts in (['high'], ['low', 'high'], ['medium', 'high', 'xhigh']):
+                rows = {f'{model}:{effort}': self.claude(model, effort=effort) for model in (pinned, other) for effort in efforts}
+                fleet = self.only('claude', **rows)
+                for constraints in ({'model': pinned}, {'model': pinned, 'effort': efforts[0]}, {'model': f'{pinned}:{efforts[0]}'}):
+                    for profile in (PROFILE, LIVE):
+                        with self.subTest(pinned=pinned, efforts=efforts, constraints=constraints, realtime=profile is LIVE):
+                            plan = self.plan(self.task(profile, constraints=constraints), fleet)
+                            self.assertEqual(plan['selected_bundle']['model'], pinned)
+
+    def test_a_flagship_that_is_down_is_refused_with_a_family_row_beside_it(self):
+        fleet = self.only('claude', a=self.claude(FLAGSHIP, effort='high'), b=self.claude(FAMILY_9, effort='high'))
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            path = Path(directory) / 'failures.json'
+            launch_failures.record({'account': 'claude', 'model': FLAGSHIP}, 'model_unavailable', path=path)     # the plan reads the real clock
+            with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(path)}):
+                named = self.plan(self.task(PROFILE, constraints={'model': FLAGSHIP}), fleet)
+                unnamed = self.plan(self.task(PROFILE), fleet)
+        self.assertEqual(named['choice'], 'none')
+        self.assertEqual(named['decision']['blocked'], 'named_model_unavailable')
+        self.assertEqual(unnamed['selected_bundle']['model'], FAMILY_9)
+
+    def test_unchecking_a_family_level_leaves_the_flagship_at_that_level(self):
+        for label, own in (('listed', {'efforts': ['low', 'high']}), ('written', {'effort': 'high'}), ('no row', {'effort': 'medium'})):
+            with self.subTest(label):
+                fleet = self.only('claude', a=self.claude(FLAGSHIP, **own), b=self.claude(FAMILY_9, effort='high', disabled=True))
+                plan = self.plan(self.task(PROFILE, constraints={'model': f'{FLAGSHIP}:high'}), fleet)
+                self.assertEqual((plan['selected_bundle']['model'], plan['selected_bundle']['effort']), (FLAGSHIP, 'high'))
+                _, row = self.launched(fleet, model=FLAGSHIP, effort='high')
+                self.assertEqual((row['bundle']['model'], row['bundle']['effort']), (FLAGSHIP, 'high'))
+
+    def test_unchecking_a_flagship_level_leaves_the_family_row_at_that_level(self):
+        for label, own in (('listed', {'efforts': ['low', 'high']}), ('written', {'effort': 'high'})):
+            with self.subTest(label):
+                fleet = self.only('claude', a=self.claude(FAMILY_9, **own), b=self.claude(FLAGSHIP, effort='high', disabled=True))
+                plan = self.plan(self.task(PROFILE, constraints={'model': f'{FAMILY_9}:high'}), fleet)
+                self.assertEqual((plan['selected_bundle']['model'], plan['selected_bundle']['effort']), (FAMILY_9, 'high'))
+                _, row = self.launched(fleet, model=FAMILY_9, effort='high')
+                self.assertEqual((row['bundle']['model'], row['bundle']['effort']), (FAMILY_9, 'high'))
+
+    def test_a_level_unchecked_on_the_model_itself_is_still_refused(self):
+        fleet = self.only('claude', a=self.claude(FLAGSHIP, efforts=['low', 'high']), b=self.claude(FLAGSHIP, effort='high', disabled=True))
+        self.assertEqual(self.plan(self.task(PROFILE, constraints={'model': f'{FLAGSHIP}:high'}), fleet)['choice'], 'none')
+        with self.assertRaisesRegex(ValueError, 'is disabled'):
+            self.record(accounts=fleet, model=FLAGSHIP, effort='high')
+
+    def test_a_family_row_offers_only_the_levels_it_lists(self):
+        fleet = self.only('claude', a=self.claude(FAMILY_9, efforts=['low', 'high']))
+        self.assertEqual(self.plan(self.task(PROFILE, constraints={'model': f'{FAMILY_9}:medium'}), fleet)['choice'], 'none')
+        with self.assertRaisesRegex(ValueError, 'named_model_unavailable'):
+            self.record(accounts=fleet, model=FAMILY_9, effort='medium')
+
+
+class ListedLevelTests(RecordCase):
+    """m7: a row listing its levels held back a sibling that could step, as a fixed level once did."""
+
+    X = {'model': 'gpt-6-astra', 'effort': 'high', 'efforts': ['high'], 'provider': 'codex'}
+    Y = {'model': 'gpt-6-astra', 'effort': 'xhigh', 'provider': 'codex'}
+
+    def test_a_row_with_no_lower_level_does_not_hold_back_its_siblings(self):
+        for label, own in (('only its level', ['high']), ('one above', ['high', 'xhigh'])):
+            with self.subTest(label):
+                fleet = self.only('codex', x={**self.X, 'efforts': own}, y=self.Y)
+                plan = self.plan(self.task(LIVE), fleet)
+                self.assertEqual((plan['choice'], plan['selected_bundle']['effort']), ('y', 'medium'))
+                self.assertEqual(dispatch_registry.resolve_bundle(plan['selected_bundle'], fleet, False, True)['effort'], 'medium')
+
+    def test_a_row_with_a_lower_level_still_answers_for_the_model(self):
+        fleet = self.only('codex', x={**self.X, 'efforts': ['medium', 'high']}, y=self.Y)
+        plan = self.plan(self.task(LIVE), fleet)
+        self.assertEqual((plan['choice'], plan['selected_bundle']['effort']), ('x', 'medium'))
+
+    def test_a_named_level_does_not_depend_on_the_order_of_the_rows(self):
+        for constraints, level in (({'model': 'gpt-6-astra'}, 'low'), ({'model': 'gpt-6-astra', 'effort': 'medium'}, 'medium')):
+            for order in (('x', 'y'), ('y', 'x')):
+                with self.subTest(constraints=constraints, order=order):
+                    fleet = self.only('codex', **{name: {'x': self.X, 'y': self.Y}[name] for name in order})
+                    plan = self.plan(self.task(LIVE, constraints=constraints), fleet)
+                    self.assertEqual(plan['choice'], f'y@{level}')
+                    self.assertEqual(dispatch_registry.resolve_bundle(plan['selected_bundle'], fleet, False, True)['effort'], level)
 
 
 if __name__ == '__main__':

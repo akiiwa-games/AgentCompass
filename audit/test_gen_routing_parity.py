@@ -73,6 +73,22 @@ class GeneratedDataTests(unittest.TestCase):
         self.assertEqual(self.data['row_keys']['claude-opus-4-20250514'], 'claude-opus-4-20250514')
         self.assertEqual(self.data['row_keys']['claude-opus-5'], 'claude-opus-5-5')
 
+    def test_a_flagship_and_its_family_row_stay_apart_in_the_data(self):
+        cases = {(r['label'], r['realtime_loop']): r for r in self.data['row_pins']}
+        for realtime in (False, True):
+            self.assertEqual(cases['flagship beside family, pin flagship', realtime]['model'], 'claude-opus-5-5')
+            self.assertEqual(cases['family beside flagship, pin family', realtime]['model'], 'claude-opus-9')
+            self.assertEqual(cases['flagship level off, family row present, pin flagship', realtime]['choice'], 'none')
+            self.assertEqual(cases['same model level off, pin that level', realtime]['choice'], 'none')
+        for label, model in (('family level off, pin flagship at that level', 'claude-opus-5-5'),
+                             ('flagship level off, pin family at that level', 'claude-opus-9')):
+            found = cases[label, False]
+            self.assertEqual((found['model'], found['effort']), (model, 'high'))
+        self.assertEqual(cases['a row listing one level beside one that steps, unnamed', True]['choice'], 'y')
+        self.assertEqual(cases['a row listing one level beside one that steps, pin model', True]['choice'], 'y@low')
+        for key in ('R1.pin_match', 'R2.unchecked_level', 'R2.listed_levels'):
+            self.assertIn(key, self.data['interpretations'])
+
     def test_a_family_guess_answers_with_the_default_speed(self):
         self.assertEqual(self.data['responsiveness']['gemini-2.5-pro']['high'], [0.52, 'default'])
 

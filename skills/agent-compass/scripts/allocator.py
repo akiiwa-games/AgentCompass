@@ -1675,8 +1675,9 @@ def dispatch_table(provider, accounts):
 
 
 def dispatch_allowed_efforts(bundle, accounts, model=None):
-    """Efforts the launch contract offers this bundle's model: None when the provider has no table at all (a gateway),
-    empty when it has one that does not list the model, so a step-down never lands on an unverified flag."""
+    """Efforts the launch contract offers this bundle's model: None when the provider has no table at all (a gateway).
+    A table that does not list the model leaves what the row itself lists, and nothing when it lists none, so a step-down
+    never lands on an unverified flag."""
     table = dispatch_table((bundle or {}).get('provider') or (bundle or {}).get('account'), accounts)
     if table is None:
         return None
@@ -1684,7 +1685,8 @@ def dispatch_allowed_efforts(bundle, accounts, model=None):
     for name in (lookup_names(raw, accounts) if raw else [model]):
         if table.get(name):
             return tuple(table[name])
-    return ()
+    own = (bundle or {}).get('efforts')
+    return tuple(own) if isinstance(own, (list, tuple)) else ()
 
 
 def model_pin_matches(task, bundle, model):
@@ -1718,6 +1720,17 @@ def has_fixed_effort(bundle, accounts):
     return split_model_effort(launch_id)[1] is not None or auto_bundles.split_effort(launch_id, known)[1] is not None
 
 
+def can_step_down(bundle, info, accounts):
+    """A row fixed at its level, or listing no level below its own, has nowhere to step."""
+    if has_fixed_effort(bundle, accounts):
+        return False
+    own = bundle.get('efforts')
+    if not isinstance(own, (list, tuple)):
+        return True
+    rank = _effort_rank(scoring_effort(bundle, info))
+    return any(_effort_rank(level) < rank for level in own)
+
+
 def named_effort_bundles(task, ctx):
     """Rows for levels the user's pin reaches on a model the account has no row at that level for: the effort they named,
     or, for a model named alone on `realtime_loop` work, every level that clears the floor, so the score decides among
@@ -1738,23 +1751,24 @@ def named_effort_bundles(task, ctx):
     found = {}
     for (_, _, model), rows in groups.items():
         written = {str(scoring_effort(r, model_spec(accounts, r['model'])) or '').lower() for r in rows}
-        carrier = next((r for r in rows if (not r.get('disabled') or r.get('disabled_by_default'))
-                        and not r.get('discovery_unavailable') and not has_fixed_effort(r, accounts)), None)
-        if carrier is None:
-            continue
-        allowed = dispatch_allowed_efforts(carrier, accounts, model)
-        if effort:
-            levels = [effort] if effort not in written else []
-            if (effort not in allowed) if allowed is not None else not task.get('constraint_model'):
-                levels = []
-        else:
-            levels = [e for e in clearing_levels(carrier, ctx) if e not in written and (allowed is None or e in allowed)]
-        for level in levels:
-            if isinstance(carrier.get('efforts'), list) and level not in carrier['efforts']:
-                continue
-            row_id = f"{carrier['id']}@{level}"
-            found[row_id] = {**{k: v for k, v in carrier.items() if k != 'when'}, 'id': row_id, 'effort': level,
-                             'pin_carrier': carrier['id']}
+        carriers = [r for r in rows if (not r.get('disabled') or r.get('disabled_by_default'))
+                    and not r.get('discovery_unavailable') and not has_fixed_effort(r, accounts)]
+        # Each level goes to the first row that offers it, so the answer does not depend on the order of the rows.
+        for carrier in carriers:
+            allowed = dispatch_allowed_efforts(carrier, accounts, model)
+            if effort:
+                levels = [effort]
+                if (effort not in allowed) if allowed is not None else not task.get('constraint_model'):
+                    levels = []
+            else:
+                levels = [e for e in clearing_levels(carrier, ctx) if allowed is None or e in allowed]
+            for level in levels:
+                if level in written or (isinstance(carrier.get('efforts'), list) and level not in carrier['efforts']):
+                    continue
+                written.add(level)
+                row_id = f"{carrier['id']}@{level}"
+                found[row_id] = {**{k: v for k, v in carrier.items() if k != 'when'}, 'id': row_id, 'effort': level,
+                                 'pin_carrier': carrier['id']}
     return found
 
 
@@ -1949,8 +1963,8 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
             sib_ab = effort_ability(policy, curves, info, sib_eff)
             if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor and sib_ab >= gate:
                 return raw_effort, resp_val, resp_source, None
-        # A row fixed at its level cannot step, so it does not stand in for the rows that can.
-        steppable = [s for s in siblings if not has_fixed_effort(s, accounts)]
+        # A row that cannot step does not stand in for the rows that can.
+        steppable = [s for s in siblings if can_step_down(s, info, accounts)]
         if steppable:
             step_down_peers = [
                 s for s in steppable

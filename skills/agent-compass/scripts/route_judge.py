@@ -2019,7 +2019,8 @@ def record_constraint(args, task=None):
     own_rows = [b for b in allocator.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
                 and allocator.row_key(b['model'], accounts) == own_model]
     if not direct and (not own_rows or (pin.effort and pin.effort not in {b.get('effort') for b in own_rows}
-                                        and pin.effort not in (allocator.dispatch_allowed_efforts(own_rows[0], accounts) or ()))):
+                                        and not any(pin.effort in (allocator.dispatch_allowed_efforts(b, accounts) or ())
+                                                    for b in own_rows))):
         # What it resembles is another model. The same answer the plan gives: blocked, never a substitute.
         raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no configured route on "
                          f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")

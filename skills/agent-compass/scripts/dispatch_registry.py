@@ -133,7 +133,8 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
                  or next((b for b in siblings if b.get('effort') == bundle.get('effort')), None))
         if exact:
             return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
-    contract = allocator.dispatch_allowed_efforts(bundle, accounts, model) or ()
+    # A named level with no row of its own arrives without the row's list, so every row of the model speaks for what it offers.
+    contract = {eff for row in (bundle, *siblings) for eff in allocator.dispatch_allowed_efforts(row, accounts, model) or ()}
     model_curves = allocator.model_curves(accounts, bundle.get('model') or model)
     resp_curves = model_curves.get('responsiveness') or {}
     ability_curve = model_curves.get('ability') if isinstance(model_curves.get('ability'), dict) else {}
@@ -196,6 +197,7 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
     key = 'user_override_' + digest(identity)[:24]
     mode = base.get('modeId') or auto_bundles.HARNESS_MODE.get(base.get('harness'))
     return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'modeId': mode} if mode else {}),
+                **({'launch_model': bundle['launch_model']} if bundle.get('launch_model') else {}),
                 **({'fast': True} if bundle.get('fast') else {}))
 
 

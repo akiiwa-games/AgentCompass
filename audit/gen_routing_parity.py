@@ -57,6 +57,26 @@ PINS = [
     {'constraints': {'model': 'gpt-6-astra', 'effort': 'xhigh'}},
     {'constraints': {'model': 'claude-opus-5-5'}},
 ]
+FAMILY_NAME = 'claude-opus-9'
+# (label, account, rows, constraints): a flagship and a family row of it, and rows listing their levels. Each is its own fleet.
+ROW_CASES = [
+    ('flagship beside family, pin flagship', 'claude', {'a': {'model': 'claude-opus-5-5', 'effort': 'high'}, 'b': {'model': FAMILY_NAME, 'effort': 'high'}},
+     {'model': 'claude-opus-5-5'}),
+    ('family beside flagship, pin family', 'claude', {'a': {'model': FAMILY_NAME, 'effort': 'high'}, 'b': {'model': 'claude-opus-5-5', 'effort': 'high'}},
+     {'model': FAMILY_NAME}),
+    ('flagship level off, family row present, pin flagship', 'claude',
+     {'a': {'model': 'claude-opus-5-5', 'effort': 'high', 'disabled': True}, 'b': {'model': FAMILY_NAME, 'effort': 'high'}}, {'model': 'claude-opus-5-5:high'}),
+    ('family level off, pin flagship at that level', 'claude',
+     {'a': {'model': 'claude-opus-5-5', 'efforts': ['low', 'high']}, 'b': {'model': FAMILY_NAME, 'effort': 'high', 'disabled': True}}, {'model': 'claude-opus-5-5:high'}),
+    ('flagship level off, pin family at that level', 'claude',
+     {'a': {'model': FAMILY_NAME, 'efforts': ['low', 'high']}, 'b': {'model': 'claude-opus-5-5', 'effort': 'high', 'disabled': True}}, {'model': f'{FAMILY_NAME}:high'}),
+    ('same model level off, pin that level', 'claude',
+     {'a': {'model': 'claude-opus-5-5', 'efforts': ['low', 'high']}, 'b': {'model': 'claude-opus-5-5', 'effort': 'high', 'disabled': True}}, {'model': 'claude-opus-5-5:high'}),
+    ('a row listing one level beside one that steps, unnamed', 'codex',
+     {'x': {'model': 'gpt-6-astra', 'effort': 'high', 'efforts': ['high']}, 'y': {'model': 'gpt-6-astra', 'effort': 'xhigh'}}, {}),
+    ('a row listing one level beside one that steps, pin model', 'codex',
+     {'x': {'model': 'gpt-6-astra', 'effort': 'high', 'efforts': ['high']}, 'y': {'model': 'gpt-6-astra', 'effort': 'xhigh'}}, {'model': 'gpt-6-astra'}),
+]
 # How this commit reads the contract where its wording leaves room. Ports follow these, as the parent ruled.
 INTERPRETATIONS = {
     'R3.best_level': 'A model named alone on realtime_loop work runs at the highest-scoring level that clears the floor. '
@@ -67,6 +87,13 @@ INTERPRETATIONS = {
                         'unchecked. It does not rank levels again; the score needs the task and the plan already used it.',
     'R1.row_key': 'A family guess is its own model wherever a row, a pin, a cooldown, a worker or a rival is matched. '
                   'It folds to its target only for its estimated score.',
+    'R1.pin_match': 'A pin on an exact or alias name matches that model\'s rows only. A family row is another model and never '
+                    'stands in, healthy or not; a named model that is down is blocked.',
+    'R2.unchecked_level': 'A level the user unchecked belongs to the row\'s own row_key: it does not reach a family row of the '
+                          'model, nor the flagship of a family row.',
+    'R2.listed_levels': 'A row listing `efforts` offers those levels. Where the launch contract lists the model the row can only '
+                        'narrow it; where it does not, the list is what is offered. A row with no level below its own does not '
+                        'hold back a sibling that can step, and each level goes to the first row offering it.',
 }
 QUOTA = {
     'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
@@ -164,16 +191,25 @@ def build(allocator, auto_bundles, support, commit, root):
     fixture = allocator.load_accounts(root / SCRIPTS / 'fixtures/reference-accounts.json')
     usage = support.usage_windows(NOW, QUOTA)
 
-    def planned(extra, realtime):
+    def planned(extra, realtime, fleet=None):
         profile = {**PROFILE, **({'realtime_loop': True} if realtime else {})}
         task = {'objective': 'parity', 'profile': profile, 'expected_hours': 1, 'disable_fast': True,
                 'include_unverified': True, **copy.deepcopy(extra)}
-        plan = allocator.plan(task, copy.deepcopy(usage), NOW, accounts=copy.deepcopy(fixture), overrides=[])
+        plan = allocator.plan(task, copy.deepcopy(usage), NOW, accounts=copy.deepcopy(fleet or fixture), overrides=[])
         selected = plan.get('selected_bundle') or {}
         decision = plan.get('decision') or {}
         return {'task': extra, 'realtime_loop': realtime, 'choice': plan.get('choice'), 'model': selected.get('model'),
                 'effort': selected.get('effort'), 'blocked': decision.get('blocked'),
                 'warnings': decision.get('warnings') or []}
+
+    def row_case(label, account, rows, constraints, realtime):
+        fleet = copy.deepcopy(fixture)
+        for spec in fleet['accounts'].values():
+            if isinstance(spec, dict):
+                spec['bundles'] = {}
+        fleet['accounts'][account]['bundles'] = {name: {**row, 'provider': account} for name, row in rows.items()}
+        result = planned({'constraints': constraints} if constraints else {}, realtime, fleet)
+        return {'label': label, 'rows': rows, **result}
 
     return {
         'source': {'repo': 'AgentCompass', 'commit': commit[:7], 'full_commit': commit,
@@ -194,6 +230,7 @@ def build(allocator, auto_bundles, support, commit, root):
         'stepdown': rows,
         'profile_validation': [verdict(multi, count) for multi, count in TASK_COUNTS],
         'pins': [planned(extra, realtime) for extra in PINS for realtime in (False, True)],
+        'row_pins': [row_case(*case, realtime) for case in ROW_CASES for realtime in (False, True)],
     }
 
 
