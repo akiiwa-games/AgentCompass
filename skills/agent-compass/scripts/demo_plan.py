@@ -1,7 +1,9 @@
 """Offline reference-fleet simulation. Never issues a dispatch receipt or reads host state."""
 
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 
 # The same bounded task as examples/task.json, so `plan --demo` needs no file from the repository.
@@ -42,8 +44,9 @@ def plan(document, allocator):
                             'resets_at': (now + timedelta(hours=4 if short else reset_hours)).isoformat()})
         usage['accounts'][name] = {'status': 'fresh', 'available': True, 'stale': False,
                                    'fetched_at': now.isoformat(), 'windows': windows}
-    result = allocator.plan(task, usage, now, records=[], accounts=accounts, overrides=[],
-                            host_policy_config={'allowed_accounts': list(snapshot)})
+    with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': 'off'}):  # this machine's cooldowns are host state
+        result = allocator.plan(task, usage, now, records=[], accounts=accounts, overrides=[],
+                                host_policy_config={'allowed_accounts': list(snapshot)})
     result['demo'] = True
     result['notice'] = ('DEMO: synthetic quota snapshot and reference fleet aliases. No credentials, live quotas, '
                         'network calls, ledger writes or worker launches. Rankings are illustrative.')
