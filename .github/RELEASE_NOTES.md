@@ -1,17 +1,21 @@
-AgentCompass v0.4.1 keeps models that are slow per turn away from tasks where the worker itself sits in a live loop: playing a game, idling through dailies, grabbing tickets, watching a market, or polling a page to click the moment something appears. It builds on v0.4.0.
+AgentCompass v0.4.2 leaves every judgement about a task to the classifier model, and tells you when an account can't be read or used instead of quietly routing around it. It builds on v0.4.1.
 
-- **A new task flag for live loops**: `realtime_loop` marks a task where the worker repeatedly observes and acts inside a running system, so a slow turn changes the outcome. Writing a ticket bot, fixing game automation code, or analysing an idle-farming log is not a live loop: a script runs the loop, not the model.
-  - **Only the classifier decides**: the flag comes from the classifier's reading of the task, or from a value the caller passes. No keywords or patterns in the code; a missing value is `false`. It does not turn on `needs_gui`, `needs_visual` or `local_only` by itself. The classifier calibration set grew to 47 cases, including paired opposites such as "write a ticket bot" and "watch the ticket page and buy at noon".
-- **Models now carry a per-effort `responsiveness`**: taken from community measurements (Artificial Analysis time to first answer token and output tokens per second; OpenRouter only where AA has none) and shipped in the reference data, so a fresh install has it with no local history.
-  - **How it is computed**: per-turn time = (time to first answer + 400 / output tok/s) × harness overhead, mapped from 4 s → 1 to 45 s → 0. For example Gemini 4 Argon High takes about 46 s per turn (0.00); Claude Sonnet 5.5 low about 6.6 s.
-  - **Models without measurements** (including variants found by provider discovery) get a cautious 0.52: never excluded, but ranked behind measured fast models.
-  - Maintainers refresh the numbers with `scripts/refresh_speed_data.py`; routing never goes online for them.
-- **Live-loop routing**: a live-loop task needs responsiveness of at least 0.50 (about 24.5 s per turn).
-  - A bundle below that steps down to the highest faster effort of the same model that clears both the floor and the task's ability gate, and only to an effort that harness actually supports. Antigravity models never step down. Cost, quota and the ledger use the effort actually dispatched.
-  - A model with no effort fast enough is excluded as "too slow per turn for a live loop".
-  - A model or effort you name yourself is kept as chosen, with a warning that it is slow for a live loop.
-- **Other tasks route as before**: compared with v0.4.0, every non-live-loop calibration case and existing routing test picks the same worker.
+- **No more classification from task text**: the code no longer reads keywords, patterns or message length to decide what a task is. Every profile field comes from the classifier's answer or from a profile the caller passes.
+  - **Two new classifier fields**: `wants_fast` (the task asks for fast mode, urgent turnaround or a pre-reset quota sprint) and `read_only_review` (a review that changes no code, so `code_complexity` must be 0). The calibration set grew to 53 cases.
+  - **When the classifier is unavailable**, times out or answers with an invalid profile, `roll` is blocked and says why. It does not fall back to a guess.
+- **Each account has one state**, the same in `plan`, `roll`, the tray account list and every warning: `ready`, `plan_inactive`, `usage_failing` or `auth_failed`.
+  - **A failed reading shows at once**. The account keeps working on its last good reading for 6 hours, then is excluded until a reading succeeds. An account with no error but no reading for over 2 hours also counts as failing.
+  - **A lapsed plan, a 402 or a subscription error code excludes the account at once.** So does a 401 or 403 on the usage API, shown as `auth_failed`.
+  - **A launch that reports an inactive subscription** excludes the account until its credentials change, the online plan shows a paid plan, a later launch succeeds, you clear it with `account_state.py --clear <account>`, or 6 hours pass and it is probed again. The account list shows when that retry is due.
+  - **Grok usage failures are no longer hidden**: a rejected key, an expired plan or a failed read now show in the account list like Codex and Claude, instead of "ready".
+  - **Plans come from each account's own readings**: the usage API's plan outranks the sign-in token's claim, and an account never borrows another account's readings. Plan names are matched in full first, then without a trailing `×N` pool count.
+- **Routing follows one contract**, shared with the Magpie and Cindy plugins:
+  - **One model resolver**: a family name stands in for a model only when nothing more exact matches, and scores below it.
+  - **Step-down stays in range**: a lower effort is chosen only from what the provider dispatches, what the row lists and what you left checked.
+  - **Names you give hold**: a named model or effort is kept in every mode, or the route is blocked with a warning. It is never silently replaced.
+- **Dispatch**: a worker creation the bridge gave up on now ends from the daemon's own record (`create_failed`) instead of waiting forever. A resume ends only on evidence from the host, not on a 2 minute clock. Only one worker that writes code can be unsettled per workspace.
+- **This update installs the full tray installer once.** The runtime fingerprint no longer counts Windows API-set DLLs, so it differs from v0.4.1 and the tray downloads the installer instead of the smaller code package. Later updates use the code package again.
 
-The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.4.1/packaging/SIGNING.md).
+The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.4.2/packaging/SIGNING.md).
 
 Status: alpha. Customize the reference fleet and model calibration for your own subscriptions.

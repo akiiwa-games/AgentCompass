@@ -1701,9 +1701,8 @@ print(json.dumps({{
              len(grok_wins) == 1 and grok_tags == [""] and grok_wins[0].get("remaining_pct") == 82.0,
              {"grok_wins": grok_wins, "grok_tags": grok_tags})
     op.check("tray hover tip renders masked pool member lines with remaining % and no raw emails",
-             "a***@example.com" in hover_text
-             and "b***@example.com" in hover_text
-             and "alice@example.com" not in hover_text,
+             "a***" in hover_text and "b***" in hover_text
+             and "@example.com" not in hover_text and "alice" not in hover_text,
              hover_text)
 
     # 3. Verify usage-float standalone & hosted behavior against the cloned plugin in ~/.agent-compass/plugins/usage-float
@@ -1779,7 +1778,7 @@ print(json.dumps({{
              rows)
     detail = rows.get("claude 7d×2", {}).get("detail") or ""
     op.check("usage-float hover detail (pool_detail_text) lists masked pool members and remaining %",
-             "a***@example.com" in detail and "b***@example.com" in detail and "alice@example.com" not in detail,
+             "a***" in detail and "b***" in detail and "@example.com" not in detail and "alice" not in detail,
              detail)
     op.check("usage-float titles week-only account 'grok' without a '7d' suffix and shows left_pct=82",
              "grok" in rows and "grok 7d" not in rows and rows["grok"].get("left_pct") == 82,
