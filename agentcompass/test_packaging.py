@@ -235,6 +235,14 @@ class PackagingTests(unittest.TestCase):
             same_fp = app_bundle.compute_runtime_fingerprint(repo)
             self.assertEqual(same_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
 
+            # 1b. Universal CRT / API-set DLLs that only the CI runner image bundles do not change it either
+            internal = repo / "dist" / "AgentCompass" / "_internal"
+            for name in ("api-ms-win-core-file-l1-1-0.dll", "API-MS-WIN-CRT-heap-l1-1-0.dll", "ucrtbase.dll"):
+                (internal / name).write_bytes(b"MZ-runner-image")
+            crt_fp = app_bundle.compute_runtime_fingerprint(repo)
+            self.assertEqual(crt_fp["runtime_fingerprint"], base_fp["runtime_fingerprint"])
+            self.assertEqual(set(crt_fp["bundled_runtime_assets_sha256"]), {"_internal/python313.dll"})
+
             # 2. Editing .spec changes runtime_fingerprint
             (repo / "packaging" / "agentcompass-tray.spec").write_text("# spec v2\n", encoding="utf-8", newline="\n")
             spec_fp = app_bundle.compute_runtime_fingerprint(repo)
