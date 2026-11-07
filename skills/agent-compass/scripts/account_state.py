@@ -12,7 +12,7 @@ reading newer than the latch; no remote error text is stored.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -20,6 +20,7 @@ import re
 
 READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED = 'ready', 'plan_inactive', 'usage_failing', 'auth_failed'
 DEFAULT_EXCLUDE_AFTER_HOURS = 6.0
+LATCH_RETRY_HOURS = 6.0
 EXCLUDE_AFTER_ENV = 'AGENTCOMPASS_USAGE_FAILING_EXCLUDE_HOURS'
 # Twice the longest polling cadence the router accepts (route_judge.POLL_MAX_SECONDS): a reading this old without an
 # error means nothing is reading the account any more.
@@ -47,7 +48,8 @@ _LAUNCH_ERROR = re.compile(
     r'订阅(?:已)?(?:过期|到期|失效|取消)', re.I)
 
 
-ONLINE_PLAN_SOURCES = ('usage_api', 'usage_api_shared', 'account-tier', 'collector')
+ONLINE_PLAN_SOURCES = ('usage_api', 'usage_api_shared', 'account-tier')
+_POOL_SUFFIX = re.compile(r'\s*×\s*\d+\s*$')
 
 
 def _time(value):
@@ -58,9 +60,12 @@ def _time(value):
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
+def strip_pool_count(label):
+    return _POOL_SUFFIX.sub('', str(label or ''))
+
+
 def plan_words(label):
-    stripped = re.sub(r'(?:\s+x|\s*×)\s*\d+\s*$', '', str(label or ''), flags=re.I)
-    return ' '.join(re.findall(r'[a-z0-9]+', stripped.lower()))
+    return ' '.join(re.findall(r'[a-z0-9]+', str(label or '').replace('×', 'x').lower()))
 
 
 def plan_without_vendor(label):
@@ -68,7 +73,12 @@ def plan_without_vendor(label):
 
 
 def plan_is_inactive(family, plan):
-    return family in SUBSCRIPTION_FAMILIES and plan_without_vendor(plan) in INACTIVE_PLANS
+    if family not in SUBSCRIPTION_FAMILIES:
+        return False
+    if plan_without_vendor(plan) in INACTIVE_PLANS:
+        return True
+    stripped = strip_pool_count(plan)
+    return stripped != str(plan or '') and plan_without_vendor(stripped) in INACTIVE_PLANS
 
 
 def reading(row, now):
@@ -203,8 +213,9 @@ def usage_refused_credentials(row, collector_words=()):
     return status in (401, 403) if status else row.get('error') in collector_words
 
 
-def _latch_credential_key(account, state_dir=None):
+def _latch_context(account, state_dir=None):
     root = Path(state_dir or os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass')
+    found_key, found_plan = None, None
     for candidate, section in (
         (os.environ.get('ROUTER_USAGE_CACHE'), 'providers'),
         (root / 'usage-cache.json', 'providers'),
@@ -214,23 +225,38 @@ def _latch_credential_key(account, state_dir=None):
             continue
         try:
             doc = json.loads(Path(candidate).read_text(encoding='utf-8'))
-            key = ((doc.get(section) or {}).get(account) or {}).get('credential_key')
-            if isinstance(key, str) and key:
-                return key
+            row = (doc.get(section) or {}).get(account) or {}
+            key = row.get('credential_key')
+            if not found_key and isinstance(key, str) and key:
+                found_key = key
+            if not found_plan:
+                if section == 'accounts' and row.get('plan_source') in ONLINE_PLAN_SOURCES and isinstance(row.get('plan'), str):
+                    found_plan = row['plan']
+                elif section == 'providers' and row.get('backend_kind') != 'gateway' and isinstance(row.get('plan_label'), str) and row['plan_label'].strip():
+                    found_plan = row['plan_label'].strip()
         except (OSError, ValueError, AttributeError):
             continue
-    return None
+    if not found_plan and account == 'antigravity':
+        try:
+            tier_doc = json.loads((root / 'antigravity-plan.json').read_text(encoding='utf-8'))
+            if isinstance(tier_doc.get('plan'), str) and tier_doc['plan'].strip():
+                found_plan = tier_doc['plan'].strip()
+        except (OSError, ValueError, AttributeError):
+            pass
+    return found_key, found_plan
 
 
 def record_launch_error(account, error=None, *, code=None, status=None, at=None, source=None, state_dir=None,
-                        credential_key=None):
+                        credential_key=None, online_plan=None):
     """Latch `plan_inactive` when a launch reports the subscription has lapsed. Returns True when it did."""
     if not error_means_inactive(error, code, status):
         return False
     import override_store
     path = latch_path(state_dir)
     at = at or datetime.now(timezone.utc).isoformat()
-    key = credential_key or _latch_credential_key(account, state_dir)
+    ctx_key, ctx_plan = _latch_context(account, state_dir)
+    key = credential_key or ctx_key
+    plan = online_plan if online_plan is not None else ctx_plan
     with override_store.locked(path):
         document = _read_latches(path)
         held = _time((document['accounts'].get(account) or {}).get('observed_at'))
@@ -239,12 +265,14 @@ def record_launch_error(account, error=None, *, code=None, status=None, at=None,
         entry = {'observed_at': at, 'source': source}
         if key:
             entry['credential_key'] = key
+        if isinstance(plan, str) and plan:
+            entry['online_plan'] = plan
         document['accounts'][account] = entry
         override_store.write(path, document)
     return True
 
 
-def seal_latch_credential(account, credential_key, *, state_dir=None, expected_observed_at=None):
+def seal_latch_credential(account, credential_key, *, online_plan=None, state_dir=None, expected_observed_at=None):
     if not isinstance(account, str) or not account or not isinstance(credential_key, str) or not credential_key:
         return False
     import override_store
@@ -259,6 +287,8 @@ def seal_latch_credential(account, credential_key, *, state_dir=None, expected_o
         if expected_observed_at is not None and row.get('observed_at') != expected_observed_at:
             return False
         row['credential_key'] = credential_key
+        if isinstance(online_plan, str) and online_plan and not row.get('online_plan'):
+            row['online_plan'] = online_plan
         override_store.write(path, document)
     return True
 
@@ -267,7 +297,7 @@ def latched(state_dir=None):
     return _read_latches(latch_path(state_dir))['accounts']
 
 
-def clear_latch(account, *, state_dir=None, expected_observed_at=None):
+def clear_latch(account, *, state_dir=None, expected_observed_at=None, launched_at=None):
     if not isinstance(account, str) or not account:
         return False
     import override_store
@@ -277,28 +307,53 @@ def clear_latch(account, *, state_dir=None, expected_observed_at=None):
     with override_store.locked(path):
         document = _read_latches(path)
         row = document['accounts'].get(account)
-        if row is None or (expected_observed_at is not None and row.get('observed_at') != expected_observed_at):
+        if not isinstance(row, dict):
+            return False
+        if expected_observed_at is not None and row.get('observed_at') != expected_observed_at:
             return False  # A newer launch failure outranks this recovery.
+        if launched_at is not None:
+            launched, observed = _time(launched_at), _time(row.get('observed_at'))
+            if not (launched and observed and launched > observed):
+                return False
         del document['accounts'][account]
         override_store.write(path, document)
     return True
 
 
-def latch_outlived(latch, last_good, row=None):
-    """A good reading newer than the launch failure ends the latch once the credential or online plan confirms recovery."""
-    observed, fetched = _time((latch or {}).get('observed_at')), _time(last_good)
-    if not (observed and fetched and fetched > observed):
+def latch_retry_at(latch):
+    observed = _time((latch or {}).get('observed_at'))
+    return (observed + timedelta(hours=LATCH_RETRY_HOURS)).isoformat() if observed else None
+
+
+def latch_reason(latch):
+    retry_at = latch_retry_at(latch) or f'after {LATCH_RETRY_HOURS:g}h'
+    return (f'a launch reported the subscription inactive (auto-retry at {retry_at}, '
+            'or clear with `account_state.py --clear <account>`)')
+
+
+def latch_outlived(latch, last_good, row=None, now=None):
+    """Unlock when the 6h re-probe timer expires, the credential changed, or an online plan source reports a different active plan."""
+    observed = _time((latch or {}).get('observed_at'))
+    if not observed:
         return False
+    current_now = _time(now) if isinstance(now, str) else now
+    if current_now and (current_now - observed).total_seconds() >= LATCH_RETRY_HOURS * 3600:
+        return True
     if not isinstance(row, dict):
         return False
     latched_key, current_key = (latch or {}).get('credential_key'), row.get('credential_key')
     if latched_key and current_key and latched_key != current_key:
         return True
+    fetched = _time(last_good)
+    if not (fetched and fetched > observed):
+        return False
     family = row.get('quota_family') or row.get('family')
     plan = row.get('plan')
     plan_read = _time(row.get('plan_read_at'))
+    prior_plan = (latch or {}).get('online_plan') or row.get('credential_plan')
     return bool(row.get('plan_source') in ONLINE_PLAN_SOURCES and plan
-                and not plan_is_inactive(family, plan) and plan_read and plan_read > observed)
+                and not plan_is_inactive(family, plan) and plan_read and plan_read > observed
+                and (not prior_plan or plan_without_vendor(plan) != plan_without_vendor(prior_plan)))
 
 
 if __name__ == '__main__':

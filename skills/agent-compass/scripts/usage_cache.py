@@ -121,6 +121,7 @@ def merge(documents):
     providers = dict(first['providers'])
     polls = dict(first['poll']) if isinstance(first.get('poll'), dict) else {}
     origin = {name: str(first_path) for name in providers}
+    first_at = _stamp(first.get('fetched_at'))
     for path, document in documents[1:]:
         other_polls = document.get('poll') if isinstance(document.get('poll'), dict) else {}
         for name, row in document['providers'].items():
@@ -129,7 +130,17 @@ def merge(documents):
             current = providers.get(name)
             seen = _stamp(row.get('fetched_at'))
             held = _stamp(current.get('fetched_at')) if isinstance(current, dict) else None
-            if current is None or (seen is not None and (held is None or seen > held)):
+            current_error = (isinstance(current, dict) and held is None
+                             and bool(current.get('error') or current.get('error_status')
+                                      or current.get('error_code') or current.get('available') is False))
+            if current_error:
+                current_at = _stamp(current.get('error_at')) or first_at
+                diff_cred = bool(row.get('credential_key') and current.get('credential_key')
+                                 and row.get('credential_key') != current.get('credential_key'))
+                take = diff_cred and seen is not None and (current_at is None or seen > current_at)
+            else:
+                take = current is None or (seen is not None and (held is None or seen > held))
+            if take:
                 providers[name] = row
                 origin[name] = str(path)
                 if name in other_polls:

@@ -673,7 +673,7 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         import launch_failures
         launch_failures.clear(row['bundle'].get('account'))
         import account_state
-        account_state.clear_latch(row['bundle'].get('account'))
+        account_state.clear_latch(row['bundle'].get('account'), launched_at=row.get('launched_at') or row.get('created_at'))
     return row
 
 

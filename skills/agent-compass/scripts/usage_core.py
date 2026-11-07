@@ -543,6 +543,13 @@ def provider_credential_key(provider_id: str) -> str | None:
         home = claude_account_home(provider_id)
         oauth, _ = read_claude_oauth(home)
         token = (oauth or {}).get("accessToken")
+    elif provider_id == "pi":
+        home = _pi_agent_home()
+        auth, _ = read_pi_codex_auth(home)
+        tokens = (auth or {}).get("tokens") or {}
+        token = str(tokens.get("access_token") or '') + ':' + str(tokens.get("account_id") or '')
+        if not tokens.get("access_token"):
+            token = None
     else:
         codex_accounts = discover_codex_accounts()
         if provider_id in codex_accounts:
@@ -715,6 +722,7 @@ def provider_error_code(payload: Any) -> str | None:
 def mark_provider_stale(provider_id: str, error: str, status: int | None = None, code: str | None = None,
                         plan: str | None = None) -> None:
     key = provider_credential_key(provider_id)
+    now_iso = datetime.now(timezone.utc).isoformat()
     def update(cache):
         providers = cache.setdefault('providers', {})
         row = providers.get(provider_id)
@@ -722,7 +730,7 @@ def mark_provider_stale(provider_id: str, error: str, status: int | None = None,
             providers.pop(provider_id, None)
             row = None
         if not isinstance(row, dict):
-            if status is None and code is None and plan is None:
+            if status is None and code is None and plan is None and key is not None:
                 return
             row = {
                 'provider_id': provider_id,
@@ -733,9 +741,12 @@ def mark_provider_stale(provider_id: str, error: str, status: int | None = None,
                 'available': False,
                 'stale': True,
                 'fetched_at': None,
+                'error_at': now_iso,
                 'credential_key': key,
             }
             providers[provider_id] = row
+        if not row.get('error_at') or not row.get('stale') or status in (401, 402, 403) or code:
+            row['error_at'] = now_iso
         row['stale'] = True
         row['error'] = error
         # What the provider itself said, for provider_inventory; a good reading replaces the whole row.

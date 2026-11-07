@@ -804,6 +804,7 @@ def _discover(home=None, environ=None, now=None):
                'status': 'ready' if bound and enabled and (facts['present'] or is_api) else
                          'disabled' if not enabled else 'saved' if not bound else 'missing_credentials',
                'plan': facts['plan'], 'plan_source': 'credential' if facts['plan'] else None,
+               'credential_plan': configured_plan(family, facts['plan']) if facts['plan'] else None,
                'credential_key': facts['credential_key'],
                'identity': facts['identity'], 'billing': ('metered' if base in ('https://api.anthropic.com', 'https://api.openai.com')
                                                          else 'unknown') if is_api else 'subscription'}
@@ -811,7 +812,8 @@ def _discover(home=None, environ=None, now=None):
         bindings[name]['credential_identity'] = facts.get('credential_identity')
         bindings[name]['credential_version'] = facts.get('credential_version')
         if is_api:
-            row.update(plan=None, plan_source=None, credential_key=digest('api', _resolved(account_home), base, token),
+            row.update(plan=None, plan_source=None, credential_plan=None,
+                       credential_key=digest('api', _resolved(account_home), base, token),
                        identity=digest(base, token))
             bindings[name].update(identity=row['identity'], credential_identity=None, credential_version=None)
             if models:
@@ -993,8 +995,9 @@ def _discover(home=None, environ=None, now=None):
             None,
         )
         pi_cached = obj(cache_rows.get('pi'))
+        pi_matches = bool(pi_cached.get('credential_key') and pi_cached.get('credential_key') == pi_facts.get('credential_key'))
         # Pi's login carries no id_token; its plan is what the usage API or the account it signs in as reports.
-        pi_online = configured_plan('codex', pi_cached.get('plan_label')) if pi_cached.get('plan_label') else None
+        pi_online = configured_plan('codex', pi_cached.get('plan_label')) if pi_matches and pi_cached.get('plan_label') else None
         pi_plan = pi_facts['plan'] or pi_online or (result['accounts'][matched_codex].get('plan') if matched_codex else None)
         pi_row = {
             'family': 'pi',
@@ -1005,6 +1008,7 @@ def _discover(home=None, environ=None, now=None):
             'sources': ['native'] + (['paseo'] if 'pi' in definitions else []),
             'status': 'ready' if pi_launcher['status'] == 'ready' else pi_launcher['status'],
             'plan': pi_plan,
+            'credential_key': pi_facts['credential_key'],
             'identity': pi_facts['identity'],
             'billing': 'subscription',
             **({'plan_source': 'usage_api', 'plan_read_at': pi_cached.get('fetched_at')} if not pi_facts['plan'] and pi_online else {}),
@@ -1012,13 +1016,15 @@ def _discover(home=None, environ=None, now=None):
         }
         bindings['pi'] = {'identity': pi_facts['identity'], 'credential_identity': pi_facts.get('credential_identity'),
                           'base': '', 'key': None}
-        if pi_cached:
+        if pi_matches:
             pi_row['usage_binding'] = 'matches'
             if pi_row['status'] == 'ready' and account_state.usage_refused_plan(pi_cached):
                 pi_row.update(status=account_state.PLAN_INACTIVE,
                               reason=f"usage API refused: {pi_cached.get('error_code') or pi_cached.get('error_status')}")
             elif pi_row['status'] == 'ready' and account_state.usage_refused_credentials(pi_cached, COLLECTOR_REJECTED['codex']):
                 pi_row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
+        elif pi_cached:
+            pi_row['usage_binding'] = 'changed'
         result['accounts']['pi'] = pi_row
     elif pi_installed or pi_home.is_dir() or (home / '.pi').is_dir():
         result['accounts']['pi'] = {
@@ -1140,18 +1146,7 @@ def _discover(home=None, environ=None, now=None):
             result['launchers'][name]['status'] = row['status']
     # One subscription can be exposed through multiple launchers/products. Keep
     # its quota owner stable instead of giving each alias a full allowance.
-    owners = {}
-    ordered = sorted(result['accounts'], key=lambda name: (result['accounts'][name]['status'] not in account_state.LISTED_STATES,
-                                                           name != result['accounts'][name]['family'], name))
-    for name in ordered:
-        row = result['accounts'][name]
-        ident = row.get('identity')
-        if ident and not row.get('quota_account'):
-            row['quota_account'] = owners.setdefault((row['family'], ident), name)
-        elif ident and row.get('quota_account'):
-            qfam = row.get('quota_family') or row['family']
-            if (qfam, ident) in owners:
-                row['quota_account'] = owners[(qfam, ident)]
+    _assign_quota_owners(result['accounts'])
     import quota_exhaustion
     exhaustion_path = state_dir / 'quota-exhaustion.json'
     exhausted_accounts = obj(read_json(exhaustion_path)[0].get('accounts')) if exhaustion_path.is_file() else {}
@@ -1169,6 +1164,30 @@ def _discover(home=None, environ=None, now=None):
     return result
 
 
+def _assign_quota_owners(accounts):
+    owners = {}
+    ordered = sorted(
+        accounts,
+        key=lambda name: (
+            accounts[name]['status'] != 'ready',
+            accounts[name]['status'] not in account_state.LISTED_STATES,
+            name != accounts[name]['family'],
+            name,
+        ),
+    )
+    for name in ordered:
+        row = accounts[name]
+        ident = row.get('identity')
+        if ident and (row.get('family') in ('claude', 'codex') or not row.get('quota_account')):
+            row['quota_account'] = owners.setdefault((row['family'], ident), name)
+    for name in ordered:
+        row = accounts[name]
+        ident = row.get('identity')
+        qfam = row.get('quota_family') or row['family']
+        if ident and row.get('quota_account') and (qfam, ident) in owners:
+            row['quota_account'] = owners[(qfam, ident)]
+
+
 def _share_online_plan(rows):
     """Accounts on one subscription have one plan: the newest usage-API plan_type among them beats an older claim."""
     online = {}
@@ -1178,8 +1197,10 @@ def _share_online_plan(rows):
             online[owner] = (str(row.get('plan_read_at') or ''), row['plan'])
     for row in rows.values():
         owner = row.get('quota_account')
-        if owner in online and row.get('plan_source') != 'usage_api' and row.get('billing') == 'subscription':
+        if owner in online and row.get('billing') == 'subscription':
             read_at, plan = online[owner]
+            if row.get('plan_source') == 'usage_api' and str(row.get('plan_read_at') or '') >= read_at:
+                continue
             claim = row.get('plan')
             if claim and row.get('plan_source') == 'credential' and configured_plan('codex', claim) != plan:
                 row['plan_conflict'] = {'online': plan, 'credential': claim}
@@ -1211,6 +1232,41 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
     previous_rows = obj(previous.get('accounts'))
     hours = account_state.exclude_after_hours(environ, override_doc)
     latches = account_state.latched(state_dir)
+
+    def _cred_id(slot):
+        return (bindings or {}).get(slot, {}).get('credential_identity') or rows[slot].get('credential_key')
+
+    def _refused_at(slot):
+        crow = obj(cache_rows.get(slot))
+        return account_state._time(crow.get('error_at') or crow.get('fetched_at'))
+
+    # A sibling with a good reading newer than a cached refusal supersedes that stale refusal (e.g. after renewal).
+    for group in members.values():
+        good_by_slot = {}
+        for slot in group:
+            if rows[slot].get('usage_binding') == 'changed':
+                continue
+            issue, good_iso = account_state.reading(cache_rows.get(slot), now)
+            qfam = rows[slot].get('quota_family') or rows[slot].get('family')
+            if issue is None and not account_state.plan_is_inactive(qfam, rows[slot].get('plan')):
+                good_time = account_state._time(good_iso)
+                if good_time is not None:
+                    good_by_slot[slot] = good_time
+        newest_group_good = max(good_by_slot.values(), default=None)
+        for slot in group:
+            crow = obj(cache_rows.get(slot))
+            ref_at = _refused_at(slot)
+            if rows[slot].get('status') == account_state.PLAN_INACTIVE and account_state.usage_refused_plan(crow):
+                if newest_group_good is not None and (ref_at is None or newest_group_good > ref_at):
+                    rows[slot]['status'] = account_state.READY
+                    rows[slot].pop('reason', None)
+            elif rows[slot].get('status') == account_state.AUTH_FAILED:
+                cid = _cred_id(slot)
+                newest_cred_good = max((t for s, t in good_by_slot.items() if cid and _cred_id(s) == cid), default=None)
+                if newest_cred_good is not None and (ref_at is None or newest_cred_good > ref_at):
+                    rows[slot]['status'] = account_state.READY
+                    rows[slot].pop('reason', None)
+
     for name, row in rows.items():
         reads = _reads_usage(name, row, override_doc)
         group = sorted(members.get(row.get('quota_account') or name) or [name], key=lambda other: other != name)
@@ -1228,10 +1284,13 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
         if latch and not latch.get('credential_key'):
             latch_row = rows.get(latch_name) or row
             if latch_row.get('credential_key'):
-                account_state.seal_latch_credential(latch_name, latch_row['credential_key'], state_dir=state_dir,
-                                                    expected_observed_at=latch.get('observed_at'))
+                online_plan = latch_row.get('plan') if latch_row.get('plan_source') in account_state.ONLINE_PLAN_SOURCES else None
+                account_state.seal_latch_credential(latch_name, latch_row['credential_key'], online_plan=online_plan,
+                                                    state_dir=state_dir, expected_observed_at=latch.get('observed_at'))
                 latch['credential_key'] = latch_row['credential_key']
-        if latch and problem is None and account_state.latch_outlived(latch, last_good, row):
+                if online_plan and not latch.get('online_plan'):
+                    latch['online_plan'] = online_plan
+        if latch and account_state.latch_outlived(latch, last_good if problem is None else None, row, now=now):
             if account_state.clear_latch(latch_name, state_dir=state_dir, expected_observed_at=latch.get('observed_at')):
                 latches.pop(latch_name, None)
                 latch = None
@@ -1242,11 +1301,11 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
              if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.PLAN_INACTIVE),
             None,
         )
-        cred_id = (bindings or {}).get(name, {}).get('credential_identity') or row.get('credential_key')
+        cred_id = _cred_id(name)
         auth_peer = next(
             (rows[other] for other in group
              if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.AUTH_FAILED
-             and cred_id and cred_id == ((bindings or {}).get(other, {}).get('credential_identity') or rows[other].get('credential_key'))),
+             and cred_id and cred_id == _cred_id(other)),
             None,
         )
         if inactive_peer is not None:
@@ -1256,14 +1315,17 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
         elif account_state.plan_is_inactive(row.get('quota_family') or row.get('family'), row.get('plan')):
             row.update(status=account_state.PLAN_INACTIVE, reason=f"plan {row.get('plan')}")
         elif latch:
-            row.update(status=account_state.PLAN_INACTIVE, reason='a launch reported the subscription inactive',
-                       plan_inactive_at=latch.get('observed_at'))
+            row.update(status=account_state.PLAN_INACTIVE, reason=account_state.latch_reason(latch),
+                       plan_inactive_at=latch.get('observed_at'),
+                       plan_inactive_retry_at=account_state.latch_retry_at(latch))
         elif reads and problem and cache_rows:
-            cached_at = next((obj(cache_rows.get(o)).get('fetched_at') for o in group
-                              if obj(cache_rows.get(o)).get('fetched_at')), None)
+            cached_at = next((obj(cache_rows.get(o)).get('error_at') or obj(cache_rows.get(o)).get('fetched_at')
+                              for o in group
+                              if obj(cache_rows.get(o)).get('error_at') or obj(cache_rows.get(o)).get('fetched_at')), None)
             account_state.failing(row, problem, last_good, previous_rows.get(name), now, hours, cached_at=cached_at)
         if name in result['launchers'] and not account_state.dispatchable(row):
             result['launchers'][name]['status'] = row['status']
+    _assign_quota_owners(rows)
 
 
 def environment_rewrites_accounts(home, environ=None):
@@ -1324,29 +1386,37 @@ def account_family(account, accounts=None, inventory=None):
 # else stays what it is, has no template, and is priced at UNKNOWN_PLAN_PRICED_AS with a warning. `prolite` is the usage
 # API's name for the $100 tier (an inference from the Codex binary and the price ladder), so it is `pro100`, never `pro`.
 PLAN_NAMES = {
-    'claude': {'pro': 'pro', 'max': 'max', 'max5': 'max5', 'max 5x': 'max5', '5x': 'max5', 'max20': 'max20',
-               'max 20x': 'max20', '20x': 'max20', 'free': 'free', 'team': 'team', 'enterprise': 'enterprise'},
+    'claude': {'pro': 'pro', 'max': 'max', 'max5': 'max5', 'max 5x': 'max5', 'max x5': 'max5', '5x': 'max5',
+               'x5': 'max5', 'max20': 'max20', 'max 20x': 'max20', 'max x20': 'max20', '20x': 'max20',
+               'x20': 'max20', 'free': 'free', 'team': 'team', 'enterprise': 'enterprise'},
     'codex': {'plus': 'plus', 'pro': 'pro', 'pro100': 'pro100', 'pro 100': 'pro100', '100': 'pro100',
               'prolite': 'pro100', 'pro lite': 'pro100', 'free': 'free', 'team': 'team', 'enterprise': 'enterprise'},
-    'antigravity': {'pro': 'pro', 'ultra': 'ultra', 'ultra5': 'ultra5', 'ultra 5x': 'ultra5', 'ultra20': 'ultra20',
-                    'ultra 20x': 'ultra20', 'free': 'free', 'free tier': 'free'},
+    'antigravity': {'pro': 'pro', 'ultra': 'ultra', 'ultra5': 'ultra5', 'ultra 5x': 'ultra5',
+                    'ultra x5': 'ultra5', 'ultra20': 'ultra20', 'ultra 20x': 'ultra20', 'ultra x20': 'ultra20',
+                    'free': 'free', 'free tier': 'free'},
 }
 UNKNOWN_PLAN_PRICED_AS = {'claude': 'pro', 'codex': 'plus', 'antigravity': 'pro'}
 
 
 def configured_plan(family, label):
-    label = str(label or '').lower()
+    raw = str(label or '').lower()
     names = PLAN_NAMES.get(family)
     if names is None:
-        return label
-    words = account_state.plan_words(label)
-    if words in names:
-        return names[words]
-    return names.get(account_state.plan_without_vendor(label), label)
+        return raw
+    for candidate in (raw, account_state.strip_pool_count(raw)):
+        words = account_state.plan_words(candidate)
+        if words in names:
+            return names[words]
+        without_vendor = account_state.plan_without_vendor(candidate)
+        if without_vendor in names:
+            return names[without_vendor]
+    return raw
 
 
 def unavailable_reason(inventory, account, provider=None):
-    row = obj(obj(inventory.get('accounts')).get(account))
+    accounts = obj(inventory.get('accounts'))
+    prov_row = obj(accounts.get(provider)) if provider and provider != account else {}
+    row = prov_row if prov_row.get('status') in account_state.LISTED_STATES else obj(accounts.get(account))
     launcher = obj(obj(inventory.get('launchers')).get(provider or account))
     if account_state.unavailable_text(row):
         return f'provider discovery: {account_state.unavailable_text(row)}'

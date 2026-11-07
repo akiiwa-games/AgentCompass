@@ -420,6 +420,104 @@ class StateTests(Machine):
             self.assertEqual(rows_401[slot]['quota_account'], 'codex')
             self.assertEqual(rows_401[slot]['status'], account_state.AUTH_FAILED)
 
+    def test_ready_sibling_takes_quota_ownership_when_primary_auth_fails(self):
+        self.write('.codex/auth.json', {'tokens': {
+            'access_token': 'expired-codex-1', 'account_id': 'acct-shared',
+            'id_token': jwt({'https://api.openai.com/auth': {'chatgpt_plan_type': 'plus'}})}})
+        self.write('.codex-2/auth.json', {'tokens': {
+            'access_token': 'valid-codex-2', 'account_id': 'acct-shared',
+            'id_token': jwt({'https://api.openai.com/auth': {'chatgpt_plan_type': 'plus'}})}})
+        self.write('.pi/agent/auth.json', {'openai-codex': {
+            'type': 'oauth', 'access': 'valid-pi', 'accountId': 'acct-shared'}})
+        self.write('.paseo/config.json', {'agents': {'providers': {
+            'codex': {'type': 'codex', 'enabled': True},
+            'codex-2': {'type': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-2')}},
+            'pi': {'type': 'pi', 'enabled': True},
+        }}})
+        with patch.object(inventory, '_which', return_value='/usr/bin/mock'):
+            self.cache(
+                codex={'error': 'HTTP 401', 'error_status': 401, 'fetched_at': None, 'available': False, 'windows': []},
+                **{'codex-2': {'plan_label': 'plus'}, 'pi': {'plan_label': 'plus'}},
+            )
+            inv = inventory.discover(now=self.now)
+            self.assertEqual(inv['accounts']['codex']['status'], account_state.AUTH_FAILED)
+            self.assertEqual(inv['accounts']['codex-2']['status'], account_state.READY)
+            self.assertEqual(inv['accounts']['pi']['status'], account_state.READY)
+            for slot in ('codex', 'codex-2', 'pi'):
+                self.assertEqual(inv['accounts'][slot]['quota_account'], 'codex-2')
+            accounts = inventory.apply(allocator.load_accounts(), inv)['accounts']
+            self.assertFalse(accounts['codex']['verified'])
+            self.assertTrue(accounts['codex-2']['verified'])
+            c2_bundles = accounts['codex-2']['bundles']
+            self.assertIsNone(c2_bundles['codex-2__sol_high'].get('discovery_unavailable'))
+            self.assertIsNone(c2_bundles['pi_sol_high'].get('discovery_unavailable'))
+            self.assertIn('credentials rejected', c2_bundles['sol_high'].get('discovery_unavailable') or '')
+
+    def test_pi_credential_rotation_and_newer_good_reading_supersede_stale_refusal(self):
+        self.codex_login('plus', 'codex', 'acct-renewed')
+        self.codex_login('plus', 'codex-2', 'acct-renewed')
+        self.write('.pi/agent/auth.json', {'openai-codex': {
+            'type': 'oauth', 'access': 'tok-pi-current', 'accountId': 'acct-renewed'}})
+        self.write('.paseo/config.json', {'agents': {'providers': {
+            'codex': {'type': 'codex', 'enabled': True},
+            'codex-2': {'type': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-2')}},
+            'pi': {'type': 'pi', 'enabled': True},
+        }}})
+        bound = inventory.discover(now=self.now)['accounts']
+        # Sub-case 1: pi has an old cached 402 from a previous credential -> usage_binding='changed', ignored
+        self.write('.agent-compass/usage-cache.json', {'providers': {
+            'codex': {'provider_id': 'codex', 'credential_key': bound['codex']['credential_key'],
+                      'fetched_at': self.now.isoformat(), 'available': True, 'plan_label': 'plus',
+                      'windows': self.windows()},
+            'pi': {'provider_id': 'pi', 'credential_key': 'old-pi-credential-key',
+                   'fetched_at': None, 'error_at': (self.now - timedelta(minutes=20)).isoformat(),
+                   'available': False, 'error': 'HTTP 402', 'error_status': 402,
+                   'error_code': 'deactivated_workspace', 'windows': []},
+        }})
+        inv_pi = inventory.discover(now=self.now)['accounts']
+        self.assertEqual(inv_pi['pi'].get('usage_binding'), 'changed')
+        self.assertEqual(inv_pi['pi']['status'], account_state.READY)
+        self.assertEqual(inv_pi['codex']['status'], account_state.READY)
+
+        # Sub-case 2: codex renewed and polled 200 OK at now-5m, while idle codex-2 holds an older 402 from now-25m
+        self.write('.agent-compass/usage-cache.json', {'providers': {
+            'codex': {'provider_id': 'codex', 'credential_key': bound['codex']['credential_key'],
+                      'fetched_at': (self.now - timedelta(minutes=5)).isoformat(), 'available': True,
+                      'plan_label': 'plus', 'windows': self.windows()},
+            'codex-2': {'provider_id': 'codex-2', 'credential_key': bound['codex-2']['credential_key'],
+                        'fetched_at': None, 'error_at': (self.now - timedelta(minutes=25)).isoformat(),
+                        'available': False, 'error': 'HTTP 402', 'error_status': 402,
+                        'error_code': 'payment_required', 'windows': []},
+        }})
+        inv_renewed = inventory.discover(now=self.now)['accounts']
+        self.assertEqual(inv_renewed['codex']['status'], account_state.READY)
+        self.assertEqual(inv_renewed['codex-2']['status'], account_state.READY)
+
+        # Sub-case 3: Same-credential older 401 on codex-2 does not override newer 200 OK on codex
+        self.write('.agent-compass/usage-cache.json', {'providers': {
+            'codex': {'provider_id': 'codex', 'credential_key': bound['codex']['credential_key'],
+                      'fetched_at': (self.now - timedelta(minutes=5)).isoformat(), 'available': True,
+                      'plan_label': 'plus', 'windows': self.windows()},
+            'codex-2': {'provider_id': 'codex-2', 'credential_key': bound['codex-2']['credential_key'],
+                        'fetched_at': None, 'error_at': (self.now - timedelta(minutes=25)).isoformat(),
+                        'available': False, 'error': 'HTTP 401', 'error_status': 401, 'windows': []},
+        }})
+        inv_auth = inventory.discover(now=self.now)['accounts']
+        self.assertEqual(inv_auth['codex']['status'], account_state.READY)
+        self.assertEqual(inv_auth['codex-2']['status'], account_state.READY)
+
+        # Sub-case 4: Never-succeeded minimal error row records error_at and uses it as the 6h clock anchor
+        cache_path = self.state / 'usage-cache.json'
+        cache_path.unlink(missing_ok=True)
+        with (patch.object(usage_core, 'CACHE_PATH', cache_path),
+              patch.object(usage_core, 'provider_credential_key', return_value=bound['codex']['credential_key'])):
+            usage_core.mark_provider_stale('codex', 'HTTP 502', status=502)
+        err_row = json.loads(cache_path.read_text(encoding='utf-8'))['providers']['codex']
+        self.assertIsNotNone(err_row.get('error_at'))
+        t0 = account_state._time(err_row['error_at'])
+        self.assertFalse(self.row('codex', now=t0 + timedelta(hours=5))['usage_excluded'])
+        self.assertTrue(self.row('codex', now=t0 + timedelta(hours=6, minutes=1))['usage_excluded'])
+
     def test_magpie_pooled_plan_labels_and_planless_failures_are_handled_as_subscriptions(self):
         self.assertEqual(inventory.configured_plan('claude', 'max 20x ×2'), 'max20')
         self.assertEqual(inventory.configured_plan('claude', 'max5'), 'max5')
@@ -441,6 +539,27 @@ class StateTests(Machine):
         spec_fail = self.spec('claude')
         self.assertEqual((spec_fail['billing'], spec_fail['verified']), ('subscription', False))
 
+    def test_tier_multipliers_match_before_pool_suffix_and_preserve_capacities(self):
+        base = allocator.load_accounts()
+        for family, label, expected_plan, expected_cap in (
+            ('antigravity', 'Ultra x5', 'ultra5', {'gemini-weekly': 156, 'gemini-5h': 45.5, '3p-weekly': 22, '3p-5h': 4.4}),
+            ('antigravity', 'ultra ×5', 'ultra5', {'gemini-weekly': 156, 'gemini-5h': 45.5, '3p-weekly': 22, '3p-5h': 4.4}),
+            ('antigravity', 'Google AI Ultra x5', 'ultra5', {'gemini-weekly': 156, 'gemini-5h': 45.5, '3p-weekly': 22, '3p-5h': 4.4}),
+            ('claude', 'Max x20', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
+            ('claude', 'Claude Max x20', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
+            ('claude', 'Claude Max ×20', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
+            ('claude', 'Max x5', 'max5', {'seven_day': 1400, 'five_hour': 94, 'weekly_fable': 700}),
+            ('claude', 'Max 20x ×2', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
+            ('codex', 'Pro ×2', 'pro', {'usage': 325}),
+        ):
+            with self.subTest(family=family, label=label):
+                got = inventory.configured_plan(family, label)
+                self.assertEqual(got, expected_plan)
+                tpl = inventory.plan_defaults(base, family, got) or {}
+                self.assertEqual(tpl.get('capacity_usd'), expected_cap)
+        self.assertTrue(account_state.plan_is_inactive('claude', 'free ×2'))
+        self.assertEqual(inventory.configured_plan('claude', 'Max 5x x2'), 'max 5x x2')
+
 
 class LaunchLatchTests(Machine):
     def test_only_a_subscription_failure_latches_and_structured_fields_decide(self):
@@ -459,18 +578,18 @@ class LaunchLatchTests(Machine):
                 self.assertEqual(account_state.error_means_inactive(error, code, status), expected)
 
     def test_a_launch_failure_excludes_until_a_newer_good_reading(self):
-        self.codex_login('pro')
-        self.cache(age_hours=1, codex={})
+        self.codex_login('plus')
+        self.cache(age_hours=1, codex={'plan_label': 'plus'})
         self.assertTrue(account_state.record_launch_error('codex', 'Your subscription has expired',
                                                           at=self.now.isoformat()))
         self.assertEqual(self.row()['status'], account_state.PLAN_INACTIVE)
         self.assertExcluded('codex', 'plan inactive')
         self.assertFalse(account_state.record_launch_error('codex', 'Your plan does not include this model'))
-        # A routine reading without an online plan or credential change must not unlock the latch.
-        self.cache(age_hours=-0.1, codex={})
+        # A routine reading with no plan change or the same online plan ('plus') must not unlock the latch.
+        self.cache(age_hours=-0.1, codex={'plan_label': 'plus'})
         self.assertEqual(self.row()['status'], account_state.PLAN_INACTIVE)
         self.assertIn('codex', account_state.latched())
-        # Once the online usage API confirms a paid plan newer than the latch, the latch clears.
+        # Once the online usage API reports a different active paid plan newer than the latch, the latch clears.
         self.cache(age_hours=-0.1, codex={'plan_label': 'pro'})
         self.assertEqual(self.row()['status'], account_state.READY)
         self.assertEqual(account_state.latched(), {})
@@ -518,6 +637,92 @@ class LaunchLatchTests(Machine):
             'updatedAt': updated_at, 'labels': labels,
         }, now=self.now + timedelta(minutes=22), path=db)
         self.assertEqual(account_state.latched(), {})
+
+    def test_launch_latch_6h_reprobe_and_ignores_same_plan_collector_older_dispatch_and_legacy_cache(self):
+        self.codex_login('plus')
+        self.claude_login()
+        self.write('.claude-magpie/settings.json', {
+            'env': {'ANTHROPIC_BASE_URL': 'https://magpie.example.com', 'ANTHROPIC_AUTH_TOKEN': 'magpie-tok'}})
+        self.write('.claude-magpie/usage-float.json', {'source': 'magpie', 'provider': 'claude', 'account': 'm1'})
+        self.write('.paseo/config.json', {'agents': {'providers': {
+            'codex': {'enabled': True, 'type': 'codex'},
+            'claude': {'enabled': True, 'type': 'claude'},
+            'claude-magpie': {'enabled': True, 'type': 'claude', 'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-magpie')}},
+        }}})
+        inv0 = inventory.discover(now=self.now)['accounts']
+        for acct in ('codex', 'claude', 'claude-magpie'):
+            account_state.record_launch_error(
+                acct, 'Your subscription has expired', at=self.now.isoformat(),
+                credential_key=inv0[acct]['credential_key'],
+            )
+
+        # 4a: 5 minutes later, routine poll with same 'plus' (usage_api) or Magpie 'Max 20x ×1' (collector) keeps latch
+        t5m = self.now + timedelta(minutes=5)
+        self.write('.agent-compass/usage-cache.json', {'fetched_at': t5m.isoformat(), 'providers': {
+            'codex': {'provider_id': 'codex', 'credential_key': inv0['codex']['credential_key'],
+                      'fetched_at': t5m.isoformat(), 'available': True, 'plan_label': 'plus', 'windows': self.windows()},
+            'claude-magpie': {'provider_id': 'claude-magpie', 'credential_key': inv0['claude-magpie']['credential_key'],
+                              'fetched_at': t5m.isoformat(), 'available': True, 'plan_label': 'Max 20x ×1',
+                              'backend_kind': 'gateway', 'windows': self.windows(window='five_hour')},
+            'claude': {'provider_id': 'claude', 'credential_key': inv0['claude']['credential_key'],
+                       'fetched_at': t5m.isoformat(), 'available': True, 'windows': self.windows(window='seven_day')},
+        }})
+        inv_5m = inventory.discover(now=t5m)['accounts']
+        for acct in ('codex', 'claude', 'claude-magpie'):
+            self.assertEqual(inv_5m[acct]['status'], account_state.PLAN_INACTIVE)
+            self.assertIn('auto-retry at', inv_5m[acct]['reason'])
+            self.assertIn('--clear', inv_5m[acct]['reason'])
+
+        # 4b: Older dispatch (launched before latch observed_at) completing does NOT clear the newer latch
+        import dispatch_registry
+        db = self.state / 'dispatch-old.sqlite3'
+        old_launch = (self.now - timedelta(minutes=30)).isoformat()
+        labels = {k: f'old-{k}' for k in dispatch_registry.LABELS}
+        with dispatch_registry.transaction(db) as conn:
+            dispatch_registry.save(conn, {
+                'dispatch_id': 'd-old', 'decision_id': 'dec-old', 'parent_id': 'p-1', 'task_id': 't-1',
+                'task_hash': 'th', 'request_hash': 'rh', 'state': 'started',
+                'created_at': old_launch, 'launched_at': old_launch, 'started_at': old_launch,
+                'lease_until': (self.now + timedelta(hours=1)).isoformat(),
+                'hard_until': (self.now + timedelta(hours=2)).isoformat(),
+                'bundle': {'account': 'claude', 'bundle_id': 'claude__opus_high'},
+                'request': {'provider': 'claude/claude-opus-5-5', 'settings': {'modeId': 'bypassPermissions'},
+                            'labels': labels},
+                'events': [],
+            })
+        dispatch_registry.observe('d-old', {
+            'id': 'agent-old', 'provider': 'claude', 'model': 'claude-opus-5-5',
+            'status': 'idle', 'attentionReason': 'finished',
+            'updatedAt': t5m.isoformat(), 'labels': labels,
+        }, now=t5m, path=db)
+        self.assertIn('claude', account_state.latched())
+
+        # 4a timed re-probe: after 6 hours, latch automatically unlocks for the next dispatch re-probe
+        t6h = self.now + timedelta(hours=6, minutes=1)
+        self.write('.agent-compass/usage-cache.json', {'fetched_at': t6h.isoformat(), 'providers': {
+            'claude': {'provider_id': 'claude', 'credential_key': inv0['claude']['credential_key'],
+                       'fetched_at': t6h.isoformat(), 'available': True, 'windows': self.windows(window='seven_day')},
+        }})
+        inv_6h = inventory.discover(now=t6h)['accounts']
+        self.assertEqual(inv_6h['claude']['status'], account_state.READY)
+        self.assertNotIn('claude', account_state.latched())
+
+        # 4c: usage_cache.merge preserves canonical minimal error row over legacy ~/.usage-float row with same credential
+        import usage_cache
+        self.write('.agent-compass/usage-cache.json', {'fetched_at': self.now.isoformat(), 'providers': {
+            'codex': {'provider_id': 'codex', 'credential_key': 'ck-same', 'fetched_at': None,
+                      'error_at': self.now.isoformat(), 'available': False, 'error': 'HTTP 402',
+                      'error_status': 402, 'windows': []},
+        }})
+        self.write('.usage-float/usage-cache.json', {'fetched_at': (self.now - timedelta(days=2)).isoformat(), 'providers': {
+            'codex': {'provider_id': 'codex', 'credential_key': 'ck-same',
+                      'fetched_at': (self.now - timedelta(days=2)).isoformat(), 'available': True,
+                      'plan_label': 'plus', 'windows': self.windows()},
+        }})
+        with patch.dict(os.environ, {'ROUTER_USAGE_CACHE': ''}):
+            merged_doc, _, _ = usage_cache.read(None, home=self.home, environ={'ROUTER_STATE_DIR': str(self.state)})
+        self.assertEqual(merged_doc['providers']['codex'].get('error_status'), 402)
+        self.assertIsNone(merged_doc['providers']['codex'].get('fetched_at'))
 
     def test_the_latch_reaches_the_other_login_on_the_subscription(self):
         self.codex_login('pro')

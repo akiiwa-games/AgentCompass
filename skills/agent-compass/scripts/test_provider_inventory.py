@@ -805,6 +805,7 @@ class DiscoveryTests(unittest.TestCase):
                 }
             }
         })
+        pi_key = self.discover()['accounts']['pi']['credential_key']
         self.write('.usage-float/usage-cache.json', {
             'providers': {
                 'team-proxy': {
@@ -812,7 +813,7 @@ class DiscoveryTests(unittest.TestCase):
                     'backend_kind': 'litellm',
                     'billing': 'metered',
                 },
-                'pi': {'fetched_at': self.now.isoformat(), 'windows': [{'id': 'usage', 'used_pct': 10}]},
+                'pi': {'credential_key': pi_key, 'fetched_at': self.now.isoformat(), 'windows': [{'id': 'usage', 'used_pct': 10}]},
             }
         })
         snapshot = self.discover()
