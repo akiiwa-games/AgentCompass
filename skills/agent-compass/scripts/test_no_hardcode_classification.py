@@ -310,6 +310,9 @@ def iter_production_python_files(root: Path = REPO_ROOT) -> list[Path]:
         for path in sorted(folder.rglob('*.py')):
             if path.name.startswith('test_') or path.name in NON_PRODUCTION_FILES:
                 continue
+            # packaging/.staged is an ignored copy left by the last local build, not this tree's source.
+            if any(part.startswith('.') for part in path.relative_to(root).parts):
+                continue
             files.append(path)
     return files
 
