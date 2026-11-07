@@ -131,6 +131,147 @@ class DiscoveryTests(unittest.TestCase):
                 if enabled:
                     self.assertEqual(snapshot['launchers']['grok'], {'family': 'grok', 'status': 'ready'})
 
+    def _grok_bot_discover(self):
+        fake_cli = self.home / 'gbot.mjs'
+        fake_cli.write_text('', encoding='utf-8')
+        with patch.object(inventory, 'GROK_BOT_CLI', fake_cli), \
+                patch.object(inventory.shutil, 'which', side_effect=lambda name, **kw: 'node' if name == 'node' else None):
+            return self.discover()
+
+    def test_grok_401_marks_auth_failed_and_excludes_grok_and_grok_bot_while_keeping_other_providers(self):
+        import account_state
+        (self.home / '.grok').mkdir(exist_ok=True)
+        self.write('.agent-compass/grok-bot/config.json', {'bot_id': 'bot-1'})
+        key_a = hashlib.sha256((str((self.home / '.grok').resolve()) + '\0token-A').encode()).hexdigest()
+        self.write('.grok/auth.json', {'https://auth.x.ai::client': {'key': 'token-A', 'user_id': 'u1'}})
+        codex_key = inventory.auth_facts('codex', self.codex_auth('account-A'), self.home / '.codex')['credential_key']
+        self.write('.agent-compass/usage-cache.json', {'providers': {
+            'codex': {
+                'available': True, 'stale': False, 'fetched_at': self.now.isoformat(),
+                'credential_key': codex_key,
+                'windows': [{'id': 'usage', 'used_pct': 10.0, 'resets_at': '2026-10-30T00:00:00+00:00'}],
+            },
+            'grok': {
+                'available': False, 'stale': True, 'error': '登录凭据需由 Grok 更新',
+                'error_status': 401, 'error_at': self.now.isoformat(), 'credential_key': key_a, 'windows': [],
+            },
+        }})
+        snap = self._grok_bot_discover()
+        self.assertEqual(snap['accounts']['grok']['status'], 'auth_failed')
+        self.assertEqual(snap['accounts']['grok-bot']['status'], 'auth_failed')
+        self.assertTrue(any('grok: auth_failed' in w for w in account_state.warnings(snap)))
+        applied = self.apply(snap)
+        self.assertIn('credentials rejected', applied['accounts']['grok']['bundles']['grok47_high']['discovery_unavailable'])
+        self.assertIn('credentials rejected', applied['accounts']['grok-bot']['bundles']['grok_bot']['discovery_unavailable'])
+        self.assertEqual(snap['accounts']['codex']['status'], 'ready')
+
+    def test_grok_402_marks_plan_inactive_and_excludes_grok_and_grok_bot(self):
+        (self.home / '.grok').mkdir(exist_ok=True)
+        self.write('.agent-compass/grok-bot/config.json', {'bot_id': 'bot-1'})
+        key_a = hashlib.sha256((str((self.home / '.grok').resolve()) + '\0token-A').encode()).hexdigest()
+        self.write('.grok/auth.json', {'https://auth.x.ai::client': {'key': 'token-A', 'user_id': 'u1'}})
+        self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {
+            'available': False, 'stale': True, 'error': '更新失败',
+            'error_status': 402, 'error_code': 'payment_required', 'error_at': self.now.isoformat(),
+            'credential_key': key_a, 'windows': [],
+        }}})
+        snap = self._grok_bot_discover()
+        self.assertEqual(snap['accounts']['grok']['status'], 'plan_inactive')
+        self.assertEqual(snap['accounts']['grok-bot']['status'], 'plan_inactive')
+        applied = self.apply(snap)
+        self.assertIn('plan inactive', applied['accounts']['grok']['bundles']['grok47_high']['discovery_unavailable'])
+        self.assertIn('plan inactive', applied['accounts']['grok-bot']['bundles']['grok_bot']['discovery_unavailable'])
+
+    def test_grok_500_or_offline_marks_usage_failing_warns_then_excludes_after_6h_and_recovers(self):
+        import account_state
+        (self.home / '.grok').mkdir(exist_ok=True)
+        self.write('.agent-compass/grok-bot/config.json', {'bot_id': 'bot-1'})
+        key_a = hashlib.sha256((str((self.home / '.grok').resolve()) + '\0token-A').encode()).hexdigest()
+        self.write('.grok/auth.json', {'https://auth.x.ai::client': {'key': 'token-A', 'user_id': 'u1'}})
+        # Without prior windows: offline / 500 still marks usage_failing immediately.
+        self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {
+            'available': False, 'stale': True, 'error': '更新失败',
+            'error_status': None, 'error_at': self.now.isoformat(), 'credential_key': key_a, 'windows': [],
+        }}})
+        snap_no_win = self._grok_bot_discover()
+        self.assertEqual(snap_no_win['accounts']['grok']['status'], 'usage_failing')
+        self.assertFalse(snap_no_win['accounts']['grok']['usage_excluded'])
+
+        # With prior windows < 6h old: warns, stays dispatchable.
+        self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {
+            'available': False, 'stale': True, 'error': '更新失败',
+            'error_status': 500, 'fetched_at': '2026-10-26T05:00:00+00:00', 'error_at': self.now.isoformat(),
+            'credential_key': key_a,
+            'windows': [{'id': 'credits', 'used_pct': 30.0, 'resets_at': '2026-10-30T00:00:00+00:00'}],
+        }}})
+        snap_grace = self._grok_bot_discover()
+        self.assertEqual(snap_grace['accounts']['grok']['status'], 'usage_failing')
+        self.assertFalse(snap_grace['accounts']['grok']['usage_excluded'])
+        self.assertTrue(any('grok: usage_failing' in w and 'still dispatchable' in w for w in account_state.warnings(snap_grace)))
+        applied_grace = self.apply(snap_grace)
+        self.assertNotIn('discovery_unavailable', applied_grace['accounts']['grok']['bundles']['grok47_high'])
+        self.assertTrue(applied_grace['accounts']['grok']['verified'])
+
+        # Over 6h old: excluded from dispatch for both grok and grok-bot.
+        self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {
+            'available': False, 'stale': True, 'error': '更新失败',
+            'error_status': 500, 'fetched_at': '2026-10-25T23:00:00+00:00', 'error_at': self.now.isoformat(),
+            'credential_key': key_a,
+            'windows': [{'id': 'credits', 'used_pct': 30.0, 'resets_at': '2026-10-30T00:00:00+00:00'}],
+        }}})
+        snap_excluded = self._grok_bot_discover()
+        self.assertEqual(snap_excluded['accounts']['grok']['status'], 'usage_failing')
+        self.assertTrue(snap_excluded['accounts']['grok']['usage_excluded'])
+        self.assertEqual(snap_excluded['accounts']['grok-bot']['status'], 'usage_failing')
+        self.assertTrue(snap_excluded['accounts']['grok-bot']['usage_excluded'])
+        applied_excluded = self.apply(snap_excluded)
+        self.assertIn('usage reading failing', applied_excluded['accounts']['grok']['bundles']['grok47_high']['discovery_unavailable'])
+        self.assertIn('usage reading failing', applied_excluded['accounts']['grok-bot']['bundles']['grok_bot']['discovery_unavailable'])
+
+        # Recovery returns both to ready.
+        self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {
+            'available': True, 'stale': False, 'error': None,
+            'fetched_at': self.now.isoformat(), 'credential_key': key_a,
+            'windows': [{'id': 'credits', 'used_pct': 20.0, 'resets_at': '2026-10-30T00:00:00+00:00'}],
+        }}})
+        snap_recovered = self._grok_bot_discover()
+        self.assertEqual(snap_recovered['accounts']['grok']['status'], 'ready')
+        self.assertEqual(snap_recovered['accounts']['grok-bot']['status'], 'ready')
+        self.assertTrue(self.apply(snap_recovered)['accounts']['grok']['verified'])
+
+    def test_grok_credential_rotation_and_missing_credentials_do_not_inherit_stale_failure(self):
+        (self.home / '.grok').mkdir(exist_ok=True)
+        self.write('.agent-compass/grok-bot/config.json', {'bot_id': 'bot-1'})
+        key_a = hashlib.sha256((str((self.home / '.grok').resolve()) + '\0token-A').encode()).hexdigest()
+        self.write('.grok/auth.json', {'https://auth.x.ai::client': {'key': 'token-B', 'user_id': 'u1'}})
+        codex_key = inventory.auth_facts('codex', self.codex_auth('account-A'), self.home / '.codex')['credential_key']
+        self.write('.agent-compass/usage-cache.json', {'providers': {
+            'codex': {
+                'available': True, 'stale': False, 'fetched_at': self.now.isoformat(),
+                'credential_key': codex_key,
+                'windows': [{'id': 'usage', 'used_pct': 10.0, 'resets_at': '2026-10-30T00:00:00+00:00'}],
+            },
+            'grok': {
+                'available': False, 'stale': True, 'error': '登录凭据需由 Grok 更新',
+                'error_status': 401, 'error_at': self.now.isoformat(), 'credential_key': key_a, 'windows': [],
+            },
+        }})
+        snap_rotated = self._grok_bot_discover()
+        self.assertEqual(snap_rotated['accounts']['grok']['usage_binding'], 'changed')
+        self.assertEqual(snap_rotated['accounts']['grok']['status'], 'ready')
+        self.assertEqual(snap_rotated['accounts']['grok-bot']['status'], 'ready')
+
+        # When ~/.grok has no login and no GROK_API_KEY, even a legacy un-keyed failure row in cache must not make it usage_failing.
+        self.write('.grok/auth.json', {})
+        self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {
+            'available': False, 'stale': True, 'error': '更新失败',
+            'error_at': self.now.isoformat(), 'credential_key': None, 'windows': [],
+        }}})
+        snap_no_creds = self._grok_bot_discover()
+        self.assertEqual(snap_no_creds['accounts']['grok']['status'], 'ready')
+        self.assertFalse(inventory.sign_in_proven(snap_no_creds['accounts']['grok']))
+        self.assertFalse(self.apply(snap_no_creds)['accounts']['grok']['verified'])
+
     def test_active_grokbuild_official_binds_health_and_disable(self):
         dbpath = self.cc([('official', 'grokbuild', 'Grok Official', {}, 1)])
         before = dbpath.read_bytes()

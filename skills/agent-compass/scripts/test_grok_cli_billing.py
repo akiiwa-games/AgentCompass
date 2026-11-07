@@ -36,9 +36,10 @@ class GrokCliBillingTests(unittest.TestCase):
         folder = TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.home = Path(folder.name)
-        patcher = patch.object(usage, "GROK_HOME", self.home)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for attr, val in (("GROK_HOME", self.home), ("HOME", self.home), ("CACHE_PATH", self.home / "usage-cache.json")):
+            patcher = patch.object(usage, attr, val)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def write_login(self, expires):
         (self.home / "auth.json").write_text(json.dumps(login(expires)), encoding="utf-8")
@@ -84,6 +85,112 @@ class GrokCliBillingTests(unittest.TestCase):
         with patch.object(usage.urllib.request, "urlopen", side_effect=OSError("offline")) as call:
             usage.fetch_grok_usage()
         self.assertEqual([c.args[0].full_url for c in call.call_args_list], [usage.GROK_CLI_BILLING_URL, usage.GROK_BILLING_URL])
+
+    def test_cli_and_web_failures_preserve_http_status_and_prefer_refusal_over_fallback_error(self):
+        self.write_login(datetime.now(timezone.utc) + timedelta(hours=1))
+        http_401 = usage.urllib.error.HTTPError(
+            usage.GROK_CLI_BILLING_URL, 401, "Unauthorized", {},
+            io.BytesIO(json.dumps({"error": {"code": "invalid_api_key"}}).encode()),
+        )
+        # CLI 401 followed by fallback OSError or missing fallback token must keep the 401 and error_code.
+        with patch.object(usage.urllib.request, "urlopen", side_effect=[http_401, OSError("fallback failed")]):
+            result = usage.fetch_grok_usage()
+        self.assertEqual(result.error_status, 401)
+        self.assertEqual(result.error_code, "invalid_api_key")
+        row = usage.load_usage_cache()["providers"]["grok"]
+        self.assertTrue(row["stale"])
+        self.assertEqual(row["error_status"], 401)
+        self.assertEqual(row["error_code"], "invalid_api_key")
+        self.assertTrue(row.get("error_at"))
+
+        # CLI 401 when read_grok_token() has no fallback token still records 401, not "no token".
+        http_401_no_fallback = usage.urllib.error.HTTPError(
+            usage.GROK_CLI_BILLING_URL, 401, "Unauthorized", {},
+            io.BytesIO(json.dumps({"code": "token_revoked"}).encode()),
+        )
+        with patch.object(usage, "read_grok_token", return_value=None), \
+                patch.object(usage.urllib.request, "urlopen", side_effect=http_401_no_fallback):
+            result = usage.fetch_grok_usage()
+        self.assertEqual(result.error_status, 401)
+        self.assertEqual(result.error_code, "token_revoked")
+        row = usage.load_usage_cache()["providers"]["grok"]
+        self.assertEqual(row["error_status"], 401)
+        self.assertEqual(row["error_code"], "token_revoked")
+
+        # 402 payment_required on web fallback when CLI login is expired.
+        self.write_login(datetime.now(timezone.utc) - timedelta(minutes=5))
+        http_402 = usage.urllib.error.HTTPError(
+            usage.GROK_BILLING_URL, 402, "Payment Required", {},
+            io.BytesIO(json.dumps({"error": "payment_required"}).encode()),
+        )
+        with patch.dict(usage.os.environ, {"GROK_API_KEY": "env-token"}), \
+                patch.object(usage.urllib.request, "urlopen", side_effect=http_402):
+            result = usage.fetch_grok_usage()
+        self.assertEqual(result.error_status, 402)
+        self.assertEqual(result.error_code, "payment_required")
+        row = usage.load_usage_cache()["providers"]["grok"]
+        self.assertEqual(row["error_status"], 402)
+        self.assertEqual(row["error_code"], "payment_required")
+
+    def test_failure_after_existing_windows_retains_windows_and_records_stale_error_in_cache(self):
+        self.write_login(datetime.now(timezone.utc) + timedelta(hours=1))
+        with patch.object(usage.urllib.request, "urlopen", return_value=Response(json.dumps(PAYLOAD).encode())):
+            first = usage.collect_local_usage(["grok"], force=True)[0]
+        self.assertTrue(first.available)
+        self.assertFalse(first.stale)
+        self.assertEqual([(w.id, w.used_pct) for w in first.windows], [("credits", 75.0)])
+
+        # Same credential fails with 500: windows stay for display, but stale/error/error_status/error_at are written.
+        http_500 = usage.urllib.error.HTTPError(
+            usage.GROK_CLI_BILLING_URL, 500, "Internal Server Error", {}, io.BytesIO(b"{}")
+        )
+        with patch.object(usage.urllib.request, "urlopen", side_effect=[http_500, OSError("offline")]):
+            second = usage.collect_local_usage(["grok"], force=True)[0]
+        self.assertTrue(second.stale)
+        self.assertEqual(second.error_status, 500)
+        self.assertEqual([(w.id, w.used_pct) for w in second.windows], [("credits", 75.0)])
+        row = usage.load_usage_cache()["providers"]["grok"]
+        self.assertTrue(row["stale"])
+        self.assertEqual(row["error_status"], 500)
+        self.assertTrue(row.get("error_at"))
+        self.assertEqual([(w["id"], w["used_pct"]) for w in row["windows"]], [("credits", 75.0)])
+
+        # Rotating credential invalidates the cached reading even without force=True and drops old windows on 401.
+        rotated = login(datetime.now(timezone.utc) + timedelta(hours=1))
+        rotated["https://auth.x.ai::client"]["key"] = "rotated-bad-key"
+        (self.home / "auth.json").write_text(json.dumps(rotated), encoding="utf-8")
+        http_401 = usage.urllib.error.HTTPError(
+            usage.GROK_CLI_BILLING_URL, 401, "Unauthorized", {}, io.BytesIO(b"{}")
+        )
+        with patch.object(usage.urllib.request, "urlopen", side_effect=[http_401, http_401]):
+            third = usage.collect_local_usage(["grok"], force=False)[0]
+        self.assertFalse(third.available)
+        self.assertEqual(third.error_status, 401)
+        row = usage.load_usage_cache()["providers"]["grok"]
+        self.assertEqual(row["error_status"], 401)
+        self.assertEqual(row["windows"], [])
+
+        # Restoring the original valid credential immediately re-fetches even with force=False
+        self.write_login(datetime.now(timezone.utc) + timedelta(hours=1))
+        with patch.object(usage.urllib.request, "urlopen", return_value=Response(json.dumps(PAYLOAD).encode())):
+            fourth = usage.collect_local_usage(["grok"], force=False)[0]
+        self.assertTrue(fourth.available)
+        self.assertFalse(fourth.stale)
+        row = usage.load_usage_cache()["providers"]["grok"]
+        self.assertTrue(row["available"])
+        self.assertFalse(row["stale"])
+        self.assertEqual(len(row["windows"]), 1)
+        self.assertNotIn("error_status", row)
+
+    def test_missing_grok_credentials_does_not_write_failure_row_to_cache(self):
+        (self.home / "auth.json").write_text("{}", encoding="utf-8")
+        with patch.dict(usage.os.environ, {"GROK_API_KEY": "", "GROK_TOKEN": ""}, clear=False), \
+                patch.object(usage.urllib.request, "urlopen") as call:
+            result = usage.collect_local_usage(["grok"], force=True)[0]
+        call.assert_not_called()
+        self.assertFalse(result.available)
+        self.assertIsNone(result.error_status)
+        self.assertNotIn("grok", usage.load_usage_cache().get("providers", {}))
 
 
 if __name__ == "__main__":

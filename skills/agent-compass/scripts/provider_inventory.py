@@ -28,7 +28,8 @@ import usage_cache
 MAX_BYTES = 5 * 1024 * 1024
 # The collector's words for a 401/403, in either language it writes.
 COLLECTOR_REJECTED = {'claude': ('登录凭据需由 Claude Code 更新', 'Login credentials must be updated by Claude Code'),
-                      'codex': ('登录凭据需由 Codex 更新', 'Login credentials must be updated by Codex')}
+                      'codex': ('登录凭据需由 Codex 更新', 'Login credentials must be updated by Codex'),
+                      'grok': ('登录凭据需由 Grok 更新', 'Login credentials must be updated by Grok')}
 GROK_BOT_CLI = grok_bot_paths.runtime_dir() / grok_bot_paths.ENTRY
 # Paseo built-in providers recognized from their Paseo entry without a model catalog.
 PASEO_RECOGNIZED_ONLY = ('copilot', 'muse', 'dsh')
@@ -87,6 +88,8 @@ def quota_source(account, accounts=None):
 def apply_shared_quota(accounts):
     """A pooled account mirrors its source's quota state; execution settings stay its own."""
     specs = accounts['accounts']
+    inventory = obj(accounts.get('_discovery'))
+    inv_accounts = obj(inventory.get('accounts'))
     for name, source_name in quota_sources(accounts).items():
         if name not in specs or source_name not in specs:
             continue
@@ -100,6 +103,15 @@ def apply_shared_quota(accounts):
         # An unread source meter is unknown, not free, for the account drawing on it.
         bot.pop('unmetered', None)
         bot.pop('unlimited', None)
+        source_row = obj(inv_accounts.get(source_name))
+        unavail = account_state.unavailable_text(source_row)
+        if unavail:
+            reason = f'provider discovery: {unavail}'
+            bot['discovery_status'] = source_row['status']
+            bot['verified'] = False
+            for bundle in obj(bot.get('bundles')).values():
+                if isinstance(bundle, dict):
+                    bundle.setdefault('discovery_unavailable', reason)
 
 
 def plan_defaults(accounts, family, plan):
@@ -234,6 +246,48 @@ def auth_facts(family, auth, home, profile=None):
             'credential_identity': digest('codex', token, account or '') if token else None,
             'credential_key': digest(_resolved(home), str(token) + ':' + str(account or '')) if token else None,
             'plan': plan_name(family, claims.get('chatgpt_plan_type'))}
+
+
+def _extract_grok_auth_token(auth):
+    if not isinstance(auth, dict):
+        return None
+    for key in ('access_token', 'accessToken', 'token', 'api_key'):
+        val = auth.get(key)
+        if isinstance(val, str) and val:
+            return val
+    oidc = None
+    legacy = None
+    for scope, value in auth.items():
+        if not isinstance(value, dict):
+            continue
+        key = value.get('key')
+        if not isinstance(key, str) or not key:
+            continue
+        s = str(scope)
+        if s.startswith('https://auth.x.ai::'):
+            oidc = key
+        elif s == 'https://accounts.x.ai/sign-in' or '/sign-in' in s:
+            legacy = key
+    return oidc or legacy
+
+
+def grok_auth_facts(grok_home, environ=None, grok_env=None):
+    auth_doc, _ = read_json(Path(grok_home) / 'auth.json')
+    file_tok = _extract_grok_auth_token(auth_doc)
+    environ = environ or {}
+    grok_env = grok_env or {}
+    env_tok = str(grok_env.get('GROK_API_KEY') or grok_env.get('GROK_TOKEN')
+                  or environ.get('GROK_API_KEY') or environ.get('GROK_TOKEN') or '').strip() or None
+    if file_tok and env_tok and file_tok != env_tok:
+        token = f'{file_tok}:{env_tok}'
+    else:
+        token = file_tok or env_tok
+    return {
+        'present': bool(token),
+        'identity': digest('grok', token) if token else None,
+        'credential_identity': digest('grok', token) if token else None,
+        'credential_key': digest(_resolved(Path(grok_home)), token) if token else None,
+    }
 
 
 def omp_credentials(agent_dir):
@@ -890,21 +944,60 @@ def _discover(home=None, environ=None, now=None):
     # Grok's ACP launcher is not an OAuth Claude/Codex slot. A cached reading is
     # metadata only; it cannot by itself prove that a client is installed.
     grok_cached = obj(cache_rows.get('grok'))
-    grok_native = bool(_which('grok', environ.get('PATH'))) or (home / '.grok').is_dir()
+    grok_home = home / '.grok'
+    grok_native = bool(_which('grok', environ.get('PATH'))) or grok_home.is_dir()
     grok_defined = 'grok' in definitions
-    _, _, grok_enabled = resolve_definition('grok', definitions)
+    _, grok_def_env, grok_enabled = resolve_definition('grok', definitions)
+    grok_facts = grok_auth_facts(grok_home, environ, grok_def_env)
+    grok_windows = [w for w in array(grok_cached.get('windows')) if isinstance(w, dict) and w.get('id')]
+    grok_has_failure = bool(
+        grok_cached.get('error_status') is not None
+        or grok_cached.get('error_code')
+        or grok_cached.get('error_at')
+        or (grok_cached.get('stale') is True and grok_cached.get('error'))
+        or (grok_cached.get('available') is False and grok_cached.get('error'))
+    )
+    grok_ckey = grok_cached.get('credential_key')
+    if grok_ckey:
+        grok_matches = bool(grok_facts['credential_key'] and grok_ckey == grok_facts['credential_key'])
+    elif grok_has_failure:
+        grok_matches = bool(grok_facts['present'])
+    else:
+        grok_matches = bool(grok_cached)
     grok_sources = (['native'] if grok_native else []) + (['paseo'] if grok_defined else [])
-    if grok_cached:
+    if grok_cached and grok_matches and (grok_windows or not grok_has_failure):
         grok_sources.append('usage-cache')
     grok_status = 'disabled' if not grok_enabled else 'ready' if grok_defined or grok_native else 'missing_client'
-    result['accounts']['grok'] = {'family': 'grok', 'provider': 'grok',
+    grok_row = {
+        'family': 'grok', 'provider': 'grok',
         'sources': grok_sources, 'status': grok_status,
-        'plan': grok_cached.get('plan_label') or 'subscription', 'billing': 'subscription'}
+        'plan': (grok_cached.get('plan_label') if grok_matches else None) or 'subscription',
+        'billing': 'subscription',
+        **({'credential_key': grok_facts['credential_key'], 'identity': grok_facts['identity']}
+           if grok_facts['present'] else {}),
+    }
+    bindings['grok'] = {
+        'identity': grok_facts['identity'],
+        'credential_identity': grok_facts['credential_identity'],
+        'base': '',
+        'key': None,
+    }
     # Preserve window IDs to share the collector's quota accounting when present.
-    grok_windows = [w for w in array(grok_cached.get('windows')) if isinstance(w, dict) and w.get('id')]
-    if grok_windows:
-        result['accounts']['grok']['usage_windows'] = [w['id'] for w in grok_windows]
-    result['launchers']['grok'] = {'family': 'grok', 'status': grok_status}
+    if grok_matches and grok_cached:
+        grok_row['usage_binding'] = 'matches'
+        if grok_windows:
+            grok_row['usage_windows'] = [w['id'] for w in grok_windows]
+        if grok_has_failure:
+            grok_row['usage_read_failed'] = True
+        if grok_row['status'] == 'ready' and account_state.usage_refused_plan(grok_cached):
+            grok_row.update(status=account_state.PLAN_INACTIVE,
+                            reason=f"usage API refused: {grok_cached.get('error_code') or grok_cached.get('error_status')}")
+        elif grok_row['status'] == 'ready' and account_state.usage_refused_credentials(grok_cached, COLLECTOR_REJECTED.get('grok', ())):
+            grok_row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
+    elif grok_cached and grok_ckey:
+        grok_row['usage_binding'] = 'changed'
+    result['accounts']['grok'] = grok_row
+    result['launchers']['grok'] = {'family': 'grok', 'status': grok_row['status']}
     # Oh My Pi is Paseo's built-in `omp` provider. The `omp` account is its API-key side (~/.omp/agent/models.yml or
     # stored API keys), so it is metered: explicit selection only. OAuth subscription logins are accounts of their own
     # below.
@@ -1219,7 +1312,7 @@ def _reads_usage(name, row, override_doc=None):
         return sign_in_proven(row) or verified
     if family == 'omp':
         return row.get('quota_account') not in (None, name)   # a login of its own has no collector
-    return family == 'grok' and bool(row.get('usage_windows'))
+    return family == 'grok' and bool(row.get('usage_windows') or row.get('usage_read_failed'))
 
 
 def _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc, bindings=None):
@@ -1325,6 +1418,20 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
             account_state.failing(row, problem, last_good, previous_rows.get(name), now, hours, cached_at=cached_at)
         if name in result['launchers'] and not account_state.dispatchable(row):
             result['launchers'][name]['status'] = row['status']
+    row = rows.get('grok')
+    bot_row = rows.get('grok-bot')
+    if (isinstance(row, dict) and isinstance(bot_row, dict)
+            and bot_row.get('status') == account_state.READY
+            and row.get('status') in (account_state.PLAN_INACTIVE, account_state.AUTH_FAILED, account_state.USAGE_FAILING)
+            and not account_state.dispatchable(row)):
+        for k in ('status', 'failing_since', 'exclude_after_hours', 'usage_excluded',
+                  'last_success_at', 'plan_inactive_at', 'plan_inactive_retry_at'):
+            if k in row:
+                bot_row[k] = row[k]
+        if row.get('reason'):
+            bot_row['reason'] = row.get('reason')
+        if 'grok-bot' in result['launchers']:
+            result['launchers']['grok-bot']['status'] = bot_row['status']
     _assign_quota_owners(rows)
 
 
@@ -1724,8 +1831,10 @@ def merge_usage(usage, accounts, now, names=None):
     """Invalidate another credential's cached quota; never probe an upstream."""
     inventory = accounts.get('_discovery') or {}
     result = copy.deepcopy(usage)
+    sources = quota_sources(accounts)
+    relevant = None if names is None else (set(names) | {sources[n] for n in names if n in sources})
     for name, row in (inventory.get('accounts') or {}).items():
-        if (names is None or name in names) and row.get('usage_binding') == 'changed':
+        if (relevant is None or name in relevant) and row.get('usage_binding') == 'changed':
             result.setdefault('accounts', {})[name] = {
                 'status': 'unknown', 'reason': 'credential_changed', 'windows': []}
     # If a launcher is disabled but another exposes the same subscription, its

@@ -550,6 +550,9 @@ def provider_credential_key(provider_id: str) -> str | None:
         token = str(tokens.get("access_token") or '') + ':' + str(tokens.get("account_id") or '')
         if not tokens.get("access_token"):
             token = None
+    elif provider_id == "grok":
+        home = GROK_HOME
+        token = _grok_credential_material()
     else:
         codex_accounts = discover_codex_accounts()
         if provider_id in codex_accounts:
@@ -729,8 +732,11 @@ def mark_provider_stale(provider_id: str, error: str, status: int | None = None,
         if isinstance(row, dict) and row.get('credential_key') != key:
             providers.pop(provider_id, None)
             row = None
+        disp = (cache.get('display_snapshots') or {}).get(provider_id)
+        if isinstance(disp, dict) and disp.get('credential_key') != key:
+            cache['display_snapshots'].pop(provider_id, None)
         if not isinstance(row, dict):
-            if status is None and code is None and plan is None and key is not None:
+            if status is None and code is None and plan is None and (key is not None or provider_id == 'grok'):
                 return
             row = {
                 'provider_id': provider_id,
@@ -1304,6 +1310,20 @@ def extract_grok_token(auth: Any) -> str | None:
     return oidc or legacy
 
 
+def _grok_credential_material() -> str | None:
+    file_tok = None
+    path = GROK_HOME / "auth.json"
+    if path.exists():
+        try:
+            file_tok = extract_grok_token(json.loads(path.read_text(encoding="utf-8")))
+        except Exception:
+            file_tok = None
+    env_tok = (os.environ.get("GROK_API_KEY") or os.environ.get("GROK_TOKEN") or "").strip() or None
+    if file_tok and env_tok and file_tok != env_tok:
+        return f"{file_tok}:{env_tok}"
+    return file_tok or env_tok
+
+
 def read_grok_token() -> str | None:
     env = os.environ.get("GROK_API_KEY") or os.environ.get("GROK_TOKEN")
     if env:
@@ -1518,11 +1538,18 @@ def parse_grok_cli_billing(payload: Any) -> tuple[float, str | None]:
     return min(100.0, float(percent)), resets_at
 
 
-def fetch_grok_cli_billing() -> tuple[float, str | None] | None:
-    """Usage from the Grok CLI's billing endpoint, or None so the caller falls back."""
+def _parse_grok_error_body(raw: bytes | str | None) -> Any:
+    if not raw:
+        return None
+    text = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    return _parse_json_body(text)
+
+
+def _fetch_grok_cli_billing_detailed() -> tuple[tuple[float, str | None] | None, int | None, str | None]:
+    """Return (parsed_result, error_status, error_code). (None, None, None) when no unexpired CLI login exists."""
     login = read_grok_cli_login()
     if login is None:
-        return None
+        return None, None, None
     req = urllib.request.Request(
         GROK_CLI_BILLING_URL,
         headers={
@@ -1535,16 +1562,40 @@ def fetch_grok_cli_billing() -> tuple[float, str | None] | None:
     )
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+            payload = _parse_grok_error_body(raw)
             if resp.status != 200:
-                return None
-            return parse_grok_cli_billing(json.loads(resp.read()))
+                return None, int(resp.status), provider_error_code(payload)
+            return parse_grok_cli_billing(payload), None, None
+    except urllib.error.HTTPError as e:
+        raw = None
+        try:
+            raw = e.read()
+        except Exception:
+            pass
+        return None, int(e.code), provider_error_code(_parse_grok_error_body(raw))
     except Exception:
-        return None
+        return None, 0, None
+
+
+def fetch_grok_cli_billing() -> tuple[float, str | None] | None:
+    """Usage from the Grok CLI's billing endpoint, or None so the caller falls back."""
+    parsed, _, _ = _fetch_grok_cli_billing_detailed()
+    return parsed
+
+
+def _grok_failure_rank(status: int | None, code: str | None) -> tuple[int, int, int, int]:
+    return (
+        1 if status in (401, 402, 403) else 0,
+        1 if (isinstance(status, int) and status > 0 and status != 200) else 0,
+        1 if code else 0,
+        1 if status is not None else 0,
+    )
 
 
 def fetch_grok_usage() -> ProviderUsage:
     """SuperGrok credit window: the Grok CLI billing endpoint, else grok.com gRPC-web (same as CC Switch)."""
-    cli = fetch_grok_cli_billing()
+    cli, cli_status, cli_code = _fetch_grok_cli_billing_detailed()
     if cli is not None:
         pct, resets_at = cli
         result = ProviderUsage(
@@ -1558,12 +1609,19 @@ def fetch_grok_usage() -> ProviderUsage:
         return result
     token = read_grok_token()
     if not token:
-        return ProviderUsage(
-            provider_id="grok",
-            display_name="grok",
-            available=False,
-            error="更新失败",
+        if cli_status is None:
+            return ProviderUsage(
+                provider_id="grok",
+                display_name="grok",
+                available=False,
+                error="更新失败",
+            )
+        err = (
+            _tr("登录凭据需由 Grok 更新", "Login credentials must be updated by Grok")
+            if cli_status in (401, 403)
+            else "更新失败"
         )
+        return stale_provider_usage("grok", err, status=cli_status, code=cli_code)
 
     # Empty gRPC-web frame: flags(1) + big-endian length(4) = 5 zero bytes
     body = bytes(5)
@@ -1582,50 +1640,59 @@ def fetch_grok_usage() -> ProviderUsage:
             "User-Agent": "usage-float",
         },
     )
+    web_status: int | None = None
+    web_code: str | None = None
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             status = resp.status
             raw = resp.read()
             grpc_status = resp.headers.get("grpc-status")
-            if grpc_status and grpc_status not in ("0", "00"):
-                return ProviderUsage(
-                    provider_id="grok",
-                    display_name="grok",
-                    available=False,
-                    error="更新失败",
-                )
             if status != 200:
-                return ProviderUsage(
+                web_status = int(status)
+                web_code = provider_error_code(_parse_grok_error_body(raw))
+            elif grpc_status and grpc_status not in ("0", "00"):
+                web_status = 401 if grpc_status == "16" else (403 if grpc_status == "7" else 0)
+                web_code = provider_error_code(_parse_grok_error_body(raw))
+            else:
+                pct, resets_at = _parse_grok_billing_payload(raw, int(time.time()))
+                result = ProviderUsage(
                     provider_id="grok",
                     display_name="grok",
-                    available=False,
-                    error="更新失败",
+                    windows=[
+                        UsageWindow(
+                            id="credits",
+                            label=_tr("额度", 'Quota'),
+                            used_pct=max(0.0, min(100.0, pct)),
+                            resets_at=resets_at,
+                        )
+                    ],
+                    available=True,
+                    fetched_at=datetime.now(timezone.utc).isoformat(),
                 )
-            pct, resets_at = _parse_grok_billing_payload(raw, int(time.time()))
+                cache_put_provider(result)
+                return result
+    except urllib.error.HTTPError as e:
+        raw = None
+        try:
+            raw = e.read()
+        except Exception:
+            pass
+        web_status = int(e.code)
+        web_code = provider_error_code(_parse_grok_error_body(raw))
     except Exception:
-        return ProviderUsage(
-            provider_id="grok",
-            display_name="grok",
-            available=False,
-            error="更新失败",
-        )
+        web_status = 0
+        web_code = None
 
-    result = ProviderUsage(
-        provider_id="grok",
-        display_name="grok",
-        windows=[
-            UsageWindow(
-                id="credits",
-                label=_tr("额度", 'Quota'),
-                used_pct=max(0.0, min(100.0, pct)),
-                resets_at=resets_at,
-            )
-        ],
-        available=True,
-        fetched_at=datetime.now(timezone.utc).isoformat(),
+    if _grok_failure_rank(cli_status, cli_code) >= _grok_failure_rank(web_status, web_code):
+        final_status, final_code = cli_status, cli_code
+    else:
+        final_status, final_code = web_status, web_code
+    err = (
+        _tr("登录凭据需由 Grok 更新", "Login credentials must be updated by Grok")
+        if final_status in (401, 403)
+        else "更新失败"
     )
-    cache_put_provider(result)
-    return result
+    return stale_provider_usage("grok", err, status=final_status, code=final_code)
 
 
 ANTIGRAVITY_MAX_OUTPUT = 1024 * 1024
@@ -2854,7 +2921,7 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                 raw = (cache.get('providers') or {}).get(pid) or {}
                 attempt = (cache.get('attempts') or {}).get(pid) or {}
                 last_attempt = attempt.get('at', 0) if attempt.get('credential_key') == key else 0
-                observed = _iso_epoch(cached.fetched_at, 0) if cached else 0
+                observed = _iso_epoch(cached.fetched_at, 0) if cached and (not raw or raw.get('credential_key') == key) else 0
                 now_ts = time.time()
                 age = now_ts - max(last_attempt, observed)
                 # A window that reset after the reading is due now, not after the idle cadence.
