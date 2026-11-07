@@ -32,7 +32,7 @@ def store_path():
 def _read(path):
     import json
     try:
-        doc = json.loads(path.read_text(encoding='utf-8'))
+        doc = json.loads(override_store.retry_denied(lambda: path.read_text(encoding='utf-8')))
         return doc if isinstance(doc, dict) and isinstance(doc.get('entries'), dict) else {'entries': {}}
     except (FileNotFoundError, ValueError):
         return {'entries': {}}
@@ -79,8 +79,11 @@ def active(*, now=None, path=None):
     path = path or store_path()
     if not path.exists():
         return {}
-    return {k: v for k, v in _read(path)['entries'].items()
-            if isinstance(v, dict) and (_time(v.get('until')) or now) > now}
+    try:
+        entries = _read(path)['entries']
+    except PermissionError:  # Only a reader may take this as none: a writer saving it would wipe the store.
+        return {}
+    return {k: v for k, v in entries.items() if isinstance(v, dict) and (_time(v.get('until')) or now) > now}
 
 
 def reason(bundle, entries, now=None):

@@ -92,7 +92,8 @@ export function notificationEvents(agent, record, now, creation) {
     if (record.seen) return [{key: 'terminal', reason: 'worker unavailable'}];
     if (record.agent_id) return now >= record.creation_deadline
       ? [{key: 'terminal', reason: 'creation outcome unavailable'}] : [];
-    if (creation?.phase === 'completed' && !creation.agent_id) return [{key: 'terminal', reason: WORKER_REMOVED}];
+    if ((creation?.phase === 'completed' && !creation.agent_id) || (creation?.phase === 'failed' && creation.agent_created))
+      return [{key: 'terminal', reason: WORKER_REMOVED}];
     return creation?.phase === 'failed' || (creation === null && now >= record.creation_deadline)
       ? [{key: 'terminal', reason: CREATE_FAILED}] : [];
   }
@@ -254,12 +255,27 @@ export async function creationRecord(client, key) {
     message: {type: 'creation.subscribe.request', kind: 'agent', idempotencyKey: key, subscribe: false},
     responseType: 'creation.subscribe.response', timeout: 10000});
   // The daemon reports a completed record whose agent is gone only as this error, never as phase `completed`.
-  if (response.error === AGENT_REMOVED_ERROR) return {phase: 'completed', outcome_unknown: false, agent_id: null};
+  if (response.error === AGENT_REMOVED_ERROR) return {phase: 'completed', outcome_unknown: false, agent_id: null, agent_created: true};
   if (response.error) throw new Error('creation_unobservable');
   const snapshot = response.snapshot;
   if (!snapshot) return null;
   return {phase: snapshot.phase, outcome_unknown: Boolean(snapshot.outcomeUnknown), agent_id: snapshot.agentId ?? null,
+    agent_created: Boolean(snapshot.agent),
     ...(snapshot.phase === 'failed' ? {failure_class: creationFailureClass(snapshot)} : {})};
+}
+
+// Only feeds a warning, so failing here must not cost the caller the agents it did read.
+async function workspaceDirectory(client, workspaceId) {
+  try {
+    let cursor;
+    do {
+      const page = await client.fetchWorkspaces({page: {limit: 200, ...(cursor ? {cursor} : {})}});
+      const found = page.entries?.find(workspace => workspace.id === workspaceId);
+      if (found) return found.workspaceDirectory ?? found.projectRootPath ?? null;
+      cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
+    } while (cursor);
+  } catch {}
+  return null;
 }
 
 // The creator knows the outcome: stop only this dispatch's watcher, without replacing its receipt.
@@ -348,6 +364,9 @@ export async function execute(client, input, notify = ensureNotification) {
     if ((r.settings?.modeId && existing.currentModeId && existing.currentModeId !== r.settings.modeId)
         || (r.settings?.thinkingOptionId && effort && effort !== r.settings.thinkingOptionId))
       return {ok: false, sent: false, error: 'worker_settings_mismatch'};
+    // The writer rule checked the workspace that was asked for, so the work must land there.
+    if (r.workspaceId && existing.workspaceId !== r.workspaceId)
+      return {ok: false, sent: false, error: 'worker_workspace_mismatch'};
     const alreadyBound = labels['router.dispatch_id'] === input.dispatch_id;
     if (!alreadyBound && (existing.status === 'running' || existing.status === 'initializing'
         || existing.status === 'error' || existing.attentionReason === 'error'
@@ -404,7 +423,7 @@ export async function execute(client, input, notify = ensureNotification) {
       }
       cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
     } while (cursor);
-    return {ok: true, agents};
+    return {ok: true, agents, cwd: await workspaceDirectory(client, input.workspace_id)};
   }
   if (input.operation !== 'observe') throw new Error('unsupported_operation');
   let agent = input.agent_id ? (await client.fetchAgent(input.agent_id))?.agent : null;

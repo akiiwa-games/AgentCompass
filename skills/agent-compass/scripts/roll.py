@@ -347,11 +347,10 @@ def parent_cwd():
     return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
 
 
-def same_cwd_warning(out, parent):
-    """A roll without --workspace lands in its parent's directory. Too many of these run in parallel on purpose to
-    block them, so other unsettled writers there are only named."""
-    cwd = parent_cwd()
-    others = registry.writers_at(cwd, parent)
+def same_cwd_warning(out, cwd, parent, workspace):
+    """The writer rule goes by workspace ID. Too many rolls with no ID, or with several IDs on one checkout, run in
+    parallel on purpose to block them, so other unsettled writers in the directory this one lands in are only named."""
+    others = registry.writers_at(cwd, parent, other_than=workspace)
     if not others:
         return out
     named = '; '.join(f"{h.get('state')} dispatch {h.get('dispatch_id')} ({h.get('title')})" for h in others)
@@ -374,8 +373,9 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     access = task_access(args)
     allow_concurrent = (getattr(args, 'allow_concurrent', None) or '').strip()
     workspace = args.workspace
+    landing = None
     if workspace and access == 'write':
-        holders, unavailable = dispatch_flow.workspace_holders(workspace, parent)
+        holders, unavailable, landing = dispatch_flow.workspace_holders(workspace, parent)
         if unavailable:
             out = dict(out, assumptions=[*out.get('assumptions', []),
                                          f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
@@ -386,7 +386,9 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                                  'task_id': task.get('task_id'), 'workspace': workspace, 'reason': allow_concurrent[:300],
                                  'holders': holders})
     if not workspace and access == 'write':
-        out = same_cwd_warning(out, parent)
+        landing = parent_cwd()
+    if landing:
+        out = same_cwd_warning(out, landing, parent, workspace)
     resume_agent_id = None
     if not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
@@ -413,7 +415,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                                resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None,
                                access=access, allow_concurrent=allow_concurrent or None,
                                new_worker=bool(getattr(args, 'new_worker', False)),
-                               cwd=None if workspace else parent_cwd())
+                               cwd=landing)
     except registry.WorkspaceBusy as busy:
         return workspace_blocked(out, busy.workspace, busy.holders)
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=args.wait)
@@ -730,7 +732,7 @@ def compact(result, status, detail_path):
     if result.get('assumptions'):
         out['assumptions'] = result['assumptions']
     if result.get('warnings'):
-        out['warnings'] = result['warnings']
+        out['warnings'] = [*out.get('warnings', []), *result['warnings']]
     out['details'] = detail_path
     return {k: v for k, v in out.items() if v is not None}
 

@@ -91,7 +91,7 @@ def public(row, now=None):
         out['resumed'] = True
     if row['state'] == 'create_failed':
         out['next_action'] = CREATE_FAILED_NEXT
-    elif row['state'] == 'canceled' and (row.get('creation') or {}).get('phase') == 'completed':
+    elif row['state'] == 'canceled' and (row.get('creation') or {}).get('removed'):
         out['next_action'] = REMOVED_NEXT
     elif creating(row):
         # Nothing here reads as a failure: the worker simply does not exist yet.
@@ -119,7 +119,10 @@ def settle_create(row, creation, now, path):
     settled, transitioned = registry.resolve_creation(row['dispatch_id'], creation, now=now, path=path)
     if transitioned and settled.get('failure_class'):
         import launch_failures
-        launch_failures.record(settled['bundle'], settled['failure_class'])
+        try:
+            launch_failures.record(settled['bundle'], settled['failure_class'])
+        except OSError:
+            pass  # A cooldown is best effort: a busy store must not stop this observation or the roll that made it.
     return settled
 
 
@@ -155,12 +158,13 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None):
 def workspace_holders(workspace, parent_id, host=None, path=None):
     """Writers in a workspace: open write dispatches, and router-launched agents running there whatever their last
     dispatch says (a worker can be sent a follow-up after it completed). The caller itself is not its own conflict.
-    Returns (holders, error); a host that cannot be read leaves the recorded dispatches as the whole answer."""
+    Returns (holders, error, the workspace's directory if Paseo gave one); a host that cannot be read leaves the recorded
+    dispatches as the whole answer."""
     host = host or host_call
     holders = registry.workspace_writers(workspace, caller=parent_id, path=path)
     response = host({'operation': 'workspace_agents', 'workspace_id': workspace})
     if not response.get('ok'):
-        return holders, response.get('error') or 'host_unavailable'
+        return holders, response.get('error') or 'host_unavailable', None
     known = {h['dispatch_id'] for h in holders}
     for agent in response.get('agents') or ():
         dispatch_id = agent.get('dispatch_id')
@@ -175,7 +179,7 @@ def workspace_holders(workspace, parent_id, host=None, path=None):
         holders.append({'dispatch_id': dispatch_id, 'state': (row or {}).get('state'), 'agent_id': agent.get('id'),
                         'task_id': (row or {}).get('task_id'), 'title': ((row or {}).get('request') or {}).get('title'),
                         'agent_status': agent.get('status')})
-    return holders, None
+    return holders, None, response.get('cwd')
 
 
 def reservation_records(read_only=False):
@@ -251,10 +255,11 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
                              if item.get('completion_notification')), notification)
         observe_error = next((item['error'] for item in observations if item.get('error')), None)
         row = registry.inspect(dispatch_id, path)
-        if row['state'] in registry.TERMINAL or left() < OBSERVE_FLOOR:
+        remaining = left()
+        if row['state'] in registry.TERMINAL or remaining < OBSERVE_FLOOR:
             break
         # Wake with at least the floor left, so the next observation is cut at what remains rather than given more.
-        time.sleep(min(poll_seconds, left() - OBSERVE_FLOOR))
+        time.sleep(min(poll_seconds, remaining - OBSERVE_FLOOR))
     result = public(row)
     if launch_error:
         result['error'] = launch_error
@@ -306,6 +311,11 @@ def cli(args):
             raise ValueError('release requires --parent-id and --basis explaining cancellation')
         require_actual_parent(args.parent_id)
         # A create that is already over can be settled now, then released; one still running stays refused.
-        reconcile(args.dispatch_id)
+        observations = reconcile(args.dispatch_id)
+        error = next((item['error'] for item in observations if item.get('error')), None)
+        row = registry.inspect(args.dispatch_id)
+        if error and row.get('launched_at') and registry.unresolved(row, registry.utcnow()):
+            raise ValueError(f'Paseo could not be read ({error}), so this worker or create may still be alive and '
+                             'release cannot confirm it is over. Try again when Paseo answers.')
         return public(registry.release(args.dispatch_id, args.parent_id, args.basis[:400]))
     return public(registry.inspect(args.dispatch_id))

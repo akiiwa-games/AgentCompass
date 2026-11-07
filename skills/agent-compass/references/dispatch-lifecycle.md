@@ -35,10 +35,10 @@ The bridge's `create` call is cut off after 25 s, and the daemon carries on rega
 | :--- | :--- | :--- |
 | `accepted` ... `prompt_started` | Stays `launching` (`creating: true`), `next_action` says so | The worker can still appear. |
 | same, past the create deadline | Stays open, `next_action` says it is overdue, and `release` refuses | The daemon has no cancel, so calling it failed could release a worker about to start. The only way out is restarting the daemon, which settles it (`failed`, outcome unknown). The real records hold no create stuck like this so far (967 agent creates read on 2026-11-07). |
-| `failed` | `create_failed` at once | The run is over and the daemon never reruns a key by itself; only a new request could, and `launching` never sends one. |
+| `failed`, no agent in its record | `create_failed` at once | The run is over and the daemon never reruns a key by itself; only a new request could, and `launching` never sends one. |
 | none, before the deadline | Stays `launching` | The request may still be on its way. |
 | none, at the deadline | `create_failed` | The bridge refuses to send after the send window (60 s after the claim), so nothing can arrive any more. |
-| agent gone (the daemon answers `Previously created agent no longer exists`, not a phase) | `canceled`, `next_action` says to check what the worker did before rolling again | Created, then removed before this dispatch observed it. |
+| agent gone (the daemon answers `Previously created agent no longer exists`, not a phase), or `failed` with an agent in its record (its prompt failed), then removed | `canceled`, `next_action` says to check what the worker did before rolling again | Created, then removed before this dispatch observed it. |
 
 The create deadline runs from the claim: 240 s by default, 480 s for `antigravity-resilient` (`CREATE_DEADLINES` in `dispatch_registry.py`), leaving room for the daemon's own provider timeouts. A host that cannot be read settles nothing (`observe_error`).
 
@@ -52,7 +52,9 @@ While `launching`, Paseo's `get_agent_status` answers "not found": the agent doe
 
 `roll --workspace W` refuses a second writer: `status: blocked`, `cause: workspace_has_active_writer`, nothing launched. W is held by any unsettled dispatch recorded against it (`prepared`, `launching`, `launched`, `started`, or `expired` after launch) and by any router-launched agent running there, even after its dispatch completed (a worker can be sent a follow-up). A dispatch recorded before this rule counts as a writer; the caller itself never does, so a coordinator can roll into its own workspace. The check is repeated in the transaction that inserts the row, so of two concurrent rolls one wins. If running agents cannot be read, the recorded dispatches decide and `assumptions` says so: a dispatch that completed and whose worker is running a follow-up can then be missed.
 
-A roll without `--workspace` is never blocked, because many normal parallel dispatches have none. If its directory, the parent's cwd, has other unsettled writer dispatches, `assumptions` and `warnings` name them. A `--workspace` dispatch counts there once its worker has been observed in that directory.
+The rule goes by workspace ID. Directories only warn: many normal parallel dispatches have no `--workspace`, and several workspace IDs can sit on one checkout on purpose. A writer roll looks at the directory it will land in (the parent's cwd, or the one Paseo gives for `--workspace W`) and `assumptions` and `warnings` name other unsettled writer dispatches recorded there. If Paseo does not give the directory, nothing is named. A roll records its directory, and an observation corrects it to where the worker is.
+
+A resume stays in its workspace too: with `--workspace W`, a compatible worker living elsewhere is not resumed (`worker_workspace_mismatch`) and the dispatch creates a new worker in W instead.
 
 Read-only work coexists with a writer. A brief is a writer unless `--access read-only` says otherwise. `interaction_style` does not decide this: it does not separate reading from writing. Titles and task text are never matched. Nothing enforces read-only on the worker, so `--access read-only` is the caller's statement.
 
@@ -64,7 +66,9 @@ A repeated `roll` of an open brief hands back that dispatch (`pending`, `next_ar
 
 ### Watching
 
-`launch --watch-seconds N` returns the current state (`pending` or `started`) within N seconds: each bridge call is cut at what is left, and it starts no further observation with under 5 s left, so it can return up to 5 s early. Only the first observation can exceed that limit: under 1 s of watch, such as 0, it gets up to 5 s so it still reads the host. `roll --wait` is the same watch, except that sending a create may take its full 25 s whatever the wait. `poll-seconds` only spaces the observations.
+A cooldown is best effort. If its store cannot be written, the dispatch still settles and the failure goes uncounted.
+
+`launch --watch-seconds N` returns the current state (`pending` or `started`) within N seconds: each bridge call is cut at what is left, and it starts no further observation with under 5 s left, so it can return up to 5 s early. Only the first observation can exceed that limit: under 1 s of watch, such as 0, it gets up to 5 s so it still reads the host. `roll --wait`, and `launch` on a `prepared` row, are the same watch, except that sending a create may take its full 25 s whatever the wait, and the first observation can follow it, so up to about 30 s. `poll-seconds` only spaces the observations.
 
 ## 2. In-Flight Quota Deduction
 
@@ -87,7 +91,7 @@ agentcompass dispatch --dispatch-action reconcile
 agentcompass dispatch --dispatch-action release --dispatch-id <dispatch_id> --parent-id <your_session_id> --basis "<why>"
 ```
 
-`release` observes first, so a create that is over settles and releases. It refuses a live worker, and a create the daemon is still running, because it cancels neither.
+`release` observes first, so a create that is over settles and releases. It refuses a live worker, and a create the daemon is still running, because it cancels neither. While Paseo cannot be read it refuses anything sent and not yet settled, since either could be alive; a dispatch never sent needs no host.
 
 ## 4. Outcome, Reuse and Launch Failures
 

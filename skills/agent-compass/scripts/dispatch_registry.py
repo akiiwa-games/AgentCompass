@@ -470,9 +470,9 @@ def workspace_writers(workspace, caller=None, now=None, path=None):
         return writers_in(connection, workspace, now, caller)
 
 
-def writers_at(cwd, caller=None, now=None, path=None):
-    """Unsettled writers recorded in a directory: a roll without --workspace records its parent's, an observation the
-    worker's own. A --workspace dispatch no worker has been observed for is not known here."""
+def writers_at(cwd, caller=None, other_than=None, now=None, path=None):
+    """Unsettled writers recorded in a directory, leaving out workspace `other_than`, whose writers the writer rule has
+    already dealt with. A roll records where it will land, and an observation where the worker is."""
     now = now or utcnow()
     if not Path(path or db_path()).exists():
         return []
@@ -480,7 +480,8 @@ def writers_at(cwd, caller=None, now=None, path=None):
     with transaction(path) as connection:
         expire(connection, now)
         return [holder(r) for r in rows(connection, 'dispatches') if r.get('cwd')
-                and os.path.normcase(os.path.normpath(r['cwd'])) == place and is_writer(r, now, caller)]
+                and os.path.normcase(os.path.normpath(r['cwd'])) == place and is_writer(r, now, caller)
+                and not (other_than and (r.get('request') or {}).get('workspaceId') == other_than)]
 
 
 def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
@@ -623,14 +624,15 @@ def resolve_creation(dispatch_id, creation, now=None, path=None):
             return row, False
         phase = creation.get('phase') if creation else None
         transitioned = True
-        if phase == 'failed':
+        if phase == 'completed' or (phase == 'failed' and creation.get('agent_created')):
+            # A worker existed, so it may have run: not the same as a create that never got that far.
+            event(row, 'canceled', now, 'host_confirmed_agent_removed')
+            row['creation'] = {'phase': phase, 'removed': True}
+        elif phase == 'failed':
             cause = 'outcome_unknown' if creation.get('outcome_unknown') else creation.get('failure_class') or 'unknown'
             event(row, 'create_failed', now, 'host_creation_failed:' + cause)
             if not creation.get('outcome_unknown'):
                 row['failure_class'] = creation.get('failure_class') or 'unknown'
-            row['creation'] = {'phase': phase}
-        elif phase == 'completed':
-            event(row, 'canceled', now, 'host_confirmed_agent_removed')
             row['creation'] = {'phase': phase}
         elif creation is None and now >= create_deadline(row):
             event(row, 'create_failed', now, 'host_never_admitted_create')
@@ -777,7 +779,10 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         save(connection, row)
     if target in ('started', 'completed'):
         import launch_failures
-        launch_failures.clear(row['bundle'].get('account'))
+        try:
+            launch_failures.clear(row['bundle'].get('account'))
+        except OSError:
+            pass  # Best effort, and this observation is already saved.
     return row
 
 
