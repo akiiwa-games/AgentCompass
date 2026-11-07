@@ -310,7 +310,7 @@ def build_usage_float_fixture_repo(base: Path) -> Path:
     """Create an isolated git repository of usage-float so setup/tray can clone it offline."""
     dest = base / "usage-float-origin"
     listing = subprocess.run(
-        ["git", "-C", str(USAGE_FLOAT_SRC), "ls-files", "-co", "--exclude-standard", "-z"],
+        ["git", "-C", str(USAGE_FLOAT_SRC), "ls-files", "-c", "-z"],
         capture_output=True, check=True,
     ).stdout
     for raw in listing.split(b"\0"):

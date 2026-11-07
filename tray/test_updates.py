@@ -303,7 +303,9 @@ class UpdateAllTests(UpdateTestCase):
         self.assertNotIn("正在更新", updates.update_all())
 
     def test_all_enabled_git_plugins_are_updated_in_order(self):
-        with mock.patch.object(updates, "update_dot2api", return_value="dot") as dot, \
+        with mock.patch.object(updates.plugins, "PATH", self.base / "plugins.json"), \
+                mock.patch.object(updates, "product_notice", return_value=""), \
+                mock.patch.object(updates, "update_dot2api", return_value="dot") as dot, \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="web") as web, \
                 mock.patch.object(updates, "update_usage_float", return_value="uf") as uf, \
                 mock.patch.object(updates, "update_gemini_web", return_value="gemini") as gemini:

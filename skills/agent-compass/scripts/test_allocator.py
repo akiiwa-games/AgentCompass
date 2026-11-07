@@ -117,7 +117,7 @@ class AllocatorTests(unittest.TestCase):
 
     def profile(self, **fields):
         base = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'hallucination_risk': 2, 'error_cost': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering'}
+                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1'}
         return dict(base, **fields)
 
     def unsubscribed(self, account):
@@ -805,10 +805,10 @@ class AllocatorTests(unittest.TestCase):
         p = self.profile
         for prof_kw, expected_kind in (
             ({'needs_gui': True, 'needs_visual': True, 'reasoning_depth': 1}, 'computer_use'),
-            ({'interaction_style': 'exploration', 'code_complexity': 0}, 'exploration_analysis'),
-            ({'interaction_style': 'text_only', 'code_complexity': 0}, 'text_in_text_out'),
-            ({'interaction_style': 'advisory', 'code_complexity': 0}, 'direction_reasoning'),
-            ({'interaction_style': 'engineering', 'code_complexity': 0}, 'tool_execution'),
+            ({'interaction_style': 'exploration', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'exploration_analysis'),
+            ({'interaction_style': 'text_only', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'text_in_text_out'),
+            ({'interaction_style': 'advisory', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'direction_reasoning'),
+            ({'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'code_complexity': 0}, 'tool_execution'),
         ):
             self.assertEqual(self.plan({'profile': p(**prof_kw)})['decision']['task']['kind'], expected_kind)
         for depth, difficulty in ((1, 'routine'), (2, 'hard'), (3, 'coupled'), (4, 'frontier')):
@@ -1812,7 +1812,7 @@ class RouterIntegrationTests(unittest.TestCase):
                 'profile': {'work_kind': 'frontend_implementation', 'reasoning_depth': 1, 'code_complexity': 2,
                             'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
                             'needs_visual': False, 'needs_gui': False, 'local_only': True,
-                            'interaction_style': 'engineering', 'reason': 'caller profile'}}}), encoding='utf-8')
+                            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reason': 'caller profile'}}}), encoding='utf-8')
             profiled = record('User: Flash', 'antigravity-resilient', 'antigravity', 'gemini-3.8-flash-high', 'high')
             self.assertEqual((profiled['classifier_skipped'], profiled['agrees'], profiled['router_choice']),
                              (False, True, 'flash_high'))
@@ -2104,7 +2104,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1,
             'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
             'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-            'interaction_style': 'engineering',
+            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
         }
         validated = allocator.validate_profile(good)
         self.assertIs(validated['realtime_loop'], True)
@@ -2275,7 +2275,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
             'hallucination_risk': 2, 'error_cost': 2,
             'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-            'interaction_style': 'engineering',
+            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
         }
         rt_plan = allocator.plan(
             {
@@ -2330,7 +2330,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 1,
                     'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
-                    'interaction_style': 'engineering',
+                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
                 },
             },
             usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
@@ -2373,7 +2373,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 2,
                     'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-                    'interaction_style': 'engineering',
+                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
                 },
             },
             {
@@ -2384,7 +2384,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 1, 'error_cost': 2,
                     'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-                    'interaction_style': 'engineering',
+                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
                 },
             },
         ]
@@ -2418,7 +2418,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                         'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                         'hallucination_risk': 2, 'error_cost': 2,
                         'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-                        'interaction_style': 'engineering',
+                        'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
                     },
                 }
                 res = allocator.plan(rt_task, usage, now=self.now, accounts=fresh_accounts, capabilities=capabilities, overrides=[])
@@ -2572,7 +2572,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
                     'hallucination_risk': 2, 'error_cost': 3,
                     'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
-                    'interaction_style': 'engineering',
+                    'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
                 },
             },
             policy, capabilities, accounts,
@@ -2587,13 +2587,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
 
         accounts = copy.deepcopy(allocator.load_accounts())
         policy = accounts['scoring']
-        for variant_id in (
-            'claude-opus-5-5-20260901',
-            'gpt-6.1-sol-20260901',
-            'gpt-6-astra-preview',
-            'grok-4.7-latest',
-            'claude-opus-5-6',
-        ):
+        # A family guess has no measured speed of its own.
+        for variant_id in ('claude-opus-5-6', 'gpt-6-experimental', 'gemini-2.5-pro'):
             with self.subTest(variant=variant_id):
                 prof = auto_bundles.default_profile(variant_id, accounts)
                 self.assertIsNone(prof['spec'].get('responsiveness'))
@@ -2603,6 +2598,15 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                 self.assertEqual(src, 'default')
                 self.assertAlmostEqual(val, policy['responsiveness']['default'])
                 self.assertGreaterEqual(val, policy['responsiveness']['floor'])
+        # A date or -latest/-preview spelling is the model itself, so its measured curve answers (R1 `alias`).
+        for variant_id, exact_id in (('claude-opus-5-5-20260901', 'claude-opus-5-5'), ('gpt-6.1-sol-20260901', 'gpt-6.1-sol'),
+                                     ('gpt-6-astra-preview', 'gpt-6-astra'), ('grok-4.7-latest', 'grok-4.7')):
+            with self.subTest(variant=variant_id):
+                prof = auto_bundles.default_profile(variant_id, accounts)
+                self.assertEqual(prof['source'], 'calibrated')
+                self.assertEqual(
+                    allocator.bundle_responsiveness({'model': variant_id, 'effort': 'medium'}, prof, accounts),
+                    allocator.bundle_responsiveness({'model': exact_id, 'effort': 'medium'}, prof, accounts))
 
     def test_issue1_resolve_bundle_requires_realtime_flag_highest_qualifying_effort_and_survives_disabled_sibling(self):
         import dispatch_registry
@@ -2637,7 +2641,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         prof_rt = {
             'work_kind': 'computer_use', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1, 'divergence': 1,
             'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
-            'realtime_loop': True, 'interaction_style': 'engineering',
+            'realtime_loop': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
         }
         norm = allocator.normalize_task(
             {'objective': 'implement polling', 'realtime_loop': False, 'profile': prof_rt},
@@ -2646,8 +2650,8 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         self.assertFalse(norm['realtime_loop'])
         self.assertFalse(norm['profile']['realtime_loop'])
 
-        # 1d. When `opus55_medium` is disabled in model management and `opus55_high` steps down to `medium`,
-        # `resolve_bundle`, `issue()`, and `prepare()` preserve `bundle_id='opus55_high'` (not disabled `opus55_medium`).
+        # 1d. When `opus55_medium` is disabled in model management, `opus55_high` steps past it to `low`, and
+        # `resolve_bundle`, `issue()`, and `prepare()` keep that effort on `bundle_id='opus55_high'`.
         acc_disabled_sib = copy.deepcopy(accounts)
         for k, v in acc_disabled_sib['accounts'].items():
             if isinstance(v, dict):
@@ -2670,7 +2674,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
             allocator.load_accounts = lambda *a, **kw: acc_disabled_sib
             plan_res = allocator.plan(task, usage, now=self.now, accounts=acc_disabled_sib, capabilities=caps, overrides=[])
             self.assertEqual(plan_res['choice'], 'opus55_high')
-            self.assertEqual(plan_res['selected_bundle']['effort'], 'medium')
+            self.assertEqual(plan_res['selected_bundle']['effort'], 'low')
             with tempfile.TemporaryDirectory() as td:
                 db = os.path.join(td, 'reg.sqlite')
                 issued = dispatch_registry.issue(plan_res, task, now=self.now, path=db, allocation_task=task)
@@ -2679,7 +2683,7 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
                     usage, accounts=acc_disabled_sib, now=self.now, path=db,
                 )
                 self.assertEqual(prepared['bundle']['bundle_id'], 'opus55_high')
-                self.assertEqual(prepared['bundle']['effort'], 'medium')
+                self.assertEqual(prepared['bundle']['effort'], 'low')
                 self.assertFalse(prepared['bundle'].get('disabled'))
         finally:
             allocator.host_policy.load_policy = orig_hp

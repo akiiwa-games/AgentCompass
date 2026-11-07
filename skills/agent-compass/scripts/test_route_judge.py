@@ -86,12 +86,12 @@ class RoutingTests(unittest.TestCase):
         self.assertIn('kept_whole', [a['code'] for a in whole['alerts']])
         self.assertNotEqual(single['choice'], 'split')
 
-    def test_multi_task_fields_are_optional_and_checked(self):
+    def test_multi_task_fields_are_required_and_checked(self):
         allocator = router.load_allocator()
         self.assertEqual({k: v for k, v in allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count='>3')).items()
                           if k in ('multi_task', 'task_count')}, {'multi_task': True, 'task_count': '>3'})
-        odd = allocator.validate_profile(dict(GUI_PROFILE, multi_task='yes', task_count='5'))
-        self.assertFalse({'multi_task', 'task_count'} & set(odd))
+        with self.assertRaisesRegex(ValueError, 'multi_task'):
+            allocator.validate_profile(dict(GUI_PROFILE, multi_task='yes', task_count='2'))
         marks = allocator.infer_task_profile({'objective': '### 交付物 1' + chr(10) + 'a' + chr(10) + '### 交付物 2' + chr(10) + 'b' + chr(10) + '### 交付物 3'},
                                              allocator.load_capabilities())
         self.assertEqual((marks['multi_task'], marks['task_count']), (True, '3'))
@@ -376,7 +376,7 @@ class RoutingTests(unittest.TestCase):
 
 
 GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'interaction_style': 'engineering'}
+               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1'}
 
 
 class ReadinessGapTests(unittest.TestCase):
@@ -815,10 +815,12 @@ JEV_RESPONSE = {
         'needs_visual': {'type': 'noul', 'noul': 0.1},
         'needs_gui': {'type': 'noul', 'noul': 0.8},
         'local_only': {'type': 'noul', 'noul': 0.7},
+        'multi_task': {'type': 'noul', 'noul': 0.1},
+        'task_count': {'type': 'choice', 'choice': '1'},
     },
     'usage': {'input_tokens': 900, 'output_tokens': 40},
 }
-JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'reasoning_depth': 2, 'code_complexity': 0,
+JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reasoning_depth': 2, 'code_complexity': 0,
                'context_scale': 2, 'divergence': 1, 'hallucination_risk': 3, 'error_cost': 2,
                'needs_visual': True, 'needs_gui': True, 'local_only': True}
 SECRET = 'test-key-0000000000000000'

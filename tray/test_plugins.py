@@ -132,6 +132,7 @@ class LifecycleTests(unittest.TestCase):
             path = Path(directory) / "plugins.json"
             plugins.set_flag("dot2api", "enabled", False, path)
             with mock.patch.object(plugins, "PATH", path), \
+                    mock.patch.object(updates, "product_notice", return_value=""), \
                     mock.patch.object(updates, "update_dot2api") as dot, \
                     mock.patch.object(updates, "update_chatgpt_web", return_value="web"), \
                     mock.patch.object(updates, "update_usage_float", return_value="uf"), \

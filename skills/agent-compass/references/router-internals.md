@@ -63,6 +63,8 @@ agentcompass record \
   --provider <provider> --account <account> --model <model> --effort <effort>
 ```
 
+`--effort` may be omitted (the account's row of that model keeps its level) or written as `--model <model>:<effort>`. A level the account has no row for inherits the launch fields of its other rows of that model. The record is refused when a window that route draws is exhausted, when the route is cooling down, or when the user unchecked the model. A model that is off only by default (a superseded generation) can be named. On `realtime_loop` work a named model steps down like any candidate and a named model and effort stays as named; a slow route is recorded with `warnings`, never refused for speed.
+
 ### C. Dispatch lifecycle
 
 `roll` prepares, launches and observes the dispatch; nothing is closed out by hand. To inspect or recover one, use `agentcompass dispatch --dispatch-action status|reconcile|release` ([dispatch lifecycle](dispatch-lifecycle.md)).
@@ -137,6 +139,34 @@ start a fresh worker with a handoff. The parent can still steer its own running 
 under the communication contract below.
 
 ---
+
+### Model names, efforts and pins
+
+The same rules hold in the other repositories that port this router; `audit/gen_routing_parity.py` writes the data they compare against from a fixed commit.
+
+**One resolver.** `model_resolution.resolve_model` is the only place a provider's spelling becomes a model. It returns `{key, source, effort, bare}`:
+
+| `source` | Meaning | Tier and abilities | Responsiveness |
+|---|---|---|---|
+| `exact` | the calibrated id itself | its own row | its measured curve |
+| `alias` | another spelling of it: prefix, date, `-latest`, `-preview`, `[1m]`, letter case, a listed alias | its own row | its measured curve |
+| `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the family target minus 0.3 tier, abilities times 0.9, marked estimated | `0.52`, `source: default`; no local telemetry and no step-down |
+| `unknown` | no match | the generic text-only baseline | `0.52`, `source: default` |
+
+A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry or curve.
+
+**Step-down range.** On `realtime_loop` work a bundle steps down only to efforts in `dispatch_efforts(provider)` that the row offers (`efforts`, when listed) and the user has not unchecked (`disabled: true` on another row of the same account, harness and model). A second account (`claude-2`, `opencode-2`) reads its family's table through discovery or `account_family`; `pi` has its own table. A table that does not list the model offers no step-down; a provider with no table at all (a gateway) steps along the measured curve. `model:effort` is a fixed level. A bundle left without a qualifying level is excluded with `<model>@<effort>: responsiveness X below the realtime_loop floor 0.5`; a step-down that leaves too little ability names both levels.
+
+**Pins.** `constraints.model`, `constraints.effort`, `pinned_model` and `pinned_effort` hold in every mode and through `issue` and `prepare`:
+
+- Model only: the plan picks among that model's levels by the rules above. On `realtime_loop` work the best level that clears the floor wins, and when none does the fastest runs with `decision.warnings`. `xhigh` and `max` have no exemption.
+- Model and effort: that level stays, and a slow one only warns. A level the model has no row for is carried as `<carrier>@<effort>` when `dispatch_efforts` allows it.
+- A family name never launches the family target; unconfigured means blocked.
+- `disabled_by_default` rows stay out of routing until named; a row the user unchecked stays out even when named.
+- A named route that is exhausted, cooling down or otherwise unusable gives `choice: none`, `decision.blocked: named_model_unavailable`, the reasons in `decision.warnings` and no substitute. Tell the user.
+- A new pin breaks the hold of a coupled chain.
+
+**Profile validation.** `multi_task` and `task_count` are required. `task_count` takes `1`, `2`, `3`, `>3` or a positive whole number (4 and above become `>3`); `multi_task: false` goes only with `1`. Zero, negatives, fractions, NaN, Infinity, words, null and contradictions are invalid and never repaired. A classifier's invalid answer counts as a failed attempt, ending in the next classifier or `scorer_unavailable`; a caller's invalid profile raises `invalid_caller_profile`. A cached profile is validated again on read, and a bad one is a miss.
 
 ### No eligible bundle
 
