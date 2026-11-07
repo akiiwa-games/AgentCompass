@@ -48,13 +48,15 @@ Known residual risks: a request the daemon has not admitted by the deadline is s
 
 While `launching`, Paseo's `get_agent_status` answers "not found": the agent does not exist yet, and that is not a failure. Do not roll again; run `next_argv`. The worker notification goes out only at an end: `finished`, `error`, `creation failed`, which says the brief can be rolled again, or `worker removed before it was observed`. A slow create sends nothing. A record that cannot be read keeps the watcher polling, and its watch limit still ends with a notice.
 
-A resume is judged the same way, with no clock. The notification is `worker unavailable` only when Paseo answers that the worker no longer exists or is archived. Until the worker carries this dispatch's labels its state is the previous turn's, so nothing is sent, and if it cannot be read the watcher keeps polling. A resume that never binds therefore stays silent until the 7-day watch limit, which ends with a notice.
+A resume is judged the same way, with no clock. The notification is `worker unavailable` only when Paseo answers that the worker no longer exists or is archived. Until the worker carries this dispatch's labels its state is the previous turn's, so nothing is sent, and if it cannot be read the watcher keeps polling. A resume that never binds therefore stays silent until `release` stops its watcher or the 7-day watch limit ends it with a notice.
+
+A resume that binds but whose turn never lands holds its lease only until it lapses: only a seen run or a user message after the launch renews it, or recovers it once expired. When the lease lapses the watcher sends one `turn not delivered` notice and keeps watching, so a turn that lands later still reports its finish. A worker this dispatch saw under its own labels and later carrying another dispatch's ends the watch with `superseded by a later dispatch`.
 
 ### One writer per workspace
 
 `roll --workspace W` refuses a second writer: `status: blocked`, `cause: workspace_has_active_writer`, nothing launched. W is held by any unsettled dispatch recorded against it (`prepared`, `launching`, `launched`, `started`, or `expired` after launch) and by any router-launched agent running there, even after its dispatch completed (a worker can be sent a follow-up). A dispatch recorded before this rule counts as a writer; the caller itself never does, so a coordinator can roll into its own workspace. The check is repeated in the transaction that inserts the row, so of two concurrent rolls one wins. If running agents cannot be read, the recorded dispatches decide and `assumptions` says so: a dispatch that completed and whose worker is running a follow-up can then be missed.
 
-The rule goes by workspace ID. Directories only warn: many normal parallel dispatches have no `--workspace`, and several workspace IDs can sit on one checkout on purpose. A writer roll looks at the directory it will land in (the parent's cwd, or the one Paseo gives for `--workspace W`) and `assumptions` and `warnings` name other unsettled writer dispatches recorded there. If Paseo does not give the directory, nothing is named. A roll records its directory, and an observation corrects it to where the worker is.
+The rule goes by workspace ID. Directories only warn: many normal parallel dispatches have no `--workspace`, and several workspace IDs can sit on one checkout on purpose. A writer roll looks at the directory it will land in (the one Paseo gives for `--workspace W`; otherwise a resumed worker's own directory, or the parent's cwd) and `assumptions` and `warnings` name other unsettled writer dispatches recorded there. If Paseo does not give the directory, nothing is named. A roll records its directory, and an observation corrects it to where the worker is.
 
 A resume stays in its workspace too: with `--workspace W`, a compatible worker living elsewhere is not resumed (`worker_workspace_mismatch`) and the dispatch creates a new worker in W instead.
 
@@ -93,7 +95,7 @@ agentcompass dispatch --dispatch-action reconcile
 agentcompass dispatch --dispatch-action release --dispatch-id <dispatch_id> --parent-id <your_session_id> --basis "<why>"
 ```
 
-`release` observes first, so a create that is over settles and releases. It refuses a live worker, and a create the daemon is still running, because it cancels neither. While Paseo cannot be read it refuses anything sent and not yet settled, since either could be alive; a dispatch never sent needs no host.
+`release` observes first, so a create that is over settles and releases. It refuses a live worker, and a create the daemon is still running, because it cancels neither. While Paseo cannot be read it refuses anything sent and not yet settled, since either could be alive; a dispatch never sent needs no host. A worker Paseo reads that does not carry this dispatch's labels is different: that answer will not change, so `release` waits only for the lease to lapse and its refusal gives the time. A release that ends a dispatch also stops its notification watcher, whose receipt then reads `creation_failed`.
 
 ## 4. Outcome, Reuse and Launch Failures
 

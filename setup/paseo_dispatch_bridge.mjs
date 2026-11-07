@@ -15,6 +15,13 @@ const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'cre
 const CREATE_FAILED = 'creation failed';
 const WORKER_REMOVED = 'worker removed before it was observed';
 const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
+const SUPERSEDED = 'superseded by a later dispatch';
+const UNDELIVERED = 'turn not delivered';
+// dispatch_registry.RUN_LEASE: past it, a resume whose turn has not landed can be released.
+const RUN_LEASE_MS = 10 * 60 * 1000;
+const WORKSPACE_LOOKUP_MS = 5000;
+// A stopped watcher notices its marker within one poll.
+const WATCHER_STOP_MS = 2 * POLL_MS;
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
@@ -96,8 +103,10 @@ export function notificationEvents(agent, record, now, creation) {
     return creation?.phase === 'failed' || (creation === null && now >= record.creation_deadline)
       ? [{key: 'terminal', reason: CREATE_FAILED}] : [];
   }
-  if (record.agent_id && record.agent_id !== record.dispatch_id
-      && agent.labels?.['router.dispatch_id'] !== record.dispatch_id)
+  const label = agent.labels?.['router.dispatch_id'];
+  // Seen under its own labels, so these are not a relabel that has yet to land: a later dispatch took this worker.
+  if (record.seen && label && label !== record.dispatch_id) return [{key: 'terminal', reason: SUPERSEDED}];
+  if (record.agent_id && record.agent_id !== record.dispatch_id && label !== record.dispatch_id)
     // Not bound to this dispatch yet, so its state is the previous turn's. Only its removal says anything about this one.
     return agent.archivedAt ? [{key: 'terminal', reason: 'worker unavailable'}] : [];
   if (agent.status === 'running') record.started = true;
@@ -116,6 +125,8 @@ export function notificationEvents(agent, record, now, creation) {
     && Date.parse(agent.lastUserMessageAt) >= created);
   if (agent.status === 'idle' && (resumed ? turnSeen : (agent.attentionReason === 'finished' || record.started)))
     return [{key: 'terminal', reason: 'finished'}];
+  // Its lease is not renewed from here, so the parent can end it. A turn that lands later still reports its finish.
+  if (resumed && !turnSeen && now - created >= RUN_LEASE_MS) return [{key: 'undelivered', reason: UNDELIVERED}];
   return [];
 }
 
@@ -128,11 +139,13 @@ export async function notificationStep(client, record, persist, now = Date.now()
   if (!record.pending) {
     const expired = now >= record.deadline;
     // Past the watch there is nothing left to decide from these, and one that cannot be read must not hold back the notice.
-    const agent = expired
+    let agent = expired
       ? await client.fetchAgent(targetId).then(found => found?.agent, () => null)
       : (await client.fetchAgent(targetId))?.agent;
     const creation = !expired && !agent && !record.seen && !record.agent_id
       ? await creationRecord(client, record.dispatch_id) : undefined;
+    // Read the record, then the agent it names: a create that got this far between the two reads is not "removed".
+    if (creation?.agent_id) agent = (await client.fetchAgent(creation.agent_id))?.agent;
     const events = expired
       ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
       : notificationEvents(agent, record, now, creation);
@@ -156,6 +169,9 @@ export async function notificationStep(client, record, persist, now = Date.now()
           ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'
           : event.reason === WORKER_REMOVED
           ? 'Paseo created this worker and it was removed before this dispatch observed it. It may have done part of the work: check that before rolling this brief again.'
+          : event.reason === UNDELIVERED
+          ? `This worker carries this dispatch's labels, but its turn has not landed within the lease. Check it with get_agent_status ` +
+            `(agentId: ${targetId}). If it should not do this work any more, release this dispatch. A finish is still reported if the turn lands.`
           : `Read the worker's final response and details with get_agent_activity ` +
             `(agentId: ${targetId}); use get_agent_status for pending permissions.`)};
     }
@@ -265,18 +281,25 @@ export async function creationRecord(client, key) {
     ...(snapshot.phase === 'failed' ? {failure_class: creationFailureClass(snapshot)} : {})};
 }
 
-// Only feeds a warning, so failing here must not cost the caller the agents it did read.
-async function workspaceDirectory(client, workspaceId) {
-  try {
-    let cursor;
-    do {
-      const page = await client.fetchWorkspaces({page: {limit: 200, ...(cursor ? {cursor} : {})}});
-      const found = page.entries?.find(workspace => workspace.id === workspaceId);
-      if (found) return found.workspaceDirectory ?? found.projectRootPath ?? null;
-      cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
-    } while (cursor);
-  } catch {}
+async function findWorkspaceDirectory(client, workspaceId) {
+  let cursor;
+  do {
+    const page = await client.fetchWorkspaces({page: {limit: 200, ...(cursor ? {cursor} : {})}});
+    const found = page.entries?.find(workspace => workspace.id === workspaceId);
+    if (found) return found.workspaceDirectory ?? found.projectRootPath ?? null;
+    cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
+  } while (cursor);
   return null;
+}
+
+// Only feeds a warning, so failing here must not cost the caller the agents it did read. Nor must hanging: the SDK's
+// own limit is longer than the caller's, which kills this bridge and loses them.
+async function workspaceDirectory(client, workspaceId) {
+  let timer;
+  const limit = new Promise(resolve => { timer = setTimeout(resolve, WORKSPACE_LOOKUP_MS, null); });
+  try { return await Promise.race([findWorkspaceDirectory(client, workspaceId), limit]); }
+  catch { return null; }
+  finally { clearTimeout(timer); }
 }
 
 // The creator knows the outcome: stop only this dispatch's watcher, without replacing its receipt.
@@ -286,6 +309,20 @@ function stopWatcher(input, reason) {
   if (record?.parent_id !== input.parent_id) return;
   fs.writeFileSync(`${file}.creation-failed`, reason, {mode: 0o600});
   saveRecord(file, {...record, status: 'creation_failed'});
+}
+
+// A refused resume's stopped watcher followed the old worker. The create falling back from it needs a watcher of its
+// own on the new one, and the old watcher must be gone first or its last save would overwrite the new record.
+async function retireRefusedResume(input) {
+  const file = notificationFile(input.dispatch_id);
+  const record = readRecord(file);
+  if (record?.parent_id !== input.parent_id || record.status !== 'creation_failed' || !record.agent_id) return;
+  for (let waited = 0; alive(record.pid); waited += 100) {
+    if (waited >= WATCHER_STOP_MS) throw new Error('notification_start_failed');
+    await pause(100);
+  }
+  fs.rmSync(`${file}.creation-failed`, {force: true});
+  fs.rmSync(file, {force: true});
 }
 
 export function project(agent) {
@@ -306,8 +343,10 @@ export async function execute(client, input, notify = ensureNotification) {
     const parent = await client.fetchAgent(input.parent_id);
     if (!parent?.agent) return {ok: false, sent: false, error: 'parent_agent_not_found'};
     let completion_notification;
-    try { completion_notification = await notify(input); }
-    catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
+    try {
+      await retireRefusedResume(input);
+      completion_notification = await notify(input);
+    } catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
     const cwd = parent.agent.cwd, workspaceId = r.workspaceId ?? parent.agent.workspaceId;
     const slash = r.provider.indexOf('/');
     // The caller stops waiting for a create it never sent and may settle it as failed, so sending later is forbidden.

@@ -1859,6 +1859,30 @@ class CreateLifecycleTests(unittest.TestCase):
             observed = registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now + timedelta(seconds=11))
         self.assertEqual(observed['state'], 'started')
 
+    def test_a_quota_store_that_cannot_be_written_does_not_lose_the_observation(self):
+        row = self.claimed()
+        import quota_exhaustion
+        with patch.object(quota_exhaustion, 'record', side_effect=PermissionError(5, 'denied')):
+            observed = registry.observe(row['dispatch_id'], self.snapshot(row, status='error', lastError='quota exceeded'),
+                                        now=self.now + timedelta(seconds=11))
+        self.assertEqual(observed['state'], 'failed')
+
+    def test_a_quota_store_read_denied_for_a_moment_is_retried(self):
+        import override_store
+        import quota_exhaustion
+        store = self.root / 'quota.json'
+        store.write_text('{"accounts": {"seen": {}}}', encoding='utf-8')
+        real, calls = Path.read_text, []
+
+        def read_text(path, *args, **options):
+            calls.append(path)
+            if len(calls) < 3:
+                raise PermissionError(5, 'denied')
+            return real(path, *args, **options)
+        with patch.object(Path, 'read_text', read_text), patch.object(override_store.time, 'sleep'):
+            self.assertEqual(quota_exhaustion._read(store), {'accounts': {'seen': {}}})
+        self.assertEqual(len(calls), 3)
+
     def test_a_store_replace_denied_for_a_moment_is_retried(self):
         import override_store
         store = self.root / 'store.json'
@@ -2011,6 +2035,113 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
                 with registry.transaction() as connection:
                     connection.execute('DELETE FROM dispatches')
+
+    def resumed(self, **stored_changes):
+        row = registry.prepare(self.issue()['decision_id'], self.task, self.launch, self.usage, accounts=self.accounts,
+                               now=self.now, resume_agent_id='old-worker', fallback_prompt='Only fixture work')
+        row = self.claim_row(row)
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored.update(stored_changes)
+            registry.save(connection, stored)
+        return stored
+
+    def previous_turn(self, row, **changes):
+        # The worker as a00ecb3a and 742b43c9 saw it: idle since long before this launch.
+        return self.snapshot(row, status='idle', id='old-worker', attentionReason='finished',
+                             lastUserMessageAt=(self.now - timedelta(days=2)).isoformat(), **changes)
+
+    def never_bound(self, row):
+        labels = dict(row['request']['labels'], **{'router.dispatch_id': 'dispatch-before', 'router.task_id': 'task-before'})
+        return self.previous_turn(row, labels=labels, updatedAt=(self.now - timedelta(days=2)).isoformat())
+
+    def test_a_resume_that_never_bound_can_be_released_once_its_lease_has_lapsed(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        released = self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})
+        self.assertEqual(released['state'], 'canceled')
+        self.assertFalse(registry.unresolved(registry.inspect(row['dispatch_id']), registry.utcnow()))
+
+    def test_a_resume_that_never_bound_says_so_while_its_lease_runs(self):
+        row = self.resumed()
+        with self.assertRaises(ValueError) as refused:
+            self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})
+        self.assertIn("does not carry this dispatch's labels", str(refused.exception))
+        self.assertNotIn('could not be read', str(refused.exception))
+        self.assertIn(row['lease_until'], str(refused.exception))
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'launching')
+
+    def test_a_resume_that_never_bound_is_still_refused_while_the_host_cannot_be_read(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        with self.assertRaisesRegex(ValueError, 'could not be read'):
+            self.release(row, lambda _: {'ok': False, 'error': 'host_timeout'})
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
+
+    def test_a_bound_resume_whose_turn_never_landed_keeps_no_lease_and_can_be_released(self):
+        row = self.resumed()
+        idle = self.previous_turn(row)
+        watched = registry.observe(row['dispatch_id'], idle, now=self.now + timedelta(minutes=5))
+        self.assertEqual((watched['state'], watched['lease_until']), ('launched', row['lease_until']))
+        lapsed = registry.observe(row['dispatch_id'], idle, now=self.now + timedelta(minutes=11))
+        self.assertEqual(lapsed['state'], 'expired')
+        self.assertEqual(registry.observe(row['dispatch_id'], idle, now=self.now + timedelta(minutes=12))['state'], 'expired')
+        self.assertEqual(self.release(row, lambda _: {'ok': True, 'agent': idle})['state'], 'canceled')
+
+    def test_a_turn_that_lands_after_the_lease_brings_the_dispatch_back(self):
+        landed = (self.now + timedelta(minutes=12)).isoformat()
+        for changes, state in (({'status': 'running'}, 'started'),
+                               ({'lastUserMessageAt': landed, 'status': 'initializing', 'attentionReason': None}, 'launched')):
+            with self.subTest(state=state):
+                row = self.resumed(task_id=state)
+                registry.observe(row['dispatch_id'], self.previous_turn(row), now=self.now + timedelta(minutes=11))
+                back = registry.observe(row['dispatch_id'], {**self.previous_turn(row), **changes},
+                                        now=self.now + timedelta(minutes=12))
+                self.assertEqual(back['state'], state)
+                self.assertGreater(registry.parse(back['lease_until']), self.now + timedelta(minutes=12))
+                with self.assertRaisesRegex(ValueError, 'Observe terminal status'):
+                    registry.release(row['dispatch_id'], 'parent-a', 'give up', now=self.now + timedelta(minutes=12))
+                with registry.transaction() as connection:
+                    connection.execute('DELETE FROM dispatches')
+
+    def watcher_marker(self, row):
+        state = self.root / 'watcher-state'
+        patcher = patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        notifications = state / 'paseo-notifications'
+        notifications.mkdir(parents=True)
+        (notifications / f"{row['dispatch_id']}.json").write_text('{}', encoding='utf-8')
+        return notifications / f"{row['dispatch_id']}.json.creation-failed"
+
+    def test_release_stops_the_dispatchs_watcher(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        marker = self.watcher_marker(row)
+        self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})
+        self.assertTrue(marker.exists())
+
+    def test_release_of_what_was_already_over_leaves_its_watcher_to_finish(self):
+        # A finished worker's notice may still be on its way.
+        row = self.resumed()
+        marker = self.watcher_marker(row)
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['state'] = 'completed'
+            registry.save(connection, stored)
+        self.assertEqual(self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})['state'], 'completed')
+        self.assertFalse(marker.exists())
+
+    def test_release_with_no_watcher_leaves_nothing_behind(self):
+        row = self.prepare()
+        marker = self.watcher_marker(row)
+        (marker.parent / f"{row['dispatch_id']}.json").unlink()
+        self.assertEqual(self.release(row, lambda _: self.fail('nothing was sent'))['state'], 'canceled')
+        self.assertFalse(marker.exists())
+
+    def test_a_marker_that_cannot_be_written_does_not_undo_the_release(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        marker = self.watcher_marker(row)
+        with patch.object(Path, 'write_text', side_effect=PermissionError(5, 'denied')):
+            self.assertEqual(self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})['state'], 'canceled')
+        self.assertFalse(marker.exists())
 
     def test_the_same_release_goes_through_once_the_host_says_it_is_over(self):
         row = self.lapsed(agent_id='gone-worker')
@@ -2356,6 +2487,37 @@ class RollLifecycleTests(unittest.TestCase):
             compact = self.go(new_worker=True, verbose=False)
         self.assertEqual(compact['status'], 'pending')
         self.assertIn(first['worker']['dispatch_id'], compact['warnings'][0])
+
+    def resuming(self, cwd):
+        import roll
+        worker = {'agent_id': 'worker-x'}
+        return (patch.object(registry, 'reusable_workers', return_value=[worker]),
+                patch.object(roll, '_bundle_matches_worker', return_value=True),
+                patch.object(roll, 'match_reusable_worker', return_value=worker),
+                patch.object(registry, 'paseo_agent_record', return_value={'cwd': cwd} if cwd else None))
+
+    def test_a_resume_with_no_workspace_warns_about_where_the_worker_lives_not_the_parent(self):
+        with self.in_cwd('C:/work/Y'):
+            there = self.go(task_id='writer-there')['worker']['dispatch_id']
+        with self.in_cwd('C:/work/P'):
+            here = self.go(task_id='writer-here')['worker']['dispatch_id']
+            workers, matches, match, record = self.resuming('C:/work/Y')
+            with workers, matches, match, record:
+                resumed = self.go(task_id='follow-up')
+        row = registry.inspect(resumed['worker']['dispatch_id'])
+        self.assertEqual((row['operation'], row['cwd']), ('resume', 'C:/work/Y'))
+        self.assertEqual(resumed['status'], 'pending')
+        self.assertTrue(any(there in note for note in resumed['warnings']))
+        self.assertFalse(any(here in note for note in resumed['warnings']))
+
+    def test_a_resumed_worker_of_unknown_directory_is_taken_to_be_in_the_parents(self):
+        with self.in_cwd('C:/work/P'):
+            here = self.go(task_id='writer-here')['worker']['dispatch_id']
+            workers, matches, match, record = self.resuming(None)
+            with workers, matches, match, record:
+                resumed = self.go(task_id='follow-up')
+        self.assertEqual(registry.inspect(resumed['worker']['dispatch_id'])['operation'], 'resume')
+        self.assertTrue(any(here in note for note in resumed['warnings']))
 
     def test_no_warning_elsewhere_for_a_reader_or_once_the_writer_has_ended(self):
         with self.in_cwd('C:/work/A'):

@@ -141,6 +141,8 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None):
                 row = registry.observe(row['dispatch_id'], response['agent'], now=now, path=path,
                                        terminal=(response.get('completion_notification') or {}).get('terminal'))
                 results.append(dict(public(row), completion_notification=response.get('completion_notification')))
+            except registry.NotBound as exc:
+                results.append({'dispatch_id': row['dispatch_id'], 'error': str(exc), 'not_bound': True})
             except ValueError as exc:
                 results.append({'dispatch_id': row['dispatch_id'], 'error': str(exc)})
         elif response.get('ok') and response.get('missing') and row.get('agent_id'):
@@ -282,6 +284,17 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     return result
 
 
+def stop_watcher(dispatch_id):
+    """The marker the bridge's watcher stops at (stopWatcher in paseo_dispatch_bridge.mjs). Best effort: the watcher
+    also ends at its watch limit, and what called this is already saved."""
+    file = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass') / 'paseo-notifications' / f'{dispatch_id}.json'
+    try:
+        if file.exists():
+            Path(f'{file}.creation-failed').write_text('released', encoding='utf-8')
+    except OSError:
+        pass
+
+
 def cli(args):
     if args.stage == 'launch':
         if not args.dispatch_id or not args.parent_id:
@@ -312,10 +325,16 @@ def cli(args):
         require_actual_parent(args.parent_id)
         # A create that is already over can be settled now, then released; one still running stays refused.
         observations = reconcile(args.dispatch_id)
-        error = next((item['error'] for item in observations if item.get('error')), None)
+        error = next((item['error'] for item in observations if item.get('error') and not item.get('not_bound')), None)
         row = registry.inspect(args.dispatch_id)
         if error and row.get('launched_at') and registry.unresolved(row, registry.utcnow()):
             raise ValueError(f'Paseo could not be read ({error}), so this worker or create may still be alive and '
                              'release cannot confirm it is over. Try again when Paseo answers.')
-        return public(registry.release(args.dispatch_id, args.parent_id, args.basis[:400]))
+        if row['state'] in registry.ACTIVE and any(item.get('not_bound') for item in observations):
+            raise ValueError("Paseo answers that this worker does not carry this dispatch's labels, so its turn may still "
+                             f"be on its way. Release works once the lease lapses at {row['lease_until']}.")
+        released = registry.release(args.dispatch_id, args.parent_id, args.basis[:400])
+        if released['state'] == 'canceled' and row['state'] != 'canceled':
+            stop_watcher(args.dispatch_id)
+        return public(released)
     return public(registry.inspect(args.dispatch_id))

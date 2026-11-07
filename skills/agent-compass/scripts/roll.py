@@ -385,10 +385,6 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             judge.append_ledger({'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': 'allow_concurrent', 'parent_id': parent,
                                  'task_id': task.get('task_id'), 'workspace': workspace, 'reason': allow_concurrent[:300],
                                  'holders': holders})
-    if not workspace and access == 'write':
-        landing = parent_cwd()
-    if landing:
-        out = same_cwd_warning(out, landing, parent, workspace)
     resume_agent_id = None
     if not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
@@ -405,6 +401,11 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             matched = match_reusable_worker(args, task, text, parent, workers=compatible)
             if matched:
                 resume_agent_id = matched['agent_id']
+    if not workspace and access == 'write':
+        # A resumed worker stays where it lives, whatever the parent's directory.
+        landing = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
+    if landing:
+        out = same_cwd_warning(out, landing, parent, workspace)
     prompt_for_launch = (prepare_resume_prompt(text, parent, out.get('parent_host') or 'paseo', out.get('parent_address'))
                          if resume_agent_id else text)
     launch = {'title': args.title or title_of(text), 'initialPrompt': prompt_for_launch}

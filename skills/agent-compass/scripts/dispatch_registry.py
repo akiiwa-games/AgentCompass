@@ -43,6 +43,10 @@ LABELS = ('router.decision_id', 'router.dispatch_id', 'router.parent_id',
 BOUND = ('provider', 'settings')
 
 
+class NotBound(ValueError):
+    """Paseo answered, and this worker does not carry this dispatch's labels."""
+
+
 class WorkspaceBusy(ValueError):
     """The workspace already has a writer; `holders` names each one."""
 
@@ -706,7 +710,7 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         row = get(connection, 'dispatches', dispatch_id)
         labels = snapshot.get('labels') or {}
         if any(labels.get(k) != row['request']['labels'][k] for k in LABELS):
-            raise ValueError('Host snapshot belongs to another dispatch/parent/task')
+            raise NotBound('Host snapshot belongs to another dispatch/parent/task')
         agent_id = snapshot.get('id')
         if not isinstance(agent_id, str) or not agent_id or row.get('agent_id') not in (None, agent_id):
             raise ValueError('Host agent ID mismatch')
@@ -725,8 +729,11 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             updated_error = snapshot.get('updatedAt')
             if isinstance(updated_error, str) and parse(updated_error) >= parse(row['launched_at']):
                 import quota_exhaustion
-                quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
-                                        windows=bundle_windows(row['bundle']), at=updated_error, source=agent_id)
+                try:
+                    quota_exhaustion.record(row['bundle']['account'], snapshot.get('lastError'),
+                                            windows=bundle_windows(row['bundle']), at=updated_error, source=agent_id)
+                except OSError:
+                    pass  # Best effort: a busy store must not stop this observation or the reconcile that made it.
         if row['state'] in TERMINAL and row['state'] != 'expired':
             return row
         if row['state'] == 'prepared':
@@ -747,7 +754,8 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             delivered = isinstance(last_message, str) and parse(last_message) >= parse(row['launched_at'])
         except ValueError:
             delivered = False
-        if row.get('operation') == 'resume' and not row.get('started_at') and not delivered and status != 'running':
+        undelivered = row.get('operation') == 'resume' and not row.get('started_at') and not delivered and status != 'running'
+        if undelivered:
             reason = None
         target = None
         if finished_before(terminal, row['launched_at']) and status != 'running':
@@ -771,9 +779,14 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         # A fresh host observation can recover an expired lease, but never outlive the hard bound.
         if target in ACTIVE and now >= parse(row['hard_until']):
             target = 'expired'
+        # The same state read again is no sign of life, so only a turn that landed renews or recovers a resume's lease.
+        # Without this every observation restored it, and release could never end one whose turn never came.
+        if target in ACTIVE and undelivered and (row['state'] == 'expired' or now >= parse(row['lease_until'])):
+            target = 'expired'
         if target in ACTIVE:
             row.pop('released_at', None)
-            row['lease_until'] = stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until'])))
+            if not undelivered:
+                row['lease_until'] = stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until'])))
         if row['state'] != target:
             event(row, target, now)
         save(connection, row)
