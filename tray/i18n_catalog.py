@@ -217,6 +217,7 @@ EN = {
     '拦截': 'Blocked',
     '可选': 'Eligible',
     '评分完成：{0} 个候选，胜出 {1}': 'Scored {0} candidates; winner: {1}',
+    '旧记录缺字段，无法重放': 'Old record is missing fields and cannot be replayed',
     '（小模型 {0} · {1}ms）': ' (Scorer {0} · {1}ms)',
     '（离线规则直判）': ' (Offline rules)',
     '（小模型失败已回退规则：{0}）': ' (Scorer failed; using rules: {0})',
@@ -821,4 +822,5 @@ EN = {
     '正在检查 AgentCompass 更新…': 'Checking for AgentCompass updates…',
     '正在更新 AgentCompass…': 'Updating AgentCompass…',
     '更新失败': 'Update failed',
+    '旧记录缺字段，无法重放': 'Old record is missing fields and cannot be replayed',
 }

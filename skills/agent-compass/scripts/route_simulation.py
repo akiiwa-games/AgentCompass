@@ -337,6 +337,26 @@ def ledger_records(path=None, last=None):
     return rows[-last:] if last else rows
 
 
+LEGACY_REPLAY_NOTE = '旧记录缺字段，无法重放'
+
+
+def lacks_required_profile_fields(profile):
+    """Invalid only because a legacy record omitted required profile fields."""
+    if not isinstance(profile, dict):
+        return False
+    try:
+        allocator.validate_profile(profile)
+        return False
+    except ValueError:
+        pass
+    try:
+        allocator.validate_profile({'wants_fast': False, 'read_only_review': False, **profile,
+                                    'multi_task': False, 'task_count': '1'})
+        return True
+    except ValueError:
+        return False
+
+
 def replay_task(row):
     task = dict(row['decision_snapshot']['task'])
     if isinstance(task.get('profile'), str):
@@ -359,9 +379,15 @@ def replay(last=None, path=None, accounts=None):
     pools = pool_counts(live_document())
     out = []
     for row in ledger_records(path, last):
+        task = replay_task(row)
+        if lacks_required_profile_fields(task.get('profile')):
+            out.append({'at': row['at'], 'kind': row.get('kind'), 'difficulty': row.get('difficulty'),
+                        'ledger_choice': row.get('choice'), 'choice': None, 'model': None,
+                        'unreplayable': True, 'replay_note': LEGACY_REPLAY_NOTE})
+            continue
         now = datetime.fromisoformat(row['at'])
         usage = snapshot(ledger_document(row['usage'], pools), accounts, now)
-        decision = allocator.plan(replay_task(row), usage, now, accounts=copy.deepcopy(accounts), overrides=[], records=[])
+        decision = allocator.plan(task, usage, now, accounts=copy.deepcopy(accounts), overrides=[], records=[])
         selected = decision.get('selected_bundle') or {}
         out.append({'at': row['at'], 'kind': row.get('kind'), 'difficulty': row.get('difficulty'),
                     'ledger_choice': row.get('choice'), 'choice': decision.get('choice'), 'model': selected.get('model')})

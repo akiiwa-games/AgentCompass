@@ -142,7 +142,9 @@ function observe(input) {
     if (found.length > 1) return { ok: false, error: 'duplicate_dispatch_agents' };
     agent = found[0] ? observeAgent(found[0].id) : null;
   }
-  return { ok: true, agent: project(agent), missing: Boolean(input.agent_id && !agent), completion_notification: receipt(agent) };
+  // Like the daemon: no record for a create that never reached this host.
+  return { ok: true, agent: project(agent), missing: Boolean(input.agent_id && !agent), ...(!agent && !input.agent_id ? { creation: null } : {}),
+    completion_notification: receipt(agent) };
 }
 
 let raw = '';

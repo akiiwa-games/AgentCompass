@@ -22,7 +22,7 @@ def setUpModule():
 
 
 TASK = {'objective': 'Implement the parser module and tests', 'work_kind': 'self_contained_code', 'difficulty': 'routine',
-        'expected_hours': 1.0, 'reasoning_depth': 2, 'code_complexity': 2}
+        'expected_hours': 1.0, 'reasoning_depth': 2, 'code_complexity': 2, 'wants_fast': False, 'read_only_review': False}
 
 
 def jwt(claims):

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
-  creationFailureClass, subscriptionLapsed} from './paseo_dispatch_bridge.mjs';
+  creationFailureClass, creationRecord, subscriptionLapsed} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -258,6 +258,332 @@ test('initial idle and delayed creation do not falsely finish; vanished workers 
   assert.equal(notificationEvents(null, record, 30)[0].reason, 'worker unavailable');
 });
 
+test('a create only notifies once it has ended: never for slowness, whatever the deadline', () => {
+  const record = {dispatch_id: 'd', creation_deadline: 100};
+  for (const phase of ['accepted', 'workspace_ready', 'agent_ready', 'prompt_started'])
+    assert.deepEqual(notificationEvents(null, record, 10_000, {phase}), [], phase);
+  assert.deepEqual(notificationEvents(null, record, 99, null), [], 'not admitted, inside the deadline');
+  assert.equal(notificationEvents(null, record, 100, null)[0].reason, 'creation failed');
+  assert.equal(notificationEvents(null, record, 10, {phase: 'failed'})[0].reason, 'creation failed');
+  assert.deepEqual(notificationEvents(null, record, 10_000), [], 'a record not read decides nothing');
+});
+
+test('a failed create tells the parent the brief can be rolled again', async () => {
+  const f = watchFixture();
+  const fetchAgent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : null;
+  f.client.sendCorrelatedSessionRequest = async () => ({snapshot: {phase: 'failed', error: 'secret-sdk-canary'}});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.match(f.calls[0][1], /safe to roll this brief again/);
+  assert(!f.calls[0][1].includes('get_agent_activity'));
+  assert(!JSON.stringify(f.record).includes('canary'));
+});
+
+test('the creation record is read through a schema-valid one-shot request, keeping only fixed fields', async () => {
+  const seen = [];
+  const client = {sendCorrelatedSessionRequest: async request => {
+    seen.push(request);
+    SessionInboundMessageSchema.parse({...request.message, requestId: 'fixture-request'});
+    return {snapshot: seen.length === 1 ? null : {phase: 'failed', outcomeUnknown: false, agentId: 'd', error: 'Timed out refreshing x secret-canary'}};
+  }};
+  assert.equal(await creationRecord(client, 'd'), null);
+  const failed = await creationRecord(client, 'd');
+  assert.deepEqual(failed, {phase: 'failed', outcome_unknown: false, agent_id: 'd', agent_created: false, failure_class: 'provider_refresh_timeout'});
+  assert.equal(seen[0].message.subscribe, false);
+  await assert.rejects(creationRecord({sendCorrelatedSessionRequest: async () => ({snapshot: null, error: 'boom'})}, 'd'), /creation_unobservable/);
+});
+
+test('observe reports the creation record when no agent exists, and finds an agent created meanwhile', async () => {
+  const none = {fetchAgents: async () => ({entries: []}), fetchAgent: async () => null,
+    sendCorrelatedSessionRequest: async () => ({snapshot: {phase: 'accepted', agentId: 'd'}})};
+  const pending = await execute(none, {operation: 'observe', dispatch_id: 'observe-creation', agent_id: null});
+  assert.deepEqual([pending.ok, pending.agent, pending.creation.phase], [true, null, 'accepted']);
+  const raced = {...none, fetchAgent: async id => ({agent: {id, status: 'running', labels: {}}}),
+    sendCorrelatedSessionRequest: async () => ({snapshot: {phase: 'completed', agentId: 'd'}})};
+  assert.equal((await execute(raced, {operation: 'observe', dispatch_id: 'observe-creation', agent_id: null})).agent.id, 'd');
+  const bound = {...none, sendCorrelatedSessionRequest: async () => assert.fail('a bound agent has no create to read')};
+  assert.equal('creation' in await execute(bound, {operation: 'observe', dispatch_id: 'observe-creation', agent_id: 'gone'}), false);
+});
+
+// What the daemon answers for a completed record whose agent is gone (real run against a real record, 2026-11-07).
+const agentRemoved = async () => ({snapshot: null, error: 'Previously created agent no longer exists'});
+
+test('a worker removed before it was observed reads as a completed record with no agent, not an unreadable host', async () => {
+  assert.deepEqual(await creationRecord({sendCorrelatedSessionRequest: agentRemoved}, 'd'),
+    {phase: 'completed', outcome_unknown: false, agent_id: null, agent_created: true});
+  const gone = {fetchAgents: async () => ({entries: []}), fetchAgent: async () => null, sendCorrelatedSessionRequest: agentRemoved};
+  const observed = await execute(gone, {operation: 'observe', dispatch_id: 'observe-removed', agent_id: null});
+  assert.deepEqual([observed.ok, observed.agent, observed.creation.phase, observed.creation.agent_id], [true, null, 'completed', null]);
+});
+
+test('the watcher reports a removed worker once and stops', async () => {
+  const f = watchFixture();
+  const fetchAgent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : null;
+  f.client.sendCorrelatedSessionRequest = agentRemoved;
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /removed before this dispatch observed it/);
+  assert(!f.calls[0][1].includes('get_agent_activity'));
+  assert.equal(f.record.status, 'delivered');
+});
+
+test('a record that cannot be read waits inside the watch and never holds back its limit', async () => {
+  const f = watchFixture();
+  const fetchAgent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : null;
+  f.client.sendCorrelatedSessionRequest = async () => ({snapshot: null, error: 'boom'});
+  await assert.rejects(notificationStep(f.client, f.record, f.persist, 10), /creation_unobservable/);
+  assert.equal(f.calls.length, 0);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, f.record.deadline), true);
+  assert.match(f.calls[0][1], /watch expired/);
+});
+
+test('a worker that failed at its prompt and was removed is reported as removed, not as never created', async () => {
+  const f = watchFixture();
+  const fetchAgent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : null;
+  f.client.sendCorrelatedSessionRequest = async () => ({snapshot: {phase: 'failed', outcomeUnknown: true, agentId: 'd',
+    agent: {id: 'd'}, failedStage: 'prompt', error: 'secret-canary'}});
+  assert.equal((await creationRecord(f.client, 'd')).agent_created, true);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.match(f.calls[0][1], /removed before this dispatch observed it/);
+  assert(!/safe to roll/.test(f.calls[0][1]));
+});
+
+test('a worker that appears between the watcher reading it and reading its record is followed, not called removed', async () => {
+  const f = watchFixture();
+  const alive = {id: 'child', status: 'running'};
+  const reads = [];
+  const parent = f.client.fetchAgent;
+  f.client.fetchAgent = async id => {
+    if (id === 'parent') return parent(id);
+    reads.push(id);
+    return reads.length === 1 ? null : {agent: alive};
+  };
+  f.client.sendCorrelatedSessionRequest = async () => ({snapshot: {phase: 'failed', outcomeUnknown: true,
+    agentId: 'child', agent: {id: 'child'}, error: 'prompt failed'}});
+  f.record.creation_deadline = 10 ** 6;
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 500), false);
+  assert.deepEqual(reads, ['child', 'child']);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.seen, true);
+  assert.equal(f.record.started, true);
+});
+
+test('a restart before any agent existed still reads as never created', () => {
+  const record = {dispatch_id: 'd', delivered: [], creation_deadline: 1000};
+  const restarted = {phase: 'failed', outcome_unknown: true, agent_id: 'd', agent_created: false};
+  assert.deepEqual(notificationEvents(null, record, 10, restarted), [{key: 'terminal', reason: 'creation failed'}]);
+});
+
+// Dispatch 49fe279b, 2026-11-07. Claimed 11:52:15.9, watcher up 11:52:17.7 with a fixed 2 minute limit, Paseo creating it
+// from 11:52:25, terminal "creation outcome unavailable" at 11:54:17.7, agent created 11:54:34, running 11:54:42.
+test('a create still running when an old watcher limit passes sends nothing, and the worker is then followed to its end', async () => {
+  const up = Date.parse('2026-11-07T11:52:17.693Z');
+  const at = text => Date.parse(`2026-11-07T${text}Z`);
+  const f = watchFixture();
+  // The record as the older CLI wrote it to disk: no created_at, and creation_deadline 2 minutes after the watcher started.
+  delete f.record.created_at;
+  Object.assign(f.record, {deadline: up + 7 * 24 * 3600 * 1000, creation_deadline: up + 120000});
+  let phase = {phase: 'accepted', agentId: 'd'};
+  f.client.sendCorrelatedSessionRequest = async () => ({snapshot: phase});
+  const fetchAgent = f.client.fetchAgent;
+  let worker = null;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? fetchAgent(id) : (worker ? {agent: worker} : null);
+  for (const moment of ['11:53:00.000', '11:54:17.735', '11:54:30.000'])
+    assert.equal(await notificationStep(f.client, f.record, f.persist, at(moment)), false, moment);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.terminal, undefined);
+  worker = {id: 'd', status: 'running', labels: {'router.dispatch_id': f.record.dispatch_id}};
+  phase = {phase: 'completed', agentId: 'd', agent: worker};
+  assert.equal(await notificationStep(f.client, f.record, f.persist, at('11:54:44.000')), false);
+  assert.equal(f.calls.length, 0);
+  worker = {...worker, status: 'idle', attentionReason: 'finished'};
+  assert.equal(await notificationStep(f.client, f.record, f.persist, at('12:30:00.000')), true);
+  assert.match(f.calls[0][1], /State: finished/);
+});
+
+function resumeFixture() {
+  const f = watchFixture();
+  // creation_deadline is what the fixed 2 minute limit was read from.
+  Object.assign(f.record, {dispatch_id: 'new-dispatch', agent_id: 'worker', created_at: 0, creation_deadline: 120000, deadline: 7 * 24 * 3600 * 1000});
+  const parent = f.client.fetchAgent;
+  f.target = async () => null;
+  f.client.fetchAgent = async id => id === f.record.parent_id ? parent(id) : f.target(id);
+  return f;
+}
+
+test('a resume target that answers late, past the old 2 minute limit, sends nothing until it is read', async () => {
+  const f = resumeFixture();
+  const step = now => notificationStep(f.client, f.record, f.persist, now);
+  f.target = async () => {throw new Error('timeout');};
+  for (const now of [60000, 120000, 121000, 200000]) await assert.rejects(step(now), /timeout/);
+  // Readable, and still carrying the previous dispatch: the relabel has not landed yet.
+  f.target = async id => ({agent: {id, status: 'idle', attentionReason: 'finished', labels: {'router.dispatch_id': 'old-dispatch'}}});
+  for (const now of [240000, 600000]) assert.equal(await step(now), false, `unbound at ${now}`);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.terminal, undefined);
+  f.target = async id => ({agent: {id, status: 'running', labels: {'router.dispatch_id': 'new-dispatch'}}});
+  assert.equal(await step(610000), false);
+  assert.equal(f.calls.length, 0);
+  f.target = async id => ({agent: {id, status: 'idle', attentionReason: 'finished', labels: {'router.dispatch_id': 'new-dispatch'}}});
+  assert.equal(await step(900000), true);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /State: finished/);
+});
+
+test('a resume target the host reports gone or archived ends the watch at once, whatever the clock says', async () => {
+  const record = {dispatch_id: 'new-dispatch', agent_id: 'worker', creation_deadline: 120000};
+  const unavailable = [{key: 'terminal', reason: 'worker unavailable'}];
+  for (const now of [10, 120000, 500000]) {
+    assert.deepEqual(notificationEvents(null, record, now), unavailable, `gone at ${now}`);
+    assert.deepEqual(notificationEvents({id: 'worker', archivedAt: '2026-11-07T00:00:00Z', labels: {'router.dispatch_id': 'old-dispatch'}}, record, now), unavailable, `archived at ${now}`);
+  }
+  const f = resumeFixture();
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.match(f.calls[0][1], /State: worker unavailable/);
+});
+
+test('an unbound resume target that is merely closed is no evidence it is gone', () => {
+  const record = {dispatch_id: 'new-dispatch', agent_id: 'worker', creation_deadline: 100};
+  assert.deepEqual(notificationEvents({id: 'worker', status: 'closed', labels: {'router.dispatch_id': 'old-dispatch'}}, record, 500), []);
+});
+
+test('a worker this dispatch saw, now labeled for another dispatch, was superseded', async () => {
+  const later = {status: 'idle', labels: {'router.dispatch_id': 'later-dispatch'}};
+  const resume = resumeFixture();
+  resume.record.seen = true;
+  resume.target = async () => ({agent: later});
+  assert.equal(await notificationStep(resume.client, resume.record, resume.persist, 300000), true);
+  assert.equal(resume.record.status, 'delivered');
+  assert.equal(resume.record.terminal.reason, 'superseded by a later dispatch');
+  assert.match(resume.calls[0][1], /State: superseded by a later dispatch/);
+  const created = {dispatch_id: 'child', creation_deadline: 100, seen: true};
+  assert.deepEqual(notificationEvents(later, created, 500), [{key: 'terminal', reason: 'superseded by a later dispatch'}]);
+});
+
+test('labels of another dispatch end nothing before this dispatch saw its own, nor do missing labels after', () => {
+  const bound = {id: 'worker', status: 'idle', labels: {'router.dispatch_id': 'new-dispatch'}};
+  assert.deepEqual(notificationEvents({...bound, labels: {'router.dispatch_id': 'later-dispatch'}},
+    {dispatch_id: 'new-dispatch', agent_id: 'worker', created_at: 0}, 500), []);
+  assert.deepEqual(notificationEvents({id: 'child', status: 'running'}, {dispatch_id: 'child', creation_deadline: 100, seen: true}, 500), []);
+});
+
+test('a bound resume whose turn never lands gets one notice after the lease, keeps watching, and still reports a finish', async () => {
+  const f = resumeFixture();
+  const labels = {'router.dispatch_id': 'new-dispatch'};
+  const before = {status: 'idle', attentionReason: 'finished', labels, lastUserMessageAt: new Date(-1000).toISOString()};
+  f.target = async () => ({agent: before});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 599000), false);
+  assert.equal(f.calls.length, 0);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 600000), false);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 700000), false);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /State: turn not delivered/);
+  assert.match(f.calls[0][1], /release/);
+  assert.equal(f.record.status, 'watching');
+  assert.equal(f.record.terminal, undefined);
+  f.target = async () => ({agent: {...before, lastUserMessageAt: new Date(650000).toISOString()}});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 800000), true);
+  assert.match(f.calls[1][1], /State: finished/);
+  assert.equal(f.record.terminal.reason, 'finished');
+});
+
+test('a resume that is running, or restoring within the lease, is not called undelivered', () => {
+  const record = {dispatch_id: 'new-dispatch', agent_id: 'worker', created_at: 0};
+  const labels = {'router.dispatch_id': 'new-dispatch'};
+  assert.deepEqual(notificationEvents({status: 'running', labels}, {...record}, 900000), []);
+  assert.deepEqual(notificationEvents({status: 'initializing', labels}, {...record}, 1000), []);
+  assert.deepEqual(notificationEvents({status: 'initializing', labels}, {...record}, 600000),
+    [{key: 'undelivered', reason: 'turn not delivered'}]);
+});
+
+test('a resume target that never becomes readable still gets its watch-limit notice', async () => {
+  const f = resumeFixture();
+  f.target = async () => {throw new Error('timeout');};
+  await assert.rejects(notificationStep(f.client, f.record, f.persist, f.record.deadline - 1), /timeout/);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, f.record.deadline), true);
+  assert.match(f.calls[0][1], /watch expired/);
+});
+
+test('a resume never lands in a workspace other than the one asked for', async () => {
+  let notified = 0, updated = 0;
+  const fake = {
+    fetchAgent: async id => id === 'parent'
+      ? {agent: {cwd: 'E:/fixture'}}
+      : {agent: {id, provider: 'claude', model: 'x', status: 'idle', workspaceId: 'Y', labels: {'router.parent_id': 'parent'}}},
+    updateAgent: async () => {updated++;}, sendMessage: async () => {},
+  };
+  const notify = async () => {notified++; return {status: 'watching'};};
+  const input = {operation: 'resume', dispatch_id: 'resume-workspace', parent_id: 'parent', agent_id: 'old', request: {provider: 'claude/x', labels: {}, initialPrompt: 'p', title: 't'}};
+  const elsewhere = await execute(fake, {...input, request: {...input.request, workspaceId: 'W'}}, notify);
+  assert.deepEqual([elsewhere.ok, elsewhere.sent, elsewhere.error, notified, updated], [false, false, 'worker_workspace_mismatch', 0, 0]);
+  assert.equal((await execute(fake, {...input, request: {...input.request, workspaceId: 'Y'}}, notify)).ok, true);
+  assert.equal((await execute(fake, input, notify)).ok, true);
+});
+
+test('workspace_agents says where the workspace is, across pages, and an unreadable list costs only that', async () => {
+  const pages = {
+    undefined: {entries: [{id: 'other', projectRootPath: 'E:/other'}], pageInfo: {hasMore: true, nextCursor: 'next'}},
+    next: {entries: [{id: 'W', projectRootPath: 'E:/repo', workspaceDirectory: 'E:/repo/tree'}], pageInfo: {hasMore: false, nextCursor: null}},
+  };
+  const seen = [];
+  const fake = {fetchAgents: async () => ({entries: [], pageInfo: {hasMore: false}}),
+    fetchWorkspaces: async options => {
+      seen.push(options);
+      return pages[options.page.cursor];
+    }};
+  const found = await execute(fake, {operation: 'workspace_agents', workspace_id: 'W'});
+  assert.deepEqual([found.ok, found.cwd], [true, 'E:/repo/tree']);
+  SessionInboundMessageSchema.parse({type: 'fetch_workspaces_request', requestId: 'fixture-request', ...seen[0]});
+  const denied = await execute({...fake, fetchWorkspaces: async () => {throw new Error('boom');}}, {operation: 'workspace_agents', workspace_id: 'W'});
+  assert.deepEqual([denied.ok, denied.agents, denied.cwd], [true, [], null]);
+});
+
+test('a workspace lookup that hangs costs only the directory, within seconds', async () => {
+  const fake = {
+    fetchAgents: async () => ({entries: [{agent: {id: 'a', status: 'running', workspaceId: 'W', labels: {'router.dispatch_id': 'd'}}}],
+      pageInfo: {hasMore: false}}),
+    fetchWorkspaces: () => new Promise(() => {}),
+  };
+  const started = Date.now();
+  const found = await execute(fake, {operation: 'workspace_agents', workspace_id: 'W'});
+  assert.deepEqual([found.ok, found.agents, found.cwd], [true, [{id: 'a', status: 'running', dispatch_id: 'd'}], null]);
+  assert(Date.now() - started < 10000);
+});
+
+test('project carries where the worker runs', () => {
+  assert.equal(project({id: 'a', cwd: 'E:/fixture'}).cwd, 'E:/fixture');
+});
+
+test('a create past its send window is never sent', async () => {
+  let created = 0;
+  const fake = {fetchAgent: async () => ({agent: {cwd: 'E:/fixture'}}), createAgent: async () => {created++; return {};}};
+  const request = {provider: 'claude/x', labels: {}};
+  const input = {operation: 'create', dispatch_id: 'send-window', parent_id: 'parent', request};
+  const late = await execute(fake, {...input, send_by: new Date(Date.now() - 1000).toISOString()}, notifier);
+  assert.deepEqual([late.ok, late.sent, late.error, created], [false, false, 'create_send_window_elapsed', 0]);
+  await execute(fake, {...input, send_by: new Date(Date.now() + 60000).toISOString()}, notifier);
+  assert.equal(created, 1);
+});
+
+test('workspace_agents lists only router agents of that workspace, across pages', async () => {
+  const filters = [];
+  const fake = {fetchAgents: async ({filter, page}) => {
+    filters.push(filter);
+    return page.cursor
+      ? {entries: [{agent: {id: 'c', status: 'initializing', workspaceId: 'W', labels: {'router.dispatch_id': 'dc'}}}], pageInfo: {hasMore: false, nextCursor: null}}
+      : {entries: [{agent: {id: 'a', status: 'running', workspaceId: 'W', labels: {'router.dispatch_id': 'da'}}},
+          {agent: {id: 'b', status: 'running', workspaceId: 'other', labels: {'router.dispatch_id': 'db'}}},
+          {agent: {id: 'h', status: 'running', workspaceId: 'W', labels: {}}}], pageInfo: {hasMore: true, nextCursor: 'next'}};
+  }};
+  const result = await execute(fake, {operation: 'workspace_agents', workspace_id: 'W'});
+  assert.deepEqual(result.agents.map(a => [a.id, a.dispatch_id]), [['a', 'da'], ['c', 'dc']]);
+  assert.deepEqual(filters[0].statuses, ['initializing', 'running']);
+  SessionInboundMessageSchema.parse({type: 'fetch_agents_request', requestId: 'fixture-request', filter: filters[0], page: {limit: 200}});
+});
+
 test('expired observation reports its limit and missing parents terminate without a send', async () => {
   const f = watchFixture();
   f.setAgent({status: 'running'});
@@ -265,9 +591,98 @@ test('expired observation reports its limit and missing parents terminate withou
   assert.match(f.calls[0][1], /watch expired/);
   const absent = watchFixture();
   absent.client.fetchAgent = async () => null;
+  absent.client.sendCorrelatedSessionRequest = async () => ({snapshot: null});
   assert.equal(await notificationStep(absent.client, absent.record, absent.persist, 10), true);
   assert.equal(absent.calls.length, 0);
   assert.equal(absent.record.status, 'parent_unavailable');
+});
+
+function fakeNotifierSdk(root) {
+  const sdk = path.join(root, 'node_modules');
+  fs.mkdirSync(path.join(sdk, '@getpaseo/client'), {recursive: true});
+  fs.writeFileSync(path.join(sdk, '@getpaseo/client/package.json'), JSON.stringify({
+    name: '@getpaseo/client', exports: {'./internal/daemon-client': './client.cjs'}}));
+  fs.writeFileSync(path.join(sdk, '@getpaseo/client/client.cjs'), `
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const root = process.env.ROUTER_STATE_DIR;
+    exports.DaemonClient = class {
+      isConnected = false;
+      async connect() {this.isConnected = true;}
+      async close() {this.isConnected = false;}
+      async fetchAgent(id) {
+        return {agent: id === 'parent' ? {status: 'running'} :
+          JSON.parse(fs.readFileSync(path.join(root, 'agent.json'), 'utf8'))};
+      }
+      async sendMessage(agent, text, options) {
+        fs.appendFileSync(path.join(root, 'messages.jsonl'), JSON.stringify({agent, text, options}) + '\\n');
+      }
+    };
+  `);
+  fs.mkdirSync(path.join(sdk, 'ws'));
+  fs.writeFileSync(path.join(sdk, 'ws/index.js'), 'exports.WebSocket = class {};');
+  return sdk;
+}
+
+test('a create that falls back from a refused resume gets its own watcher, following the new worker', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-notify-'));
+  const oldEnv = {...process.env};
+  const pids = new Set();
+  const running = pid => {try {process.kill(pid, 0); return true;} catch {return false;}};
+  const until = async predicate => {
+    for (let i = 0; i < 200; i++) {
+      if (predicate()) return;
+      await pause(50);
+    }
+    assert.fail('notifier lifecycle deadline exceeded');
+  };
+  const file = path.join(root, 'paseo-notifications', 'fallback.json');
+  const record = () => JSON.parse(fs.readFileSync(file, 'utf8'));
+  try {
+    process.env.ROUTER_PASEO_SDK_ROOT = fakeNotifierSdk(root);
+    process.env.ROUTER_STATE_DIR = root;
+    process.env.PASEO_HOME = root;
+    fs.writeFileSync(path.join(root, 'agent.json'), JSON.stringify({status: 'idle', labels: {'router.dispatch_id': 'before'}}));
+    const request = {provider: 'claude/m', title: 't', initialPrompt: 'p', labels: {'router.dispatch_id': 'fallback'}};
+    const old = {id: 'old-worker', provider: 'claude', model: 'm', status: 'idle', labels: {'router.parent_id': 'parent'}};
+    const refused = await execute({
+      fetchAgent: async id => ({agent: id === 'parent' ? {cwd: '/fixture'} : old}),
+      updateAgent: async () => {},
+      sendMessage: async () => {throw new Error('fixture refusal');},
+    }, {operation: 'resume', dispatch_id: 'fallback', parent_id: 'parent', agent_id: 'old-worker', request});
+    assert.equal(refused.error, 'host_resume_failed');
+    const firstPid = record().pid;
+    pids.add(firstPid);
+    assert.equal(record().agent_id, 'old-worker');
+
+    const created = await execute({
+      fetchAgent: async () => ({agent: {cwd: '/fixture'}}),
+      createAgent: async options => ({id: options.agentId, provider: 'claude', model: 'm', status: 'running', labels: options.labels}),
+    }, {operation: 'create', dispatch_id: 'fallback', parent_id: 'parent', request,
+      create_deadline: new Date(Date.now() + 60000).toISOString()});
+    assert.equal(created.ok, true);
+    assert.equal(created.completion_notification.status, 'watching');
+    pids.add(created.completion_notification.pid);
+    assert.notEqual(created.completion_notification.pid, firstPid);
+    assert.equal(running(firstPid), false);
+    assert.equal(running(created.completion_notification.pid), true);
+    assert.equal(record().agent_id, undefined);
+    assert.equal(fs.existsSync(`${file}.creation-failed`), false);
+
+    fs.writeFileSync(path.join(root, 'agent.json'), JSON.stringify({status: 'idle', attentionReason: 'finished'}));
+    await until(() => record().status === 'delivered');
+    const [message] = fs.readFileSync(path.join(root, 'messages.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.match(message.text, /Worker: fallback\nState: finished/);
+    await until(() => !running(created.completion_notification.pid));
+  } finally {
+    if (fs.existsSync(file)) pids.add(record().pid);
+    for (const pid of pids) if (running(pid)) process.kill(pid);
+    for (const name of ['ROUTER_STATE_DIR', 'ROUTER_PASEO_SDK_ROOT', 'PASEO_HOME']) {
+      if (oldEnv[name] === undefined) delete process.env[name]; else process.env[name] = oldEnv[name];
+    }
+    await until(() => [...pids].every(pid => !running(pid)));
+    fs.rmSync(root, {recursive: true, force: true});
+  }
 });
 
 test('detached notifier has one owner, recovers a killed owner, and exits after delivery', async () => {
@@ -284,31 +699,8 @@ test('detached notifier has one owner, recovers a killed owner, and exits after 
     assert.fail('notifier lifecycle deadline exceeded');
   };
   try {
-    const sdk = path.join(root, 'node_modules');
-    fs.mkdirSync(path.join(sdk, '@getpaseo/client'), {recursive: true});
-    fs.writeFileSync(path.join(sdk, '@getpaseo/client/package.json'), JSON.stringify({
-      name: '@getpaseo/client', exports: {'./internal/daemon-client': './client.cjs'}}));
-    fs.writeFileSync(path.join(sdk, '@getpaseo/client/client.cjs'), `
-      const fs = require('node:fs');
-      const path = require('node:path');
-      const root = process.env.ROUTER_STATE_DIR;
-      exports.DaemonClient = class {
-        isConnected = false;
-        async connect() {this.isConnected = true;}
-        async close() {this.isConnected = false;}
-        async fetchAgent(id) {
-          return {agent: id === 'parent' ? {status: 'running'} :
-            JSON.parse(fs.readFileSync(path.join(root, 'agent.json'), 'utf8'))};
-        }
-        async sendMessage(agent, text, options) {
-          fs.appendFileSync(path.join(root, 'messages.jsonl'), JSON.stringify({agent, text, options}) + '\\n');
-        }
-      };
-    `);
-    fs.mkdirSync(path.join(sdk, 'ws'));
-    fs.writeFileSync(path.join(sdk, 'ws/index.js'), 'exports.WebSocket = class {};');
     process.env.ROUTER_STATE_DIR = root;
-    process.env.ROUTER_PASEO_SDK_ROOT = sdk;
+    process.env.ROUTER_PASEO_SDK_ROOT = fakeNotifierSdk(root);
     process.env.PASEO_HOME = root;
     fs.writeFileSync(path.join(root, 'agent.json'), JSON.stringify({status: 'running'}));
     const input = {dispatch_id: 'lifecycle', parent_id: 'parent'};

@@ -42,6 +42,16 @@ def locked(path, timeout=10):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def retry_denied(call, attempts=5, pause=0.05):
+    """Windows denies a replace while a reader has the file open, and an open during a replace."""
+    for attempt in range(attempts - 1):
+        try:
+            return call()
+        except PermissionError:
+            time.sleep(pause)
+    return call()
+
+
 def write(path, document):
     """Atomic replacement; caller holds locked(path) across read/modify/write."""
     path = Path(path)
@@ -51,7 +61,7 @@ def write(path, document):
             json.dump(document, handle, ensure_ascii=False, indent=2)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        retry_denied(lambda: os.replace(temporary, path))
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

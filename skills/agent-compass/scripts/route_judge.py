@@ -2,6 +2,7 @@
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import copy
 import importlib.util
 from datetime import datetime, timedelta, timezone
 import json
@@ -83,7 +84,8 @@ SCORER_PROMPT = (
     '1. `local_only`: `true` only when depending on un-inlined local files/repos/processes/GUI; `false` when inputs are '
     'inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, '
     '`complex_build_plan`), even if a local output path is named.\n'
-    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis.\n'
+    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis '
+    '(even if saving a review report file to a specified path).\n'
     '3. `context_scale`: 1 = single module/script or self-contained task; 2 = 2..5 coupled modules; 3 = repo/system-wide.\n'
     '4. `divergence`: 1 = convergent spec/fix/review; 2 = multi-hypothesis diagnosis/comparison; 3 = open-ended creative.\n'
     '5. `realtime_loop`: `true` ONLY when the worker agent itself stays inside a live external system\'s continuous '
@@ -92,6 +94,13 @@ SCORER_PROMPT = (
     'immediately, live-stream chat). `false` for ALL coding, UI design, bug fixing, optimization, diagnosis, or log '
     'analysis—even on real-time/polling/game/dashboard/flash-sale features—and for one-off GUI clicks. Set `needs_gui` '
     'by whether the worker operates a GUI (`true`) vs pure CLI/API/WebSocket (`false`).\n'
+    '6. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
+    'pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") without negation (e.g. '
+    '"do not use fast mode" -> `false`; runtime step adverbs like "click immediately" -> `false`; ordinary quota mentions '
+    'without requesting fast execution -> `false`).\n'
+    '7. `read_only_review`: `true` ONLY for read-only code/diff/branch/security/release reviews or audits (`code_complexity` 0) '
+    'that write no repo production/test code (even if saving a review report file to a specified output path); `false` '
+    'when implementing/fixing code (even from a prior review), running ops commands, or doing general exploration/research.\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
@@ -683,8 +692,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
             pol = accts['scoring']
             spec = accts['accounts'].get(bundle['account']) or {}
             c_model = alloc.canonical(bundle['model'], accts)
-            m_info = alloc.model_spec(accts, c_model)
-            m_curves = accts.get('effort_curves', {}).get(c_model, {})
+            m_info = alloc.model_spec(accts, bundle['model'])
+            m_curves = alloc.model_curves(accts, bundle['model'])
             eff_hours = float(hours_val or pol['default_hours'].get(diff_val if diff_val in pol['default_hours'] else 'hard', 1.5))
             if spec.get('billing') != 'unknown':
                 expected_usd = round(alloc.bundle_task_usd(spec, c_model, bundle.get('effort') or 'high', eff_hours, pol, m_curves, m_info, fast=bool(bundle.get('fast'))), 2)
@@ -698,6 +707,8 @@ def finalize(result, payload, requested, started, task=None, records=None):
     append_ledger({
         'v': 1, 'at': now.isoformat(), 'stage': result.get('stage'), 'source': result.get('source'),
         'choice': result.get('choice'), 'specialty': result.get('specialty'),
+        **({'task_id': task['task_id']} if task.get('task_id') else {}),
+        **({'request_hash': task.get('request_hash') or _task_request_hash(task)} if isinstance(task, dict) else {}),
         **{k: result[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound') if k in result},
         **({'host_session_id': task['host_session_id']} if task.get('host_session_id') else {}),
         'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
@@ -1322,6 +1333,8 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
         questions[name] = {'type': 'noul', 'instructions': instructions}
     allocator = load_allocator()
     questions['realtime_loop'] = {'type': 'noul', 'instructions': allocator.REALTIME_LOOP_QUESTION}
+    questions['wants_fast'] = {'type': 'noul', 'instructions': allocator.WANTS_FAST_QUESTION}
+    questions['read_only_review'] = {'type': 'noul', 'instructions': allocator.READ_ONLY_REVIEW_QUESTION}
     questions['multi_task'] = {'type': 'noul', 'instructions': allocator.MULTI_TASK_QUESTION}
     questions['task_count'] = {'type': 'choice', 'instructions': allocator.TASK_COUNT_QUESTION,
                                'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
@@ -1367,19 +1380,16 @@ def parse_jev_response(response, allocator):
                 profile['expected_hours'] = table[choice][0]
             else:
                 profile['urgency'] = choice
-    # Optional like the effort band: a Jev answer without them leaves the brief unsplit.
-    rt = answers.get('realtime_loop')
-    rt = rt.get('noul') if isinstance(rt, dict) else rt
-    if isinstance(rt, (int, float)) and not isinstance(rt, bool) and math.isfinite(rt):
-        profile['realtime_loop'] = float(rt) >= 0.5
-    multi = answers.get('multi_task')
-    multi = multi.get('noul') if isinstance(multi, dict) else multi
-    if isinstance(multi, (int, float)) and not isinstance(multi, bool) and math.isfinite(multi):
-        profile['multi_task'] = float(multi) >= 0.5
+    for opt_flag in ('realtime_loop', 'wants_fast', 'read_only_review', 'multi_task'):
+        ans = answers.get(opt_flag)
+        ans = ans.get('noul') if isinstance(ans, dict) else ans
+        if isinstance(ans, (int, float)) and not isinstance(ans, bool) and math.isfinite(ans):
+            profile[opt_flag] = float(ans) >= 0.5
     count = answers.get('task_count')
     count = count.get('choice') if isinstance(count, dict) else count
-    if count in allocator.TASK_COUNTS:
+    if count is not None:
         profile['task_count'] = count
+    # A missing or contradictory split answer fails here: the cascade moves on rather than guessing.
     return allocator.validate_profile(profile)
 
 
@@ -1523,7 +1533,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 9  # 9: semantic-only realtime_loop rubric and contrastive hard cases
+SCORE_CACHE_VERSION = 10  # 10: semantic wants_fast and read_only_review classifier fields
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 
@@ -1623,7 +1633,7 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
     fail, returns `(None, meta)` with `source: 'scorer_unavailable'` so the parent session chooses autonomously;
     never falls back to mechanical keyword guessing."""
     if isinstance(task.get('profile'), dict):
-        return allocator.validate_profile(task['profile']), {'source': 'caller_profile', 'model': None}
+        return allocator.validate_caller_profile(task['profile']), {'source': 'caller_profile', 'model': None}
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
     reason, attempts, skipped = 'model_call_skipped', [], []
@@ -1632,7 +1642,10 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
         cache_key = score_cache_key(task, allocator, capabilities, order, config)
         cached = score_cache_get(cache_key)
         if cached:
-            return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
+            try:
+                return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
+            except ValueError:
+                pass        # written under an older schema, or damaged: a miss, not a failure
         input_error = None
         for scorer_type in order:
             # Every usable account of the family in turn; none (no account, client or key) skips it without an error.
@@ -1886,45 +1899,24 @@ def evaluate(payload, requested='auto', timeout=120):
             'next': 'Check runtime/model/login availability; continue feasible parent work. Never use Jev as a judge.'}
 
 
-BOGUS_LOCAL_ONLY_RE = re.compile(
-    r'^\s*(?:need[s]?\s+)?(?:to\s+)?(?:in[- ]place\s+|direct(?:ly)?\s+|local(?:ly)?\s+)*'
-    r'(?:edit|modify|write|update|patch|change|create)(?:ing|s)?'
-    r'(?:\s+(?:of|in|on|to|for|within|local|the|in[- ]place|workspace|repo|repository|project|code|source|file|files))*\s*\.?\s*$',
-    re.I,
-)
-OBJECTIVE_LOCAL_RUNTIME_RE = re.compile(
-    r'\b(?:ssh|ssh-agent|vps|localhost|127\.0\.0\.1|pytest|unittest|sqlite|daemon|worktree|adb|emulator|intranet|webhook|credentials?)\b',
-    re.I,
-)
-LOCAL_UI_OR_HOST_ROUTES = frozenset({'frontend_implementation', 'computer_use', 'exploration_analysis', 'research_packet'})
-
-
-def valid_local_only_reason(needs, kind=None, task=None):
-    """True when needs.local_only is not set, is on a UI/local-host route, is backed by browser/gui/AdvisorMode,
-    or gives a concrete local dependency rather than bare 'in-place edit'."""
-    if not isinstance(needs, dict) or not needs.get('local_only'):
-        return True
-    if kind in LOCAL_UI_OR_HOST_ROUTES or needs.get('browser') or needs.get('gui') or needs.get('AdvisorMode'):
-        return True
-    reason = str(needs.get('local_only_reason') or '').strip()
-    if BOGUS_LOCAL_ONLY_RE.match(reason):
-        return False
-    if len(reason) >= 8:
-        return True
-    if not reason and isinstance(task, dict):
-        text = f"{task.get('objective') or ''} {task.get('environment') or ''}"
-        if OBJECTIVE_LOCAL_RUNTIME_RE.search(text):
-            return True
-    return False
+def _task_request_hash(task):
+    if not isinstance(task, dict):
+        return ''
+    existing = task.get('request_hash') or task.get('task_hash')
+    if isinstance(existing, str) and existing.strip():
+        return existing.strip()
+    payload = {k: v for k, v in scorer_task_fields(task).items() if k in ('objective', 'context', 'environment')}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()[:24] if payload else ''
 
 
 def recent_route_lock(task, records, now, bundle_id, window_seconds):
     """Find a matching recent route only for an explicitly configured reroute guard."""
     if not isinstance(task, dict) or not records:
         return None
-    obj = (task.get('objective') or '').strip()
     chain_id = (task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else None
-    if not obj and not chain_id:
+    task_id = (task.get('task_id') or '').strip() if isinstance(task.get('task_id'), str) else None
+    req_hash = _task_request_hash(task)
+    if not chain_id and not task_id and not req_hash:
         return None
     for row in reversed(records):
         if not isinstance(row, dict) or row.get('stage') != 'plan' or row.get('choice') != bundle_id:
@@ -1935,22 +1927,49 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
             continue
         if (now - at).total_seconds() > window_seconds:
             break
-        row_obj = (row.get('objective') or '').strip()
-        if (chain_id and row.get('chain') == chain_id) or (obj and row_obj and obj[:180] == row_obj[:180]):
+        row_hash = row.get('request_hash') or row.get('task_hash')
+        if ((chain_id and row.get('chain') == chain_id)
+                or (task_id and row.get('task_id') == task_id)
+                or (req_hash and row_hash == req_hash)):
             return row
     return None
 
 
 def match_bundle(allocator, accounts, args, include_disabled=False):
-    """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle."""
-    model = allocator.canonical(args.model, accounts)
+    """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
+
+    A name that only a family guess could place matches its own rows, never the flagship's. With no effort named, the
+    model's default effort (else High) leads, not whichever row the document lists first."""
+    matches = []
     for bundle in allocator.bundles(accounts).values():
         if not include_disabled and bundle.get('disabled'):
             continue
-        if (bundle['account'] == args.account and bundle['provider'] == args.provider and allocator.canonical(bundle['model'], accounts) == model
+        same = allocator.row_key(bundle['model'], accounts) == allocator.row_key(args.model, accounts)
+        if (bundle['account'] == args.account and bundle['provider'] == args.provider and same
                 and (args.effort is None or bundle.get('effort') == args.effort)):
-            return bundle['id']
-    return None
+            matches.append(bundle)
+    if not matches:
+        return None
+    default = allocator.model_spec(accounts, args.model).get('default_effort') or 'high'
+    return next((b for b in matches if b.get('effort') == default), matches[0])['id']
+
+
+NAMED_ROW_FIELDS = ('modeId', 'draws', 'launch_model', 'harness', 'billing')
+
+
+def named_effort_review(allocator, accounts, pin, task, usage, now, records):
+    """(effort, warnings) for a route the user named on realtime work: the plan on exactly that account and model,
+    so a named model chooses its level like any other candidate and a slow named effort is warned about."""
+    other = [bid for bid, b in allocator.bundles(accounts).items()
+             if b['account'] != pin.account or b['provider'] != pin.provider]
+    named = {'model': pin.model, **({'effort': pin.effort} if pin.effort else {})}
+    plan = allocator.plan({**task, 'constraints': named}, usage, now, unavailable=other, records=records)
+    decision = plan.get('decision') or {}
+    if plan.get('choice') == 'none':
+        return None, list(decision.get('warnings') or [])
+    row = next((c for c in plan['ranking'] if c['id'] == plan['choice']), {})
+    slow = (row.get('components') or {}).get('realtime_slow_pin_warning')
+    return (plan.get('selected_bundle') or {}).get('effort'), [slow] if slow else []
 
 
 def record_constraint(args, task=None):
@@ -1981,16 +2000,45 @@ def record_constraint(args, task=None):
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, args.account, args.provider)
     if unavailable:
         raise ValueError(unavailable)
-    chosen = match_bundle(allocator, accounts, args)
+    # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
+    pin = copy.copy(args)
+    pin.model, named_effort = allocator.split_model_effort(args.model)
+    resolved = allocator.resolve_model(pin.model, accounts)
+    pin.effort = args.effort or named_effort or resolved['effort']
+    direct = resolved['source'] in allocator.DIRECT_SOURCES
+    own_model = allocator.row_key(pin.model, accounts)
+    own_rows = [b for b in allocator.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
+                and allocator.row_key(b['model'], accounts) == own_model]
+    if not direct and (not own_rows or (pin.effort and pin.effort not in {b.get('effort') for b in own_rows}
+                                        and not any(pin.effort in (allocator.dispatch_allowed_efforts(b, accounts) or ())
+                                                    for b in own_rows))):
+        # What it resembles is another model. The same answer the plan gives: blocked, never a substitute.
+        raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no configured route on "
+                         f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")
+    chosen = match_bundle(allocator, accounts, pin)
+    disabled_match = match_bundle(allocator, accounts, pin, include_disabled=True) if chosen is None else None
+    if disabled_match is not None:
+        if allocator.bundles(accounts)[disabled_match].get('disabled_by_default'):
+            chosen = disabled_match     # off by default, not by the user: naming the model reaches it
+        else:
+            raise ValueError(
+                f"Bundle {disabled_match!r} ({args.account}/{pin.model}) is disabled. "
+                f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
+            )
+    if own_rows and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows):
+        # Every level unchecked is the model unchecked, also at a level with no row of its own.
+        raise ValueError(
+            f"Bundle {own_rows[0]['id']!r} ({args.account}/{pin.model}) is disabled. "
+            f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
+        )
     discovered = allocator.bundles(accounts).get(chosen) or {}
     if discovered.get('discovery_unavailable'):
         raise ValueError(discovered['discovery_unavailable'])
-    disabled_match = match_bundle(allocator, accounts, args, include_disabled=True) if chosen is None else None
-    if disabled_match is not None:
-        raise ValueError(
-            f"Bundle {disabled_match!r} ({args.account}/{args.model}) is disabled. "
-            f"Do not dispatch {args.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
-        )
+    # The account's other row of this model supplies the launch fields of an effort it has no row for.
+    sibling_id = (chosen or match_bundle(allocator, accounts, _with_effort(pin, None))
+                  or match_bundle(allocator, accounts, _with_effort(pin, None), include_disabled=True))
+    sibling = allocator.bundles(accounts).get(sibling_id) or {}
+    inherited = {k: sibling[k] for k in NAMED_ROW_FIELDS if k in sibling}
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
     if not allocator.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
         raise ValueError(
@@ -1999,7 +2047,8 @@ def record_constraint(args, task=None):
         )
     # External runners dispatch directly after record; apply the same registered
     # window protection used by prepared dispatches.
-    quota_bundle = {**discovered, 'account': args.account, 'provider': args.provider, 'model': args.model, 'effort': args.effort}
+    quota_bundle = {**discovered, **inherited, 'account': args.account, 'provider': args.provider, 'model': pin.model,
+                    'effort': pin.effort or discovered.get('effort')}
     if chosen:
         quota_bundle['id'] = chosen
         quota_bundle.setdefault('bundle_id', chosen)
@@ -2014,21 +2063,46 @@ def record_constraint(args, task=None):
                 f"Account {args.account!r} window {wid!r} is exhausted or below safety floor ({reason}). "
                 f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
             )
-    c_model = allocator.canonical(args.model, accounts)
+    cooling = (allocator.cooling_reason(quota_bundle, allocator.launch_failures.active(), accounts)
+               if allocator.launch_failures.enabled() else None)
+    if cooling:
+        raise ValueError(f"{args.account}/{pin.model} is cooling down ({cooling}). Tell the user; do not substitute another model.")
+    c_model = resolved['key'] if direct else allocator.model_leaf(pin.model)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:
         allocator.fast_modes.validate(allocator.bundle_harness(discovered or {'provider': args.provider}, args.account),
-                                      c_model, allocator.model_spec(accounts, c_model))
+                                      c_model, allocator.model_spec(accounts, pin.model))
+    warnings = []
+    effort = pin.effort or discovered.get('effort')
+    profile = task.get('profile') if isinstance(task.get('profile'), dict) else None
+    realtime = bool((task.get('needs') or {}).get('realtime_loop') or task.get('realtime_loop') or (profile or {}).get('realtime_loop'))
+    records = None
+    if task and realtime:
+        records = read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES)
+        try:
+            reviewed, warnings = named_effort_review(allocator, accounts, pin, task, usage, now, records)
+        except (ValueError, KeyError, TypeError):
+            reviewed, warnings = None, []
+        if reviewed and not pin.effort and reviewed != effort:
+            effort, chosen = reviewed, match_bundle(allocator, accounts, _with_effort(pin, reviewed))
+    if effort is None and not sibling:
+        effort = allocator.auto_bundles.HARNESS_DEFAULT_EFFORT.get(allocator.bundle_harness({'provider': args.provider, 'model': c_model}, args.account))
     base_b = allocator.bundles(accounts).get(chosen) or {}
-    bundle = {**base_b, 'provider': args.provider, 'account': args.account, 'model': c_model,
-              'effort': args.effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
+    bundle = {**inherited, **base_b, 'provider': args.provider, 'account': args.account, 'model': c_model,
+              'effort': effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
+    if not direct:
+        bundle.setdefault('launch_model', pin.model)
     bundle['harness'] = allocator.bundle_harness(bundle, args.account, chosen)
+    if 'modeId' not in bundle and bundle['harness'] in allocator.auto_bundles.HARNESS_MODE:
+        bundle['modeId'] = allocator.auto_bundles.HARNESS_MODE[bundle['harness']]
     if fast_requested and bundle['harness'] == 'claude':
         bundle['fast_billing'] = allocator.fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
+    if warnings:
+        result['warnings'] = warnings
     if fast_requested:
         result['_allocation_task'] = {**(task or {}), 'force_fast': True}
     # Account loading may enroll a newly discovered account; check the resulting policy.
@@ -2040,7 +2114,7 @@ def record_constraint(args, task=None):
     if task:
         try:
             plan_task = {**task, 'force_fast': True} if fast_requested else task
-            plan = allocator.plan(plan_task, usage, now, records=read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
+            plan = allocator.plan(plan_task, usage, now, records=records if records is not None else read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
@@ -2055,6 +2129,12 @@ def record_constraint(args, task=None):
                            'override_cost': None if row is None else {'excluded': row['excluded'], 'score': row['score'],
                                                                       'notes': row['notes']}})
     return finalize(result, None, 'auto', started, task)
+
+
+def _with_effort(pin, effort):
+    other = copy.copy(pin)
+    other.effort = effort
+    return other
 
 
 def manage_overrides(args, now=None):
@@ -2304,7 +2384,7 @@ def scorer_unavailable_result(task, scorer, started):
     reason = f'System-One classifier unavailable ({why}); mechanical fallback is disabled so the parent session chooses autonomously.'
     objective = task.get('objective')
     result = {
-        'stage': 'plan', 'choice': 'none', 'error': 'scorer_unavailable',
+        'stage': 'plan', 'status': 'blocked', 'choice': 'none', 'error': 'scorer_unavailable',
         'caller_action': 'parent_autonomous_choice',
         'scorer': scorer, 'task_profile': None, 'reason': reason,
         'decision': {'action': 'parent_choice', 'reason': reason, 'needs_user_decision': False},
@@ -2355,7 +2435,6 @@ def plan_stage(document, args):
     loaded_accounts = allocator.load_accounts()
     policy = loaded_accounts['scoring']
     extra_alerts, scorer = [], None
-    profile_local_only_applied = False
     hours_estimate = None
     live_disabled = os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1'
     has_caller_spec = bool(task.get('work_kind') and task.get('difficulty'))
@@ -2365,6 +2444,13 @@ def plan_stage(document, args):
         or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)
             and not (live_disabled and has_caller_spec))
     )
+    if not fatal_gap and getattr(args, 'stage', None) == 'roll' and not args.dry_run and args.no_score and not isinstance(task.get('profile'), dict):
+        return scorer_unavailable_result(
+            task,
+            {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
+             'fallback_detail': 'roll --no-score requires a complete caller-supplied task.profile.'},
+            started,
+        ), 2
     if should_score:
         profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
         if profile is None:
@@ -2393,7 +2479,6 @@ def plan_stage(document, args):
             # still lets the classifier win over a caller-supplied difficulty.
         if profile['local_only'] and needs.get('local_only') is None:
             # Trust the classifier; explicit caller needs still take precedence.
-            profile_local_only_applied = True
             needs['local_only'] = True
             needs['local_only_reason'] = profile.get('reason') or 'Task profile requires execution on this machine.'
             task = {**task, 'needs': needs}
@@ -2407,9 +2492,16 @@ def plan_stage(document, args):
                 task['expected_hours'] = profile['expected_hours']
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
                                   'confidence': profile.get('hours_confidence', 'unknown')}
-    task_profile = task.get('profile') or {}
+    task_profile = allocator.validate_caller_profile(task['profile']) if task.get('profile') else {}
+    if task_profile:
+        task = {**task, 'profile': task_profile}
+    is_ro_review = bool(task_profile.get('read_only_review'))
+    if is_ro_review and isinstance(task.get('chain'), dict):
+        chain_worker = task['chain'].get('worker')
+        if isinstance(chain_worker, dict) and chain_worker.get('read_only_review') is False:
+            task = {k: v for k, v in task.items() if k != 'chain'}
     if task_profile.get('multi_task') is True:
-        count = task_profile.get('task_count') or '>1'
+        count = task_profile['task_count']
         keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
         if not keep_whole:
             return split_result(task, count, scorer, started), 2
@@ -2418,14 +2510,6 @@ def plan_stage(document, args):
                              'message': f'The classifier found {count} separate tasks; the caller kept them as one '
                                         'assignment: ' + keep_whole[:300]})
     kind = allocator.task_kind(task, capabilities, policy)
-    if needs.get('local_only') and not profile_local_only_applied and not valid_local_only_reason(needs, kind, task):
-        needs['local_only'] = False
-        task = {**task, 'needs': needs}
-        extra_alerts.append({
-            'code': 'local_only_ignored_without_reason', 'severity': 'info', 'account': 'dot',
-            'message': 'needs.local_only was ignored because needs.local_only_reason was missing or only cited ordinary file editing. '
-                       'Pass files to Dot with `run_dot_task.py run --prompt-file ... --file <path> --apply-to .`, or provide a concrete '
-                       'needs.local_only_reason (e.g. local git/daemon/pytest/hardware/intranet/credentials).'})
     guard = capabilities.get('remote_reroute_guard') or {}
     guarded_bundle = guard.get('bundle_id')
     locked_route = (recent_route_lock(task, records, now, guarded_bundle, guard.get('window_seconds', 600))
@@ -2476,6 +2560,13 @@ def plan_stage(document, args):
             'confidence': 'unknown', 'limit': 'no usable classifier estimate; the policy default for the difficulty was used'}
     if scorer is not None:
         planned['scorer'], planned['task_profile'] = scorer, task['profile']
+    if not isinstance(task.get('profile'), dict):
+        planned['unclassified'] = True
+        planned['unclassified_reason'] = (
+            'no_score_without_profile' if args.no_score else 'dry_run' if args.dry_run
+            else 'live_scorer_disabled' if (live_disabled and has_caller_spec)
+            else 'no_task_profile'
+        )
     planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
     result = finalize(planned, None, 'auto', started, reviewed_task)
     return result, 0 if result.get('choice') != 'none' else 2
@@ -2518,12 +2609,14 @@ def main():
     parser.add_argument('--workspace', help='roll: Paseo workspaceId (default: the parent agent workspace).')
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
     parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session.')
-    parser.add_argument('--new-worker', action='store_true', help='roll: start a fresh worker instead of resuming an idle worker from a previous turn.')
+    parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')
+    parser.add_argument('--access', choices=('read-only', 'write'), help='roll: what this brief does to its workspace (default write). Only a writer is held to one per --workspace.')
+    parser.add_argument('--allow-concurrent', metavar='REASON', help='roll: launch into a --workspace that already has a writer, with the concrete reason (kept in the ledger).')
     parser.add_argument('--wait', type=float, default=0, help='roll: seconds to wait for the worker (default 0: launch and return).')
     parser.add_argument('--score', action='store_true',
                         help='plan: profile the task first with the System-One scorer (default on plan when objective is present).')
     parser.add_argument('--no-score', action='store_true',
-                        help='plan: skip the System-One scorer model call and use deterministic inference.')
+                        help='plan: skip the System-One scorer model call and use only caller-supplied task fields/profile.')
     parser.add_argument('--score-timeout', type=int, default=SCORER_TIMEOUT_SECONDS,
                         help='score/plan/scorer: scorer time limit in seconds (1-120); a CLI process tree is stopped on timeout.')
     parser.add_argument('--action', choices=('show', 'set', 'test'), default='show',
@@ -2612,8 +2705,8 @@ def main():
             policy = allocator.load_accounts()['scoring']
             profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
             if profile is None:
-                result = {'stage': 'score', 'source': scorer['source'], 'task_profile': None, 'scorer': scorer,
-                          'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
+                result = {'stage': 'score', 'status': 'blocked', 'source': scorer['source'], 'task_profile': None,
+                          'scorer': scorer, 'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
                 print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
                 return 2
             derived = allocator.profile_difficulty(profile, policy)
@@ -2639,7 +2732,7 @@ def main():
             if args.dry_run:
                 raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
             result = dispatch_flow.cli(args)
-            code = 1 if result.get('state') == 'failed' else 0
+            code = 1 if result.get('state') in ('failed', 'create_failed') else 0
         elif args.stage == 'providers':
             accounts = load_allocator().load_accounts()
             result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync'),

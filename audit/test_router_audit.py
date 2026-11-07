@@ -34,10 +34,12 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(audit.classify(row(0, bundle=pro)), "specialist:pro")
         self.assertEqual(audit.classify(row(0, bundle={"provider": "codex", "model": "gpt-6-astra"})), "specialist:astra")
 
-    def test_instruction_words_mark_a_fixed_route_and_their_absence_marks_an_open_one(self):
+    def test_instruction_fields_mark_a_fixed_route_and_free_text_reason_stays_open(self):
         codex = {"provider": "codex", "model": "gpt-6.1-sol"}
-        self.assertEqual(audit.classify(row(0, reason="Honors the explicit model requirement", bundle=codex)),
-                         "fixed:instruction")
+        self.assertEqual(audit.classify(row(0, pinned=True, bundle=codex)), "fixed:instruction")
+        self.assertEqual(audit.classify(row(0, action="retained", bundle=codex)), "fixed:instruction")
+        self.assertEqual(audit.classify(row(0, choice="same_owner", bundle=codex)), "fixed:instruction")
+        self.assertEqual(audit.classify(row(0, reason="Honors the explicit model requirement", bundle=codex)), "open")
         self.assertEqual(audit.classify(row(0, reason="Codex is nearly empty, so Opus is cheaper here",
                                            bundle={"provider": "claude", "model": "claude-opus-5-5"})), "open")
 
@@ -91,7 +93,7 @@ class FindingTests(unittest.TestCase):
 
     def test_fixed_routes_dominating_selects_is_reported_with_the_open_count(self):
         codex = {"provider": "codex", "account": "codex", "model": "gpt-6.1-sol"}
-        rows = [row(i, reason="explicit retained owner", bundle=codex) for i in range(9)]
+        rows = [row(i, action="retained", bundle=codex) for i in range(9)]
         rows.append(row(50, reason="Opus has headroom", bundle={"provider": "claude", "model": "claude-opus-5-5"}))
         found = {f["key"]: f for f in audit.build_findings(context(rows))}
         self.assertIn("fixed", found)

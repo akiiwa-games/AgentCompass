@@ -12,6 +12,16 @@ const WATCH_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 const CREATE_LIMIT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
 const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed']);
+const CREATE_FAILED = 'creation failed';
+const WORKER_REMOVED = 'worker removed before it was observed';
+const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
+const SUPERSEDED = 'superseded by a later dispatch';
+const UNDELIVERED = 'turn not delivered';
+// dispatch_registry.RUN_LEASE: past it, a resume whose turn has not landed can be released.
+const RUN_LEASE_MS = 10 * 60 * 1000;
+const WORKSPACE_LOOKUP_MS = 5000;
+// A stopped watcher notices its marker within one poll.
+const WATCHER_STOP_MS = 2 * POLL_MS;
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
@@ -51,8 +61,8 @@ export async function ensureNotification(input) {
   const existing = readRecord(file);
   if (existing && existing.parent_id !== input.parent_id) throw new Error('notification_parent_mismatch');
   if (existing && (DONE.has(existing.status) || alive(existing.pid))) return notificationReceipt(file);
-  const args = [fileURLToPath(import.meta.url), '--watch', input.dispatch_id, input.parent_id];
-  if (input.agent_id && input.agent_id !== input.dispatch_id) args.push(input.agent_id);
+  const args = [fileURLToPath(import.meta.url), '--watch', input.dispatch_id, input.parent_id,
+    input.agent_id && input.agent_id !== input.dispatch_id ? input.agent_id : '', input.create_deadline ?? ''];
   const child = spawn(process.execPath, args, {detached: true, windowsHide: true,
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: process.env});
   try {
@@ -82,13 +92,23 @@ export async function ensureNotification(input) {
   throw new Error('notification_not_ready');
 }
 
-export function notificationEvents(agent, record, now) {
-  if (!agent) return record.seen || now >= record.creation_deadline
-    ? [{key: 'terminal', reason: record.seen ? 'worker unavailable' : 'creation outcome unavailable'}] : [];
-  if (record.agent_id && record.agent_id !== record.dispatch_id
-      && agent.labels?.['router.dispatch_id'] !== record.dispatch_id)
-    return now >= record.creation_deadline
-      ? [{key: 'terminal', reason: 'creation outcome unavailable'}] : [];
+// `creation` is the daemon's durable record for a created worker: an object, null when the daemon never admitted the
+// request, undefined when it was not read. Nothing is sent while a create can still succeed, however long it takes.
+// No agent means the daemon answered that it has none, in memory or in storage: a host that cannot answer throws.
+export function notificationEvents(agent, record, now, creation) {
+  if (!agent) {
+    if (record.seen || record.agent_id) return [{key: 'terminal', reason: 'worker unavailable'}];
+    if ((creation?.phase === 'completed' && !creation.agent_id) || (creation?.phase === 'failed' && creation.agent_created))
+      return [{key: 'terminal', reason: WORKER_REMOVED}];
+    return creation?.phase === 'failed' || (creation === null && now >= record.creation_deadline)
+      ? [{key: 'terminal', reason: CREATE_FAILED}] : [];
+  }
+  const label = agent.labels?.['router.dispatch_id'];
+  // Seen under its own labels, so these are not a relabel that has yet to land: a later dispatch took this worker.
+  if (record.seen && label && label !== record.dispatch_id) return [{key: 'terminal', reason: SUPERSEDED}];
+  if (record.agent_id && record.agent_id !== record.dispatch_id && label !== record.dispatch_id)
+    // Not bound to this dispatch yet, so its state is the previous turn's. Only its removal says anything about this one.
+    return agent.archivedAt ? [{key: 'terminal', reason: 'worker unavailable'}] : [];
   if (agent.status === 'running') record.started = true;
   record.seen = true;
   if (agent.status === 'error' || agent.attentionReason === 'error' || agent.providerUnavailable)
@@ -100,11 +120,13 @@ export function notificationEvents(agent, record, now) {
   // A resumed worker is relabeled before its turn is sent: until the turn is seen running or its message lands,
   // idle/finished is still the previous turn's.
   const resumed = record.agent_id && record.agent_id !== record.dispatch_id;
-  const created = (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
+  const created = record.created_at ?? (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
   const turnSeen = record.started || (typeof agent.lastUserMessageAt === 'string'
     && Date.parse(agent.lastUserMessageAt) >= created);
   if (agent.status === 'idle' && (resumed ? turnSeen : (agent.attentionReason === 'finished' || record.started)))
     return [{key: 'terminal', reason: 'finished'}];
+  // Its lease is not renewed from here, so the parent can end it. A turn that lands later still reports its finish.
+  if (resumed && !turnSeen && now - created >= RUN_LEASE_MS) return [{key: 'undelivered', reason: UNDELIVERED}];
   return [];
 }
 
@@ -115,10 +137,18 @@ export async function notificationStep(client, record, persist, now = Date.now()
   let event;
   const targetId = record.agent_id ?? record.dispatch_id;
   if (!record.pending) {
-    const agent = (await client.fetchAgent(targetId))?.agent;
-    const events = now >= record.deadline
+    const expired = now >= record.deadline;
+    // Past the watch there is nothing left to decide from these, and one that cannot be read must not hold back the notice.
+    let agent = expired
+      ? await client.fetchAgent(targetId).then(found => found?.agent, () => null)
+      : (await client.fetchAgent(targetId))?.agent;
+    const creation = !expired && !agent && !record.seen && !record.agent_id
+      ? await creationRecord(client, record.dispatch_id) : undefined;
+    // Read the record, then the agent it names: a create that got this far between the two reads is not "removed".
+    if (creation?.agent_id) agent = (await client.fetchAgent(creation.agent_id))?.agent;
+    const events = expired
       ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
-      : notificationEvents(agent, record, now);
+      : notificationEvents(agent, record, now, creation);
     event = events.find(event => !record.delivered.includes(event.key));
     // The first terminal sighting is the outcome. The registry reads it, because Paseo later closes an
     // idle finished worker or fails it on a plugin reload, and a late observation would see only that.
@@ -135,9 +165,15 @@ export async function notificationStep(client, record, persist, now = Date.now()
       record.pending = {...event, messageId: createHash('sha256')
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
       text: `[AgentCompass worker notification]\nDispatch: ${record.dispatch_id}\n` +
-        `Worker: ${targetId}\nState: ${event.reason}\n` +
-        `Read the worker's final response and details with get_agent_activity ` +
-        `(agentId: ${targetId}); use get_agent_status for pending permissions.`};
+        `Worker: ${targetId}\nState: ${event.reason}\n` + (event.reason === CREATE_FAILED
+          ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'
+          : event.reason === WORKER_REMOVED
+          ? 'Paseo created this worker and it was removed before this dispatch observed it. It may have done part of the work: check that before rolling this brief again.'
+          : event.reason === UNDELIVERED
+          ? `This worker carries this dispatch's labels, but its turn has not landed within the lease. Check it with get_agent_status ` +
+            `(agentId: ${targetId}). If it should not do this work any more, release this dispatch. A finish is still reported if the turn lands.`
+          : `Read the worker's final response and details with get_agent_activity ` +
+            `(agentId: ${targetId}); use get_agent_status for pending permissions.`)};
     }
     persist();
   }
@@ -152,7 +188,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
   return terminal;
 }
 
-async function watch(dispatchId, parentId, agentId = dispatchId) {
+async function watch(dispatchId, parentId, agentId, createDeadline) {
   const file = notificationFile(dispatchId), lock = `${file}.lock`;
   fs.mkdirSync(path.dirname(file), {recursive: true});
   let lockFd;
@@ -180,7 +216,8 @@ async function watch(dispatchId, parentId, agentId = dispatchId) {
   try {
     const record = readRecord(file) ?? {dispatch_id: dispatchId, parent_id: parentId,
       ...(agentId && agentId !== dispatchId ? {agent_id: agentId} : {}),
-      deadline: Date.now() + WATCH_LIMIT_MS, creation_deadline: Date.now() + CREATE_LIMIT_MS,
+      deadline: Date.now() + WATCH_LIMIT_MS, created_at: Date.now(),
+      creation_deadline: Date.parse(createDeadline) || Date.now() + CREATE_LIMIT_MS,
       status: 'watching', delivered: [], pending: null};
     if (agentId && agentId !== dispatchId && !record.agent_id) record.agent_id = agentId;
     if (record.parent_id !== parentId) throw new Error('notification_parent_mismatch');
@@ -239,9 +276,69 @@ export function creationFailureClass(creation) {
   return 'unknown';
 }
 
+// The daemon owns a create across socket lifetimes and keeps its outcome under the idempotency key, so the answer the
+// creating bridge was killed before receiving can still be read. Only a fixed vocabulary leaves this adapter.
+export async function creationRecord(client, key) {
+  const response = await client.sendCorrelatedSessionRequest({
+    message: {type: 'creation.subscribe.request', kind: 'agent', idempotencyKey: key, subscribe: false},
+    responseType: 'creation.subscribe.response', timeout: 10000});
+  // The daemon reports a completed record whose agent is gone only as this error, never as phase `completed`.
+  if (response.error === AGENT_REMOVED_ERROR) return {phase: 'completed', outcome_unknown: false, agent_id: null, agent_created: true};
+  if (response.error) throw new Error('creation_unobservable');
+  const snapshot = response.snapshot;
+  if (!snapshot) return null;
+  return {phase: snapshot.phase, outcome_unknown: Boolean(snapshot.outcomeUnknown), agent_id: snapshot.agentId ?? null,
+    agent_created: Boolean(snapshot.agent),
+    ...(snapshot.phase === 'failed' ? {failure_class: creationFailureClass(snapshot)} : {})};
+}
+
+async function findWorkspaceDirectory(client, workspaceId) {
+  let cursor;
+  do {
+    const page = await client.fetchWorkspaces({page: {limit: 200, ...(cursor ? {cursor} : {})}});
+    const found = page.entries?.find(workspace => workspace.id === workspaceId);
+    if (found) return found.workspaceDirectory ?? found.projectRootPath ?? null;
+    cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
+  } while (cursor);
+  return null;
+}
+
+// Only feeds a warning, so failing here must not cost the caller the agents it did read. Nor must hanging: the SDK's
+// own limit is longer than the caller's, which kills this bridge and loses them.
+async function workspaceDirectory(client, workspaceId) {
+  let timer;
+  const limit = new Promise(resolve => { timer = setTimeout(resolve, WORKSPACE_LOOKUP_MS, null); });
+  try { return await Promise.race([findWorkspaceDirectory(client, workspaceId), limit]); }
+  catch { return null; }
+  finally { clearTimeout(timer); }
+}
+
+// The creator knows the outcome: stop only this dispatch's watcher, without replacing its receipt.
+function stopWatcher(input, reason) {
+  const file = notificationFile(input.dispatch_id);
+  const record = readRecord(file);
+  if (record?.parent_id !== input.parent_id) return;
+  fs.writeFileSync(`${file}.creation-failed`, reason, {mode: 0o600});
+  saveRecord(file, {...record, status: 'creation_failed'});
+}
+
+// A refused resume's stopped watcher followed the old worker. The create falling back from it needs a watcher of its
+// own on the new one, and the old watcher must be gone first or its last save would overwrite the new record.
+async function retireRefusedResume(input) {
+  const file = notificationFile(input.dispatch_id);
+  const record = readRecord(file);
+  if (record?.parent_id !== input.parent_id || record.status !== 'creation_failed' || !record.agent_id) return;
+  for (let waited = 0; alive(record.pid); waited += 100) {
+    if (waited >= WATCHER_STOP_MS) throw new Error('notification_start_failed');
+    await pause(100);
+  }
+  fs.rmSync(`${file}.creation-failed`, {force: true});
+  fs.rmSync(file, {force: true});
+}
+
 export function project(agent) {
   if (!agent) return null;
-  const result = Object.fromEntries(['id', 'provider', 'model', 'status', 'updatedAt', 'createdAt',
+  const result = Object.fromEntries(['id', 'provider', 'model', 'status', 'cwd', 'updatedAt', 'createdAt',
     'lastUserMessageAt', 'attentionReason', 'archivedAt', 'providerUnavailable',
     'currentModeId', 'thinkingOptionId', 'effectiveThinkingOptionId', 'labels']
     .filter(k => agent[k] !== undefined).map(k => [k, agent[k]]));
@@ -258,10 +355,18 @@ export async function execute(client, input, notify = ensureNotification) {
     const parent = await client.fetchAgent(input.parent_id);
     if (!parent?.agent) return {ok: false, sent: false, error: 'parent_agent_not_found'};
     let completion_notification;
-    try { completion_notification = await notify(input); }
-    catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
+    try {
+      await retireRefusedResume(input);
+      completion_notification = await notify(input);
+    } catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
     const cwd = parent.agent.cwd, workspaceId = r.workspaceId ?? parent.agent.workspaceId;
     const slash = r.provider.indexOf('/');
+    // The caller stops waiting for a create it never sent and may settle it as failed, so sending later is forbidden.
+    if (input.send_by && Date.now() > Date.parse(input.send_by)) {
+      stopWatcher(input, 'create_send_window_elapsed');
+      return {ok: false, sent: false, error: 'create_send_window_elapsed',
+        completion_notification: {...completion_notification, status: 'creation_failed'}};
+    }
     let creation;
     const options = {
       provider: r.provider.slice(0, slash), model: r.provider.slice(slash + 1),
@@ -280,12 +385,7 @@ export async function execute(client, input, notify = ensureNotification) {
           && creation.phase === 'failed' && creation.outcomeUnknown === false) {
         // Keep arbitrary SDK error text private; only structured, definitive
         // failure authorizes reservation release. Timeouts remain ambiguous.
-        const file = notificationFile(input.dispatch_id);
-        const record = readRecord(file);
-        if (record?.parent_id === input.parent_id) {
-          fs.writeFileSync(`${file}.creation-failed`, 'host_creation_failed', {mode: 0o600});
-          saveRecord(file, {...record, status: 'creation_failed'});
-        }
+        stopWatcher(input, 'host_creation_failed');
         return {ok: false, sent: false, error: 'host_creation_failed', failure_class: creationFailureClass(creation),
           completion_notification: {...completion_notification, status: 'creation_failed'}};
       }
@@ -316,6 +416,9 @@ export async function execute(client, input, notify = ensureNotification) {
     if ((r.settings?.modeId && existing.currentModeId && existing.currentModeId !== r.settings.modeId)
         || (r.settings?.thinkingOptionId && effort && effort !== r.settings.thinkingOptionId))
       return {ok: false, sent: false, error: 'worker_settings_mismatch'};
+    // The writer rule checked the workspace that was asked for, so the work must land there.
+    if (r.workspaceId && existing.workspaceId !== r.workspaceId)
+      return {ok: false, sent: false, error: 'worker_workspace_mismatch'};
     const alreadyBound = labels['router.dispatch_id'] === input.dispatch_id;
     if (!alreadyBound && (existing.status === 'running' || existing.status === 'initializing'
         || existing.status === 'error' || existing.attentionReason === 'error'
@@ -352,17 +455,27 @@ export async function execute(client, input, notify = ensureNotification) {
           try { await client.updateAgent(input.agent_id, {name: existing.title, labels}); }
           catch { return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification}; }
         }
-        const file = notificationFile(input.dispatch_id);
-        const record = readRecord(file);
-        if (record?.parent_id === input.parent_id) {
-          fs.writeFileSync(`${file}.creation-failed`, 'host_resume_failed', {mode: 0o600});
-          saveRecord(file, {...record, status: 'creation_failed'});
-        }
+        stopWatcher(input, 'host_resume_failed');
         return {ok: false, sent: false, error: 'host_resume_failed',
           completion_notification: {...completion_notification, status: 'creation_failed'}};
       }
       return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification};
     }
+  }
+  if (input.operation === 'workspace_agents') {
+    const agents = [];
+    let cursor;
+    do {
+      const page = await client.fetchAgents({filter: {statuses: ['initializing', 'running']},
+        page: {limit: 200, ...(cursor ? {cursor} : {})}});
+      for (const entry of page.entries ?? []) {
+        const agent = entry.agent ?? entry;
+        if (agent.workspaceId === input.workspace_id && agent.labels?.['router.dispatch_id'])
+          agents.push({id: agent.id, status: agent.status, dispatch_id: agent.labels['router.dispatch_id']});
+      }
+      cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
+    } while (cursor);
+    return {ok: true, agents, cwd: await workspaceDirectory(client, input.workspace_id)};
   }
   if (input.operation !== 'observe') throw new Error('unsupported_operation');
   let agent = input.agent_id ? (await client.fetchAgent(input.agent_id))?.agent : null;
@@ -377,10 +490,14 @@ export async function execute(client, input, notify = ensureNotification) {
       if (id) agent = (await client.fetchAgent(id))?.agent;
     }
   }
+  // Read the record, then the agent it names: a create that completes between the two lookups is not "removed".
+  const creation = !agent && !input.agent_id ? await creationRecord(client, input.dispatch_id) : undefined;
+  if (creation?.agent_id) agent = (await client.fetchAgent(creation.agent_id))?.agent;
   const file = notificationFile(input.dispatch_id);
   const record = readRecord(file);
   const completion_notification = record ? await notify(record) : notificationReceipt(file);
-  return {ok: true, agent: project(agent), missing: Boolean(input.agent_id && !agent), completion_notification};
+  return {ok: true, agent: project(agent), missing: Boolean(input.agent_id && !agent),
+    ...(creation !== undefined ? {creation} : {}), completion_notification};
 }
 
 async function createClient() {
@@ -417,7 +534,7 @@ async function createClient() {
 }
 
 async function main() {
-  if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4], process.argv[5]);
+  if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4], process.argv[5], process.argv[6]);
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
   const client = await createClient();
   let connected = false;

@@ -1,6 +1,7 @@
 """Dispatch lifecycle tests: isolated DB, fake host, no live creation or services."""
 import copy
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import hashlib
 import json
@@ -8,6 +9,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -76,6 +79,7 @@ class DispatchTests(unittest.TestCase):
             'ROUTER_OVERRIDES': str(self.root / 'overrides.json'),
             'ROUTER_CAPACITY': str(self.root / 'capacity.json'),
             'ROUTER_LEDGER': str(self.root / 'ledger.jsonl'),
+            'ROUTER_LAUNCH_FAILURES': str(self.root / 'launch-failures.json'),
             'ROUTER_USAGE_CACHE': str(self.root / 'usage.json'),
             'ROUTER_HOST_POLICY': str(self.root / 'host.json'), 'PYTHONDONTWRITEBYTECODE': '1',
             'ROUTER_DISABLE_LIVE_SCORER': '1',
@@ -97,7 +101,7 @@ class DispatchTests(unittest.TestCase):
              'resets_at': (self.now + timedelta(hours=hours)).isoformat(), 'seconds_until_reset': hours * 3600}
             for wid, rem, hours in [('five_hour', 40, 2.5), ('seven_day', 61, 130)]]}}}
         self.bundle = dict(allocator.bundles(self.accounts)['lab_sonnet55_high'], bundle_id='lab_sonnet55_high')
-        self.launch = {'title': 'Fixture task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'workspace-fixture'}
+        self.launch = {'title': 'Fixture task', 'initialPrompt': 'Only fixture work'}
 
     def issue(self, task=None, **changes):
         result = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle,
@@ -203,7 +207,7 @@ class DispatchTests(unittest.TestCase):
                 self.prepare(self.override_decision(**changes))
         with self.assertRaisesRegex(ValueError, 'no known'):
             self.override_decision(effort='turbo')
-        for changes in ({'account': 'claude-lab'}, {'provider': 'pi'}, {'model': 'unknown-model'}):
+        for changes in ({'account': 'claude-lab'}, {'provider': 'grok'}, {'model': 'unknown-model'}):
             bundle = dict(provider='codex', account='codex', model='gpt-6-astra', effort='low')
             bundle.update(changes)
             with self.assertRaisesRegex(ValueError, 'no known'):
@@ -489,25 +493,64 @@ class DispatchTests(unittest.TestCase):
     def test_reuse_needs_overlap_with_the_new_brief(self):
         import argparse
         import roll
-        worker = {'agent_id': 'agent-review', 'task_ids': ['roll-old'], 'brief_paths': [],
-                  'titles': ['Independent review: s01-telegram fix (b)'], 'updated_at': self.now.isoformat()}
+        for banned in ('_MATCH_STOP_WORDS', '_match_tokens'):
+            self.assertFalse(hasattr(roll, banned), f'{banned} must be removed from roll')
+        worker = {'agent_id': 'agent-review', 'task_ids': ['roll-old'], 'brief_paths': ['/tmp/step1.md'],
+                  'chain_ids': ['chain-1'], 'titles': ['Independent review: s01-telegram fix (b)'],
+                  'updated_at': self.now.isoformat()}
         args = argparse.Namespace(new_worker=False, resume=None, task_id='roll-new', title=None)
-        task = {'task_id': 'roll-new', 'brief_path': None}
-        self.assertIsNone(roll.match_reusable_worker(args, task, '# Weekly storage scan', 'parent-a', workers=[worker]))
-        matched = roll.match_reusable_worker(args, task, '# Telegram fix: second review round', 'parent-a',
-                                             workers=[worker])
-        self.assertEqual(matched['agent_id'], 'agent-review')
+        task = {'task_id': 'roll-new', 'brief_path': '/tmp/step1-rev.md'}
+        # Stem overlap ('step1' vs 'step1-rev') and title word overlap ('telegram', 'fix', 'review') never match
+        self.assertIsNone(roll.match_reusable_worker(args, task, '# Telegram fix: second review round', 'parent-a',
+                                                     workers=[worker]))
+        # Exact task_id matches
+        by_tid = roll.match_reusable_worker(
+            argparse.Namespace(new_worker=False, resume=None, task_id='roll-old', title=None),
+            {'task_id': 'roll-old', 'brief_path': None}, '# Any text', 'parent-a', workers=[worker])
+        self.assertEqual(by_tid['agent_id'], 'agent-review')
+        # Exact brief_path matches
+        by_brief = roll.match_reusable_worker(
+            args, {'task_id': 'roll-new', 'brief_path': '/tmp/step1.md'}, '# Any text', 'parent-a', workers=[worker])
+        self.assertEqual(by_brief['agent_id'], 'agent-review')
+        # Explicit dispatch chain matches
+        by_chain = roll.match_reusable_worker(
+            args, {'task_id': 'roll-new', 'brief_path': None, 'chain': 'chain-1'}, '# Any text', 'parent-a',
+            workers=[worker])
+        self.assertEqual(by_chain['agent_id'], 'agent-review')
+        # Explicit --resume matches
+        by_resume = roll.match_reusable_worker(
+            argparse.Namespace(new_worker=False, resume='agent-review', task_id='roll-new', title=None),
+            task, '# Any text', 'parent-a', workers=[worker])
+        self.assertEqual(by_resume['agent_id'], 'agent-review')
 
     def test_a_review_never_goes_back_to_a_worker_that_wrote_the_code(self):
         import roll
-        implementer = {'agent_id': 'agent-fixer', 'titles': ['任务：修复"代码包增量更新"审查发现的问题',
-                                                             '任务：对抗审查 AgentCompass "代码包增量更新"']}
-        reviewer = {'agent_id': 'agent-review', 'titles': ['Independent review of the s01 telegram change']}
-        self.assertTrue(roll.is_review_title('任务：复审"代码包增量更新"修复后的未提交改动（只读）'))
-        self.assertTrue(roll.is_review_title('Adversarial code review of the update fix'))
-        self.assertFalse(roll.is_review_title('任务：修复"代码包增量更新"审查发现的问题'))
-        self.assertFalse(roll.is_review_title('Step 1-Rev: Address review comments'))
-        self.assertEqual([w['agent_id'] for w in roll.independent_reviewers([implementer, reviewer])],
+        for banned in ('_REVIEW_RE', '_AUTHORING_RE', 'is_review_title'):
+            self.assertFalse(hasattr(roll, banned), f'{banned} must be removed from roll')
+        review_prof = {'work_kind': 'debug_review', 'code_complexity': 0, 'read_only_review': True}
+        fix_prof = {'work_kind': 'debug_review', 'code_complexity': 2, 'read_only_review': False}
+        self.assertTrue(roll.is_readonly_review_profile(review_prof))
+        self.assertTrue(roll.is_readonly_review_profile({'work_kind': 'debug_review', 'code_complexity': 0}))
+        self.assertFalse(roll.is_readonly_review_profile(fix_prof))
+        self.assertFalse(roll.is_readonly_review_profile({'work_kind': 'general_implementation', 'code_complexity': 0}))
+        implementer = {
+            'agent_id': 'agent-fixer',
+            'titles': ['Independent review of the s01 telegram change'],
+            'profiles': [fix_prof, review_prof],
+            'read_only_review': False,
+        }
+        reviewer = {
+            'agent_id': 'agent-review',
+            'titles': ['任务：修复"代码包增量更新"审查发现的问题'],
+            'profiles': [review_prof],
+            'read_only_review': True,
+        }
+        unclassified = {
+            'agent_id': 'agent-unknown',
+            'titles': ['Unclassified worker'],
+            'profiles': [],
+        }
+        self.assertEqual([w['agent_id'] for w in roll.independent_reviewers([implementer, reviewer, unclassified])],
                          ['agent-review'])
 
     def test_definitive_create_failure_cools_the_account_down_and_a_start_clears_it(self):
@@ -518,10 +561,10 @@ class DispatchTests(unittest.TestCase):
             refused = {'ok': False, 'sent': False, 'error': 'host_creation_failed',
                        'failure_class': 'provider_refresh_timeout'}
             result = flow.launch(row['dispatch_id'], 'parent-a', host=lambda _: refused, watch_seconds=0)
-            self.assertEqual(result['state'], 'failed')
+            self.assertEqual(result['state'], 'create_failed')
             self.assertEqual(result['error'], 'host_creation_failed')
             events = registry.inspect(row['dispatch_id'])['events']
-            self.assertEqual(events[-1]['reason'], 'host_rejected_before_create:host_creation_failed:provider_refresh_timeout')
+            self.assertEqual(events[-1]['reason'], 'host_creation_failed:provider_refresh_timeout')
             plan = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
             for candidate in plan['ranking']:
                 if candidate['bundle'].get('account') == 'claude-lab':
@@ -718,7 +761,8 @@ except ValueError as e:
         self.assertEqual((first['state'], first['agent_id']), ('launching', None))
         again = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
         self.assertEqual(again['state'], 'launching')
-        self.assertEqual(again['observe_error'], 'agent_not_observed')
+        self.assertTrue(again['creating'])
+        self.assertNotIn('observe_error', again)
         self.assertIn('continuation', again)
         self.assertEqual(calls, ['create', 'observe', 'observe'])
 
@@ -1458,7 +1502,9 @@ class RollTests(unittest.TestCase):
         codex_task = {**self.task, 'task_id': 'task-normal-1', 'work_kind': 'general_implementation',
                       'profile': {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1,
                                   'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': False, 'needs_gui': False,
-                                  'local_only': True, 'interaction_style': 'engineering', 'reason': 'test'}}
+                                  'local_only': True, 'wants_fast': False, 'read_only_review': False,
+                                  'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                                  'reason': 'test'}}
         normal_plan = allocator.plan(codex_task, codex_usage, self.now, accounts=self.accounts)
         self.assertEqual(normal_plan['choice'], 'sol_high')
         normal_dec = registry.issue(dict(normal_plan, stage='plan'), codex_task, self.now)
@@ -1524,8 +1570,16 @@ class RollTests(unittest.TestCase):
             self.assertEqual((code1, res1['launched'], res1['worker']['state']), (0, True, 'completed'))
             self.assertEqual([op for op, _, _ in operations], ['create', 'observe'])
 
+            # A different brief path with stem/token overlap ('step1-rev.md') does NOT auto-resume without --resume
             operations.clear()
-            res2, code2 = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+            res_unmatched, code_unmatched = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+            self.assertEqual((code_unmatched, res_unmatched['launched']), (0, True))
+            self.assertEqual(operations[0][0], 'create')
+            self.assertFalse(res_unmatched['worker'].get('resumed', False))
+
+            # Explicit --resume (or exact brief_path/task_id) resumes the worker
+            operations.clear()
+            res2, code2 = roll.run(argparse.Namespace(brief=b2, **{**base_args, 'resume': 'agent-fixture'}), judge)
             self.assertEqual((code2, res2['launched'], res2['worker']['state']), (0, True, 'completed'))
             self.assertEqual(operations[0][:2], ('resume', 'agent-fixture'))
             self.assertTrue(res2['worker'].get('resumed'))
@@ -1542,9 +1596,9 @@ class RollTests(unittest.TestCase):
             self.assertEqual(once, twice)
             self.assertEqual(twice.count('Parent session agent ID: `parent-a`.'), 1)
 
-            # --new-worker forces a fresh create even when an idle worker is available
+            # --new-worker forces a fresh create even when brief_path matches
             operations.clear()
-            res3, code3 = roll.run(argparse.Namespace(brief=b3, **{**base_args, 'new_worker': True}), judge)
+            res3, code3 = roll.run(argparse.Namespace(brief=b1, **{**base_args, 'new_worker': True}), judge)
             self.assertEqual((code3, res3['launched']), (0, True))
             self.assertEqual(operations[0][0], 'create')
             self.assertFalse(res3['worker'].get('resumed', False))
@@ -1577,9 +1631,7 @@ class RollTests(unittest.TestCase):
         import argparse
         import roll
         b1 = self.root / 'turn1.md'
-        b2 = self.root / 'turn2.md'
         b1.write_text('# Turn 1: Heavy exploration\n', encoding='utf-8')
-        b2.write_text('# Turn 2: Continue exploration\n', encoding='utf-8')
         judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
                                    'usage_snapshot': staticmethod(lambda _: self.usage),
                                    'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
@@ -1598,7 +1650,11 @@ class RollTests(unittest.TestCase):
             roll.run(argparse.Namespace(brief=b1, **base_args), judge)
             operations.clear()
             with patch.object(allocator, 'session_state', return_value=worn_state):
-                res2, code2 = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+                # Explicit --resume on a worn worker must raise ValueError rather than silently creating a new worker
+                with self.assertRaisesRegex(ValueError, '--resume'):
+                    roll.run(argparse.Namespace(brief=b1, **{**base_args, 'resume': 'agent-worn'}), judge)
+                # Automatic reuse via exact brief_path rotates to a fresh worker
+                res2, code2 = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
             self.assertEqual((code2, res2['launched']), (0, True))
             self.assertEqual(operations[0][0], 'create')
             self.assertFalse(res2['worker'].get('resumed', False))
@@ -1640,12 +1696,8 @@ class RollTests(unittest.TestCase):
         import roll
         b1a = self.root / 'brief-step1a.md'
         b1b = self.root / 'brief-step1b.md'
-        b1a_rev = self.root / 'brief-step1a-rev.md'
-        b1b_rev = self.root / 'brief-step1b-rev.md'
         b1a.write_text('# Step 1A: Refactor auth module\n', encoding='utf-8')
         b1b.write_text('# Step 1B: Refactor storage module\n', encoding='utf-8')
-        b1a_rev.write_text('# Step 1A-Rev: Fix auth review findings\n', encoding='utf-8')
-        b1b_rev.write_text('# Step 1B-Rev: Fix storage review findings\n', encoding='utf-8')
         judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
                                    'prefetch_scores': staticmethod(lambda tasks, timeout: None),
                                    'usage_snapshot': staticmethod(lambda _: self.usage),
@@ -1665,11 +1717,1081 @@ class RollTests(unittest.TestCase):
             self.assertEqual([(op, aid) for op, aid, _ in operations], [('create', 'worker-1a'), ('create', 'worker-1b')])
 
             operations.clear()
-            # Roll revision briefs in reverse order to prove matching by step tag rather than mere recency
-            r2, c2 = roll.run_batch(argparse.Namespace(brief=[b1a_rev, b1b_rev], **batch_args), judge)
+            # Re-rolling the exact brief_paths in reverse order resumes each matching worker without collision
+            r2, c2 = roll.run_batch(argparse.Namespace(brief=[b1b, b1a], **batch_args), judge)
             self.assertEqual(c2, 0)
-            self.assertEqual([(op, aid) for op, aid, _ in operations], [('resume', 'worker-1a'), ('resume', 'worker-1b')])
+            self.assertEqual([(op, aid) for op, aid, _ in operations], [('resume', 'worker-1b'), ('resume', 'worker-1a')])
             self.assertTrue(all(item['worker'].get('resumed') for item in r2['results']))
+
+    def test_review_independence_and_explicit_resume_and_blocked_status(self):
+        import argparse
+        import roll
+        # m9: empty --local-only is rejected
+        ns_empty = argparse.Namespace(brief=None, task='Do work', file=[], apply_to=None, local_only='   ',
+                                      keep_whole=None, hours=1.0, title=None, workspace=None, task_id='t-1',
+                                      fast=False, resume=None, new_worker=False)
+        with self.assertRaisesRegex(ValueError, '--local-only'):
+            roll.build_task(ns_empty, 'Do work', {'id': 'p-1'})
+
+        # m5: scorer_unavailable maps to status='blocked' and reason='scorer_unavailable' in both full and compact output
+        judge_blocked = type('Judge', (), {
+            'plan_stage': staticmethod(lambda doc, _: (
+                {'stage': 'plan', 'status': 'blocked', 'choice': 'none', 'error': 'scorer_unavailable',
+                 'scorer': {'source': 'scorer_unavailable', 'fallback_reason': 'no_classifier_available'}}, 2)),
+            'usage_snapshot': staticmethod(lambda _: self.usage),
+        })
+        ns = argparse.Namespace(brief=None, task='Do work', file=[], apply_to=None, local_only='local daemon',
+                                keep_whole=None, hours=1.0, title=None, workspace=None, task_id='t-blocked',
+                                wait=0, parent_id='parent-a', parent_host=None, parent_address=None,
+                                provider=None, account=None, model=None, effort=None, basis=None,
+                                usage_cache=None, dry_run=False, verbose=True, fast=False,
+                                resume=None, new_worker=False, no_score=False)
+        with patch.object(roll, 'resolve_parent', return_value=('parent-a', 'paseo', 'parent-a')):
+            res_b, code_b = roll.run(ns, judge_blocked)
+            self.assertEqual((code_b, res_b['status'], res_b['reason'], res_b['error']),
+                             (2, 'blocked', 'scorer_unavailable', 'scorer_unavailable'))
+            comp = roll.compact(res_b, res_b['status'], None)
+            self.assertEqual((comp['status'], comp['reason'], comp['error']),
+                             ('blocked', 'scorer_unavailable', 'scorer_unavailable'))
+
+        # m7: prepare() does not copy implementer chain_id onto a fresh read-only review worker
+        review_task = dict(self.task, task_id='t-review', chain={'id': 'chain-impl-1', 'worker': {'agent_id': 'agent-impl', 'bundle': 'lab_sonnet55_high', 'read_only_review': False}}, profile={
+            'work_kind': 'debug_review', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1,
+            'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2, 'needs_visual': False, 'needs_gui': False,
+            'local_only': True, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': True,
+            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reason': 'review'})
+        review_dec = registry.issue({'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
+                                     'decision': {'action': 'start'}}, review_task, self.now)
+        rev_row = registry.prepare(review_dec['decision_id'], review_task, self.launch, self.usage,
+                                   accounts=self.accounts, now=self.now, resume_agent_id=None)
+        self.assertIsNone(rev_row.get('chain_id'))
+        registry.claim(rev_row['request'], now=self.now)
+        registry.observe(rev_row['dispatch_id'], self.snapshot(rev_row, 'idle', attentionReason='finished'), now=self.now)
+
+        # M1 & m6: named-model review rejects explicit --resume of an implementer worker
+        impl_worker = {'agent_id': 'agent-impl', 'task_ids': ['t-impl'], 'brief_paths': [],
+                       'chain_id': 'chain-impl-1', 'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
+                       'profiles': [{'work_kind': 'general_implementation', 'code_complexity': 2, 'read_only_review': False}],
+                       'read_only_review': False, 'bundle_id': 'lab_sonnet55_high',
+                       'bundle': self.bundle}
+        review_prof = dict(review_task['profile'])
+        def fake_record_constraint(a, t):
+            t['profile'] = review_prof
+            base_dec = {'stage': 'record', 'choice': 'lab_sonnet55_high', 'constraint': 'user_override',
+                        'basis': a.basis, 'task_profile': review_prof, 'selected_bundle': self.bundle}
+            return {**base_dec, **registry.issue(base_dec, t, self.now)}
+
+        judge_named = type('Judge', (), {
+            'record_constraint': staticmethod(fake_record_constraint),
+            'usage_snapshot': staticmethod(lambda _: self.usage),
+        })
+        ns_named_resume = argparse.Namespace(
+            brief=None, task='Review the diff only', file=[], apply_to=None, local_only='local daemon',
+            keep_whole=None, hours=0.5, title=None, workspace=None, task_id='t-impl',
+            wait=0, parent_id='parent-a', parent_host=None, parent_address=None,
+            provider='claude-lab', account='claude-lab', model='claude-sonnet-5-5', effort='high',
+            basis='User asked for Sonnet review', usage_cache=None, dry_run=False, verbose=True,
+            fast=False, resume='agent-impl', new_worker=False, no_score=False)
+        with patch.object(roll, 'resolve_parent', return_value=('parent-a', 'paseo', 'parent-a')), \
+                patch.object(registry, 'pending', return_value=[]), \
+                patch.object(registry, 'reusable_workers', return_value=[impl_worker]), \
+                patch.object(roll.dispatch_flow, 'paseo_reachable', return_value=True), \
+                patch.object(roll.dispatch_flow, 'reconcile'), \
+                patch.object(roll.dispatch_flow, 'launch', return_value={'state': 'running', 'agent_id': 'fresh-rev', 'observed_at': self.now.isoformat()}):
+            with self.assertRaisesRegex(ValueError, 'previously wrote or modified code and cannot be resumed'):
+                roll.run(ns_named_resume, judge_named)
+            # Without explicit --resume, even with matching task_id='t-impl', named-model review does not reuse implementer
+            ns_named_auto = argparse.Namespace(**{**vars(ns_named_resume), 'resume': None})
+            res_auto, code_auto = roll.run(ns_named_auto, judge_named)
+            self.assertEqual(code_auto, 0)
+            self.assertFalse(res_auto['worker'].get('resumed'))
+
+
+class CreateLifecycleTests(unittest.TestCase):
+    """A create nobody has seen finish: the daemon's durable record decides, and only an ended one is terminal."""
+    setUp, snapshot, issue, prepare = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue, DispatchTests.prepare
+
+    def claimed(self, provider=None):
+        row = self.prepare()
+        if provider:
+            with registry.transaction() as connection:
+                stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+                stored['bundle']['provider'] = provider
+                registry.save(connection, stored)
+        return self.claim_row(row)
+
+    def claim_row(self, row):
+        import route_judge
+        with patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+                patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
+            return registry.claim(registry.inspect(row['dispatch_id'])['request'], parent_id='parent-a', now=self.now)
+
+    def observe_only(self, creation):
+        def host(request):
+            self.assertEqual(request['operation'], 'observe')
+            return {'ok': True, 'agent': None, 'missing': False, 'creation': creation}
+        return host
+
+    def test_daemon_failure_after_the_bridge_gave_up_is_terminal_releasable_and_rerollable(self):
+        # dispatch 32e17e1b: the daemon recorded a definitive failure 131 s in, long after the bridge's 25 s cut-off.
+        import launch_failures
+        store = self.root / 'launch-failures.json'
+        with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)}):
+            row = self.claimed()
+            host = self.observe_only({'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'model_unavailable'})
+            result = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+            self.assertEqual(result['state'], 'create_failed')
+            self.assertEqual(result['error'], 'create_failed')
+            self.assertIn('safe to roll', result['next_action'])
+            self.assertNotIn('continuation_argv', result)
+            self.assertEqual(registry.reservations(), [])
+            self.assertEqual(registry.release(row['dispatch_id'], 'parent-a', 'give up')['state'], 'create_failed')
+            self.assertTrue(json.loads(store.read_text(encoding='utf-8')))
+            launch_failures.clear('claude-lab')
+            self.assertEqual(self.prepare(self.issue())['state'], 'prepared')
+
+    def test_a_request_never_admitted_fails_only_after_its_provider_deadline(self):
+        for provider, seconds in (('claude-lab', registry.CREATE_DEADLINE),
+                                  ('antigravity-resilient', registry.CREATE_DEADLINES['antigravity-resilient'])):
+            with self.subTest(provider=provider):
+                row = self.claimed(provider)
+                launched = registry.parse(row['launched_at'])
+                self.assertEqual(registry.create_deadline(row), launched + timedelta(seconds=seconds))
+                self.assertGreater(seconds, registry.CREATE_SEND_WINDOW + flow.HOST_TIMEOUT)
+                before = flow.reconcile(row['dispatch_id'], self.observe_only(None), now=launched + timedelta(seconds=seconds - 1))
+                self.assertEqual(before[0]['state'], 'launching')
+                self.assertTrue(before[0]['creating'])
+                after = flow.reconcile(row['dispatch_id'], self.observe_only(None), now=launched + timedelta(seconds=seconds))
+                self.assertEqual(after[0]['state'], 'create_failed')
+                self.assertEqual(registry.inspect(row['dispatch_id'])['events'][-1]['reason'], 'host_never_admitted_create')
+                registry.reservations()
+                with registry.transaction() as connection:
+                    connection.execute('DELETE FROM dispatches')
+
+    def test_an_admitted_create_stays_open_past_its_deadline_because_the_host_cannot_cancel_it(self):
+        row = self.claimed()
+        late = registry.parse(row['launched_at']) + timedelta(seconds=registry.CREATE_DEADLINE + 5)
+        observed = flow.reconcile(row['dispatch_id'], self.observe_only({'phase': 'accepted'}), now=late)
+        self.assertEqual(observed[0]['state'], 'launching')
+        self.assertIn('no cancel', observed[0]['next_action'])
+        with self.assertRaisesRegex(ValueError, 'Observe terminal status'):
+            registry.release(row['dispatch_id'], 'parent-a', 'give up')
+        # The lease lapses, but the expired row still refuses a release that would free a worker about to appear.
+        registry.reservations(now=late + timedelta(seconds=registry.RUN_LEASE))
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
+        with self.assertRaisesRegex(ValueError, 'still creating'):
+            registry.release(row['dispatch_id'], 'parent-a', 'give up')
+        # When it does arrive, the same dispatch binds it.
+        agent = self.snapshot(row, updatedAt=(late + timedelta(seconds=1)).isoformat())
+        recovered = flow.reconcile(row['dispatch_id'], lambda _: {'ok': True, 'agent': agent}, now=late + timedelta(seconds=2))
+        self.assertEqual(recovered[0]['state'], 'started')
+
+    # What the bridge emits when the daemon answers {snapshot: null, error: 'Previously created agent no longer exists'}.
+    REMOVED = {'phase': 'completed', 'outcome_unknown': False, 'agent_id': None, 'agent_created': True}
+
+    def test_a_worker_removed_before_it_was_observed_ends_the_dispatch_and_frees_the_workspace(self):
+        task = dict(self.task, task_id='removed', expected_hours=0.001)
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'W'}
+        row = registry.prepare(self.issue(task)['decision_id'], task, launch, self.usage, accounts=self.accounts, now=self.now)
+        claimed = self.claim_row(row)
+        self.assertTrue(registry.workspace_writers('W', now=self.now))
+        # An expired lease that once saw the create in flight: the state the review found stuck.
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', claimed['dispatch_id'])
+            stored.update(state='expired', creation={'phase': 'accepted', 'in_flight': True})
+            registry.save(connection, stored)
+        settled = flow.reconcile(claimed['dispatch_id'], self.observe_only(self.REMOVED), now=self.now)
+        self.assertEqual(settled[0]['state'], 'canceled')
+        self.assertIn('removed', settled[0]['next_action'])
+        self.assertEqual(registry.workspace_writers('W', now=self.now), [])
+        self.assertEqual(registry.release(claimed['dispatch_id'], 'parent-a', 'give up')['state'], 'canceled')
+
+    def test_a_worker_that_failed_at_its_prompt_and_was_removed_is_not_reported_as_never_created(self):
+        row = self.claimed()
+        store = self.root / 'prompt-failed.json'
+        creation = {'phase': 'failed', 'outcome_unknown': True, 'agent_id': row['dispatch_id'], 'agent_created': True, 'failure_class': 'unknown'}
+        with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)}):
+            settled = flow.reconcile(row['dispatch_id'], self.observe_only(creation), now=self.now)
+        self.assertEqual(settled[0]['state'], 'canceled')
+        self.assertIn('part of the work', settled[0]['next_action'])
+        self.assertNotIn('safe to roll', settled[0]['next_action'])
+        self.assertFalse(store.exists())
+
+    def test_a_failure_before_any_worker_existed_stays_create_failed(self):
+        row = self.claimed()
+        creation = {'phase': 'failed', 'outcome_unknown': True, 'agent_id': row['dispatch_id'], 'agent_created': False, 'failure_class': 'unknown'}
+        settled = flow.reconcile(row['dispatch_id'], self.observe_only(creation), now=self.now)
+        self.assertEqual(settled[0]['state'], 'create_failed')
+        self.assertIn('safe to roll', settled[0]['next_action'])
+
+    def test_roll_reports_a_removed_worker_as_over_not_as_an_unconfirmed_delivery(self):
+        import roll
+        row = self.prepare()
+
+        def host(request):
+            if request['operation'] == 'create':
+                return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+            return {'ok': True, 'agent': None, 'creation': self.REMOVED}
+        args = SimpleNamespace(title='fixture', workspace=None, wait=0)
+        decision = {'decision_id': row['decision_id'], 'selected_bundle': self.bundle}
+        with patch.object(flow, 'host_call', host), patch.object(registry, 'prepare', return_value=row):
+            result, code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
+        self.assertEqual((roll.status_of(result, code), code), ('blocked', 2))
+        self.assertIn('removed', result['next'])
+        self.assertNotIn('continuation_argv', result['worker'])
+
+    def test_a_resume_is_never_settled_from_the_create_record(self):
+        row = self.claimed()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['operation'] = 'resume'
+            registry.save(connection, stored)
+        much_later = registry.parse(row['launched_at']) + timedelta(seconds=registry.CREATE_DEADLINE + 5)
+        self.assertEqual(registry.resolve_creation(row['dispatch_id'], None, now=much_later), (registry.inspect(row['dispatch_id']), False))
+
+    def cooldowns(self):
+        store = self.root / 'cooldowns.json'
+        return store, patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)})
+
+    def test_an_unknown_outcome_ends_the_dispatch_but_cools_nothing_down(self):
+        store, scope = self.cooldowns()
+        with scope:
+            row = self.claimed()
+            settled = flow.settle_create(row, {'phase': 'failed', 'outcome_unknown': True, 'failure_class': 'unknown'}, self.now, None)
+        self.assertEqual(settled['state'], 'create_failed')
+        self.assertEqual(settled['events'][-1]['reason'], 'host_creation_failed:outcome_unknown')
+        self.assertFalse(store.exists())
+
+    def test_two_processes_settling_one_row_count_one_failure(self):
+        store, scope = self.cooldowns()
+        with scope:
+            stale = self.claimed()  # Both read the row while it was still open.
+            for _ in range(2):
+                flow.settle_create(stale, {'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'unknown'}, self.now, None)
+        entries = json.loads(store.read_text(encoding='utf-8'))['entries']
+        self.assertEqual([entry['streak'] for entry in entries.values()], [1])
+
+    def test_a_cooldown_that_cannot_be_written_stops_neither_the_settlement_nor_the_other_rows(self):
+        rows = []
+        for task_id in ('one', 'two'):
+            task = dict(self.task, task_id=task_id, expected_hours=0.001)
+            rows.append(self.claim_row(self.prepare(self.issue(task), task)))
+        import launch_failures
+        with patch.object(launch_failures, 'record', side_effect=PermissionError(5, 'denied')):
+            settled = flow.reconcile(host=self.observe_only({'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'unknown'}), now=self.now)
+        self.assertEqual({row['dispatch_id'] for row in settled}, {row['dispatch_id'] for row in rows})
+        self.assertEqual({row['state'] for row in settled}, {'create_failed'})
+
+    def test_a_cooldown_store_that_cannot_be_cleared_does_not_lose_the_observation(self):
+        row = self.claimed()
+        import launch_failures
+        with patch.object(launch_failures, 'clear', side_effect=PermissionError(5, 'denied')):
+            observed = registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now + timedelta(seconds=11))
+        self.assertEqual(observed['state'], 'started')
+
+    def test_a_quota_store_that_cannot_be_written_does_not_lose_the_observation(self):
+        row = self.claimed()
+        import quota_exhaustion
+        with patch.object(quota_exhaustion, 'record', side_effect=PermissionError(5, 'denied')):
+            observed = registry.observe(row['dispatch_id'], self.snapshot(row, status='error', lastError='quota exceeded'),
+                                        now=self.now + timedelta(seconds=11))
+        self.assertEqual(observed['state'], 'failed')
+
+    def test_a_quota_store_read_denied_for_a_moment_is_retried(self):
+        import override_store
+        import quota_exhaustion
+        store = self.root / 'quota.json'
+        store.write_text('{"accounts": {"seen": {}}}', encoding='utf-8')
+        real, calls = Path.read_text, []
+
+        def read_text(path, *args, **options):
+            calls.append(path)
+            if len(calls) < 3:
+                raise PermissionError(5, 'denied')
+            return real(path, *args, **options)
+        with patch.object(Path, 'read_text', read_text), patch.object(override_store.time, 'sleep'):
+            self.assertEqual(quota_exhaustion._read(store), {'accounts': {'seen': {}}})
+        self.assertEqual(len(calls), 3)
+
+    def test_a_store_replace_denied_for_a_moment_is_retried(self):
+        import override_store
+        store = self.root / 'store.json'
+        real, calls = os.replace, []
+
+        def replace(source, target):
+            calls.append(source)
+            if len(calls) < 3:
+                raise PermissionError(5, 'denied')
+            real(source, target)
+        with patch.object(override_store.os, 'replace', replace), patch.object(override_store.time, 'sleep'):
+            override_store.write(store, {'entries': {}})
+        self.assertEqual(json.loads(store.read_text(encoding='utf-8')), {'entries': {}})
+        self.assertEqual(len(calls), 3)
+
+    def test_a_cooldown_reader_denied_sees_none_and_a_writer_denied_keeps_the_store(self):
+        import launch_failures
+        import override_store
+        store = self.root / 'denied.json'
+        launch_failures.record(self.bundle, 'unknown', path=store)
+        before = store.read_text(encoding='utf-8')
+        with patch.object(Path, 'read_text', side_effect=PermissionError(5, 'denied')), patch.object(override_store.time, 'sleep'):
+            self.assertEqual(launch_failures.active(path=store), {})
+            with self.assertRaises(PermissionError):
+                launch_failures.record(self.bundle, 'unknown', path=store)
+        self.assertEqual(store.read_text(encoding='utf-8'), before)
+
+    def sent_create(self, pause, **prepare):
+        """The create a launch sends when the process stalls for `pause` seconds right after the claim."""
+        import allocator
+        import route_judge
+        row = self.prepare() if not prepare else registry.prepare(self.issue()['decision_id'], self.task, self.launch, self.usage,
+                                                                  accounts=self.accounts, now=self.now, **prepare)
+        sent, offset = {}, [0]
+        real_now, real_claim = registry.utcnow, registry.claim
+
+        def claim(*args, **kwargs):
+            claimed = real_claim(*args, **kwargs)
+            offset[0] = pause
+            return claimed
+
+        def host(request):
+            if request['operation'] == 'resume':
+                return {'ok': False, 'sent': False, 'error': 'worker_not_found'}
+            if request['operation'] == 'create':
+                sent.update(request)
+                return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+            return {'ok': True, 'agent': None, 'creation': None}
+        with patch.object(registry, 'claim', claim), patch.object(registry, 'utcnow', lambda: real_now() + timedelta(seconds=offset[0])), \
+                patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+                patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
+            flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+        launched = registry.parse(registry.inspect(row['dispatch_id'])['launched_at'])
+        return sent, launched, real_now
+
+    def test_a_stall_after_the_claim_cannot_move_the_send_window(self):
+        sent, launched, _ = self.sent_create(300)
+        self.assertEqual(registry.parse(sent['send_by']), launched + timedelta(seconds=registry.CREATE_SEND_WINDOW))
+        self.assertLessEqual(registry.parse(sent['send_by']), registry.parse(sent['create_deadline']))
+
+    def test_a_resume_falling_back_to_create_gets_a_fresh_window_capped_at_the_deadline(self):
+        sent, launched, real_now = self.sent_create(30, resume_agent_id='agent-old', fallback_prompt='Only fixture work')
+        self.assertLess(abs((registry.parse(sent['send_by']) - (real_now() + timedelta(seconds=30 + registry.CREATE_SEND_WINDOW))).total_seconds()), 10)
+        self.assertLess(registry.parse(sent['send_by']), registry.parse(sent['create_deadline']))
+        with registry.transaction() as connection:
+            connection.execute('DELETE FROM dispatches')
+        sent, launched, _ = self.sent_create(300, resume_agent_id='agent-old', fallback_prompt='Only fixture work')
+        self.assertEqual(registry.parse(sent['send_by']), registry.parse(sent['create_deadline']))
+
+    def test_the_create_carries_its_send_window_and_deadline(self):
+        row = self.prepare()
+        sent = {}
+
+        def host(request):
+            if request['operation'] == 'create':
+                sent.update(request)
+                return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+            return {'ok': True, 'agent': None, 'creation': None}
+        flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
+        launched = registry.parse(registry.inspect(row['dispatch_id'])['launched_at'])
+        self.assertEqual(registry.parse(sent['send_by']), launched + timedelta(seconds=registry.CREATE_SEND_WINDOW))
+        self.assertEqual(registry.parse(sent['create_deadline']), launched + timedelta(seconds=registry.CREATE_DEADLINE))
+
+    def test_inside_the_window_nothing_reads_as_a_failure(self):
+        import roll
+        from types import SimpleNamespace
+        row = self.prepare()
+
+        def host(request):
+            if request['operation'] == 'create':
+                return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+            return {'ok': True, 'agent': None, 'missing': False, 'creation': {'phase': 'accepted'},
+                    'completion_notification': {'status': 'watching'}}
+        args = SimpleNamespace(title='fixture', workspace=None, wait=0)
+        decision = {'decision_id': row['decision_id'], 'selected_bundle': self.bundle}
+        with patch.object(flow, 'host_call', host), patch.object(registry, 'prepare', return_value=row):
+            result, code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
+        status = roll.status_of(result, code)
+        self.assertEqual((status, code), ('pending', 0))
+        worker = result['worker']
+        self.assertEqual((worker['state'], worker['creating'], worker['creation_phase']), ('launching', True, 'accepted'))
+        self.assertNotIn('observe_error', worker)
+        self.assertNotIn('error', worker)
+        compact = roll.compact(result, status, 'detail.json')
+        self.assertIn('not a failure', compact['next_action'])
+        self.assertIn('Do not roll again', compact['next_action'])
+        self.assertNotIn('cause', compact)
+        self.assertTrue(compact['next_argv'])
+
+    def test_a_host_that_cannot_be_read_says_so_without_settling(self):
+        row = self.claimed()
+        late = registry.parse(row['launched_at']) + timedelta(hours=1)
+        observed = flow.reconcile(row['dispatch_id'], lambda _: {'ok': False, 'error': 'host_timeout'}, now=late)
+        self.assertEqual(observed[0]['error'], 'host_timeout')
+        self.assertIsNone(registry.inspect(row['dispatch_id']).get('creation'))
+
+    def test_release_settles_a_finished_create_first(self):
+        row = self.claimed()
+        args = SimpleNamespace(stage='dispatch', dispatch_action='release', dispatch_id=row['dispatch_id'],
+                               parent_id='parent-a', basis='cancel')
+        with patch.object(flow, 'host_call', self.observe_only({'phase': 'failed', 'failure_class': 'unknown'})):
+            self.assertEqual(flow.cli(args)['state'], 'create_failed')
+
+
+class ReleaseTests(unittest.TestCase):
+    """release only ends what is over, so a host it cannot read leaves an unsettled launch alone."""
+    setUp, snapshot, issue, prepare = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue, DispatchTests.prepare
+    claimed, claim_row = CreateLifecycleTests.claimed, CreateLifecycleTests.claim_row
+
+    def release(self, row, host):
+        args = SimpleNamespace(stage='dispatch', dispatch_action='release', dispatch_id=row['dispatch_id'],
+                               parent_id='parent-a', basis='give up')
+        with patch.object(flow, 'host_call', host):
+            return flow.cli(args)
+
+    def lapsed(self, **changes):
+        row = self.claimed()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored.update(state='expired', **changes)
+            registry.save(connection, stored)
+        return row
+
+    def test_an_expired_launch_is_not_released_while_the_host_cannot_be_read(self):
+        for changes in ({}, {'agent_id': 'live-worker'}):
+            with self.subTest(changes=changes):
+                row = self.lapsed(**changes)
+                with self.assertRaisesRegex(ValueError, 'could not be read'):
+                    self.release(row, lambda _: {'ok': False, 'error': 'host_timeout'})
+                self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
+                with registry.transaction() as connection:
+                    connection.execute('DELETE FROM dispatches')
+
+    def resumed(self, **stored_changes):
+        row = registry.prepare(self.issue()['decision_id'], self.task, self.launch, self.usage, accounts=self.accounts,
+                               now=self.now, resume_agent_id='old-worker', fallback_prompt='Only fixture work')
+        row = self.claim_row(row)
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored.update(stored_changes)
+            registry.save(connection, stored)
+        return stored
+
+    def previous_turn(self, row, **changes):
+        # The worker as a00ecb3a and 742b43c9 saw it: idle since long before this launch.
+        return self.snapshot(row, status='idle', id='old-worker', attentionReason='finished',
+                             lastUserMessageAt=(self.now - timedelta(days=2)).isoformat(), **changes)
+
+    def never_bound(self, row):
+        labels = dict(row['request']['labels'], **{'router.dispatch_id': 'dispatch-before', 'router.task_id': 'task-before'})
+        return self.previous_turn(row, labels=labels, updatedAt=(self.now - timedelta(days=2)).isoformat())
+
+    def test_a_resume_that_never_bound_can_be_released_once_its_lease_has_lapsed(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        released = self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})
+        self.assertEqual(released['state'], 'canceled')
+        self.assertFalse(registry.unresolved(registry.inspect(row['dispatch_id']), registry.utcnow()))
+
+    def test_a_resume_that_never_bound_says_so_while_its_lease_runs(self):
+        row = self.resumed()
+        with self.assertRaises(ValueError) as refused:
+            self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})
+        self.assertIn("does not carry this dispatch's labels", str(refused.exception))
+        self.assertNotIn('could not be read', str(refused.exception))
+        self.assertIn(row['lease_until'], str(refused.exception))
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'launching')
+
+    def test_a_resume_that_never_bound_is_still_refused_while_the_host_cannot_be_read(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        with self.assertRaisesRegex(ValueError, 'could not be read'):
+            self.release(row, lambda _: {'ok': False, 'error': 'host_timeout'})
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
+
+    def test_a_bound_resume_whose_turn_never_landed_keeps_no_lease_and_can_be_released(self):
+        row = self.resumed()
+        idle = self.previous_turn(row)
+        watched = registry.observe(row['dispatch_id'], idle, now=self.now + timedelta(minutes=5))
+        self.assertEqual((watched['state'], watched['lease_until']), ('launched', row['lease_until']))
+        lapsed = registry.observe(row['dispatch_id'], idle, now=self.now + timedelta(minutes=11))
+        self.assertEqual(lapsed['state'], 'expired')
+        self.assertEqual(registry.observe(row['dispatch_id'], idle, now=self.now + timedelta(minutes=12))['state'], 'expired')
+        self.assertEqual(self.release(row, lambda _: {'ok': True, 'agent': idle})['state'], 'canceled')
+
+    def test_a_turn_that_lands_after_the_lease_brings_the_dispatch_back(self):
+        landed = (self.now + timedelta(minutes=12)).isoformat()
+        for changes, state in (({'status': 'running'}, 'started'),
+                               ({'lastUserMessageAt': landed, 'status': 'initializing', 'attentionReason': None}, 'launched')):
+            with self.subTest(state=state):
+                row = self.resumed(task_id=state)
+                registry.observe(row['dispatch_id'], self.previous_turn(row), now=self.now + timedelta(minutes=11))
+                back = registry.observe(row['dispatch_id'], {**self.previous_turn(row), **changes},
+                                        now=self.now + timedelta(minutes=12))
+                self.assertEqual(back['state'], state)
+                self.assertGreater(registry.parse(back['lease_until']), self.now + timedelta(minutes=12))
+                with self.assertRaisesRegex(ValueError, 'Observe terminal status'):
+                    registry.release(row['dispatch_id'], 'parent-a', 'give up', now=self.now + timedelta(minutes=12))
+                with registry.transaction() as connection:
+                    connection.execute('DELETE FROM dispatches')
+
+    def watcher_marker(self, row):
+        state = self.root / 'watcher-state'
+        patcher = patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        notifications = state / 'paseo-notifications'
+        notifications.mkdir(parents=True)
+        (notifications / f"{row['dispatch_id']}.json").write_text('{}', encoding='utf-8')
+        return notifications / f"{row['dispatch_id']}.json.creation-failed"
+
+    def test_release_stops_the_dispatchs_watcher(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        marker = self.watcher_marker(row)
+        self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})
+        self.assertTrue(marker.exists())
+
+    def test_release_of_what_was_already_over_leaves_its_watcher_to_finish(self):
+        # A finished worker's notice may still be on its way.
+        row = self.resumed()
+        marker = self.watcher_marker(row)
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['state'] = 'completed'
+            registry.save(connection, stored)
+        self.assertEqual(self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})['state'], 'completed')
+        self.assertFalse(marker.exists())
+
+    def test_release_with_no_watcher_leaves_nothing_behind(self):
+        row = self.prepare()
+        marker = self.watcher_marker(row)
+        (marker.parent / f"{row['dispatch_id']}.json").unlink()
+        self.assertEqual(self.release(row, lambda _: self.fail('nothing was sent'))['state'], 'canceled')
+        self.assertFalse(marker.exists())
+
+    def test_a_marker_that_cannot_be_written_does_not_undo_the_release(self):
+        row = self.resumed(lease_until=registry.stamp(self.now - timedelta(seconds=1)))
+        marker = self.watcher_marker(row)
+        with patch.object(Path, 'write_text', side_effect=PermissionError(5, 'denied')):
+            self.assertEqual(self.release(row, lambda _: {'ok': True, 'agent': self.never_bound(row)})['state'], 'canceled')
+        self.assertFalse(marker.exists())
+
+    def test_the_same_release_goes_through_once_the_host_says_it_is_over(self):
+        row = self.lapsed(agent_id='gone-worker')
+        released = self.release(row, lambda _: {'ok': True, 'agent': None, 'missing': True})
+        self.assertEqual(released['state'], 'canceled')
+
+    def test_a_dispatch_never_sent_needs_no_host_to_be_released(self):
+        row = self.prepare()
+
+        def host(_):
+            self.fail('nothing was sent, so there is nothing to observe')
+        self.assertEqual(self.release(row, host)['state'], 'canceled')
+
+
+class WatchLimitTests(unittest.TestCase):
+    """--watch-seconds against the real host_call: a real process that never answers, whose child keeps stdout open."""
+    setUp, snapshot, issue, prepare = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue, DispatchTests.prepare
+    claimed, claim_row = CreateLifecycleTests.claimed, CreateLifecycleTests.claim_row
+
+    def test_watch_seconds_is_a_hard_limit_on_a_hung_bridge(self):
+        bridge = self.root / 'hung_bridge.mjs'
+        bridge.write_text("import {spawn} from 'node:child_process';\n"
+                          "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 40000)'], {stdio: 'inherit', detached: true}).unref();\n"
+                          "setTimeout(() => {}, 60000);\n", encoding='utf-8')
+        row = self.claimed()
+        with patch.dict(os.environ, {'ROUTER_PASEO_BRIDGE': str(bridge)}):
+            started = time.monotonic()
+            result = flow.launch(row['dispatch_id'], 'parent-a', watch_seconds=2, poll_seconds=1)
+            elapsed = time.monotonic() - started
+            self.assertEqual(result['state'], 'launching')
+            self.assertEqual(result['observe_error'], 'host_timeout')
+            self.assertTrue(result['continuation_argv'])
+            self.assertLess(elapsed, 3.5)
+            started = time.monotonic()
+            flow.launch(row['dispatch_id'], 'parent-a', watch_seconds=0, poll_seconds=1)
+            self.assertLess(time.monotonic() - started, flow.OBSERVE_FLOOR + 1.5)
+
+    def test_each_observation_is_cut_at_what_is_left_of_the_watch(self):
+        row = self.claimed()
+        timeouts = []
+
+        def host(request):
+            timeouts.append(request['timeout_seconds'])
+            return {'ok': False, 'error': 'host_timeout'}
+        with patch.object(flow, 'OBSERVE_FLOOR', 0.1):
+            flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=2, poll_seconds=1)
+        self.assertGreater(len(timeouts), 1)
+        self.assertLessEqual(timeouts[0], 2)
+        self.assertEqual(timeouts, sorted(timeouts, reverse=True))
+
+    def run_on_a_clock(self, watch, poll, observation):
+        """launch on a virtual clock against a host that takes `observation` seconds, up to the timeout it is given."""
+        row = self.claimed()
+        clock = [0.0]
+        timeouts = []
+
+        def host(request):
+            timeouts.append(request['timeout_seconds'])
+            clock[0] += min(observation, request['timeout_seconds'])
+            return {'ok': False, 'error': 'host_timeout'}
+        fake = SimpleNamespace(monotonic=lambda: clock[0], sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+        with patch.object(flow, 'time', fake):
+            flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=watch, poll_seconds=poll)
+        with registry.transaction() as connection:
+            connection.execute('DELETE FROM dispatches')
+        return clock[0], timeouts
+
+    def test_no_watch_overruns_whatever_its_observations_cost(self):
+        for watch, poll in ((10, 5), (10, 1), (7, 5), (30, 5), (1, 1), (120, 5)):
+            for observation in (0.2, 1, 3, 4.6, 5.5, 9, 60):
+                with self.subTest(watch=watch, poll=poll, observation=observation):
+                    elapsed, _ = self.run_on_a_clock(watch, poll, observation)
+                    self.assertLessEqual(elapsed, watch + 0.001)
+
+    def test_only_a_first_observation_can_exceed_a_short_watch(self):
+        elapsed, timeouts = self.run_on_a_clock(0, 1, 60)
+        self.assertEqual((elapsed, timeouts), (flow.OBSERVE_FLOOR, [flow.OBSERVE_FLOOR]))
+
+    def test_a_clock_crossing_the_floor_between_reads_cannot_make_a_negative_sleep(self):
+        row = self.claimed()
+        clock = [0.0]
+
+        def monotonic():
+            clock[0] += 0.01
+            return clock[0]
+
+        def sleep(seconds):
+            if seconds < 0:
+                raise ValueError('sleep length must be non-negative')
+            clock[0] += seconds
+
+        def host(_):
+            if clock[0] < 4:  # The next read leaves the floor plus 5 ms, and a read after it less than the floor.
+                clock[0] = 10.01 - flow.OBSERVE_FLOOR - 0.015
+            return {'ok': False, 'error': 'host_timeout'}
+        with patch.object(flow, 'time', SimpleNamespace(monotonic=monotonic, sleep=sleep)):
+            self.assertEqual(flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=10, poll_seconds=5)['state'], 'launching')
+
+    def test_a_sleep_leaves_room_for_the_next_observation(self):
+        _, timeouts = self.run_on_a_clock(10, 5, 4.6)
+        self.assertEqual([round(t, 1) for t in timeouts], [10, 5])
+
+    def test_an_expired_launch_that_recovers_is_observed_once_on_a_zero_watch(self):
+        row = self.claimed()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['state'] = 'expired'
+            registry.save(connection, stored)
+        observations = []
+
+        def host(request):
+            observations.append(request['operation'])
+            return {'ok': True, 'agent': self.snapshot(row, updatedAt=registry.stamp(registry.utcnow()))}
+        self.assertEqual(flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)['state'], 'started')
+        self.assertEqual(observations, ['observe'])
+
+    def test_a_killed_bridge_is_reaped(self):
+        calls = []
+
+        class Hung:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def wait(self, timeout=None):
+                calls.append(('wait', timeout))
+                if timeout is not None:
+                    raise flow.subprocess.TimeoutExpired('node', timeout)
+
+            def kill(self):
+                calls.append(('kill', None))
+        with patch.object(flow.subprocess, 'Popen', Hung):
+            result = flow.host_call({'operation': 'observe', 'timeout_seconds': 1})
+        self.assertEqual(result['error'], 'host_timeout')
+        self.assertEqual(calls, [('wait', 1), ('kill', None), ('wait', None)])
+
+
+class WorkspaceWriterTests(unittest.TestCase):
+    """One writer per workspace, decided from recorded dispatches, the host's running agents and the classifier field."""
+    setUp, snapshot, issue = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue
+
+    def prepare_in(self, workspace='W', task_id='writer', **options):
+        task = dict(self.task, task_id=task_id, expected_hours=0.001)
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': workspace}
+        return registry.prepare(self.issue(task)['decision_id'], task, launch, self.usage,
+                                accounts=self.accounts, now=self.now, **options)
+
+    def test_each_open_state_of_a_writer_holds_the_workspace_and_terminal_ones_do_not(self):
+        first = self.prepare_in()
+        for state in ('prepared', 'launching', 'launched', 'started'):
+            with self.subTest(state=state):
+                with registry.transaction() as connection:
+                    row = registry.get(connection, 'dispatches', first['dispatch_id'])
+                    row['state'] = state
+                    registry.save(connection, row)
+                with self.assertRaises(registry.WorkspaceBusy) as caught:
+                    self.prepare_in(task_id='second')
+                self.assertEqual(caught.exception.holders[0]['dispatch_id'], first['dispatch_id'])
+        for state in ('completed', 'failed', 'create_failed', 'canceled'):
+            with self.subTest(state=state):
+                with registry.transaction() as connection:
+                    row = registry.get(connection, 'dispatches', first['dispatch_id'])
+                    row['state'] = state
+                    registry.save(connection, row)
+                other = self.prepare_in(task_id='third-' + state)
+                with registry.transaction() as connection:
+                    connection.execute('DELETE FROM dispatches WHERE id=?', (other['dispatch_id'],))
+
+    def test_other_workspaces_and_no_workspace_are_unaffected(self):
+        self.prepare_in()
+        self.assertEqual(self.prepare_in('other', task_id='elsewhere')['state'], 'prepared')
+
+    def test_read_only_coexists_both_ways(self):
+        reader = self.prepare_in(task_id='reader', access='read_only')
+        writer = self.prepare_in(task_id='writer')
+        self.assertEqual(self.prepare_in(task_id='reader-2', access='read_only')['state'], 'prepared')
+        self.assertEqual(registry.workspace_writers('W', now=self.now)[0]['dispatch_id'], writer['dispatch_id'])
+        self.assertEqual(reader['access'], 'read_only')
+
+    def test_a_row_recorded_before_access_existed_counts_as_a_writer(self):
+        row = self.prepare_in()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            del stored['access']
+            registry.save(connection, stored)
+        with self.assertRaises(registry.WorkspaceBusy):
+            self.prepare_in(task_id='second')
+
+    def test_allow_concurrent_is_recorded_on_the_dispatch(self):
+        self.prepare_in()
+        row = self.prepare_in(task_id='second', allow_concurrent='different directories')
+        self.assertEqual(row['allow_concurrent'], 'different directories')
+
+    def test_access_is_the_flag_then_read_only_review_then_write_and_never_the_text(self):
+        import roll
+        cases = (
+            (None, None, 'write'), (None, False, 'write'), (None, 'true', 'write'), (None, 1, 'write'),
+            (None, True, 'read_only'), ('write', True, 'write'), ('read-only', False, 'read_only'), ('read-only', None, 'read_only'),
+        )
+        for flag, field, expected in cases:
+            with self.subTest(flag=flag, field=field):
+                # A title and brief full of review words change nothing.
+                args = SimpleNamespace(access=flag, title='Read-only independent code review 只读审查', brief=None)
+                self.assertEqual(roll.task_access(args, field), expected)
+
+    def holders(self, agents, parent='parent-a'):
+        return flow.workspace_holders('W', parent, host=lambda _: {'ok': True, 'agents': agents})
+
+    def test_a_running_router_agent_holds_the_workspace_even_after_its_dispatch_completed(self):
+        row = self.prepare_in()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['state'] = 'completed'
+            registry.save(connection, stored)
+        holders, error, _ = self.holders([{'id': 'a1', 'status': 'running', 'dispatch_id': row['dispatch_id']}])
+        self.assertIsNone(error)
+        self.assertEqual([(h['agent_id'], h['agent_status']) for h in holders], [('a1', 'running')])
+
+    def test_running_read_only_agents_and_the_caller_itself_do_not_hold_it(self):
+        reader = self.prepare_in(task_id='reader', access='read_only')
+        holders, _, _ = self.holders([{'id': 'a1', 'status': 'running', 'dispatch_id': reader['dispatch_id']},
+                                   {'id': 'parent-a', 'status': 'running', 'dispatch_id': 'unknown-dispatch'}])
+        self.assertEqual(holders, [])
+        holders, _, _ = self.holders([{'id': 'a2', 'status': 'running', 'dispatch_id': 'unknown-dispatch'}])
+        self.assertEqual(holders[0]['agent_id'], 'a2')
+
+    def started_as(self, agent, task_id):
+        row = self.prepare_in(task_id=task_id, allow_concurrent='fixture')
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored.update(state='started', launched_at=registry.stamp(self.now), agent_id=agent,
+                          lease_until=registry.stamp(self.now + timedelta(seconds=600)))
+            registry.save(connection, stored)
+        return row
+
+    def test_the_callers_own_dispatch_does_not_hold_its_workspace_for_it(self):
+        own = self.started_as('parent-a', 'coordinator')
+        running = [{'id': 'parent-a', 'status': 'running', 'dispatch_id': own['dispatch_id']}]
+        self.assertEqual(flow.workspace_holders('W', 'parent-a', host=lambda _: {'ok': True, 'agents': running}), ([], None, None))
+        self.assertEqual(self.prepare_in(task_id='next')['state'], 'prepared')
+
+    def test_anothers_dispatch_still_holds_it_and_so_do_the_callers_own_workers(self):
+        self.started_as('parent-a', 'coordinator')
+        other = self.started_as('someone-else', 'other')
+        holders, _, _ = flow.workspace_holders('W', 'parent-a', host=lambda _: {'ok': True, 'agents': []})
+        self.assertEqual([h['dispatch_id'] for h in holders], [other['dispatch_id']])
+        with self.assertRaises(registry.WorkspaceBusy) as caught:
+            self.prepare_in(task_id='next')
+        self.assertEqual([h['dispatch_id'] for h in caught.exception.holders], [other['dispatch_id']])
+        # As seen by the other agent, the coordinator is the one in its way.
+        self.assertEqual(len(registry.workspace_writers('W', caller='someone-else', now=self.now)), 1)
+
+    def test_an_unreadable_host_leaves_recorded_writers_in_force(self):
+        row = self.prepare_in()
+        holders, error, _ = flow.workspace_holders('W', 'parent-a', host=lambda _: {'ok': False, 'error': 'host_timeout'})
+        self.assertEqual(error, 'host_timeout')
+        self.assertEqual(holders[0]['dispatch_id'], row['dispatch_id'])
+
+    def test_concurrent_prepare_lets_exactly_one_writer_in(self):
+        decisions = []
+        for index in range(2):
+            task = dict(self.task, task_id=f'racer-{index}', expected_hours=0.001)
+            decisions.append((self.issue(task)['decision_id'], task))
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'W'}
+        with ThreadPoolExecutor(2) as pool:
+            def attempt(item):
+                try:
+                    return registry.prepare(item[0], item[1], dict(launch), self.usage, accounts=self.accounts, now=self.now)['state']
+                except registry.WorkspaceBusy:
+                    return 'busy'
+            self.assertEqual(sorted(pool.map(attempt, decisions)), ['busy', 'prepared'])
+
+
+class RollLifecycleTests(unittest.TestCase):
+    """roll end to end against a fake host and a fake judge."""
+    setUp, snapshot, issue = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue
+    roll = RollTests.roll
+    brief = RollTests.brief
+
+    def setUp(self):
+        DispatchTests.setUp(self)
+        self.creates = []
+        self.running = []
+        self.directories = {}
+
+    def host(self, request):
+        operation = request['operation']
+        if operation == 'workspace_agents':
+            return {'ok': True, 'agents': list(self.running), 'cwd': self.directories.get(request['workspace_id'])}
+        if operation == 'create':
+            self.creates.append(request['dispatch_id'])
+            return {'ok': False, 'sent': True, 'error': 'host_timeout'}
+        return {'ok': True, 'agent': None, 'creation': {'phase': 'accepted'}}
+
+    def decision(self):
+        return {'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
+                'decision': {'action': 'start'}, 'task_profile': {'interaction_style': 'engineering'}}
+
+    def fresh_decision(self):
+        decision = self.decision()
+        decision.pop('decision_id', None)
+        return decision
+
+    def go(self, **flags):
+        flags.setdefault('hours', 0.001)
+        flags.setdefault('task', None)
+        flags.setdefault('task_id', None)
+        flags.setdefault('new_worker', False)
+        flags.setdefault('resume', None)
+        flags.setdefault('fast', False)
+        flags.setdefault('keep_whole', None)
+        flags.setdefault('access', None)
+        flags.setdefault('allow_concurrent', None)
+        flags.setdefault('account', None)
+        flags.setdefault('verbose', True)
+        with patch.object(flow, 'host_call', self.host), patch.object(flow, 'launch', wraps=flow.launch):
+            (result, _), _ = self.roll(self.fresh_decision(), reachable=True, **flags)
+        return result
+
+    def test_no_interaction_style_exempts_a_brief_from_the_writer_rule(self):
+        # text_only on a real ledger entry was a brief that committed code and synced it.
+        first = self.go(workspace='W')
+        for style in ('exploration', 'text_only', 'advisory'):
+            with self.subTest(style=style), patch.object(self, 'decision', lambda: {
+                    **RollLifecycleTests.decision(self), 'task_profile': {'interaction_style': style}}):
+                result = self.go(workspace='W', new_worker=True)
+                self.assertEqual(result['status'], 'blocked')
+                self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
+        self.assertEqual(len(self.creates), 1)
+        # Classifier read_only_review=True exempts the brief as read_only unless --access write overrides it.
+        with patch.object(self, 'decision', lambda: {
+                **RollLifecycleTests.decision(self), 'task_profile': {'interaction_style': 'engineering', 'read_only_review': True}}):
+            ro_result = self.go(workspace='W', new_worker=True)
+            self.assertEqual(ro_result['status'], 'pending')
+            self.assertEqual(ro_result['worker']['access'], 'read_only')
+            forced_write = self.go(workspace='W', new_worker=True, access='write')
+            self.assertEqual(forced_write['status'], 'blocked')
+        self.assertEqual(len(self.creates), 2)
+
+    def in_cwd(self, cwd):
+        return patch.dict(os.environ, {'PASEO_AGENT_CWD': cwd})
+
+    def test_no_workspace_names_other_writers_in_the_same_directory_and_blocks_nothing(self):
+        with self.in_cwd('C:/work/A'):
+            first = self.go()
+            second = self.go(new_worker=True)
+        self.assertEqual(second['status'], 'pending')
+        self.assertEqual(len(self.creates), 2)
+        self.assertNotIn('warnings', first)
+        self.assertTrue(any(first['worker']['dispatch_id'] in note for note in second['warnings']))
+        self.assertTrue(any(first['worker']['dispatch_id'] in note for note in second['assumptions']))
+        with self.in_cwd('c:\\work\\A\\' if os.name == 'nt' else 'C:/work/A/'):
+            compact = self.go(new_worker=True, verbose=False)
+        self.assertEqual(compact['status'], 'pending')
+        self.assertIn(first['worker']['dispatch_id'], compact['warnings'][0])
+
+    def resuming(self, cwd):
+        import roll
+        worker = {'agent_id': 'worker-x'}
+        return (patch.object(registry, 'reusable_workers', return_value=[worker]),
+                patch.object(roll, '_bundle_matches_worker', return_value=True),
+                patch.object(roll, 'match_reusable_worker', return_value=worker),
+                patch.object(registry, 'paseo_agent_record', return_value={'cwd': cwd} if cwd else None))
+
+    def test_a_resume_with_no_workspace_warns_about_where_the_worker_lives_not_the_parent(self):
+        with self.in_cwd('C:/work/Y'):
+            there = self.go(task_id='writer-there')['worker']['dispatch_id']
+        with self.in_cwd('C:/work/P'):
+            here = self.go(task_id='writer-here')['worker']['dispatch_id']
+            workers, matches, match, record = self.resuming('C:/work/Y')
+            with workers, matches, match, record:
+                resumed = self.go(task_id='follow-up')
+        row = registry.inspect(resumed['worker']['dispatch_id'])
+        self.assertEqual((row['operation'], row['cwd']), ('resume', 'C:/work/Y'))
+        self.assertEqual(resumed['status'], 'pending')
+        self.assertTrue(any(there in note for note in resumed['warnings']))
+        self.assertFalse(any(here in note for note in resumed['warnings']))
+
+    def test_a_resumed_worker_of_unknown_directory_is_taken_to_be_in_the_parents(self):
+        with self.in_cwd('C:/work/P'):
+            here = self.go(task_id='writer-here')['worker']['dispatch_id']
+            workers, matches, match, record = self.resuming(None)
+            with workers, matches, match, record:
+                resumed = self.go(task_id='follow-up')
+        self.assertEqual(registry.inspect(resumed['worker']['dispatch_id'])['operation'], 'resume')
+        self.assertTrue(any(here in note for note in resumed['warnings']))
+
+    def test_no_warning_elsewhere_for_a_reader_or_once_the_writer_has_ended(self):
+        with self.in_cwd('C:/work/A'):
+            self.go()
+            reader = self.go(new_worker=True, access='read-only')
+        self.assertNotIn('warnings', reader)
+        with self.in_cwd('C:/work/B'):
+            self.assertNotIn('warnings', self.go(new_worker=True))
+        with registry.transaction() as connection:
+            for row in registry.rows(connection, 'dispatches'):
+                row['state'] = 'completed'
+                registry.save(connection, row)
+        with self.in_cwd('C:/work/A'):
+            self.assertNotIn('warnings', self.go(new_worker=True))
+
+    def test_an_observed_worker_counts_in_the_directory_it_runs_in(self):
+        first = self.go(workspace='W')
+        row = registry.inspect(first['worker']['dispatch_id'])
+        snapshot = self.snapshot(row, updatedAt=registry.stamp(registry.utcnow()), cwd='C:/work/W', status='running')
+        registry.observe(row['dispatch_id'], snapshot)
+        with self.in_cwd('C:/work/W'):
+            result = self.go(new_worker=True)
+        self.assertIn(first['worker']['dispatch_id'], result['warnings'][0])
+
+    def test_workspace_ids_on_one_checkout_warn_about_each_other_and_block_nothing(self):
+        self.directories = {'W': 'C:/work/checkout', 'X': 'c:\\work\\checkout' if os.name == 'nt' else 'C:/work/checkout', 'Y': 'C:/work/other'}
+        first = self.go(workspace='W')
+        self.assertNotIn('warnings', first)
+        second = self.go(workspace='X', new_worker=True)
+        self.assertEqual(second['status'], 'pending')
+        self.assertEqual(len(self.creates), 2)
+        for field in ('warnings', 'assumptions'):
+            self.assertTrue(any(first['worker']['dispatch_id'] in note for note in second[field]))
+        self.assertNotIn('warnings', self.go(workspace='Y', new_worker=True))
+        # The same ID is still the writer rule's to refuse.
+        self.assertEqual(self.go(workspace='W', new_worker=True)['status'], 'blocked')
+
+    def test_a_writer_in_a_workspace_is_named_to_a_roll_with_none_before_its_worker_exists(self):
+        self.directories = {'W': 'C:/work/checkout'}
+        first = self.go(workspace='W')
+        with self.in_cwd('C:/work/checkout'):
+            result = self.go(new_worker=True)
+        self.assertIn(first['worker']['dispatch_id'], result['warnings'][0])
+
+    def test_a_directory_paseo_does_not_give_warns_about_nothing(self):
+        self.go(workspace='W')
+        self.assertNotIn('warnings', self.go(workspace='X', new_worker=True))
+
+    def test_allow_concurrent_is_not_warned_again_about_the_writer_it_named(self):
+        self.directories = {'W': 'C:/work/checkout'}
+        self.go(workspace='W')
+        self.assertNotIn('warnings', self.roll_forced(lambda _: None))
+
+    def test_an_unreadable_host_lets_the_roll_through_and_says_so(self):
+        host = self.host
+
+        def unreadable(request):
+            return {'ok': False, 'error': 'host_timeout'} if request['operation'] == 'workspace_agents' else host(request)
+        with patch.object(self, 'host', unreadable):
+            result = self.go(workspace='W')
+        self.assertEqual(result['status'], 'pending')
+        self.assertTrue(any('host_timeout' in note for note in result['assumptions']))
+
+    def test_new_worker_beats_the_open_dispatch_of_the_same_brief(self):
+        first = self.go()
+        again = self.go()
+        self.assertEqual(again['worker']['dispatch_id'], first['worker']['dispatch_id'])
+        self.assertEqual(len(self.creates), 1)
+        fresh = self.go(new_worker=True)
+        self.assertNotEqual(fresh['worker']['dispatch_id'], first['worker']['dispatch_id'])
+        self.assertEqual(len(self.creates), 2)
+
+    def test_second_writer_in_a_workspace_is_blocked_even_with_new_worker(self):
+        first = self.go(workspace='W')
+        self.assertEqual(first['status'], 'pending')
+        result = self.go(workspace='W', new_worker=True)
+        self.assertEqual(result['status'], 'blocked')
+        self.assertEqual(result['error'], 'workspace_has_active_writer')
+        self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
+        for needle in (first['worker']['dispatch_id'], '--access read-only', '--allow-concurrent'):
+            self.assertIn(needle, result['next'])
+        self.assertEqual(len(self.creates), 1)
+
+    def test_compact_blocked_names_the_holder_and_the_way_out(self):
+        first = self.go(workspace='W')
+        compact = self.go(workspace='W', new_worker=True, verbose=False)
+        self.assertEqual(compact['status'], 'blocked')
+        self.assertEqual(compact['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
+        self.assertIn('--allow-concurrent', compact['next_action'])
+        self.assertEqual(compact['cause'], 'workspace_has_active_writer')
+
+    def test_a_running_router_agent_blocks_a_workspace_with_no_open_dispatch(self):
+        self.running = [{'id': 'old-worker', 'status': 'running', 'dispatch_id': 'unknown'}]
+        result = self.go(workspace='W')
+        self.assertEqual(result['status'], 'blocked')
+        self.assertEqual(result['blocked_by'][0]['agent_id'], 'old-worker')
+        self.assertEqual(self.creates, [])
+
+    def test_read_only_flag_and_allow_concurrent_get_through_and_the_reason_reaches_the_ledger(self):
+        self.go(workspace='W')
+        reader = self.go(workspace='W', new_worker=True, access='read-only')
+        self.assertEqual(reader['status'], 'pending')
+        self.assertEqual(reader['worker']['access'], 'read_only')
+        ledger = []
+        forced = self.roll_forced(ledger.append)
+        self.assertEqual(forced['status'], 'pending')
+        self.assertEqual(ledger[0]['stage'], 'allow_concurrent')
+        self.assertEqual(ledger[0]['reason'], 'separate directories')
+        self.assertEqual(ledger[0]['workspace'], 'W')
+
+    def roll_forced(self, append_ledger):
+        import roll
+        args = SimpleNamespace(title='fixture', workspace='W', wait=0, new_worker=True, access=None,
+                               allow_concurrent='separate directories')
+        task = dict(self.task, task_id='forced', expected_hours=0.001)
+        decision = dict(self.decision(), **registry.issue(self.decision(), task, self.now))
+        judge = SimpleNamespace(append_ledger=append_ledger)
+        with patch.object(flow, 'host_call', self.host):
+            result, code = roll.paseo(args, {}, decision, task, 'fixture', 'parent-a', self.usage, judge=judge)
+        return dict(result, status=roll.status_of(result, code))
+
+    def test_exit_status_of_a_settled_create_is_an_error_with_a_safe_next_step(self):
+        import roll
+        first = self.go()
+
+        def settled(request):
+            return {'ok': True, 'agent': None, 'creation': {'phase': 'failed', 'failure_class': 'unknown'}}
+        args = SimpleNamespace(title='fixture', workspace=None, wait=0)
+        decision = {'decision_id': 'unused', 'selected_bundle': self.bundle}
+        with patch.object(flow, 'host_call', settled), \
+                patch.object(registry, 'prepare', return_value=registry.inspect(first['worker']['dispatch_id'])):
+            result, code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
+        self.assertEqual((roll.status_of(result, code), code), ('error', 1))
+        self.assertEqual(result['caller_action'], 'roll_again_safe')
+        self.assertIn('safe to roll', roll.compact(result, 'error', 'x')['next_action'])
 
 
 if __name__ == '__main__':

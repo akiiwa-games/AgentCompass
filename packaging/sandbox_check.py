@@ -187,7 +187,7 @@ class Fixture:
                 if self.path.endswith("/chat/completions"):
                     profile = {"work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
                                "context_scale": 1, "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
-                               "needs_visual": False, "needs_gui": False, "local_only": True, "expected_hours": 0.5,
+                               "needs_visual": False, "needs_gui": False, "local_only": True, "realtime_loop": False, "wants_fast": False, "read_only_review": False, "expected_hours": 0.5,
                                "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",
                                "multi_task": False, "task_count": "1",
                                "reason": "sandbox fixture classification of a local util.py edit"}
@@ -444,7 +444,7 @@ def scenario_clean_install(ctx):
         "objective": "Fix the pagination bug", "work_kind": "general_implementation", "expected_hours": 1,
         "needs": {"local_only": True},
         "profile": {"reasoning_depth": 3, "code_complexity": 2, "context_scale": 2, "hallucination_risk": 2, "error_cost": 2,
-                    "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering",
+                    "needs_visual": False, "needs_gui": False, "local_only": True, "wants_fast": False, "read_only_review": False, "interaction_style": "engineering", "multi_task": False, "task_count": "1",
                     "reason": "sandbox fixture"}}}), encoding="utf-8")
     result = box.run_command(op, [box.agentcompass, "plan", "--input", task, "--dry-run"], ROUTER_LEDGER=str(box.state / "ledger.jsonl"))
     plan = parse_json(result.stdout) or {}
@@ -1015,12 +1015,13 @@ MINIMAL_SOURCE = ("tray/", "agentcompass/", "skills/", "setup/", "packaging/", "
 
 
 def build_fixture_repo(base: Path, minimal: bool = False) -> Path:
-    """Copy the working tree (tracked + untracked, not ignored) into a throw-away git repo so a build sees uncommitted work.
+    """Copy the tracked files as they stand in the working tree into a throw-away git repo: a build sees uncommitted edits, while
+    a stray untracked file stays out of the fixture and check_payload can still catch it. `git add` a new file to include it.
 
     ``minimal`` is the copy used when the product comes from a given wheel: only what the tray, helper and source-entry scenarios
     need. Either way the copy never holds a usage-float directory and never aliases the real checkout.
     """
-    listing = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-co", "--exclude-standard", "-z"], capture_output=True, check=True).stdout
+    listing = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-c", "-z"], capture_output=True, check=True).stdout
     repo = base / ("source" if minimal else "repo")
     for raw in filter(None, listing.split(b"\0")):
         rel = raw.decode("utf-8")

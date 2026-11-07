@@ -84,6 +84,39 @@ class UsageAwareSimulationTests(unittest.TestCase):
         usage = sim.snapshot(sim.ledger_document(old), self.accounts, at)    # old record, no live pool: one account
         self.assertEqual(allocator.pool_size(window(usage, 'claude', 'seven_day')), 1)
 
+    def test_legacy_ledger_row_missing_required_profile_fields_is_marked_unreplayable(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        current_profile = {
+            'work_kind': 'general_implementation', 'reasoning_depth': 3, 'code_complexity': 2,
+            'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
+            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+            'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering',
+            'expected_hours': 0.5, 'hours_confidence': 'high', 'urgency': 'unknown',
+            'multi_task': False, 'task_count': '1',
+        }
+        old_profile = {k: v for k, v in current_profile.items() if k not in ('wants_fast', 'read_only_review')}
+        base_row = {
+            'stage': 'plan', 'at': NOW.isoformat(), 'choice': 'sol_high',
+            'kind': 'general_implementation', 'difficulty': 'hard', 'hours': 1.0,
+            'usage': {'accounts': {}},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            ledger_file = Path(d) / 'ledger.jsonl'
+            rows = [
+                {**base_row, 'decision_snapshot': {'task': {'objective': 'old row', 'expected_hours': 1.0, 'profile': old_profile}}},
+                {**base_row, 'decision_snapshot': {'task': {'objective': 'current row', 'expected_hours': 1.0, 'profile': current_profile}}},
+            ]
+            ledger_file.write_text('\n'.join(json.dumps(r) for r in rows) + '\n', encoding='utf-8')
+            out = sim.replay(path=ledger_file, accounts=self.accounts)
+        self.assertEqual(len(out), 2)
+        self.assertTrue(out[0].get('unreplayable'))
+        self.assertIsNone(out[0]['choice'])
+        self.assertEqual(out[0]['replay_note'], sim.LEGACY_REPLAY_NOTE)
+        self.assertFalse(out[1].get('unreplayable', False))
+        self.assertIsNotNone(out[1]['choice'])
+
 
 if __name__ == '__main__':
     unittest.main()

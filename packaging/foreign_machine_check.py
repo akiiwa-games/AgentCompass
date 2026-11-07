@@ -173,7 +173,7 @@ class ForeignFixtureServer:
                     })
                 if self.path.endswith("/chat/completions"):
                     profile = {
-                        "multi_task": False, "task_count": "1",
+                        "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
                         "context_scale": 1, "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
                         "needs_visual": False, "needs_gui": False, "local_only": True, "expected_hours": 0.5,
@@ -310,7 +310,7 @@ def build_usage_float_fixture_repo(base: Path) -> Path:
     """Create an isolated git repository of usage-float so setup/tray can clone it offline."""
     dest = base / "usage-float-origin"
     listing = subprocess.run(
-        ["git", "-C", str(USAGE_FLOAT_SRC), "ls-files", "-co", "--exclude-standard", "-z"],
+        ["git", "-C", str(USAGE_FLOAT_SRC), "ls-files", "-c", "-z"],
         capture_output=True, check=True,
     ).stdout
     for raw in listing.split(b"\0"):
@@ -559,7 +559,7 @@ def verify_f02_fleet_parity(ctx: dict):
             "work_kind": "general_implementation", "expected_hours": 0.5,
             "profile": {"reasoning_depth": 2, "code_complexity": 2, "context_scale": 1, "divergence": 1,
                         "hallucination_risk": 2, "error_cost": 2, "needs_visual": False, "needs_gui": False,
-                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1",
+                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "bounded coding"},
         }),
         ("deep_debugging", {
@@ -567,7 +567,7 @@ def verify_f02_fleet_parity(ctx: dict):
             "work_kind": "debug_review", "expected_hours": 1.5,
             "profile": {"reasoning_depth": 4, "code_complexity": 3, "context_scale": 3, "divergence": 2,
                         "hallucination_risk": 3, "error_cost": 3, "needs_visual": False, "needs_gui": False,
-                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1",
+                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "deep debugging"},
         }),
         ("frontend_visual", {
@@ -575,7 +575,7 @@ def verify_f02_fleet_parity(ctx: dict):
             "work_kind": "frontend_implementation", "expected_hours": 1.0,
             "profile": {"reasoning_depth": 3, "code_complexity": 2, "context_scale": 2, "divergence": 3,
                         "hallucination_risk": 2, "error_cost": 2, "needs_visual": True, "needs_gui": False,
-                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1",
+                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "frontend UI"},
         }),
     ]
@@ -748,7 +748,7 @@ def verify_f04_quota_gate_scope_and_twins(ctx: dict):
         "work_kind": "general_implementation", "expected_hours": 1.0,
         "profile": {"reasoning_depth": 3, "code_complexity": 3, "context_scale": 2, "divergence": 1,
                     "hallucination_risk": 2, "error_cost": 2, "needs_visual": False, "needs_gui": False,
-                    "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1",
+                    "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                     "reason": "verify no twin pi bundles and agy 3p capacity"},
     }}), encoding="utf-8")
     res_plan = run_in_box(box, op, [box.agentcompass, "plan", "--input", task_file, "--dry-run"], env)

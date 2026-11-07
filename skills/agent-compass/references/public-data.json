@@ -1,19 +1,19 @@
 {
   "schema_version": 2,
-  "version": "ba8f5b4df801",
-  "published_at": "2026-11-07T14:22:15Z",
+  "version": "49822ab58828",
+  "published_at": "2026-11-07T16:32:15Z",
   "files": {
     "accounts.json": {
-      "sha256": "7fba068ff543f8ac0265dc9a3a1ead6619452b7f8f2fb7d00792ec64996e7a2a",
-      "bytes": 151062
+      "sha256": "1e2e86d3de1887b50d84cbe973e65307dd097989206e185431ca1abf8de3016c",
+      "bytes": 151670
     },
     "plan-templates.json": {
       "sha256": "26fc459337e59ca6c02bb3287019bff11bcbef26546ebec27760b1479cf9193b",
       "bytes": 7516
     },
     "classifier-cases.json": {
-      "sha256": "70028609bcbfeb9313d54df3099ec52cee802ac141f3052e8e29b9d681910cd6",
-      "bytes": 49486
+      "sha256": "c86f654947fd75d0254e9b8144a2022b3e1217f1295d8259d30deffd854ce1b3",
+      "bytes": 55575
     }
   }
 }
