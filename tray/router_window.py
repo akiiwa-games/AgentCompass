@@ -4260,13 +4260,15 @@ class Panel:
             failed = bool(
                 (result.get("failed") or result.get("deferred")) if structured else False
             ) or any(st in ("failed", "deferred") for st in statuses.values())
-            notice = str(result.get("product_notice") or "") if structured else ""
+            product_status = str(result.get("product_status") or "dev") if structured else "dev"
+            product_warn = product_status in ("newer", "failed")
             active_statuses = [st for st in statuses.values() if st != "skipped"]
             all_up_to_date = (
                 structured
                 and not busy
                 and not failed
-                and not notice
+                and not product_warn
+                and product_status in ("current", "ahead", "dev")
                 and bool(active_statuses)
                 and all(st in ("current", "updated") for st in active_statuses)
             )
@@ -4274,7 +4276,7 @@ class Panel:
                 pill = (_tr("正在更新"), "warn")
             elif failed:
                 pill = (_tr("部分异常"), "warn")
-            elif notice:
+            elif product_warn:
                 pill = (_tr("需注意"), "warn")
             elif all_up_to_date:
                 pill = (_tr("已是最新"), "ok")

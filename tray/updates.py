@@ -330,12 +330,26 @@ def _infer_mock_status(message: str) -> str:
     return "current"
 
 
+class ProductNoticeResult(str):
+    """Product release notice string carrying structured `status` ('newer' | 'current' | 'ahead' | 'failed' | 'dev')."""
+
+    status: str
+    kind: str
+
+    def __new__(cls, text: str = "", *, status: str = "dev"):
+        obj = super().__new__(cls, text)
+        obj.status = str(status)
+        obj.kind = str(status)
+        return obj
+
+
 class UpdateAllResult(str):
-    """Summary string with structured component outcomes (`busy`, `components`, `statuses`, `product_notice`)."""
+    """Summary string with structured component outcomes (`busy`, `components`, `statuses`, `product_notice`, `product_status`)."""
 
     busy: bool
     summary: str
     product_notice: str
+    product_status: str
     components: dict[str, dict[str, str]]
     statuses: dict[str, str]
     updated: list[str]
@@ -352,6 +366,7 @@ class UpdateAllResult(str):
         busy: bool = False,
         components: dict[str, dict[str, str]] | None = None,
         product_notice: str = "",
+        product_status: str | None = None,
     ):
         obj = super().__new__(cls, summary)
         comp = dict(components or {})
@@ -359,11 +374,18 @@ class UpdateAllResult(str):
             name: str(info.get("status", "failed") if isinstance(info, dict) else info)
             for name, info in comp.items()
         }
+        resolved_product_status = (
+            product_status
+            or getattr(product_notice, "status", None)
+            or getattr(product_notice, "kind", None)
+            or ("dev" if not product_notice else "current")
+        )
         obj.summary = str(summary)
         obj.busy = bool(busy)
         obj.components = comp
         obj.statuses = statuses
         obj.product_notice = str(product_notice or "")
+        obj.product_status = str(resolved_product_status)
         obj.updated = [name for name, st in statuses.items() if st == "updated"]
         obj.current = [name for name, st in statuses.items() if st == "current"]
         obj.skipped = [name for name, st in statuses.items() if st == "skipped"]
@@ -383,6 +405,7 @@ class UpdateAllResult(str):
             "components": self.components,
             "statuses": self.statuses,
             "product_notice": self.product_notice,
+            "product_status": self.product_status,
             "updated": self.updated,
             "current": self.current,
             "skipped": self.skipped,
@@ -441,11 +464,22 @@ def update_all(progress=None) -> UpdateAllResult:
             components[label] = {"status": status, "message": result}
             report("result", result)
         notice = product_notice()
+        product_status = str(
+            getattr(notice, "status", None)
+            or getattr(notice, "kind", None)
+            or ("dev" if not notice else "current")
+        )
         if notice:
             results.append(notice)
             report("result", notice, "AgentCompass")
         report("finish", _tr("本轮更新检查结束"), "")
-        return UpdateAllResult("；".join(results), busy=False, components=components, product_notice=notice)
+        return UpdateAllResult(
+            "；".join(results),
+            busy=False,
+            components=components,
+            product_notice=notice,
+            product_status=product_status,
+        )
     finally:
         _progress.callback = None
         _progress.component = ""
@@ -2064,7 +2098,7 @@ def update_agentcompass(
         LOCK.release()
 
 
-def release_notice(root: Path, opener=None) -> str:
+def release_notice(root: Path, opener=None) -> ProductNoticeResult:
     """Tell a non-git install how to upgrade. Does not download or replace files."""
     if str(root) not in os.sys.path:
         os.sys.path.append(str(root))
@@ -2080,39 +2114,48 @@ def release_notice(root: Path, opener=None) -> str:
         with open_url(request, timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except Exception as error:
-        return (
+        return ProductNoticeResult(
             f"AgentCompass {local} has no .git checkout, so it cannot git pull. "
             f"Could not read GitHub releases ({error}). "
             f"Upgrade with: uv tool upgrade agentcompass "
-            f"or download the installer from {RELEASES_PAGE}"
+            f"or download the installer from {RELEASES_PAGE}",
+            status="failed",
         )
     tag = str(payload.get("tag_name") or "")
     page = str(payload.get("html_url") or RELEASES_PAGE)
     remote = _version_key(tag)
     here = _version_key(local)
     if remote > here:
-        return (
+        return ProductNoticeResult(
             f"AgentCompass {local} is not a git checkout. GitHub release {tag} is newer. "
             f"Upgrade the router with: uv tool upgrade agentcompass "
-            f"Or download the Windows installer from: {page}"
+            f"Or download the Windows installer from: {page}",
+            status="newer",
         )
     if remote == here:
-        return f"AgentCompass {local} matches GitHub release {tag}. No upgrade is waiting."
-    return f"AgentCompass {local} is newer than GitHub release {tag or 'unknown'}."
+        return ProductNoticeResult(
+            f"AgentCompass {local} matches GitHub release {tag}. No upgrade is waiting.",
+            status="current",
+        )
+    return ProductNoticeResult(
+        f"AgentCompass {local} is newer than GitHub release {tag or 'unknown'}.",
+        status="ahead",
+    )
 
 
-def product_notice(root: Path | None = None, opener=None) -> str:
+def product_notice(root: Path | None = None, opener=None) -> ProductNoticeResult:
     """Empty for a dev checkout, so the existing git updater is unchanged."""
     root = root or Path(__file__).resolve().parents[1]
     if (root / ".git").exists():
-        return ""
+        return ProductNoticeResult("", status="dev")
     try:
         return release_notice(root, opener=opener)
     except Exception as error:
-        return (
+        return ProductNoticeResult(
             f"AgentCompass has no git checkout and the release check failed: {error}. "
             "Upgrade with: uv tool upgrade agentcompass "
-            "or download the installer from https://github.com/akiiwa-games/AgentCompass/releases/latest"
+            "or download the installer from https://github.com/akiiwa-games/AgentCompass/releases/latest",
+            status="failed",
         )
 
 
