@@ -46,6 +46,9 @@ DNA_KEYS = (("divergence", "发散创新"), ("global_rigor", "全局严密"), ("
             ("capability", "视觉与工具"))
 DNA_KEYS = LocalizedSequence(DNA_KEYS)
 TRACK = "#E2E8F0"  # segmented switch track on the page background
+STRATEGY_PAD = 14    # card padding on the strategy settings page
+STRATEGY_GAP = 12    # space between its cards
+STRATEGY_FIELD = 10  # entry and spinbox text size there, matching the 10pt labels beside them
 AUTO_REPLAY_ROWS = 5  # newest ledger rows tried for the opening decision; legacy rows replan, so keep it small
 
 
@@ -2570,7 +2573,7 @@ class Panel:
 
     def build_setting_strategy(self, frame):
         footer = self.ttk.Frame(frame)
-        footer.pack(side="bottom", fill="x", pady=(8, 0))
+        footer.pack(side="bottom", fill="x", pady=(10, 0))
         self.strategy_save = self.ttk.Button(footer, text=_tr("保存策略与画像"), style="SmallAccent.TButton", command=self.save_strategy)
         self.strategy_save.pack(side="right")
         self.ttk.Button(footer, text=_tr("恢复默认参数"), style="Small.TButton", command=self.restore_tuning).pack(side="left")
@@ -2624,7 +2627,8 @@ class Panel:
         tk, ttk = self.tk, self.ttk
         from router_data import STRATEGY_PRESETS, TUNING_DEFAULTS
 
-        box = theme.card(frame, padding=10, fill="x")
+        box = theme.card(frame, padding=STRATEGY_PAD, fill="x")
+        ttk.Label(box, text=_tr("策略与阈值"), style="CardH2.TLabel").pack(anchor="w", pady=(0, 8))
         presets = ttk.Frame(box, style="Card.TFrame")
         presets.pack(fill="x")
         ttk.Label(presets, text=_tr("策略预设"), style="CardH3.TLabel").pack(side="left", padx=(0, 10))
@@ -2634,21 +2638,21 @@ class Panel:
                                 command=lambda n=name: self.apply_strategy_preset(n))
             button.pack(side="left", padx=(0, 6))
             self.preset_buttons[name] = button
-        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=7)
+        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=12)
         cols = ttk.Frame(box, style="Card.TFrame")
         cols.pack(fill="x")
         cols.columnconfigure(0, weight=1, uniform="tune")
         cols.columnconfigure(1, weight=1, uniform="tune")
 
         weights = ttk.Frame(cols, style="Card.TFrame")
-        weights.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        weights.grid(row=0, column=0, sticky="nsew", padx=(0, 28))
         ttk.Label(weights, text=_tr("任务匹配权重（和为 1）"), style="CardH3.TLabel").grid(row=0, column=0, columnspan=3,
-                                                                          sticky="w", pady=(0, 6))
+                                                                          sticky="w", pady=(0, 8))
         self.tuning_vars = {}
         self.weight_scales = {}
         for row, (key, label) in enumerate((("subjective.weight", _tr("三项能力匹配")), ("subjective.vector_weight", _tr("能力向量")),
                                             ("subjective.route_weight", _tr("路由顺位"))), start=1):
-            ttk.Label(weights, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=5)
+            ttk.Label(weights, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=7)
             s_var = tk.DoubleVar(value=TUNING_DEFAULTS[key])
             ttk.Scale(weights, from_=0.0, to=1.0, variable=s_var, style="Card.Horizontal.TScale",
                       command=lambda _v, k=key: self.on_weight_slide(k)).grid(row=row, column=1, sticky="ew", padx=10)
@@ -2658,19 +2662,20 @@ class Panel:
             self.tuning_vars[key] = t_var
         weights.columnconfigure(1, weight=1)
         ttk.Label(weights, text=_tr("权重用于任务匹配；雷达展示四项能力与额度经济。"),
-                  style="CardTiny.TLabel", wraplength=theme.px(300)).grid(
-                      row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+                  style="CardSub.TLabel", wraplength=theme.px(340)).grid(
+                      row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         numbers = ttk.Frame(cols, style="Card.TFrame")
         numbers.grid(row=0, column=1, sticky="nsew")
         ttk.Label(numbers, text=_tr("额度阈值"), style="CardH3.TLabel").grid(row=0, column=0, columnspan=2, sticky="w",
-                                                                    pady=(0, 6))
+                                                                    pady=(0, 8))
         for row, (key, label) in enumerate((("safety_margin_pct", _tr("周安全余量 %")), ("short_window_floor_pct", _tr("短窗底线 %")),
                                             ("reset_horizon_hours", _tr("临期消纳窗口 h")), ("reset_bonus_max", _tr("临期最大加成")),
                                             ("rotate_after_carried_tokens", _tr("上下文轮换阈值"))), start=1):
-            ttk.Label(numbers, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=2)
+            ttk.Label(numbers, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=4)
             var = tk.StringVar()
-            ttk.Entry(numbers, textvariable=var, width=11, font=(self.mono, 9)).grid(row=row, column=1, sticky="e", pady=2)
+            ttk.Entry(numbers, textvariable=var, width=11, font=(self.mono, STRATEGY_FIELD)).grid(
+                row=row, column=1, sticky="e", pady=4)
             self.tuning_vars[key] = var
         numbers.columnconfigure(0, weight=1)
 
@@ -2739,20 +2744,20 @@ class Panel:
         tk, ttk = self.tk, self.ttk
         from router_data import ABILITY_FLOOR_KEYS, ABILITY_FLOOR_LABELS
 
-        box = theme.card(frame, padding=10, fill="x", pady=(8, 0))
+        box = theme.card(frame, padding=STRATEGY_PAD, fill="x", pady=(STRATEGY_GAP, 0))
         self.ability_floor_card = box
 
         head = ttk.Frame(box, style="Card.TFrame")
         head.pack(fill="x")
         title_col = ttk.Frame(head, style="Card.TFrame")
         title_col.pack(side="left", fill="x", expand=True)
-        ttk.Label(title_col, text=_tr("能力门槛与模型分布"), style="CardH3.TLabel").pack(anchor="w")
+        ttk.Label(title_col, text=_tr("能力门槛与模型分布"), style="CardH2.TLabel").pack(anchor="w")
         ttk.Label(
             title_col,
             text=_tr("展示各模型在不同思考档位下的有效能力区间，以及四个难度门槛、路由专属门槛与关键任务余量。"),
-            style="CardTiny.TLabel",
+            style="CardSub.TLabel",
             wraplength=theme.px(560),
-        ).pack(anchor="w", pady=(2, 0))
+        ).pack(anchor="w", pady=(4, 0))
 
         actions = ttk.Frame(head, style="Card.TFrame")
         actions.pack(side="right", anchor="ne")
@@ -2769,10 +2774,10 @@ class Panel:
             command=self.save_ability_floors,
         ).pack(side="right")
 
-        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=7)
+        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=12)
 
         controls = ttk.Frame(box, style="Card.TFrame")
-        controls.pack(fill="x", pady=(0, 4))
+        controls.pack(fill="x", pady=(0, 6))
         self.ability_floor_vars = {}
         self.ability_floor_entries = {}
         self.route_floor_vars = {}
@@ -2783,7 +2788,7 @@ class Panel:
             lbl = _tr(ABILITY_FLOOR_LABELS.get(key, key))
             cell = ttk.Frame(controls, style="Card.TFrame")
             cell.pack(side="left", padx=(0, 14))
-            ttk.Label(cell, text=lbl, style="Card.TLabel").pack(side="left", padx=(0, 4))
+            ttk.Label(cell, text=lbl, style="Card.TLabel").pack(side="left", padx=(0, 6))
             var = tk.StringVar(value="")
             spin = ttk.Spinbox(
                 cell,
@@ -2792,7 +2797,7 @@ class Panel:
                 increment=0.05,
                 textvariable=var,
                 width=6,
-                font=(self.mono, 9),
+                font=(self.mono, STRATEGY_FIELD),
                 command=lambda k=key: self.on_floor_entry_change(k),
             )
             spin.pack(side="left")
@@ -2802,7 +2807,7 @@ class Panel:
             self.ability_floor_vars[key] = var
             self.ability_floor_entries[key] = spin
             if idx < len(ABILITY_FLOOR_KEYS) - 1:
-                ttk.Label(cell, text="≤", style="CardTiny.TLabel").pack(side="left", padx=(8, 0))
+                ttk.Label(cell, text="≤", style="CardSub.TLabel").pack(side="left", padx=(10, 0))
 
         self.route_floor_bar = ttk.Frame(controls, style="Card.TFrame")
         self.route_floor_bar.pack(side="right")
@@ -2811,10 +2816,10 @@ class Panel:
         self.floor_preview_label = ttk.Label(
             box,
             textvariable=self.floor_preview_var,
-            style="CardTiny.TLabel",
+            style="CardSub.TLabel",
             wraplength=theme.px(820),
         )
-        self.floor_preview_label.pack(anchor="w", pady=(2, 4))
+        self.floor_preview_label.pack(anchor="w", pady=(4, 8))
 
         self.ability_floor_chart = ability_floor_chart.AbilityFloorChartCanvas(
             box,
@@ -2840,7 +2845,7 @@ class Panel:
             r_label = f"{display_names.kind_label(r_name)}·{_tr(ABILITY_FLOOR_LABELS.get(diff, diff))}"
             cell = ttk.Frame(self.route_floor_bar, style="Card.TFrame")
             cell.pack(side="left", padx=(8, 0))
-            ttk.Label(cell, text=r_label, style="CardTiny.TLabel").pack(side="left", padx=(0, 4))
+            ttk.Label(cell, text=r_label, style="CardSub.TLabel").pack(side="left", padx=(0, 6))
             var = tk.StringVar(value="")
             spin = ttk.Spinbox(
                 cell,
@@ -2849,7 +2854,7 @@ class Panel:
                 increment=0.05,
                 textvariable=var,
                 width=6,
-                font=(self.mono, 9),
+                font=(self.mono, STRATEGY_FIELD),
                 command=lambda k=rk: self.on_floor_entry_change(k),
             )
             spin.pack(side="left")
@@ -2954,23 +2959,24 @@ class Panel:
 
     def build_setting_value(self, frame):
         tk, ttk = self.tk, self.ttk
-        box = theme.card(frame, padding=10, fill="x", pady=(8, 0))
+        box = theme.card(frame, padding=STRATEGY_PAD, fill="x", pady=(STRATEGY_GAP, 0))
         self.value_card = box
         head = ttk.Frame(box, style="Card.TFrame")
         head.pack(fill="x")
-        self.harness_title = ttk.Label(head, text=_tr("Harness 系数"), style="CardH3.TLabel")
+        self.harness_title = ttk.Label(head, text=_tr("Harness 系数"), style="CardH2.TLabel")
         self.harness_title.pack(side="left")
         default_box = ttk.Frame(head, style="Card.TFrame")
         default_box.pack(side="right")
         ttk.Label(default_box, text=_tr("默认系数"), style="Card.TLabel").pack(side="left", padx=(0, 6))
         self.harness_default = tk.StringVar(value="1")
-        self.harness_default_entry = ttk.Entry(default_box, textvariable=self.harness_default, width=6, font=(self.mono, 9))
+        self.harness_default_entry = ttk.Entry(default_box, textvariable=self.harness_default, width=6,
+                                               font=(self.mono, STRATEGY_FIELD))
         self.harness_default_entry.pack(side="left")
         self.harness_default.trace_add("write", self._paint_default_factor)
         ttk.Style(self.root).configure("Invalid.TEntry", fieldbackground=theme.RED_SOFT, foreground=theme.RED,
                                        bordercolor=theme.RED, lightcolor=theme.RED, darkcolor=theme.RED)
         ttk.Label(box, text=_tr("乘在加权适配与能力上。选「（任意）」的列不参与匹配，列表也可以手改。"),
-                  style="CardTiny.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 6))
+                  style="CardSub.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 10))
         self._harness_columns = (("harness", "通道"), ("work_kind", "工作类型"), ("model", "模型"),
                                  ("model_prefix", "模型前缀"), ("factor", "系数"))
         self._factor_choices = {}
@@ -2980,24 +2986,24 @@ class Panel:
         self.harness_headers = {}
         for column, ((key, label), width) in enumerate(zip(self._harness_columns, widths)):
             self.harness_table.columnconfigure(column, weight=width, minsize=theme.px(width))
-            header = ttk.Label(self.harness_table, text=_tr(label), style="CardTiny.TLabel", anchor="w")
-            header.grid(row=0, column=column, sticky="ew", padx=(0, 6), pady=(0, 2))
+            header = ttk.Label(self.harness_table, text=_tr(label), style="CardColumn.TLabel", anchor="w")
+            header.grid(row=0, column=column, sticky="ew", padx=(0, 8), pady=(0, 4))
             self.harness_headers[key] = header
         self.harness_table.columnconfigure(len(self._harness_columns), weight=0)
         self.harness_rule_rows = []
-        ttk.Button(box, text=_tr("添加一行"), style="Small.TButton", command=self.add_harness_rule).pack(anchor="w", pady=(6, 8))
-        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=(0, 8))
-        self.exchange_title = ttk.Label(box, text=_tr("机会成本汇率"), style="CardH3.TLabel")
+        ttk.Button(box, text=_tr("添加一行"), style="Small.TButton", command=self.add_harness_rule).pack(anchor="w", pady=(8, 12))
+        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=(0, 12))
+        self.exchange_title = ttk.Label(box, text=_tr("机会成本汇率"), style="CardH2.TLabel")
         self.exchange_title.pack(anchor="w")
         ttk.Label(box, text=_tr("1 分大约兑换这些被挤占额度；没有美元容量的窗口用每工时。"),
-                  style="CardTiny.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 6))
+                  style="CardSub.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 10))
         rates = ttk.Frame(box, style="Card.TFrame")
         rates.pack(fill="x")
         self.exchange_vars = {}
         for key, label in (("score_per_displaced_usd", "每美元分数"), ("score_per_displaced_worker_hour", "每工时分数")):
             ttk.Label(rates, text=_tr(label), style="Card.TLabel").pack(side="left", padx=(0, 6))
             var = tk.StringVar()
-            ttk.Entry(rates, textvariable=var, width=8, font=(self.mono, 9)).pack(side="left", padx=(0, 16))
+            ttk.Entry(rates, textvariable=var, width=8, font=(self.mono, STRATEGY_FIELD)).pack(side="left", padx=(0, 24))
             self.exchange_vars[key] = var
         self._value_ready = False
         self.prefill(self._read_value_form, self.value_loaded)
@@ -3114,11 +3120,11 @@ class Panel:
             shown = self._show_choice(key, rule.get(key, ""))
             var = tk.StringVar(value=shown)
             if key in ("harness", "work_kind", "model"):
-                widget = ttk.Combobox(self.harness_table, textvariable=var, font=(self.mono, 9),
+                widget = ttk.Combobox(self.harness_table, textvariable=var, font=(self.mono, STRATEGY_FIELD),
                                        width={"harness": 20, "work_kind": 8, "model": 10}[key],
                                        values=self._choice_values(key, shown))
             else:
-                widget = ttk.Entry(self.harness_table, textvariable=var, font=(self.mono, 9),
+                widget = ttk.Entry(self.harness_table, textvariable=var, font=(self.mono, STRATEGY_FIELD),
                                     width=5 if key == "factor" else 8)
             holder[key] = var
             holder["widgets"][key] = widget
@@ -3139,8 +3145,8 @@ class Panel:
         keys = [key for key, _label in self._harness_columns]
         for index, holder in enumerate(self.harness_rule_rows, start=1):
             for column, key in enumerate(keys):
-                holder["widgets"][key].grid(row=index, column=column, sticky="ew", padx=(0, 6), pady=1)
-            holder["delete"].grid(row=index, column=len(keys), sticky="w", pady=1)
+                holder["widgets"][key].grid(row=index, column=column, sticky="ew", padx=(0, 8), pady=3)
+            holder["delete"].grid(row=index, column=len(keys), sticky="w", pady=3)
 
     def remove_harness_rule(self, holder, _batch: bool = False):
         if holder in self.harness_rule_rows:
@@ -3189,20 +3195,22 @@ class Panel:
 
     def build_setting_dna(self, frame):
         tk, ttk = self.tk, self.ttk
-        box = theme.card(frame, padding=10, fill="x", pady=(8, 0))
+        box = theme.card(frame, padding=STRATEGY_PAD, fill="x", pady=(STRATEGY_GAP, 0))
         box.columnconfigure(1, weight=1)
-        box.rowconfigure(0, weight=1)
+        box.rowconfigure(2, weight=1)
+        ttk.Label(box, text=_tr("模型画像"), style="CardH2.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        tk.Frame(box, bg=theme.BORDER, height=1).grid(row=1, column=0, columnspan=2, sticky="ew", pady=12)
         left = ttk.Frame(box, style="Card.TFrame")
-        left.grid(row=0, column=0, sticky="nsw", padx=(0, 16))
+        left.grid(row=2, column=0, sticky="nsw", padx=(0, 24))
         ttk.Label(left, text=_tr("模型"), style="CardH3.TLabel").grid(row=0, column=0, sticky="w")
         self.dna_picker = ttk.Combobox(left, state="readonly", width=26)
-        self.dna_picker.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 6))
+        self.dna_picker.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 8))
         self.dna_picker.bind("<<ComboboxSelected>>", lambda e: self.dna_model_changed())
         self.dna_model = None
         self.dna_draft = {}
         self.dna_vars, self.dna_texts = {}, {}
         for row, (key, label) in enumerate(DNA_KEYS, start=2):
-            ttk.Label(left, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=6)
+            ttk.Label(left, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=7)
             var = tk.DoubleVar(value=0.5)
             ttk.Scale(left, from_=0.0, to=1.0, variable=var, length=theme.px(150), style="Card.Horizontal.TScale",
                       command=lambda _v, k=key: self.on_dna_slide(k)).grid(row=row, column=1, sticky="ew", padx=10)
@@ -3210,13 +3218,13 @@ class Panel:
             ttk.Label(left, textvariable=text, style="Mono.TLabel", width=5).grid(row=row, column=2, sticky="e")
             self.dna_vars[key], self.dna_texts[key] = var, text
         buttons = ttk.Frame(left, style="Card.TFrame")
-        buttons.grid(row=2 + len(DNA_KEYS), column=0, columnspan=3, sticky="w", pady=(6, 0))
+        buttons.grid(row=2 + len(DNA_KEYS), column=0, columnspan=3, sticky="w", pady=(10, 0))
         ttk.Button(buttons, text=_tr("还原画像"), style="Small.TButton", command=self.revert_dna).pack(side="left")
-        self.dna_radar = radar_chart.RadarChartCanvas(box, size=theme.px(195), bg=theme.CARD)
-        self.dna_radar.grid(row=0, column=1, sticky="nsew")
+        self.dna_radar = radar_chart.RadarChartCanvas(box, size=theme.px(220), bg=theme.CARD)
+        self.dna_radar.grid(row=2, column=1, sticky="nsew")
         ttk.Label(box, text=_tr("4 项能力可手动微调；额度经济由模型价格或实时窗口余量自动计算，不可手动调节。"),
-                  style="CardTiny.TLabel", wraplength=theme.px(600)).grid(
-                      row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+                  style="CardSub.TLabel", wraplength=theme.px(640)).grid(
+                      row=3, column=0, columnspan=2, sticky="w", pady=(12, 0))
         if self.models:
             self.fill_dna_models()
         else:
