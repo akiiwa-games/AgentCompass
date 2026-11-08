@@ -938,9 +938,14 @@ class Panel:
     def say(self, then=None):
         """A done() callback that shows the message and optionally runs then()."""
         def done(message):
-            self.status.set(message or _tr("完成"))
+            text = message or _tr("完成")
+            self.status.set(text)
             if then:
-                then()
+                self._keep_status_once = text
+                try:
+                    then()
+                finally:
+                    self._keep_status_once = None
         return done
 
     # ---------- shell ----------
@@ -3823,7 +3828,11 @@ class Panel:
             elif plugin.id == "dot2api":
                 dot = self.data_module().dot_details()
                 self.tunnel_url = dot.get("tunnel_url") or ""
-                widgets["info"].set(self.tunnel_url or _tr("隧道未发布"))
+                widgets["info"].set(
+                    (self.tunnel_url or _tr("隧道未发布"))
+                    if (deployed or self.tunnel_url)
+                    else _tr("未下载 · 启用后自动部署")
+                )
             elif plugin.id == "easytier":
                 widgets["info"].set(_tr("正在读取对端…"))
             elif plugin.id == "muse2api" and deployed:
@@ -3842,14 +3851,13 @@ class Panel:
             return ((_tr("安装/修复"), grok_bot_cli.install), (_tr("检查连接"), grok_bot_cli.check),
                     (_tr("使用说明"), grok_bot_cli.guide))
 
-        state = Path.home() / ".agent-compass"
-
-        def log(path):
+        def log(path_or_fn):
             def open_log():
-                if not Path(path).exists():
-                    return _tr('日志不存在：{0}').format(f'{path}')
-                os.startfile(path)
-                return _tr('已打开日志 {0}').format(f'{Path(path).name}')
+                target = Path(path_or_fn() if callable(path_or_fn) else path_or_fn)
+                if not target.exists():
+                    return _tr('日志不存在：{0}').format(f'{target}')
+                os.startfile(target)
+                return _tr('已打开日志 {0}').format(f'{target.name}')
             return open_log
         start = lambda: services.plugin_start(plugin_id)
         stop = lambda: services.plugin_stop(plugin_id)
@@ -3857,13 +3865,13 @@ class Panel:
             import dot_reconnect
 
             return ((_tr("启动"), start), (_tr("停止"), stop), (_tr("重连"), lambda: dot_reconnect.reconnect() or _tr("隧道地址未变化，无需重连")),
-                    (_tr("日志"), log(Path.home() / ".dot2api" / "serve.log")))
+                    (_tr("日志"), log(lambda: services.LOG_DIR / "serve.log")))
         if plugin_id == "muse2api":
             import gateways
 
             console = f"{gateways.MUSE_URL}/dashboard"
             return ((_tr("管理台"), lambda: gateways.open_console(console)), (_tr("启动"), start), (_tr("停止"), stop),
-                    (_tr("日志"), log(gateways.MUSE_LOG)))
+                    (_tr("日志"), log(lambda: gateways.MUSE_LOG)))
         if plugin_id == "easytier":
             import easytier
             import network_status
@@ -3873,15 +3881,15 @@ class Panel:
         if plugin_id == "chatgpt-web":
             return ((_tr("打开"), lambda: services.start_chatgpt_web(True)), (_tr("启动"), start), (_tr("停止"), stop),
                     (_tr("重启"), lambda: f"{services.stop_chatgpt_web()}；{services.start_chatgpt_web(False)}"),
-                    (_tr("日志"), log(state / "chatgpt-web.log")))
+                    (_tr("日志"), log(lambda: services.STATE_DIR / "chatgpt-web.log")))
         if plugin_id == "gemini-web":
             return ((_tr("打开"), lambda: services.start_gemini_web(True)), (_tr("停止"), stop),
-                    (_tr("日志"), log(state / "gemini-web.log")))
+                    (_tr("日志"), log(lambda: services.STATE_DIR / "gemini-web.log")))
         if plugin_id == "usage-float":
             return ((_tr("悬浮窗"), lambda: services.component_action("usage-float", "show")), (_tr("启动"), start),
                     (_tr("停止"), stop), (_tr("刷新"), lambda: services.component_action("usage-float", "refresh")),
                     (_tr("设置"), lambda: services.component_action("usage-float", "settings")),
-                    (_tr("日志"), log(state / "usage-float.log")))
+                    (_tr("日志"), log(lambda: services.STATE_DIR / "usage-float.log")))
         return ()
 
     def plugin_act(self, plugin_id, work):
@@ -3907,12 +3915,29 @@ class Panel:
         def done(message):
             if not self.closing and self.current == 'plugins':
                 self.status.set(message)
-                self.load_plugins(probe=False)
+                self._keep_status_once = message
+                try:
+                    self.load_plugins(probe=False)
+                finally:
+                    self._keep_status_once = None
         # Let an in-flight bounded read finish on close, as with existing long actions.
         self.run(work, done, _tr('正在检查 Grok Bot 连接…'), long=True)
 
+    def _record_plugin_flag(self, plugin_id: str, key: str, value: bool) -> None:
+        flags = getattr(self, "_user_plugin_flags", None)
+        if flags is None:
+            flags = {}
+            self._user_plugin_flags = flags
+        flags[(plugin_id, key)] = (getattr(self, "_plugins_load_generation", 0), bool(value))
+
     def toggle_enabled(self, plugin_id, value):
         import services
+
+        value = bool(value)
+        self._cards_cache = None
+        self._plugins_update_result = None
+        self._record_plugin_flag(plugin_id, "enabled", value)
+        plugins.set_flag(plugin_id, "enabled", value)
 
         def work():
             plugins.set_flag(plugin_id, "enabled", value)
@@ -3922,33 +3947,61 @@ class Panel:
                     return _tr('已停用 {0}；{1}').format(f'{name}', f'{services.plugin_stop(plugin_id)}')
                 except Exception as exc:
                     return _tr('已停用 {0}（停止时出错：{1}）').format(f'{name}', f'{exc}')
-            if plugins.autostarts(plugin_id) and plugin_id != "gemini-web":
-                return _tr('已启用 {0}；{1}').format(f'{name}', f'{services.plugin_start(plugin_id)}')
+            if plugins.autostarts(plugin_id):
+                try:
+                    return _tr('已启用 {0}；{1}').format(f'{name}', f'{services.plugin_start(plugin_id)}')
+                except Exception as exc:
+                    return _tr('已启用 {0}（启动时出错：{1}）').format(f'{name}', f'{exc}')
+            spec = plugins.BY_ID[plugin_id]
+            root = plugins.plugin_root(plugin_id)
+            if spec.repo and not (root / ".git").exists():
+                import updates
+
+                try:
+                    deployed = updates.ensure_plugin(plugin_id)
+                    services.refresh_plugin_roots()
+                    return _tr('已启用 {0}；{1}').format(f'{name}', f'{deployed}')
+                except Exception as exc:
+                    return _tr('已启用 {0}（部署时出错：{1}）').format(f'{name}', f'{exc}')
             return _tr('已启用 {0}').format(f'{name}')
         if value and plugin_id == "muse2api":
             # First enable downloads and installs its dependencies: show it in the update window.
             import update_status
             import updates
 
-            plugins.set_flag(plugin_id, "enabled", True)
-            try:
-                update_status.open_window()
-            except Exception as exc:
-                log_error(exc)
-            self.run(lambda: _tr('已启用 {0}；').format(f'{plugins.BY_ID[plugin_id].name}') + updates.deploy_gateway(
-                plugin_id, plugins.autostarts(plugin_id), progress=update_status.record),
-                self.say(self.load_plugins), _tr("正在下载并构建…（关闭窗口不会中断）"), long=True)
+            self._open_update_window_if_interactive()
+
+            def deploy_work():
+                plugins.set_flag(plugin_id, "enabled", True)
+                name = plugins.BY_ID[plugin_id].name
+                try:
+                    return _tr('已启用 {0}；').format(f'{name}') + updates.deploy_gateway(
+                        plugin_id, plugins.autostarts(plugin_id), progress=update_status.record
+                    )
+                except Exception as exc:
+                    log_error(exc)
+                    return _tr('已启用 {0}（部署时出错：{1}）').format(f'{name}', f'{exc}')
+
+            self.run(deploy_work, self.say(self.load_plugins), _tr("正在下载并构建…（关闭窗口不会中断）"), long=True)
             return
         self.run(work, self.say(self.load_plugins))
 
     def toggle_autostart(self, plugin_id, value):
+        value = bool(value)
+        self._record_plugin_flag(plugin_id, "autostart", value)
+        plugins.set_flag(plugin_id, "autostart", value)
         self.run(lambda: plugins.set_flag(plugin_id, "autostart", value) and
                  _tr('{0} 随托盘自启：{1}').format(f'{plugins.BY_ID[plugin_id].name}', f"{(_tr('开') if value else _tr('关'))}"))
 
     def load_plugins(self, probe=True):
         import services
 
-        if probe:
+        keep_status = getattr(self, "_keep_status_once", None)
+        update_result = getattr(self, "_plugins_update_result", None)
+        if not keep_status or (update_result and keep_status != update_result[0]):
+            self._plugins_update_result = None
+            update_result = None
+        if probe and not keep_status:
             self._grok_auto_check_pending = True
         self._plugins_load_generation = getattr(self, '_plugins_load_generation', 0) + 1
         generation = self._plugins_load_generation
@@ -3964,11 +4017,16 @@ class Panel:
                         return reading['label'], reading
                     if plugin_id == "easytier":
                         reading = easytier.snapshot()
-                        return easytier.label(reading), len(easytier.remote_peers(reading.get("peers")))
+                        peers_raw = reading.get("peers")
+                        peer_count = (
+                            None
+                            if reading.get("state") == "running" and peers_raw is None
+                            else len(easytier.remote_peers(peers_raw))
+                        )
+                        return easytier.label(reading), peer_count
                     return services.plugin_label(plugin_id), None
                 except Exception as exc:
                     return _tr('状态异常：{0}').format(f'{exc}')[:30], None
-            config = plugins.load()
             found = {}
             threads = []
             for pid in plugins.BY_ID:
@@ -3977,6 +4035,7 @@ class Panel:
                 threads.append(t)
             for t in threads:
                 t.join()
+            config = plugins.load()
             labels = {plugin_id: value[0] for plugin_id, value in found.items()}
             data = self.data_module()
             extras = {"dot2api": data.dot_details(), "easytier": found["easytier"][1],
@@ -3985,13 +4044,24 @@ class Panel:
             return config, labels, extras
         def done(value):
             if generation == self._plugins_load_generation:
-                self.plugins_loaded(value)
-        self.run(work, done, _tr("正在读取集成状态…"))
+                config, labels, extras = value
+                for (pid, key), (rec_gen, flag_val) in (getattr(self, "_user_plugin_flags", None) or {}).items():
+                    if rec_gen >= generation and pid in config and isinstance(config[pid], dict):
+                        config[pid][key] = flag_val
+                self.plugins_loaded(
+                    (config, labels, extras),
+                    keep_status=keep_status,
+                    update_result=update_result,
+                )
+        self.run(work, done, None if keep_status else _tr("正在读取集成状态…"))
 
-    def plugins_loaded(self, value):
+    def plugins_loaded(self, value, keep_status=None, update_result=None):
         config, labels, extras = value
         enabled_count = 0
         running_count = 0
+        expected_running_count = 0
+        expected_ok_count = 0
+        attention_count = 0
         for plugin in plugins.PLUGINS:
             widgets = self.plugin_widgets[plugin.id]
             row = config[plugin.id]
@@ -4003,6 +4073,8 @@ class Panel:
                     enabled_count += 1
                     if kind == 'ok':
                         running_count += 1
+                    elif kind in ('warn', 'error', 'danger'):
+                        attention_count += 1
                 theme.set_pill(widgets["status"], labels[plugin.id], kind)
                 widgets["info"].set(grok_bot_cli.info())
                 if getattr(self, '_grok_auto_check_pending', False):
@@ -4010,35 +4082,63 @@ class Panel:
                     if reading.get('installed'):
                         self.check_grok_bot()
                 continue
+            deployed = not plugin.repo or (plugins.plugin_root(plugin.id) / ".git").exists()
+            raw_label = labels[plugin.id]
+            if not deployed and raw_label == _tr("已停止"):
+                raw_label = _tr("未安装")
+            raw_kind = theme.status_kind(raw_label)
             if row["enabled"]:
                 enabled_count += 1
-                if theme.status_kind(labels[plugin.id]) == "ok":
+                if raw_kind == "ok":
                     running_count += 1
-            label = labels[plugin.id] if row["enabled"] else _tr('未启用 · {0}').format(f'{labels[plugin.id]}')
-            theme.set_pill(widgets["status"], label[:18], theme.status_kind(labels[plugin.id]) if row["enabled"] else "idle")
+                elif raw_kind in ("warn", "error", "danger"):
+                    attention_count += 1
+                if row["autostart"]:
+                    expected_running_count += 1
+                    if raw_kind == "ok":
+                        expected_ok_count += 1
+            label = raw_label if row["enabled"] else _tr('未启用 · {0}').format(f'{raw_label}')
+            pill_label = label if len(label) <= 42 else f"{label[:41]}…"
+            theme.set_pill(widgets["status"], pill_label, raw_kind if row["enabled"] else "idle")
             widgets["enabled"].set(row["enabled"])
             widgets["autostart"].set(row["autostart"])
             if plugin.id == "dot2api":
                 dot = extras["dot2api"]
                 self.tunnel_url = dot.get("tunnel_url") or ""
-                widgets["info"].set(f"{self.tunnel_url or _tr('隧道未发布')} · {dot.get('subscription')}")
+                if deployed or self.tunnel_url or raw_kind == "ok":
+                    widgets["info"].set(f"{self.tunnel_url or _tr('隧道未发布')} · {dot.get('subscription')}")
+                else:
+                    widgets["info"].set(_tr("未下载 · 启用后自动部署"))
             elif plugin.id == "easytier":
                 peers = extras.get("easytier")
                 widgets["info"].set(_tr("对端读取失败") if peers is None else _tr('可见对端 {0} 个').format(f'{peers}'))
-            elif plugin.id == "muse2api" and (plugins.plugin_root(plugin.id) / ".git").exists():
+            elif plugin.id == "muse2api" and deployed:
                 import gateways
 
                 chrome = _tr("Chrome 已找到") if gateways.chrome_path().is_file() else _tr("缺 Chrome")
                 widgets["info"].set(_tr('{0}/v1 · {1} · muse.ai cookie 在管理台导入').format(f'{gateways.MUSE_URL}', f'{chrome}'))
             else:
-                deployed = (plugins.plugin_root(plugin.id) / ".git").exists()
                 widgets["info"].set(str(plugins.plugin_root(plugin.id)) if deployed else _tr("未下载 · 启用后自动部署"))
-        if hasattr(self, "plugins_status") and not getattr(self, "plugins_updating", False):
-            self.plugins_status.set(_tr("集成：{0} 已启用 · {1} 运行中").format(enabled_count, running_count))
-        if hasattr(self, "plugins_pill") and not getattr(self, "plugins_updating", False):
-            all_ok = running_count >= enabled_count and enabled_count > 0
-            theme.set_pill(self.plugins_pill, _tr("正常") if all_ok else _tr("就绪"), "ok" if all_ok else "idle")
-        self.status.set(_tr('集成状态已更新 · {0}').format(f"{time.strftime('%H:%M:%S')}"))
+        if not getattr(self, "plugins_updating", False):
+            if update_result:
+                summary_text, pill = update_result
+                if hasattr(self, "plugins_status") and summary_text:
+                    self.plugins_status.set(summary_text)
+                if hasattr(self, "plugins_pill") and pill:
+                    theme.set_pill(self.plugins_pill, *pill)
+            else:
+                if hasattr(self, "plugins_status"):
+                    self.plugins_status.set(_tr("集成：{0} 已启用 · {1} 运行中").format(enabled_count, running_count))
+                if hasattr(self, "plugins_pill"):
+                    if attention_count > 0:
+                        theme.set_pill(self.plugins_pill, _tr("部分异常"), "warn")
+                    else:
+                        all_ok = enabled_count > 0 and (
+                            (expected_running_count > 0 and expected_ok_count >= expected_running_count)
+                            or running_count >= enabled_count
+                        )
+                        theme.set_pill(self.plugins_pill, _tr("正常") if all_ok else _tr("就绪"), "ok" if all_ok else "idle")
+            self.status.set(keep_status or _tr('集成状态已更新 · {0}').format(f"{time.strftime('%H:%M:%S')}"))
 
     def copy_tunnel(self):
         url = getattr(self, "tunnel_url", "")
@@ -4092,6 +4192,7 @@ class Panel:
         if getattr(self, "plugins_updating", False):
             return
         self.plugins_updating = True
+        self._plugins_update_result = None
         if hasattr(self, "plugins_update_button"):
             self.plugins_update_button.state(["disabled"])
             self.plugins_update_button.configure(text=_tr("更新中…"))
@@ -4110,18 +4211,38 @@ class Panel:
             if text:
                 self._post_ui_progress(generation, self.plugins_progress, text)
 
+        def work():
+            try:
+                return updates.update_all(progress=progress)
+            except Exception as error:
+                log_error(error)
+                return _tr("检查更新失败：{0}").format(error)
+
         def done(summary):
             self.plugins_updating = False
             if hasattr(self, "plugins_update_button"):
                 self.plugins_update_button.state(["!disabled"])
                 self.plugins_update_button.configure(text=_tr("检查更新"))
-            if hasattr(self, "plugins_status") and summary:
-                self.plugins_status.set(summary)
-            if summary:
-                self.status.set(summary)
-            self.load_plugins()
+            text = str(summary or "")
+            failed = any(word in text.lower() for word in (
+                "失败", "出错", "未更新", "稍后", "没能", "延后",
+                "failed", "error", "not updated", "later", "could not", "deferred",
+            ))
+            pill = (_tr("部分异常") if failed else _tr("已是最新"), "warn" if failed else "ok")
+            if hasattr(self, "plugins_pill"):
+                theme.set_pill(self.plugins_pill, *pill)
+            if hasattr(self, "plugins_status") and text:
+                self.plugins_status.set(text)
+            if text:
+                self.status.set(text)
+            self._plugins_update_result = (text, pill) if text else None
+            self._keep_status_once = text or None
+            try:
+                self.load_plugins()
+            finally:
+                self._keep_status_once = None
 
-        self.run(lambda: updates.update_all(progress=progress), done,
+        self.run(work, done,
                  _tr("正在检查并更新组件…（关闭窗口不会中断）"), long=True)
 
     def plugins_progress(self, message):

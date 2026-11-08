@@ -334,6 +334,8 @@ EN = {
     '已停用 {0}；{1}': 'Disabled {0}; {1}',
     '已停用 {0}（停止时出错：{1}）': 'Disabled {0} (stop failed: {1})',
     '已启用 {0}；{1}': 'Enabled {0}; {1}',
+    '已启用 {0}（启动时出错：{1}）': 'Enabled {0} (start failed: {1})',
+    '已启用 {0}（部署时出错：{1}）': 'Enabled {0} (deploy failed: {1})',
     '已启用 {0}': 'Enabled {0}',
     '已启用 {0}；': 'Enabled {0}; ',
     '正在下载并构建…（关闭窗口不会中断）': 'Downloading and building… (continues if you close this window)',

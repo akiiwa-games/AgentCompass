@@ -344,7 +344,7 @@ def update_all(progress=None) -> str:
         notice = product_notice()
         if notice:
             results.append(notice)
-            report("result", notice)
+            report("result", notice, "AgentCompass")
         report("finish", _tr("本轮更新检查结束"), "")
         return "；".join(results)
     finally:

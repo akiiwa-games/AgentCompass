@@ -8,9 +8,13 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from i18n import translate
+
+_LOCK = threading.RLock()
 
 STATE_DIR = Path.home() / ".agent-compass"
 PATH = STATE_DIR / "plugins.json"
@@ -99,53 +103,65 @@ def defaults() -> dict:
 
 def load(path: Path | None = None) -> dict:
     """{plugin id: {'enabled', 'autostart'}}. A missing or broken file means the defaults (opt-in plugins off)."""
-    path = path or PATH
-    config = defaults()
-    stored = None
-    try:
-        document = json.loads(path.read_text(encoding="utf-8-sig"))
-        stored = document.get("plugins") if isinstance(document, dict) else None
-    except (OSError, ValueError):
-        pass
-    if not isinstance(stored, dict):
-        stored = {}
-        # Before plugins.json, Usage Float's autostart was switched off by a marker file.
-        if (path.parent / LEGACY_UF_AUTOSTART_OFF.name).exists():
-            config["usage-float"]["autostart"] = False
-    for plugin_id, row in stored.items():
-        if plugin_id in config and isinstance(row, dict):
-            for key in ("enabled", "autostart"):
-                if isinstance(row.get(key), bool):
-                    config[plugin_id][key] = row[key]
-    return config
+    with _LOCK:
+        path = path or PATH
+        config = defaults()
+        stored = None
+        try:
+            document = json.loads(path.read_text(encoding="utf-8-sig"))
+            stored = document.get("plugins") if isinstance(document, dict) else None
+        except (OSError, ValueError):
+            pass
+        if not isinstance(stored, dict):
+            stored = {}
+            # Before plugins.json, Usage Float's autostart was switched off by a marker file.
+            if (path.parent / LEGACY_UF_AUTOSTART_OFF.name).exists():
+                config["usage-float"]["autostart"] = False
+        for plugin_id, row in stored.items():
+            if plugin_id in config and isinstance(row, dict):
+                for key in ("enabled", "autostart"):
+                    if isinstance(row.get(key), bool):
+                        config[plugin_id][key] = row[key]
+        return config
 
 
 def save(config: dict, path: Path | None = None) -> None:
-    path = path or PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    clean = {pid: {"enabled": bool(config[pid]["enabled"]), "autostart": bool(config[pid]["autostart"])}
-             for pid in BY_ID if pid in config}
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps({"v": 1, "plugins": clean}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    with _LOCK:
+        path = path or PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        clean = {pid: {"enabled": bool(config[pid]["enabled"]), "autostart": bool(config[pid]["autostart"])}
+                 for pid in BY_ID if pid in config}
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(json.dumps({"v": 1, "plugins": clean}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            temporary.replace(path)
+        finally:
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
 
 
 def set_flag(plugin_id: str, key: str, value: bool, path: Path | None = None) -> dict:
     if plugin_id not in BY_ID or key not in ("enabled", "autostart"):
         raise ValueError(f"unknown plugin setting {plugin_id}.{key}")
-    config = load(path)
-    config[plugin_id][key] = bool(value)
-    save(config, path)
-    return config
+    with _LOCK:
+        config = load(path)
+        config[plugin_id][key] = bool(value)
+        save(config, path)
+        return config
 
 
 def enabled(plugin_id: str, config: dict | None = None) -> bool:
-    return bool((config or load())[plugin_id]["enabled"])
+    with _LOCK:
+        return bool((config or load())[plugin_id]["enabled"])
 
 
 def autostarts(plugin_id: str, config: dict | None = None) -> bool:
-    row = (config or load())[plugin_id]
-    return bool(row["enabled"] and row["autostart"])
+    with _LOCK:
+        row = (config or load())[plugin_id]
+        return bool(row["enabled"] and row["autostart"])
 
 
 def menu_plugins(config: dict) -> list[Plugin]:
