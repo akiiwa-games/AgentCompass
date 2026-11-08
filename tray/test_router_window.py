@@ -1096,17 +1096,19 @@ class WindowHelperTests(unittest.TestCase):
             self.assertEqual(panel.quota_cards[0]["name"].cget("text"), "Claude")
             w0_name, w0_share, w0_bar, w0_detail = panel.quota_cards[0]["windows"][0]
             w1_name, w1_share, w1_bar, w1_detail = panel.quota_cards[0]["windows"][1]
-            self.assertEqual((w0_name.cget("text"), w0_detail.cget("text"), w0_share.cget("text")), ("7d", "2d 1h", "20%"))
-            self.assertEqual((w1_name.cget("text"), w1_detail.cget("text"), w1_share.cget("text")), ("5h", "3h 10m", "70%"))
-            self.assertEqual(panel.quota_cards[2]["windows"][0][0].cget("text"), "credits")
+            self.assertEqual((w0_name.cget("text"), w0_detail.cget("text"), w0_share.cget("text")), ("7d", "2d 1h", "80%"))
+            self.assertEqual((w1_name.cget("text"), w1_detail.cget("text"), w1_share.cget("text")), ("5h", "3h 10m", "30%"))
+            self.assertEqual((w0_bar.value, w1_bar.value), (80.0, 30.0))
+            self.assertEqual((w0_bar.colour, w1_bar.colour), ("Green", "Amber"))
+            self.assertEqual(panel.quota_cards[2]["windows"][0][0].cget("text"), "")
+            for c in panel.quota_cards:
+                self.assertGreaterEqual(c["name"].winfo_width(), c["name"].winfo_reqwidth())
             # Segmented bar splits 100% into used (20%), reserved (12.5%), and free remaining (67.5%).
             self.assertEqual(w0_bar.segments, {"used_pct": 20.0, "reserved_pct": 12.5, "remaining_pct": 67.5})
-            # Secondary details ($, burn rate, plan, in-flight workers) live in the hover tooltip.
+            # Hover tooltip shows plan, remaining %, countdown, and in-flight reservation %.
             self.assertIn("max20", panel.quota_cards[0]["tooltip_text"])
-            self.assertIn("≈$500", panel.quota_cards[0]["tooltip_text"])
-            self.assertIn("1.20%/h", panel.quota_cards[0]["tooltip_text"])
-            self.assertIn("a1b2c3d4", panel.quota_cards[0]["tooltip_text"])
-            self.assertIn("opus55_high", panel.quota_cards[0]["tooltip_text"])
+            self.assertIn("7d 80% · 2d 1h · 在途 12%", panel.quota_cards[0]["tooltip_text"])
+            self.assertIn("5h 30% · 3h 10m", panel.quota_cards[0]["tooltip_text"])
             self.assertEqual(panel.quota_unmetered_cards[0]["name"].cget("text"), "OpenCode")
             # Worker table is visible without scrolling and shows at least 4 rows of height.
             self.assertGreaterEqual(panel.worker_table.winfo_height(), panel.worker_table.winfo_reqheight())
@@ -1120,6 +1122,186 @@ class WindowHelperTests(unittest.TestCase):
             root.update()
             self.assertEqual(panel.quota_cols, 3)
             self.assertEqual([w["outer"] for w in panel.quota_cards], outers_before)
+            errors.assert_not_called()
+
+    def test_quota_bar_and_card_show_remaining_percentage_and_thresholds(self):
+        import tkinter as tk
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        holder = tk.Frame(root)
+        bar = router_window.QuotaBar(tk, holder)
+        bar.set_segments(80.0, reserved_pct=12.5, colour="Green", stale=False)
+        self.assertEqual(bar.value, 80.0)
+        self.assertEqual(bar["value"], 80.0)
+        self.assertEqual(bar.segments, {"used_pct": 20.0, "reserved_pct": 12.5, "remaining_pct": 67.5})
+        rem_items = bar.canvas.find_withtag("seg_remaining")
+        self.assertEqual(len(rem_items), 1)
+        self.assertEqual(len(bar.canvas.find_withtag("seg_used")), 0)
+        coords = bar.canvas.coords(rem_items[0])
+        track_coords = bar.canvas.coords(bar.canvas.find_withtag("usage_track")[0])
+        self.assertAlmostEqual(coords[2] / track_coords[2], 0.80, places=2)
+
+        # Verify colour thresholds follow remaining percentage (<=10% Red, <=30% Amber, >30% Green)
+        for rem, expected_colour, expected_fg in (
+            (80.0, "Green", router_window.theme.GREEN),
+            (30.0, "Amber", router_window.theme.AMBER),
+            (10.0, "Red", router_window.theme.RED),
+        ):
+            w_name = tk.Label(holder)
+            w_share = tk.Label(holder)
+            w_detail = tk.Label(holder)
+            w_bar = router_window.QuotaBar(tk, holder)
+            widgets = {"windows": [(w_name, w_share, w_bar, w_detail)], "refreshable": False}
+            card = {
+                "account": "claude",
+                "label": "Claude",
+                "kind": "ok",
+                "usage_status": "fresh",
+                "windows": [{"id": "seven_day", "hours": 168, "remaining_pct": rem, "reset_in": "2天1小时", "stale": False}],
+            }
+            router_window.Panel.fill_quota_card(widgets, card)
+            self.assertEqual(w_share.cget("text"), f"{rem:.0f}%")
+            self.assertEqual(w_share.cget("fg"), expected_fg)
+            self.assertEqual(w_bar.value, rem)
+            self.assertEqual(w_bar.colour, expected_colour)
+
+    def test_quota_page_reentering_after_data_update_shows_fresh_readings_and_marks_failed_accounts(self):
+        import router_window
+        import tk_test_support
+
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        t1 = "2026-11-08T01:00:00+00:00"
+        t2 = "2026-11-08T05:30:00+00:00"
+        t3 = "2026-11-08T06:15:00+00:00"
+        t_fail_last = "2026-11-07T02:00:00+00:00"
+
+        def make_cards(claude_rem, claude_at, codex_failing=False):
+            cards = [{
+                "account": "claude",
+                "label": "Claude",
+                "badge": "就绪",
+                "kind": "ok",
+                "status": "ready",
+                "plan": "max20",
+                "fetched_at": claude_at,
+                "usage_status": "fresh",
+                "usage_age_seconds": 60,
+                "refreshable": True,
+                "windows": [{
+                    "id": "seven_day",
+                    "hours": 168,
+                    "remaining_pct": claude_rem,
+                    "reserved_pct": 0.0,
+                    "reset_in": "2天1小时",
+                    "stale": False,
+                }],
+            }]
+            if codex_failing:
+                cards.append({
+                    "account": "codex",
+                    "label": "Codex",
+                    "badge": f"读数失败：read_failed（上次成功 {router_data.read_time_text(t_fail_last)}）",
+                    "kind": "warn",
+                    "status": "usage_failing",
+                    "status_reason": "read_failed",
+                    "last_success_at": t_fail_last,
+                    "fetched_at": t_fail_last,
+                    "plan": "pro",
+                    "usage_status": "stale",
+                    "usage_age_seconds": 86400,
+                    "refreshable": True,
+                    "windows": [{
+                        "id": "usage",
+                        "hours": 168,
+                        "remaining_pct": 75.0,
+                        "reserved_pct": 0.0,
+                        "reset_in": "4天2小时",
+                        "stale": True,
+                    }],
+                })
+            else:
+                cards.append({
+                    "account": "codex",
+                    "label": "Codex",
+                    "badge": "就绪",
+                    "kind": "ok",
+                    "status": "ready",
+                    "plan": "pro",
+                    "fetched_at": claude_at,
+                    "usage_status": "fresh",
+                    "usage_age_seconds": 60,
+                    "refreshable": True,
+                    "windows": [{
+                        "id": "usage",
+                        "hours": 168,
+                        "remaining_pct": 75.0,
+                        "reserved_pct": 0.0,
+                        "reset_in": "4天2小时",
+                        "stale": False,
+                    }],
+                })
+            return cards
+
+        current_cards = [make_cards(85.0, t1)]
+
+        def sync_run(work, done=None, status=None, long=False):
+            if status:
+                panel.status.set(status)
+            res = work()
+            if done:
+                done(res)
+
+        with mock.patch.object(router_data, "account_cards", side_effect=lambda: current_cards[0]), \
+                mock.patch.object(router_data, "workers", return_value=[]), \
+                mock.patch.object(router_data, "collect_usage_now") as http_collect, \
+                mock.patch.object(router_window.theme, "set_window_icon"), \
+                mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()), \
+                mock.patch.object(router_window, "log_error") as errors:
+            with mock.patch.object(router_window.Panel, "run"), mock.patch.object(router_window.Panel, "prefill"):
+                panel = router_window.Panel(root, "scoring")
+            self.addCleanup(lambda: panel._poll_id and root.after_cancel(panel._poll_id))
+
+            with mock.patch.object(panel, "run", side_effect=sync_run), \
+                    mock.patch.object(panel, "schedule_prebuild"):
+                # Prebuild builds "quota" in the background with initial snapshot (85% at t1).
+                panel.prebuild_next()
+                self.assertIn("quota", panel.built)
+                self.assertIn("quota", panel.stale)
+                self.assertEqual(panel.quota_cards[0]["windows"][0][1].cget("text"), "85%")
+                self.assertEqual(panel.quota_cards[0]["windows"][0][2].value, 85.0)
+
+                # Collector updates cache to 42% at t2 while window is on "scoring"; first visit to "quota" must refresh.
+                current_cards[0] = make_cards(42.0, t2, codex_failing=True)
+                panel.show("quota")
+                self.assertEqual(panel.quota_cards[0]["windows"][0][1].cget("text"), "42%")
+                self.assertEqual(panel.quota_cards[0]["windows"][0][2].value, 42.0)
+                self.assertIn(router_data.read_time_text(t2), panel.quota_updated.cget("text"))
+                self.assertEqual(panel.quota_cards[0]["read_at"].cget("text"), router_data.read_time_text(t2))
+
+                # Failing account is explicitly flagged and its old reading is marked stale, never fresh.
+                codex_card = panel.quota_cards[1]
+                self.assertEqual(codex_card["name"].cget("text"), "Codex · 读数失败")
+                self.assertEqual(int(panel.quota_cards[0]["read_at"].grid_info()["row"]), 0)
+                self.assertEqual(int(codex_card["read_at"].grid_info()["row"]), 1)
+                self.assertIn(router_data.read_time_text(t_fail_last), codex_card["read_at"].cget("text"))
+                self.assertIn("旧读数", codex_card["read_at"].cget("text"))
+                self.assertTrue(codex_card["windows"][0][2].stale)
+                self.assertEqual(codex_card["windows"][0][1].cget("fg"), "#64748B")
+
+                # Switch away to "scoring", collector updates cache to 18% at t3, then switch back to "quota".
+                panel.show("scoring")
+                current_cards[0] = make_cards(18.0, t3, codex_failing=True)
+                panel.show("quota")
+                self.assertEqual(panel.quota_cards[0]["windows"][0][1].cget("text"), "18%")
+                self.assertEqual(panel.quota_cards[0]["windows"][0][2].value, 18.0)
+                self.assertEqual(panel.quota_cards[0]["windows"][0][2].colour, "Amber")
+                self.assertIn(router_data.read_time_text(t3), panel.quota_updated.cget("text"))
+                self.assertEqual(panel.quota_cards[0]["read_at"].cget("text"), router_data.read_time_text(t3))
+                http_collect.assert_not_called()
             errors.assert_not_called()
 
 
