@@ -150,6 +150,7 @@ def apply(root, title: str | None = None, geometry: str | None = None, minsize: 
     style.configure("Page.TLabel", foreground=INK, font=(FONT, 14, "bold"))
     style.configure("CardH3.TLabel", background=CARD, foreground=INK, font=(FONT, 10, "bold"))
     style.configure("CardTiny.TLabel", background=CARD, foreground=MUTED, font=(FONT, 8))
+    style.configure("CardColumn.TLabel", background=CARD, foreground=MUTED, font=(FONT, 9, "bold"))  # table headers
     style.configure("Tiny.TButton", font=(FONT, 9), padding=(6, 1), width=-4)
     style.configure("SmallAccent.TButton", font=(FONT, 9), padding=(8, 3), width=-6, background=ACCENT, foreground="#FFFFFF",
                     bordercolor=ACCENT, lightcolor=ACCENT, darkcolor=ACCENT, focuscolor=ACCENT)

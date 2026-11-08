@@ -109,6 +109,19 @@ PALETTE_DARK = {
 }
 
 DIFFICULTY_ORDER = ("routine", "hard", "coupled", "frontier")
+
+# Layout in 96-dpi pixels (scaled by dpi_scale). Text sizes follow the panel's type ramp: row labels match the 9pt
+# table text, annotations the 8pt hint text, the column title the 10pt bold card heading.
+TOP_HEADER_H = 108
+BAND_STRIP_TOP = 84
+CRIT_FOOTER_H = 28
+BOTTOM_PAD = 52
+ROW_H_DENSE = 30.0  # more than 18 models
+ROW_H = 32.0
+LEFT_COL_MIN = 228
+LEFT_COL_MAX = 340
+FONT_PX = {"title": 13.5, "sub": 11.5, "row": 12.0, "acct": 10.5, "mono": 11.5, "mono_sm": 11.0,
+           "tiny": 10.5, "pill": 11.5, "tip_head": 12.5, "tip_body": 11.0}
 DIFFICULTY_SHORT = {
     "routine": "常规",
     "hard": "较难",
@@ -227,6 +240,15 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font, max_w: float, max_lin
     return lines
 
 
+def _fit_text(draw: ImageDraw.ImageDraw, text: str, font, max_w: float) -> str:
+    """text, or its longest prefix plus an ellipsis that fits max_w (the hover card still shows it in full)."""
+    if max_w <= 0 or draw.textlength(text, font=font) <= max_w:
+        return text
+    while len(text) > 1 and draw.textlength(text + "…", font=font) > max_w:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
 class AbilityFloorRenderer:
     """High-DPI PIL renderer for the ability-floor chart."""
 
@@ -238,7 +260,7 @@ class AbilityFloorRenderer:
                  dpi_scale: float | None = None, supersample: int = 2):
         self.theme_mode = "dark" if str(theme_mode).lower() == "dark" else "light"
         self.pal = PALETTE_DARK if self.theme_mode == "dark" else PALETTE_LIGHT
-        self.dpi_scale = float(dpi_scale if dpi_scale is not None else getattr(theme, "SCALE", 1.0))
+        self.dpi_scale = float(dpi_scale if dpi_scale is not None else getattr(theme, "FACTOR", 1.0))
         self.supersample = max(1, int(supersample))
         self.width = max(560, int(width))
         self.height = int(height) if height is not None else 460
@@ -248,14 +270,35 @@ class AbilityFloorRenderer:
 
     def _row_height_px(self, model_count: int) -> int:
         s = self.dpi_scale
-        unit = 23.5 if model_count > 18 else 26.5
+        unit = ROW_H_DENSE if model_count > 18 else ROW_H
         return int(round(unit * s))
+
+    def _left_column_width(self, draw, models, k, left_margin, f_acct, f_row, f_tiny, f_title) -> int:
+        """Wide enough for the longest account pill + model name + badges, within LEFT_COL_MIN..MAX."""
+        def badge(text):
+            return draw.textlength(text, font=f_tiny) + 12 * k
+
+        need = left_margin + 4 * k + draw.textlength(_tr("模型与账号档位"), font=f_title)
+        for m in models:
+            acct = str(m.get("account_label") or m.get("account") or "")
+            label = str(m.get("model_label") or m.get("model") or "")
+            width = (left_margin + 4 * k + draw.textlength(acct, font=f_acct) + 19 * k
+                     + draw.textlength(label, font=f_row) + 6 * k)
+            if m.get("fixed_effort"):
+                fixed = str(m["fixed_effort"]).lower()
+                width += badge(f"{_tr('固定')}·{EFFORT_SHORT.get(fixed, fixed)}")
+            if m.get("estimated"):
+                width += badge(_tr("估"))
+            if not m.get("enabled", True):
+                width += badge(_tr("未选"))
+            need = max(need, width + 10 * k)
+        return int(round(max(LEFT_COL_MIN * k, min(LEFT_COL_MAX * k, need))))
 
     def compute_height_for_models(self, model_count: int) -> int:
         s = self.dpi_scale
-        top_pad = int(round(92 * s))
-        crit_footer_pad = int(round(24 * s))
-        bottom_pad = int(round(44 * s))
+        top_pad = int(round(TOP_HEADER_H * s))
+        crit_footer_pad = int(round(CRIT_FOOTER_H * s))
+        bottom_pad = int(round(BOTTOM_PAD * s))
         row_h = self._row_height_px(model_count)
         rows = max(6, int(model_count))
         return top_pad + rows * row_h + crit_footer_pad + bottom_pad
@@ -332,20 +375,24 @@ class AbilityFloorRenderer:
         img = Image.new("RGBA", (W, H), pal["surface"])
         draw = ImageDraw.Draw(img, "RGBA")
 
-        f_title = _load_font("bold", max(11, int(round(10.5 * k))))
-        f_sub = _load_font("regular", max(10, int(round(9.0 * k))))
-        f_row = _load_font("bold", max(10, int(round(9.5 * k))))
-        f_acct = _load_font("bold", max(9, int(round(8.2 * k))))
-        f_mono = _load_font("mono", max(9, int(round(8.8 * k))))
-        f_mono_sm = _load_font("mono", max(8, int(round(7.8 * k))))
-        f_tiny = _load_font("regular", max(8, int(round(8.0 * k))))
-        f_pill = _load_font("bold", max(9, int(round(8.5 * k))))
+        def font(kind: str, name: str):
+            return _load_font(kind, max(8, int(round(FONT_PX[name] * k))))
 
-        left_col_w = int(round(218 * k))
+        f_title = font("bold", "title")
+        f_sub = font("regular", "sub")
+        f_row = font("bold", "row")
+        f_acct = font("bold", "acct")
+        f_mono = font("mono", "mono")
+        f_mono_sm = font("mono", "mono_sm")
+        f_tiny = font("regular", "tiny")
+        f_pill = font("bold", "pill")
+
+        left_margin = int(round(14 * k))
+        left_col_w = self._left_column_width(draw, models, k, left_margin, f_acct, f_row, f_tiny, f_title)
         right_pad = int(round(22 * k))
-        band_strip_top = int(round(72 * k))
-        top_header_h = int(round(92 * k))
-        crit_footer_h = int(round(24 * k))
+        band_strip_top = int(round(BAND_STRIP_TOP * k))
+        top_header_h = int(round(TOP_HEADER_H * k))
+        crit_footer_h = int(round(CRIT_FOOTER_H * k))
 
         plot_left = left_col_w
         plot_right = W - right_pad
@@ -401,12 +448,8 @@ class AbilityFloorRenderer:
             if cx2 > cx1 + 1:
                 bdraw.rectangle([cx1, band_strip_top, cx2, plot_bottom], fill=bcol)
                 if cx2 - cx1 >= 52 * k:
-                    tb = bdraw.textbbox((0, 0), blabel, font=f_tiny)
-                    tw = tb[2] - tb[0]
-                    th = tb[3] - tb[1]
-                    tx = cx1 + (cx2 - cx1 - tw) / 2
-                    ty = band_strip_top + (plot_top - band_strip_top - th) / 2 - int(round(1 * k))
-                    bdraw.text((tx, ty), blabel, fill=_with_alpha(pal["text_mid"], 185), font=f_tiny)
+                    bdraw.text(((cx1 + cx2) / 2, (band_strip_top + plot_top) / 2), blabel,
+                               fill=_with_alpha(pal["text_mid"], 185), font=f_tiny, anchor="mm")
 
         img = Image.alpha_composite(img, band_overlay)
         draw = ImageDraw.Draw(img, "RGBA")
@@ -424,7 +467,6 @@ class AbilityFloorRenderer:
 
         row_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         rdraw = ImageDraw.Draw(row_overlay, "RGBA")
-        left_margin = int(round(14 * k))
         for idx, m in enumerate(models):
             ry1 = plot_top + idx * row_h
             ry2 = ry1 + row_h
@@ -515,29 +557,28 @@ class AbilityFloorRenderer:
 
         # Left column header & axis title
         draw.text(
-            (left_margin + 4 * k, int(round(16 * k))),
+            (left_margin + 4 * k, int(round(14 * k))),
             _tr("模型与账号档位"),
             fill=pal["text"],
             font=f_title,
         )
+        legend = _wrap_text(draw, _tr("实心=已启用 · 双环=固定档 · 菱形=估算分 · 浅色=未勾选"), f_tiny,
+                            plot_left - left_margin - 16 * k, max_lines=2)
+        for li, line in enumerate(legend):
+            draw.text((left_margin + 4 * k, int(round((38 + li * 15.5) * k))), line, fill=pal["text_muted"], font=f_tiny)
         draw.text(
-            (left_margin + 4 * k, int(round(38 * k))),
-            _tr("实心=已启用 · 双环=固定档 · 菱形=估算分 · 浅色=未勾选"),
-            fill=pal["text_muted"],
-            font=f_tiny,
-        )
-        draw.text(
-            (left_margin + 4 * k, band_strip_top + int(round(3 * k))),
+            (left_margin + 4 * k, (band_strip_top + plot_top) / 2),
             _tr("所属账号 / 模型名称"),
             fill=pal["text_muted"],
             font=f_tiny,
+            anchor="lm",
         )
 
         # Bottom axis caption
         axis_title = _tr("有效能力值（Base Tier × 思考档位加成）")
         at_box = draw.textbbox((0, 0), axis_title, font=f_sub)
         draw.text(
-            (plot_right - (at_box[2] - at_box[0]), plot_bottom + int(round(22 * k))),
+            (plot_right - (at_box[2] - at_box[0]), plot_bottom + int(round(26 * k))),
             axis_title,
             fill=pal["text_muted"],
             font=f_sub,
@@ -547,6 +588,7 @@ class AbilityFloorRenderer:
         crit_to_show = [("hard", critical_gates.get("hard")), ("frontier", critical_gates.get("frontier"))]
         if active_handle in DIFFICULTY_ORDER and active_handle not in ("frontier", "hard"):
             crit_to_show.append((active_handle, critical_gates.get(active_handle)))
+        crit_tags = []  # drawn with the markers, above the floor lines that cross the footer strip
         for c_diff, c_val in crit_to_show:
             if c_val is None or not (self.MAIN_MIN <= float(c_val) <= self.MAIN_MAX):
                 continue
@@ -560,20 +602,7 @@ class AbilityFloorRenderer:
                 dash=int(round(3 * ss)),
                 gap=int(round(4 * ss)),
             )
-            c_lbl = f"{_tr(DIFFICULTY_SHORT.get(c_diff, c_diff))}+{_tr('关键')} {float(c_val):.2f}"
-            cb = draw.textbbox((0, 0), c_lbl, font=f_tiny)
-            cw = cb[2] - cb[0]
-            ch = cb[3] - cb[1]
-            cy = rows_bottom + (crit_footer_h - (ch + 5 * k)) / 2
-            px1 = max(plot_left + 2 * k, min(plot_right - cw - 10 * k, cx - cw / 2 - 5 * k))
-            draw.rounded_rectangle(
-                [px1, cy, px1 + cw + 10 * k, cy + ch + 5 * k],
-                radius=int(round(4 * k)),
-                fill=_with_alpha(pal["surface"], 235),
-                outline=_with_alpha(pal["floor_critical"], 175),
-                width=1,
-            )
-            draw.text((px1 + 5 * k, cy + 1 * k), c_lbl, fill=pal["floor_critical"], font=f_tiny)
+            crit_tags.append((cx, f"{_tr(DIFFICULTY_SHORT.get(c_diff, c_diff))}+{_tr('关键')} {float(c_val):.2f}"))
 
         # 5. Secondary route-specific floor lines & handles (e.g. tool_execution.hard)
         route_items = sorted(route_floors.items(), key=lambda kv: kv[1])
@@ -593,10 +622,9 @@ class AbilityFloorRenderer:
             r_name, r_diff = rk.split(".", 1) if "." in rk else (rk, "hard")
             short_route = display_names.kind_label(r_name)
             r_text = f"{short_route}·{_tr(DIFFICULTY_SHORT.get(r_diff, r_diff))} {rval:.2f}"
-            rb = draw.textbbox((0, 0), r_text, font=f_tiny)
-            rw = rb[2] - rb[0] + int(round(20 * k))
-            rh = int(round(18 * k))
-            ry = int(round(9 * k))
+            rw = draw.textlength(r_text, font=f_tiny) + int(round(22 * k))
+            rh = int(round(22 * k))
+            ry = int(round(8 * k))
             rx1 = max(plot_left, min(plot_right - rw, rx - rw / 2))
             draw.line([(rx1 + rw / 2, ry + rh), (rx, band_strip_top)], fill=_with_alpha(rcol, 175), width=max(1, ss))
             draw.rounded_rectangle(
@@ -608,14 +636,14 @@ class AbilityFloorRenderer:
             )
             # Vector grip dots on route handle pill
             gx_base = rx1 + int(round(6 * k))
-            gy_base = ry + int(round(4.5 * k))
+            gy_base = ry + rh / 2 - int(round(3.4 * k))
             dot_r = max(1, int(round(1.0 * k)))
             for g_row in range(3):
                 for g_col in range(2):
                     dx = gx_base + g_col * int(round(3.0 * k))
                     dy = gy_base + g_row * int(round(3.4 * k))
                     draw.ellipse([dx - dot_r, dy - dot_r, dx + dot_r, dy + dot_r], fill=_with_alpha(rcol, 200))
-            draw.text((rx1 + int(round(14 * k)), ry + int(round(1.5 * k))), r_text, fill=rcol, font=f_tiny)
+            draw.text((rx1 + int(round(15 * k)), ry + rh / 2), r_text, fill=rcol, font=f_tiny, anchor="lm")
             self.handle_hitboxes.append({
                 "id": f"route:{rk}",
                 "kind": "route",
@@ -639,9 +667,8 @@ class AbilityFloorRenderer:
             fx = vx(fval)
             d_lbl = _tr(DIFFICULTY_SHORT.get(d, d))
             txt = f"{d_lbl} {fval:.2f}"
-            tb = draw.textbbox((0, 0), txt, font=f_pill)
-            pw = (tb[2] - tb[0]) + int(round(24 * k))
-            ph = int(round(21 * k))
+            pw = draw.textlength(txt, font=f_pill) + int(round(26 * k))
+            ph = int(round(23 * k))
             handle_specs.append({
                 "key": d,
                 "val": fval,
@@ -685,7 +712,7 @@ class AbilityFloorRenderer:
 
             pw, ph = spec["pw"], spec["ph"]
             hx1 = spec["cx"] - pw / 2
-            hy1 = int(round((33 if spec["tier"] == 0 else 48) * k))
+            hy1 = int(round((36 if spec["tier"] == 0 else 58) * k))
             hx2 = hx1 + pw
             hy2 = hy1 + ph
 
@@ -714,7 +741,7 @@ class AbilityFloorRenderer:
             )
 
             gx_base = hx1 + int(round(7 * k))
-            gy_base = hy1 + int(round(5.5 * k))
+            gy_base = hy1 + ph / 2 - int(round(3.8 * k))
             dot_r = max(1, int(round(1.1 * k)))
             for g_row in range(3):
                 for g_col in range(2):
@@ -723,10 +750,11 @@ class AbilityFloorRenderer:
                     draw.ellipse([dx - dot_r, dy - dot_r, dx + dot_r, dy + dot_r], fill=_with_alpha(col, 200))
 
             draw.text(
-                (hx1 + int(round(16 * k)), hy1 + int(round(2.0 * k))),
+                (hx1 + int(round(17 * k)), hy1 + ph / 2),
                 spec["text"],
                 fill=col if is_act else pal["text"],
                 font=f_pill,
+                anchor="lm",
             )
 
             self.handle_hitboxes.append({
@@ -754,9 +782,8 @@ class AbilityFloorRenderer:
 
             # Left column: account pill + model label
             acct_txt = str(m.get("account_label") or m.get("account") or "")
-            ab = mdraw.textbbox((0, 0), acct_txt, font=f_acct)
-            aw = (ab[2] - ab[0]) + int(round(10 * k))
-            ah = int(round(15 * k))
+            aw = mdraw.textlength(acct_txt, font=f_acct) + int(round(12 * k))
+            ah = int(round(19 * k))
             ax1 = left_margin + int(round(4 * k))
             ay1 = ry_mid - ah / 2
             mdraw.rounded_rectangle(
@@ -767,31 +794,31 @@ class AbilityFloorRenderer:
                 width=1,
             )
             mdraw.text(
-                (ax1 + int(round(5 * k)), ay1 + int(round(1 * k))),
+                (ax1 + aw / 2, ry_mid),
                 acct_txt,
                 fill=_with_alpha(fam_col, 245 if enabled else 130),
                 font=f_acct,
+                anchor="mm",
             )
 
-            mdl_txt = str(m.get("model_label") or m.get("model") or "")
-            mx = ax1 + aw + int(round(6 * k))
-            mb = mdraw.textbbox((0, 0), mdl_txt, font=f_row)
-            mh = mb[3] - mb[1]
+            mx = ax1 + aw + int(round(7 * k))
+            mdl_txt = _fit_text(mdraw, str(m.get("model_label") or m.get("model") or ""), f_row,
+                                plot_left - mx - int(round(8 * k)))
             mdraw.text(
-                (mx, ry_mid - mh / 2 - int(round(1 * k))),
+                (mx, ry_mid),
                 mdl_txt,
                 fill=_with_alpha(pal["text"], 255 if enabled else 120),
                 font=f_row,
+                anchor="lm",
             )
 
             # Badges in left column (固定 / 估 / 未选)
             fixed_eff = m.get("fixed_effort")
-            bx_cursor = mx + (mb[2] - mb[0]) + int(round(5 * k))
+            bx_cursor = mx + mdraw.textlength(mdl_txt, font=f_row) + int(round(6 * k))
             if fixed_eff and bx_cursor < plot_left - int(round(26 * k)):
                 ftag = f"{_tr('固定')}·{EFFORT_SHORT.get(str(fixed_eff).lower(), str(fixed_eff))}"
-                fb = mdraw.textbbox((0, 0), ftag, font=f_tiny)
-                fw = (fb[2] - fb[0]) + int(round(6 * k))
-                fh = int(round(13 * k))
+                fw = mdraw.textlength(ftag, font=f_tiny) + int(round(8 * k))
+                fh = int(round(17 * k))
                 fy = ry_mid - fh / 2
                 mdraw.rounded_rectangle(
                     [bx_cursor, fy, bx_cursor + fw, fy + fh],
@@ -801,18 +828,18 @@ class AbilityFloorRenderer:
                     width=1,
                 )
                 mdraw.text(
-                    (bx_cursor + int(round(3 * k)), fy),
+                    (bx_cursor + fw / 2, ry_mid),
                     ftag,
                     fill=_with_alpha(pal["text_mid"], alpha),
                     font=f_tiny,
+                    anchor="mm",
                 )
                 bx_cursor += fw + int(round(4 * k))
 
             if estimated and bx_cursor < plot_left - int(round(22 * k)):
                 etag = _tr("估")
-                eb = mdraw.textbbox((0, 0), etag, font=f_tiny)
-                ew = (eb[2] - eb[0]) + int(round(6 * k))
-                eh = int(round(13 * k))
+                ew = mdraw.textlength(etag, font=f_tiny) + int(round(8 * k))
+                eh = int(round(17 * k))
                 ey = ry_mid - eh / 2
                 mdraw.rounded_rectangle(
                     [bx_cursor, ey, bx_cursor + ew, ey + eh],
@@ -820,25 +847,25 @@ class AbilityFloorRenderer:
                     fill=_with_alpha(pal["est_badge_bg"], alpha),
                 )
                 mdraw.text(
-                    (bx_cursor + int(round(3 * k)), ey),
+                    (bx_cursor + ew / 2, ry_mid),
                     etag,
                     fill=_with_alpha(pal["est_badge_fg"], alpha),
                     font=f_tiny,
+                    anchor="mm",
                 )
                 bx_cursor += ew + int(round(4 * k))
 
             if not enabled and bx_cursor < plot_left - int(round(28 * k)):
                 otag = _tr("未选")
-                ob = mdraw.textbbox((0, 0), otag, font=f_tiny)
-                ow = (ob[2] - ob[0]) + int(round(6 * k))
-                oh = int(round(13 * k))
+                ow = mdraw.textlength(otag, font=f_tiny) + int(round(8 * k))
+                oh = int(round(17 * k))
                 oy = ry_mid - oh / 2
                 mdraw.rounded_rectangle(
                     [bx_cursor, oy, bx_cursor + ow, oy + oh],
                     radius=int(round(3 * k)),
                     fill=pal["off_badge_bg"],
                 )
-                mdraw.text((bx_cursor + int(round(3 * k)), oy), otag, fill=pal["off_badge_fg"], font=f_tiny)
+                mdraw.text((bx_cursor + ow / 2, ry_mid), otag, fill=pal["off_badge_fg"], font=f_tiny, anchor="mm")
 
             # Effort range bar & dots inside plot
             efforts = m.get("efforts") or []
@@ -873,7 +900,7 @@ class AbilityFloorRenderer:
                 dot_col = _with_alpha(_family_color(m.get("account", ""), pal), e_alpha)
                 is_high = str(eff.get("effort") or "").lower() in ("high", "default")
                 is_fixed = bool(eff.get("fixed") or fixed_eff)
-                r = int(round((5.4 if is_hov else 4.3) * k))
+                r = int(round((5.8 if is_hov else 4.8) * k))
 
                 if estimated:
                     # Distinct diamond marker for estimated/unmeasured models
@@ -936,13 +963,28 @@ class AbilityFloorRenderer:
             else:
                 vcol = pal["text"] if is_hov else _with_alpha(pal["text_mid" if enabled else "text_muted"], 235 if enabled else 140)
             vfont = f_row if is_hov else f_mono_sm
-            vb = mdraw.textbbox((0, 0), val_txt, font=vfont)
-            vw = vb[2] - vb[0]
-            vh = vb[3] - vb[1]
-            vx_label = x_max + int(round(9 * k))
+            vw = mdraw.textlength(val_txt, font=vfont)
+            vx_label = x_max + int(round(10 * k))
             if vx_label + vw > plot_right - int(round(6 * k)):
-                vx_label = x_min - vw - int(round(9 * k))
-            mdraw.text((vx_label, ry_mid - vh / 2 - int(round(1 * k))), val_txt, fill=vcol, font=vfont)
+                vx_label = x_min - vw - int(round(10 * k))
+            # A soft backing keeps the figure readable where a floor line crosses it.
+            mdraw.rounded_rectangle([vx_label - 2 * k, ry_mid - 9 * k, vx_label + vw + 2 * k, ry_mid + 9 * k],
+                                    radius=int(round(3 * k)), fill=_with_alpha(pal["plot_bg"], 225))
+            mdraw.text((vx_label, ry_mid), val_txt, fill=vcol, font=vfont, anchor="lm")
+
+        for cx, c_lbl in crit_tags:
+            cw = mdraw.textlength(c_lbl, font=f_tiny)
+            ch = 19 * k
+            cy = rows_bottom + (crit_footer_h - ch) / 2
+            px1 = max(plot_left + 2 * k, min(plot_right - cw - 12 * k, cx - cw / 2 - 6 * k))
+            mdraw.rounded_rectangle(
+                [px1, cy, px1 + cw + 12 * k, cy + ch],
+                radius=int(round(4 * k)),
+                fill=_with_alpha(pal["surface"], 245),
+                outline=_with_alpha(pal["floor_critical"], 175),
+                width=1,
+            )
+            mdraw.text((px1 + 6 * k, cy + ch / 2), c_lbl, fill=pal["floor_critical"], font=f_tiny, anchor="lm")
 
         # Left column vertical divider & horizontal rails
         mdraw.line([(plot_left, int(round(6 * k))), (plot_left, plot_bottom)], fill=pal["border"], width=max(1, ss))
@@ -958,7 +1000,8 @@ class AbilityFloorRenderer:
             img = self._draw_hover_tooltip(img, models[hovered_row], hovered_row, len(models), floors, route_floors,
                                            critical_gates, plot_left, plot_right, plot_top, rows_bottom, row_h, k, ss, vx)
 
-        return img.resize((w1, h1), Image.Resampling.LANCZOS)
+        # An exact box reduce of the supersampled image: same anti-aliasing, a fraction of LANCZOS's cost at panel size.
+        return img.reduce(ss) if ss > 1 else img
 
     def _draw_hover_tooltip(self, img: Image.Image, m: dict, row_idx: int, total_rows: int, floors: dict,
                             route_floors: dict, critical_gates: dict, plot_left: int, plot_right: int,
@@ -967,12 +1010,12 @@ class AbilityFloorRenderer:
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         tdraw = ImageDraw.Draw(overlay, "RGBA")
 
-        f_head = _load_font("bold", max(10, int(round(9.8 * k))))
-        f_body = _load_font("regular", max(9, int(round(8.4 * k))))
-        f_bold_sm = _load_font("bold", max(9, int(round(8.4 * k))))
+        f_head = _load_font("bold", max(10, int(round(FONT_PX["tip_head"] * k))))
+        f_body = _load_font("regular", max(9, int(round(FONT_PX["tip_body"] * k))))
+        f_bold_sm = _load_font("bold", max(9, int(round(FONT_PX["tip_body"] * k))))
 
-        card_w = int(round(272 * k))
-        pad = int(round(9 * k))
+        card_w = int(round(300 * k))
+        pad = int(round(11 * k))
 
         title = f"{m.get('account_label')} · {m.get('model_label')}"
         status_tags = [
@@ -1006,8 +1049,8 @@ class AbilityFloorRenderer:
         basis_raw = m.get("basis") or _tr("公开基准校准数据")
         basis_lines = _wrap_text(tdraw, _tr("依据：") + basis_raw, f_body, card_w - 2 * pad, max_lines=3)
 
-        line_h = int(round(15.5 * k))
-        card_h = pad * 2 + int(round(20 * k)) + line_h * (3 + len(basis_lines)) + int(round(6 * k))
+        line_h = int(round(18 * k))
+        card_h = pad * 2 + int(round(22 * k)) + line_h * (3 + len(basis_lines)) + int(round(6 * k))
 
         # Models form a top-right to bottom-left staircase: place tooltip in the empty bottom-right
         # quadrant when hovering top rows, or in the empty top-left quadrant when hovering bottom rows.
@@ -1037,7 +1080,7 @@ class AbilityFloorRenderer:
 
         y_cur = cy1 + pad
         tdraw.text((cx1 + pad, y_cur), title, fill=pal["text"], font=f_head)
-        y_cur += int(round(19 * k))
+        y_cur += int(round(22 * k))
         tdraw.text((cx1 + pad, y_cur), status_line, fill=pal["floor_hard"], font=f_bold_sm)
         y_cur += line_h
         tdraw.text((cx1 + pad, y_cur), eff_line, fill=pal["text"], font=f_body)
