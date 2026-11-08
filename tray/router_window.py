@@ -291,6 +291,38 @@ def quota_window_title(card: dict, window: dict) -> str:
     return f"{acct} {w_short}".strip()
 
 
+def card_read_stamp(card: dict) -> str:
+    """Short reading time or stale/failure note for a quota card."""
+    import router_data
+
+    raw = card.get("fetched_at") or card.get("last_success_at")
+    moment = router_data._iso_datetime(raw) if raw else None
+    stamp = moment.astimezone().strftime("%m-%d %H:%M") if moment else None
+    age = card.get("usage_age_seconds")
+    if not stamp and isinstance(age, (int, float)) and age >= 0:
+        stamp = _tr("{0}前读").format(ago_text(age))
+    failing = card.get("status") in ("usage_failing", "plan_inactive", "auth_failed")
+    stale = failing or card.get("usage_status") == "stale" or any(w.get("stale") for w in card.get("windows") or ())
+    if stale:
+        if stamp:
+            return _tr("旧读数 {0}").format(stamp) if moment else stamp
+        return _tr("旧读数") if card.get("windows") else ""
+    return stamp or ""
+
+
+def quota_reading_stamp(cards: list[dict]) -> str | None:
+    """Latest quota reading timestamp across cards, formatted in local time."""
+    import router_data
+
+    moments = [
+        m for card in (cards or ())
+        if (m := router_data._iso_datetime(card.get("fetched_at") or card.get("last_success_at"))) is not None
+    ]
+    if not moments:
+        return None
+    return max(moments).astimezone().strftime("%m-%d %H:%M")
+
+
 def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool = False) -> str:
     """Hover: plan, what is left per window and when it resets, in-flight reservations.
 
@@ -312,8 +344,11 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
     head =" · ".join(str(v) for v in (card.get("label") or card.get("account") or "—", card.get("plan")) if v)
     if card.get("kind") not in (None, "ok") and card.get("badge"):
         head += f"  [{card['badge']}]"
-    if card.get("usage_status") == "stale" and card.get("usage_age_seconds") is not None:
-        head += " · " + _tr("{0}前读").format(ago_text(card["usage_age_seconds"]))
+    stamp = card_read_stamp(card)
+    if stamp:
+        head += f" · {stamp}"
+        if card.get("usage_age_seconds") is not None and (card.get("fetched_at") or card.get("last_success_at")):
+            head += f" ({_tr('{0}前读').format(ago_text(card['usage_age_seconds']))})"
     lines = [head]
     for w_item in [window] if window is not None else list(card.get("windows") or ()):
         tag = card_window_name(card, w_item) or short_window_name(w_item)
@@ -394,7 +429,7 @@ def pool_member_lines(members) -> list[str]:
 
 
 class QuotaBar:
-    """Usage-float presentation: used quota fills from the left."""
+    """Usage-float presentation: remaining quota fills from the left."""
 
     def __init__(self, tk_mod, parent, height: int = 6):
         self.tk = tk_mod
@@ -436,7 +471,7 @@ class QuotaBar:
         used = 0.0 if remaining_pct is None else max(0.0, 100.0 - rem)
         eff_res = min(rem, self.reserved_pct)
         free_rem = max(0.0, rem - eff_res)
-        self.value = used
+        self.value = rem
         self.segments = {
             "used_pct": round(used, 2),
             "reserved_pct": round(eff_res, 2),
@@ -452,9 +487,9 @@ class QuotaBar:
         fill = ("#94A3B8" if self.stale else
                 {"Green": theme.GREEN, "Amber": theme.AMBER, "Red": theme.RED}.get(self.colour, theme.GREEN))
         c.create_rectangle(0, 0, w, h, fill=TRACK, width=0, tags=("usage_track",))
-        x_used = int(round(w * self.value / 100.0))
-        if x_used > 0:
-            c.create_rectangle(0, 0, x_used, h, fill=fill, width=0, tags=("seg_used",))
+        x_rem = int(round(w * self.value / 100.0))
+        if x_rem > 0:
+            c.create_rectangle(0, 0, x_rem, h, fill=fill, width=0, tags=("seg_remaining",))
 
 
 
@@ -804,6 +839,10 @@ class Panel:
         if not hidden and getattr(self, '_boost_refreshed', None) is not None \
                 and time.monotonic() - self._boost_refreshed >= 60:
             self.load_boost()
+        if not hidden and self.current == "quota" and not self.busy_jobs \
+                and getattr(self, "_quota_refreshed", None) is not None \
+                and time.monotonic() - self._quota_refreshed >= 15:
+            self.load_quota(True)
         self._poll_id = self.root.after(100 if hidden else 30, self.poll)
 
     # ---------- warm window ----------
@@ -842,9 +881,11 @@ class Panel:
 
     def reveal(self):
         """Show the window again: read the page on screen afresh, then bring the window to the front."""
-        if self.hidden():
-            self.stale.discard(self.current)
-            self.refresh_page(self.current)
+        was_hidden = self.hidden()
+        self.stale.update(self.built - {self.current})
+        self.stale.discard(self.current)
+        self.refresh_page(self.current)
+        if was_hidden:
             self.root.deiconify()
             page = self.pages[self.current]
             page._page_hidden = False
@@ -853,6 +894,8 @@ class Panel:
         self.root.focus_force()
 
     def refresh_page(self, key):
+        if key == "quota":
+            self._cards_cache = None
         {"scoring": self.load_ledger, "quota": self.load_quota, "policy": self.load_policy,
          "plugins": self.load_plugins}[key]()
 
@@ -905,6 +948,8 @@ class Panel:
         if not force and cached is not None and now - cached[0] < 1.5:
             return cached[1]
         data = self.data_module()
+        if (force or cached is None) and hasattr(data, "_invalidate_accounts_cache"):
+            data._invalidate_accounts_cache()
         cards = data.account_cards()
         if cards and any("reserved_pct" not in w for c in cards for w in c.get("windows") or ()):
             res_fn = getattr(data, "pool_reservations", None)
@@ -1013,8 +1058,12 @@ class Panel:
         if not already_built:
             self.built.add(key)
             getattr(self, f"build_{key}")(self.pages[key])
-        elif key in self.stale and key != 'plugins':
+        elif (key in self.stale or key == "quota") and key != 'plugins':
             self.refresh_page(key)
+        elif key == "policy" and "models" in getattr(self, "settings_built", ()):
+            if time.monotonic() - getattr(self, "_models_loaded_at", 0.0) >= 5.0:
+                self.run(lambda: self.data_module().harness_model_rows(), self.models_rows_loaded)
+                self.load_boost()
         self.stale.discard(key)
         self.page_stack.show(self.pages[key])
         if key == 'plugins' and already_built:
@@ -1042,6 +1091,7 @@ class Panel:
             for key, _, _ in PAGES:
                 if key not in self.built:
                     self.built.add(key)
+                    self.stale.add(key)
                     getattr(self, f"build_{key}")(self.pages[key])
                     self.page_stack.prepare(self.pages[key])
                     break
@@ -1052,6 +1102,7 @@ class Panel:
                     self.trim_due = True  # a warm window built everything before anyone opened it
                     return
                 self.settings_built.add(key)
+                self.stale.add("policy")
                 getattr(self, f"build_setting_{key}")(self.setting_frames[key])
                 self.setting_stack.prepare(self.setting_frames[key])
         except Exception as exc:
@@ -1734,6 +1785,7 @@ class Panel:
             self.quota_canvas.configure(scrollregion=bbox)
 
     def load_quota(self, force: bool = False):
+        self._quota_refreshed = time.monotonic()
         data = self.data_module()
         self.run(lambda: (self.cached_account_cards(force), data.workers()), self.quota_loaded, _tr("正在读取账号水位…"))
 
@@ -1744,6 +1796,7 @@ class Panel:
         self.run(lambda: self.data_module().refresh_usage(accounts), self.say(lambda: done(None)), _tr("正在请求刷新额度…"))
 
     def quota_cards_loaded(self, cards):
+        self._quota_refreshed = time.monotonic()
         self._rendered_quota_cards = cards
         shape = tuple((card["account"], tuple(w["id"] for w in card["windows"])) for card in cards)
         metered_cards = [card for card in cards if card["windows"]]
@@ -1772,9 +1825,14 @@ class Panel:
         for widgets, card in zip(getattr(self, "quota_unmetered_cards", ()), unmetered_cards):
             self.fill_quota_card(widgets, card)
         if hasattr(self, "quota_updated"):
-            stamp = time.strftime("%H:%M:%S")
-            self.quota_updated.configure(
-                text=f"{tr('剩余额度%', 'Remaining %')} · {tr('更新于', 'Updated')} {stamp} ↻")
+            read_stamp = quota_reading_stamp(cards)
+            if read_stamp:
+                self.quota_updated.configure(
+                    text=f"{tr('剩余额度%', 'Remaining %')} · {tr('读数于', 'Read at')} {read_stamp} ↻")
+            else:
+                stamp = time.strftime("%H:%M:%S")
+                self.quota_updated.configure(
+                    text=f"{tr('剩余额度%', 'Remaining %')} · {tr('更新于', 'Updated')} {stamp} ↻")
         self.sync_quota_geometry()
 
     def quota_loaded(self, value):
@@ -1814,9 +1872,6 @@ class Panel:
         top.pack(fill="x", pady=(0, 2))
         dot = tk.Label(top, text="●", bg=theme.CARD, fg=theme.GREEN, font=(theme.FONT, 7), padx=0, pady=0)
         dot.pack(side="left", padx=(0, 4))
-        name = tk.Label(top, text=card["label"], bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 9, "bold"),
-                        anchor="w", padx=0, pady=0)
-        name.pack(side="left")
         again = None
         if refreshable:
             # Weakened ↻ in card header: faint at rest, darkens on hover, or right-click anywhere on the card.
@@ -1824,6 +1879,12 @@ class Panel:
                              cursor="hand2", bd=0, padx=2, pady=0)
             again.bind("<Button-1>", lambda _e, a=card["account"]: self.refresh_usage([a]))
             again.pack(side="right")
+        read_at = tk.Label(top, text="", bg=theme.CARD, fg=theme.MUTED, font=(self.mono, 8),
+                           anchor="e", padx=2, pady=0)
+        read_at.pack(side="right")
+        name = tk.Label(top, text=card["label"], bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 9, "bold"),
+                        anchor="w", padx=0, pady=0)
+        name.pack(side="left", fill="x", expand=True)
 
         win_widgets = []
         for _ in card["windows"]:
@@ -1849,6 +1910,7 @@ class Panel:
             "account": card["account"],
             "refreshable": refreshable,
             "again": again,
+            "read_at": read_at,
             "dot": dot,
             "name": name,
             "windows": win_widgets,
@@ -1889,7 +1951,14 @@ class Panel:
     def fill_quota_card(widgets, card):
         refreshable = bool(widgets.get("refreshable"))
         widgets["tooltip_text"] = quota_tooltip_text(card, None, refreshable)
-        dot_fg = (theme.GREEN if card.get("kind") == "ok"
+        is_failing = card.get("status") in ("usage_failing", "plan_inactive", "auth_failed")
+        is_card_stale = bool(
+            is_failing
+            or card.get("usage_status") == "stale"
+            or any(w.get("stale") for w in card.get("windows") or ())
+        )
+        dot_fg = (theme.AMBER if is_failing or (card.get("kind") == "ok" and is_card_stale)
+                  else theme.GREEN if card.get("kind") == "ok"
                   else theme.AMBER if card.get("kind") == "warn"
                   else theme.RED if card.get("kind") == "bad"
                   else theme.FAINT)
@@ -1897,6 +1966,11 @@ class Panel:
             widgets["dot"].configure(fg=dot_fg)
         if "name" in widgets:
             widgets["name"].configure(text=card_title(card))
+        if "read_at" in widgets:
+            widgets["read_at"].configure(
+                text=card_read_stamp(card),
+                fg=theme.AMBER if is_failing else theme.MUTED,
+            )
         if not card.get("windows"):
             plan = card.get('usage_note') or clip(card.get("plan"), 14)
             badge = short_badge(card.get("badge"))
@@ -1906,7 +1980,7 @@ class Panel:
         for (w_name, w_share, bar, w_detail), window in zip(widgets["windows"], card["windows"]):
             remaining = window.get("remaining_pct")
             reserved = float(window.get("reserved_pct") or 0.0)
-            is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh")
+            is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh" or is_failing)
             w_name.configure(text=card_window_name(card, window))
             # A pool counts down to its next partial refill; each account's own reset is on the hover.
             w_detail.configure(text=short_countdown(window.get("reset_in")))
@@ -1914,8 +1988,7 @@ class Panel:
             # describe the whole pool.
             count = window.get("accounts") if isinstance(window.get("accounts"), int) and window["accounts"] > 1 else 1
             share = None if remaining is None else max(0.0, min(100.0, float(remaining) / count))
-            used = None if share is None else 100.0 - share
-            colour = "Red" if used is not None and used >= 90 else "Amber" if used is not None and used >= 70 else "Green"
+            colour = "Red" if share is not None and share <= 10.0 else "Amber" if share is not None and share <= 30.0 else "Green"
             fg = ("#64748B" if is_stale
                   else theme.GREEN if colour == "Green"
                   else theme.AMBER if colour == "Amber"
@@ -1924,7 +1997,7 @@ class Panel:
             if hasattr(bar, "set_segments"):
                 bar.set_segments(share, reserved / count, colour=colour, stale=is_stale)
             else:
-                bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=used or 0)
+                bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=share or 0)
 
     # ---------- page 3: model settings ----------
 

@@ -99,6 +99,39 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertIn('套餐失效，已排除派发', card['badge'])
         self.assertIn('auto-retry at 2026-11-08T04:05:00+00:00', card['badge'])
 
+    def test_failing_reading_never_presents_old_window_as_fresh(self):
+        allocator, router = Mock(), Mock()
+        inventory = Mock(quota_sources=real_inventory.quota_sources)
+        allocator.load_accounts.return_value = {
+            'accounts': {'codex': {'windows': {'usage': {'hours': 168}}, 'bundles': {}}},
+            '_discovery': {'accounts': {'codex': self.failing()}},
+        }
+        allocator.host_policy.load_policy.return_value = None
+        allocator.host_policy.account_allowed.return_value = True
+        allocator.canonical_window_id.side_effect = lambda spec, wid: wid
+        allocator.window_capacity_usd.return_value = None
+        router.usage_snapshot.return_value = {
+            'accounts': {
+                'codex': {
+                    'status': 'fresh',
+                    'fetched_at': '2026-11-07T01:00:00+00:00',
+                    'observation_age_seconds': 3600,
+                    'windows': [{'id': 'usage', 'observed_remaining_pct': 78.0, 'seconds_until_reset': 86400}],
+                }
+            }
+        }
+        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+             patch.dict(sys.modules, {'provider_inventory': inventory}), \
+             patch.object(router_data, '_read_json', return_value={}), \
+             patch.object(router_data, 'pool_reservations', return_value={}), \
+             patch.object(router_data.router_priority, 'targets', return_value=[]), \
+             patch.object(router_data.plugins, 'load', return_value={}):
+            card = router_data.account_cards()[0]
+        self.assertEqual(card['fetched_at'], '2026-11-07T01:00:00+00:00')
+        self.assertEqual(card['usage_status'], 'stale')
+        self.assertTrue(card['windows'][0]['stale'])
+        self.assertIn('旧读数', router_window.card_read_stamp(card))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -153,7 +153,11 @@ def _accounts_fingerprint(allocator) -> tuple | None:
         STATE_DIR / "plugins.json",
         STATE_DIR / "model-catalog.json",
         STATE_DIR / "usage-cache.json",
+        STATE_DIR / "usage-collector.json",
         STATE_DIR / "quota-exhaustion.json",
+        STATE_DIR / "plan-inactive.json",
+        STATE_DIR / "venice-usage.json",
+        Path.home() / ".usage-float" / "usage-cache.json",
         paseo_home / "config.json",
     )
     stamps = []
@@ -570,11 +574,21 @@ def account_cards() -> list[dict]:
     for name in names:
         spec = acc_table.get(name) or {}
         row = inv_accounts.get(name)
+        usage_row = (usage.get("accounts") or {}).get(name) or {}
+        if (isinstance(row, dict) and row.get("status") == "ready"
+                and (usage_row.get("stale") is True or usage_row.get("available") is False)):
+            row = {
+                **row,
+                "status": "usage_failing",
+                "reason": usage_row.get("error") or row.get("reason") or "stale_reading",
+                "last_success_at": row.get("last_success_at") or usage_row.get("fetched_at"),
+            }
         text, kind = account_badge(name, row, config, policy)
         if name in members:
             # Quota visibility belongs to the pool, not the source account's execution switch.
             text, kind = account_badge(name, row, config, None)
-        usage_row = (usage.get("accounts") or {}).get(name) or {}
+        status = (row or {}).get("status")
+        reading_failed = status in ("usage_failing", "plan_inactive", "auth_failed") or bool((row or {}).get("usage_read_failed"))
         windows = []
         latched = set((row or {}).get("exhausted_windows") or ())  # Only these windows are latched out.
         member_rows = pool_member_rows(usage_row.get("pool_members"), now)
@@ -589,7 +603,7 @@ def account_cards() -> list[dict]:
                 remaining = None  # A passed reset is not a fresh quota observation.
             elif remaining is None:
                 remaining = window.get("observed_remaining_pct")
-            if (row or {}).get('status') == 'quota_exhausted' or wid in latched or c_wid in latched:
+            if status == 'quota_exhausted' or wid in latched or c_wid in latched:
                 remaining = 0.0  # Explicit upstream exhaustion outranks an older positive cache.
             cap = allocator.window_capacity_usd(spec, c_wid, now) if spec else None
             acct_obs = observed.get(name) or {}
@@ -605,7 +619,7 @@ def account_cards() -> list[dict]:
                 "rate_3h": rates.get("pct_per_hour_3h"), "rate_24h": rates.get("pct_per_hour_24h"),
                 "reset_in": _tr("已重置") if reset_passed else countdown(
                     refill if refill is not None else window.get("seconds_until_reset")),
-                "stale": reset_passed or usage_row.get("status") != "fresh"})
+                "stale": reset_passed or usage_row.get("status") != "fresh" or reading_failed})
         bundle_pills = []
         for bid, bspec in (spec.get("bundles") or {}).items():
             b_prov = bspec.get("provider")
@@ -617,12 +631,19 @@ def account_cards() -> list[dict]:
             eff = bspec.get("effort")
             b_label = f"{m_label}·{eff}" if eff and eff not in ("high", "default") else m_label
             bundle_pills.append({"id": bid, "label": b_label, "enabled": not bool(bspec.get("disabled"))})
+        fetched_at = usage_row.get("fetched_at") or (row or {}).get("last_success_at")
+        usage_status = (
+            'quota_exhausted' if status == 'quota_exhausted'
+            else 'stale' if reading_failed and usage_row.get("status") == "fresh"
+            else usage_row.get("status")
+        )
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,
-                      "status": (row or {}).get("status"), "status_reason": (row or {}).get("reason"),
+                      "status": status, "status_reason": (row or {}).get("reason"),
                       "last_success_at": (row or {}).get("last_success_at"),
+                      "fetched_at": fetched_at,
                       "plan": (row or {}).get("plan") or spec.get("plan"),
-                      "usage_status": 'quota_exhausted' if (row or {}).get('status') == 'quota_exhausted' else usage_row.get("status"),
+                      "usage_status": usage_status,
                       "usage_age_seconds": usage_row.get("observation_age_seconds"),
                       "pool_members": member_rows,
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
