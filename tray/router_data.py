@@ -575,12 +575,11 @@ def account_cards() -> list[dict]:
         spec = acc_table.get(name) or {}
         row = inv_accounts.get(name)
         usage_row = (usage.get("accounts") or {}).get(name) or {}
-        if (isinstance(row, dict) and row.get("status") == "ready"
-                and (usage_row.get("stale") is True or usage_row.get("available") is False)):
+        if isinstance(row, dict) and row.get("status") == "ready" and usage_row.get("available") is False:
             row = {
                 **row,
                 "status": "usage_failing",
-                "reason": usage_row.get("error") or row.get("reason") or "stale_reading",
+                "reason": usage_row.get("error") or row.get("reason") or _tr("额度接口暂不可用"),
                 "last_success_at": row.get("last_success_at") or usage_row.get("fetched_at"),
             }
         text, kind = account_badge(name, row, config, policy)

@@ -1100,7 +1100,9 @@ class WindowHelperTests(unittest.TestCase):
             self.assertEqual((w1_name.cget("text"), w1_detail.cget("text"), w1_share.cget("text")), ("5h", "3h 10m", "30%"))
             self.assertEqual((w0_bar.value, w1_bar.value), (80.0, 30.0))
             self.assertEqual((w0_bar.colour, w1_bar.colour), ("Green", "Amber"))
-            self.assertEqual(panel.quota_cards[2]["windows"][0][0].cget("text"), "credits")
+            self.assertEqual(panel.quota_cards[2]["windows"][0][0].cget("text"), "")
+            for c in panel.quota_cards:
+                self.assertGreaterEqual(c["name"].winfo_width(), c["name"].winfo_reqwidth())
             # Segmented bar splits 100% into used (20%), reserved (12.5%), and free remaining (67.5%).
             self.assertEqual(w0_bar.segments, {"used_pct": 20.0, "reserved_pct": 12.5, "remaining_pct": 67.5})
             # Hover tooltip shows plan, remaining %, countdown, and in-flight reservation %.
@@ -1283,6 +1285,8 @@ class WindowHelperTests(unittest.TestCase):
                 # Failing account is explicitly flagged and its old reading is marked stale, never fresh.
                 codex_card = panel.quota_cards[1]
                 self.assertEqual(codex_card["name"].cget("text"), "Codex · 读数失败")
+                self.assertEqual(int(panel.quota_cards[0]["read_at"].grid_info()["row"]), 0)
+                self.assertEqual(int(codex_card["read_at"].grid_info()["row"]), 1)
                 self.assertIn(router_data.read_time_text(t_fail_last), codex_card["read_at"].cget("text"))
                 self.assertIn("旧读数", codex_card["read_at"].cget("text"))
                 self.assertTrue(codex_card["windows"][0][2].stale)

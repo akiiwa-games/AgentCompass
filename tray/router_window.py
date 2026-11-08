@@ -1870,21 +1870,23 @@ class Panel:
         box = theme.card(self.quota_grid, padding=(10, 6))
         top = tk.Frame(box, bg=theme.CARD)
         top.pack(fill="x", pady=(0, 2))
+        top.columnconfigure(1, weight=0)
+        top.columnconfigure(2, weight=1)
         dot = tk.Label(top, text="●", bg=theme.CARD, fg=theme.GREEN, font=(theme.FONT, 7), padx=0, pady=0)
-        dot.pack(side="left", padx=(0, 4))
+        dot.grid(row=0, column=0, sticky="w", padx=(0, 4))
+        name = tk.Label(top, text=card["label"], bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 9, "bold"),
+                        anchor="w", padx=0, pady=0)
+        name.grid(row=0, column=1, sticky="w")
+        read_at = tk.Label(top, text="", bg=theme.CARD, fg=theme.MUTED, font=(self.mono, 8),
+                           anchor="e", padx=2, pady=0)
+        read_at.grid(row=0, column=2, sticky="e", padx=2)
         again = None
         if refreshable:
             # Weakened ↻ in card header: faint at rest, darkens on hover, or right-click anywhere on the card.
             again = tk.Label(top, text="↻", bg=theme.CARD, fg="#CBD5E1", font=(theme.FONT, 9),
                              cursor="hand2", bd=0, padx=2, pady=0)
             again.bind("<Button-1>", lambda _e, a=card["account"]: self.refresh_usage([a]))
-            again.pack(side="right")
-        read_at = tk.Label(top, text="", bg=theme.CARD, fg=theme.MUTED, font=(self.mono, 8),
-                           anchor="e", padx=2, pady=0)
-        read_at.pack(side="right")
-        name = tk.Label(top, text=card["label"], bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 9, "bold"),
-                        anchor="w", padx=0, pady=0)
-        name.pack(side="left", fill="x", expand=True)
+            again.grid(row=0, column=3, sticky="e")
 
         win_widgets = []
         for _ in card["windows"]:
@@ -1952,25 +1954,30 @@ class Panel:
         refreshable = bool(widgets.get("refreshable"))
         widgets["tooltip_text"] = quota_tooltip_text(card, None, refreshable)
         is_failing = card.get("status") in ("usage_failing", "plan_inactive", "auth_failed")
-        is_card_stale = bool(
-            is_failing
-            or card.get("usage_status") == "stale"
-            or any(w.get("stale") for w in card.get("windows") or ())
-        )
-        dot_fg = (theme.AMBER if is_failing or (card.get("kind") == "ok" and is_card_stale)
+        dot_fg = (theme.AMBER if is_failing or card.get("kind") == "warn"
                   else theme.GREEN if card.get("kind") == "ok"
-                  else theme.AMBER if card.get("kind") == "warn"
                   else theme.RED if card.get("kind") == "bad"
                   else theme.FAINT)
         if "dot" in widgets:
             widgets["dot"].configure(fg=dot_fg)
         if "name" in widgets:
             widgets["name"].configure(text=card_title(card))
+            if widgets["name"].winfo_manager() == "grid":
+                widgets["name"].grid_configure(row=0, column=1, columnspan=2 if is_failing else 1, sticky="w")
         if "read_at" in widgets:
+            stamp = card_read_stamp(card)
             widgets["read_at"].configure(
-                text=card_read_stamp(card),
+                text=stamp,
                 fg=theme.AMBER if is_failing else theme.MUTED,
+                anchor="w" if is_failing else "e",
             )
+            if widgets["read_at"].winfo_manager() in ("grid", ""):
+                if not stamp:
+                    widgets["read_at"].grid_remove()
+                elif is_failing:
+                    widgets["read_at"].grid(row=1, column=1, columnspan=3, sticky="w", padx=0, pady=(1, 0))
+                else:
+                    widgets["read_at"].grid(row=0, column=2, columnspan=1, sticky="e", padx=2, pady=0)
         if not card.get("windows"):
             plan = card.get('usage_note') or clip(card.get("plan"), 14)
             badge = short_badge(card.get("badge"))

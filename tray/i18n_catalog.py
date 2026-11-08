@@ -400,7 +400,7 @@ EN = {
     '旧读数 {0}': 'Stale {0}',
     '旧读数': 'Stale',
     '读数于': 'Read at',
-    '读数时间': 'Read at',
+    '额度接口暂不可用': 'provider unavailable',
     '在途 {0}%': '{0}% in flight',
     '(不计入)': '(not added)',
     '{0}分钟': '{0}m',
