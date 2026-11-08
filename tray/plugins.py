@@ -9,12 +9,14 @@ import json
 import os
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from i18n import translate
 
 _LOCK = threading.RLock()
+_REPLACE_RETRY_DELAYS = (0.02, 0.04, 0.05, 0.06)
 
 STATE_DIR = Path.home() / ".agent-compass"
 PATH = STATE_DIR / "plugins.json"
@@ -134,7 +136,14 @@ def save(config: dict, path: Path | None = None) -> None:
         temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp")
         try:
             temporary.write_text(json.dumps({"v": 1, "plugins": clean}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            temporary.replace(path)
+            for delay in _REPLACE_RETRY_DELAYS:
+                try:
+                    temporary.replace(path)
+                    break
+                except PermissionError:
+                    time.sleep(delay)
+            else:
+                temporary.replace(path)
         finally:
             try:
                 if temporary.exists():

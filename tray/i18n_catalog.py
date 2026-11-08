@@ -828,6 +828,10 @@ EN = {
     '安装形态：{0}': 'Install type: {0}',
     '正在检查 AgentCompass 更新…': 'Checking for AgentCompass updates…',
     '正在更新 AgentCompass…': 'Updating AgentCompass…',
+    '正在更新': 'Updating',
+    '稍后再试': 'Try again later',
+    '需注意': 'Attention',
+    '已启用，等待刷新': 'Enabled, awaiting refresh',
     '更新失败': 'Update failed',
     '旧记录缺字段，无法重放': 'Old record is missing fields and cannot be replayed',
 }

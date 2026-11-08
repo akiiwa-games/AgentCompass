@@ -134,10 +134,10 @@ def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
     """Clone a missing Git plugin into ~/.agent-compass/plugins/<id> and run its initial build/setup."""
     plugin = plugins.BY_ID[plugin_id]
     if not plugin.repo:
-        return _tr('{0} 无远端仓库').format(f'{plugin.name}')
+        return _set_status("skipped", _tr('{0} 无远端仓库').format(f'{plugin.name}'))
     target = root or (plugins.PLUGINS_DIR / plugin_id)
     if (target / ".git").exists():
-        return _tr('{0} 已部署（{1}）').format(f'{plugin.name}', f'{version(target)}')
+        return _set_status("current", _tr('{0} 已部署（{1}）').format(f'{plugin.name}', f'{version(target)}'))
     target.parent.mkdir(parents=True, exist_ok=True)
     report("progress", _tr('从 GitHub 下载 {0} 到 {1}').format(f'{plugin.name}', f'{target}'), plugin.name)
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "Never"}
@@ -150,7 +150,7 @@ def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
         patch_and_build()
     elif plugin_id == "muse2api":
         prepare_gateway(plugin_id)
-    return _tr('{0} 已下载并部署（{1}）').format(f'{plugin.name}', f'{version(target)}')
+    return _set_status("updated", _tr('{0} 已下载并部署（{1}）').format(f'{plugin.name}', f'{version(target)}'))
 
 
 def update_simple_plugin(plugin_id: str, root: Path) -> str:
@@ -158,12 +158,12 @@ def update_simple_plugin(plugin_id: str, root: Path) -> str:
     if not (root / ".git").exists():
         return ensure_plugin(plugin_id, root)
     if behind(root) == 0:
-        return _tr('{0} 已是最新（{1}）').format(f'{plugin.name}', f'{version(root)}')
+        return _set_status("current", _tr('{0} 已是最新（{1}）').format(f'{plugin.name}', f'{version(root)}'))
     if changed(root):
-        return _tr('{0} 有本地改动，未更新').format(f'{plugin.name}')
+        return _set_status("failed", _tr('{0} 有本地改动，未更新').format(f'{plugin.name}'))
     old = version(root)
     git(root, "pull", "--ff-only", timeout=300)
-    return _tr('{0} 已更新：{1} → {2}').format(f'{plugin.name}', f'{old}', f'{version(root)}')
+    return _set_status("updated", _tr('{0} 已更新：{1} → {2}').format(f'{plugin.name}', f'{old}', f'{version(root)}'))
 
 
 def update_usage_float() -> str:
@@ -179,9 +179,9 @@ def update_dot2api() -> str:
     if not (root / ".git").exists():
         return ensure_plugin("dot2api", root)
     if behind(root) == 0:
-        return _tr('Dot2API 已是最新（{0}）').format(f'{version(root)}')
+        return _set_status("current", _tr('Dot2API 已是最新（{0}）').format(f'{version(root)}'))
     if changed(root):
-        return _tr("Dot2API 有本地改动，未更新")
+        return _set_status("failed", _tr("Dot2API 有本地改动，未更新"))
     before, old = git(root, "rev-parse", "HEAD"), version(root)
     was_running = services.dot_ready()
     if was_running:
@@ -199,10 +199,10 @@ def update_dot2api() -> str:
             message += _tr('；回退也失败了：{0}').format(f'{again}')
         if was_running:
             services.start_dot2api()
-        return message
+        return _set_status("failed", message)
     if was_running:
         services.start_dot2api()
-    return _tr('Dot2API 已更新：{0} → {1}').format(f'{old}', f'{version(root)}')
+    return _set_status("updated", _tr('Dot2API 已更新：{0} → {1}').format(f'{old}', f'{version(root)}'))
 
 
 def update_gateway(plugin_id: str) -> str:
@@ -214,10 +214,10 @@ def update_gateway(plugin_id: str) -> str:
     if behind(root) == 0:
         if not gateways.built(plugin_id):
             prepare_gateway(plugin_id)
-            return _tr('{0} 已补完构建（{1}）').format(f'{name}', f'{version(root)}')
-        return _tr('{0} 已是最新（{1}）').format(f'{name}', f'{version(root)}')
+            return _set_status("updated", _tr('{0} 已补完构建（{1}）').format(f'{name}', f'{version(root)}'))
+        return _set_status("current", _tr('{0} 已是最新（{1}）').format(f'{name}', f'{version(root)}'))
     if changed(root):
-        return _tr('{0} 有本地改动，未更新').format(f'{name}')
+        return _set_status("failed", _tr('{0} 有本地改动，未更新').format(f'{name}'))
     before, old = git(root, "rev-parse", "HEAD"), version(root)
     was_running = services.muse_ready()
     services.UPDATING_COMPONENTS.add(plugin_id)
@@ -227,9 +227,9 @@ def update_gateway(plugin_id: str) -> str:
         try:
             git(root, "pull", "--ff-only", timeout=300)
             prepare_gateway(plugin_id)
-            message = _tr('{0} 已更新：{1} → {2}').format(f'{name}', f'{old}', f'{version(root)}')
+            message = _set_status("updated", _tr('{0} 已更新：{1} → {2}').format(f'{name}', f'{old}', f'{version(root)}'))
         except Exception as error:
-            message = _tr('{0} 更新失败：{1}').format(f'{name}', f'{error}')
+            message = _set_status("failed", _tr('{0} 更新失败：{1}').format(f'{name}', f'{error}'))
             try:
                 git(root, "reset", "--hard", before)
                 prepare_gateway(plugin_id)
@@ -279,14 +279,14 @@ def update_chatgpt_web() -> str:
     if not (root / ".git").exists():
         return ensure_plugin("chatgpt-web", root)
     if services.chatgpt_busy():
-        return _tr("ChatGPT Web 正在处理请求，稍后再更新")
+        return _set_status("deferred", _tr("ChatGPT Web 正在处理请求，稍后再更新"))
     if behind(root) == 0:
-        return _tr('ChatGPT Web 已是最新（{0}）').format(f'{version(root)}')
+        return _set_status("current", _tr('ChatGPT Web 已是最新（{0}）').format(f'{version(root)}'))
     was_running = services.chatgpt_main_pid() is not None
     if was_running:
         stopped = services.stop_chatgpt_web()
         if services.chatgpt_main_pid() is not None:
-            return _tr('ChatGPT Web 没能停下，未更新：{0}').format(f'{stopped}')
+            return _set_status("failed", _tr('ChatGPT Web 没能停下，未更新：{0}').format(f'{stopped}'))
     before, old = git(root, "rev-parse", "HEAD"), version(root)
     try:
         web_patch.revert(root)
@@ -305,17 +305,110 @@ def update_chatgpt_web() -> str:
             message += _tr('；回退也失败了：{0}').format(f'{again}')
         if was_running:
             services.start_chatgpt_web()
-        return message
+        return _set_status("failed", message)
     if was_running:
         services.start_chatgpt_web()
-    return _tr('ChatGPT Web 已更新：{0} → {1}').format(f'{old}', f'{version(root)}')
+    return _set_status("updated", _tr('ChatGPT Web 已更新：{0} → {1}').format(f'{old}', f'{version(root)}'))
 
 
-def update_all(progress=None) -> str:
+def _set_status(status: str, message: str) -> str:
+    _progress.status = status
+    return message
+
+
+def _infer_mock_status(message: str) -> str:
+    """Fallback when a unit test patches a component updater with a plain return_value string."""
+    lower = str(message or "").lower()
+    if any(w in lower for w in ("失败", "出错", "未更新", "没能", "failed", "error", "not updated", "could not")):
+        return "failed"
+    if any(w in lower for w in ("稍后", "延后", "正在处理", "later", "deferred", "busy")):
+        return "deferred"
+    if any(w in lower for w in ("已跳过", "skipped")):
+        return "skipped"
+    if any(w in lower for w in ("已更新", "已下载", "已补完", "updated", "deployed")):
+        return "updated"
+    return "current"
+
+
+class UpdateAllResult(str):
+    """Summary string with structured component outcomes (`busy`, `components`, `statuses`, `product_notice`)."""
+
+    busy: bool
+    summary: str
+    product_notice: str
+    components: dict[str, dict[str, str]]
+    statuses: dict[str, str]
+    updated: list[str]
+    current: list[str]
+    skipped: list[str]
+    deferred: list[str]
+    failed: list[str]
+    messages: list[str]
+
+    def __new__(
+        cls,
+        summary: str = "",
+        *,
+        busy: bool = False,
+        components: dict[str, dict[str, str]] | None = None,
+        product_notice: str = "",
+    ):
+        obj = super().__new__(cls, summary)
+        comp = dict(components or {})
+        statuses = {
+            name: str(info.get("status", "failed") if isinstance(info, dict) else info)
+            for name, info in comp.items()
+        }
+        obj.summary = str(summary)
+        obj.busy = bool(busy)
+        obj.components = comp
+        obj.statuses = statuses
+        obj.product_notice = str(product_notice or "")
+        obj.updated = [name for name, st in statuses.items() if st == "updated"]
+        obj.current = [name for name, st in statuses.items() if st == "current"]
+        obj.skipped = [name for name, st in statuses.items() if st == "skipped"]
+        obj.deferred = [name for name, st in statuses.items() if st == "deferred"]
+        obj.failed = [name for name, st in statuses.items() if st == "failed"]
+        obj.messages = [
+            str(info.get("message", "")) for info in comp.values() if isinstance(info, dict) and info.get("message")
+        ]
+        if obj.product_notice:
+            obj.messages.append(obj.product_notice)
+        return obj
+
+    def _as_dict(self) -> dict:
+        return {
+            "summary": self.summary,
+            "busy": self.busy,
+            "components": self.components,
+            "statuses": self.statuses,
+            "product_notice": self.product_notice,
+            "updated": self.updated,
+            "current": self.current,
+            "skipped": self.skipped,
+            "deferred": self.deferred,
+            "failed": self.failed,
+            "messages": self.messages,
+        }
+
+    def get(self, key: str, default=None):
+        return self._as_dict().get(key, default)
+
+    def keys(self):
+        return self._as_dict().keys()
+
+    def __getitem__(self, key):
+        if isinstance(key, (int, slice)):
+            return super().__getitem__(key)
+        return self._as_dict()[key]
+
+
+def update_all(progress=None) -> UpdateAllResult:
     if not LOCK.acquire(blocking=False):
-        return _tr("正在更新，请稍候")
+        return UpdateAllResult(_tr("正在更新，请稍候"), busy=True)
     try:
         _progress.callback = progress
+        _progress.status = None
         config = plugins.load()
         items = (("Dot2API", update_dot2api, "dot2api"),
                  ("ChatGPT Web", update_chatgpt_web, "chatgpt-web"),
@@ -325,31 +418,38 @@ def update_all(progress=None) -> str:
         targets = [label for label, _, pid in items if plugins.enabled(pid, config) or plugins.BY_ID[pid].enabled_by_default]
         report("start", _tr("开始检查并更新已启用插件组件"), "", title=_tr("外部集成"), targets=targets)
         results = []
+        components: dict[str, dict[str, str]] = {}
         for label, update, plugin_id in items:
             _progress.component = label
+            _progress.status = None
             if plugin_id and not plugins.enabled(plugin_id, config):
                 if not plugins.BY_ID[plugin_id].enabled_by_default:
                     continue    # an opt-in plugin the user never enabled is not mentioned
                 result = _tr('{0} 插件未启用，已跳过').format(f'{label}')
                 results.append(result)
+                components[label] = {"status": "skipped", "message": result}
                 report("result", result)
                 continue
             report("component", _tr("检查上游版本"))
             try:
                 result = update()
+                status = getattr(_progress, "status", None) or _infer_mock_status(result)
             except Exception as error:
                 result = _tr('{0} 更新出错：{1}').format(f'{label}', f'{error}')
+                status = "failed"
             results.append(result)
+            components[label] = {"status": status, "message": result}
             report("result", result)
         notice = product_notice()
         if notice:
             results.append(notice)
             report("result", notice, "AgentCompass")
         report("finish", _tr("本轮更新检查结束"), "")
-        return "；".join(results)
+        return UpdateAllResult("；".join(results), busy=False, components=components, product_notice=notice)
     finally:
         _progress.callback = None
         _progress.component = ""
+        _progress.status = None
         LOCK.release()
 
 

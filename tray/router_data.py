@@ -426,9 +426,9 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     plugin_entry = (plugin_config or {}).get(plugin_id) if plugin_id and isinstance(plugin_config, dict) else None
     if isinstance(plugin_entry, dict) and plugin_entry.get("enabled") is False:
         return _tr("集成已关闭"), "idle"
-    if row.get("reason") == "plugin_disabled_in_agentcompass" and not (
-        isinstance(plugin_entry, dict) and plugin_entry.get("enabled") is True
-    ):
+    if row.get("reason") == "plugin_disabled_in_agentcompass":
+        if isinstance(plugin_entry, dict) and plugin_entry.get("enabled") is True:
+            return _tr("已启用，等待刷新"), "idle"
         return _tr("集成已关闭"), "idle"
     if not allocator.host_policy.account_allowed(policy, name):
         if row.get('billing') in ('metered', 'unknown'):

@@ -226,8 +226,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         import tk_test_support
         import update_status
 
-        i18n.set_language("zh")
-        self.addCleanup(i18n.set_language, "zh")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
@@ -256,6 +254,8 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         self.update_status = update_status
 
         for patcher in (
+            mock.patch.object(router_data, "STATE_DIR", self.state_dir, create=True),
+            mock.patch.object(i18n, "settings_path", return_value=self.state_dir / "ui-settings.json"),
             mock.patch.object(plugins, "STATE_DIR", self.state_dir),
             mock.patch.object(plugins, "PATH", self.plugins_path),
             mock.patch.object(plugins, "PLUGINS_DIR", self.plugins_dir),
@@ -269,6 +269,8 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
+        self.addCleanup(setattr, i18n, "_cache_key", None)
+        i18n.set_language("zh")
 
     def _mark_deployed(self, *plugin_ids: str) -> None:
         for pid in plugin_ids:
@@ -395,15 +397,15 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             panel.plugin_widgets["chatgpt-web"]["autostart"].set(False)
             panel.toggle_autostart("chatgpt-web", False)
 
-            # Settings file must already be updated with pure booleans on disk
-            saved = json.loads(self.plugins_path.read_text(encoding="utf-8"))
-            self.assertIs(saved["plugins"]["dot2api"]["enabled"], False)
-            self.assertIs(saved["plugins"]["chatgpt-web"]["autostart"], False)
-
             # Even if the stale initial load callback runs before toggle jobs finish, UI checkboxes must not revert
             initial_done(stale_snapshot)
             self.assertFalse(panel.plugin_widgets["dot2api"]["enabled"].get())
             self.assertFalse(panel.plugin_widgets["chatgpt-web"]["autostart"].get())
+
+            # Settings file must already be updated with pure booleans on disk
+            saved = json.loads(self.plugins_path.read_text(encoding="utf-8"))
+            self.assertIs(saved["plugins"]["dot2api"]["enabled"], False)
+            self.assertIs(saved["plugins"]["chatgpt-web"]["autostart"], False)
 
             # Drain the queued toggle jobs and their follow-up load_plugins refreshes
             while jobs:
@@ -416,6 +418,29 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             self.assertFalse(panel.plugin_widgets["chatgpt-web"]["autostart"].get())
             self.assertTrue(panel.plugin_widgets["usage-float"]["enabled"].get())
             self.assertIn("已停用 Dot2API", panel.status.get())
+
+            # Rapid on->off toggle with out-of-order worker completion must not overwrite newer False write
+            service_calls = []
+            with mock.patch.object(services, "plugin_stop", side_effect=lambda pid: service_calls.append("stop") or "已停止"), \
+                    mock.patch.object(services, "plugin_start", side_effect=lambda pid: service_calls.append("start") or "已启动"):
+                plugins.set_flag("chatgpt-web", "enabled", False, self.plugins_path)
+                panel.toggle_enabled("chatgpt-web", True)
+                panel.plugin_widgets["chatgpt-web"]["enabled"].set(False)
+                panel.toggle_enabled("chatgpt-web", False)
+                (w1, d1), (w2, d2) = jobs[:2]
+                del jobs[:2]
+                r2 = w2()
+                r1 = w1()
+                d2(r2)
+                d1(r1)
+                while jobs:
+                    w, d = jobs.pop(0)
+                    v = w()
+                    if d:
+                        d(v)
+            self.assertIs(plugins.load(self.plugins_path)["chatgpt-web"]["enabled"], False)
+            self.assertFalse(panel.plugin_widgets["chatgpt-web"]["enabled"].get())
+            self.assertEqual(service_calls, ["stop"])
 
         # Reopen a fresh Panel instance to simulate tray / window restart: state must persist
         panel2 = self._make_panel(sync_run=True)
@@ -497,7 +522,82 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
                 {"dot2api": {"enabled": True, "autostart": True}},
                 None,
             )
-            self.assertNotEqual(badge2, "集成已关闭")
+            self.assertEqual((badge2, kind2), ("已启用，等待刷新", "idle"))
+
+    def test_save_retries_permission_error_and_ui_toggle_recovers_when_file_locked_by_subprocess(self):
+        import subprocess
+        import sys
+
+        self._mark_deployed("usage-float", "chatgpt-web", "gemini-web", "dot2api")
+        plugins.save(plugins.defaults(), self.plugins_path)
+        panel = self._make_panel(sync_run=True)
+
+        # 1. Brief lock held by a real reader subprocess (~60ms): save() retries within ~200ms and succeeds
+        brief_reader = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import sys,time;f=open(sys.argv[1],encoding='utf-8');sys.stdout.write('open\\n');sys.stdout.flush();time.sleep(0.06)",
+                str(self.plugins_path),
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            self.assertEqual(brief_reader.stdout.readline().strip(), "open")
+            plugins.set_flag("dot2api", "enabled", False, self.plugins_path)
+            self.assertIs(plugins.load(self.plugins_path)["dot2api"]["enabled"], False)
+        finally:
+            brief_reader.wait(timeout=5)
+            if brief_reader.stdout:
+                brief_reader.stdout.close()
+
+        # 2. Persistent lock held by a real reader subprocess across the retry budget:
+        # UI toggle catches PermissionError, reports in status bar, restores checkbox to disk state, and does not start/stop.
+        plugins.set_flag("dot2api", "enabled", True, self.plugins_path)
+        panel.load_plugins(probe=False)
+        self.assertTrue(panel.plugin_widgets["dot2api"]["enabled"].get())
+
+        long_reader = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import sys;f=open(sys.argv[1],encoding='utf-8');sys.stdout.write('open\\n');sys.stdout.flush();sys.stdin.readline()",
+                str(self.plugins_path),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            self.assertEqual(long_reader.stdout.readline().strip(), "open")
+            with mock.patch.object(services, "plugin_stop") as stop_fn, \
+                    mock.patch.object(services, "plugin_start") as start_fn:
+                panel.plugin_widgets["dot2api"]["enabled"].set(False)
+                panel.toggle_enabled("dot2api", False)
+                self.assertIn("操作失败：", panel.status.get())
+                self.assertTrue(panel.plugin_widgets["dot2api"]["enabled"].get())
+                self.assertIs(plugins.load(self.plugins_path)["dot2api"]["enabled"], True)
+                stop_fn.assert_not_called()
+                start_fn.assert_not_called()
+
+                panel.plugin_widgets["chatgpt-web"]["autostart"].set(False)
+                panel.toggle_autostart("chatgpt-web", False)
+                self.assertIn("操作失败：", panel.status.get())
+                self.assertTrue(panel.plugin_widgets["chatgpt-web"]["autostart"].get())
+                self.assertIs(plugins.load(self.plugins_path)["chatgpt-web"]["autostart"], True)
+                self.assertEqual(list(self.state_dir.glob("*.tmp")), [])
+        finally:
+            if long_reader.stdin:
+                try:
+                    long_reader.stdin.write("\n")
+                    long_reader.stdin.flush()
+                    long_reader.stdin.close()
+                except OSError:
+                    pass
+            long_reader.wait(timeout=5)
+            if long_reader.stdout:
+                long_reader.stdout.close()
 
     def test_update_components_covers_progress_up_to_date_updated_partial_fail_network_fail_and_disabled_skip(self):
         self._mark_deployed("usage-float", "chatgpt-web", "gemini-web", "dot2api")
@@ -506,13 +606,20 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         # Disable dot2api; keep chatgpt-web, usage-float, gemini-web enabled; muse2api is disabled by default
         plugins.set_flag("dot2api", "enabled", False, self.plugins_path)
 
-        # 1. Already up to date + disabled component skipped + non-empty product_notice
+        # 1a. All enabled components confirmed up to date and no product_notice -> pill shows '已是最新'
         with mock.patch.object(updates, "update_dot2api") as up_dot, \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
                 mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新（3333333）"), \
                 mock.patch.object(updates, "update_gateway") as up_muse, \
-                mock.patch.object(updates, "product_notice", return_value="AgentCompass 0.3.8 matches GitHub release v0.3.8."):
+                mock.patch.object(updates, "product_notice", return_value=""):
+            res = updates.update_all()
+            self.assertFalse(res.busy)
+            self.assertEqual(
+                res.statuses,
+                {"Dot2API": "skipped", "ChatGPT Web": "current", "Usage Float": "current", "Gemini Web": "current"},
+            )
+            self.assertEqual(res.product_notice, "")
             panel.update_components()
         up_dot.assert_not_called()
         up_muse.assert_not_called()
@@ -522,9 +629,32 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         self.assertIn("Dot2API 插件未启用，已跳过", panel.plugins_status.get())
         self.assertIn("ChatGPT Web 已是最新", panel.plugins_status.get())
         self.assertEqual(panel.status.get(), panel.plugins_status.get())
+
+        # 1b. Non-empty product_notice (e.g. newer GitHub release) -> pill shows '需注意' (not '已是最新'),
+        # and AgentCompass notice does not overwrite Muse2API in update-status.json
+        notice = "AgentCompass 0.4.2 is not a git checkout. GitHub release v0.4.3 is newer. Upgrade with: uv tool upgrade agentcompass"
+        with mock.patch.object(updates, "update_dot2api") as up_dot, \
+                mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
+                mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
+                mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新（3333333）"), \
+                mock.patch.object(updates, "update_gateway") as up_muse, \
+                mock.patch.object(updates, "product_notice", return_value=notice):
+            panel.update_components()
+        self.assertEqual(panel.plugins_pill.cget("text").strip(), "需注意")
         status_doc = self.update_status.read_status(self.state_dir)
         self.assertNotIn("Muse2API", status_doc.get("results", {}))
         self.assertIn("AgentCompass", status_doc.get("results", {}))
+
+        # 1c. updates.LOCK held -> update_all returns busy=True, pill shows '正在更新' (not '已是最新')
+        self.assertTrue(updates.LOCK.acquire(blocking=False))
+        try:
+            busy_res = updates.update_all()
+            self.assertTrue(busy_res.busy)
+            panel.update_components()
+        finally:
+            updates.LOCK.release()
+        self.assertEqual(panel.plugins_pill.cget("text").strip(), "正在更新")
+        self.assertEqual(panel.plugins_status.get(), "正在更新，请稍候")
 
         # 2. Partial component failure -> pill shows '部分异常' ('warn') and summary persists after load_plugins
         with mock.patch.object(updates, "update_dot2api") as up_dot, \

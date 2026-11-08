@@ -3930,18 +3930,37 @@ class Panel:
             self._user_plugin_flags = flags
         flags[(plugin_id, key)] = (getattr(self, "_plugins_load_generation", 0), bool(value))
 
+    def _persist_plugin_flag(self, plugin_id: str, key: str, value: bool) -> bool:
+        value = bool(value)
+        try:
+            plugins.set_flag(plugin_id, key, value)
+        except Exception as exc:
+            disk_val = bool(plugins.load().get(plugin_id, {}).get(key, not value))
+            widgets = getattr(self, "plugin_widgets", {}).get(plugin_id)
+            if widgets and key in widgets:
+                widgets[key].set(disk_val)
+            flags = getattr(self, "_user_plugin_flags", None)
+            if flags is not None:
+                flags.pop((plugin_id, key), None)
+            self.status.set(_tr('操作失败：{0}').format(f'{exc}'))
+            return False
+        self._record_plugin_flag(plugin_id, key, value)
+        return True
+
     def toggle_enabled(self, plugin_id, value):
         import services
 
         value = bool(value)
+        if not self._persist_plugin_flag(plugin_id, "enabled", value):
+            return
         self._cards_cache = None
         self._plugins_update_result = None
-        self._record_plugin_flag(plugin_id, "enabled", value)
-        plugins.set_flag(plugin_id, "enabled", value)
 
         def work():
-            plugins.set_flag(plugin_id, "enabled", value)
             name = plugins.BY_ID[plugin_id].name
+            current = plugins.enabled(plugin_id)
+            if current != value:
+                return _tr('已启用 {0}').format(f'{name}') if current else _tr('已停用 {0}').format(f'{name}')
             if not value:
                 try:
                     return _tr('已停用 {0}；{1}').format(f'{name}', f'{services.plugin_stop(plugin_id)}')
@@ -3972,8 +3991,9 @@ class Panel:
             self._open_update_window_if_interactive()
 
             def deploy_work():
-                plugins.set_flag(plugin_id, "enabled", True)
                 name = plugins.BY_ID[plugin_id].name
+                if not plugins.enabled(plugin_id):
+                    return _tr('已停用 {0}').format(f'{name}')
                 try:
                     return _tr('已启用 {0}；').format(f'{name}') + updates.deploy_gateway(
                         plugin_id, plugins.autostarts(plugin_id), progress=update_status.record
@@ -3988,10 +4008,12 @@ class Panel:
 
     def toggle_autostart(self, plugin_id, value):
         value = bool(value)
-        self._record_plugin_flag(plugin_id, "autostart", value)
-        plugins.set_flag(plugin_id, "autostart", value)
-        self.run(lambda: plugins.set_flag(plugin_id, "autostart", value) and
-                 _tr('{0} 随托盘自启：{1}').format(f'{plugins.BY_ID[plugin_id].name}', f"{(_tr('开') if value else _tr('关'))}"))
+        if not self._persist_plugin_flag(plugin_id, "autostart", value):
+            return
+        self._plugins_update_result = None
+        name = plugins.BY_ID[plugin_id].name
+        state_text = _tr('开') if value else _tr('关')
+        self.run(lambda: _tr('{0} 随托盘自启：{1}').format(f'{name}', f'{state_text}'))
 
     def load_plugins(self, probe=True):
         import services
@@ -4216,19 +4238,48 @@ class Panel:
                 return updates.update_all(progress=progress)
             except Exception as error:
                 log_error(error)
-                return _tr("检查更新失败：{0}").format(error)
+                return updates.UpdateAllResult(
+                    _tr("检查更新失败：{0}").format(error),
+                    components={"batch": {"status": "failed", "message": str(error)}},
+                )
 
-        def done(summary):
+        def done(result):
             self.plugins_updating = False
             if hasattr(self, "plugins_update_button"):
                 self.plugins_update_button.state(["!disabled"])
                 self.plugins_update_button.configure(text=_tr("检查更新"))
-            text = str(summary or "")
-            failed = any(word in text.lower() for word in (
-                "失败", "出错", "未更新", "稍后", "没能", "延后",
-                "failed", "error", "not updated", "later", "could not", "deferred",
-            ))
-            pill = (_tr("部分异常") if failed else _tr("已是最新"), "warn" if failed else "ok")
+            structured = isinstance(result, dict) or hasattr(result, "statuses")
+            text = str(result.get("summary") if isinstance(result, dict) else (result or ""))
+            busy = bool(result.get("busy")) if structured else (text == _tr("正在更新，请稍候"))
+            statuses = dict(result.get("statuses") or {}) if structured else {}
+            if structured and not statuses and isinstance(result.get("components"), dict):
+                statuses = {
+                    k: (v.get("status", "failed") if isinstance(v, dict) else str(v))
+                    for k, v in result["components"].items()
+                }
+            failed = bool(
+                (result.get("failed") or result.get("deferred")) if structured else False
+            ) or any(st in ("failed", "deferred") for st in statuses.values())
+            notice = str(result.get("product_notice") or "") if structured else ""
+            active_statuses = [st for st in statuses.values() if st != "skipped"]
+            all_up_to_date = (
+                structured
+                and not busy
+                and not failed
+                and not notice
+                and bool(active_statuses)
+                and all(st in ("current", "updated") for st in active_statuses)
+            )
+            if busy:
+                pill = (_tr("正在更新"), "warn")
+            elif failed:
+                pill = (_tr("部分异常"), "warn")
+            elif notice:
+                pill = (_tr("需注意"), "warn")
+            elif all_up_to_date:
+                pill = (_tr("已是最新"), "ok")
+            else:
+                pill = (_tr("就绪"), "idle")
             if hasattr(self, "plugins_pill"):
                 theme.set_pill(self.plugins_pill, *pill)
             if hasattr(self, "plugins_status") and text:
