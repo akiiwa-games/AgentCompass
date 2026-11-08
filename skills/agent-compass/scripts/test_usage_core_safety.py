@@ -324,6 +324,111 @@ class UsageSafetyTests(unittest.TestCase):
             self.assertIn('限流退避', res3.error or '')
             self.assertEqual(http_call.call_count, 1)
 
+    def test_success_with_advancing_clock_magpie_and_v042_cache_never_triggers_false_retry(self):
+        self.activity({})
+        codex_dir = self.root / '.codex'
+        codex_dir.mkdir(exist_ok=True)
+        (codex_dir / 'auth.json').write_text(json.dumps({'tokens': {'access_token': 'codex-tok', 'account_id': 'acc-1'}}))
+        real_time = time.time
+        offset = [0.0]
+
+        def advancing_time():
+            offset[0] += 0.005
+            return real_time() + offset[0]
+
+        def fetch_claude(**kwargs):
+            pid = kwargs.get('provider_id', 'claude')
+            now_dt = datetime.fromtimestamp(advancing_time(), tz=timezone.utc)
+            if pid == 'claude-2':
+                # Magpie gateway readAt is minutes older than the local attempt timestamp
+                read_at = (now_dt - timedelta(seconds=180)).isoformat()
+                res = usage.ProviderUsage(
+                    provider_id='claude-2', display_name='claude-2', available=True,
+                    fetched_at=read_at, backend_kind='gateway', billing='subscription',
+                    windows=[usage.UsageWindow('five_hour', '5h', 15)],
+                )
+                usage.cache_put_provider(res)
+                return res
+            return usage.ProviderUsage(
+                provider_id=pid, display_name=pid, available=True,
+                fetched_at=now_dt.isoformat(),
+                windows=[usage.UsageWindow('seven_day', '7d', 20)],
+            )
+
+        def fetch_codex(acc):
+            now_dt = datetime.fromtimestamp(advancing_time(), tz=timezone.utc)
+            return usage.ProviderUsage(
+                provider_id=acc.provider_id, display_name=acc.display_name, available=True,
+                fetched_at=now_dt.isoformat(),
+                windows=[usage.UsageWindow('usage', '7d', 30)],
+            )
+
+        import types
+        codex_acc = usage.CodexAccount('codex', 'codex', codex_dir)
+        magpie_src = types.SimpleNamespace(credential_key='magpie-ck-2')
+        with patch.object(usage.time, 'time', side_effect=advancing_time), \
+             patch.object(usage, 'CODEX_HOME', codex_dir), \
+             patch.dict(usage.CODEX_ACCOUNT_BY_ID, {'codex': codex_acc}), \
+             patch.object(usage, 'claude_magpie_source', side_effect=lambda pid: magpie_src if pid == 'claude-2' else None), \
+             patch.object(usage, 'fetch_claude_usage', side_effect=fetch_claude) as m_claude, \
+             patch.object(usage, 'fetch_codex_usage', side_effect=fetch_codex) as m_codex:
+            # 1. Initial successful read across Claude, Codex, and Magpie (claude-2)
+            usage.collect_local_usage(['claude', 'codex', 'claude-2'])
+            self.assertEqual(m_claude.call_count, 2)  # claude + claude-2
+            self.assertEqual(m_codex.call_count, 1)
+            cache_doc = usage.load_usage_cache()
+            for pid in ('claude', 'codex', 'claude-2'):
+                att = cache_doc['attempts'][pid]
+                self.assertEqual(att.get('failures'), 0, pid)
+                obs = usage._iso_epoch(cache_doc['providers'][pid]['fetched_at'], 0)
+                self.assertGreater(att['at'], obs, pid)
+
+            # At +125s after success (< 300s Magpie poll and < 1800s idle poll), nothing re-fetches
+            offset[0] += 125.0
+            usage.collect_local_usage(['claude', 'codex', 'claude-2'])
+            self.assertEqual(m_claude.call_count, 2)
+            self.assertEqual(m_codex.call_count, 1)
+
+            # 2. First real failure after a success records failures == 1 and retry_seconds == 120
+            offset[0] += 2000.0
+            m_claude.side_effect = lambda **kw: usage.ProviderUsage(
+                provider_id=kw.get('provider_id', 'claude'), display_name='claude', available=False, error='更新失败'
+            )
+            m_codex.side_effect = lambda acc: usage.ProviderUsage(
+                provider_id=acc.provider_id, display_name=acc.display_name, available=False, error='更新失败'
+            )
+            usage.collect_local_usage(['claude', 'codex'])
+            cache_after_fail = usage.load_usage_cache()
+            for pid in ('claude', 'codex'):
+                self.assertEqual(cache_after_fail['attempts'][pid].get('failures'), 1, pid)
+                self.assertEqual(cache_after_fail['attempts'][pid].get('retry_seconds'), 120, pid)
+
+            # 3. Old v0.4.2 cache entry without `failures` key is not counted as a failure
+            m_claude.side_effect = fetch_claude
+            offset[0] += 2000.0
+            usage.collect_local_usage(['claude'])
+            calls_before_legacy = m_claude.call_count
+            ckey = usage.provider_credential_key('claude')
+            legacy_at = advancing_time() + 1.0
+            usage.update_usage_cache(
+                lambda c: c['attempts'].__setitem__('claude', {'at': legacy_at, 'credential_key': ckey})
+            )
+            self.assertNotIn('failures', usage.load_usage_cache()['attempts']['claude'])
+
+            # At +125s after the legacy v0.4.2 attempt, must throttle at normal poll (not 120s)
+            offset[0] += 125.0
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(m_claude.call_count, calls_before_legacy)
+
+            # When poll finally elapses and a failure occurs, it starts at failures == 1 (120s)
+            offset[0] += 2000.0
+            m_claude.side_effect = lambda **kw: usage.ProviderUsage(
+                provider_id='claude', display_name='claude', available=False, error='更新失败'
+            )
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(usage.load_usage_cache()['attempts']['claude'].get('failures'), 1)
+            self.assertEqual(usage.load_usage_cache()['attempts']['claude'].get('retry_seconds'), 120)
+
 
 
 if __name__ == '__main__':

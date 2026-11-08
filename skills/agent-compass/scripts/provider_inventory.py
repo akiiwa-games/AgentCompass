@@ -1375,6 +1375,8 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
                 if newest_group_good is not None and (ref_at is None or newest_group_good > ref_at):
                     rows[slot]['status'] = account_state.READY
                     rows[slot].pop('reason', None)
+                    rows[slot].pop('plan_inactive_at', None)
+                    rows[slot].pop('plan_inactive_retry_at', None)
             elif rows[slot].get('status') == account_state.AUTH_FAILED:
                 cid = _cred_id(slot)
                 newest_cred_good = max((t for s, t in good_by_slot.items() if cid and _cred_id(s) == cid), default=None)

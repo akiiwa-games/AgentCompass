@@ -2894,9 +2894,11 @@ def record_usage_attempt(
     retry_seconds: int | None = None,
 ) -> None:
     def update(cache):
-        entry: dict[str, Any] = {'at': time.time(), 'credential_key': key}
-        if failures > 0:
-            entry['failures'] = int(failures)
+        entry: dict[str, Any] = {
+            'at': time.time(),
+            'credential_key': key,
+            'failures': max(0, int(failures)),
+        }
         if retry_seconds is not None and retry_seconds > 0:
             entry['retry_seconds'] = int(retry_seconds)
         cache.setdefault('attempts', {})[provider_id] = entry
@@ -2934,12 +2936,14 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                 same_attempt = attempt.get('credential_key') == key
                 last_attempt = attempt.get('at', 0) if same_attempt else 0
                 observed = _iso_epoch(cached.fetched_at, 0) if cached and (not raw or raw.get('credential_key') == key) else 0
-                if observed > last_attempt and not raw.get('error') and raw.get('available') is not False:
-                    prior_failures = 0
-                elif same_attempt and isinstance(attempt.get('failures'), int) and attempt['failures'] > 0:
-                    prior_failures = attempt['failures']
-                elif last_attempt > 0 and (last_attempt > observed or raw.get('error') or raw.get('available') is False or not cached):
-                    prior_failures = 1
+                stored_failures = attempt.get('failures') if same_attempt else None
+                if (
+                    isinstance(stored_failures, int)
+                    and not isinstance(stored_failures, bool)
+                    and stored_failures > 0
+                    and not (observed > last_attempt and not raw.get('error') and raw.get('available') is not False)
+                ):
+                    prior_failures = stored_failures
                 else:
                     prior_failures = 0
                 throttle = failure_retry_seconds(prior_failures, poll) if prior_failures > 0 else poll

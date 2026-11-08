@@ -496,6 +496,9 @@ class StateTests(Machine):
         inv_renewed = inventory.discover(now=self.now)['accounts']
         self.assertEqual(inv_renewed['codex']['status'], account_state.READY)
         self.assertEqual(inv_renewed['codex-2']['status'], account_state.READY)
+        self.assertNotIn('reason', inv_renewed['codex-2'])
+        self.assertNotIn('plan_inactive_at', inv_renewed['codex-2'])
+        self.assertNotIn('plan_inactive_retry_at', inv_renewed['codex-2'])
 
         # Sub-case 3: Same-credential older 401 on codex-2 does not override newer 200 OK on codex
         self.write('.agent-compass/usage-cache.json', {'providers': {
