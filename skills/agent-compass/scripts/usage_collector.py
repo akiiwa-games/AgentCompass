@@ -37,7 +37,7 @@ def discovered_subscriptions() -> list[str]:
     return items
 
 
-def collect():
+def collect(*, force: bool = False):
     usage = usage_core
     venice_usage.refresh(STATE)
     # Refresh opted-in admission before filtering newly discovered subscriptions.
@@ -48,7 +48,7 @@ def collect():
     subscriptions = host_policy.usage_providers(host_policy.load_policy(), defaults + [n for n in sources if n not in defaults])
     subscriptions = list(dict.fromkeys(sources.get(name, name) for name in subscriptions))
     selected = usage.active_providers(subscriptions)
-    observations = usage.fetch_all(selected, force=False)
+    observations = usage.fetch_all(selected, force=force)
     result = {'hostname': socket.gethostname(), 'collection_mode': 'direct',
               'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
               'cache_path': str(usage.CACHE_PATH), 'excluded': [],
@@ -67,6 +67,7 @@ def collect():
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='agentcompass usage', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--once', action='store_true', help='Collect one time and exit (what `agentcompass usage` always does); without it the tray helper repeats every 5 minutes.')
+    parser.add_argument('--force', action='store_true', help='Skip poll/retry throttling (Claude 429 rate-limit backoff still applies).')
     args = parser.parse_args(argv)
     if not args.once and os.name == 'nt':
         import ctypes
@@ -74,9 +75,11 @@ def main(argv=None):
         kernel.CreateMutexW(None, False, 'Local\\AgentCompassUsageCollector')
         if ctypes.get_last_error() == 183:
             return 0
+    first_pass = True
     while True:
         try:
-            result = collect()
+            result = collect(force=bool(args.force and first_pass))
+            first_pass = False
             if sys.stdout is not None:
                 print(json.dumps(result), flush=True)
         except Exception as error:

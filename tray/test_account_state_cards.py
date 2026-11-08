@@ -76,6 +76,29 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertTrue(dispatchable({'status': 'usage_failing', 'usage_excluded': False}))
         self.assertFalse(dispatchable({'status': 'usage_failing', 'usage_excluded': True}))
 
+    def test_usage_refused_402_account_card_shows_auto_retry_time(self):
+        cached = {
+            'error_status': 402,
+            'error_code': 'deactivated_workspace',
+            'error_at': '2026-11-08T04:00:00+00:00',
+        }
+        retry_at = real_inventory.account_state.usage_refused_retry_at(
+            cached, poll={'seconds': 300, 'at': 1762574400.0}
+        )
+        self.assertEqual(retry_at, '2026-11-08T04:05:00+00:00')
+        reason = real_inventory.account_state.usage_refused_reason(cached, retry_at=retry_at)
+        self.assertIn('auto-retry at 2026-11-08T04:05:00+00:00', reason)
+        card = self.card({
+            'family': 'codex',
+            'identity': 'i',
+            'status': 'plan_inactive',
+            'reason': reason,
+            'plan_inactive_retry_at': retry_at,
+        })
+        self.assertEqual(card['kind'], 'warn')
+        self.assertIn('套餐失效，已排除派发', card['badge'])
+        self.assertIn('auto-retry at 2026-11-08T04:05:00+00:00', card['badge'])
+
 
 if __name__ == '__main__':
     unittest.main()

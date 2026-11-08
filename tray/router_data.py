@@ -432,7 +432,11 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     if status == 'quota_exhausted':
         return _tr('额度已耗尽，等待刷新恢复'), 'warn'
     if status == 'plan_inactive':
-        return _tr('套餐失效，已排除派发：{0}').format(row.get('reason') or status), 'warn'
+        reason = str(row.get('reason') or status)
+        retry_at = row.get('plan_inactive_retry_at')
+        if retry_at and 'auto-retry at' not in reason:
+            reason = f'{reason} (auto-retry at {retry_at})'
+        return _tr('套餐失效，已排除派发：{0}').format(reason), 'warn'
     if status == 'auth_failed':
         return _tr('登录被拒绝，已排除派发：{0}').format(row.get('reason') or status), 'warn'
     if status == 'usage_failing':

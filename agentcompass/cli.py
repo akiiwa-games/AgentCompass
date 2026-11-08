@@ -95,11 +95,12 @@ def route_judge_command(stage: str, args: list[str]) -> list[str]:
     return [sys.executable, "-I", "-X", "utf8", str(script), stage, *args]
 
 
-USAGE_HELP = """usage: agentcompass usage [--show [--accounts KEY ...] [--usage-cache FILE]]
+USAGE_HELP = """usage: agentcompass usage [--force] [--show [--accounts KEY ...] [--usage-cache FILE]]
 
 Without --show: collect provider usage once into the router's cache (~/.agent-compass/usage-cache.json, or under
 ROUTER_STATE_DIR) for the accounts this machine's host policy allows, and print a receipt. Needs no Usage Float and no tray.
 
+--force             skip poll/retry throttling (Claude 429 rate-limit backoff still applies)
 --show              print what routing reads from the cache (read only, nothing is collected)
 --accounts KEY ...  with --show: only these accounts
 --usage-cache FILE  with --show: read only this file (also: ROUTER_USAGE_CACHE)

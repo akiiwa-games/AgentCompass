@@ -325,7 +325,11 @@ class StateTests(Machine):
                 usage_core.collect_local_usage(['codex'], force=True)
             row_402 = usage_core.load_usage_cache()['providers']['codex']
             self.assertEqual((row_402.get('error_status'), row_402.get('error_code')), (402, 'deactivated_workspace'))
-            self.assertEqual(self.row('codex')['status'], account_state.PLAN_INACTIVE)
+            inv_402 = self.row('codex')
+            self.assertEqual(inv_402['status'], account_state.PLAN_INACTIVE)
+            self.assertIn('auto-retry at', inv_402.get('reason') or '')
+            self.assertIsNotNone(inv_402.get('plan_inactive_retry_at'))
+            self.assertIn(inv_402['plan_inactive_retry_at'], inv_402['reason'])
 
             # Credential rotation with no prior cache for the new credential: 401 -> auth_failed
             self.write('.codex/auth.json', {'tokens': {

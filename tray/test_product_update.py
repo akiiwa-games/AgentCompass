@@ -1178,6 +1178,144 @@ class IncrementalCodePackageUpdateTests(unittest.TestCase):
         fake_kernel.CloseHandle.assert_called_once_with(535353)
         self.assertIsNone(panel.show_event)
 
+    def test_full_installer_fallback_records_runtime_change_reason_in_events_and_status_i18n(self):
+        import i18n
+
+        for lang, expected_phrase in (
+            ("zh", "运行时已变更，本次更新需要完整安装包"),
+            ("en", "Runtime changed; a full installer is required for this update"),
+        ):
+            with self.subTest(lang=lang), TemporaryDirectory() as tmp:
+                i18n.set_language(lang)
+                self.addCleanup(lambda: i18n.set_language("zh"))
+                base = Path(tmp)
+                state_dir = base / "state"
+                home = base / "home"
+                home.mkdir()
+                old_fp = "1" * 64
+                new_fp = "2" * 64
+                inst_root = _make_modular_installer_dir(base, version="0.3.18", runtime_fp=old_fp)
+                zip_file = base / "release" / "app-0.4.0.zip"
+                zip_bytes, zip_sha = _make_code_package_zip(zip_file, version="0.4.0", runtime_fp=new_fp)
+                setup_bytes = b"MZ-new-runtime-full-installer"
+                setup_sha = hashlib.sha256(setup_bytes).hexdigest()
+                manifest_payload = {
+                    "schema_version": 1,
+                    "version": "0.4.0",
+                    "runtime_fingerprint": new_fp,
+                    "app_package": {
+                        "name": "app-0.4.0.zip",
+                        "size": len(zip_bytes),
+                        "sha256": zip_sha,
+                        "required_runtime_fingerprint": new_fp,
+                    },
+                    "installer": {
+                        "name": "AgentCompass-tray-setup.exe",
+                        "size": len(setup_bytes),
+                        "sha256": setup_sha,
+                        "runtime_fingerprint": new_fp,
+                    },
+                }
+                manifest_bytes = json.dumps(manifest_payload).encode("utf-8")
+
+                events = []
+                updates.update_agentcompass(
+                    on_event=events.append,
+                    root=inst_root,
+                    home=home,
+                    state_dir=state_dir,
+                    which_path=None,
+                    frozen=False,
+                    release={
+                        "tag_name": "v0.4.0",
+                        "assets": [
+                            {"name": "manifest.json", "url": "https://example.com/manifest.json"},
+                            {
+                                "name": "app-0.4.0.zip",
+                                "url": "https://example.com/app-0.4.0.zip",
+                                "digest": f"sha256:{zip_sha}",
+                            },
+                            {
+                                "name": "AgentCompass-tray-setup.exe",
+                                "url": "https://example.com/AgentCompass-tray-setup.exe",
+                                "digest": f"sha256:{setup_sha}",
+                            },
+                        ],
+                    },
+                    opener=lambda req, timeout=300: _Body(
+                        manifest_bytes if req.full_url.endswith("manifest.json") else setup_bytes
+                    ),
+                    runner=lambda args, cwd=None, env=None: "",
+                    restart_fn=lambda: "restarted",
+                )
+                self.assertTrue(
+                    any(
+                        expected_phrase in str(e.get("message") or "")
+                        and "runtime_fingerprint_mismatch" in str(e.get("message") or "")
+                        for e in events
+                    ),
+                    events,
+                )
+                status_file = state_dir / "update-status.json"
+                self.assertTrue(status_file.is_file())
+                status_doc = json.loads(status_file.read_text(encoding="utf-8"))
+                self.assertIn("runtime_fingerprint_mismatch", str(status_doc.get("full_installer_reason") or ""))
+                self.assertTrue(
+                    any(
+                        expected_phrase in line and "runtime_fingerprint_mismatch" in line
+                        for line in (status_doc.get("events") or [])
+                    ),
+                    status_doc.get("events"),
+                )
+
+                # Also verify when _apply_code_package raises _IncompatibleCodePackageRuntime
+                events_exc = []
+                state_dir_exc = base / "state-exc"
+                same_manifest = dict(manifest_payload, runtime_fingerprint=old_fp)
+                same_manifest["app_package"] = dict(manifest_payload["app_package"], required_runtime_fingerprint=old_fp)
+                same_manifest_bytes = json.dumps(same_manifest).encode("utf-8")
+                updates.update_agentcompass(
+                    on_event=events_exc.append,
+                    root=inst_root,
+                    home=home,
+                    state_dir=state_dir_exc,
+                    which_path=None,
+                    frozen=False,
+                    release={
+                        "tag_name": "v0.4.0",
+                        "assets": [
+                            {"name": "manifest.json", "url": "https://example.com/manifest.json"},
+                            {
+                                "name": "app-0.4.0.zip",
+                                "url": "https://example.com/app-0.4.0.zip",
+                                "digest": f"sha256:{zip_sha}",
+                            },
+                            {
+                                "name": "AgentCompass-tray-setup.exe",
+                                "url": "https://example.com/AgentCompass-tray-setup.exe",
+                                "digest": f"sha256:{setup_sha}",
+                            },
+                        ],
+                    },
+                    opener=lambda req, timeout=300: _Body(
+                        same_manifest_bytes
+                        if req.full_url.endswith("manifest.json")
+                        else (zip_bytes if req.full_url.endswith(".zip") else setup_bytes)
+                    ),
+                    runner=lambda args, cwd=None, env=None: "",
+                    restart_fn=lambda: "restarted",
+                )
+                self.assertTrue(
+                    any(expected_phrase in str(e.get("message") or "") for e in events_exc),
+                    events_exc,
+                )
+                status_exc_doc = json.loads((state_dir_exc / "update-status.json").read_text(encoding="utf-8"))
+                self.assertTrue(status_exc_doc.get("full_installer_reason"))
+                self.assertTrue(
+                    any(expected_phrase in line for line in (status_exc_doc.get("events") or [])),
+                    status_exc_doc.get("events"),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,11 +34,19 @@ class UsageSafetyTests(unittest.TestCase):
             home.mkdir()
             (home / '.credentials.json').write_text(json.dumps({
                 'claudeAiOauth': {'accessToken': token, 'refreshToken': 'not-for-monitor'}}))
-        for name, value in (('CACHE_PATH', self.root / 'cache.json'),
-                            ('CLAUDE_HOME', self.first), ('CLAUDE_HOME_2', self.second)):
+        (self.root / '.codex-2').mkdir()
+        for name, value in (('HOME', self.root), ('CACHE_PATH', self.root / 'cache.json'),
+                            ('CLAUDE_HOME', self.first), ('CLAUDE_HOME_2', self.second),
+                            ('CODEX_HOME_2', self.root / '.codex-2')):
             p = patch.object(usage, name, value)
             p.start()
             self.addCleanup(p.stop)
+        p_codex = patch.dict(
+            usage.CODEX_ACCOUNT_BY_ID,
+            {'codex-2': usage.CodexAccount('codex-2', 'codex-2', self.root / '.codex-2')},
+        )
+        p_codex.start()
+        self.addCleanup(p_codex.stop)
         p = patch.dict('os.environ', {'ROUTE_MANAGER_ACTIVITY_FILE': str(self.root / 'capacity.json')})
         p.start()
         self.addCleanup(p.stop)
@@ -259,6 +267,62 @@ class UsageSafetyTests(unittest.TestCase):
         ) as direct:
             self.assertFalse(usage.collect_local_usage(['claude'])[0].available)
             direct.assert_not_called()
+
+    def test_failed_attempts_use_exponential_retry_backoff_and_preserve_claude_429_backoff(self):
+        self.activity({})
+        failure = usage.ProviderUsage(provider_id='claude', display_name='claude', available=False, error='更新失败')
+        now0 = 1_700_000_000.0
+        clock = [now0]
+        with patch.object(usage.time, 'time', side_effect=lambda: clock[0]), \
+             patch.object(usage, 'fetch_claude_usage', return_value=failure) as direct:
+            # First failed attempt at t=0 -> throttled for 120s (2m), not full 1800s idle poll
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(direct.call_count, 1)
+
+            clock[0] = now0 + 60
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(direct.call_count, 1)
+
+            # At t=125s (>= 120s), retries and fails a second time -> backoff doubles to 240s (4m)
+            clock[0] = now0 + 125
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(direct.call_count, 2)
+
+            clock[0] = now0 + 125 + 180
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(direct.call_count, 2)
+
+            # At t=125+245s (>= 240s), retries and succeeds -> resets to full 1800s idle poll
+            clock[0] = now0 + 125 + 245
+            good_item = usage.ProviderUsage(
+                provider_id='claude', display_name='claude', available=True,
+                fetched_at=datetime.fromtimestamp(clock[0], tz=timezone.utc).isoformat(),
+                windows=[usage.UsageWindow('seven_day', '7d', 20)],
+            )
+            direct.return_value = good_item
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(direct.call_count, 3)
+
+            # 300s after success (< 1800s idle poll), stays throttled on normal poll cadence
+            clock[0] = now0 + 125 + 245 + 300
+            usage.collect_local_usage(['claude'])
+            self.assertEqual(direct.call_count, 3)
+
+        # Claude 429 rate-limit backoff must never be bypassed by the 2-minute failure retry or force=True
+        usage.CACHE_PATH.unlink(missing_ok=True)
+        with patch.object(usage, 'claude_authorized_json', return_value=(429, {})) as http_call:
+            res1 = usage.collect_local_usage(['claude'], force=True)[0]
+            self.assertIn('限流退避', res1.error or '')
+            self.assertEqual(http_call.call_count, 1)
+            # Simulate 3 minutes passing (> 120s retry backoff, < 900s 429 backoff)
+            usage.update_usage_cache(
+                lambda c: c.get('attempts', {}).get('claude', {}).update({'at': time.time() - 180})
+            )
+            res2 = usage.collect_local_usage(['claude'], force=False)[0]
+            res3 = usage.collect_local_usage(['claude'], force=True)[0]
+            self.assertIn('限流退避', res2.error or '')
+            self.assertIn('限流退避', res3.error or '')
+            self.assertEqual(http_call.call_count, 1)
 
 
 

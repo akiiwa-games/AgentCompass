@@ -320,6 +320,44 @@ def clear_latch(account, *, state_dir=None, expected_observed_at=None, launched_
     return True
 
 
+USAGE_RETRY_SECONDS = 300
+
+
+def usage_refused_retry_at(cached, poll=None, attempt=None, now=None):
+    """Next poll/retry timestamp for a usage-API plan refusal (402 or inactive error code)."""
+    if not isinstance(cached, dict):
+        return None
+    observed = _time(cached.get('error_at') or cached.get('fetched_at'))
+    if observed is None and isinstance(attempt, dict) and isinstance(attempt.get('at'), (int, float)) and not isinstance(attempt.get('at'), bool):
+        observed = datetime.fromtimestamp(attempt['at'], tz=timezone.utc)
+    if observed is None and isinstance(poll, dict) and isinstance(poll.get('at'), (int, float)) and not isinstance(poll.get('at'), bool):
+        observed = datetime.fromtimestamp(poll['at'], tz=timezone.utc)
+    if observed is None:
+        observed = _time(now) if isinstance(now, str) else now
+    if not isinstance(observed, datetime):
+        return None
+    seconds = None
+    ckey = cached.get('credential_key')
+    if isinstance(attempt, dict) and (not ckey or attempt.get('credential_key') == ckey):
+        cand = attempt.get('retry_seconds')
+        if isinstance(cand, (int, float)) and not isinstance(cand, bool) and cand > 0:
+            seconds = cand
+    if seconds is None and isinstance(poll, dict):
+        cand = poll.get('seconds')
+        if isinstance(cand, (int, float)) and not isinstance(cand, bool) and cand > 0:
+            seconds = cand
+    if seconds is None:
+        seconds = USAGE_RETRY_SECONDS
+    return (observed + timedelta(seconds=seconds)).isoformat()
+
+
+def usage_refused_reason(cached, retry_at=None, poll=None, attempt=None, now=None):
+    detail = (cached.get('error_code') or cached.get('error_status')) if isinstance(cached, dict) else None
+    when = retry_at or usage_refused_retry_at(cached, poll=poll, attempt=attempt, now=now)
+    suffix = f' (auto-retry at {when})' if when else ''
+    return f'usage API refused: {detail}{suffix}'
+
+
 def latch_retry_at(latch):
     observed = _time((latch or {}).get('observed_at'))
     return (observed + timedelta(hours=LATCH_RETRY_HOURS)).isoformat() if observed else None

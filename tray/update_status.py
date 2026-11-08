@@ -48,6 +48,9 @@ def record(event: dict | str, *, directory: Path | None = None) -> None:
                 _state.pop("pending_installer", None)
             else:
                 _state["pending_installer"] = event["pending_installer"]
+        full_reason = event.get("full_installer_reason") or event.get("reason")
+        if full_reason:
+            _state["full_installer_reason"] = str(full_reason)
         component = event.get("component", "")
         message = event.get("message", "")
         targets = _state.setdefault("targets", [])

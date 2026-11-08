@@ -783,6 +783,8 @@ def _discover(home=None, environ=None, now=None):
         definitions = {}
     cache = usage_cache.read(None, home, environ)[0] or {}
     cache_rows = cache.get('providers') if isinstance(cache.get('providers'), dict) else {}
+    cache_polls = cache.get('poll') if isinstance(cache.get('poll'), dict) else {}
+    cache_attempts = cache.get('attempts') if isinstance(cache.get('attempts'), dict) else {}
     result = {'schema': 'agent-compass.providers.v2.local', 'generated_at': now.isoformat(),
               'accounts': {}, 'launchers': {}, 'saved': [], 'source_paths': {},
               'sources': {'paseo': paseo_error or 'read'}}
@@ -888,8 +890,16 @@ def _discover(home=None, environ=None, now=None):
         if (cached.get('credential_key') and cached.get('credential_key') == row.get('credential_key')):
             row['usage_binding'] = 'matches'
             if row['status'] == 'ready' and account_state.usage_refused_plan(cached):
-                row.update(status=account_state.PLAN_INACTIVE,
-                           reason=f"usage API refused: {cached.get('error_code') or cached.get('error_status')}")
+                retry_at = account_state.usage_refused_retry_at(
+                    cached, poll=cache_polls.get(name), attempt=cache_attempts.get(name), now=now
+                )
+                row.update(
+                    status=account_state.PLAN_INACTIVE,
+                    reason=account_state.usage_refused_reason(cached, retry_at=retry_at),
+                    **({'plan_inactive_at': cached.get('error_at') or cached.get('fetched_at')}
+                       if (cached.get('error_at') or cached.get('fetched_at')) else {}),
+                    **({'plan_inactive_retry_at': retry_at} if retry_at else {}),
+                )
             elif row['status'] == 'ready' and account_state.usage_refused_credentials(cached, COLLECTOR_REJECTED[family]):
                 row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
             label = cached.get('plan_label') if isinstance(cached.get('plan_label'), str) else ''
@@ -986,8 +996,16 @@ def _discover(home=None, environ=None, now=None):
         if grok_has_failure:
             grok_row['usage_read_failed'] = True
         if grok_row['status'] == 'ready' and account_state.usage_refused_plan(grok_cached):
-            grok_row.update(status=account_state.PLAN_INACTIVE,
-                            reason=f"usage API refused: {grok_cached.get('error_code') or grok_cached.get('error_status')}")
+            grok_retry_at = account_state.usage_refused_retry_at(
+                grok_cached, poll=cache_polls.get('grok'), attempt=cache_attempts.get('grok'), now=now
+            )
+            grok_row.update(
+                status=account_state.PLAN_INACTIVE,
+                reason=account_state.usage_refused_reason(grok_cached, retry_at=grok_retry_at),
+                **({'plan_inactive_at': grok_cached.get('error_at') or grok_cached.get('fetched_at')}
+                   if (grok_cached.get('error_at') or grok_cached.get('fetched_at')) else {}),
+                **({'plan_inactive_retry_at': grok_retry_at} if grok_retry_at else {}),
+            )
         elif grok_row['status'] == 'ready' and account_state.usage_refused_credentials(grok_cached, COLLECTOR_REJECTED.get('grok', ())):
             grok_row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
     elif grok_cached and grok_ckey:
@@ -1108,8 +1126,16 @@ def _discover(home=None, environ=None, now=None):
         if pi_matches:
             pi_row['usage_binding'] = 'matches'
             if pi_row['status'] == 'ready' and account_state.usage_refused_plan(pi_cached):
-                pi_row.update(status=account_state.PLAN_INACTIVE,
-                              reason=f"usage API refused: {pi_cached.get('error_code') or pi_cached.get('error_status')}")
+                pi_retry_at = account_state.usage_refused_retry_at(
+                    pi_cached, poll=cache_polls.get('pi'), attempt=cache_attempts.get('pi'), now=now
+                )
+                pi_row.update(
+                    status=account_state.PLAN_INACTIVE,
+                    reason=account_state.usage_refused_reason(pi_cached, retry_at=pi_retry_at),
+                    **({'plan_inactive_at': pi_cached.get('error_at') or pi_cached.get('fetched_at')}
+                       if (pi_cached.get('error_at') or pi_cached.get('fetched_at')) else {}),
+                    **({'plan_inactive_retry_at': pi_retry_at} if pi_retry_at else {}),
+                )
             elif pi_row['status'] == 'ready' and account_state.usage_refused_credentials(pi_cached, COLLECTOR_REJECTED['codex']):
                 pi_row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
         elif pi_cached:
@@ -1399,6 +1425,9 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
         )
         if inactive_peer is not None:
             row.update(status=account_state.PLAN_INACTIVE, reason=inactive_peer.get('reason'))
+            for k in ('plan_inactive_at', 'plan_inactive_retry_at'):
+                if inactive_peer.get(k):
+                    row[k] = inactive_peer[k]
         elif auth_peer is not None:
             row.update(status=account_state.AUTH_FAILED, reason=auth_peer.get('reason'))
         elif account_state.plan_is_inactive(row.get('quota_family') or row.get('family'), row.get('plan')):

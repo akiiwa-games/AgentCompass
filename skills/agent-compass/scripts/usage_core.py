@@ -2876,9 +2876,30 @@ def provider_poll_seconds(provider_id: str) -> int:
         return UNKNOWN_ACTIVITY_REFRESH_SECONDS
 
 
-def record_usage_attempt(provider_id: str, key: str | None) -> None:
+FAILURE_RETRY_BASE_SECONDS = 120
+
+
+def failure_retry_seconds(failures: int, poll: int) -> int:
+    """Short exponential retry cadence after failed attempts (2m, 4m, 8m...), capped at poll."""
+    if failures <= 0:
+        return poll
+    return min(poll, FAILURE_RETRY_BASE_SECONDS * (2 ** min(failures - 1, 10)))
+
+
+def record_usage_attempt(
+    provider_id: str,
+    key: str | None,
+    *,
+    failures: int = 0,
+    retry_seconds: int | None = None,
+) -> None:
     def update(cache):
-        cache.setdefault('attempts', {})[provider_id] = {'at': time.time(), 'credential_key': key}
+        entry: dict[str, Any] = {'at': time.time(), 'credential_key': key}
+        if failures > 0:
+            entry['failures'] = int(failures)
+        if retry_seconds is not None and retry_seconds > 0:
+            entry['retry_seconds'] = int(retry_seconds)
+        cache.setdefault('attempts', {})[provider_id] = entry
     update_usage_cache(update)
 
 
@@ -2910,15 +2931,25 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                 cache = load_usage_cache()
                 raw = (cache.get('providers') or {}).get(pid) or {}
                 attempt = (cache.get('attempts') or {}).get(pid) or {}
-                last_attempt = attempt.get('at', 0) if attempt.get('credential_key') == key else 0
+                same_attempt = attempt.get('credential_key') == key
+                last_attempt = attempt.get('at', 0) if same_attempt else 0
                 observed = _iso_epoch(cached.fetched_at, 0) if cached and (not raw or raw.get('credential_key') == key) else 0
+                if observed > last_attempt and not raw.get('error') and raw.get('available') is not False:
+                    prior_failures = 0
+                elif same_attempt and isinstance(attempt.get('failures'), int) and attempt['failures'] > 0:
+                    prior_failures = attempt['failures']
+                elif last_attempt > 0 and (last_attempt > observed or raw.get('error') or raw.get('available') is False or not cached):
+                    prior_failures = 1
+                else:
+                    prior_failures = 0
+                throttle = failure_retry_seconds(prior_failures, poll) if prior_failures > 0 else poll
                 now_ts = time.time()
                 age = now_ts - max(last_attempt, observed)
                 # A window that reset after the reading is due now, not after the idle cadence.
                 resets = [_iso_epoch(w.resets_at, 0) for w in (cached.windows if cached else []) if w.resets_at]
                 passed = [r for r in resets if observed < r <= now_ts]
                 reset_due = bool(passed) and (last_attempt < max(passed) or now_ts - last_attempt >= REFRESH_SECONDS)
-                if not force and not reset_due and 0 <= age < poll:
+                if not force and not reset_due and 0 <= age < throttle:
                     if cached:
                         # Keep exactly the same numbers/titles. Staleness is
                         # metadata for routing, not an extra panel label.
@@ -2928,7 +2959,14 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                         out.append(ProviderUsage(provider_id=pid, display_name=pid,
                                                  available=False, stale=True, error='更新失败'))
                     continue
-                record_usage_attempt(pid, key)
+                is_claude = pid == 'claude' or is_claude_provider(pid)
+                if not (is_claude and claude_magpie_source(pid) is None and claude_in_backoff(pid)):
+                    next_failures = prior_failures + 1
+                    record_usage_attempt(
+                        pid, key,
+                        failures=next_failures,
+                        retry_seconds=failure_retry_seconds(next_failures, poll),
+                    )
                 if pid == 'claude':
                     item = fetch_claude_usage(force=force)
                 elif is_claude_provider(pid):
@@ -2954,6 +2992,7 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                     # freshness bound); that is a real reading, not a failure.
                     item.credential_key = key
                     cache_put_provider(item)
+                    record_usage_attempt(pid, key, failures=0, retry_seconds=poll)
                 elif item.error or item.stale or not item.available:
                     item = stale_provider_usage(
                         pid, item.error or '更新失败', [item, cached],

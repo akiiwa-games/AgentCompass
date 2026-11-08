@@ -1659,6 +1659,7 @@ def _restart_tray_step(state_dir: Path | None = None) -> str:
 def update_agentcompass(
     progress=None,
     *,
+    on_event=None,
     root: Path | None = None,
     home: Path | None = None,
     state_dir: Path | None = None,
@@ -1673,11 +1674,18 @@ def update_agentcompass(
     if not LOCK.acquire(blocking=False):
         return _tr("正在更新，请稍候")
     try:
-        if progress is None and state_dir is not None:
+        user_cb = on_event if on_event is not None else progress
+        if state_dir is not None:
             import update_status
-            _progress.callback = lambda ev: update_status.record(ev, directory=Path(state_dir))
+
+            def _dispatch_event(ev):
+                update_status.record(ev, directory=Path(state_dir))
+                if user_cb is not None:
+                    user_cb(ev)
+
+            _progress.callback = _dispatch_event
         else:
-            _progress.callback = progress
+            _progress.callback = user_cb
         _progress.component = "AgentCompass"
         report("start", _tr("开始检查并更新 AgentCompass"), "", title="AgentCompass", targets=["AgentCompass"])
 
@@ -1714,7 +1722,7 @@ def update_agentcompass(
             dl_dir = (Path(state_dir) if state_dir is not None else services.STATE_DIR) / "downloads"
             local_rt = read_local_runtime_info(inst_root)
             manifest_data = _load_release_manifest(release_info or {}, opener=opener)
-            use_code_pkg, _pkg_reason = can_use_code_package(local_rt, manifest_data)
+            use_code_pkg, pkg_reason = can_use_code_package(local_rt, manifest_data)
             app_pkg_info = (manifest_data or {}).get("app_package") if isinstance(manifest_data, dict) else None
             app_asset_name = str((app_pkg_info or {}).get("name") or "")
             app_asset = (
@@ -1726,6 +1734,22 @@ def update_agentcompass(
                 if use_code_pkg
                 else None
             )
+            if not use_code_pkg:
+                reason_text = pkg_reason or "incompatible_runtime"
+                report(
+                    "progress",
+                    _tr("运行时已变更，本次更新需要完整安装包（{0}）").format(reason_text),
+                    reason=reason_text,
+                    full_installer_reason=reason_text,
+                )
+            elif app_asset is None:
+                reason_text = "missing_app_package_asset"
+                report(
+                    "progress",
+                    _tr("运行时已变更，本次更新需要完整安装包（{0}）").format(reason_text),
+                    reason=reason_text,
+                    full_installer_reason=reason_text,
+                )
             used_code_pkg = False
             manifest_verified = bool((manifest_data or {}).get("_digest_verified"))
             if use_code_pkg and app_asset is not None:
@@ -1761,8 +1785,15 @@ def update_agentcompass(
                     report("result", msg)
                     updated_any = True
                     used_code_pkg = True
-                except _IncompatibleCodePackageRuntime:
+                except _IncompatibleCodePackageRuntime as exc:
                     used_code_pkg = False
+                    reason_text = str(exc) or "incompatible_code_package_runtime"
+                    report(
+                        "progress",
+                        _tr("运行时已变更，本次更新需要完整安装包（{0}）").format(reason_text),
+                        reason=reason_text,
+                        full_installer_reason=reason_text,
+                    )
 
             if not used_code_pkg:
                 report("component", _tr("下载并校验托盘安装包"))
