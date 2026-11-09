@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-09T10:19:57+00:00",
+ "generated_at": "2026-11-09T11:33:49+00:00",
  "conversion": "capability value = min(1, 0.8 x s / s_anchor), anchor claude-opus-5-5; see calibration/measurements.py",
  "sources": {
   "lmarena.tier_fit": {
@@ -213,7 +213,7 @@
    "models_listed": 85,
    "kind": "benchmark",
    "anchor": {
-    "reference": 0.885,
+    "reference": 0.8086,
     "shared": [
      "claude-opus-4-8",
      "gemini-3.7-flash",
@@ -222,9 +222,10 @@
      "gpt-5.6-sol",
      "grok-4.6",
      "kimi-k3",
-     "minimax-m3"
+     "minimax-m3",
+     "qwen3.8-max"
     ],
-    "how": "bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)"
+    "how": "bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)"
    }
   },
   "vals.swebench_lt15m": {
@@ -238,7 +239,7 @@
    "models_listed": 85,
    "kind": "benchmark",
    "anchor": {
-    "reference": 1.3908,
+    "reference": 1.3049,
     "shared": [
      "claude-opus-4-8",
      "deepseek-v4-pro",
@@ -460,7 +461,23 @@
    "method": "arena.ai Agent / Overall real sessions: Cost/Task (P50) / Time/Task (P50) x 60",
    "models_listed": 51,
    "kind": "community",
-   "sessions": 2750973
+   "sessions": 2750973,
+   "unpriced": {
+    "nemotron-3.5-super-vl-free": {
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "missing": [
+      "Cost/Task"
+     ],
+     "reason": "listed on arena.ai Agent / Overall as NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) without Cost/Task"
+    },
+    "beam-free": {
+     "listed_as": "Beam 1.0 501B A23B",
+     "missing": [
+      "Cost/Task"
+     ],
+     "reason": "listed on arena.ai Agent / Overall as Beam 1.0 501B A23B without Cost/Task"
+    }
+   }
   },
   "community.wokey.claude": {
    "file": "community-wokey-claude.html",
@@ -1023,51 +1040,157 @@
   "deepseek-v4.1-flash-free": {
    "tier": [
     {
-     "source": "secondary.tier_fit",
+     "source": "lmarena.tier_fit",
      "kind": "benchmark",
-     "value": 2.92,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
+     "value": 3.21,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:37+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "tiers.py primary fit",
      "fits": {
-      "aa": 2.92
+      "webdev": 3.45,
+      "agent": 2.97
      },
-     "listed_as": {
-      "aa": "DeepSeek V4.1 Flash 1017"
-     },
-     "vendor_reported": {}
+     "best_variant_tier": 3.21,
+     "high_correction": {},
+     "listed_as": "DeepSeek-V4.1-Flash-20261017"
     }
    ],
-   "module_precision": [
+   "divergence": [
     {
-     "source": "arena.agent_alignment",
+     "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.7192,
-     "as_of": "2026-10-16",
-     "fetched_at": "2026-11-09T07:26:22+00:00",
-     "url": "https://arena.ai/leaderboard/agent/alignment",
-     "method": "arena.ai Agent Alignment Index (Best Aligned Agents), index / 100; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "alignment",
-     "listed_as": "DeepSeek V4.1 Flash",
-     "raw": 0.748,
-     "reference": 0.832
+     "value": 0.7292,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "chat",
+     "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
+     "raw": 1474.8845,
+     "reference": 1505.7072
     },
     {
-     "source": "aa.terminalbench_4",
+     "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.4071,
+     "value": 0.6275,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "creative",
+     "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
+     "raw": 1440.6822,
+     "reference": 1516.7994
+    },
+    {
+     "source": "eqbench.creative_writing_v3",
+     "kind": "benchmark",
+     "value": 0.0802,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:52+00:00",
+     "url": "https://eqbench.com/creative_writing.js",
+     "method": "EQ-Bench Creative Writing v3 Elo; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "creative",
+     "listed_as": "deepseek-v4.1-flash",
+     "raw": 1539.9,
+     "reference": 2050.9
+    }
+   ],
+   "vision_tools": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": 0.467,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:37+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "gui_design",
+     "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
+     "raw": 1664.248,
+     "reference": 1818.1872
+    },
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": 0.6974,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "vision",
+     "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
+     "raw": 1278.8619,
+     "reference": 1323.6515
+    },
+    {
+     "source": "arena.agent_work_tools",
+     "kind": "benchmark",
+     "value": 0.6888,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "tools",
+     "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
+     "raw": 2.77,
+     "reference": 0.5968
+    },
+    {
+     "source": "arena.agent_work_gui",
+     "kind": "benchmark",
+     "value": 0.6888,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "gui",
+     "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
+     "raw": 2.77,
+     "reference": 0.5968
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": 0.7429,
      "as_of": "2026-11-09",
      "fetched_at": "2026-11-09T03:43:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis `terminalbench-4-0` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "terminal",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "vision",
      "listed_as": "DeepSeek V4.1 Flash 1017",
-     "raw": 0.2879,
-     "reference": 0.5657
+     "raw": 0.7971,
+     "reference": 0.8584
+    },
+    {
+     "source": "aa.automationbench",
+     "kind": "benchmark",
+     "value": 0.8669,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `automationbench-aa` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "tools",
+     "listed_as": "DeepSeek V4.1 Flash 1017",
+     "raw": 0.6849,
+     "reference": 0.6321
     }
    ],
    "global_rigor": [
+    {
+     "source": "arena.agent_code",
+     "kind": "benchmark",
+     "value": 0.6724,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "agentic",
+     "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
+     "raw": 3.31,
+     "reference": 0.6146
+    },
     {
      "source": "arena.agent_alignment_false_attribution",
      "kind": "benchmark",
@@ -1108,47 +1231,32 @@
      "reference": 0.7118
     }
    ],
-   "divergence": [
+   "module_precision": [
     {
-     "source": "eqbench.creative_writing_v3",
+     "source": "arena.agent_alignment",
      "kind": "benchmark",
-     "value": 0.0802,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:52+00:00",
-     "url": "https://eqbench.com/creative_writing.js",
-     "method": "EQ-Bench Creative Writing v3 Elo; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "creative",
-     "listed_as": "deepseek-v4.1-flash",
-     "raw": 1539.9,
-     "reference": 2050.9
-    }
-   ],
-   "vision_tools": [
-    {
-     "source": "aa.mmmu_pro",
-     "kind": "benchmark",
-     "value": 0.7429,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "vision",
-     "listed_as": "DeepSeek V4.1 Flash 1017",
-     "raw": 0.7971,
-     "reference": 0.8584
+     "value": 0.7192,
+     "as_of": "2026-10-16",
+     "fetched_at": "2026-11-09T07:26:22+00:00",
+     "url": "https://arena.ai/leaderboard/agent/alignment",
+     "method": "arena.ai Agent Alignment Index (Best Aligned Agents), index / 100; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "alignment",
+     "listed_as": "DeepSeek V4.1 Flash",
+     "raw": 0.748,
+     "reference": 0.832
     },
     {
-     "source": "aa.automationbench",
+     "source": "aa.terminalbench_4",
      "kind": "benchmark",
-     "value": 0.8669,
+     "value": 0.4071,
      "as_of": "2026-11-09",
      "fetched_at": "2026-11-09T03:43:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis `automationbench-aa` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "tools",
+     "method": "Artificial Analysis `terminalbench-4-0` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "terminal",
      "listed_as": "DeepSeek V4.1 Flash 1017",
-     "raw": 0.6849,
-     "reference": 0.6321
+     "raw": 0.2879,
+     "reference": 0.5657
     }
    ],
    "usd_per_hour": [
@@ -1223,6 +1331,20 @@
      "method": "AA cost/time repriced at the OpenRouter output price 0.567 (AA lists 1.2) per million tokens",
      "effort": "none",
      "listed_as": "deepseek/deepseek-v4.1-flash"
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.084,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
+     "cost_per_task_usd": 0.15,
+     "time_per_task_min": 8.3,
+     "sessions": 78504
     },
     {
      "source": "derived.community_mix",
@@ -4442,15 +4564,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.4735,
+     "value": 0.5182,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "22/42",
      "raw": 0.5238,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -4483,7 +4605,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5159,
+     "value": 0.5499,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -4491,7 +4613,7 @@
      "component": "coding",
      "listed_as": "174/194",
      "raw": 0.8969,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "usd_per_hour": [
@@ -6372,15 +6494,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.8824,
+     "value": 0.9658,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "41/42",
      "raw": 0.9762,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -6400,7 +6522,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5604,
+     "value": 0.5973,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -6408,7 +6530,7 @@
      "component": "coding",
      "listed_as": "189/194",
      "raw": 0.9742,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -6575,22 +6697,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.8824,
+     "value": 0.9658,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "41/42",
      "raw": 0.9762,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5574,
+     "value": 0.5941,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -6598,7 +6720,7 @@
      "component": "coding",
      "listed_as": "188/194",
      "raw": 0.9691,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -6725,22 +6847,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.7748,
+     "value": 0.848,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "36/42",
      "raw": 0.8571,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5545,
+     "value": 0.5909,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -6748,7 +6870,7 @@
      "component": "coding",
      "listed_as": "187/194",
      "raw": 0.9639,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -6899,15 +7021,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.904,
+     "value": 0.9894,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "42/42",
      "raw": 1.0,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -6927,7 +7049,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5604,
+     "value": 0.5973,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -6935,7 +7057,7 @@
      "component": "coding",
      "listed_as": "189/194",
      "raw": 0.9742,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "usd_per_hour": [
@@ -7254,15 +7376,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.8179,
+     "value": 0.8952,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "38/42",
      "raw": 0.9048,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -7295,7 +7417,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5604,
+     "value": 0.5973,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -7303,7 +7425,7 @@
      "component": "coding",
      "listed_as": "189/194",
      "raw": 0.9742,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "usd_per_hour": [
@@ -7610,15 +7732,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.7533,
+     "value": 0.8245,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "35/42",
      "raw": 0.8333,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -7638,7 +7760,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5367,
+     "value": 0.572,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -7646,7 +7768,7 @@
      "component": "coding",
      "listed_as": "181/194",
      "raw": 0.933,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "usd_per_hour": [
@@ -8029,6 +8151,32 @@
      "reference": 0.6146
     },
     {
+     "source": "arena.agent_alignment_false_attribution",
+     "kind": "benchmark",
+     "value": 0.7674,
+     "as_of": "2026-10-16",
+     "fetched_at": "2026-11-09T07:26:22+00:00",
+     "url": "https://arena.ai/leaderboard/agent/alignment",
+     "method": "arena.ai Agent Alignment, 1 - false attribution rate; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "anti_hallucination",
+     "listed_as": "Qwen3.8 Max",
+     "raw": 0.9222,
+     "reference": 0.9614
+    },
+    {
+     "source": "arena.agent_alignment_deceptive_completion",
+     "kind": "benchmark",
+     "value": 0.6908,
+     "as_of": "2026-10-16",
+     "fetched_at": "2026-11-09T07:26:22+00:00",
+     "url": "https://arena.ai/leaderboard/agent/alignment",
+     "method": "arena.ai Agent Alignment, 1 - deceptive completion rate; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "long_horizon",
+     "listed_as": "Qwen3.8 Max",
+     "raw": 0.8081,
+     "reference": 0.9359
+    },
+    {
      "source": "aa.lcr",
      "kind": "benchmark",
      "value": 0.7774,
@@ -8057,18 +8205,31 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.5811,
+     "value": 0.636,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "27/42",
      "raw": 0.6429,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
+    {
+     "source": "arena.agent_alignment",
+     "kind": "benchmark",
+     "value": 0.7106,
+     "as_of": "2026-10-16",
+     "fetched_at": "2026-11-09T07:26:22+00:00",
+     "url": "https://arena.ai/leaderboard/agent/alignment",
+     "method": "arena.ai Agent Alignment Index (Best Aligned Agents), index / 100; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "alignment",
+     "listed_as": "Qwen3.8 Max",
+     "raw": 0.739,
+     "reference": 0.832
+    },
     {
      "source": "aa.terminalbench_4",
      "kind": "benchmark",
@@ -8085,7 +8246,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5367,
+     "value": 0.572,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -8093,7 +8254,7 @@
      "component": "coding",
      "listed_as": "181/194",
      "raw": 0.933,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "usd_per_hour": [
@@ -8171,6 +8332,20 @@
      "url": "https://artificialanalysis.ai/leaderboards/models",
      "method": "USD per million tokens",
      "listed_as": "Qwen3.8 Max (0902)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 2.0,
+      "output": 6.0,
+      "cache_read": 0.25
+     },
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.8-max-0902"
     }
    ]
   },
@@ -8567,15 +8742,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.8394,
+     "value": 0.9187,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "39/42",
      "raw": 0.9286,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -8595,7 +8770,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5307,
+     "value": 0.5657,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -8603,7 +8778,7 @@
      "component": "coding",
      "listed_as": "179/194",
      "raw": 0.9227,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -8861,15 +9036,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.4305,
+     "value": 0.4711,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "20/42",
      "raw": 0.4762,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -8902,7 +9077,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.4863,
+     "value": 0.5183,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -8910,7 +9085,7 @@
      "component": "coding",
      "listed_as": "164/194",
      "raw": 0.8454,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -9897,15 +10072,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.3444,
+     "value": 0.3769,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "16/42",
      "raw": 0.381,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "vision_tools": [
@@ -9940,7 +10115,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.4655,
+     "value": 0.4961,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -9948,7 +10123,7 @@
      "component": "coding",
      "listed_as": "157/194",
      "raw": 0.8093,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "usd_per_hour": [
@@ -9971,23 +10146,131 @@
   "nemotron-3.5-super-vl-free": {
    "tier": [
     {
-     "source": "secondary.tier_fit",
+     "source": "lmarena.tier_fit",
      "kind": "benchmark",
-     "value": 1.98,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
+     "value": 1.52,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:37+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "tiers.py primary fit",
      "fits": {
-      "aa": 1.98
+      "webdev": 1.74,
+      "agent": 1.3
      },
-     "listed_as": {
-      "aa": "Nemotron 3.5 Super VL"
-     },
-     "vendor_reported": {}
+     "best_variant_tier": 1.52,
+     "high_correction": {},
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B"
+    }
+   ],
+   "divergence": [
+    {
+     "source": "lmarena.text_overall",
+     "kind": "benchmark",
+     "value": 0.5954,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "chat",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "raw": 1414.8161,
+     "reference": 1505.7072
+    },
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": 0.5167,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "creative",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "raw": 1388.1774,
+     "reference": 1516.7994
+    }
+   ],
+   "vision_tools": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": 0.1314,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:37+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "gui_design",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "raw": 1398.8739,
+     "reference": 1818.1872
+    },
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": 0.5558,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "vision",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "raw": 1214.1038,
+     "reference": 1323.6515
+    },
+    {
+     "source": "arena.agent_work_tools",
+     "kind": "benchmark",
+     "value": 0.5592,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "tools",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "raw": -16.57,
+     "reference": 0.5968
+    },
+    {
+     "source": "arena.agent_work_gui",
+     "kind": "benchmark",
+     "value": 0.5592,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "gui",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "raw": -16.57,
+     "reference": 0.5968
+    },
+    {
+     "source": "aa.automationbench",
+     "kind": "benchmark",
+     "value": 0.1876,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `automationbench-aa` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "tools",
+     "listed_as": "Nemotron 3.5 Super VL",
+     "raw": 0.1482,
+     "reference": 0.6321
     }
    ],
    "global_rigor": [
+    {
+     "source": "arena.agent_code",
+     "kind": "benchmark",
+     "value": 0.5424,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "agentic",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "raw": -16.66,
+     "reference": 0.6146
+    },
     {
      "source": "aa.lcr",
      "kind": "benchmark",
@@ -10028,21 +10311,6 @@
      "listed_as": "Nemotron 3.5 Super VL",
      "raw": 0.0,
      "reference": 0.5657
-    }
-   ],
-   "vision_tools": [
-    {
-     "source": "aa.automationbench",
-     "kind": "benchmark",
-     "value": 0.1876,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis `automationbench-aa` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "tools",
-     "listed_as": "Nemotron 3.5 Super VL",
-     "raw": 0.1482,
-     "reference": 0.6321
     }
    ],
    "usd_per_hour": [
@@ -10201,15 +10469,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.1291,
+     "value": 0.1413,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "6/42",
      "raw": 0.1429,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -10229,7 +10497,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.4062,
+     "value": 0.4329,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -10237,7 +10505,7 @@
      "component": "coding",
      "listed_as": "137/194",
      "raw": 0.7062,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "vision_tools": [
@@ -10603,53 +10871,103 @@
   "muse-wonder-1.0": {
    "tier": [
     {
-     "source": "secondary.tier_fit",
+     "source": "lmarena.tier_fit",
      "kind": "benchmark",
-     "value": 3.47,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
+     "value": 3.19,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:37+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "tiers.py primary fit",
      "fits": {
-      "aa": 3.47
+      "webdev": 3.42,
+      "agent": 2.96
      },
-     "listed_as": {
-      "aa": "Muse Wonder"
-     },
-     "vendor_reported": {}
+     "best_variant_tier": 3.19,
+     "high_correction": {},
+     "listed_as": "Muse Wonder"
     }
    ],
-   "global_rigor": [
+   "divergence": [
     {
-     "source": "aa.omniscience_index",
+     "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.6996,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis `omniscience` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "anti_hallucination",
-     "listed_as": "Muse Wonder",
-     "raw": 24.5,
-     "reference": 0.7118
-    }
-   ],
-   "module_precision": [
+     "value": 0.8148,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "chat",
+     "listed_as": "Muse Wonder (Max)",
+     "raw": 1512.1348,
+     "reference": 1505.7072
+    },
     {
-     "source": "aa.terminalbench_4",
+     "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.5429,
+     "value": 0.7464,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "creative",
+     "listed_as": "Muse Wonder (Max)",
+     "raw": 1493.5058,
+     "reference": 1516.7994
+    },
+    {
+     "source": "eqbench.creative_writing_v3",
+     "kind": "benchmark",
+     "value": 0.6995,
      "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis `terminalbench-4-0` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
-     "component": "terminal",
-     "listed_as": "Muse Wonder",
-     "raw": 0.3838,
-     "reference": 0.5657
+     "fetched_at": "2026-11-09T03:43:52+00:00",
+     "url": "https://eqbench.com/creative_writing.js",
+     "method": "EQ-Bench Creative Writing v3 Elo; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "creative",
+     "listed_as": "muse-wonder",
+     "raw": 2007.0,
+     "reference": 2050.9
     }
    ],
    "vision_tools": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": 0.4398,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:37+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "gui_design",
+     "listed_as": "Muse Wonder (Max)",
+     "raw": 1649.6929,
+     "reference": 1818.1872
+    },
+    {
+     "source": "arena.agent_work_tools",
+     "kind": "benchmark",
+     "value": 0.692,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "tools",
+     "listed_as": "Muse Wonder (Max)",
+     "raw": 3.24,
+     "reference": 0.5968
+    },
+    {
+     "source": "arena.agent_work_gui",
+     "kind": "benchmark",
+     "value": 0.692,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "gui",
+     "listed_as": "Muse Wonder (Max)",
+     "raw": 3.24,
+     "reference": 0.5968
+    },
     {
      "source": "aa.mmmu_pro",
      "kind": "benchmark",
@@ -10675,6 +10993,88 @@
      "listed_as": "Muse Wonder",
      "raw": 0.6722,
      "reference": 0.6321
+    }
+   ],
+   "global_rigor": [
+    {
+     "source": "arena.agent_code",
+     "kind": "benchmark",
+     "value": 0.6679,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "agentic",
+     "listed_as": "Muse Wonder (Max)",
+     "raw": 2.62,
+     "reference": 0.6146
+    },
+    {
+     "source": "arena.agent_alignment_false_attribution",
+     "kind": "benchmark",
+     "value": 0.7879,
+     "as_of": "2026-10-16",
+     "fetched_at": "2026-11-09T07:26:22+00:00",
+     "url": "https://arena.ai/leaderboard/agent/alignment",
+     "method": "arena.ai Agent Alignment, 1 - false attribution rate; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "anti_hallucination",
+     "listed_as": "Muse Wonder",
+     "raw": 0.9469,
+     "reference": 0.9614
+    },
+    {
+     "source": "arena.agent_alignment_deceptive_completion",
+     "kind": "benchmark",
+     "value": 0.7316,
+     "as_of": "2026-10-16",
+     "fetched_at": "2026-11-09T07:26:22+00:00",
+     "url": "https://arena.ai/leaderboard/agent/alignment",
+     "method": "arena.ai Agent Alignment, 1 - deceptive completion rate; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "long_horizon",
+     "listed_as": "Muse Wonder",
+     "raw": 0.8559,
+     "reference": 0.9359
+    },
+    {
+     "source": "aa.omniscience_index",
+     "kind": "benchmark",
+     "value": 0.6996,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `omniscience` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "anti_hallucination",
+     "listed_as": "Muse Wonder",
+     "raw": 24.5,
+     "reference": 0.7118
+    }
+   ],
+   "module_precision": [
+    {
+     "source": "arena.agent_alignment",
+     "kind": "benchmark",
+     "value": 0.7452,
+     "as_of": "2026-10-16",
+     "fetched_at": "2026-11-09T07:26:22+00:00",
+     "url": "https://arena.ai/leaderboard/agent/alignment",
+     "method": "arena.ai Agent Alignment Index (Best Aligned Agents), index / 100; transcribed 2026-11-09 by user (browser capture); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "alignment",
+     "listed_as": "Muse Wonder",
+     "raw": 0.775,
+     "reference": 0.832
+    },
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": 0.5429,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "terminal",
+     "listed_as": "Muse Wonder",
+     "raw": 0.3838,
+     "reference": 0.5657
     }
    ],
    "usd_per_hour": [
@@ -10703,6 +11103,20 @@
      "listed_as": "Muse Wonder (Max)",
      "cost_per_task": 6.95204,
      "time_per_task_s": 770.02
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 21.771,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "Muse Wonder (Max)",
+     "cost_per_task_usd": 1.27,
+     "time_per_task_min": 3.5,
+     "sessions": 13921
     },
     {
      "source": "derived.community_mix",
@@ -10771,6 +11185,20 @@
      "url": "https://artificialanalysis.ai/leaderboards/models",
      "method": "USD per million tokens",
      "listed_as": "Muse Wonder (High)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 4.0,
+      "output": 20.0,
+      "cache_read": 0.2
+     },
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "meta/muse-wonder"
     }
    ]
   },
@@ -10981,6 +11409,49 @@
      "reference": 1818.1872
     }
    ],
+   "global_rigor": [
+    {
+     "source": "vals.swebench_1_4h",
+     "kind": "benchmark",
+     "value": 0.2356,
+     "as_of": "2026-09-01",
+     "fetched_at": "2026-11-09T03:43:48+00:00",
+     "url": "https://www.vals.ai/benchmarks/swebench",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
+     "component": "long_horizon",
+     "listed_as": "10/42",
+     "raw": 0.2381,
+     "reference": 0.8086
+    }
+   ],
+   "module_precision": [
+    {
+     "source": "vals.swebench_lt15m",
+     "kind": "benchmark",
+     "value": 0.5056,
+     "as_of": "2026-09-01",
+     "fetched_at": "2026-11-09T03:43:48+00:00",
+     "url": "https://www.vals.ai/benchmarks/swebench",
+     "method": "vals.ai SWE-bench Verified, <15min fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through aa.terminalbench_4, arena.agent_alignment on 14 shared models (same axis)), capped at 1",
+     "component": "coding",
+     "listed_as": "160/194",
+     "raw": 0.8247,
+     "reference": 1.3049
+    },
+    {
+     "source": "vals.terminal_bench_2",
+     "kind": "benchmark",
+     "value": 0.2877,
+     "as_of": "2026-06-04",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://www.vals.ai/benchmarks/terminal-bench-2",
+     "method": "vals.ai Terminal-Bench 2.0 accuracy; 0.8 x s / s_anchor (bridged through aa.terminalbench_4, arena.agent_alignment on 3 shared models (same axis)), capped at 1",
+     "component": "terminal",
+     "listed_as": "Claude Haiku 4.5 (Thinking)",
+     "raw": 0.382,
+     "reference": 1.0621
+    }
+   ],
    "price": [
     {
      "source": "openrouter.price",
@@ -11083,6 +11554,49 @@
      "listed_as": "Claude Opus 4.6 (High)",
      "raw": 1315.478,
      "reference": 1323.6515
+    }
+   ],
+   "global_rigor": [
+    {
+     "source": "vals.swebench_1_4h",
+     "kind": "benchmark",
+     "value": 0.424,
+     "as_of": "2026-09-01",
+     "fetched_at": "2026-11-09T03:43:48+00:00",
+     "url": "https://www.vals.ai/benchmarks/swebench",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
+     "component": "long_horizon",
+     "listed_as": "18/42",
+     "raw": 0.4286,
+     "reference": 0.8086
+    }
+   ],
+   "module_precision": [
+    {
+     "source": "vals.swebench_lt15m",
+     "kind": "benchmark",
+     "value": 0.553,
+     "as_of": "2026-09-01",
+     "fetched_at": "2026-11-09T03:43:48+00:00",
+     "url": "https://www.vals.ai/benchmarks/swebench",
+     "method": "vals.ai SWE-bench Verified, <15min fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through aa.terminalbench_4, arena.agent_alignment on 14 shared models (same axis)), capped at 1",
+     "component": "coding",
+     "listed_as": "175/194",
+     "raw": 0.9021,
+     "reference": 1.3049
+    },
+    {
+     "source": "vals.terminal_bench_2",
+     "kind": "benchmark",
+     "value": 0.4401,
+     "as_of": "2026-06-04",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://www.vals.ai/benchmarks/terminal-bench-2",
+     "method": "vals.ai Terminal-Bench 2.0 accuracy; 0.8 x s / s_anchor (bridged through aa.terminalbench_4, arena.agent_alignment on 3 shared models (same axis)), capped at 1",
+     "component": "terminal",
+     "listed_as": "Claude Opus 4.6 (Thinking)",
+     "raw": 0.5843,
+     "reference": 1.0621
     }
    ],
    "price": [
@@ -11206,22 +11720,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.452,
+     "value": 0.4947,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "21/42",
      "raw": 0.5,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5011,
+     "value": 0.5341,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -11229,7 +11743,7 @@
      "component": "coding",
      "listed_as": "169/194",
      "raw": 0.8711,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -11380,22 +11894,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.6026,
+     "value": 0.6596,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "28/42",
      "raw": 0.6667,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.507,
+     "value": 0.5404,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -11403,7 +11917,7 @@
      "component": "coding",
      "listed_as": "171/194",
      "raw": 0.8814,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -11518,15 +12032,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.1291,
+     "value": 0.1413,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "6/42",
      "raw": 0.1429,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -11546,7 +12060,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.2669,
+     "value": 0.2844,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -11554,7 +12068,7 @@
      "component": "coding",
      "listed_as": "90/194",
      "raw": 0.4639,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -11749,22 +12263,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.1937,
+     "value": 0.212,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "9/42",
      "raw": 0.2143,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.4418,
+     "value": 0.4709,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -11772,7 +12286,7 @@
      "component": "coding",
      "listed_as": "149/194",
      "raw": 0.768,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -11881,15 +12395,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.452,
+     "value": 0.4947,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "21/42",
      "raw": 0.5,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -11909,7 +12423,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.51,
+     "value": 0.5435,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -11917,7 +12431,7 @@
      "component": "coding",
      "listed_as": "172/194",
      "raw": 0.8866,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -12038,22 +12552,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.3444,
+     "value": 0.3769,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "16/42",
      "raw": 0.381,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.4922,
+     "value": 0.5246,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -12061,7 +12575,7 @@
      "component": "coding",
      "listed_as": "166/194",
      "raw": 0.8557,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -12184,22 +12698,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.5811,
+     "value": 0.636,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "27/42",
      "raw": 0.6429,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5189,
+     "value": 0.553,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -12207,7 +12721,7 @@
      "component": "coding",
      "listed_as": "175/194",
      "raw": 0.9021,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -12344,7 +12858,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5248,
+     "value": 0.5593,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -12352,7 +12866,7 @@
      "component": "coding",
      "listed_as": "177/194",
      "raw": 0.9124,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -12398,15 +12912,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.6457,
+     "value": 0.7067,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "30/42",
      "raw": 0.7143,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "price": [
@@ -12517,22 +13031,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.6672,
+     "value": 0.7303,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "31/42",
      "raw": 0.7381,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5396,
+     "value": 0.5751,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -12540,7 +13054,7 @@
      "component": "coding",
      "listed_as": "182/194",
      "raw": 0.9381,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -12704,15 +13218,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.8394,
+     "value": 0.9187,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "39/42",
      "raw": 0.9286,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -12732,7 +13246,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5515,
+     "value": 0.5878,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -12740,7 +13254,7 @@
      "component": "coding",
      "listed_as": "186/194",
      "raw": 0.9588,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -12959,15 +13473,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.3874,
+     "value": 0.424,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "18/42",
      "raw": 0.4286,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -12987,7 +13501,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.51,
+     "value": 0.5435,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -12995,7 +13509,7 @@
      "component": "coding",
      "listed_as": "172/194",
      "raw": 0.8866,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -13235,15 +13749,15 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.5166,
+     "value": 0.5654,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "24/42",
      "raw": 0.5714,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
@@ -13263,7 +13777,7 @@
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5011,
+     "value": 0.5341,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -13271,7 +13785,7 @@
      "component": "coding",
      "listed_as": "169/194",
      "raw": 0.8711,
-     "reference": 1.3908
+     "reference": 1.3049
     }
    ],
    "price": [
@@ -13411,22 +13925,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.3659,
+     "value": 0.4005,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "17/42",
      "raw": 0.4048,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.5041,
+     "value": 0.5372,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -13434,7 +13948,7 @@
      "component": "coding",
      "listed_as": "170/194",
      "raw": 0.8763,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",
@@ -13607,22 +14121,22 @@
     {
      "source": "vals.swebench_1_4h",
      "kind": "benchmark",
-     "value": 0.3444,
+     "value": 0.3769,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 8 shared models (same component)), capped at 1",
+     "method": "vals.ai SWE-bench Verified, 1–4hr fix-time bucket, resolved share; 0.8 x s / s_anchor (bridged through arena.agent_alignment_deceptive_completion on 9 shared models (same component)), capped at 1",
      "component": "long_horizon",
      "listed_as": "16/42",
      "raw": 0.381,
-     "reference": 0.885
+     "reference": 0.8086
     }
    ],
    "module_precision": [
     {
      "source": "vals.swebench_lt15m",
      "kind": "benchmark",
-     "value": 0.4744,
+     "value": 0.5056,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
@@ -13630,7 +14144,7 @@
      "component": "coding",
      "listed_as": "160/194",
      "raw": 0.8247,
-     "reference": 1.3908
+     "reference": 1.3049
     },
     {
      "source": "vals.terminal_bench_2",

@@ -105,6 +105,8 @@ def build_task(args, text, parent):
         task.setdefault('needs', {})['file_transfer'] = True
     if getattr(args, 'fast', False):
         task.setdefault('needs', {})['fast'] = True
+    if getattr(args, 'can_wait_hours', None) is not None:
+        task['can_wait_hours'] = float(args.can_wait_hours)
     return task
 
 
@@ -775,6 +777,8 @@ def compact(result, status, detail_path):
         out['route_bundle'], out['worker_prompt_file'] = bundle, result.get('worker_prompt_file')
     if status == 'split':
         out['task_count'] = result.get('task_count')
+    if result.get('start_after_hours') is not None:
+        out['start_after_hours'] = result['start_after_hours']
     if result.get('blocked_by'):
         out['blocked_by'] = result['blocked_by']
     if result.get('assumptions'):
@@ -962,6 +966,11 @@ def _run(args, judge):
     if (decision.get('decision') or {}).get('needs_user_decision'):
         return dict(out, launched=False, dispatch_mode='none', caller_action='ask_user',
                     next='The router needs a user decision; show route.reason to the user.'), 2
+    if (decision.get('decision') or {}).get('action') == 'defer':
+        wait = (decision.get('decision') or {}).get('start_after_hours') or (decision.get('decision') or {}).get('wait_hours')
+        return dict(out, launched=False, dispatch_mode='defer', caller_action='wait_for_reset',
+                    start_after_hours=wait,
+                    next=f"Defer {bundle.get('id') or decision.get('choice')} for {wait}h until its quota window resets; do not launch now."), 2
     text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address)
     out['worker_prompt_file'] = str(prompt_file)
     if provider == 'dot':

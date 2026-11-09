@@ -373,27 +373,106 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(off, route_judge.scorer_schema(allocator, caps))     # the shipped policy leaves it off
 
     def test_waiting_cost_scales_with_demand_instead_of_fixed_deferred_start_penalty(self):
-        """Round 8 (user): no fixed 0.15 delay penalty on the five-axis path. Routine tasks pay a high waiting cost and
-        go to whoever is available now; high-demand tasks pay a small waiting cost and prefer waiting for the capable
-        model's short-window reset."""
+        """Rounds 8-9 (user): no fixed 0.15 delay penalty on the five-axis path; waiting cost is linear in `(1 - target)`.
+        Without `can_wait_hours`, `plan()` starts the best ready-now candidate immediately; when `can_wait_hours` is given,
+        routine tasks still start now while high-demand tasks prefer waiting for the capable model's short-window reset."""
         policy = self.accounts['scoring']
+        per_hour = allocator.exchange_rate(policy, 'shortage_loss_per_worker_hour')
         low_t = allocator.five_axis_targets(demand(0, 1, 1, 0))
         high_t = allocator.five_axis_targets(demand(3, 3, 0, 0))
         low_wait = allocator.five_axis_wait_cost(3.0, demand(0, 1, 1, 0), low_t, policy)
         high_wait = allocator.five_axis_wait_cost(3.0, demand(3, 3, 0, 0), high_t, policy)
-        self.assertGreater(low_wait, high_wait * 10)
+        self.assertAlmostEqual(low_wait, round(per_hour * 3.0 * (1.0 - 0.8 / 3.0), 4))
+        self.assertAlmostEqual(high_wait, round(per_hour * 3.0 * (1.0 - 0.8), 4))
+        self.assertGreater(low_wait, high_wait * 3)
         self.assertGreater(high_wait, 0.0)
+        base = {name: row(0.55, usd=5.0) for name, info in self.accounts['models'].items() if isinstance(info, dict)}
         doc = document(self.accounts['models'],
-                       **{'claude-opus-5-5': row(demand(0.8, 0.8, 0.8, 0.8), usd=22.86),
-                          'gpt-6.1-sol': row(demand(0.7, 0.79, 0.79, 0.73), usd=6.12)})
-        routine = self.plan(self.accounts, doc, state='5h-only scarce', profile={'axis_demand': demand(0, 1, 1, 0)})
-        frontier = self.plan(self.accounts, doc, state='5h-only scarce',
+                       **{**base,
+                          'claude-opus-5-5': row(demand(0.733, 0.800, 0.800, 0.800), usd=22.86),
+                          'gpt-6.1-sol': row(demand(0.587, 0.788, 0.787, 0.732), usd=6.12)})
+        # Without can_wait_hours: resolves to the best immediately startable candidate (never defer, never needs_user_decision).
+        immediate = self.plan(self.accounts, doc, state='5h-only scarce',
+                              profile={'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0})
+        self.assertEqual(immediate['decision']['action'], 'start')
+        self.assertFalse(immediate['decision']['needs_user_decision'])
+        self.assertEqual(immediate['selected_bundle']['account'], 'codex')
+        self.assertEqual(immediate['decision']['better_if_waiting']['bundle'], 'opus55_max')
+        # With can_wait_hours: routine starts now, frontier defers for the capable model's reset.
+        routine = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
+                            profile={'axis_demand': demand(0, 1, 1, 0)})
+        frontier = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
                              profile={'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0})
         self.assertEqual(routine['decision']['action'], 'start')
         self.assertEqual(routine['selected_bundle']['account'], 'codex')
         self.assertEqual(frontier['decision']['action'], 'defer')
         self.assertEqual(frontier['selected_bundle']['account'], 'claude')
         self.assertGreater(frontier['decision']['start_after_hours'], 0.0)
+
+    def test_roll_launches_best_ready_now_without_can_wait_and_never_launches_a_defer(self):
+        """Round 9 F1: roll without can_wait_hours launches the best ready-now candidate when 5h is empty on the top
+        owner; when can_wait_hours allows a defer, roll returns start_after_hours and never launches into an empty window."""
+        import argparse
+        import roll
+        base = {name: row(0.55, usd=5.0) for name, info in self.accounts['models'].items() if isinstance(info, dict)}
+        doc = document(self.accounts['models'],
+                       **{**base,
+                          'claude-opus-5-5': row(demand(0.733, 0.800, 0.800, 0.800), usd=22.86),
+                          'gpt-6.1-sol': row(demand(0.587, 0.788, 0.787, 0.732), usd=6.12)})
+        launched_bundles = []
+
+        def run_roll(can_wait_hours=None):
+            acc = copy.deepcopy(self.accounts)
+            acc['scoring']['five_axis'] = {'enabled': True}
+            usage = self.usage(acc, '5h-only scarce')
+            profile = {**PROFILE, 'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0}
+
+            def fake_plan_stage(payload, _args):
+                t = dict(payload['task'], profile=profile)
+                original = allocator.load_five_axis
+                allocator.load_five_axis = lambda path=None: doc
+                try:
+                    d = allocator.plan(t, usage, NOW, accounts=acc,
+                                       overrides=[], records=[], host_policy_config=self.policy)
+                finally:
+                    allocator.load_five_axis = original
+                return d, 0
+
+            judge = types.SimpleNamespace(plan_stage=fake_plan_stage, usage_snapshot=lambda _c: usage)
+            args = argparse.Namespace(brief=None, task='frontier proof', task_id='t-f1', hours=2.0, local_only=None,
+                                      file=[], apply_to=None, fast=False, can_wait_hours=can_wait_hours, dry_run=False,
+                                      parent_id='parent-1', new_worker=True, resume=None, provider=None, account=None,
+                                      model=None, effort=None, basis=None, no_score=False, usage_cache=None, wait=0,
+                                      verbose=False)
+            orig_resolve, orig_pending, orig_reusable = roll.resolve_parent, roll.registry.pending, roll.registry.reusable_workers
+            orig_paseo, orig_cli = roll.can_launch_via_paseo, roll.cli
+            roll.resolve_parent = lambda _a: ('parent-1', 'cli', 'parent-1')
+            roll.registry.pending = lambda: []
+            roll.registry.reusable_workers = lambda _p: []
+            roll.can_launch_via_paseo = lambda _prov: False
+            roll.cli = lambda _a, out, b, _txt, _j: (launched_bundles.append((b['account'], b['model'])) or
+                                                     (dict(out, launched=True, dispatch_mode='cli',
+                                                           caller_action='already_launched_do_not_respawn',
+                                                           worker={'pid': 123, 'output': 'o', 'stderr': 'e'}), 0))
+            try:
+                return roll.run(args, judge)
+            finally:
+                roll.resolve_parent, roll.registry.pending, roll.registry.reusable_workers = orig_resolve, orig_pending, orig_reusable
+                roll.can_launch_via_paseo, roll.cli = orig_paseo, orig_cli
+
+        res_now, code_now = run_roll(can_wait_hours=None)
+        self.assertEqual(code_now, 0)
+        self.assertEqual(res_now['status'], 'launched')
+        self.assertEqual(res_now['worker']['account'], 'codex')
+        self.assertEqual(launched_bundles, [('codex', 'gpt-6.1-sol')])
+
+        launched_bundles.clear()
+        res_defer, code_defer = run_roll(can_wait_hours=4.0)
+        self.assertEqual(code_defer, 2)
+        self.assertEqual(res_defer['status'], 'blocked')
+        self.assertEqual(res_defer['worker']['account'], 'claude')
+        self.assertEqual(res_defer['start_after_hours'], 3.0)
+        self.assertEqual(launched_bundles, [])
 
 
 class AnchorRelativeTests(unittest.TestCase):
@@ -767,6 +846,59 @@ class DerivedUsdTests(unittest.TestCase):
         self.assertEqual(usd_arena['m']['kind'], 'community')
         self.assertFalse(usd_arena['m']['fallback'])
         self.assertEqual(usd_arena['m']['sources']['arena.agent_sessions']['sessions'], 1234)
+
+    def test_arena_matcher_handles_dated_and_versioned_labels_and_reports_true_miss_reason(self):
+        """Round 9 F3: dated/variant labels such as `DeepSeek-V4.1-Flash-20261017 (Max)` and `Muse Wonder (Max)` match
+        their models; a miss gives the true reason (without Cost/Task, distrusted, or not captured), not 'not listed'."""
+        import measurements
+        matcher = measurements.Matcher(['DeepSeek-V4.1-Flash-20261017 (Max)', 'DeepSeek-V4.1-Flash-20260910 (Max)',
+                                        'Muse Wonder (Max)', 'Beam 1.0 501B A23B'])
+        self.assertEqual(matcher.find('deepseek-v4.1-flash-free'), 'DeepSeek-V4.1-Flash-20261017 (Max)')
+        self.assertEqual(matcher.find('muse-wonder-1.0'), 'Muse Wonder (Max)')
+        shipped = allocator.load_five_axis()
+        ds = shipped['models']['deepseek-v4.1-flash-free']['usd_per_hour']
+        mw = shipped['models']['muse-wonder-1.0']['usd_per_hour']
+        self.assertEqual((ds['value'], ds['kind'], ds['fallback'], ds['used']), (1.084, 'community', False, ['arena.agent_sessions']))
+        self.assertEqual((mw['value'], mw['kind'], mw['fallback'], mw['used']), (21.771, 'community', False, ['arena.agent_sessions']))
+        # A model listed on arena.ai Agent / Overall without Cost/Task says so instead of 'not listed'.
+        nem = shipped['models']['nemotron-3.5-super-vl-free']['usd_per_hour']
+        self.assertIn('without Cost/Task', nem['merge'])
+        self.assertNotIn('not listed', nem['merge'])
+        beam = shipped['models']['beam-free']['usd_per_hour']
+        self.assertIn('without Cost/Task', beam['reason'])
+        # Distrusting arena.agent_sessions records 'arena.agent_sessions distrusted', not 'not listed'.
+        meas = {'models': {'m': {'usd_per_hour': [
+            {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'value': 6.125},
+            {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 13.688},
+        ]}}}
+        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=('arena.agent_sessions',))
+        usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas, None)
+        self.assertEqual((usd['m']['value'], usd['m']['fallback']), (13.688, True))
+        self.assertIn('arena.agent_sessions distrusted', usd['m']['merge'])
+        self.assertNotIn('not listed', usd['m']['merge'])
+
+    def test_usd_community_mix_with_source_priority_falls_through_without_cross_scale_median(self):
+        """Round 9 F4: `usd_community_mix` with `--source-priority` naming a missing source falls through the priority
+        order to `arena.agent_sessions` (then `derived.community_mix`), never taking a median of arena + AA + derived."""
+        meas = {'models': {'gemini-4-argon-high': {'usd_per_hour': [
+            {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'value': 7.50},
+            {'source': 'openrouter.cost_time', 'kind': 'vendor', 'effort': 'high', 'value': 23.83},
+            {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': 6.658},
+            {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 31.901},
+        ]}}}
+        scorer = self.fa.Scorer(meas, {'models': {'gemini-4-argon-high': {}}})
+        rows = {'gemini-4-argon-high': {'fields': meas['models']['gemini-4-argon-high']}}
+        usd = self.fa.usd_community_mix(scorer, rows, meas, priority=['user'])
+        self.assertEqual(usd['gemini-4-argon-high']['value'], 6.658)
+        self.assertEqual(usd['gemini-4-argon-high']['used'], ['arena.agent_sessions'])
+        self.assertEqual(usd['gemini-4-argon-high']['kind'], 'community')
+        self.assertFalse(usd['gemini-4-argon-high']['fallback'])
+        # Naming an available source in priority picks that source alone without cross-scale median.
+        usd_aa = self.fa.usd_community_mix(scorer, rows, meas, priority=['aa.cost_time'])
+        self.assertEqual(usd_aa['gemini-4-argon-high']['value'], 7.50)
+        self.assertEqual(usd_aa['gemini-4-argon-high']['used'], ['aa.cost_time'])
+        self.assertEqual(usd_aa['gemini-4-argon-high']['kind'], 'benchmark')
+        self.assertTrue(usd_aa['gemini-4-argon-high']['fallback'])
 
 
 

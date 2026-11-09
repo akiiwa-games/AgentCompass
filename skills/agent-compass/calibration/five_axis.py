@@ -36,12 +36,14 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
   routing notes (the live percentage still prices scarcity); the packaged template figure is never a fallback. A source
   older than STALE_DAYS (data date, else fetch date) is a yellow note; a source not fetched, or whose sentence is gone,
   contributes nothing (red).
-- usd_per_hour has a pluggable basis (`--usd-basis`, `USD_BASES`). Default `community_mix` (option B, user
-  2026-11-09): `derived.community_mix` only, AA's measured output speed per hour priced at the community token mix
-  wokey values the capacities at, so cost and capacity share one real-usage scale; a model without it is mode B.
-  `benchmark` (the AA/OpenRouter merge above) and `community` (measured community usd per worker-hour, else `derived`
-  from a measured same-provider model x the benchmark ratio, both citations; option A) stay for comparison. Each
-  window's reference-model hours are its capacity over that model's usd.
+- usd_per_hour has a pluggable basis (`--usd-basis`, `USD_BASES`). Default `community_mix` (rounds 8-9, user
+  2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 / Time/Task P50
+  x 60, kind `community`) is the primary source; option B (`derived.community_mix`, AA's measured output speed per hour
+  priced at the community token mix at list prices) is a labelled fallback (`fallback: True`) only when arena does not
+  give cost and time for the model; a model with neither is mode B. `benchmark` (the AA/OpenRouter merge above) and
+  `community` (measured community usd per worker-hour, else `derived` from a measured same-provider model x the benchmark
+  ratio, both citations; option A) stay for comparison. Each window's reference-model hours are its capacity over that
+  model's arena usd.
 - economy is priced by the router at run time; `economy_static` = 1 / (1 + usd / 15) is the tray's static view.
 """
 import argparse
@@ -460,24 +462,50 @@ def usd_community(scorer, rows, meas, priority):
             for m in rows}
 
 
+def arena_usd_miss_reason(scorer, model, raw_entries, meas):
+    """True reason `arena.agent_sessions` gave no value for `model` (round 9 F3: never say 'not listed' when the source
+    was distrusted, not captured, or listed the model without Cost/Task or Time/Task)."""
+    if any(e.get('source') == 'arena.agent_sessions' for e in raw_entries or ()) and 'arena.agent_sessions' in scorer.distrust:
+        return 'arena.agent_sessions distrusted'
+    missing = ((meas or {}).get('missing_sources') or {}).get('arena.agent_sessions')
+    if missing:
+        return f"arena.agent_sessions unavailable ({missing.get('reason') or 'not captured'})"
+    unpriced = ((((meas or {}).get('sources') or {}).get('arena.agent_sessions') or {}).get('unpriced') or {}).get(model)
+    if unpriced:
+        return unpriced['reason']
+    return 'not listed on arena.ai Agent / Overall'
+
+
 def usd_community_mix(scorer, rows, meas, priority):
-    """Round 8 (user, 2026-11-09): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 ÷
+    """Rounds 8-9 (user, 2026-11-09): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 ÷
     Time/Task P50 × 60, kind `community`) is the primary source; option B (`derived.community_mix`, AA throughput ×
-    community token mix × list price) is a labelled fallback (`fallback: True`) for models arena does not list."""
+    community token mix × list price) is a labelled fallback (`fallback: True`) for models arena does not list with cost
+    and time. When `--source-priority` is given, it falls through `[*priority, 'arena.agent_sessions', 'derived.community_mix']`
+    and never takes a median across mixed scales (review F4)."""
+    order = [*(priority or ()), 'arena.agent_sessions', 'derived.community_mix']
     out = {}
     for m, r in rows.items():
-        trusted = scorer.trusted(r['fields'].get('usd_per_hour'))
-        arena = [e for e in trusted if e['source'] == 'arena.agent_sessions']
-        if arena:
-            picked = pick_usd(trusted if priority else arena, priority or ['arena.agent_sessions'])
-            is_fb = picked.get('used') != ['arena.agent_sessions']
-            out[m] = {**picked, 'kind': 'derived' if is_fb else 'community', 'fallback': is_fb}
+        raw = r['fields'].get('usd_per_hour') or ()
+        trusted = scorer.trusted(raw)
+        by_src = {}
+        for e in trusted:
+            by_src.setdefault(e['source'], []).append(e)
+        chosen = next((s for s in order if s in by_src), None)
+        if not chosen:
+            why = arena_usd_miss_reason(scorer, m, raw, meas)
+            out[m] = {'value': None, 'status': 'missing', 'sources': {}, 'merge': None, 'reason': why}
             continue
-        fb = pick_usd([e for e in trusted if e['source'] == 'derived.community_mix'])
-        if fb['value'] is not None:
-            fb = {**fb, 'kind': 'derived', 'fallback': True,
-                  'merge': 'fallback (not listed with cost/time on arena.ai Agent): ' + (fb.get('merge') or 'derived.community_mix')}
-        out[m] = fb
+        picked = pick_usd(by_src[chosen], [chosen])
+        is_fb = chosen != 'arena.agent_sessions'
+        kind = by_src[chosen][0].get('kind') or ('derived' if is_fb else 'community')
+        if chosen == 'derived.community_mix' and 'derived.community_mix' not in (priority or ()):
+            why = arena_usd_miss_reason(scorer, m, raw, meas)
+            merge = f"fallback ({why}): {picked.get('merge') or 'derived.community_mix'}"
+        elif chosen in (priority or ()) and chosen != 'arena.agent_sessions':
+            merge = f'source priority: {chosen}'
+        else:
+            merge = picked.get('merge')
+        out[m] = {**picked, 'merge': merge, 'kind': kind, 'fallback': is_fb}
     return out
 
 
