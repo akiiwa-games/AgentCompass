@@ -9,6 +9,11 @@ usage documents, so the input is what `roll` would feed the allocator). Three al
 - old: shipped behaviour (`scoring.five_axis` absent).
 - new: five-axis path: axis-demand gate (tier folded into the axes), merged cited usd, capacity in reference-model hours.
 - new_no_eqbench: the same with EQ-Bench Creative Writing distrusted (five_axis.py --distrust eqbench.creative_writing_v3).
+- new_oq005, new_oq0: the new path with overqualification_weight 0.05 and 0 (default 0.08), side by side (review 2026-11-09:
+  this weight alone decides the Fable / Astra / Sol shares).
+
+Each new decision also records how close it sits to a floor: the winner's demanded-axis level over its gate, and every
+candidate (scored or excluded by a floor) within 1% of its floor.
 
 This is a sample, not the 180k-row grid (LEAN rules, 2026-11-07).
 """
@@ -16,6 +21,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -45,7 +51,8 @@ EXTRA_CATALOGS = {'pi': ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra'], 'dot': 
 EXTRA_STATES = {'claude fable-weekly tight': [('claude', ('weekly_fable',), 'tight')]}
 STATES = ('ample', 'claude scarce', 'codex scarce', 'antigravity gemini scarce', 'claude tight', 'codex tight',
           'claude fable-weekly tight', '5h-only scarce')
-NEW = ('new', 'new_no_eqbench')
+NEW = ('new', 'new_no_eqbench', 'new_oq005', 'new_oq0')
+NEAR = 0.01     # within 1% of a floor
 
 
 def algos(folder):
@@ -56,7 +63,9 @@ def algos(folder):
     doc = five_axis.build(meas, sources.accounts(), plans, ['eqbench.creative_writing_v3'])
     path = Path(folder) / 'five-axis-no-eqbench.json'
     path.write_text(json.dumps(doc), encoding='utf-8')
-    return {'old': None, 'new': {'enabled': True}, 'new_no_eqbench': {'enabled': True, 'path': str(path)}}
+    return {'old': None, 'new': {'enabled': True}, 'new_no_eqbench': {'enabled': True, 'path': str(path)},
+            'new_oq005': {'enabled': True, 'overqualification_weight': 0.05},
+            'new_oq0': {'enabled': True, 'overqualification_weight': 0.0}}
 
 
 def fleet_accounts(name):
@@ -85,6 +94,32 @@ def top_components(decision):
     keep = ('fit', 'ability', 'opportunity_cost', 'overqualification', 'effort_penalty', 'free_usage', 'five_axis_level',
             'five_axis_gate', 'route_fit', 'vector_fit', 'subjective_fit', 'reset_bonus', 'shortfall')
     return {'id': top['id'], 'score': top['score'], **{k: c[k] for k in keep if k in c}}
+
+
+FLOOR_MSG = re.compile(r'(?:demanded-axis level|\w+) ([\d.]+) below (?:the \w+ floor|its per-axis floor) ([\d.]+)')
+
+
+def near_floor(decision):
+    """{winner_margin, near: [candidates within NEAR of a floor, relative]} for one five-axis decision."""
+    near, winner = [], None
+    for c in decision['ranking']:
+        lbl = label(c.get('bundle'))
+        k = c.get('components') or {}
+        if c['score'] is not None and k.get('five_axis_gate'):
+            margin = k['five_axis_level'] / k['five_axis_gate'] - 1
+            if c['id'] == decision.get('choice'):
+                winner = round(margin, 4)
+            if abs(margin) <= NEAR:
+                near.append((lbl, round(margin, 4)))
+            continue
+        for e in c.get('excluded') or ():
+            m = FLOOR_MSG.search(e)
+            if m and float(m.group(2)) > 0:
+                margin = float(m.group(1)) / float(m.group(2)) - 1
+                if abs(margin) <= NEAR:
+                    near.append((lbl, round(margin, 4)))
+                break
+    return {'winner_margin': winner, 'near': near}
 
 
 def candidate(decision, model_label):
@@ -148,6 +183,7 @@ def run(variants_cfg):
                     out[f'{name}_top'] = top_components(d)
                 for name in NEW:
                     out[f'{name}_driver'] = driver(decisions[name], out['old'], out[name])
+                out['new_floor'] = near_floor(decisions['new'])
                 rows.append(out)
     return rows
 
@@ -168,10 +204,22 @@ def markdown(rows):
     share = {n: Counter(r[n] for r in rows) for n in names}
     n = len(rows)
     lines = [f'# Five-axis sampled parity, round 2 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
-    lines += ['## Selection share (model@account)', '', '| model@account | old | new | new without EQ-Bench |', '| :--- | ---: | ---: | ---: |']
+    lines += ['## Selection share (model@account)', '',
+              '| model@account | old | new (oq 0.08) | new oq 0.05 | new oq 0 | new without EQ-Bench |',
+              '| :--- | ---: | ---: | ---: | ---: | ---: |']
     for k in sorted(set().union(*share.values()), key=lambda k: (-share['old'][k], -share['new'][k])):
-        lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_no_eqbench'][k]} |")
-    lines.append('')
+        lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_oq005'][k]} | {share['new_oq0'][k]} | "
+                     f"{share['new_no_eqbench'][k]} |")
+    lines += ['', '| | ' + ' | '.join(NEW) + ' |', '| :--- | ' + ' | '.join('---:' for _ in NEW) + ' |',
+              '| changed vs old | ' + ' | '.join(str(sum(r[x] != r['old'] for r in rows)) for x in NEW) + ' |',
+              '| changed vs new (oq 0.08) | ' + ' | '.join(str(sum(r[x] != r['new'] for r in rows)) for x in NEW) + ' |', '']
+    win_near = [r for r in rows if r['new_floor']['winner_margin'] is not None and r['new_floor']['winner_margin'] <= NEAR]
+    any_near = [r for r in rows if r['new_floor']['near']]
+    lines += [f'## Decisions within {NEAR:.0%} of a floor (new)', '',
+              f'- winner within {NEAR:.0%} above its gate: {len(win_near)} of {n}',
+              f'- any candidate within {NEAR:.0%} of its floor (a re-rating of that size could flip it): {len(any_near)} of {n}',
+              '- most frequent near-floor candidates: ' + ', '.join(f'{k} ({v})' for k, v in Counter(
+                  lbl for r in any_near for lbl, _ in r['new_floor']['near']).most_common(10)), '']
     for fleet in FLEETS:
         sub = [r for r in rows if r['fleet'] == fleet]
         lines += [f'## Account split per state, {fleet} (old → new)', '']

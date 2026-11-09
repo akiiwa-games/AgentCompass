@@ -680,6 +680,8 @@ def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None
         capacity = template_capacity_usd(spec, wid)
     if capacity and usd:
         return 100 * usd / capacity * scale
+    if five_axis_usd_missing(info):
+        return 0.0      # no cited usd: unpriced, not the burn prior (rule B notes it on a named dispatch)
     model_rates = (info or {}).get('burn_pct_per_worker_hour') or {}
     rate = model_rates.get(wid, spec.get('burn_pct_per_worker_hour', {}).get(wid))
     return None if rate is None else rate * reference * scale
@@ -758,9 +760,18 @@ def model_duration_multiplier(model, info=None):
     return value if value > 0 else 1.0
 
 
+def five_axis_usd_missing(info):
+    """True on the five-axis path when the model has no cited usd_per_hour (its value was removed, not defaulted)."""
+    return (info or {}).get('usd_per_hour') is None and ((info or {}).get('five_axis') or {}).get('usd_status') == 'missing'
+
+
 def model_usd_per_hour(model, info=None):
-    """List-price dollars of one active worker-hour at High (accounts `usd_per_hour`, else a prior)."""
+    """List-price dollars of one active worker-hour at High (accounts `usd_per_hour`, else a prior). On the five-axis
+    path a model without a cited usd prices at 0 instead of the prior: rule B keeps it out of automatic routing on a
+    metered account, and a named dispatch carries a note that its cost is not priced (review F4)."""
     usd = (info or {}).get('usd_per_hour')
+    if usd is None and five_axis_usd_missing(info):
+        return 0.0
     return float(usd if usd is not None else USD_PER_HOUR_DEFAULTS.get(model, 4.0))
 
 
@@ -2135,8 +2146,9 @@ def five_axis_overlay(accounts, data=None):
 
     Each model row gets `five_axis` {scores, missing, index, usd_status}; usd_per_hour and duration_multiplier become
     the merged cited values (an unsourced usd is removed, not defaulted). The scalar tier is left in place but the
-    five-axis path does not read it. Each windowed account's capacity is rescaled from the shipped reference-model usd to
-    the merged one (the hours a window holds stay the same); a window left without capacity is marked unknown."""
+    five-axis path does not read it. Each windowed account's capacity is the packaged list-price USD figure, scaled by the
+    data's `capacity_conversion` factor (1.0 since review F2: the cited usd is on the same list-price scale); a window
+    left without capacity is marked unknown."""
     cfg = five_axis_config(accounts.get('scoring'))
     if cfg is None:
         return accounts
@@ -2212,15 +2224,17 @@ def five_axis_fallback_levels(task):
 
 
 def five_axis_demand(task):
-    """({axis: level 0..3}, source): the classifier's axis_demand, else the fallback mapping."""
+    """({axis: level 0..3}, source): the classifier's axis_demand, else the fallback mapping. An all-zero answer gives
+    no floor and no fit, so it is replaced by the fallback and labelled as such (review F5), never as 'classifier'."""
     given = (task.get('profile') or {}).get('axis_demand')
-    if given:
-        demand, source = dict(given), 'classifier'
-    else:
-        demand = five_axis_fallback_levels(task)
-        source = 'profile_fields_fallback' if task.get('profile') else 'kind_traits_fallback'
+    fallback = 'profile_fields_fallback' if task.get('profile') else 'kind_traits_fallback'
+    if given and any(given.values()):
+        return dict(given), 'classifier'
+    demand = five_axis_fallback_levels(task)
+    source = f'{fallback} (classifier axis_demand all zero)' if given else fallback
     if not any(demand.values()):        # a trivial task still asks the least rigor, so a floor and a fit exist
         demand['global_rigor'] = 1
+        source += ' + minimum global_rigor 1'
     return demand, source
 
 
@@ -2773,17 +2787,19 @@ def evaluate_bundle(bundle, task, ctx):
     if task.get('constraint_effort') and str(scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
         exclude('explicit effort constraint')
     if five:
-        # Rule B: a demanded axis with no data at all, or no cited usd on a billed account, leaves automatic routing;
-        # naming the model (--model, or its bundle) still dispatches it, with the data error as a warning.
+        # Rule B: a demanded axis with no data at all, or no cited usd on a metered account (billed or quota windows),
+        # leaves automatic routing; naming the model (--model, or its bundle) still dispatches it, with the data error as
+        # a warning and its cost unpriced (model_usd_per_hour returns 0, never the 4.0 prior).
         state = info.get('five_axis') or {'missing': list(FIVE_AXES), 'usd_status': 'missing'}
         billed = not (spec.get('unmetered') or spec.get('unlimited'))
         named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
         blind = [a for a, w in task['five_axis_demand'].items() if w >= five['demanded_level'] and a in state.get('missing', ())]
         errors = ([f'no trusted data for the demanded axis {", ".join(blind)}'] if blind else []) + (
-            ['usd_per_hour has no cited source on a billed account'] if billed and state.get('usd_status') != 'ok' else [])
+            ['usd_per_hour has no cited source on a metered account'] if billed and state.get('usd_status') != 'ok' else [])
         for error in errors:
             if named:
-                result['notes'].append(f'data error: {error}; dispatched because it was named')
+                unpriced = ' (its cost is not priced)' if error.startswith('usd_per_hour') else ''
+                result['notes'].append(f'data error: {error}; dispatched because it was named{unpriced}')
                 result.setdefault('data_errors', []).append(error)
             else:
                 exclude(f'data error: {error} (out of automatic routing; name the model to dispatch it)')

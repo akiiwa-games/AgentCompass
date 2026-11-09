@@ -27,13 +27,14 @@ from collections import defaultdict
 import numpy as np
 
 import five_axis_tasks
+import measurements
 import sources
 
 sys.path.insert(0, str(sources.REPO / 'scripts'))
 import allocator  # noqa: E402
 
 CASES = sources.REPO / 'references' / 'classifier-cases.json'
-ANCHOR = 'claude-opus-5-5'
+ANCHOR = measurements.ANCHOR    # the model every capability value is relative to
 SYNTHETIC = ('dot', 'grok-bot', 'gpt-6-pro')       # tiers that are routing alignments, not measurements
 DIFFICULTIES = ('routine', 'hard', 'coupled', 'frontier')
 RATIOS = np.round(np.arange(0.30, 1.0001, 0.0025), 4)
@@ -86,13 +87,14 @@ def max_share(scores, anchor, demand, axis_ratio):
     return min(terms)
 
 
-def best_share(pairs, axis_ratio_shares):
-    """(share, agreeing pairs) maximising agreement; ties take the middle of the best run."""
+def best_share(pairs, low=0.0):
+    """(share >= low, agreeing pairs) maximising agreement; ties take the middle of the best run."""
     if not pairs:
         return None, 0
-    counts = [sum((top >= r - 1e-9) == old for top, old in pairs) for r in RATIOS]
+    grid = [r for r in RATIOS if r >= low - 1e-9] or [float(low)]
+    counts = [sum((top >= r - 1e-9) == old for top, old in pairs) for r in grid]
     peak = max(counts)
-    best = [r for r, n in zip(RATIOS, counts) if n == peak]
+    best = [r for r, n in zip(grid, counts) if n == peak]
     return float(best[len(best) // 2]), peak
 
 
@@ -108,15 +110,18 @@ def calibrate(doc, acc):
     best = None
     for k in AXIS_RATIOS:
         tops = {g: [(max_share(sc, anchor, dm, k), old, m, c) for sc, dm, old, m, c in pairs] for g, pairs in groups.items()}
-        ratio, crit, agree = {}, {}, 0
+        ratio, crit, agree, low = {}, {}, 0, 0.0
         for d in DIFFICULTIES:
-            ratio[d], n = best_share([(t[0], old) for t, old, _, _ in tops.get((d, False), [])], k)
+            # Monotone by construction: a harder difficulty never asks less, a critical task never less than its
+            # difficulty (round 2 searched each group alone and could invert them on two or three cases).
+            ratio[d], n = best_share([(t[0], old) for t, old, _, _ in tops.get((d, False), [])], low)
             agree += n
             if ratio[d] is None:        # no case at this difficulty: today's floor over the anchor's tier
-                ratio[d] = round(float(policy['ability_floor'][d]) / float(acc['models'][ANCHOR]['tier']), 4)
+                ratio[d] = max(low, round(float(policy['ability_floor'][d]) / float(acc['models'][ANCHOR]['tier']), 4))
+            low = ratio[d]
             cpairs = [(t[0], old) for t, old, _, _ in tops.get((d, True), [])]
             if cpairs:
-                crit[d], n = best_share(cpairs, k)
+                crit[d], n = best_share(cpairs, ratio[d])
                 agree += n
             else:
                 floor = float(policy['ability_floor'][d])
@@ -150,6 +155,7 @@ def calibrate(doc, acc):
                               'n_cases': len(all_cases), 'n_models': len(rows),
                               'demand': 'classifier cases: allocator.five_axis_fallback_levels; synthetic profiles: hand-labelled axis_demand',
                               'today': 'shipped tier at High vs route ability_floor + critical headroom'},
-            'drift': ('Floors are shares of the anchor model level on the same demand, so a new leaderboard top that lowers '
-                      'every board-best-relative score lowers the anchor level and the floor together. Re-run this '
-                      'calibration only when the anchor model itself changes.')}
+            'drift': ('Every capability value is relative to the anchor model at the source (measurements.py: 0.8 x s / '
+                      's_anchor; Elo boards as twice the win rate against the anchor), so a new model at the top of a board '
+                      'changes no other model value, no anchor level and no floor. Floors move when the anchor model is '
+                      'replaced, when a board re-rates existing models, or when a backfill fit gains points.')}

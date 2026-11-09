@@ -8,23 +8,26 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
 - No scalar tier. The four capability axes (divergence, global_rigor, module_precision, vision_tools) are the only
   model ability; difficulty floors are requirements on the axes a task demands (`floors`, calibrated below).
 - Each axis is the mean of its components, each component the mean of its trusted sources (`measurements.py` converts
-  every source to 0..1 the same way: success over the board's best). A component no trusted source measures is
-  backfilled from public data, a linear fit of the component on the AA Intelligence Index over the models that have it
-  (at least five points), else on the public LMArena tier fit; a model with neither keeps the components it has. An axis with no component at all is
-  backfilled the same way on the axis, else on the public LMArena tier fit; still empty, it scores 0 and is `missing`.
-  A task that demands a missing axis leaves automatic routing for that model (an explicit --model still dispatches it).
+  every source the same way, relative to the anchor model: 0.8 x s / s_anchor, so a new top model moves nothing). A
+  component no trusted source measures is backfilled from public data, a linear fit of the component on the AA
+  Intelligence Index over the models that have it, else on the public LMArena tier fit; a fit needs MIN_FIT_POINTS
+  measured points and a positive slope (review F1: one public point is not a fit). Without a fit the component stays
+  missing and the axis averages the components it has (a yellow data note). An axis with no component at all is
+  backfilled the same way on the axis; still empty, it scores 0 and is `missing`. A task that demands a missing axis
+  leaves automatic routing for that model (an explicit --model still dispatches it).
 - A model whose own boards are empty inherits another model's thinking axes only when a vendor statement names the
   underlying model (`INHERIT`, cited); otherwise it is --model only.
 - A dated user override (`--user-overrides`, source `user`) replaces a public axis value; none is shipped.
-- usd_per_hour merges every cited source (`measurements.py`: AA cost/time, OpenRouter repricing, packaged values with a
-  stated basis, community burn): each source's value at High (else its effort-less listing, else the median of its
-  listed efforts), then the median over sources, or the first available source of `--source-priority`. `--distrust`
-  removes a source from every field. A billed model with no cited usd leaves automatic routing.
+- usd_per_hour merges every cited public source (`measurements.py`: AA cost/time and its OpenRouter repricing; the
+  shipped local calibration-sample values are not a source, review F2): each source's value at High (else its
+  effort-less listing, else the median of its listed efforts), then the median over sources, or the first available
+  source of `--source-priority`. `--distrust` removes a source from every field. A model with no cited usd leaves
+  automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced.
 - duration_multiplier is 1.0 when a time-based source (AA cost/time, OpenRouter repricing of it) is in the merge, since
   its hourly figure already prices the model's own pace; otherwise the shipped multiplier stays, cited as community.
-- Plan capacity is counted in hours of each window's reference model: the shipped community capacity (plan-templates
-  provenance and basis) over the reference model's shipped usd, then back to USD at the merged reference usd, so the
-  hours a window holds do not move when the usd scale does.
+- Plan capacity stays the packaged plan-templates figure (list-price USD of usage, with its provenance and basis);
+  its hours of each window's reference model are that figure over the reference model's cited usd (review F2: not the
+  shipped local sample). The router reads the USD figure unchanged.
 - economy is priced by the router at run time; `economy_static` = 1 / (1 + usd / 15) is the tray's static view.
 """
 import argparse
@@ -62,7 +65,8 @@ INHERIT = {
             'cited_in': 'references/accounts.json scoring.basis (reviewed 2026-10-27)', 'url': None},
 }
 PUBLIC_TIER_SOURCES = ('lmarena.tier_fit', 'secondary.tier_fit')
-MIN_FIT_POINTS = 5
+PREDICTORS = ('aa.index', 'tier')      # backfill predictors in order of preference
+MIN_FIT_POINTS = 8      # measured points a backfill regression needs (review F1)
 
 
 def mean(xs):
@@ -112,7 +116,7 @@ def pick_duration(usd, info):
                 'kind': 'benchmark', 'method': 'the hourly figure already prices the model pace (user, 2026-11-09)'}
     shipped = info.get('duration_multiplier')
     if shipped is not None:
-        return {'value': float(shipped), 'source': 'packaged.accounts', 'kind': 'community',
+        return {'value': float(shipped), 'source': 'accounts.duration_multiplier', 'kind': 'community',
                 'method': 'shipped duration_multiplier, kept: no time-based usd source for this model'}
     return {'value': 1.0, 'source': None, 'kind': None, 'method': 'no speed data: neutral 1.0'}
 
@@ -141,12 +145,24 @@ class Scorer:
             comps.setdefault(e['component'], {})[e['source']] = e['value']
         return {c: {'value': mean(list(srcs.values())), 'sources': srcs, 'status': 'measured'} for c, srcs in comps.items()}
 
-    def predictor(self, fields):
+    def predictors(self, fields):
+        """{predictor: x} for the public predictors the model has: the AA index, the public LMArena tier fit."""
+        out = {}
         idx = self.trusted(fields.get('intelligence_index'))
         if idx:
-            return 'aa.index', idx[0]['value']
+            out['aa.index'] = idx[0]['value']
         tier = [e for e in self.trusted(fields.get('tier')) if e['source'] in PUBLIC_TIER_SOURCES]
-        return ('tier', tier[0]['value']) if tier else (None, None)
+        if tier:
+            out['tier'] = tier[0]['value']
+        return out
+
+    @staticmethod
+    def backfill(fits, key, preds):
+        """(predictor, x, fit) for the first predictor, AA index then tier, the model has and that has a usable fit."""
+        for name in PREDICTORS:
+            if name in preds and fits.get((*key, name)):
+                return name, preds[name], fits[(*key, name)]
+        return None, None, None
 
     @staticmethod
     def fit(points):
@@ -154,30 +170,30 @@ class Scorer:
             return None
         x, y = np.array([p[0] for p in points]), np.array([p[1] for p in points])
         b, a = np.polyfit(x, y, 1)
+        if b <= 0:      # ability falling with the index is not a usable predictor
+            return None
         return {'a': float(a), 'b': float(b), 'r': float(np.corrcoef(x, y)[0, 1]), 'n': len(points)}
 
     def score(self):
         rows = {}
         for m in self.models:
             fields = self.meas['models'].get(m) or {}
-            rows[m] = {'fields': fields, 'predictor': self.predictor(fields),
+            rows[m] = {'fields': fields, 'preds': self.predictors(fields),
                        'comps': {a: self.components(fields, a) for a in AXES}}
         fits = {}
         for a, comps in AXES.items():
             for c in comps:
-                for name in ('aa.index', 'tier'):
-                    pts = [(r['predictor'][1], r['comps'][a][c]['value']) for r in rows.values()
-                           if c in r['comps'][a] and r['predictor'][0] == name]
+                for name in PREDICTORS:
+                    pts = [(r['preds'][name], r['comps'][a][c]['value']) for r in rows.values()
+                           if c in r['comps'][a] and r['comps'][a][c]['status'] == 'measured' and name in r['preds']]
                     fits[(a, c, name)] = self.fit(pts)
-        # Component backfill: every unmeasured component from the component's fit on the model's own predictor (the AA
-        # index, else the public LMArena tier fit), so a partial axis does not average only its measured components.
+        # Component backfill: every unmeasured component from the component's fit on the AA index, else on the public
+        # LMArena tier fit (each fit over every measured model that has that predictor), so a partial axis does not
+        # average only its measured components.
         for r in rows.values():
-            name, x = r['predictor']
-            if name is None:
-                continue
             for a, comps in AXES.items():
                 for c in comps:
-                    f = fits.get((a, c, name))
+                    name, x, f = self.backfill(fits, (a, c), r['preds'])
                     if c not in r['comps'][a] and f:
                         r['comps'][a][c] = {'value': round(float(np.clip(f['a'] + f['b'] * x, 0, 1)), 4), 'sources': {},
                                             'status': 'backfilled', 'backfill': {'predictor': name, 'x': x}}
@@ -192,16 +208,15 @@ class Scorer:
                                 'components': r['comps'][a], 'missing_components': [c for c in comps if c not in present]}
         # Axis backfill for a model with no component on the axis: the axis fit on the index, else on the public tier.
         for a in AXES:
-            for name in ('aa.index', 'tier'):
-                pts = [(r['predictor'][1], r['axes'][a]['value']) for r in rows.values()
-                       if r['axes'][a]['status'] in ('measured', 'partial') and r['predictor'][0] == name]
+            for name in PREDICTORS:
+                pts = [(r['preds'][name], r['axes'][a]['value']) for r in rows.values()
+                       if r['axes'][a]['status'] in ('measured', 'partial') and name in r['preds']]
                 fits[(a, None, name)] = self.fit(pts)
         for m, r in rows.items():
-            name, x = r['predictor']
             for a, ax in r['axes'].items():
                 if ax['status'] != 'missing':
                     continue
-                f = fits.get((a, None, name)) if name else None
+                name, x, f = self.backfill(fits, (a, None), r['preds'])
                 if f:
                     ax.update(value=round(float(np.clip(f['a'] + f['b'] * x, 0, 1)), 4), status='backfilled',
                               backfill={'predictor': name, 'x': x, 'level': 'axis'})
@@ -232,13 +247,12 @@ class Scorer:
 
 
 def capacity(acc, plans, usd):
-    shipped = {m: (acc['models'].get(m) or {}).get('usd_per_hour') for fam in REFERENCE_MODELS.values() for m in fam.values()}
+    """Packaged window capacity with its hours of the window's reference model at the cited reference usd."""
     factors, out = {}, {}
     for fam, windows in REFERENCE_MODELS.items():
         for wid, ref in windows.items():
-            new, old = usd[ref]['value'], shipped.get(ref)
-            factors.setdefault(fam, {})[wid] = {'reference_model': ref, 'shipped_usd_per_hour': old, 'merged_usd_per_hour': new,
-                                                'factor': round(new / old, 4) if new and old else None}
+            factors.setdefault(fam, {})[wid] = {'reference_model': ref, 'cited_usd_per_hour': usd[ref]['value'], 'factor': 1.0,
+                                                'note': 'capacity_usd is list-price usage USD, the scale of the cited usd'}
     for fam, table in plans.items():
         if not isinstance(table, dict):
             continue
@@ -247,12 +261,11 @@ def capacity(acc, plans, usd):
                 continue
             for wid, cap in spec['capacity_usd'].items():
                 f = (factors.get(fam) or {}).get(wid) or {}
-                old, new = f.get('shipped_usd_per_hour'), f.get('merged_usd_per_hour')
-                hours = round(cap / old, 1) if old else None
+                ref_usd = f.get('cited_usd_per_hour')
                 out.setdefault(fam, {}).setdefault(plan, {})[wid] = {
-                    'unit': 'reference_model_hours', 'reference_model': f.get('reference_model'), 'ref_hours': hours,
-                    'capacity_usd': round(hours * new, 1) if hours and new else None, 'shipped_capacity_usd': cap,
-                    'status': 'ok' if hours and new else 'unknown',
+                    'unit': 'usd', 'capacity_usd': cap, 'reference_model': f.get('reference_model'),
+                    'ref_hours': round(cap / ref_usd, 1) if ref_usd else None,
+                    'status': 'ok' if ref_usd else 'reference usd missing (hours unknown; the USD capacity still applies)',
                     'source': {'kind': 'community', 'provenance': spec.get('provenance'), 'basis': spec.get('basis'),
                                'url': None, 'as_of': acc.get('reviewed_at')}}
     return factors, out
@@ -271,12 +284,17 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
     for m, r in rows.items():
         model_errors = []
         if usd[m]['status'] == 'missing':
-            model_errors.append({'model': m, 'field': 'usd_per_hour', 'reason': 'no_cited_source', 'level': 'red_if_billed',
-                                 'effect': 'out of automatic routing on a billed account; free and unmetered accounts are unaffected'})
+            model_errors.append({'model': m, 'field': 'usd_per_hour', 'reason': 'no_cited_source', 'level': 'red_if_metered',
+                                 'effect': 'out of automatic routing on a metered account (billed or quota windows); a named '
+                                           'dispatch runs with its cost unpriced; free and unmetered accounts are unaffected'})
         for a, ax in r['axes'].items():
             if ax.get('flag') == 'missing':
                 model_errors.append({'model': m, 'field': a, 'reason': 'no_trusted_source', 'level': 'red_if_demanded',
                                      'effect': 'scores 0; a task that demands this axis leaves automatic routing for the model'})
+            elif ax.get('missing_components') and ax['status'] != 'inherited':
+                model_errors.append({'model': m, 'field': f"{a}.{','.join(ax['missing_components'])}",
+                                     'reason': 'component_unmeasured_no_fit', 'level': 'yellow',
+                                     'effect': 'the axis averages the components it has'})
         errors += model_errors
         idx = scorer.trusted(r['fields'].get('intelligence_index'))
         u = usd[m]['value']

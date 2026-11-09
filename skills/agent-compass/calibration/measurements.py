@@ -14,8 +14,6 @@ Fields
   - `aa.cost_time` (benchmark): Artificial Analysis cost per task x 3600 / time per task (round 046, section 2.3, method A).
   - `openrouter.cost_time` (vendor price on benchmark tokens): the AA figure repriced at the OpenRouter output price,
     only where that price differs from AA's (an equal price adds no independent evidence).
-  - `packaged.accounts` (community): the shipped `usd_per_hour` where the row's basis states a measured $/h figure.
-  - `community.burn` (community): a model's measured quota burn (%/worker-hour) times the plan window's capacity.
 - `price`: input / output / cache-read USD per million tokens (OpenRouter, AA), for cross-checks only.
 - The four capability axes of the tray radar, one entry per (component, source):
   - `divergence`: creative (LMArena Creative Writing, EQ-Bench Creative Writing v3), exploration (LMArena Agent).
@@ -24,8 +22,10 @@ Fields
   - `module_precision`: coding (SWE-bench Verified <15 min bucket, LMArena WebDev), terminal (AA Terminal-Bench 4.0,
     vals.ai Terminal-Bench 2.0).
   - `vision_tools`: vision (LMArena Vision, AA MMMU-Pro), GUI (OSWorld-Verified, general models only), tools
-    (AA tau2-bench, AA AutomationBench). A model the data marks text-only scores 0 on vision and GUI (source
-    `accounts.visual`) unless a public board lists it there: the public leaderboard wins (user, 2026-11-09).
+    (AA tau2-bench, AA AutomationBench). A model scores 0 on vision and GUI only from a cited vendor statement that it
+    takes no image input (accounts row `text_only_source` {url, as_of, statement}, source `vendor.text_only`); the
+    local `visual` / `text_only` routing flags are not a source (review F1, 2026-11-09), so without a statement and
+    without a board the component is missing. A public board that lists the model wins over a statement.
 
 Where the old tier came from: its primary fit is LMArena WebDev and Agent through the anchors, moved from the best
 listed variant to High by the AA effort gain (efforts.high_tier). WebDev is module_precision.coding, Agent is
@@ -33,13 +33,24 @@ divergence.exploration, and LMArena Text overall joins global_rigor as `reasonin
 tier carried). The High correction now scales every LMArena component of the model by High tier / best-variant tier
 (LMArena lists each model at its best variant), so the axes are read at High as the tier was.
 
-One conversion for every capability source: a model's success s on the source divided by the best success any listed
-model reaches there (round 2: the 90%-of-best allowance is dropped; it saturated LCR, MMMU-Pro and SWE <15 min).
+One conversion for every capability source, relative to the anchor model (ANCHOR, Opus 5.5) rather than to the board's
+best, so a new model at the top of a board moves no other model's value (review F3, 2026-11-09; round 2 divided by the
+board best, which an Elo board does not scale linearly): value = ANCHOR_VALUE x s / s_anchor, capped at 1. The anchor
+sits at ANCHOR_VALUE (0.8) on every component it is measured on, so 1.0 is 1.25 times the anchor.
 - Percent and fraction boards: s is the success rate (per difficulty bucket where the board has buckets).
-- Elo boards: s is the expected win rate against the board's best model, 1 / (1 + 10^((best - rating) / 400)).
-- LMArena Agent reports a net difference in confirmed success that can be negative: s is the score above the board's
-  lowest score.
-- METR: s is the p50 time horizon (minutes) over the best model's.
+- Elo boards: s / s_anchor is twice the expected win rate against the anchor, 2 / (1 + 10^((anchor - rating) / 400)).
+- Net-difference boards (LMArena Agent: confirmed success minus failure, -1..1; AA Omniscience Index: correct minus
+  incorrect, -100..100): s is the share of positive outcomes, (1 + d / bound) / 2, a fixed map with no board term.
+- METR: s is the p50 time horizon in minutes.
+- A board that does not list the anchor is bridged: its reference success is the median, over at least MIN_BRIDGE of
+  our models it lists, of s x ANCHOR_VALUE / the model's anchored value on the same component (else the same axis) from
+  boards that do list the anchor. With fewer shared models the board cannot be anchored and is recorded as missing.
+  A bridged board's reference moves only when a model listed both on it and on an anchored mate is added (it joins
+  the median); a model new to the anchored boards alone moves nothing.
+
+usd_per_hour comes only from public sources (review F2, 2026-11-09): AA cost per task over time per task, and the same
+repriced at the OpenRouter output price. The shipped accounts values (a local 14-day calibration sample) and the
+community burn figures (measured locally, no external citation) are not sources.
 """
 import argparse
 import json
@@ -54,9 +65,11 @@ import efforts
 import sources
 import tiers
 
-X = 0.0              # full marks only at the board's best (round 1 used floors.X = 0.10, which saturated boards)
+ANCHOR = 'claude-opus-5-5'      # every capability value is relative to this model (five_axis_floors anchors the floors on it)
+ANCHOR_VALUE = 0.8              # the anchor's value on each component; 1.0 = 1.25 x the anchor
+MIN_BRIDGE = 3                  # shared models needed to bridge a board that does not list the anchor
+NET_BOUND = {'lmarena.agent': 1.0, 'aa.omniscience_index': 100.0}
 OUT = sources.REPO / 'references' / 'public-measurements.json'
-PLANS = sources.REPO / 'references' / 'plan-templates.json'
 SCHEMA = 'agent-compass.public-measurements/1'
 
 # Names the automatic matcher cannot derive (a dated or differently worded listing of the same model).
@@ -79,11 +92,11 @@ CAPABILITY_SOURCES = {
     'lmarena.text_overall': ('global_rigor', 'reasoning', 'elo'),
     'lmarena.creative_writing': ('divergence', 'creative', 'elo'),
     'eqbench.creative_writing_v3': ('divergence', 'creative', 'elo'),
-    'lmarena.agent': ('divergence', 'exploration', 'shifted'),
+    'lmarena.agent': ('divergence', 'exploration', 'net'),
     'metr.time_horizon_p50': ('global_rigor', 'long_horizon', 'ratio'),
     'vals.swebench_1_4h': ('global_rigor', 'long_horizon', 'fraction'),
     'aa.lcr': ('global_rigor', 'long_context', 'fraction'),
-    'aa.omniscience_index': ('global_rigor', 'anti_hallucination', 'shifted'),
+    'aa.omniscience_index': ('global_rigor', 'anti_hallucination', 'net'),
     'vals.swebench_lt15m': ('module_precision', 'coding', 'fraction'),
     'lmarena.webdev': ('module_precision', 'coding', 'elo'),
     'aa.terminalbench_4': ('module_precision', 'terminal', 'fraction'),
@@ -97,8 +110,8 @@ CAPABILITY_SOURCES = {
 # The kind of each source (decision 2, 2026-11-09): vendor = the vendor's own statement or price list, benchmark = a
 # third-party measurement, community = a community or packaged estimate with a stated basis.
 SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark',
-               'secondary.tier_fit': 'benchmark', 'user': 'user', 'accounts.visual': 'vendor', 'aa.cost_time': 'benchmark',
-               'openrouter.cost_time': 'vendor', 'packaged.accounts': 'community', 'community.burn': 'community',
+               'secondary.tier_fit': 'benchmark', 'user': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
+               'openrouter.cost_time': 'vendor',
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'aa.index': 'benchmark'}
 AXES = {'divergence': ('creative', 'exploration'),
         'global_rigor': ('reasoning', 'long_horizon', 'long_context', 'anti_hallucination'),
@@ -143,21 +156,62 @@ class Matcher:
         return next((self.by_key[k] for k in candidates(model) if k in self.by_key), None)
 
 
-def success(kind, value, board):
-    """(s, s_best) on the source's own scale; see the module docstring."""
-    vals = list(board.values())
+def success(kind, value, bound=1.0):
+    """s on the source's own absolute scale (no board term); see the module docstring. Elo has no absolute s."""
+    if kind == 'net':
+        return (1 + value / bound) / 2
+    return value
+
+
+def relative(kind, value, ref, bound=1.0):
+    """s / s_ref: `ref` is the reference rating on an Elo board, else the reference success."""
     if kind == 'elo':
-        best = max(vals)
-        return 1 / (1 + 10 ** ((best - value) / 400)), 0.5
-    if kind == 'shifted':
-        low = min(vals)
-        return value - low, max(vals) - low
-    return value, max(vals)
+        return 2 / (1 + 10 ** ((ref - value) / 400))
+    return success(kind, value, bound) / ref if ref > 0 else 0.0
 
 
-def normalise(kind, value, board):
-    s, best = success(kind, value, board)
-    return round(min(1.0, max(0.0, s / ((1 - X) * best))) if best > 0 else 0.0, 4), round(s, 4), round(best, 4)
+def anchored_value(kind, value, ref, bound=1.0):
+    return round(min(1.0, max(0.0, ANCHOR_VALUE * relative(kind, value, ref, bound))), 4)
+
+
+def anchor_boards(raw, kinds, comps, anchor=ANCHOR):
+    """Anchor-relative values for every board (module docstring).
+
+    raw {source: {model: raw value}}, kinds {source: (kind, bound)}, comps {source: (axis, component)}. Returns
+    ({source: {model: value}}, {source: reference}, {source: why it could not be anchored})."""
+    values, refs, failed = {}, {}, {}
+    for src, board in raw.items():
+        kind, bound = kinds[src]
+        if anchor in board:
+            ref = board[anchor] if kind == 'elo' else success(kind, board[anchor], bound)
+            refs[src] = {'reference': round(ref, 4), 'how': f'{anchor} listed'}
+            values[src] = {m: anchored_value(kind, v, ref, bound) for m, v in board.items()}
+    anchored = dict(values)
+    for src, board in raw.items():
+        if src in anchored:
+            continue
+        kind, bound = kinds[src]
+        axis, comp = comps[src]
+        if kind == 'elo':
+            failed[src] = f'{anchor} is not listed, and an Elo board is not bridged'
+            continue
+        for level, mates in (('component', [o for o in anchored if comps[o] == (axis, comp)]),
+                             ('axis', [o for o in anchored if comps[o][0] == axis])):
+            def mate(m, mates=mates):
+                vals = [anchored[o][m] for o in mates if anchored[o].get(m, 0) > 0]
+                return sum(vals) / len(vals) if vals else None
+            shared = [m for m in board if mate(m) and success(kind, board[m], bound) > 0]
+            if len(shared) >= MIN_BRIDGE:
+                break
+        if len(shared) < MIN_BRIDGE:
+            failed[src] = (f'{anchor} is not listed, and only {len(shared)} listed models have an anchored value on the '
+                           f'same {level} (a bridge needs {MIN_BRIDGE})')
+            continue
+        ref = float(np.median([success(kind, board[m], bound) * ANCHOR_VALUE / mate(m) for m in shared]))
+        refs[src] = {'reference': round(ref, 4), 'shared': sorted(shared),
+                     'how': f'bridged through {", ".join(sorted(mates))} on {len(shared)} shared models (same {level})'}
+        values[src] = {m: anchored_value(kind, v, ref, bound) for m, v in board.items()}
+    return values, refs, failed
 
 
 def vals_date(target, page):
@@ -278,43 +332,57 @@ class Builder:
         return out
 
     def capabilities(self):
-        for src, (board, as_of, method, strip, listed) in self.boards().items():
-            axis, comp, kind = CAPABILITY_SOURCES[src]
+        boards, raw, names = self.boards(), {}, {}
+        for src, (board, as_of, method, strip, listed) in boards.items():
             filename = ARENA_FILE.get(src) or VALS_FILE.get(src) or FILE_OF[src.split('.')[0]]
             self.register(src, filename, as_of, method, len(board))
             match = Matcher(board, strip)
             family = src.split('.')[0]
             explicit_key = {'lmarena': 'arena', 'aa': 'aa', 'vals': 'swe' if 'swebench' in src else 'tb2'}.get(family)
+            raw[src], names[src] = {}, {}
             for model in self.models:
                 exp = (EXTRA_NAMES.get(model) or {}).get(explicit_key) or (tiers.NAMES.get(model) or {}).get(explicit_key) \
                     or (tiers.ANCHORS.get(model) if family in ('lmarena', 'aa') else None)
                 name = match.find(model, exp) or (match.find(model) if exp else None)
-                if name is None:
-                    continue
-                value, s, best = normalise(kind, board[name], board)
+                if name is not None:
+                    raw[src][model], names[src][model] = board[name], name
+        kinds = {src: (CAPABILITY_SOURCES[src][2], NET_BOUND.get(src, 1.0)) for src in raw}
+        values, refs, failed = anchor_boards(raw, kinds, {src: CAPABILITY_SOURCES[src][:2] for src in raw})
+        for src, why in failed.items():
+            self.source_rows[src]['not_anchored'] = why
+            self.miss(src, self.source_rows[src]['file'], f'not used: {why}')
+        for src, board_values in values.items():
+            axis, comp, _ = CAPABILITY_SOURCES[src]
+            method, listed = boards[src][2], boards[src][4]
+            self.source_rows[src]['anchor'] = refs[src]
+            for model, value in board_values.items():
                 extra = {}
-                ratio = self.high_ratio.get(model) if family == 'lmarena' else None
+                ratio = self.high_ratio.get(model) if src.startswith('lmarena.') else None
                 if ratio is not None and ratio != 1.0:
                     # LMArena lists the best variant; read it at High as the tier fit does (efforts.high_tier).
                     extra = {'best_variant_value': value, 'high_ratio': ratio}
                     value = round(min(1.0, value * ratio), 4)
+                name = names[src][model]
                 self.names[model][src] = name
-                self.add(model, axis, src, value, f'{method}; s / best s, capped at 1'
+                self.add(model, axis, src, value, f'{method}; {ANCHOR_VALUE:g} x s / s_anchor ({refs[src]["how"]}), capped at 1'
                          + ('; x High/best-variant tier ratio' if extra else ''), component=comp,
-                         listed_as=listed.get(name, name), raw=round(board[name], 4), success=s, best_success=best, **extra)
+                         listed_as=listed.get(name, name), raw=round(raw[src][model], 4), reference=refs[src]['reference'], **extra)
         self.conflicts = []
         for model, info in self.models.items():
-            if info.get('text_only') or not info.get('visual'):
-                for comp in ('vision', 'gui'):
-                    listed = [e['source'] for e in self.out[model].get('vision_tools', []) if e.get('component') == comp]
-                    if listed:      # a board measured image input on a row the data marks text-only
-                        self.conflicts.append({'model': model, 'field': f'vision_tools.{comp}', 'reason': 'sources_disagree',
-                                               'detail': f'accounts row is text-only, but {", ".join(listed)} list the model',
-                                               'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
-                        continue
-                    self.out[model].setdefault('vision_tools', []).append(
-                        {'source': 'accounts.visual', 'value': 0.0, 'component': comp, 'as_of': self.acc.get('reviewed_at'),
-                         'url': None, 'method': 'the model row is text-only (no image input): vision and GUI are 0, not unknown'})
+            stated = info.get('text_only_source')
+            if not (isinstance(stated, dict) and stated.get('url')):
+                continue        # the local visual / text_only flags are routing data, not a source (review F1)
+            for comp in ('vision', 'gui'):
+                listed = [e['source'] for e in self.out[model].get('vision_tools', []) if e.get('component') == comp]
+                if listed:      # a board measured image input on a model a vendor statement calls text-only
+                    self.conflicts.append({'model': model, 'field': f'vision_tools.{comp}', 'reason': 'sources_disagree',
+                                           'detail': f'vendor statement says text-only, but {", ".join(listed)} list the model',
+                                           'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
+                    continue
+                self.out[model].setdefault('vision_tools', []).append(
+                    {'source': 'vendor.text_only', 'kind': 'vendor', 'value': 0.0, 'component': comp,
+                     'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated['url'], 'statement': stated.get('statement'),
+                     'method': 'vendor statement that the model takes no image input: vision and GUI are 0, not unknown'})
 
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
@@ -425,48 +493,16 @@ class Builder:
                      f'AA cost/time repriced at the OpenRouter output price {ours:g} (AA lists {theirs:g}) per million tokens',
                      effort=e['effort'], listed_as=listed)
 
-    def packaged(self, plans):
-        """Community and packaged usd figures with a stated basis (decision 2, 2026-11-09)."""
-        when = self.acc.get('reviewed_at')
-        self.source_rows['packaged.accounts'] = {
-            'file': 'references/accounts.json', 'url': None, 'fetched_at': None, 'sha256': None, 'as_of': when,
-            'as_of_kind': 'accounts reviewed_at', 'kind': 'community', 'models_listed': None,
-            'method': 'shipped usd_per_hour of a row whose basis states a measured $/h figure (the basis is quoted)'}
-        self.source_rows['community.burn'] = {
-            'file': 'references/accounts.json + references/plan-templates.json', 'url': None, 'fetched_at': None, 'sha256': None,
-            'as_of': when, 'as_of_kind': 'accounts reviewed_at', 'kind': 'community', 'models_listed': None,
-            'method': "a model's burn_pct_per_worker_hour on a window x that window's plan capacity_usd / 100"}
-        for model, info in self.models.items():
-            basis = str(info.get('basis') or '')
-            stated = re.search(r'[^;.]*\$[\d.]+/h[^;]*', basis)
-            usd = info.get('usd_per_hour')
-            if stated and isinstance(usd, (int, float)) and usd > 0:
-                self.add(model, 'usd_per_hour', 'packaged.accounts', float(usd), 'shipped value; basis: ' + stated.group(0).strip(),
-                         effort='high')
-            # The burn was measured on the first plan that has the window (the plan the basis names: Ultra 20x).
-            burn = info.get('burn_pct_per_worker_hour') or {}
-            found = next(((fam, plan, spec, wid, pct) for fam, table in plans.items() if isinstance(table, dict)
-                          for plan, spec in table.items() if isinstance(spec, dict) and isinstance(spec.get('capacity_usd'), dict)
-                          for wid, pct in burn.items() if spec['capacity_usd'].get(wid)), None)
-            if found:
-                fam, plan, spec, wid, pct = found
-                cap = spec['capacity_usd'][wid]
-                self.add(model, 'usd_per_hour', 'community.burn', round(pct * cap / 100, 3),
-                         f'{pct}%/worker-hour of {fam} {plan} {wid} x capacity ${cap} '
-                         f'({spec.get("provenance")}: {str(spec.get("basis") or "")[:160]})', effort='high',
-                         plan=f'{fam}/{plan}', window=wid)
-
-    def build(self, plans=None):
+    def build(self):
         self.tier()
         self.capabilities()
         self.usd()
-        self.packaged(plans if plans is not None else json.loads(PLANS.read_text(encoding='utf-8')))
         missing_sources = {**self.missing}
         for name, row in self.manifest.items():
             if row.get('status') != 'ok':
                 missing_sources.setdefault(name, {'file': name, 'url': row.get('url'), 'reason': row.get('error')})
         return {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                'conversion': f'capability value = min(1, s / ({1 - X:g} x best s)); see calibration/measurements.py',
+                'conversion': f'capability value = min(1, {ANCHOR_VALUE:g} x s / s_anchor), anchor {ANCHOR}; see calibration/measurements.py',
                 'sources': self.source_rows, 'missing_sources': missing_sources, 'conflicts': self.conflicts,
                 'axes': {a: list(c) for a, c in AXES.items()},
                 'models': {m: f for m, f in self.out.items()}}
