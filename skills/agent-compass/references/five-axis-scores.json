@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-09T06:38:25+00:00",
- "measurements_sha256": "9b54fbbb195812e727da71c713f0d0365fec3164ece6ad642e03fd2782ac7a48",
+ "generated_at": "2026-11-09T07:10:51+00:00",
+ "measurements_sha256": "e9740f20b85f730e6f67eb1cfe4ff6eacf3df94111754634289200b423a438c0",
  "distrusted_sources": [],
  "source_priority": [],
  "user_overrides": [],
@@ -11,163 +11,105 @@
    "a": 0.2603,
    "b": 0.0099,
    "r": 0.6518,
-   "n": 22
-  },
-  "divergence.creative~tier": {
-   "a": 0.1899,
-   "b": 0.131,
-   "r": 0.5564,
-   "n": 36
+   "n": 22,
+   "y_min": 0.0802,
+   "y_max": 1.0
   },
   "divergence.exploration~aa.index": {
    "a": 0.5267,
    "b": 0.0047,
    "r": 0.8869,
-   "n": 22
-  },
-  "divergence.exploration~tier": {
-   "a": 0.4107,
-   "b": 0.0877,
-   "r": 0.9377,
-   "n": 26
+   "n": 22,
+   "y_min": 0.5966,
+   "y_max": 0.8204
   },
   "global_rigor.reasoning~aa.index": {
    "a": 0.5193,
    "b": 0.0057,
    "r": 0.7904,
-   "n": 20
-  },
-  "global_rigor.reasoning~tier": {
-   "a": 0.4527,
-   "b": 0.093,
-   "r": 0.7851,
-   "n": 34
-  },
-  "global_rigor.long_horizon~tier": {
-   "a": -0.1942,
-   "b": 0.3587,
-   "r": 0.8615,
-   "n": 25
+   "n": 20,
+   "y_min": 0.4699,
+   "y_max": 0.8946
   },
   "global_rigor.long_context~aa.index": {
    "a": 0.6936,
    "b": 0.0021,
    "r": 0.5634,
-   "n": 23
-  },
-  "global_rigor.long_context~tier": {
-   "a": 0.4979,
-   "b": 0.0871,
-   "r": 0.7167,
-   "n": 21
+   "n": 23,
+   "y_min": 0.5839,
+   "y_max": 0.8355
   },
   "global_rigor.anti_hallucination~aa.index": {
    "a": 0.3664,
    "b": 0.0082,
    "r": 0.925,
-   "n": 26
-  },
-  "global_rigor.anti_hallucination~tier": {
-   "a": 0.2202,
-   "b": 0.1321,
-   "r": 0.7921,
-   "n": 20
+   "n": 26,
+   "y_min": 0.4737,
+   "y_max": 0.8626
   },
   "module_precision.coding~aa.index": {
    "a": 0.0551,
    "b": 0.0114,
    "r": 0.8962,
-   "n": 23
-  },
-  "module_precision.coding~tier": {
-   "a": -0.0745,
-   "b": 0.1506,
-   "r": 0.8808,
-   "n": 40
+   "n": 23,
+   "y_min": 0.2282,
+   "y_max": 0.8
   },
   "module_precision.terminal~aa.index": {
    "a": -0.1586,
    "b": 0.0185,
    "r": 0.9124,
-   "n": 26
-  },
-  "module_precision.terminal~tier": {
-   "a": -0.4053,
-   "b": 0.2809,
-   "r": 0.8522,
-   "n": 32
+   "n": 26,
+   "y_min": 0.0,
+   "y_max": 0.95
   },
   "vision_tools.vision~aa.index": {
    "a": 0.5787,
    "b": 0.0041,
    "r": 0.6102,
-   "n": 19
-  },
-  "vision_tools.vision~tier": {
-   "a": 0.56,
-   "b": 0.054,
-   "r": 0.4656,
-   "n": 27
+   "n": 19,
+   "y_min": 0.5906,
+   "y_max": 0.8571
   },
   "vision_tools.tools~aa.index": {
    "a": 0.2829,
    "b": 0.0125,
    "r": 0.7156,
-   "n": 26
-  },
-  "vision_tools.tools~tier": {
-   "a": -0.2992,
-   "b": 0.3263,
-   "r": 0.8629,
-   "n": 24
+   "n": 26,
+   "y_min": 0.0106,
+   "y_max": 0.9849
   },
   "divergence~aa.index": {
-   "a": 0.3935,
-   "b": 0.0073,
-   "r": 0.7769,
-   "n": 24
-  },
-  "divergence~tier": {
-   "a": 0.3015,
-   "b": 0.1094,
-   "r": 0.7588,
-   "n": 40
+   "a": 0.3999,
+   "b": 0.0071,
+   "r": 0.7693,
+   "n": 24,
+   "y_min": 0.3708,
+   "y_max": 0.8595
   },
   "global_rigor~aa.index": {
-   "a": 0.5306,
-   "b": 0.006,
-   "r": 0.8321,
-   "n": 26
-  },
-  "global_rigor~tier": {
-   "a": 0.2695,
-   "b": 0.1561,
-   "r": 0.96,
-   "n": 44
+   "a": 0.5241,
+   "b": 0.0055,
+   "r": 0.8276,
+   "n": 26,
+   "y_min": 0.4236,
+   "y_max": 0.8416
   },
   "module_precision~aa.index": {
-   "a": -0.0518,
-   "b": 0.015,
+   "a": -0.0501,
+   "b": 0.0149,
    "r": 0.9458,
-   "n": 26
-  },
-  "module_precision~tier": {
-   "a": -0.2361,
-   "b": 0.215,
-   "r": 0.9088,
-   "n": 45
+   "n": 26,
+   "y_min": 0.1141,
+   "y_max": 0.8253
   },
   "vision_tools~aa.index": {
    "a": 0.4436,
    "b": 0.0081,
    "r": 0.7959,
-   "n": 26
-  },
-  "vision_tools~tier": {
-   "a": 0.1339,
-   "b": 0.1897,
-   "r": 0.9082,
-   "n": 37
+   "n": 26,
+   "y_min": 0.3061,
+   "y_max": 0.9056
   }
  },
  "usd_basis": {
@@ -1837,7 +1779,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7159,
+     "value": 0.669,
      "status": "partial",
      "components": {
       "anti_hallucination": {
@@ -1856,15 +1798,6 @@
         "x": 28.64
        }
       },
-      "long_horizon": {
-       "value": 0.8567,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.93
-       }
-      },
       "long_context": {
        "value": 0.7543,
        "sources": {},
@@ -1875,7 +1808,9 @@
        }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.3944,
@@ -1926,7 +1861,7 @@
    },
    "scores": {
     "divergence": 0.3708,
-    "global_rigor": 0.7159,
+    "global_rigor": 0.669,
     "module_precision": 0.3944,
     "vision_tools": 0.8049
    },
@@ -1969,6 +1904,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "deepseek-v4.1-flash-free",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "deepseek-v4.1-flash-free",
      "field": "vision_tools.gui",
@@ -2022,7 +1964,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8645,
+     "value": 0.8194,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -2045,18 +1987,11 @@
         "aa.omniscience_index": 0.7863
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 4.08
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.7163,
@@ -2105,7 +2040,7 @@
    },
    "scores": {
     "divergence": 0.8595,
-    "global_rigor": 0.8645,
+    "global_rigor": 0.8194,
     "module_precision": 0.7163,
     "vision_tools": 0.7787
    },
@@ -2150,6 +2085,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "claude-fable-5-1",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "claude-fable-5-1",
      "field": "vision_tools.gui",
@@ -2748,7 +2690,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8581,
+     "value": 0.8108,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -2771,18 +2713,11 @@
         "aa.omniscience_index": 0.821
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.53
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.6589,
@@ -2833,7 +2768,7 @@
    },
    "scores": {
     "divergence": 0.6347,
-    "global_rigor": 0.8581,
+    "global_rigor": 0.8108,
     "module_precision": 0.6589,
     "vision_tools": 0.8838
    },
@@ -2874,6 +2809,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "gemini-4-argon-high",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "gemini-4-argon-high",
      "field": "vision_tools.gui",
@@ -3858,7 +3800,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7038,
+     "value": 0.6516,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -3881,18 +3823,11 @@
         "aa.omniscience_index": 0.5917
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 0.8603,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.94
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.3279,
@@ -3943,7 +3878,7 @@
    },
    "scores": {
     "divergence": 0.5666,
-    "global_rigor": 0.7038,
+    "global_rigor": 0.6516,
     "module_precision": 0.3279,
     "vision_tools": 0.5644
    },
@@ -3988,6 +3923,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "claude-haiku-5-5",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "claude-haiku-5-5",
      "field": "vision_tools.gui",
@@ -4042,7 +3984,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8109,
+     "value": 0.7585,
      "status": "partial",
      "components": {
       "long_context": {
@@ -4067,18 +4009,11 @@
         "predictor": "aa.index",
         "x": 42.43
        }
-      },
-      "long_horizon": {
-       "value": 0.9679,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.24
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.5281,
@@ -4127,7 +4062,7 @@
    },
    "scores": {
     "divergence": 0.6802,
-    "global_rigor": 0.8109,
+    "global_rigor": 0.7585,
     "module_precision": 0.5281,
     "vision_tools": 0.7605
    },
@@ -4173,6 +4108,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "gpt-6.1-terra",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "gpt-6.1-terra",
      "field": "vision_tools.gui",
@@ -4226,7 +4168,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7923,
+     "value": 0.6882,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -4235,39 +4177,16 @@
         "lmarena.text_overall": 0.6882
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.48
-       }
-      },
-      "long_context": {
-       "value": 0.8011,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.48
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.6799,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.48
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.5333,
+     "value": 0.4942,
      "status": "partial",
      "components": {
       "coding": {
@@ -4276,21 +4195,14 @@
         "lmarena.webdev": 0.4942
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.5723,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.48
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.7179,
+     "value": 0.5995,
      "status": "partial",
      "components": {
       "vision": {
@@ -4299,27 +4211,19 @@
         "lmarena.vision": 0.5995
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.8363,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.48
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
     "divergence": 0.7482,
-    "global_rigor": 0.7923,
-    "module_precision": 0.5333,
-    "vision_tools": 0.7179
+    "global_rigor": 0.6882,
+    "module_precision": 0.4942,
+    "vision_tools": 0.5995
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -4351,7 +4255,21 @@
     },
     {
      "model": "gpt-6-sol",
-     "field": "vision_tools.gui",
+     "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-6-sol",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-6-sol",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -4401,7 +4319,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6435,
+     "value": 0.6107,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -4424,18 +4342,11 @@
         "aa.omniscience_index": 0.49
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 0.742,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.61
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.1763,
@@ -4485,7 +4396,7 @@
    },
    "scores": {
     "divergence": 0.5418,
-    "global_rigor": 0.6435,
+    "global_rigor": 0.6107,
     "module_precision": 0.1763,
     "vision_tools": 0.6042
    },
@@ -4531,6 +4442,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "gpt-6-luna",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "gpt-6-luna",
      "field": "vision_tools.gui",
@@ -4584,7 +4502,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8007,
+     "value": 0.8774,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -4600,30 +4518,15 @@
         "vals.swebench_1_4h": 1.0
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.788,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.33
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.6601,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.33
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.4402,
+     "value": 0.3502,
      "status": "partial",
      "components": {
       "coding": {
@@ -4633,21 +4536,14 @@
         "vals.swebench_lt15m": 0.3148
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.5302,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.33
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.7454,
+     "value": 0.7035,
      "status": "partial",
      "components": {
       "vision": {
@@ -4656,27 +4552,19 @@
         "lmarena.vision": 0.7035
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.7873,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.33
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
     "divergence": 0.6773,
-    "global_rigor": 0.8007,
-    "module_precision": 0.4402,
-    "vision_tools": 0.7454
+    "global_rigor": 0.8774,
+    "module_precision": 0.3502,
+    "vision_tools": 0.7035
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -4708,7 +4596,21 @@
     },
     {
      "model": "gpt-5.6-sol",
-     "field": "vision_tools.gui",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-5.6-sol",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-5.6-sol",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -4759,7 +4661,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7506,
+     "value": 0.8572,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -4775,30 +4677,15 @@
         "vals.swebench_1_4h": 1.0
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7244,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.6
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5637,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.6
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.3032,
+     "value": 0.2812,
      "status": "partial",
      "components": {
       "coding": {
@@ -4808,21 +4695,14 @@
         "vals.swebench_lt15m": 0.3131
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.3251,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.6
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.6123,
+     "value": 0.6756,
      "status": "partial",
      "components": {
       "vision": {
@@ -4831,27 +4711,19 @@
         "lmarena.vision": 0.6756
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.5491,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.6
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
     "divergence": 0.5771,
-    "global_rigor": 0.7506,
-    "module_precision": 0.3032,
-    "vision_tools": 0.6123
+    "global_rigor": 0.8572,
+    "module_precision": 0.2812,
+    "vision_tools": 0.6756
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -4883,7 +4755,21 @@
     },
     {
      "model": "gpt-5.6-terra",
-     "field": "vision_tools.gui",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-5.6-terra",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-5.6-terra",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -4912,7 +4798,7 @@
   "gpt-5.6-luna": {
    "axes": {
     "divergence": {
-     "value": 0.5453,
+     "value": 0.4552,
      "status": "partial",
      "components": {
       "creative": {
@@ -4922,21 +4808,14 @@
         "eqbench.creative_writing_v3": 0.3527
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.6353,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.7399,
+     "value": 0.8402,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -4952,30 +4831,15 @@
         "vals.swebench_1_4h": 1.0
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7209,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5584,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.2965,
+     "value": 0.2791,
      "status": "partial",
      "components": {
       "coding": {
@@ -4985,21 +4849,14 @@
         "vals.swebench_lt15m": 0.3115
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.3139,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.5915,
+     "value": 0.6468,
      "status": "partial",
      "components": {
       "vision": {
@@ -5008,27 +4865,19 @@
         "lmarena.vision": 0.6468
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.5361,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
-    "divergence": 0.5453,
-    "global_rigor": 0.7399,
-    "module_precision": 0.2965,
-    "vision_tools": 0.5915
+    "divergence": 0.4552,
+    "global_rigor": 0.8402,
+    "module_precision": 0.2791,
+    "vision_tools": 0.6468
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -5060,7 +4909,28 @@
     },
     {
      "model": "gpt-5.6-luna",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-5.6-luna",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-5.6-luna",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-5.6-luna",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -5089,133 +4959,65 @@
   "grok-4.7-build-fast": {
    "axes": {
     "divergence": {
-     "value": 0.6723,
-     "status": "backfilled",
-     "components": {
-      "creative": {
-       "value": 0.6355,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      },
-      "exploration": {
-       "value": 0.709,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      }
-     },
-     "missing_components": []
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.8081,
-     "status": "backfilled",
-     "components": {
-      "reasoning": {
-       "value": 0.769,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      },
-      "long_context": {
-       "value": 0.7941,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.6694,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      }
-     },
-     "missing_components": []
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "reasoning",
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     },
     "module_precision": {
-     "value": 0.4937,
-     "status": "backfilled",
-     "components": {
-      "coding": {
-       "value": 0.4376,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      },
-      "terminal": {
-       "value": 0.5498,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      }
-     },
-     "missing_components": []
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     },
     "vision_tools": {
-     "value": 0.7769,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.7436,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      },
-      "tools": {
-       "value": 0.8102,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.4
-       }
-      }
-     },
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
      "missing_components": [
-      "gui"
-     ]
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
-    "divergence": 0.6723,
-    "global_rigor": 0.8081,
-    "module_precision": 0.4937,
-    "vision_tools": 0.7769
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.0,
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "divergence",
+    "global_rigor",
+    "module_precision",
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -5245,10 +5047,31 @@
     },
     {
      "model": "grok-4.7-build-fast",
-     "field": "vision_tools.gui",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+    },
+    {
+     "model": "grok-4.7-build-fast",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+    },
+    {
+     "model": "grok-4.7-build-fast",
+     "field": "module_precision",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+    },
+    {
+     "model": "grok-4.7-build-fast",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -5807,32 +5630,18 @@
   "qwen3-coder-next": {
    "axes": {
     "divergence": {
-     "value": 0.4896,
-     "status": "backfilled",
-     "components": {
-      "creative": {
-       "value": 0.4166,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.73
-       }
-      },
-      "exploration": {
-       "value": 0.5625,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.73
-       }
-      }
-     },
-     "missing_components": []
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.4859,
+     "value": 0.4548,
      "status": "partial",
      "components": {
       "long_context": {
@@ -5841,39 +5650,16 @@
         "aa.lcr": 0.4548
        },
        "status": "measured"
-      },
-      "reasoning": {
-       "value": 0.6137,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.73
-       }
-      },
-      "long_horizon": {
-       "value": 0.4263,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.73
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.4488,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.73
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "reasoning",
+      "long_horizon",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.093,
+     "value": 0.0,
      "status": "partial",
      "components": {
       "terminal": {
@@ -5882,21 +5668,14 @@
         "aa.terminalbench_4": 0.0
        },
        "status": "measured"
-      },
-      "coding": {
-       "value": 0.1861,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.73
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "coding"
+     ]
     },
     "vision_tools": {
-     "value": 0.3902,
+     "value": 0.127,
      "status": "partial",
      "components": {
       "tools": {
@@ -5906,29 +5685,23 @@
         "aa.tau2_bench": 0.2407
        },
        "status": "measured"
-      },
-      "vision": {
-       "value": 0.6534,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.73
-       }
       }
      },
      "missing_components": [
+      "vision",
       "gui"
      ]
     }
    },
    "scores": {
-    "divergence": 0.4896,
-    "global_rigor": 0.4859,
-    "module_precision": 0.093,
-    "vision_tools": 0.3902
+    "divergence": 0.0,
+    "global_rigor": 0.4548,
+    "module_precision": 0.0,
+    "vision_tools": 0.127
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "divergence"
+   ],
    "usd_per_hour": {
     "value": 17.059,
     "status": "ok",
@@ -5967,7 +5740,28 @@
    "data_errors": [
     {
      "model": "qwen3-coder-next",
-     "field": "vision_tools.gui",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+    },
+    {
+     "model": "qwen3-coder-next",
+     "field": "global_rigor.reasoning,long_horizon,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3-coder-next",
+     "field": "module_precision.coding",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3-coder-next",
+     "field": "vision_tools.vision,gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -6193,7 +5987,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8372,
+     "value": 0.783,
      "status": "partial",
      "components": {
       "long_context": {
@@ -6218,18 +6012,11 @@
         "predictor": "aa.index",
         "x": 46.45
        }
-      },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.47
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.7315,
@@ -6278,7 +6065,7 @@
    },
    "scores": {
     "divergence": 0.8505,
-    "global_rigor": 0.8372,
+    "global_rigor": 0.783,
     "module_precision": 0.7315,
     "vision_tools": 0.8547
    },
@@ -6319,6 +6106,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "kimi-k3.1-pro",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "kimi-k3.1-pro",
      "field": "vision_tools.gui",
@@ -6372,7 +6166,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7918,
+     "value": 0.8804,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -6388,30 +6182,15 @@
         "vals.swebench_1_4h": 1.0
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7715,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.14
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.635,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.14
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.4279,
+     "value": 0.3789,
      "status": "partial",
      "components": {
       "coding": {
@@ -6421,54 +6200,34 @@
         "vals.swebench_lt15m": 0.2981
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.4768,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.14
-       }
-      }
-     },
-     "missing_components": []
-    },
-    "vision_tools": {
-     "value": 0.7274,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.7296,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.14
-       }
-      },
-      "tools": {
-       "value": 0.7253,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.14
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "terminal"
      ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
     "divergence": 0.7217,
-    "global_rigor": 0.7918,
-    "module_precision": 0.4279,
-    "vision_tools": 0.7274
+    "global_rigor": 0.8804,
+    "module_precision": 0.3789,
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -6498,10 +6257,24 @@
     },
     {
      "model": "kimi-k3",
-     "field": "vision_tools.gui",
+     "field": "global_rigor.long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "kimi-k3",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "kimi-k3",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -6725,7 +6498,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6934,
+     "value": 0.6605,
      "status": "partial",
      "components": {
       "long_context": {
@@ -6750,18 +6523,11 @@
         "predictor": "aa.index",
         "x": 29.06
        }
-      },
-      "long_horizon": {
-       "value": 0.7922,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.75
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.3485,
@@ -6810,7 +6576,7 @@
    },
    "scores": {
     "divergence": 0.5972,
-    "global_rigor": 0.6934,
+    "global_rigor": 0.6605,
     "module_precision": 0.3485,
     "vision_tools": 0.8277
    },
@@ -6853,6 +6619,13 @@
    "data_errors": [
     {
      "model": "minimax-m3.1-flash",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "minimax-m3.1-flash",
      "field": "vision_tools.gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
@@ -6882,75 +6655,31 @@
   "doubao-seed-2-1-pro-260628": {
    "axes": {
     "divergence": {
-     "value": 0.5803,
-     "status": "backfilled",
-     "components": {
-      "creative": {
-       "value": 0.5254,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      },
-      "exploration": {
-       "value": 0.6353,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      }
-     },
-     "missing_components": []
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.6735,
-     "status": "backfilled",
-     "components": {
-      "reasoning": {
-       "value": 0.6909,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      },
-      "long_horizon": {
-       "value": 0.724,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      },
-      "long_context": {
-       "value": 0.7209,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5584,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      }
-     },
-     "missing_components": []
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "reasoning",
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     },
     "module_precision": {
-     "value": 0.2803,
+     "value": 0.2467,
      "status": "partial",
      "components": {
       "coding": {
@@ -6959,54 +6688,36 @@
         "lmarena.webdev": 0.2467
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.3139,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      }
-     },
-     "missing_components": []
-    },
-    "vision_tools": {
-     "value": 0.6172,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.6982,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
-      },
-      "tools": {
-       "value": 0.5361,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.56
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "terminal"
      ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
-    "divergence": 0.5803,
-    "global_rigor": 0.6735,
-    "module_precision": 0.2803,
-    "vision_tools": 0.6172
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.2467,
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "divergence",
+    "global_rigor",
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -7036,10 +6747,31 @@
     },
     {
      "model": "doubao-seed-2-1-pro-260628",
-     "field": "vision_tools.gui",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+    },
+    {
+     "model": "doubao-seed-2-1-pro-260628",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+    },
+    {
+     "model": "doubao-seed-2-1-pro-260628",
+     "field": "module_precision.terminal",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "doubao-seed-2-1-pro-260628",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -7086,7 +6818,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7783,
+     "value": 0.7045,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -7109,18 +6841,11 @@
         "aa.omniscience_index": 0.5368
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.34
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.4465,
@@ -7169,7 +6894,7 @@
    },
    "scores": {
     "divergence": 0.6604,
-    "global_rigor": 0.7783,
+    "global_rigor": 0.7045,
     "module_precision": 0.4465,
     "vision_tools": 0.7047
    },
@@ -7210,6 +6935,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "mimo-v2.6-pro",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "mimo-v2.6-pro",
      "field": "vision_tools.gui",
@@ -7262,7 +6994,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7012,
+     "value": 0.6315,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -7285,18 +7017,11 @@
         "aa.omniscience_index": 0.5011
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 0.9105,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.08
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.372,
@@ -7346,7 +7071,7 @@
    },
    "scores": {
     "divergence": 0.5981,
-    "global_rigor": 0.7012,
+    "global_rigor": 0.6315,
     "module_precision": 0.372,
     "vision_tools": 0.739
    },
@@ -7389,6 +7114,13 @@
    "data_errors": [
     {
      "model": "mimo-v2.6-flash-free",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "mimo-v2.6-flash-free",
      "field": "vision_tools.gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
@@ -7418,7 +7150,7 @@
   "nemotron-3-ultra-free": {
    "axes": {
     "divergence": {
-     "value": 0.4637,
+     "value": 0.562,
      "status": "partial",
      "components": {
       "exploration": {
@@ -7427,21 +7159,14 @@
         "lmarena.agent": 0.562
        },
        "status": "measured"
-      },
-      "creative": {
-       "value": 0.3655,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.34
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "creative"
+     ]
     },
     "global_rigor": {
-     "value": 0.5086,
+     "value": 0.4452,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -7450,39 +7175,16 @@
         "vals.swebench_1_4h": 0.4452
        },
        "status": "measured"
-      },
-      "reasoning": {
-       "value": 0.5774,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.34
-       }
-      },
-      "long_context": {
-       "value": 0.6147,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.34
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.3972,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.34
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "reasoning",
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.1308,
+     "value": 0.2615,
      "status": "partial",
      "components": {
       "coding": {
@@ -7491,54 +7193,34 @@
         "vals.swebench_lt15m": 0.2615
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.34
-       }
-      }
-     },
-     "missing_components": []
-    },
-    "vision_tools": {
-     "value": 0.3851,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.6323,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.34
-       }
-      },
-      "tools": {
-       "value": 0.138,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.34
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "terminal"
      ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
-    "divergence": 0.4637,
-    "global_rigor": 0.5086,
-    "module_precision": 0.1308,
-    "vision_tools": 0.3851
+    "divergence": 0.562,
+    "global_rigor": 0.4452,
+    "module_precision": 0.2615,
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -7568,10 +7250,31 @@
     },
     {
      "model": "nemotron-3-ultra-free",
-     "field": "vision_tools.gui",
+     "field": "divergence.creative",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "nemotron-3-ultra-free",
+     "field": "global_rigor.reasoning,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "nemotron-3-ultra-free",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "nemotron-3-ultra-free",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -7597,7 +7300,7 @@
   "nemotron-3.5-super-vl-free": {
    "axes": {
     "divergence": {
-     "value": 0.4928,
+     "value": 0.4958,
      "status": "backfilled",
      "components": {
       "creative": {
@@ -7610,7 +7313,7 @@
        }
       },
       "exploration": {
-       "value": 0.5907,
+       "value": 0.5966,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7622,7 +7325,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5825,
+     "value": 0.6034,
      "status": "partial",
      "components": {
       "long_context": {
@@ -7647,21 +7350,14 @@
         "predictor": "aa.index",
         "x": 13.62
        }
-      },
-      "long_horizon": {
-       "value": 0.5196,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.99
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
-     "value": 0.1052,
+     "value": 0.1141,
      "status": "partial",
      "components": {
       "terminal": {
@@ -7672,7 +7368,7 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.2105,
+       "value": 0.2282,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7710,9 +7406,9 @@
     }
    },
    "scores": {
-    "divergence": 0.4928,
-    "global_rigor": 0.5825,
-    "module_precision": 0.1052,
+    "divergence": 0.4958,
+    "global_rigor": 0.6034,
+    "module_precision": 0.1141,
     "vision_tools": 0.4113
    },
    "missing_axes": [],
@@ -7754,6 +7450,13 @@
    "data_errors": [
     {
      "model": "nemotron-3.5-super-vl-free",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "nemotron-3.5-super-vl-free",
      "field": "vision_tools.gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
@@ -7783,7 +7486,7 @@
   "nemotron-3.5-lightning-free": {
    "axes": {
     "divergence": {
-     "value": 0.4427,
+     "value": 0.4647,
      "status": "partial",
      "components": {
       "creative": {
@@ -7794,7 +7497,7 @@
        "status": "measured"
       },
       "exploration": {
-       "value": 0.5527,
+       "value": 0.5966,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7888,7 +7591,7 @@
     }
    },
    "scores": {
-    "divergence": 0.4427,
+    "divergence": 0.4647,
     "global_rigor": 0.4236,
     "module_precision": 0.1176,
     "vision_tools": 0.3061
@@ -7982,7 +7685,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6668,
+     "value": 0.6489,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -7999,15 +7702,6 @@
        },
        "status": "measured"
       },
-      "long_horizon": {
-       "value": 0.7204,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.55
-       }
-      },
       "long_context": {
        "value": 0.749,
        "sources": {},
@@ -8018,7 +7712,9 @@
        }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.3256,
@@ -8067,7 +7763,7 @@
    },
    "scores": {
     "divergence": 0.5365,
-    "global_rigor": 0.6668,
+    "global_rigor": 0.6489,
     "module_precision": 0.3256,
     "vision_tools": 0.6749
    },
@@ -8109,6 +7805,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "mistral-large-4",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "mistral-large-4",
      "field": "vision_tools.gui",
@@ -8165,7 +7868,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8073,
+     "value": 0.743,
      "status": "partial",
      "components": {
       "anti_hallucination": {
@@ -8184,15 +7887,6 @@
         "x": 40.53
        }
       },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.48
-       }
-      },
       "long_context": {
        "value": 0.7795,
        "sources": {},
@@ -8203,7 +7897,9 @@
        }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.5302,
@@ -8254,7 +7950,7 @@
    },
    "scores": {
     "divergence": 0.6891,
-    "global_rigor": 0.8073,
+    "global_rigor": 0.743,
     "module_precision": 0.5302,
     "vision_tools": 0.8159
    },
@@ -8296,6 +7992,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "muse-wonder-1.0",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "muse-wonder-1.0",
      "field": "vision_tools.gui",
@@ -8603,7 +8306,7 @@
   "claude-haiku-4-5": {
    "axes": {
     "divergence": {
-     "value": 0.5166,
+     "value": 0.5127,
      "status": "partial",
      "components": {
       "creative": {
@@ -8612,21 +8315,14 @@
         "lmarena.creative_writing": 0.5127
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.5204,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.25
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.4605,
+     "value": 0.5959,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -8635,39 +8331,16 @@
         "lmarena.text_overall": 0.5959
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 0.2541,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.25
-       }
-      },
-      "long_context": {
-       "value": 0.6068,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.25
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.3854,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.25
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.0464,
+     "value": 0.0929,
      "status": "partial",
      "components": {
       "coding": {
@@ -8676,54 +8349,34 @@
         "lmarena.webdev": 0.0929
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.25
-       }
-      }
-     },
-     "missing_components": []
-    },
-    "vision_tools": {
-     "value": 0.368,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.6275,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.25
-       }
-      },
-      "tools": {
-       "value": 0.1086,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.25
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "terminal"
      ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
-    "divergence": 0.5166,
-    "global_rigor": 0.4605,
-    "module_precision": 0.0464,
-    "vision_tools": 0.368
+    "divergence": 0.5127,
+    "global_rigor": 0.5959,
+    "module_precision": 0.0929,
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -8753,10 +8406,31 @@
     },
     {
      "model": "claude-haiku-4-5",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-haiku-4-5",
+     "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-haiku-4-5",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-haiku-4-5",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -8782,7 +8456,7 @@
   "claude-opus-4-6": {
    "axes": {
     "divergence": {
-     "value": 0.5949,
+     "value": 0.5387,
      "status": "partial",
      "components": {
       "creative": {
@@ -8792,21 +8466,14 @@
         "eqbench.creative_writing_v3": 0.3203
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.6511,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.74
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.7258,
+     "value": 0.7956,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -8815,39 +8482,16 @@
         "lmarena.text_overall": 0.7956
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 0.7886,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.74
-       }
-      },
-      "long_context": {
-       "value": 0.7366,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.74
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5822,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.74
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.3229,
+     "value": 0.2814,
      "status": "partial",
      "components": {
       "coding": {
@@ -8856,21 +8500,14 @@
         "lmarena.webdev": 0.2814
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.3644,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.74
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.6874,
+     "value": 0.78,
      "status": "partial",
      "components": {
       "vision": {
@@ -8879,27 +8516,19 @@
         "lmarena.vision": 0.78
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.5948,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.74
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
-    "divergence": 0.5949,
-    "global_rigor": 0.7258,
-    "module_precision": 0.3229,
-    "vision_tools": 0.6874
+    "divergence": 0.5387,
+    "global_rigor": 0.7956,
+    "module_precision": 0.2814,
+    "vision_tools": 0.78
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -8931,7 +8560,28 @@
     },
     {
      "model": "claude-opus-4-6",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-opus-4-6",
+     "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-opus-4-6",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-opus-4-6",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -8960,7 +8610,7 @@
   "claude-sonnet-4-6": {
    "axes": {
     "divergence": {
-     "value": 0.5596,
+     "value": 0.4822,
      "status": "partial",
      "components": {
       "creative": {
@@ -8970,21 +8620,14 @@
         "eqbench.creative_writing_v3": 0.3214
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.637,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.58
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.648,
+     "value": 0.6542,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -9000,27 +8643,12 @@
         "vals.swebench_1_4h": 0.5843
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7227,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.58
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5611,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.58
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.2554,
@@ -9045,7 +8673,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.6471,
+     "value": 0.6994,
      "status": "partial",
      "components": {
       "vision": {
@@ -9061,25 +8689,18 @@
         "osworld.verified": 0.6947
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.5426,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.58
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "tools"
+     ]
     }
    },
    "scores": {
-    "divergence": 0.5596,
-    "global_rigor": 0.648,
+    "divergence": 0.4822,
+    "global_rigor": 0.6542,
     "module_precision": 0.2554,
-    "vision_tools": 0.6471
+    "vision_tools": 0.6994
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -9108,6 +8729,27 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "claude-sonnet-4-6",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-sonnet-4-6",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-sonnet-4-6",
+     "field": "vision_tools.tools",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
     }
    ],
    "legacy": {
@@ -9155,7 +8797,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7214,
+     "value": 0.7549,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -9171,30 +8813,15 @@
         "vals.swebench_1_4h": 0.7791
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7593,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.0
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.6165,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.0
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.3828,
+     "value": 0.328,
      "status": "partial",
      "components": {
       "coding": {
@@ -9204,54 +8831,34 @@
         "vals.swebench_lt15m": 0.2848
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.4375,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.0
-       }
-      }
-     },
-     "missing_components": []
-    },
-    "vision_tools": {
-     "value": 0.7008,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.722,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.0
-       }
-      },
-      "tools": {
-       "value": 0.6797,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.0
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "terminal"
      ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
     "divergence": 0.5597,
-    "global_rigor": 0.7214,
-    "module_precision": 0.3828,
-    "vision_tools": 0.7008
+    "global_rigor": 0.7549,
+    "module_precision": 0.328,
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -9281,10 +8888,24 @@
     },
     {
      "model": "glm-5.2",
-     "field": "vision_tools.gui",
+     "field": "global_rigor.long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "glm-5.2",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "glm-5.2",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -9310,7 +8931,7 @@
   "gpt-oss-120b": {
    "axes": {
     "divergence": {
-     "value": 0.3306,
+     "value": 0.1628,
      "status": "partial",
      "components": {
       "creative": {
@@ -9320,21 +8941,14 @@
         "eqbench.creative_writing_v3": 0.0029
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.4984,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.0
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.3726,
+     "value": 0.3794,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -9357,18 +8971,11 @@
         "vals.swebench_1_4h": 0.167
        },
        "status": "measured"
-      },
-      "anti_hallucination": {
-       "value": 0.3523,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.0
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.0946,
@@ -9393,7 +9000,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.3574,
+     "value": 0.1008,
      "status": "partial",
      "components": {
       "tools": {
@@ -9403,27 +9010,19 @@
         "aa.tau2_bench": 0.1991
        },
        "status": "measured"
-      },
-      "vision": {
-       "value": 0.614,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.0
-       }
       }
      },
      "missing_components": [
+      "vision",
       "gui"
      ]
     }
    },
    "scores": {
-    "divergence": 0.3306,
-    "global_rigor": 0.3726,
+    "divergence": 0.1628,
+    "global_rigor": 0.3794,
     "module_precision": 0.0946,
-    "vision_tools": 0.3574
+    "vision_tools": 0.1008
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -9465,7 +9064,21 @@
    "data_errors": [
     {
      "model": "gpt-oss-120b",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-oss-120b",
+     "field": "global_rigor.anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gpt-oss-120b",
+     "field": "vision_tools.vision,gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -9494,7 +9107,7 @@
   "gemini-3.1-flash-lite": {
    "axes": {
     "divergence": {
-     "value": 0.5329,
+     "value": 0.5674,
      "status": "partial",
      "components": {
       "creative": {
@@ -9503,21 +9116,14 @@
         "lmarena.creative_writing": 0.5674
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.4984,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.0
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.4561,
+     "value": 0.4435,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -9533,27 +9139,12 @@
         "vals.swebench_1_4h": 0.2504
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.585,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.0
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.3523,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.0
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.1283,
@@ -9578,7 +9169,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.3186,
+     "value": 0.6102,
      "status": "partial",
      "components": {
       "vision": {
@@ -9587,27 +9178,19 @@
         "lmarena.vision": 0.6102
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.0271,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.0
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
-    "divergence": 0.5329,
-    "global_rigor": 0.4561,
+    "divergence": 0.5674,
+    "global_rigor": 0.4435,
     "module_precision": 0.1283,
-    "vision_tools": 0.3186
+    "vision_tools": 0.6102
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -9639,7 +9222,21 @@
     },
     {
      "model": "gemini-3.1-flash-lite",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gemini-3.1-flash-lite",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gemini-3.1-flash-lite",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -9668,32 +9265,18 @@
   "kimi-k2.7-code": {
    "axes": {
     "divergence": {
-     "value": 0.5454,
-     "status": "backfilled",
-     "components": {
-      "creative": {
-       "value": 0.4835,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.24
-       }
-      },
-      "exploration": {
-       "value": 0.6072,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.24
-       }
-      }
-     },
-     "missing_components": []
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.6323,
+     "value": 0.676,
      "status": "partial",
      "components": {
       "long_context": {
@@ -9709,27 +9292,12 @@
         "vals.swebench_1_4h": 0.5843
        },
        "status": "measured"
-      },
-      "reasoning": {
-       "value": 0.6611,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.24
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5161,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.24
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "reasoning",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.128,
@@ -9754,7 +9322,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.4859,
+     "value": 0.291,
      "status": "partial",
      "components": {
       "tools": {
@@ -9764,29 +9332,23 @@
         "aa.tau2_bench": 0.2725
        },
        "status": "measured"
-      },
-      "vision": {
-       "value": 0.6809,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.24
-       }
       }
      },
      "missing_components": [
+      "vision",
       "gui"
      ]
     }
    },
    "scores": {
-    "divergence": 0.5454,
-    "global_rigor": 0.6323,
+    "divergence": 0.0,
+    "global_rigor": 0.676,
     "module_precision": 0.128,
-    "vision_tools": 0.4859
+    "vision_tools": 0.291
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "divergence"
+   ],
    "usd_per_hour": {
     "value": 12.168,
     "status": "ok",
@@ -9825,7 +9387,21 @@
    "data_errors": [
     {
      "model": "kimi-k2.7-code",
-     "field": "vision_tools.gui",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+    },
+    {
+     "model": "kimi-k2.7-code",
+     "field": "global_rigor.reasoning,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "kimi-k2.7-code",
+     "field": "vision_tools.vision,gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -9854,7 +9430,7 @@
   "qwen3.6-plus": {
    "axes": {
     "divergence": {
-     "value": 0.576,
+     "value": 0.5518,
      "status": "partial",
      "components": {
       "creative": {
@@ -9863,21 +9439,14 @@
         "lmarena.creative_writing": 0.5518
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.6002,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.16
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.5737,
+     "value": 0.5515,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -9893,27 +9462,12 @@
         "vals.swebench_1_4h": 0.4452
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.6861,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.16
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5056,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.16
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.2077,
@@ -9938,40 +9492,27 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.5411,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.6766,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.16
-       }
-      },
-      "tools": {
-       "value": 0.4056,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.16
-       }
-      }
-     },
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
      "missing_components": [
-      "gui"
-     ]
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
-    "divergence": 0.576,
-    "global_rigor": 0.5737,
+    "divergence": 0.5518,
+    "global_rigor": 0.5515,
     "module_precision": 0.2077,
-    "vision_tools": 0.5411
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -10001,10 +9542,24 @@
     },
     {
      "model": "qwen3.6-plus",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3.6-plus",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3.6-plus",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -10030,7 +9585,7 @@
   "claude-opus-4-7": {
    "axes": {
     "divergence": {
-     "value": 0.6378,
+     "value": 0.6175,
      "status": "partial",
      "components": {
       "creative": {
@@ -10040,21 +9595,14 @@
         "eqbench.creative_writing_v3": 0.5019
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.6581,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.82
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.7196,
+     "value": 0.7709,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -10070,27 +9618,12 @@
         "vals.swebench_1_4h": 0.7513
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7436,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.82
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5928,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.82
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.2879,
@@ -10115,7 +9648,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.7024,
+     "value": 0.7839,
      "status": "partial",
      "components": {
       "vision": {
@@ -10124,27 +9657,19 @@
         "lmarena.vision": 0.7839
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.6209,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.82
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
-    "divergence": 0.6378,
-    "global_rigor": 0.7196,
+    "divergence": 0.6175,
+    "global_rigor": 0.7709,
     "module_precision": 0.2879,
-    "vision_tools": 0.7024
+    "vision_tools": 0.7839
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10176,7 +9701,21 @@
     },
     {
      "model": "claude-opus-4-7",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-opus-4-7",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-opus-4-7",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -10205,7 +9744,7 @@
   "claude-opus-4-8": {
    "axes": {
     "divergence": {
-     "value": 0.5928,
+     "value": 0.5285,
      "status": "partial",
      "components": {
       "creative": {
@@ -10215,21 +9754,14 @@
         "eqbench.creative_writing_v3": 0.3665
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.6572,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.81
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.7288,
+     "value": 0.7905,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -10245,27 +9777,12 @@
         "vals.swebench_1_4h": 0.8348
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7427,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.81
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5914,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.81
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.2913,
@@ -10290,7 +9807,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.6754,
+     "value": 0.7332,
      "status": "partial",
      "components": {
       "vision": {
@@ -10299,27 +9816,19 @@
         "lmarena.vision": 0.7332
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.6177,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.81
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
-    "divergence": 0.5928,
-    "global_rigor": 0.7288,
+    "divergence": 0.5285,
+    "global_rigor": 0.7905,
     "module_precision": 0.2913,
-    "vision_tools": 0.6754
+    "vision_tools": 0.7332
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10351,7 +9860,21 @@
     },
     {
      "model": "claude-opus-4-8",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-opus-4-8",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "claude-opus-4-8",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -10380,7 +9903,7 @@
   "grok-4.5": {
    "axes": {
     "divergence": {
-     "value": 0.5149,
+     "value": 0.3742,
      "status": "partial",
      "components": {
       "creative": {
@@ -10390,21 +9913,14 @@
         "eqbench.creative_writing_v3": 0.0975
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.6555,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.79
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.7257,
+     "value": 0.7866,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -10420,30 +9936,15 @@
         "vals.swebench_1_4h": 0.8626
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.741,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.79
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5888,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.79
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.3376,
+     "value": 0.2966,
      "status": "partial",
      "components": {
       "coding": {
@@ -10453,21 +9954,14 @@
         "vals.swebench_lt15m": 0.3031
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.3785,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.79
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.6643,
+     "value": 0.7174,
      "status": "partial",
      "components": {
       "vision": {
@@ -10476,27 +9970,19 @@
         "lmarena.vision": 0.7174
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.6111,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.79
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
-    "divergence": 0.5149,
-    "global_rigor": 0.7257,
-    "module_precision": 0.3376,
-    "vision_tools": 0.6643
+    "divergence": 0.3742,
+    "global_rigor": 0.7866,
+    "module_precision": 0.2966,
+    "vision_tools": 0.7174
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10528,7 +10014,28 @@
     },
     {
      "model": "grok-4.5",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "grok-4.5",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "grok-4.5",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "grok-4.5",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -10578,7 +10085,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7681,
+     "value": 0.8449,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -10594,30 +10101,15 @@
         "vals.swebench_1_4h": 1.0
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7619,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.03
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.6205,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.03
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.3978,
+     "value": 0.3497,
      "status": "partial",
      "components": {
       "coding": {
@@ -10627,21 +10119,14 @@
         "vals.swebench_lt15m": 0.3098
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.4459,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.03
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.6758,
+     "value": 0.6622,
      "status": "partial",
      "components": {
       "vision": {
@@ -10650,27 +10135,19 @@
         "lmarena.vision": 0.6622
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.6894,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 3.03
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
     "divergence": 0.6483,
-    "global_rigor": 0.7681,
-    "module_precision": 0.3978,
-    "vision_tools": 0.6758
+    "global_rigor": 0.8449,
+    "module_precision": 0.3497,
+    "vision_tools": 0.6622
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10702,7 +10179,21 @@
     },
     {
      "model": "grok-4.6",
-     "field": "vision_tools.gui",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "grok-4.6",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "grok-4.6",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -10753,7 +10244,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6411,
+     "value": 0.6841,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -10776,18 +10267,11 @@
         "vals.swebench_1_4h": 0.5009
        },
        "status": "measured"
-      },
-      "anti_hallucination": {
-       "value": 0.5122,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.21
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.1981,
@@ -10840,7 +10324,7 @@
    },
    "scores": {
     "divergence": 0.5128,
-    "global_rigor": 0.6411,
+    "global_rigor": 0.6841,
     "module_precision": 0.1981,
     "vision_tools": 0.5606
    },
@@ -10881,6 +10365,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "gemini-3.1-pro-preview",
+     "field": "global_rigor.anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
     {
      "model": "gemini-3.1-pro-preview",
      "field": "vision_tools.gui",
@@ -10934,7 +10425,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6923,
+     "value": 0.7153,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -10950,30 +10441,15 @@
         "vals.swebench_1_4h": 0.6678
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7445,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.83
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5941,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.83
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.3509,
+     "value": 0.3121,
      "status": "partial",
      "components": {
       "coding": {
@@ -10983,21 +10459,14 @@
         "vals.swebench_lt15m": 0.2815
        },
        "status": "measured"
-      },
-      "terminal": {
-       "value": 0.3897,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.83
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "terminal"
+     ]
     },
     "vision_tools": {
-     "value": 0.6995,
+     "value": 0.7748,
      "status": "partial",
      "components": {
       "vision": {
@@ -11006,27 +10475,19 @@
         "lmarena.vision": 0.7748
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.6242,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.83
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "gui",
+      "tools"
      ]
     }
    },
    "scores": {
     "divergence": 0.5618,
-    "global_rigor": 0.6923,
-    "module_precision": 0.3509,
-    "vision_tools": 0.6995
+    "global_rigor": 0.7153,
+    "module_precision": 0.3121,
+    "vision_tools": 0.7748
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -11058,7 +10519,21 @@
     },
     {
      "model": "gemini-3.7-flash",
-     "field": "vision_tools.gui",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gemini-3.7-flash",
+     "field": "module_precision.terminal",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gemini-3.7-flash",
+     "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
@@ -11087,7 +10562,7 @@
   "kimi-k2.6": {
    "axes": {
     "divergence": {
-     "value": 0.5178,
+     "value": 0.4064,
      "status": "partial",
      "components": {
       "creative": {
@@ -11097,21 +10572,14 @@
         "eqbench.creative_writing_v3": 0.2083
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.6292,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.49
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.609,
+     "value": 0.5859,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -11127,27 +10595,12 @@
         "vals.swebench_1_4h": 0.473
        },
        "status": "measured"
-      },
-      "long_context": {
-       "value": 0.7148,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.49
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5492,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.49
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.2473,
@@ -11172,7 +10625,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.6403,
+     "value": 0.7039,
      "status": "partial",
      "components": {
       "vision": {
@@ -11188,25 +10641,18 @@
         "osworld.verified": 0.7039
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.5132,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.49
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "tools"
+     ]
     }
    },
    "scores": {
-    "divergence": 0.5178,
-    "global_rigor": 0.609,
+    "divergence": 0.4064,
+    "global_rigor": 0.5859,
     "module_precision": 0.2473,
-    "vision_tools": 0.6403
+    "vision_tools": 0.7039
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -11235,6 +10681,27 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "kimi-k2.6",
+     "field": "divergence.exploration",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "kimi-k2.6",
+     "field": "global_rigor.long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "kimi-k2.6",
+     "field": "vision_tools.tools",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
     }
    ],
    "legacy": {
@@ -11260,7 +10727,7 @@
   "qwen3-max": {
    "axes": {
     "divergence": {
-     "value": 0.5189,
+     "value": 0.5253,
      "status": "partial",
      "components": {
       "creative": {
@@ -11269,21 +10736,14 @@
         "lmarena.creative_writing": 0.5253
        },
        "status": "measured"
-      },
-      "exploration": {
-       "value": 0.5125,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.16
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "exploration"
+     ]
     },
     "global_rigor": {
-     "value": 0.4525,
+     "value": 0.6155,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -11292,39 +10752,16 @@
         "lmarena.text_overall": 0.6155
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 0.2219,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.16
-       }
-      },
-      "long_context": {
-       "value": 0.599,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.16
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.3735,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.16
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
-     "value": 0.1009,
+     "value": 0.1016,
      "status": "partial",
      "components": {
       "terminal": {
@@ -11333,54 +10770,34 @@
         "vals.terminal_bench_2": 0.1016
        },
        "status": "measured"
-      },
-      "coding": {
-       "value": 0.1002,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.16
-       }
-      }
-     },
-     "missing_components": []
-    },
-    "vision_tools": {
-     "value": 0.351,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.6226,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.16
-       }
-      },
-      "tools": {
-       "value": 0.0793,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 1.16
-       }
       }
      },
      "missing_components": [
-      "gui"
+      "coding"
      ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
-    "divergence": 0.5189,
-    "global_rigor": 0.4525,
-    "module_precision": 0.1009,
-    "vision_tools": 0.351
+    "divergence": 0.5253,
+    "global_rigor": 0.6155,
+    "module_precision": 0.1016,
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -11410,10 +10827,31 @@
     },
     {
      "model": "qwen3-max",
-     "field": "vision_tools.gui",
+     "field": "divergence.exploration",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3-max",
+     "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3-max",
+     "field": "module_precision.coding",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3-max",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -11439,7 +10877,7 @@
   "qwen3.7-max": {
    "axes": {
     "divergence": {
-     "value": 0.5601,
+     "value": 0.6224,
      "status": "partial",
      "components": {
       "exploration": {
@@ -11448,21 +10886,14 @@
         "lmarena.agent": 0.6224
        },
        "status": "measured"
-      },
-      "creative": {
-       "value": 0.4979,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.35
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "creative"
+     ]
     },
     "global_rigor": {
-     "value": 0.5875,
+     "value": 0.4452,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -11471,36 +10902,13 @@
         "vals.swebench_1_4h": 0.4452
        },
        "status": "measured"
-      },
-      "reasoning": {
-       "value": 0.6714,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.35
-       }
-      },
-      "long_context": {
-       "value": 0.7026,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.35
-       }
-      },
-      "anti_hallucination": {
-       "value": 0.5307,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.35
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "reasoning",
+      "long_context",
+      "anti_hallucination"
+     ]
     },
     "module_precision": {
      "value": 0.249,
@@ -11525,40 +10933,27 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.5773,
-     "status": "backfilled",
-     "components": {
-      "vision": {
-       "value": 0.6869,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.35
-       }
-      },
-      "tools": {
-       "value": 0.4676,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 2.35
-       }
-      }
-     },
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
      "missing_components": [
-      "gui"
-     ]
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "flag": "missing",
+     "reason": "no trusted source and no public predictor to backfill from"
     }
    },
    "scores": {
-    "divergence": 0.5601,
-    "global_rigor": 0.5875,
+    "divergence": 0.6224,
+    "global_rigor": 0.4452,
     "module_precision": 0.249,
-    "vision_tools": 0.5773
+    "vision_tools": 0.0
    },
-   "missing_axes": [],
+   "missing_axes": [
+    "vision_tools"
+   ],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
@@ -11588,10 +10983,24 @@
     },
     {
      "model": "qwen3.7-max",
-     "field": "vision_tools.gui",
+     "field": "divergence.creative",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
      "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3.7-max",
+     "field": "global_rigor.reasoning,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "qwen3.7-max",
+     "field": "vision_tools",
+     "reason": "no_trusted_source",
+     "level": "red_if_demanded",
+     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
     }
    ],
    "legacy": {
@@ -11776,7 +11185,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8812,
+     "value": 0.8416,
      "status": "partial",
      "components": {
       "reasoning": {
@@ -11799,18 +11208,11 @@
         "aa.omniscience_index": 0.8626
        },
        "status": "measured"
-      },
-      "long_horizon": {
-       "value": 1.0,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "tier",
-        "x": 4.33
-       }
       }
      },
-     "missing_components": []
+     "missing_components": [
+      "long_horizon"
+     ]
     },
     "module_precision": {
      "value": 0.8253,
@@ -11861,7 +11263,7 @@
    },
    "scores": {
     "divergence": 0.8266,
-    "global_rigor": 0.8812,
+    "global_rigor": 0.8416,
     "module_precision": 0.8253,
     "vision_tools": 0.9056
    },
@@ -11906,6 +11308,13 @@
    "data_errors": [
     {
      "model": "gemini-4-carbon",
+     "field": "global_rigor.long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "the axis averages the components it has"
+    },
+    {
+     "model": "gemini-4-carbon",
      "field": "vision_tools.gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
@@ -11936,7 +11345,21 @@
  "data_errors": [
   {
    "model": "deepseek-v4.1-flash-free",
+   "field": "global_rigor.long_horizon",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "deepseek-v4.1-flash-free",
    "field": "vision_tools.gui",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-fable-5-1",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -11986,6 +11409,13 @@
   {
    "model": "gpt-6-astra",
    "field": "vision_tools.gui",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gemini-4-argon-high",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12118,7 +11548,21 @@
   },
   {
    "model": "claude-haiku-5-5",
+   "field": "global_rigor.long_horizon",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-haiku-5-5",
    "field": "vision_tools.gui",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-6.1-terra",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12139,7 +11583,28 @@
   },
   {
    "model": "gpt-6-sol",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-6-sol",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-6-sol",
+   "field": "vision_tools.gui,tools",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-6-luna",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12160,7 +11625,21 @@
   },
   {
    "model": "gpt-5.6-sol",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-5.6-sol",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-5.6-sol",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12174,7 +11653,21 @@
   },
   {
    "model": "gpt-5.6-terra",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-5.6-terra",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-5.6-terra",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12188,7 +11681,28 @@
   },
   {
    "model": "gpt-5.6-luna",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-5.6-luna",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-5.6-luna",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-5.6-luna",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12202,10 +11716,31 @@
   },
   {
    "model": "grok-4.7-build-fast",
-   "field": "vision_tools.gui",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "grok-4.7-build-fast",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "grok-4.7-build-fast",
+   "field": "module_precision",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "grok-4.7-build-fast",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
   },
   {
    "model": "deepseek-v4-pro",
@@ -12230,7 +11765,28 @@
   },
   {
    "model": "qwen3-coder-next",
-   "field": "vision_tools.gui",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "qwen3-coder-next",
+   "field": "global_rigor.reasoning,long_horizon,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3-coder-next",
+   "field": "module_precision.coding",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3-coder-next",
+   "field": "vision_tools.vision,gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12238,6 +11794,13 @@
   {
    "model": "qwen3.8-max",
    "field": "vision_tools.gui",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "kimi-k3.1-pro",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12258,7 +11821,28 @@
   },
   {
    "model": "kimi-k3",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "kimi-k3",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "kimi-k3",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "minimax-m3.1-flash",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12279,7 +11863,35 @@
   },
   {
    "model": "doubao-seed-2-1-pro-260628",
-   "field": "vision_tools.gui",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "doubao-seed-2-1-pro-260628",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "doubao-seed-2-1-pro-260628",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "doubao-seed-2-1-pro-260628",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "mimo-v2.6-pro",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12287,6 +11899,13 @@
   {
    "model": "mimo-v2.6-pro",
    "field": "vision_tools.gui",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "mimo-v2.6-flash-free",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12307,7 +11926,35 @@
   },
   {
    "model": "nemotron-3-ultra-free",
-   "field": "vision_tools.gui",
+   "field": "divergence.creative",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "nemotron-3-ultra-free",
+   "field": "global_rigor.reasoning,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "nemotron-3-ultra-free",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "nemotron-3-ultra-free",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "nemotron-3.5-super-vl-free",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12328,7 +11975,21 @@
   },
   {
    "model": "mistral-large-4",
+   "field": "global_rigor.long_horizon",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "mistral-large-4",
    "field": "vision_tools.gui",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "muse-wonder-1.0",
+   "field": "global_rigor.long_horizon",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12419,10 +12080,31 @@
   },
   {
    "model": "claude-haiku-4-5",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-haiku-4-5",
+   "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-haiku-4-5",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-haiku-4-5",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
   },
   {
    "model": "claude-opus-4-6",
@@ -12433,7 +12115,28 @@
   },
   {
    "model": "claude-opus-4-6",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-opus-4-6",
+   "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-opus-4-6",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-opus-4-6",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12446,6 +12149,27 @@
    "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
   },
   {
+   "model": "claude-sonnet-4-6",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-sonnet-4-6",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-sonnet-4-6",
+   "field": "vision_tools.tools",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
    "model": "glm-5.2",
    "field": "usd_per_hour",
    "reason": "no_cited_source",
@@ -12454,14 +12178,42 @@
   },
   {
    "model": "glm-5.2",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "glm-5.2",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "glm-5.2",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "gpt-oss-120b",
+   "field": "divergence.exploration",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
   },
   {
    "model": "gpt-oss-120b",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gpt-oss-120b",
+   "field": "vision_tools.vision,gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12475,14 +12227,42 @@
   },
   {
    "model": "gemini-3.1-flash-lite",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gemini-3.1-flash-lite",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gemini-3.1-flash-lite",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
   },
   {
    "model": "kimi-k2.7-code",
-   "field": "vision_tools.gui",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "kimi-k2.7-code",
+   "field": "global_rigor.reasoning,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "kimi-k2.7-code",
+   "field": "vision_tools.vision,gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12496,10 +12276,24 @@
   },
   {
    "model": "qwen3.6-plus",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3.6-plus",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3.6-plus",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
   },
   {
    "model": "claude-opus-4-7",
@@ -12510,7 +12304,21 @@
   },
   {
    "model": "claude-opus-4-7",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-opus-4-7",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-opus-4-7",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12524,7 +12332,21 @@
   },
   {
    "model": "claude-opus-4-8",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-opus-4-8",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "claude-opus-4-8",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12538,7 +12360,28 @@
   },
   {
    "model": "grok-4.5",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "grok-4.5",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "grok-4.5",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "grok-4.5",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12552,7 +12395,28 @@
   },
   {
    "model": "grok-4.6",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "grok-4.6",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "grok-4.6",
+   "field": "vision_tools.gui,tools",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gemini-3.1-pro-preview",
+   "field": "global_rigor.anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12573,7 +12437,21 @@
   },
   {
    "model": "gemini-3.7-flash",
-   "field": "vision_tools.gui",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gemini-3.7-flash",
+   "field": "module_precision.terminal",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gemini-3.7-flash",
+   "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
@@ -12586,6 +12464,27 @@
    "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
   },
   {
+   "model": "kimi-k2.6",
+   "field": "divergence.exploration",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "kimi-k2.6",
+   "field": "global_rigor.long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "kimi-k2.6",
+   "field": "vision_tools.tools",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
    "model": "qwen3-max",
    "field": "usd_per_hour",
    "reason": "no_cited_source",
@@ -12594,10 +12493,31 @@
   },
   {
    "model": "qwen3-max",
-   "field": "vision_tools.gui",
+   "field": "divergence.exploration",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3-max",
+   "field": "global_rigor.long_horizon,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3-max",
+   "field": "module_precision.coding",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3-max",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
   },
   {
    "model": "qwen3.7-max",
@@ -12608,10 +12528,24 @@
   },
   {
    "model": "qwen3.7-max",
-   "field": "vision_tools.gui",
+   "field": "divergence.creative",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3.7-max",
+   "field": "global_rigor.reasoning,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "qwen3.7-max",
+   "field": "vision_tools",
+   "reason": "no_trusted_source",
+   "level": "red_if_demanded",
+   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
   },
   {
    "model": "qwen3-flash-2025-07-28",
@@ -12650,6 +12584,13 @@
   },
   {
    "model": "gemini-4-carbon",
+   "field": "global_rigor.long_horizon",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "the axis averages the components it has"
+  },
+  {
+   "model": "gemini-4-carbon",
    "field": "vision_tools.gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
@@ -12659,32 +12600,32 @@
  "floors": {
   "anchor": "claude-opus-5-5",
   "ratio": {
-   "routine": 0.61,
-   "hard": 0.7475,
-   "coupled": 0.8775,
-   "frontier": 0.9425
+   "routine": 0.5975,
+   "hard": 0.785,
+   "coupled": 0.875,
+   "frontier": 0.9975
   },
   "critical_ratio": {
-   "routine": 0.6896,
-   "hard": 0.8025,
+   "routine": 0.6754,
+   "hard": 0.785,
    "coupled": 0.88,
-   "frontier": 0.9825
+   "frontier": 1.0
   },
   "axis_ratio": {
    "routine": 0.7,
    "hard": 0.7,
    "coupled": 0.9,
-   "frontier": 0.95
+   "frontier": 1.0
   },
   "level_blend": 1.0,
-  "axis_per_tier": 0.1548,
+  "axis_per_tier": 0.1501,
   "agreement": {
    "coupled": {
-    "share": 0.8775,
+    "share": 0.875,
     "axis_ratio": 0.9,
-    "pairs": 468,
+    "pairs": 369,
     "cases": 9,
-    "agreement": 0.968,
+    "agreement": 0.976,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-opus-5-5",
@@ -12708,9 +12649,9 @@
    "coupled critical": {
     "share": 0.88,
     "axis_ratio": 0.9,
-    "pairs": 104,
+    "pairs": 82,
     "cases": 2,
-    "agreement": 0.962,
+    "agreement": 0.951,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-opus-5-5",
@@ -12731,28 +12672,25 @@
     ]
    },
    "frontier": {
-    "share": 0.9425,
-    "axis_ratio": 0.95,
-    "pairs": 416,
+    "share": 0.9975,
+    "axis_ratio": 1.0,
+    "pairs": 328,
     "cases": 8,
-    "agreement": 0.962,
+    "agreement": 0.976,
     "qualify_today": [
      "claude-opus-5-5",
      "gemini-4-carbon",
      "gpt-6-astra"
     ],
     "qualify_new_all_cases": [
-     "claude-fable-5-1",
      "claude-opus-5-5",
-     "gemini-4-carbon",
-     "gpt-6-astra",
-     "kimi-k3.1-pro"
+     "gemini-4-carbon"
     ]
    },
    "frontier critical": {
-    "share": 0.9825,
-    "axis_ratio": 0.95,
-    "pairs": 52,
+    "share": 1.0,
+    "axis_ratio": 1.0,
+    "pairs": 41,
     "cases": 1,
     "agreement": 1.0,
     "qualify_today": [
@@ -12765,11 +12703,11 @@
     ]
    },
    "hard": {
-    "share": 0.7475,
+    "share": 0.785,
     "axis_ratio": 0.7,
-    "pairs": 2600,
+    "pairs": 2050,
     "cases": 50,
-    "agreement": 0.926,
+    "agreement": 0.889,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-haiku-5-5",
@@ -12784,7 +12722,6 @@
      "gemini-3.8-flash-high",
      "gemini-4-argon-high",
      "gemini-4-carbon",
-     "glm-5.2",
      "glm-5.3",
      "glm-5.3-flash-free",
      "gpt-5.6-sol",
@@ -12795,8 +12732,6 @@
      "grok-4.5",
      "grok-4.6",
      "grok-4.7",
-     "grok-4.7-build-fast",
-     "kimi-k3",
      "kimi-k3.1-pro",
      "mimo-v2.6-flash-free",
      "mimo-v2.6-pro",
@@ -12811,13 +12746,10 @@
      "gemini-4-argon-high",
      "gemini-4-carbon",
      "glm-5.3",
-     "gpt-5.6-sol",
      "gpt-6-astra",
      "gpt-6-sol",
      "gpt-6.1-sol",
      "gpt-6.1-terra",
-     "grok-4.7-build-fast",
-     "kimi-k3",
      "kimi-k3.1-pro",
      "mimo-v2.6-pro",
      "muse-wonder-1.0",
@@ -12825,11 +12757,11 @@
     ]
    },
    "hard critical": {
-    "share": 0.8025,
+    "share": 0.785,
     "axis_ratio": 0.7,
-    "pairs": 156,
+    "pairs": 123,
     "cases": 3,
-    "agreement": 0.885,
+    "agreement": 0.854,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-opus-5-5",
@@ -12837,7 +12769,6 @@
      "gemini-3.8-flash-high",
      "gemini-4-argon-high",
      "gemini-4-carbon",
-     "glm-5.2",
      "glm-5.3",
      "gpt-5.6-sol",
      "gpt-6-astra",
@@ -12846,8 +12777,6 @@
      "gpt-6.1-terra",
      "grok-4.6",
      "grok-4.7",
-     "grok-4.7-build-fast",
-     "kimi-k3",
      "kimi-k3.1-pro",
      "mimo-v2.6-flash-free",
      "mimo-v2.6-pro",
@@ -12861,13 +12790,12 @@
      "gemini-4-argon-high",
      "gemini-4-carbon",
      "glm-5.3",
+     "glm-5.3-flash-free",
      "gpt-5.6-sol",
      "gpt-6-astra",
      "gpt-6-sol",
      "gpt-6.1-sol",
      "gpt-6.1-terra",
-     "grok-4.7-build-fast",
-     "kimi-k3",
      "kimi-k3.1-pro",
      "mimo-v2.6-pro",
      "muse-wonder-1.0",
@@ -12875,11 +12803,11 @@
     ]
    },
    "routine": {
-    "share": 0.61,
+    "share": 0.5975,
     "axis_ratio": 0.7,
-    "pairs": 1040,
+    "pairs": 820,
     "cases": 20,
-    "agreement": 1.0,
+    "agreement": 0.951,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-haiku-5-5",
@@ -12891,12 +12819,10 @@
      "claude-sonnet-5-5",
      "deepseek-v4-pro",
      "deepseek-v4.1-flash-free",
-     "doubao-seed-2-1-pro-260628",
      "gemini-3.7-flash",
      "gemini-3.8-flash-high",
      "gemini-4-argon-high",
      "gemini-4-carbon",
-     "glm-5.2",
      "glm-5.3",
      "glm-5.3-flash-free",
      "gpt-5.6-luna",
@@ -12910,16 +12836,13 @@
      "grok-4.5",
      "grok-4.6",
      "grok-4.7",
-     "grok-4.7-build-fast",
      "kimi-k2.6",
-     "kimi-k3",
      "kimi-k3.1-pro",
      "mimo-v2.6-flash-free",
      "mimo-v2.6-pro",
      "minimax-m3.1-flash",
      "mistral-large-4",
      "muse-wonder-1.0",
-     "qwen3.7-max",
      "qwen3.8-max"
     ],
     "qualify_new_all_cases": [
@@ -12933,12 +12856,11 @@
      "claude-sonnet-5-5",
      "deepseek-v4-pro",
      "deepseek-v4.1-flash-free",
-     "doubao-seed-2-1-pro-260628",
+     "gemini-3.1-pro-preview",
      "gemini-3.7-flash",
      "gemini-3.8-flash-high",
      "gemini-4-argon-high",
      "gemini-4-carbon",
-     "glm-5.2",
      "glm-5.3",
      "glm-5.3-flash-free",
      "gpt-5.6-luna",
@@ -12952,16 +12874,14 @@
      "grok-4.5",
      "grok-4.6",
      "grok-4.7",
-     "grok-4.7-build-fast",
      "kimi-k2.6",
-     "kimi-k3",
      "kimi-k3.1-pro",
      "mimo-v2.6-flash-free",
      "mimo-v2.6-pro",
+     "minimax-m3",
      "minimax-m3.1-flash",
      "mistral-large-4",
      "muse-wonder-1.0",
-     "qwen3.7-max",
      "qwen3.8-max"
     ]
    }
@@ -12970,12 +12890,6 @@
    "coupled": {
     "kimi-k3.1-pro": {
      "enters": 9,
-     "leaves": 0,
-     "cases": 9,
-     "why_leaves": null
-    },
-    "muse-wonder-1.0": {
-     "enters": 6,
      "leaves": 0,
      "cases": 9,
      "why_leaves": null
@@ -12996,17 +12910,11 @@
     }
    },
    "frontier": {
-    "claude-fable-5-1": {
-     "enters": 8,
-     "leaves": 0,
+    "gpt-6-astra": {
+     "enters": 0,
+     "leaves": 8,
      "cases": 8,
-     "why_leaves": null
-    },
-    "kimi-k3.1-pro": {
-     "enters": 8,
-     "leaves": 0,
-     "cases": 8,
-     "why_leaves": null
+     "why_leaves": "first_principles_architecture_critique: global_rigor 0.773 vs anchor 0.800 (needs share 0.9975, reaches 0.966)"
     }
    },
    "frontier critical": {},
@@ -13015,55 +12923,49 @@
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.541 vs anchor 0.800 (needs share 0.7475, reaches 0.676)"
+     "why_leaves": "read-only diff review: level 0.528 vs anchor 0.800 (needs share 0.785, reaches 0.660)"
     },
     "claude-opus-4-6": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.583 vs anchor 0.800 (needs share 0.7475, reaches 0.728)"
+     "why_leaves": "read-only diff review: level 0.599 vs anchor 0.800 (needs share 0.785, reaches 0.749)"
     },
     "claude-opus-4-7": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.587 vs anchor 0.800 (needs share 0.7475, reaches 0.734)"
+     "why_leaves": "read-only diff review: level 0.615 vs anchor 0.800 (needs share 0.785, reaches 0.769)"
     },
     "claude-opus-4-8": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.572 vs anchor 0.800 (needs share 0.7475, reaches 0.715)"
+     "why_leaves": "read-only diff review: level 0.586 vs anchor 0.800 (needs share 0.785, reaches 0.732)"
     },
     "deepseek-v4-pro": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.556 vs anchor 0.800 (needs share 0.7475, reaches 0.695)"
+     "why_leaves": "read-only diff review: level 0.556 vs anchor 0.800 (needs share 0.785, reaches 0.695)"
     },
     "deepseek-v4.1-flash-free": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.572 vs anchor 0.800 (needs share 0.7475, reaches 0.714)"
+     "why_leaves": "read-only diff review: level 0.560 vs anchor 0.800 (needs share 0.785, reaches 0.700)"
     },
     "gemini-3.7-flash": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.576 vs anchor 0.800 (needs share 0.7475, reaches 0.720)"
+     "why_leaves": "read-only diff review: level 0.591 vs anchor 0.800 (needs share 0.785, reaches 0.739)"
     },
     "gemini-3.8-flash-high": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.593 vs anchor 0.800 (needs share 0.7475, reaches 0.741)"
-    },
-    "glm-5.2": {
-     "enters": 0,
-     "leaves": 3,
-     "cases": 50,
-     "why_leaves": "read-only diff review: level 0.591 vs anchor 0.800 (needs share 0.7475, reaches 0.739)"
+     "why_leaves": "read-only diff review: level 0.593 vs anchor 0.800 (needs share 0.785, reaches 0.741)"
     },
     "glm-5.3": {
      "enters": 47,
@@ -13077,35 +12979,41 @@
      "cases": 50,
      "why_leaves": null
     },
+    "gpt-5.6-sol": {
+     "enters": 0,
+     "leaves": 26,
+     "cases": 50,
+     "why_leaves": "markdown_inlined_spec_self_contained_code: module_precision 0.350 vs anchor 0.800 (needs share 0.785, reaches 0.625)"
+    },
     "grok-4.5": {
      "enters": 0,
      "leaves": 3,
      "cases": 50,
-     "why_leaves": "read-only diff review: level 0.561 vs anchor 0.800 (needs share 0.7475, reaches 0.701)"
+     "why_leaves": "read-only diff review: level 0.544 vs anchor 0.800 (needs share 0.785, reaches 0.680)"
     },
     "grok-4.6": {
-     "enters": 21,
-     "leaves": 0,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": null
+     "why_leaves": "read-only diff review: level 0.626 vs anchor 0.800 (needs share 0.785, reaches 0.783)"
     },
     "grok-4.7": {
      "enters": 0,
-     "leaves": 26,
+     "leaves": 50,
      "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: module_precision 0.388 vs anchor 0.800 (needs share 0.7475, reaches 0.693)"
+     "why_leaves": "visual_design_diff: level 0.615 vs anchor 0.800 (needs share 0.785, reaches 0.769)"
     },
     "mimo-v2.6-flash-free": {
      "enters": 0,
-     "leaves": 26,
+     "leaves": 50,
      "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: module_precision 0.372 vs anchor 0.800 (needs share 0.7475, reaches 0.664)"
+     "why_leaves": "visual_design_diff: level 0.585 vs anchor 0.800 (needs share 0.785, reaches 0.731)"
     },
     "minimax-m3.1-flash": {
-     "enters": 21,
-     "leaves": 0,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": null
+     "why_leaves": "read-only diff review: level 0.608 vs anchor 0.800 (needs share 0.785, reaches 0.761)"
     }
    },
    "hard critical": {
@@ -13113,16 +13021,16 @@
      "enters": 0,
      "leaves": 2,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.593 vs anchor 0.800 (needs share 0.8025, reaches 0.741)"
-    },
-    "glm-5.2": {
-     "enters": 0,
-     "leaves": 2,
-     "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.591 vs anchor 0.800 (needs share 0.8025, reaches 0.739)"
+     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.593 vs anchor 0.800 (needs share 0.785, reaches 0.741)"
     },
     "glm-5.3": {
      "enters": 1,
+     "leaves": 0,
+     "cases": 3,
+     "why_leaves": null
+    },
+    "glm-5.3-flash-free": {
+     "enters": 3,
      "leaves": 0,
      "cases": 3,
      "why_leaves": null
@@ -13143,25 +13051,19 @@
      "enters": 0,
      "leaves": 2,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.622 vs anchor 0.800 (needs share 0.8025, reaches 0.778)"
+     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.626 vs anchor 0.800 (needs share 0.785, reaches 0.783)"
     },
     "grok-4.7": {
      "enters": 0,
      "leaves": 3,
      "cases": 3,
-     "why_leaves": "realtime_loop_orderbook_watch_cn: level 0.615 vs anchor 0.800 (needs share 0.8025, reaches 0.769)"
-    },
-    "kimi-k3": {
-     "enters": 1,
-     "leaves": 0,
-     "cases": 3,
-     "why_leaves": null
+     "why_leaves": "realtime_loop_orderbook_watch_cn: level 0.615 vs anchor 0.800 (needs share 0.785, reaches 0.769)"
     },
     "mimo-v2.6-flash-free": {
      "enters": 0,
      "leaves": 2,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.603 vs anchor 0.800 (needs share 0.8025, reaches 0.753)"
+     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.585 vs anchor 0.800 (needs share 0.785, reaches 0.731)"
     },
     "mimo-v2.6-pro": {
      "enters": 1,
@@ -13182,7 +13084,20 @@
      "why_leaves": null
     }
    },
-   "routine": {}
+   "routine": {
+    "gemini-3.1-pro-preview": {
+     "enters": 20,
+     "leaves": 0,
+     "cases": 20,
+     "why_leaves": null
+    },
+    "minimax-m3": {
+     "enters": 20,
+     "leaves": 0,
+     "cases": 20,
+     "why_leaves": null
+    }
+   }
   },
   "calibrated_on": {
    "cases": [
@@ -13190,17 +13105,17 @@
     "calibration/five_axis_tasks.py"
    ],
    "n_cases": 93,
-   "n_models": 52,
+   "n_models": 41,
    "demand": "classifier cases: allocator.five_axis_fallback_levels; synthetic profiles: hand-labelled axis_demand",
    "today": "shipped tier at High vs route ability_floor + critical headroom"
   },
   "drift": "Every capability value is relative to the anchor model at the source (measurements.py: 0.8 x s / s_anchor; Elo boards as twice the win rate against the anchor), so a new model at the top of a board changes no other model value, no anchor level and no floor. Floors move when the anchor model is replaced, when a board re-rates existing models, or when a backfill fit gains points.",
   "level_blend_search": {
-   "0": 4208,
-   "0.25": 4282,
-   "0.5": 4432,
-   "0.75": 4532,
-   "1": 4591
+   "0": 3222,
+   "0.25": 3271,
+   "0.5": 3364,
+   "0.75": 3418,
+   "1": 3506
   }
  }
 }

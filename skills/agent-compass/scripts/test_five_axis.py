@@ -1,7 +1,8 @@
-"""The five-axis path (round 047, rounds 2-5): off by default; when on, the tier is folded into the axes, usd merges cited
+"""The five-axis path (round 047, rounds 2-6): off by default; when on, the tier is folded into the axes, usd merges cited
 sources, capacity comes down the cited ladder (community, time-to-exhaust, vendor multiplier; an empty ladder is a data
-error that still prices scarcity live), ties go to the lower opportunity cost then the larger surplus, and the classifier
-may answer the axis demand itself."""
+error that still prices scarcity live), every long window charges burn x a pacing shadow price (no overqualification
+term), ties go to the lower opportunity cost then the larger surplus, and the classifier may answer the axis demand
+itself."""
 import copy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,12 +50,13 @@ def document(models, **override):
     return {'models': rows, 'floors': FLOORS, 'capacity': CAPACITY}
 
 
-def window(usd, age=3):
-    return {'unit': 'usd', 'capacity_usd': usd, 'status': 'ok', 'age_days': age}
+def window(usd, age=3, ref=None):
+    return {'unit': 'usd', 'capacity_usd': usd, 'status': 'ok', 'age_days': age, 'reference_model': ref}
 
 
 # Community capacity per family / plan / window, as five_axis.capacity writes it (Max 20x weekly_fable left out).
-CAPACITY = {'claude': {'max20': {'seven_day': window(1700.0), 'five_hour': window(270.0)}},
+CAPACITY = {'claude': {'max20': {'seven_day': window(1700.0, ref='claude-opus-5-5'),
+                                 'five_hour': window(270.0, ref='claude-opus-5-5')}},
             'codex': {'pro': {'usage': window(615.0)}}}
 
 
@@ -149,6 +151,8 @@ class FiveAxisTests(unittest.TestCase):
         spec = out['accounts']['claude']
         self.assertEqual(spec['capacity_usd'], {'seven_day': 1700.0, 'five_hour': 270.0})
         self.assertNotIn('capacity_change', spec)
+        # Displaced work is counted in hours of the window's reference model (round 6), at its merged usd.
+        self.assertEqual(spec['reference_usd_per_hour'], {'seven_day': 15.0, 'five_hour': 15.0})
         # Max 20x weekly_fable has no community value: unknown, with neither the template figure nor the burn prior.
         self.assertTrue(spec['capacity_unknown'])
         self.assertEqual(spec['capacity_source']['weekly_fable']['status'], 'missing')
@@ -187,7 +191,68 @@ class FiveAxisTests(unittest.TestCase):
                 cand('dear', 20.0, 0.9), cand('best', 30.0, 0.9, score=0.6), cand('free_scarce', 0.0, 0.55, oc=0.1)]
         self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
                          ['best', 'dear', 'cheap', 'free', 'free_scarce', 'dear_scarce'])
-        self.assertEqual(allocator.FIVE_AXIS_DEFAULTS['overqualification_weight'], 0.05)
+        self.assertNotIn('overqualification_weight', allocator.FIVE_AXIS_DEFAULTS)     # round 6: no such term
+        self.assertFalse(hasattr(allocator, 'five_axis_overqualification'))
+
+    POLICY = {'safety_margin_pct': 5, 'demand_pace_floor_ratio': 0.5}
+
+    @staticmethod
+    def week(remaining, reset_hours, rate=None):
+        state = {'full': 100.0, 'hours': 168.0, 'remaining': remaining, 'reset_hours': reset_hours,
+                 'end_hours': reset_hours, 'short': False}
+        used, elapsed = 100.0 - remaining, 168.0 - reset_hours
+        rate = used / elapsed if rate is None and elapsed > 0 else (rate or 0.0)
+        return state, (rate * reset_hours, 1.0, rate, 'period average')
+
+    def test_pacing_price_is_never_zero_while_the_window_is_far_from_empty(self):
+        cfg = allocator.FIVE_AXIS_DEFAULTS
+        for remaining, reset in ((100.0, 168.0), (90.0, 84.0), (95.0, 20.0)):     # week start, ample mid-week, near the end
+            state, forecast = self.week(remaining, reset)
+            price = allocator.five_axis_pacing(state, forecast, self.POLICY, cfg)['price']
+            self.assertGreater(price, 0.0, (remaining, reset))
+        # The demand floor: no observed use still projects half the straight-line pace.
+        row = allocator.five_axis_pacing(*self.week(100.0, 168.0, rate=0.0), self.POLICY, cfg)
+        self.assertAlmostEqual(row['demand_pct'], 50.0, places=1)
+
+    def test_pacing_price_rises_ahead_of_pace(self):
+        cfg = allocator.FIVE_AXIS_DEFAULTS
+        # Mid-week, the same demand forecast: 20% used is behind an even pace, 50% on it, 60% ahead.
+        rows = [allocator.five_axis_pacing({**self.week(r, 84.0)[0]}, (25.0, 1.0, 25.0 / 84.0, 'observed'), self.POLICY, cfg)
+                for r in (80.0, 50.0, 40.0)]
+        self.assertEqual([r['pace'] > 1.0 for r in rows], [False, False, True])
+        self.assertLess(rows[0]['price'], rows[1]['price'])
+        self.assertLess(rows[1]['price'], rows[2]['price'])
+        # Demand above what is left: the price keeps rising past 1 instead of flattening.
+        heavy = [allocator.five_axis_pacing(self.week(r, 84.0)[0], (60.0, 1.0, 60.0 / 84.0, 'observed'), self.POLICY, cfg)
+                 for r in (50.0, 40.0)]
+        self.assertGreater(heavy[0]['price'], 1.0)
+        self.assertGreater(heavy[1]['price'], heavy[0]['price'])
+
+    def test_a_long_window_charges_burn_times_the_pacing_price_in_reference_hours(self):
+        policy = {**self.accounts['scoring'], 'safety_margin_pct': 5, 'demand_pace_floor_ratio': 0.5}
+        spec = {'capacity_usd': {'seven_day': 1700.0}}
+        state, forecast = self.week(90.0, 84.0)
+        state.update(known=True, stale=False)
+        step = 100.0 * 150.0 / 1700.0       # a $150 task
+        pacing = {**allocator.FIVE_AXIS_DEFAULTS, 'reference_usd_per_hour': 50.0}
+        row = allocator.window_cost(spec, 'seven_day', state, step, forecast, policy, {'notes': []}, NOW, pacing=pacing)
+        per_hour = allocator.exchange_rate(policy, 'shortage_loss_per_worker_hour')
+        self.assertAlmostEqual(row['pacing']['cost'], round(per_hour * 3.0 * row['pacing']['price'], 4), places=4)
+        self.assertGreater(row['opportunity_cost'], 0.0)
+        self.assertGreaterEqual(row['opportunity_cost'], row['pacing']['cost'])
+        off = allocator.window_cost(spec, 'seven_day', state, step, forecast, policy, {'notes': []}, NOW,
+                                    pacing={**pacing, 'pace': False})
+        self.assertNotIn('pacing', off)
+        self.assertLess(off['opportunity_cost'], row['opportunity_cost'])
+
+    def test_ample_quota_still_charges_the_burn_of_a_billed_candidate(self):
+        doc = document(self.accounts['models'])
+        d = self.plan(self.accounts, doc, state='ample', profile={'axis_demand': demand(0, 1, 2, 0)})
+        claude = [c for c in d['ranking'] if c['bundle']['account'] == 'claude' and c['score'] is not None]
+        self.assertTrue(claude)
+        self.assertTrue(all(c['components']['opportunity_cost'] > 0 for c in claude))
+        self.assertTrue(all((c.get('capacity') or {}).get('pacing') for c in claude))
+        self.assertFalse([c for c in d['ranking'] if c['components'].get('overqualification')])
 
     def test_gate_level_blends_in_the_equal_weight_level(self):
         axes = {'divergence': 0.2, 'global_rigor': 1.0, 'module_precision': 1.0, 'vision_tools': 0.4}
@@ -311,6 +376,17 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertIsNotNone(self.fa.Scorer.fit(enough))
         falling = [(10.0 * i, 1 - 0.1 * i) for i in range(1, self.fa.MIN_FIT_POINTS + 1)]
         self.assertIsNone(self.fa.Scorer.fit(falling))
+
+    def test_a_backfill_stays_inside_the_measured_range_and_tier_is_no_predictor(self):
+        import five_axis
+        self.assertEqual(five_axis.PREDICTORS, ('aa.index',))
+        f = five_axis.Scorer.fit([(x, 0.5 + 0.03 * x) for x in range(10)])     # measured 0.50 .. 0.77
+        self.assertEqual((f['y_min'], f['y_max']), (0.5, 0.77))
+        self.assertEqual(five_axis.Scorer.predict(f, 20), 0.77)       # 1.1 on the line: capped at the best measured
+        self.assertEqual(five_axis.Scorer.predict(f, -5), 0.5)
+        self.assertEqual(five_axis.Scorer.predict(f, 5), 0.65)
+        scorer = types.SimpleNamespace(trusted=lambda entries: list(entries or ()))
+        self.assertEqual(five_axis.Scorer.predictors(scorer, {'tier': [{'source': 'lmarena.tier_fit', 'value': 4.08}]}), {})
 
     def test_shipped_data_has_no_local_flag_or_sample_sources(self):
         import json

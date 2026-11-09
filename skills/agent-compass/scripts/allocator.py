@@ -805,14 +805,44 @@ def inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records
     return sum(active.values())
 
 
-def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step_usd=None, unit=None):
+def five_axis_pacing(state, forecast, policy, pacing):
+    """The pacing shadow price of one long window on the five-axis path (round 6, user 2026-11-09): how much of a
+    marginal unit of the window other work will want before the window ends. Projected demand over the
+    rest of the window (the allocator's forecast: observed rate, else the period average, else the straight line, never
+    below `demand_pace_floor_ratio` of the straight line) over the usable remainder, times where usage stands against an
+    even pace ((used + k) / (elapsed + k), k = `pace_smoothing`; ahead of pace raises it). It is not zero while the
+    window is far from empty: a window that will be needed later is worth something at every point of the period. Not
+    capped at 1: above 1 demand outruns the window, and the price has to keep rising to ration it (a cap held the price
+    flat from the first hour of a heavy week, so running ahead of pace could not raise it)."""
+    full, hours = state.get('full', 100.0), max(float(state['hours']), 1e-6)
+    rate = max(float(forecast[2] or 0.0), float(policy.get('demand_pace_floor_ratio', 0.5)) * full / hours)
+    demand = rate * max(0.0, state['end_hours'])
+    usable = state['remaining'] - policy['safety_margin_pct']
+    elapsed = clamp(1.0 - state.get('natural_reset_hours', state['reset_hours']) / hours, 0.0, 1.0)
+    used = clamp(1.0 - state['remaining'] / full, 0.0, 1.0)
+    k = float(pacing.get('pace_smoothing', 0.1))
+    pace = (used + k) / (elapsed + k)
+    pressure = demand / usable if usable > 0 else float('inf')
+    pressure = min(pressure, 99.0)      # an empty usable remainder: the shortage term and the reserve take over
+    return {'price': round(pressure * pace, 4), 'pressure': round(pressure, 4),
+            'pace': round(pace, 4), 'demand_pct': round(demand, 1), 'used_pct': round(100 * used, 1),
+            'elapsed_pct': round(100 * elapsed, 1)}
+
+
+def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step_usd=None, unit=None, pacing=None):
     """One window's share of the opportunity cost: the other work that spending `step` here would push past the
     window's end (expected shortage with the step minus without it), valued at list price against the window's USD
     capacity (explicit `capacity_usd`, else the derived pool) times the opportunity exchange
     (`exchange_rate`, preferring `scoring.opportunity_exchange`). Only a window with no USD
     capacity at all counts worker-hours, at this bundle's own burn (`unit`, %/worker-hour) or the account prior if
     higher: dividing a high-burn model's shortage by a cheap model's prior inflated it (Argon 1.6%/h over Flash
-    0.2%/h was 8x, fixed 2026-10-27)."""
+    0.2%/h was 8x, fixed 2026-10-27).
+
+    On the five-axis path (`pacing`, round 6) displaced work is counted in hours of the window's reference model at
+    `score_per_displaced_worker_hour` (option-B usd runs about 6.6x the shipped usd scale the per-usd exchange was set on:
+    Opus $49.2/h against $7.5/h), and the window also charges its pacing cost: the step in reference-model hours times
+    the same exchange times `five_axis_pacing`. The window costs the larger of the two (both price the same displaced
+    work: the shortage term its tail, the pacing term its expectation), plus the scarcity term."""
     mean, sd, rate, source = forecast
     remaining, end = state['remaining'], state['end_hours']
     usable = remaining - policy['safety_margin_pct']       # other work cannot use the reserve either
@@ -824,7 +854,18 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
     real_step_usd = (step * capacity / 100.0) if capacity else (step_usd if step_usd is not None else (step * eff_cap_usd / 100.0 if eff_cap_usd else None))
     rem_usd = (remaining * eff_cap_usd / 100.0) if eff_cap_usd else None
     after_usd = (rem_usd - real_step_usd) if (rem_usd is not None and real_step_usd is not None) else None
-    if eff_cap_usd:
+    ref_usd = (pacing or {}).get('reference_usd_per_hour')
+    pace_row = None
+    if eff_cap_usd and ref_usd:
+        displaced = shortage * eff_cap_usd / 100
+        per_hour = exchange_rate(policy, 'shortage_loss_per_worker_hour')
+        cost = per_hour * displaced / ref_usd
+        if real_step_usd is not None and pacing.get('pace', True):
+            pace_row = five_axis_pacing(state, forecast, policy, pacing)
+            pace_row['reference_usd_per_hour'] = round(ref_usd, 4)
+            pace_row['cost'] = round(per_hour * real_step_usd / ref_usd * pace_row['price'], 4)
+            cost = max(cost, pace_row['cost'])
+    elif eff_cap_usd:
         displaced = shortage * eff_cap_usd / 100
         cost = exchange_rate(policy, 'shortage_loss_per_usd') * displaced
     else:
@@ -854,6 +895,8 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
     reset_bonus = round(float(policy.get('reset_bonus_max', 1.2)) * sunk_weight, 4) if sunk_weight > 0 else 0.0
     cost *= 1.0 - sunk_weight
     scarcity_cost *= 1.0 - sunk_weight
+    if pace_row is not None:
+        pace_row['cost'] = round(pace_row['cost'] * (1.0 - sunk_weight), 4)
     if source == 'observed' and mean > remaining:
         result['notes'].append(f"{wid}: other work at the observed {rate:.2f}%/h wants ~{mean:.0f}% before its "
                                f"{'expiry' if expires_first else 'reset'} in {end:.0f}h; {remaining:.0f}% is left")
@@ -870,6 +913,7 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
             ('usd_displaced' if eff_cap_usd else 'worker_hours_displaced'): round(displaced, 3),
             **({'reset_sunk_weight': sunk_weight, 'reset_bonus': reset_bonus, 'surplus_pct': round(excess_pct, 1)}
                if reset_bonus > 0 else {}),
+            **({'pacing': pace_row} if pace_row is not None else {}),
             'opportunity_cost': round(cost, 4)}
 
 
@@ -2068,8 +2112,12 @@ def subjective_fit(weights, subj):
 #   with it), and every strongly demanded axis has its own floor. Ranking uses the level above the floor.
 # - Missing data (rule B): a demanded axis with no data at all, or no cited usd on a billed account, leaves automatic
 #   routing; a named model still runs, with the data error as a warning.
-# - Plan capacity is the shipped community figure in reference-model hours, priced at the merged usd scale, so
-#   scarcity pricing stays; a window with no capacity still prices scarcity from its live percentage and reset time.
+# - Plan capacity is the cited figure of the capacity ladder (community, time-to-exhaust, vendor multiplier), priced at
+#   the merged usd scale; a window with an empty ladder is a data error that still prices scarcity from its live
+#   percentage and reset time.
+# - Economy (round 6, user): no overqualification term. Every long window charges the candidate's burn (option-B usd
+#   over the window's capacity) times a pacing shadow price that is not zero while the window is far from empty
+#   (five_axis_pacing), counted in hours of the window's reference model at score_per_displaced_worker_hour.
 FIVE_AXIS_FILE = REFERENCES / 'five-axis-scores.json'
 FIVE_AXES = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
 FIVE_AXIS_THINKING = ('divergence', 'global_rigor', 'module_precision')
@@ -2080,8 +2128,8 @@ FIVE_AXIS_DEFAULTS = {
     'weights': {'fit': 0.4, 'ability': 0.0, 'continuity': 0.25},
     'strong_level': 2,           # an axis demanded at this level or above has its own floor
     'demanded_level': 1,         # rule B: an axis demanded at this level or above must have data
-    'overqualification_weight': 0.05,   # round 4: ties are broken explicitly, this only prices surplus
-    'overqualification_price_cap': 3.0,
+    'pace': True,                # the pacing cost of each long window (round 6); False = shortage-only, for audits
+    'pace_smoothing': 0.1,       # k in the pacing price's (used + k) / (elapsed + k): keeps the period start finite
 }
 FIVE_AXIS_DEMAND_SCHEMA = {
     'type': 'object', 'additionalProperties': False, 'required': list(FIVE_AXES),
@@ -2192,6 +2240,11 @@ def five_axis_overlay(accounts, data=None):
                 if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
         spec['capacity_usd'] = caps
         spec.pop('capacity_change', None)       # the community measurement is the capacity in effect when measured
+        # Displaced work is counted in hours of the window's reference model (round 6), at its merged usd.
+        spec['reference_usd_per_hour'] = {
+            wid: float(v) for wid in spec['windows']
+            if isinstance(v := (((rows.get((rows_.get(wid) or {}).get('reference_model') or '') or {}).get('usd_per_hour')
+                                 or {}).get('value')), (int, float)) and v > 0}
         spec['capacity_source'] = {wid: {'status': (rows_.get(wid) or {}).get('status', 'missing'),
                                          'age_days': (rows_.get(wid) or {}).get('age_days'), 'plan': plan or None}
                                    for wid in spec['windows']}
@@ -2306,30 +2359,6 @@ def five_axis_order(candidate):
     k = candidate['components']
     return (-candidate['score'], round(k.get('opportunity_cost', 0.0), 4),
             -(k.get('five_axis_level', 0.0) - k.get('five_axis_gate', 0.0)))
-
-
-def five_axis_overqualification(eligible, task, cfg, policy):
-    """Ordinary profiled work (`minimum_sufficient`): a billed candidate pays for ability beyond the floor plus the
-    saturation span in proportion to how much dearer it is than the cheapest billed candidate that clears the same floor
-    (user, 2026-11-09: no fixed reference price). Free and unmetered candidates cost nothing and pay nothing."""
-    if not task.get('minimum_sufficient'):
-        return
-    priced = [c for c in eligible if (c.get('five_axis_price') or {}).get('usd_per_hour', 0) > 0]
-    if not priced:
-        return
-    cheapest = min(c['five_axis_price']['usd_per_hour'] for c in priced)
-    scale = task['five_gate']['axis_per_tier']
-    prof = policy.get('profile') or {}
-    span = float(prof.get('saturation_span', 0.3)) * scale
-    width = float(prof.get('overqualification_span', 0.6)) * scale
-    for c in priced:
-        k = c['components']
-        price = min(float(cfg['overqualification_price_cap']), c['five_axis_price']['usd_per_hour'] / cheapest - 1.0)
-        excess = clamp((k['five_axis_level'] - k['five_axis_gate'] - span) / width, 0.0, 1.0) if width > 0 else 0.0
-        cost = round(float(cfg['overqualification_weight']) * excess * price * (1.0 - c['five_axis_price']['sprint_sunk']), 4)
-        if cost:
-            k['overqualification'] = cost
-            k['overqualification_reference_usd'] = round(cheapest, 4)
 
 
 HARNESS_CAPABILITIES = {
@@ -3048,8 +3077,10 @@ def evaluate_bundle(bundle, task, ctx):
                 exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
                         f'and it resets in {state["reset_hours"] / 24:.1f} days')
                 result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+            pacing = ({**five, 'reference_usd_per_hour': (spec.get('reference_usd_per_hour') or {}).get(wid)}
+                      if five else None)
             row = window_cost(spec, wid, state, step, demand_forecast(spec, wid, state, policy), policy, result, now, step_usd=step_usd,
-                              unit=unit * context_scale)
+                              unit=unit * context_scale, pacing=pacing)
             opportunity += row['opportunity_cost']
             row.update(chain_pct=chain, chain_usd=round(chain_usd, 2), stale=state['stale'])
             if binding is None or (row['opportunity_cost'], -row['after']) > (binding['opportunity_cost'], -binding['after']):
@@ -3286,9 +3317,9 @@ def evaluate_bundle(bundle, task, ctx):
     if five:
         # One capability match replaces route order, the vectors and graded ability: the demanded-axis level above the
         # floor, as a share of the room above it. On ordinary profiled work (`minimum_sufficient`) meeting the floor is
-        # sufficient, as on the shipped path: the fit is full one saturation span above the floor, so a sufficient
-        # cheaper model wins when quota is plentiful. Overqualification is priced in rank(), against the cheapest
-        # billed model that clears the same floor.
+        # sufficient, as on the shipped path: the fit is full one saturation span above the floor. No overqualification
+        # term (round 6, user: a hand-made rule); the burn against each window's pacing price decides between the
+        # models that clear the floor.
         if task['minimum_sufficient']:
             span = float((policy.get('profile') or {}).get('saturation_span', 0.3))     # axis units here (rank())
             fit = clamp((effective - gate) / span, 0.0, 1.0) if span > 0 else float(effective >= gate)
@@ -3481,8 +3512,6 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     weights = dict(five['weights'] if five else policy['weights'])
     weights['continuity'] *= policy['coupling_continuity_multiplier'][task['coupling']] if task['worker'] else 0
     kind = task['kind']
-    if five:
-        five_axis_overqualification(eligible, task, five, policy)
     for c in eligible:
         parts = {k: c['components'][k] for k in weights}
         quality = harness_quality_factor(c['bundle'], kind, policy, accounts)
