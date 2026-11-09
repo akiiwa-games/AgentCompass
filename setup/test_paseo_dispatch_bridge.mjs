@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
-  creationFailureClass, creationRecord, subscriptionLapsed} from './paseo_dispatch_bridge.mjs';
+  creationFailureClass, creationRecord, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
+  RETRY_STUCK_CODE} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -862,4 +863,90 @@ test('a definitive create failure carries a fixed failure class, never the SDK t
   assert.equal(creationFailureClass({error: 'Unknown model gpt-x'}), 'model_unavailable');
   assert.equal(creationFailureClass({error: 'something with secret-prompt-canary'}), 'unknown');
   assert.equal(creationFailureClass(undefined), 'unknown');
+});
+
+// 2026-11-09: an opencode free-model worker sat `running` on "Provider retry (attempt 1): Free usage exceeded, subscribe
+// to Go"; opencode never gives up, so the watcher must stop such a turn and say why, with the provider's own message.
+const MINUTE = 60 * 1000;
+const T0 = Date.parse('2026-11-09T08:00:00.000Z');
+const retryEntry = (attempt, at, message = 'Free usage exceeded, subscribe to Go') =>
+  ({provider: 'opencode', timestamp: new Date(at).toISOString(),
+    item: {type: 'error', message: `Provider retry (attempt ${attempt}): ${message}`}});
+const progress = at => ({provider: 'opencode', timestamp: new Date(at).toISOString(),
+  item: {type: 'assistant_message', text: 'working'}});
+
+test("provider retry notices are read from Paseo's own template and omp's structured status line", () => {
+  assert.deepEqual(providerRetry(retryEntry(3, T0)),
+    {attempt: 3, message: 'Free usage exceeded, subscribe to Go', next: null, at: T0});
+  assert.deepEqual(providerRetry({timestamp: new Date(T0).toISOString(),
+    item: {type: 'error', message: 'Provider retry (attempt 1)'}}), {attempt: 1, message: null, next: null, at: T0});
+  assert.equal(providerRetry({timestamp: new Date(T0).toISOString(),
+    item: {type: 'error', message: 'Free usage exceeded, subscribe to Go'}}), null);   // not a retry notice
+  assert.equal(providerRetry(progress(T0)), null);
+  assert.deepEqual(providerRetry({timestamp: new Date(T0).toISOString(), item: {type: 'tool_call', name: 'omp_auto_retry',
+    detail: {type: 'plain_text', text: 'Retrying in 8s: 429 Too Many Requests'},
+    metadata: {source: 'omp_auto_retry_start', attempt: 2, maxAttempts: 3, delayMs: 8000}}}),
+  {attempt: 2, message: 'Retrying in 8s: 429 Too Many Requests', next: new Date(T0 + 8000).toISOString(), at: T0});
+});
+
+test('a retry streak is stuck only past its bounds, and any progress resets it', () => {
+  const one = retryStreak([progress(T0 - MINUTE), retryEntry(1, T0)]);
+  assert.equal(one.count, 1);
+  assert.equal(retryIsStuck(one, T0 + 4 * MINUTE), false);
+  assert.equal(retryIsStuck(one, T0 + 5 * MINUTE), true);   // however few attempts
+  const fast = retryStreak([1, 2, 3, 4].map(n => retryEntry(n, T0 + n * 5000)));
+  assert.equal(retryIsStuck(fast, T0 + 25 * 1000), false);   // four quick retries are not yet stuck
+  assert.equal(retryIsStuck(fast, T0 + 5000 + MINUTE), true);
+  assert.equal(retryStreak([retryEntry(1, T0), retryEntry(2, T0 + MINUTE), progress(T0 + 2 * MINUTE)]), null);
+  assert.equal(retryStreak([]), null);
+});
+
+function stuckFixture({entries, labels = {'router.dispatch_id': 'child'}, timelineError} = {}) {
+  const f = watchFixture();
+  f.record.deadline = T0 + 24 * 60 * MINUTE;
+  const order = [];
+  f.setAgent({id: 'child', status: 'running', labels});
+  f.client.fetchAgentTimeline = async (id, options) => {
+    order.push(['timeline', id, options.direction, options.projection]);
+    if (timelineError) throw new Error('secret-prompt-canary');
+    return {entries: entries ?? [progress(T0 - MINUTE), retryEntry(1, T0), retryEntry(2, T0 + 2 * MINUTE)]};
+  };
+  f.client.cancelAgent = async id => order.push(['cancel', id, f.saved.at(-1)?.terminal?.failure_code ?? null]);
+  return {...f, order};
+}
+
+test('a running worker stuck in provider retry is stopped, its terminal saved first, and the parent told why', async () => {
+  const f = stuckFixture();
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 2 * MINUTE), false);   // not past its bounds yet
+  assert.equal(f.order.filter(([kind]) => kind === 'cancel').length, 0);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 6 * MINUTE), true);
+  // Saved before the cancel, so the stop's idle state can never read as a finish.
+  assert.deepEqual(f.order.at(-1), ['cancel', 'child', RETRY_STUCK_CODE]);
+  assert.deepEqual(f.order[0], ['timeline', 'child', 'tail', 'canonical']);
+  assert.equal(f.record.terminal.failure_code, RETRY_STUCK_CODE);
+  assert.equal(f.record.terminal.provider_message, 'Free usage exceeded, subscribe to Go');
+  assert.equal(f.record.terminal.attempts, 2);
+  assert.equal(f.record.terminal.retrying_since, new Date(T0).toISOString());
+  assert.equal(f.record.terminal.next, null);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /State: provider retry stuck/);
+  assert.match(f.calls[0][1], /Provider message: Free usage exceeded, subscribe to Go/);
+  assert.equal(f.record.status, 'delivered');
+  // After the cancel the host says idle: the outcome stays the stuck retry.
+  f.setAgent({id: 'child', status: 'idle', attentionReason: 'finished', labels: {'router.dispatch_id': 'child'}});
+  assert.deepEqual(notificationEvents({status: 'idle', attentionReason: 'finished',
+    labels: {'router.dispatch_id': 'child'}}, f.record, T0 + 7 * MINUTE), [{key: 'terminal', reason: 'provider retry stuck'}]);
+});
+
+test('an unreadable timeline, progress after retrying, or a worker bound to another dispatch is left alone', async () => {
+  for (const options of [{timelineError: true}, {entries: [retryEntry(1, T0), progress(T0 + MINUTE)]}]) {
+    const f = stuckFixture(options);
+    assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 60 * MINUTE), false);
+    assert.equal(f.record.terminal, undefined);
+    assert.equal(f.calls.length, 0);
+  }
+  const f = stuckFixture({labels: {'router.dispatch_id': 'previous'}});
+  f.record.agent_id = 'worker';   // a resumed worker not relabelled for this dispatch yet
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 60 * MINUTE), false);
+  assert.equal(f.order.length, 0);
 });

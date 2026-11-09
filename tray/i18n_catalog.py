@@ -65,6 +65,11 @@ EN = {
     '未检测到': 'Not detected',
     '模型启动失败：不可用，下次重试 {0}': 'Model launch failed: unavailable, next retry {0}',
     '{0} 个模型启动失败，已排除派发': '{0} model(s) failed to launch, excluded from dispatch',
+    '无提供方消息': 'no provider message',
+    '提供方持续重试，整个账号已排除派发：{0}（成功派发或手动清除前不再尝试）':
+        'Provider kept retrying, whole account excluded from dispatch: {0} (not tried again until a dispatch succeeds or it is cleared)',
+    '{0} 提供方持续重试，已排除派发：{1}（下次重试 {2}）': '{0}: provider kept retrying, excluded from dispatch: {1} (next retry {2})',
+    '提供方持续重试，已排除派发，下次重试 {0}': 'Provider kept retrying, excluded from dispatch, next retry {0}',
     '默认分': 'Default score',
     '估价': 'Estimated price',
     '未验证': 'Unverified',

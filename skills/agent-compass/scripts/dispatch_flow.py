@@ -54,6 +54,10 @@ MODEL_LATCHED_NEXT = (' The provider reported that model {model} does not exist 
 WORKER_FAILED_NEXT = ('Paseo created this worker and it ended in error, so nothing is running this brief. Read its error '
                       '(get_agent_activity on agent_id) and tell the user before rolling again: the router does not read '
                       'error text, so it may choose the same model again.')
+RETRY_STUCK_NEXT = ('Its provider kept retrying one request without progress, so AgentCompass stopped the turn and holds '
+                    'that model (with backoff) or its whole account (until a dispatch there completes or the hold is '
+                    'cleared) out of dispatch; plan/roll warnings and the tray account list show the provider message. '
+                    'Nothing is running this brief: roll it again and the router picks another model.')
 REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispatch observed it. The dispatch is over and '
                 'holds nothing. The worker may have done part of the work: check that before rolling this brief again.')
 
@@ -102,7 +106,7 @@ def public(row, now=None):
                 model=model_latch.launch_model(row['bundle']), account=row['bundle'].get('account'),
                 code=row['failure_code'], retry=model_latch.retry_text({'observed_at': row.get('updated_at')}))
     elif row['state'] == 'failed' and row.get('agent_id'):
-        out['next_action'] = WORKER_FAILED_NEXT
+        out['next_action'] = RETRY_STUCK_NEXT if row.get('failure_code') == 'provider_retry_stuck' else WORKER_FAILED_NEXT
     elif row['state'] == 'canceled' and (row.get('creation') or {}).get('removed'):
         out['next_action'] = REMOVED_NEXT
     elif creating(row):
@@ -291,6 +295,8 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         result['error'] = 'create_failed'
     elif row['state'] == 'failed' and row.get('agent_id'):
         result['error'] = 'worker_failed'
+    if row['state'] == 'failed' and row.get('failure_code'):
+        result['cause'] = f"{result.get('error') or 'worker_failed'}:{row['failure_code']}"
     if row['state'] == 'create_failed':
         # Fixed vocabulary only: the bridge's class and the provider's own code, never its text.
         result['cause'] = ':'.join(str(p) for p in (result['error'], row.get('failure_class'), row.get('failure_code')) if p)

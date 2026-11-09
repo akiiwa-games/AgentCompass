@@ -23,6 +23,7 @@ import window_scope
 import host_policy
 import launch_failures
 import model_latch
+import provider_retry
 import override_store
 import antigravity_telemetry
 import provider_inventory
@@ -1808,7 +1809,8 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
             continue
         sib_bundle = {**b, 'id': sib_id}
         if cooling_reason(sib_bundle, failures_map, accounts, now=ctx.get('now')) or \
-                model_latch.reason(sib_bundle, ctx.get('model_latches')):
+                model_latch.reason(sib_bundle, ctx.get('model_latches')) or \
+                provider_retry.reason(sib_bundle, ctx.get('provider_retries')):
             continue
         siblings.append(sib_bundle)
     self_id = bundle.get('id')
@@ -2469,6 +2471,9 @@ def evaluate_bundle(bundle, task, ctx):
     latched_model = model_latch.reason(bundle, ctx.get('model_latches'))
     if latched_model:
         exclude(latched_model)
+    retrying = provider_retry.reason(bundle, ctx.get('provider_retries'))
+    if retrying:
+        exclude(retrying)
     # Only subscription accounts join automatic routing. A checked metered (API) bundle is a last resort:
     # explicit selection, task.metered_ok, or plan()'s fallback pass when no subscription can take the work.
     # Unknown billing stays explicit selection only.
@@ -3058,7 +3063,8 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
            'host_policy': host_policy.load_policy() if host_policy_config is None else host_policy_config,
            'overrides': list(overrides), 'records': list(records or ()),
            'launch_failures': launch_failures.active() if launch_failures.enabled() else {},
-           'model_latches': model_latch.active(now=now)}
+           'model_latches': model_latch.active(now=now),
+           'provider_retries': provider_retry.active(now=now)}
     ctx['bundles'].update(named_effort_bundles(task, ctx))
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()
                   if bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
@@ -3412,6 +3418,8 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision.setdefault('warnings', []).extend(state_warnings)
     latch_warnings = model_latch.warnings(model_latch.active(now=now),
                                           lambda name: host_policy.account_allowed(state_policy, name))
+    latch_warnings += provider_retry.warnings(provider_retry.active(now=now),
+                                              lambda name: host_policy.account_allowed(state_policy, name))
     if latch_warnings:
         # First: the roll answer shows only the first few warnings, and a model that cannot start must be seen.
         decision['warnings'] = [*latch_warnings, *decision.get('warnings', [])]

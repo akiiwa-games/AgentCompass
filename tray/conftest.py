@@ -6,6 +6,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ['CODEX_HOME'] = str(ROOT)
+# Tray tests never read this machine's provider-retry holds; a test that needs them points this at its own file.
+os.environ.setdefault('ROUTER_PROVIDER_RETRY', 'off')
 sys.path.insert(0, str(ROOT / 'skills' / 'agent-compass' / 'scripts'))
 importlib.import_module('allocator')
 importlib.import_module('route_judge')

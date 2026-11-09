@@ -745,6 +745,17 @@ def finished_before(terminal, launched_at):
         return False
 
 
+def retry_stuck(terminal, launched_at):
+    """The bridge's notifier stopped this launch because its provider kept retrying without progress."""
+    if not isinstance(terminal, dict) or terminal.get('failure_code') != 'provider_retry_stuck':
+        return False
+    at = terminal.get('at')
+    try:
+        return isinstance(at, str) and parse(at) >= parse(launched_at)
+    except ValueError:
+        return False
+
+
 def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     """Accept only the bound host agent; start/terminal receipts are idempotent.
 
@@ -808,7 +819,12 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if undelivered:
             reason = None
         target = None
-        if finished_before(terminal, row['launched_at']) and status != 'running':
+        stuck = retry_stuck(terminal, row['launched_at'])
+        if stuck:
+            # The bridge stopped a turn its provider kept retrying: whatever the host says after that stop, it failed.
+            target = 'failed'
+            row['failure_code'] = terminal['failure_code']
+        elif finished_before(terminal, row['launched_at']) and status != 'running':
             target = 'completed'
         elif status == 'error' or reason == 'error' or snapshot.get('providerUnavailable'):
             target = 'failed'
@@ -840,6 +856,19 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if row['state'] != target:
             event(row, target, now)
         save(connection, row)
+    if stuck:
+        import provider_retry
+        try:
+            provider_retry.record(row['bundle'], terminal, dispatch_id=dispatch_id)
+        except OSError:
+            pass  # Best effort: provider_retry.ingest records it from the watcher's receipt on the next roll.
+    if target == 'completed':
+        import provider_retry
+        try:
+            provider_retry.clear(row['bundle'].get('account'), provider_retry.launch_model(row['bundle']),
+                                 launched_at=row.get('launched_at') or row.get('created_at'))
+        except OSError:
+            pass
     if target in ('started', 'completed'):
         import account_state
         import launch_failures

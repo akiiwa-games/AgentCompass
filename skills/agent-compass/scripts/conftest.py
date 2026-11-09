@@ -37,3 +37,9 @@ def isolated_launch_failures(monkeypatch):
 def isolated_model_latches(monkeypatch):
     """Tests never read or write the machine's latched models; model-latch tests point it at their own file."""
     monkeypatch.setenv('ROUTER_MODEL_LATCH', 'off')
+
+
+@pytest.fixture(autouse=True)
+def isolated_provider_retries(monkeypatch):
+    """Tests never read or write the machine's provider-retry holds; provider-retry tests point it at their own file."""
+    monkeypatch.setenv('ROUTER_PROVIDER_RETRY', 'off')

@@ -200,7 +200,7 @@ def short_badge(text: str) -> str:
 
 def card_title(card: dict) -> str:
     """A quota card's name; an account in trouble says so on the card itself, with the reason on the hover."""
-    if card.get("status") not in ("plan_inactive", "usage_failing", "auth_failed"):
+    if card.get("status") not in ("plan_inactive", "usage_failing", "auth_failed") and not card.get("retry_hold"):
         return card["label"]
     return f'{card["label"]} · {short_badge(card.get("badge")).split("，", 1)[0].split(", ", 1)[0]}'
 

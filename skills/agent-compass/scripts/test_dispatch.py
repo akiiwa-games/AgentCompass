@@ -2939,5 +2939,169 @@ class ModelLatchTests(unittest.TestCase):
         self.assertEqual(plan['choice'], 'lab_sonnet55_high')
 
 
+class ProviderRetryTests(unittest.TestCase):
+    """2026-11-09: an opencode free-model worker sat `running` on "Provider retry (attempt 1): Free usage exceeded,
+    subscribe to Go" while the account looked ready and the router kept choosing opencode. The bridge stops such a
+    worker with failure_code provider_retry_stuck; the classifier, never code, decides what the message blocks."""
+    setUp_dispatch, snapshot = DispatchTests.setUp, DispatchTests.snapshot
+    issue, prepare = DispatchTests.issue, DispatchTests.prepare
+    MESSAGE = 'Free usage exceeded, subscribe to Go'
+
+    def setUp(self):
+        import provider_retry
+        self.setUp_dispatch()
+        self.store = self.root / provider_retry.FILE
+        env = patch.dict(os.environ, {'ROUTER_PROVIDER_RETRY': str(self.store), 'ROUTER_STATE_DIR': str(self.root)})
+        env.start()
+        self.addCleanup(env.stop)
+        self.scopes, self.asked = [], []
+        self.real_classify = provider_retry.classify_scope
+
+        def classify(account, provider, model, message):
+            self.asked.append((account, provider, model, message))
+            return (self.scopes.pop(0) if self.scopes else 'unknown'), {'source': 'system_one', 'scorer_type': 'fake'}
+        classifier = patch.object(provider_retry, 'classify_scope', side_effect=classify)
+        classifier.start()
+        self.addCleanup(classifier.stop)
+        self.other = dict(allocator.bundles(self.accounts)['lab_opus55_high'], bundle_id='lab_opus55_high')
+
+    def stuck(self, at, **changes):
+        return {'reason': 'provider retry stuck', 'failure_code': 'provider_retry_stuck', 'provider_message': self.MESSAGE,
+                'next': None, 'attempts': 5, 'retrying_since': (at - timedelta(minutes=5)).isoformat(),
+                'at': at.isoformat(), **changes}
+
+    def launched(self):
+        row = self.prepare(self.issue())
+        registry.claim(row['request'], now=self.now)
+        return row
+
+    def excluded(self, bundle_id):
+        plan = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
+        return plan, next(c for c in plan['ranking'] if c['id'] == bundle_id)['excluded']
+
+    def test_a_stuck_terminal_fails_the_dispatch_and_holds_the_model_with_the_provider_message(self):
+        import provider_retry
+        row = self.launched()
+        self.assertEqual(registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)['state'], 'started')
+        # The bridge cancelled the turn, so the host now says idle; the watcher's terminal says why.
+        at = self.now + timedelta(seconds=20)
+        done = registry.observe(row['dispatch_id'], self.snapshot(row, status='idle', attentionReason='finished'),
+                                now=self.now + timedelta(seconds=30), terminal=self.stuck(at))
+        self.assertEqual((done['state'], done['failure_code']), ('failed', 'provider_retry_stuck'))
+        self.assertEqual(flow.public(done)['next_action'], flow.RETRY_STUCK_NEXT)
+        self.assertEqual(self.asked, [('claude-lab', 'claude-lab', 'claude-sonnet-5-5', self.MESSAGE)])
+        held = provider_retry.active(now=at)
+        self.assertEqual(set(held), {'claude-lab/claude-sonnet-5-5'})   # unknown scope starts at the model
+        self.assertEqual(held['claude-lab/claude-sonnet-5-5']['retry_at'], (at + timedelta(seconds=120)).isoformat())
+        plan, excluded = self.excluded('lab_sonnet55_high')
+        self.assertTrue(any(self.MESSAGE in e for e in excluded), excluded)
+        self.assertNotIn(plan['choice'], ('lab_sonnet55_high', 'lab_sonnet55_medium'))
+        self.assertTrue(any(w.startswith('claude-lab/claude-sonnet-5-5: provider kept retrying') and self.MESSAGE in w
+                            for w in plan['decision']['warnings']), plan['decision'])
+        # Observing the same terminal again records nothing more.
+        registry.observe(row['dispatch_id'], self.snapshot(row, status='idle'), now=self.now + timedelta(seconds=40),
+                         terminal=self.stuck(at))
+        self.assertEqual(len(self.asked), 1)
+
+    def test_an_account_scope_holds_every_model_until_a_later_dispatch_there_completes(self):
+        import provider_retry
+        self.scopes = ['account']
+        # Launched after the stuck sighting but before it was recorded: routing cannot start one once the hold exists.
+        row = self.launched()
+        at = self.now - timedelta(minutes=1)
+        entry = provider_retry.record(self.bundle, self.stuck(at), dispatch_id='d-stuck')
+        self.assertEqual((entry['model'], entry['scope_source'], entry['retry_at']), (None, 'classifier', None))
+        # A quota that blocks the whole account does not lift by waiting.
+        later = self.now + timedelta(days=30)
+        self.assertEqual(set(provider_retry.active(now=later)), {'claude-lab'})
+        self.assertIn(self.MESSAGE, provider_retry.reason(self.other, provider_retry.active(now=later)))
+        _, excluded = self.excluded('lab_opus55_high')
+        self.assertTrue(any('on this account' in e for e in excluded), excluded)
+        with self.assertRaisesRegex(ValueError, 'provider kept retrying'):
+            self.prepare(self.issue(task={**self.task, 'task_id': 'another-task'}), task={**self.task, 'task_id': 'another-task'})
+        # A dispatch launched before the hold says nothing about it.
+        self.assertFalse(provider_retry.clear('claude-lab', 'claude-sonnet-5-5',
+                                              launched_at=(at - timedelta(seconds=1)).isoformat()))
+        registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+        self.assertTrue(provider_retry.active(now=self.now))   # a running worker is no success: a stuck one runs too
+        registry.observe(row['dispatch_id'], self.snapshot(row, status='idle', attentionReason='finished'),
+                         now=self.now + timedelta(seconds=30))
+        self.assertEqual(provider_retry.active(now=self.now), {})
+
+    def test_unknown_scope_widens_to_the_account_when_a_second_model_fails_the_same_way(self):
+        import provider_retry
+        at = self.now
+        provider_retry.record(self.bundle, self.stuck(at), dispatch_id='d1')
+        self.assertEqual(set(provider_retry.active(now=at)), {'claude-lab/claude-sonnet-5-5'})
+        widened = provider_retry.record(self.other, self.stuck(at + timedelta(minutes=1)), dispatch_id='d2')
+        self.assertEqual((widened['model'], widened['scope_source'], widened['retry_at']), (None, 'widened', None))
+        self.assertEqual(widened['models'], ['claude-opus-5-5', 'claude-sonnet-5-5'])
+        self.assertIn('claude-lab', provider_retry.active(now=at + timedelta(days=1)))
+
+    def test_a_scope_the_classifier_names_is_not_widened(self):
+        import provider_retry
+        for second in ('model', 'transient'):
+            with self.subTest(second=second):
+                self.store.unlink(missing_ok=True)
+                self.scopes = ['unknown', second]
+                provider_retry.record(self.bundle, self.stuck(self.now), dispatch_id=f'a-{second}')
+                entry = provider_retry.record(self.other, self.stuck(self.now), dispatch_id=f'b-{second}')
+                self.assertEqual((entry['model'], entry['scope']), ('claude-opus-5-5', second))
+                self.assertNotIn('claude-lab', provider_retry.active(now=self.now))
+
+    def test_a_model_hold_backs_off_like_a_failing_usage_reading_and_the_provider_next_wins(self):
+        import provider_retry
+        import usage_core
+        at, seen = self.now, []
+        self.scopes = ['model'] * 5
+        for index in range(5):
+            entry = provider_retry.record(self.bundle, self.stuck(at), dispatch_id=f'd{index}')
+            seconds = (provider_retry._time(entry['retry_at']) - at).total_seconds()
+            seen.append(seconds)
+            self.assertEqual(seconds, usage_core.failure_retry_seconds(index + 1, usage_core.IDLE_REFRESH_SECONDS))
+            at = provider_retry._time(entry['retry_at'])
+        self.assertEqual(seen, [120, 240, 480, 960, 1800])   # 2 min doubling, capped at the idle poll
+        self.assertIsNone(provider_retry.record(self.bundle, self.stuck(at), dispatch_id='d0'))  # once per dispatch
+        self.assertEqual(provider_retry.active(now=at + timedelta(seconds=1)), {})   # then the next roll re-probes it
+        self.store.unlink()
+        nxt = self.now + timedelta(hours=1)
+        entry = provider_retry.record(self.bundle, self.stuck(self.now, next=nxt.isoformat()), dispatch_id='n1')
+        self.assertEqual(entry['retry_at'], nxt.isoformat())
+
+    def test_a_watcher_receipt_is_held_before_the_registry_observes_it(self):
+        import provider_retry
+        row = self.launched()
+        folder = self.root / 'paseo-notifications'
+        folder.mkdir()
+        (folder / f"{row['dispatch_id']}.json").write_text(json.dumps({
+            'dispatch_id': row['dispatch_id'], 'parent_id': 'parent-a', 'status': 'delivered',
+            'terminal': self.stuck(self.now)}), encoding='utf-8')
+        (folder / 'other.json').write_text(json.dumps({'dispatch_id': 'other', 'terminal': {'reason': 'finished'}}))
+        written = provider_retry.ingest()
+        self.assertEqual([(e['source'], e['message']) for e in written], [(row['dispatch_id'], self.MESSAGE)])
+        self.assertEqual(provider_retry.ingest(), [])
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'launching')   # the registry decides its state
+
+    def test_the_scope_comes_from_the_configured_classifier_and_a_silent_one_reads_as_unknown(self):
+        import provider_retry
+        import route_judge
+        asked = []   # the real classify_scope, with the classifier backend faked
+
+        def run(scorer_type, instructions, text, schema, timeout, config, account=None):
+            asked.append(text)
+            return {'scope': 'account', 'reason': 'a free-usage quota shared by the free models'}, 'claude', 'haiku'
+        with patch.object(route_judge, 'scorer_accounts', return_value=['claude']), \
+                patch.object(route_judge, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
+                patch.object(route_judge, 'run_structured', side_effect=run):
+            scope, meta = self.real_classify('opencode', 'opencode', 'glm-5.3-flash-free', self.MESSAGE)
+        self.assertEqual((scope, meta['source']), ('account', 'system_one'))
+        self.assertIn(self.MESSAGE, asked[0])
+        with patch.object(route_judge, 'scorer_accounts', return_value=['claude']), \
+                patch.object(route_judge, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
+                patch.object(route_judge, 'run_structured', return_value=({'scope': 'quota'}, 'claude', 'haiku')):
+            self.assertEqual(self.real_classify('opencode', 'opencode', 'm', self.MESSAGE)[0], 'unknown')
+        self.assertEqual(self.real_classify('opencode', 'opencode', 'm', None)[0], 'unknown')
+
+
 if __name__ == '__main__':
     unittest.main()
