@@ -833,3 +833,65 @@ class ResidueTests(Machine):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ProviderHoldReloginTests(Machine):
+    """Review 2 R8: a subscription that got logged out fails its worker with a message the classifier scopes `account`,
+    an indefinite hold. Logging back in shows as a good usage reading newer than the hold, or another credential, and
+    lifts it the way it lifts the plan-inactive latch; an account without a usage reader keeps the clear."""
+    MESSAGE = 'Your session has expired. Please log in again.'
+
+    def setUp(self):
+        super().setUp()
+        import provider_retry
+        self.store = self.state / provider_retry.FILE
+        env = patch.dict(os.environ, {'ROUTER_PROVIDER_RETRY': str(self.store)})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def hold(self, scope, model, dispatch_id, at=None):
+        import provider_retry
+        return provider_retry.record({'account': 'codex', 'provider': 'codex', 'model': model},
+                                     {'failure_code': 'provider_turn_failed', 'provider_message': self.MESSAGE,
+                                      'at': (at or self.now).isoformat()},
+                                     dispatch_id=dispatch_id, classify=lambda *args: (scope, {'source': 'system_one'}))
+
+    def held(self):
+        import provider_retry
+        self.row()   # discovery settles account states, as every plan and the tray do
+        return set(provider_retry.active(now=self.now))
+
+    def test_a_good_usage_reading_newer_than_the_hold_lifts_it_and_its_model_holds(self):
+        self.codex_login('plus')
+        self.cache(age_hours=1, codex={'plan_label': 'plus'})   # the last good reading predates the hold
+        entry = self.hold('account', 'gpt-6.1-sol', 'd1')
+        self.assertIsNone(entry['retry_at'])
+        self.assertTrue(entry.get('credential_key'))   # the login it was taken under
+        self.hold('model', 'gpt-6.1-terra', 'd2')
+        self.assertEqual(self.held(), {'codex', 'codex/gpt-6.1-terra'})
+        self.cache(age_hours=-0.1, codex={'error': 'unauthorized', 'available': False})   # still logged out
+        self.assertEqual(self.held(), {'codex', 'codex/gpt-6.1-terra'})
+        self.cache(age_hours=-0.2, codex={'plan_label': 'plus'})   # logged back in: a good reading after the hold
+        self.assertEqual(self.held(), set())
+
+    def test_a_different_credential_lifts_it_before_any_new_reading(self):
+        self.codex_login('plus')
+        self.cache(age_hours=1, codex={'plan_label': 'plus'})
+        self.hold('account', 'gpt-6.1-sol', 'd1')
+        self.assertEqual(self.held(), {'codex'})
+        self.codex_login('plus', account='another-account')   # re-login with another credential, cache not refreshed
+        self.assertEqual(self.held(), set())
+
+    def test_an_account_without_a_usage_reader_keeps_its_hold(self):
+        self.codex_login('plus')
+        self.cache(age_hours=1, codex={'plan_label': 'plus'})
+        self.hold('account', 'gpt-6.1-sol', 'd1')
+        self.cache(age_hours=-0.2, codex={'plan_label': 'plus'})
+        with patch.object(inventory, '_reads_usage', return_value=False):
+            self.assertEqual(self.held(), {'codex'})
+
+    def test_a_hold_taken_after_the_reading_is_kept(self):
+        self.codex_login('plus')
+        self.cache(age_hours=-0.1, codex={'plan_label': 'plus'})
+        self.hold('account', 'gpt-6.1-sol', 'd1', at=self.now + timedelta(hours=1))
+        self.assertEqual(self.held(), {'codex'})

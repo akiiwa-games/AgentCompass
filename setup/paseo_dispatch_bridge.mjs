@@ -22,6 +22,16 @@ const RUN_LEASE_MS = 10 * 60 * 1000;
 const WORKSPACE_LOOKUP_MS = 5000;
 // A stopped watcher notices its marker within one poll.
 const WATCHER_STOP_MS = 2 * POLL_MS;
+// A provider that keeps retrying one request is stuck only once nothing but its retry notices has happened in the turn
+// for the whole RETRY_STUCK_MS window (and it retried at least RETRY_STUCK_ATTEMPTS times). Fast retries do not shorten
+// the window, and one long retry-after cannot end it early: a minute of provider overload must not stop a working
+// worker. opencode never gives up by itself (opencode-agent.ts appendOpenCodeSessionStatus), so without this its worker
+// stays `running` forever.
+const RETRY_STUCK_ATTEMPTS = Number(process.env.AGENTCOMPASS_RETRY_STUCK_ATTEMPTS) || 1;
+const RETRY_STUCK_MS = (Number(process.env.AGENTCOMPASS_RETRY_STUCK_SECONDS) || 300) * 1000;
+const RETRY_TIMELINE_LIMIT = 40;
+const RETRY_MESSAGE_LIMIT = 2000;
+const RETRY_STUCK = 'provider retry stuck';
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
@@ -111,6 +121,8 @@ export function notificationEvents(agent, record, now, creation) {
     return agent.archivedAt ? [{key: 'terminal', reason: 'worker unavailable'}] : [];
   if (agent.status === 'running') record.started = true;
   record.seen = true;
+  // The watcher stopped a turn its provider kept retrying: the stop's idle or canceled state is not a finish.
+  if (record.terminal?.failure_code === RETRY_STUCK_CODE) return [{key: 'terminal', reason: RETRY_STUCK}];
   if (agent.status === 'error' || agent.attentionReason === 'error' || agent.providerUnavailable)
     return [{key: 'terminal', reason: 'error'}];
   if (agent.status === 'closed' || agent.archivedAt) return [{key: 'terminal', reason: 'closed'}];
@@ -128,6 +140,128 @@ export function notificationEvents(agent, record, now, creation) {
   // Its lease is not renewed from here, so the parent can end it. A turn that lands later still reports its finish.
   if (resumed && !turnSeen && now - created >= RUN_LEASE_MS) return [{key: 'undelivered', reason: UNDELIVERED}];
   return [];
+}
+
+// Paseo renders a provider's own retry notice (opencode `session.status` retry, pi `auto_retry_start`) as a timeline
+// `error` item in this one fixed template of its own (opencode-agent.ts, pi/agent.ts), and omp's as a status-line tool
+// call with structured metadata. Reading Paseo's template recovers the attempt and the provider's message verbatim; what
+// the message means is decided by the router's classifier (provider_retry.py), never here.
+const RETRY_TEMPLATE = /^Provider retry \(attempt (\d+)\)(?:: ([\s\S]*))?$/;
+export const RETRY_STUCK_CODE = 'provider_retry_stuck';
+// A worker whose turn ended in error carries the provider's own error text (agent.lastError, from the provider's
+// turn_failed). opencode 2.x fails a free model at once this way ("Free usage limit reached. ..."); the router's classifier
+// decides whether it blocks the model, the account, or nothing (provider_retry.py).
+export const TURN_FAILED_CODE = 'provider_turn_failed';
+
+// Paseo clears lastError when a turn starts, so it is this dispatch's unless this is a resumed worker whose turn has not
+// started yet: then the error is the previous turn's, and says nothing about this one.
+export function turnIsCurrent(agent, record) {
+  if (!record?.agent_id || record.agent_id === record.dispatch_id) return true;
+  const created = record.created_at ?? (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
+  return Boolean(record.started || (typeof agent?.lastUserMessageAt === 'string'
+    && Date.parse(agent.lastUserMessageAt) >= created));
+}
+
+export function turnFailure(agent, record) {
+  if (record && !turnIsCurrent(agent, record)) return {};
+  const message = typeof agent?.lastError === 'string' ? agent.lastError.trim() : '';
+  return message ? {failure_code: TURN_FAILED_CODE, provider_message: message.slice(0, RETRY_MESSAGE_LIMIT)} : {};
+}
+
+// Whether a finished turn ended on the model's own reply: its last item is an assistant message and nothing back to the
+// turn's prompt is an error (a provider retry is one). Paseo's idle/finished state is the same after a cancel and its
+// timeline marks no cancel, so this is the only sign the provider served the turn; only it lets the router lift a
+// provider hold. A turn longer than the page counts when the page holds no error.
+export function endedOnReply(entries) {
+  const list = entries ?? [];
+  if (list[list.length - 1]?.item?.type !== 'assistant_message') return false;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const type = list[i]?.item?.type;
+    if (type === 'user_message') return true;
+    if (type === 'error') return false;
+  }
+  return true;
+}
+
+async function turnReplied(client, agentId) {
+  try {
+    const page = await client.fetchAgentTimeline(agentId, {direction: 'tail', limit: RETRY_TIMELINE_LIMIT, projection: 'canonical'});
+    return endedOnReply(page?.entries);
+  } catch { return false; }
+}
+
+export function providerRetry(entry) {
+  const item = entry?.item, at = Date.parse(entry?.timestamp ?? '');
+  if (!item || !Number.isFinite(at)) return null;
+  if (item.type === 'error' && typeof item.message === 'string') {
+    const found = RETRY_TEMPLATE.exec(item.message);
+    return found ? {attempt: Number(found[1]), message: found[2] ?? null, next: null, at} : null;
+  }
+  const meta = item.metadata;
+  if (item.type === 'tool_call' && meta?.source === 'omp_auto_retry_start' && Number.isInteger(meta.attempt)) {
+    const delay = Number(meta.delayMs);
+    return {attempt: meta.attempt, message: typeof item.detail?.text === 'string' ? item.detail.text : null,
+      next: Number.isFinite(delay) && delay >= 0 ? new Date(at + delay).toISOString() : null, at};
+  }
+  return null;
+}
+
+// The retries at the end of the turn's timeline, newest first, back to the first item that is anything else. Any such
+// item (text, reasoning, a tool call, the turn's prompt) is progress, or the start of this turn.
+export function retryStreak(entries) {
+  const streak = [];
+  for (let i = (entries ?? []).length - 1; i >= 0; i--) {
+    const retry = providerRetry(entries[i]);
+    if (!retry) break;
+    streak.push(retry);
+  }
+  return streak.length ? {newest: streak[0], oldest: streak[streak.length - 1], count: streak.length} : null;
+}
+
+export function retryIsStuck(streak, now) {
+  if (!streak) return false;
+  return now - streak.oldest.at >= RETRY_STUCK_MS && Math.max(streak.newest.attempt, streak.count) >= RETRY_STUCK_ATTEMPTS;
+}
+
+// Whether the turn did anything before it started retrying: back from the retries to the turn's prompt, any other item
+// is work. A page that ends before the prompt with older items beyond it is taken as having worked.
+export function workedBeforeRetrying(entries, streak, hasOlder) {
+  for (let i = (entries ?? []).length - (streak?.count ?? 0) - 1; i >= 0; i--) {
+    if (entries[i]?.item?.type === 'user_message') return false;
+    if (entries[i]?.item) return true;
+  }
+  return Boolean(hasOlder);
+}
+
+// The terminal record of a worker stuck in provider retry, or null. A timeline that cannot be read says nothing.
+export async function stuckProviderRetry(client, agentId, now) {
+  let page;
+  try {
+    page = await client.fetchAgentTimeline(agentId, {direction: 'tail', limit: RETRY_TIMELINE_LIMIT, projection: 'canonical'});
+  } catch { return null; }
+  const streak = retryStreak(page?.entries);
+  if (!retryIsStuck(streak, now)) return null;
+  const message = streak.newest.message ?? streak.oldest.message;
+  return {reason: RETRY_STUCK, failure_code: RETRY_STUCK_CODE,
+    partial_work: workedBeforeRetrying(page.entries, streak, page.hasOlder),
+    provider_message: typeof message === 'string' ? message.slice(0, RETRY_MESSAGE_LIMIT) : null,
+    next: streak.newest.next, attempts: Math.max(streak.newest.attempt, streak.count),
+    retrying_since: new Date(streak.oldest.at).toISOString(), at: new Date(now).toISOString()};
+}
+
+export function retryStuckText(terminal, targetId) {
+  const head = `Its provider kept retrying one request without progress (${terminal?.attempts ?? '?'} attempts since ` +
+    `${terminal?.retrying_since ?? '?'}). Provider message: ${terminal?.provider_message ?? '(none)'}\n` +
+    'AgentCompass holds that model (or its whole account) out of dispatch.\n';
+  if (terminal?.cancelled === false)
+    return head + `Stopping the worker failed, so it may still be running and may resume once the provider recovers: ` +
+      `stop it with cancel_agent (agentId: ${targetId}) and check what it did before rolling this brief again.`;
+  if (terminal?.partial_work)
+    return head + `AgentCompass stopped the turn. The worker had already done part of the work (it is stopped, not ` +
+      `removed): check its activity (get_agent_activity, agentId: ${targetId}) and its worktree before rolling this ` +
+      'brief again; the router will pick another model.';
+  return head + 'AgentCompass stopped the turn before the worker did any work; roll this brief again and the router ' +
+    'picks another model.';
 }
 
 // This small step is also used by tests with an SDK fake. Persist the pending
@@ -149,12 +283,29 @@ export async function notificationStep(client, record, persist, now = Date.now()
     const events = expired
       ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
       : notificationEvents(agent, record, now, creation);
+    // A running worker bound to this dispatch whose provider keeps retrying without progress is stopped here: the
+    // terminal is saved before the cancel, so the stop's idle state can never read as a finish.
+    const bound = agent && (agent.labels?.['router.dispatch_id'] === record.dispatch_id
+      || !record.agent_id || record.agent_id === record.dispatch_id);
+    if (!events.length && !record.terminal && bound && agent.status === 'running') {
+      const stuck = await stuckProviderRetry(client, targetId, now);
+      if (stuck) {
+        record.terminal = {...stuck, status: agent.status, attentionReason: agent.attentionReason ?? null};
+        persist();
+        // Retried once at once; a cancel that still fails is said to the parent, never reported as stopped.
+        record.terminal.cancelled = await client.cancelAgent(targetId).then(() => true,
+          () => client.cancelAgent(targetId).then(() => true, () => false));
+        events.push({key: 'terminal', reason: RETRY_STUCK});
+      }
+    }
     event = events.find(event => !record.delivered.includes(event.key));
     // The first terminal sighting is the outcome. The registry reads it, because Paseo later closes an
     // idle finished worker or fails it on a plugin reload, and a late observation would see only that.
     if (event?.key === 'terminal' && !record.terminal)
       record.terminal = {reason: event.reason, status: agent?.status ?? null,
-        attentionReason: agent?.attentionReason ?? null, at: new Date(now).toISOString()};
+        attentionReason: agent?.attentionReason ?? null, at: new Date(now).toISOString(),
+        ...(event.reason === 'error' ? turnFailure(agent, record) : {}),
+        ...(event.reason === 'finished' ? {replied: await turnReplied(client, targetId)} : {})};
   }
   const parent = (await client.fetchAgent(record.parent_id))?.agent;
   if (!parent || parent.archivedAt || parent.status === 'closed') {
@@ -169,10 +320,15 @@ export async function notificationStep(client, record, persist, now = Date.now()
           ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'
           : event.reason === WORKER_REMOVED
           ? 'Paseo created this worker and it was removed before this dispatch observed it. It may have done part of the work: check that before rolling this brief again.'
+          : event.reason === RETRY_STUCK ? retryStuckText(record.terminal, targetId)
           : event.reason === UNDELIVERED
           ? `This worker carries this dispatch's labels, but its turn has not landed within the lease. Check it with get_agent_status ` +
             `(agentId: ${targetId}). If it should not do this work any more, release this dispatch. A finish is still reported if the turn lands.`
-          : `Read the worker's final response and details with get_agent_activity ` +
+          : (record.terminal?.failure_code === TURN_FAILED_CODE && event.key === 'terminal'
+            ? `The worker's turn ended with this error: ${record.terminal.provider_message}\nAgentCompass's classifier ` +
+              'reads it: when it is the provider refusing the model or the account, that is held out of dispatch; an ' +
+              "error of the worker's own work or of this task's input holds nothing. " : '') +
+            `Read the worker's final response and details with get_agent_activity ` +
             `(agentId: ${targetId}); use get_agent_status for pending permissions.`)};
     }
     persist();

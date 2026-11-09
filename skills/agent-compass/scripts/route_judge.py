@@ -1694,6 +1694,105 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
     return None, meta
 
 
+def run_structured(scorer_type, instructions, text, schema, timeout, config, account=None):
+    """(answer object, provider, model) from one scorer backend reading `text` under `instructions`: the same backends
+    and accounts as the task scorer, for a question other than a task profile. Jev's API answers task profiles only."""
+    spec = SCORER_TYPES[scorer_type]
+    prompt = instructions + '\n\n' + text
+    if scorer_type == 'agy_flash_low':
+        command = scorer_command(scorer_prefix(), schema, prompt)
+        with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
+            code, out, _ = run_process(command, Path(temporary), timeout=timeout)
+        if code != 0:
+            raise RuntimeError('System-One scorer CLI failed.')
+        envelope = json.loads(out)
+        answer = envelope.get('structured_output') if isinstance(envelope, dict) and not envelope.get('is_error') else None
+        if not isinstance(answer, dict):
+            raise ValueError('System-One scorer returned no answer.')
+        return answer, SCORER['provider'], SCORER['model']
+    if os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1':
+        raise ScorerError('Live scorer disabled by environment.')
+    if scorer_type == 'jev':
+        raise ScorerUnavailable('The TypeSafe System One API classifies tasks only.')
+    if scorer_type in SCORER_API_FIELDS:
+        key, _, base, model = scorer_api_settings(scorer_type, config)
+        if not key:
+            raise ScorerUnavailable('Custom scorer API key not configured.')
+        if not (base and model):
+            raise ScorerError('Custom scorer needs base_url and model.')
+        system = (instructions + '\nReturn exactly one JSON object (no Markdown) that satisfies this JSON schema:\n'
+                  + json.dumps(schema, ensure_ascii=False))
+        request = {'model': model, 'temperature': 0, 'response_format': {'type': 'json_object'},
+                   'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': text}]}
+        response = post_json(openai_chat_url(check_base_url(base)), request, key, timeout)
+        try:
+            answer = json.loads(response['choices'][0]['message']['content'])
+        except (KeyError, IndexError, TypeError, ValueError):
+            raise ValueError('OpenAI-compatible scorer returned no answer.') from None
+        if not isinstance(answer, dict):
+            raise ValueError('OpenAI-compatible scorer returned no answer.')
+        return answer, spec['provider'], model
+    try:
+        prefix = cli_prefix(spec['provider'])
+    except RuntimeError:
+        raise ScorerUnavailable(f"{spec['provider']} CLI is not installed.") from None
+    with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
+        directory = Path(temporary)
+        if spec['provider'] == 'claude':
+            code, out, _ = run_process(claude_scorer_command(prefix, spec['model'], schema), directory, prompt, timeout,
+                                       account=account)
+            if code != 0:
+                raise ScorerError('Claude scorer CLI failed.')
+            envelope = json.loads(out)
+            answer = envelope.get('structured_output') if isinstance(envelope, dict) and not envelope.get('is_error') else None
+        else:
+            (directory / 'schema.json').write_text(json.dumps({**schema, 'additionalProperties': False}), encoding='utf-8')
+            code, _, _ = run_process(codex_scorer_command(prefix, spec['model'], directory), directory, prompt, timeout,
+                                     account=account)
+            if code != 0:
+                raise ScorerError('Codex scorer CLI failed.')
+            answer = json.loads((directory / 'answer.json').read_text(encoding='utf-8-sig'))
+    if not isinstance(answer, dict):
+        raise ValueError('Scorer returned no answer.')
+    return answer, spec['provider'], spec['model']
+
+
+def classify_structured(instructions, text, schema, validate, timeout=SCORER_TIMEOUT_SECONDS, scorer_config=None):
+    """(validated answer or None, metadata) from the configured System-One classifier cascade, the same order and
+    accounts as `score_task`. `validate(answer)` returns the answer it accepts or raises ValueError. None when no
+    classifier answered: the caller treats that as unknown, never as a keyword guess."""
+    config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
+    configured, order = scorer_attempt_order(config)
+    policy = host_policy.load_policy()
+    attempts, skipped = [], []
+    for scorer_type in order:
+        accounts = scorer_accounts(scorer_type, policy=policy)
+        if not accounts:
+            skipped.append({'scorer_type': scorer_type,
+                            'detail': f'No ready {SCORER_FAMILIES.get(scorer_type)} account on this host.'})
+        for account in accounts:
+            try:
+                answer, provider, model = run_structured(scorer_type, instructions, text, schema, timeout, config, account)
+                answer = validate(answer)
+            except ScorerUnavailable as exc:
+                skipped.append({'scorer_type': scorer_type, 'detail': str(exc)})
+                break
+            except SCORER_ERRORS as exc:
+                attempts.append({'scorer_type': scorer_type, 'error_type': type(exc).__name__,
+                                 **({'account': account} if account else {}),
+                                 **({'detail': str(exc)} if isinstance(exc, ScorerError) else {})})
+                continue
+            return answer, {'source': 'system_one', 'scorer_type': scorer_type, 'provider': provider, 'model': model,
+                            **({'account': account} if account else {})}
+    meta = {'source': 'scorer_unavailable', 'configured_scorer': configured,
+            'fallback_reason': attempts[0]['error_type'] if attempts else 'scorer_unavailable'}
+    if attempts:
+        meta['attempts'] = attempts
+    if skipped:
+        meta['skipped'] = skipped
+    return None, meta
+
+
 def prefetch_scores(tasks, timeout=SCORER_TIMEOUT_SECONDS):
     """Classify several tasks at the same time so a batch roll waits for one scorer round, not one per brief. Results
     land in the score cache that each roll then reads; a failure here is left for that roll to meet and report."""
@@ -2070,6 +2169,8 @@ def record_constraint(args, task=None):
     latched_model = allocator.model_latch.reason(quota_bundle, allocator.model_latch.active(now=now))
     if latched_model:
         raise ValueError(f"{args.account}/{pin.model}: {latched_model}. Tell the user; do not substitute another model.")
+    # A model the user names on a held account or model is the probe that can lift the hold: it goes, with a warning.
+    retrying = allocator.provider_retry.reason(quota_bundle, allocator.provider_retry.active(now=now))
     c_model = resolved['key'] if direct else allocator.model_leaf(pin.model)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:
@@ -2104,6 +2205,9 @@ def record_constraint(args, task=None):
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
+    if retrying:
+        warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
+                    "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
     if warnings:
         result['warnings'] = warnings
     if fast_requested:
@@ -2425,6 +2529,13 @@ def plan_stage(document, args):
         return result, 0 if result.get('choice') != 'none' else 2
     reviewed_task = task
     started = time.monotonic()
+    if not getattr(args, 'dry_run', False):
+        import provider_retry
+        try:
+            # A worker the bridge stopped for a stuck provider retry is held before this plan, not after the next reconcile.
+            provider_retry.ingest()
+        except Exception:  # noqa: BLE001 - a hold that cannot be recorded now is recorded by the next observation
+            pass
     now = datetime.now(timezone.utc)
     usage = usage_snapshot(args.usage_cache, None, now)
     records = read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES)

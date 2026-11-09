@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
-  creationFailureClass, creationRecord, subscriptionLapsed} from './paseo_dispatch_bridge.mjs';
+  creationFailureClass, creationRecord, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
+  workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -823,7 +824,7 @@ test('the notifier keeps its first terminal sighting and the receipt reports it'
     assert.equal(await notificationStep(client, record, persist, 5_000), true);
     assert.equal(record.status, 'parent_unavailable');
     assert.deepEqual(record.terminal, {reason: 'finished', status: 'idle', attentionReason: 'finished',
-      at: new Date(5_000).toISOString()});
+      at: new Date(5_000).toISOString(), replied: false});   // no timeline read: not shown to have ended on a reply
     assert.deepEqual(notificationReceipt(file).terminal, record.terminal);
 
     // A live parent: the sighting is kept once, later lifecycle (closed after idle collection) does not replace it.
@@ -862,4 +863,174 @@ test('a definitive create failure carries a fixed failure class, never the SDK t
   assert.equal(creationFailureClass({error: 'Unknown model gpt-x'}), 'model_unavailable');
   assert.equal(creationFailureClass({error: 'something with secret-prompt-canary'}), 'unknown');
   assert.equal(creationFailureClass(undefined), 'unknown');
+});
+
+// 2026-11-09: an opencode free-model worker sat `running` on "Provider retry (attempt 1): Free usage exceeded, subscribe
+// to Go"; opencode never gives up, so the watcher must stop such a turn and say why, with the provider's own message.
+const MINUTE = 60 * 1000;
+const T0 = Date.parse('2026-11-09T08:00:00.000Z');
+const retryEntry = (attempt, at, message = 'Free usage exceeded, subscribe to Go') =>
+  ({provider: 'opencode', timestamp: new Date(at).toISOString(),
+    item: {type: 'error', message: `Provider retry (attempt ${attempt}): ${message}`}});
+const progress = at => ({provider: 'opencode', timestamp: new Date(at).toISOString(),
+  item: {type: 'assistant_message', text: 'working'}});
+
+test("provider retry notices are read from Paseo's own template and omp's structured status line", () => {
+  assert.deepEqual(providerRetry(retryEntry(3, T0)),
+    {attempt: 3, message: 'Free usage exceeded, subscribe to Go', next: null, at: T0});
+  assert.deepEqual(providerRetry({timestamp: new Date(T0).toISOString(),
+    item: {type: 'error', message: 'Provider retry (attempt 1)'}}), {attempt: 1, message: null, next: null, at: T0});
+  assert.equal(providerRetry({timestamp: new Date(T0).toISOString(),
+    item: {type: 'error', message: 'Free usage exceeded, subscribe to Go'}}), null);   // not a retry notice
+  assert.equal(providerRetry(progress(T0)), null);
+  assert.deepEqual(providerRetry({timestamp: new Date(T0).toISOString(), item: {type: 'tool_call', name: 'omp_auto_retry',
+    detail: {type: 'plain_text', text: 'Retrying in 8s: 429 Too Many Requests'},
+    metadata: {source: 'omp_auto_retry_start', attempt: 2, maxAttempts: 3, delayMs: 8000}}}),
+  {attempt: 2, message: 'Retrying in 8s: 429 Too Many Requests', next: new Date(T0 + 8000).toISOString(), at: T0});
+});
+
+test('a retry streak is stuck only after the whole window without progress, and any progress resets it', () => {
+  const one = retryStreak([progress(T0 - MINUTE), retryEntry(1, T0)]);
+  assert.equal(one.count, 1);
+  assert.equal(retryIsStuck(one, T0 + 4 * MINUTE), false);   // one long retry-after does not end the window early
+  assert.equal(retryIsStuck(one, T0 + 5 * MINUTE), true);
+  // Review F4: a minute of overload with fast retries (opencode backs off 2 s, 4 s, 8 s ...) is not stuck.
+  const overload = retryStreak([0, 2, 6, 14, 30, 60].map((s, n) => retryEntry(n + 1, T0 + s * 1000)));
+  assert.equal(retryIsStuck(overload, T0 + 61 * 1000), false);
+  assert.equal(retryIsStuck(overload, T0 + 4 * MINUTE), false);
+  assert.equal(retryIsStuck(overload, T0 + 5 * MINUTE), true);
+  assert.equal(retryStreak([retryEntry(1, T0), retryEntry(2, T0 + MINUTE), progress(T0 + 2 * MINUTE)]), null);
+  assert.equal(retryStreak([]), null);
+});
+
+function stuckFixture({entries, labels = {'router.dispatch_id': 'child'}, timelineError} = {}) {
+  const f = watchFixture();
+  f.record.deadline = T0 + 24 * 60 * MINUTE;
+  const order = [];
+  f.setAgent({id: 'child', status: 'running', labels});
+  f.client.fetchAgentTimeline = async (id, options) => {
+    order.push(['timeline', id, options.direction, options.projection]);
+    if (timelineError) throw new Error('secret-prompt-canary');
+    return {entries: entries ?? [progress(T0 - MINUTE), retryEntry(1, T0), retryEntry(2, T0 + 2 * MINUTE)]};
+  };
+  f.client.cancelAgent = async id => order.push(['cancel', id, f.saved.at(-1)?.terminal?.failure_code ?? null]);
+  return {...f, order};
+}
+
+test('a running worker stuck in provider retry is stopped, its terminal saved first, and the parent told why', async () => {
+  const f = stuckFixture();
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 2 * MINUTE), false);   // not past its bounds yet
+  assert.equal(f.order.filter(([kind]) => kind === 'cancel').length, 0);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 6 * MINUTE), true);
+  // Saved before the cancel, so the stop's idle state can never read as a finish.
+  assert.deepEqual(f.order.at(-1), ['cancel', 'child', RETRY_STUCK_CODE]);
+  assert.deepEqual(f.order[0], ['timeline', 'child', 'tail', 'canonical']);
+  assert.equal(f.record.terminal.failure_code, RETRY_STUCK_CODE);
+  assert.equal(f.record.terminal.provider_message, 'Free usage exceeded, subscribe to Go');
+  assert.equal(f.record.terminal.attempts, 2);
+  assert.equal(f.record.terminal.retrying_since, new Date(T0).toISOString());
+  assert.equal(f.record.terminal.next, null);
+  assert.equal(f.record.terminal.cancelled, true);
+  assert.equal(f.record.terminal.partial_work, true);   // it said "working" before it started retrying
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /State: provider retry stuck/);
+  assert.match(f.calls[0][1], /Provider message: Free usage exceeded, subscribe to Go/);
+  assert.match(f.calls[0][1], /already done part of the work \(it is stopped, not removed\)/);
+  assert.doesNotMatch(f.calls[0][1], /before the worker did any work/);
+  assert.equal(f.record.status, 'delivered');
+  // After the cancel the host says idle: the outcome stays the stuck retry.
+  f.setAgent({id: 'child', status: 'idle', attentionReason: 'finished', labels: {'router.dispatch_id': 'child'}});
+  assert.deepEqual(notificationEvents({status: 'idle', attentionReason: 'finished',
+    labels: {'router.dispatch_id': 'child'}}, f.record, T0 + 7 * MINUTE), [{key: 'terminal', reason: 'provider retry stuck'}]);
+});
+
+test('an unreadable timeline, progress after retrying, or a worker bound to another dispatch is left alone', async () => {
+  for (const options of [{timelineError: true}, {entries: [retryEntry(1, T0), progress(T0 + MINUTE)]}]) {
+    const f = stuckFixture(options);
+    assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 60 * MINUTE), false);
+    assert.equal(f.record.terminal, undefined);
+    assert.equal(f.calls.length, 0);
+  }
+  const f = stuckFixture({labels: {'router.dispatch_id': 'previous'}});
+  f.record.agent_id = 'worker';   // a resumed worker not relabelled for this dispatch yet
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 60 * MINUTE), false);
+  assert.equal(f.order.length, 0);
+});
+
+test('a turn that retried from its prompt on is reported as having done no work', async () => {
+  const prompt = {timestamp: new Date(T0 - MINUTE).toISOString(), item: {type: 'user_message', text: 'brief'}};
+  const f = stuckFixture({entries: [progress(T0 - 2 * MINUTE), prompt, retryEntry(1, T0)]});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 6 * MINUTE), true);
+  assert.equal(f.record.terminal.partial_work, false);
+  assert.match(f.calls[0][1], /before the worker did any work; roll this brief again/);
+  const streak = retryStreak([retryEntry(1, T0)]);
+  assert.equal(workedBeforeRetrying([retryEntry(1, T0)], streak, true), true);   // the prompt is beyond the page
+  assert.equal(workedBeforeRetrying([retryEntry(1, T0)], streak, false), false);
+});
+
+test('a stop that fails is told to the parent, never reported as stopped', async () => {
+  const f = stuckFixture();
+  let tries = 0;
+  f.client.cancelAgent = async () => {tries++; throw new Error('secret-prompt-canary');};
+  assert.equal(await notificationStep(f.client, f.record, f.persist, T0 + 6 * MINUTE), true);
+  assert.equal(tries, 2);   // retried once
+  assert.equal(f.record.terminal.cancelled, false);
+  assert.match(f.calls[0][1], /Stopping the worker failed, so it may still be running/);
+  assert.match(f.calls[0][1], /cancel_agent \(agentId: child\)/);
+  assert.doesNotMatch(f.calls[0][1], /secret-prompt-canary/);
+});
+
+test("a worker whose turn failed carries the provider's error text into its terminal", async () => {
+  // opencode 2.2.6 (2026-11-09) fails a free model at once instead of retrying.
+  const message = 'Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.';
+  const f = watchFixture();
+  f.setAgent({id: 'child', status: 'error', attentionReason: 'error', lastError: message});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.equal(f.record.terminal.failure_code, TURN_FAILED_CODE);
+  assert.equal(f.record.terminal.provider_message, message);
+  assert.match(f.calls[0][1], new RegExp(`The worker's turn ended with this error: ${message.replace(/[.]/g, '\\.')}`));
+  // Review 2 R3: the bridge does not know yet whether this is the provider's doing, so it does not say so.
+  assert.doesNotMatch(f.calls[0][1], /Provider error/);
+  const plain = watchFixture();
+  plain.setAgent({id: 'child', status: 'error'});
+  await notificationStep(plain.client, plain.record, plain.persist, 10);
+  assert.equal(plain.record.terminal.failure_code, undefined);   // no provider text, nothing to classify
+});
+
+test('a finished turn records whether it ended on the model reply; a cancel mid-retry or mid-tool does not', async () => {
+  // Review 2 R1: Paseo's idle/finished reads the same after a cancel; only a turn ending on the reply may lift a hold.
+  const prompt = {timestamp: new Date(T0).toISOString(), item: {type: 'user_message', text: 'brief'}};
+  const tool = {timestamp: new Date(T0).toISOString(), item: {type: 'tool_call', name: 'shell'}};
+  assert.equal(endedOnReply([prompt, tool, progress(T0 + 1000)]), true);
+  assert.equal(endedOnReply([prompt, retryEntry(1, T0 + 1000)]), false);   // cancelled while retrying
+  assert.equal(endedOnReply([prompt, progress(T0), retryEntry(1, T0 + 1000), progress(T0 + 2000)]), false);
+  assert.equal(endedOnReply([prompt, progress(T0), tool]), false);           // cancelled in a tool call
+  assert.equal(endedOnReply([prompt]), false);                                // cancelled before any reply
+  assert.equal(endedOnReply([]), false);
+  for (const [entries, replied] of [[[prompt, progress(T0 + 1000)], true], [[prompt, retryEntry(1, T0 + 1000)], false]]) {
+    const f = watchFixture();
+    f.client.fetchAgentTimeline = async () => ({entries});
+    assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+    assert.equal(f.record.terminal.reason, 'finished');
+    assert.equal(f.record.terminal.replied, replied);
+  }
+});
+
+test("a resumed worker's error from its previous turn is not this dispatch's provider failure", async () => {
+  // Review 2 R4: Paseo clears lastError when a turn starts; before this turn started it is the previous turn's.
+  const message = 'Free usage limit reached.';
+  const record = {dispatch_id: 'd2', agent_id: 'child', created_at: 5000};
+  assert.deepEqual(turnFailure({lastError: message, lastUserMessageAt: new Date(4000).toISOString()}, record), {});
+  assert.equal(turnFailure({lastError: message, lastUserMessageAt: new Date(6000).toISOString()}, record).failure_code,
+    TURN_FAILED_CODE);
+  assert.equal(turnFailure({lastError: message}, {...record, started: true}).failure_code, TURN_FAILED_CODE);
+  assert.equal(turnFailure({lastError: message}, {dispatch_id: 'child', agent_id: 'child'}).failure_code, TURN_FAILED_CODE);
+  const f = watchFixture();
+  Object.assign(f.record, {dispatch_id: 'd2', agent_id: 'child', created_at: 5000, deadline: 60_000});
+  f.setAgent({id: 'child', status: 'error', lastError: message, labels: {'router.dispatch_id': 'd2'},
+    lastUserMessageAt: new Date(4000).toISOString()});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 6000), true);
+  assert.equal(f.record.terminal.reason, 'error');
+  assert.equal(f.record.terminal.failure_code, undefined);
+  assert.doesNotMatch(f.calls[0][1], /ended with this error/);
 });

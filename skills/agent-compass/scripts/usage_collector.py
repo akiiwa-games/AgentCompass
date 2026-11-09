@@ -49,6 +49,13 @@ def collect(*, force: bool = False):
     subscriptions = list(dict.fromkeys(sources.get(name, name) for name in subscriptions))
     selected = usage.active_providers(subscriptions)
     observations = usage.fetch_all(selected, force=force)
+    try:
+        import provider_retry
+        # Holds a worker the bridge stopped for a stuck provider retry, so the tray shows it before the next roll.
+        provider_retry.ingest()
+    except Exception as error:  # noqa: BLE001 - never costs the usage reading
+        with (STATE / 'usage-collector.log').open('a', encoding='utf-8') as stream:
+            stream.write(f'{datetime.datetime.now().isoformat()} provider_retry {type(error).__name__}\n')
     result = {'hostname': socket.gethostname(), 'collection_mode': 'direct',
               'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
               'cache_path': str(usage.CACHE_PATH), 'excluded': [],

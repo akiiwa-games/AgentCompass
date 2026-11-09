@@ -586,7 +586,10 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             raise ValueError('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
         if decision.get('constraint') == 'user_override':
-            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint'))
+            import provider_retry
+            # A named model on a held account or model is the probe that can lift the hold (provider_retry).
+            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
+                                                                     provider_retry.EXCLUSION_PREFIX))
                           and ': responsiveness ' not in e]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
@@ -745,11 +748,60 @@ def finished_before(terminal, launched_at):
         return False
 
 
+def provider_failed(terminal, launched_at):
+    """The bridge's notifier saw this launch fail at its provider: stopped while the provider kept retrying without
+    progress, or its turn ended with the provider's error."""
+    if not isinstance(terminal, dict) or terminal.get('failure_code') not in ('provider_retry_stuck', 'provider_turn_failed'):
+        return False
+    at = terminal.get('at')
+    try:
+        return isinstance(at, str) and parse(at) >= parse(launched_at)
+    except ValueError:
+        return False
+
+
+def provider_replied(terminal, launched_at):
+    """The bridge's notifier saw this launch's turn end on the model's own reply. Paseo's idle/finished state reads the
+    same after a cancel, so only this lifts a provider hold; a terminal without the flag says nothing."""
+    if not isinstance(terminal, dict) or terminal.get('reason') != 'finished' or terminal.get('replied') is not True:
+        return False
+    at = terminal.get('at')
+    try:
+        return isinstance(at, str) and isinstance(launched_at, str) and parse(at) >= parse(launched_at)
+    except ValueError:
+        return False
+
+
+def classify_provider_failure(dispatch_id, terminal, path=None):
+    """Record a provider failure the notifier saw (provider_retry asks the classifier, so outside the registry's
+    transaction) and return the scope it was recorded with, or None."""
+    import provider_retry
+    if not isinstance(terminal, dict) or terminal.get('failure_code') not in provider_retry.FAILURE_CODES:
+        return None
+    try:
+        row = inspect(dispatch_id, path)
+    except (ValueError, OSError):
+        return None
+    if row.get('state') in TERMINAL or not isinstance(row.get('launched_at'), str) \
+            or not provider_failed(terminal, row['launched_at']):
+        return None
+    try:
+        provider_retry.record(row['bundle'], terminal, dispatch_id=dispatch_id)
+    except OSError:
+        pass  # Best effort: provider_retry.ingest records it from the watcher's receipt on the next roll.
+    try:
+        return provider_retry.dispatch_scope(dispatch_id)
+    except OSError:
+        return None
+
+
 def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     """Accept only the bound host agent; start/terminal receipts are idempotent.
 
     `terminal` is the notifier's first terminal sighting of this dispatch, when it has one."""
     now = now or utcnow()
+    import provider_retry
+    scope = classify_provider_failure(dispatch_id, terminal, path)
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)
         labels = snapshot.get('labels') or {}
@@ -808,7 +860,14 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if undelivered:
             reason = None
         target = None
-        if finished_before(terminal, row['launched_at']) and status != 'running':
+        stuck = provider_failed(terminal, row['launched_at'])
+        if stuck:
+            # The provider failed this turn (or the bridge stopped it retrying): whatever the host says after, it failed.
+            target = 'failed'
+            # A failed turn the classifier read as the worker's own error (or this task's input) is not the provider's.
+            row['failure_code'] = provider_retry.outcome_code(terminal['failure_code'], scope)
+            row['failure_detail'] = {k: terminal[k] for k in ('partial_work', 'cancelled') if k in terminal}
+        elif finished_before(terminal, row['launched_at']) and status != 'running':
             target = 'completed'
         elif status == 'error' or reason == 'error' or snapshot.get('providerUnavailable'):
             target = 'failed'
@@ -840,6 +899,13 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if row['state'] != target:
             event(row, target, now)
         save(connection, row)
+    # Only a turn positively seen ending on the model's reply lifts a hold: a cancelled probe reads as finished too.
+    if target == 'completed' and provider_replied(terminal, row.get('launched_at')):
+        try:
+            provider_retry.clear(row['bundle'].get('account'), provider_retry.launch_model(row['bundle']),
+                                 include_account=True, launched_at=row.get('launched_at') or row.get('created_at'))
+        except OSError:
+            pass
     if target in ('started', 'completed'):
         import account_state
         import launch_failures

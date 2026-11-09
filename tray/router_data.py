@@ -573,6 +573,7 @@ def account_cards() -> list[dict]:
         )
     ]
     reservations = pool_reservations(accounts=accounts, now=now)
+    retry_holds = provider_retry_holds(allocator)
     try:
         priority = router_priority.targets(allocator, accounts)
     except Exception:
@@ -592,6 +593,11 @@ def account_cards() -> list[dict]:
         if name in members:
             # Quota visibility belongs to the pool, not the source account's execution switch.
             text, kind = account_badge(name, row, config, None)
+        held = retry_hold_text(retry_holds, name)
+        if held and kind != "idle":   # an idle badge already says why the account takes no work
+            text, kind = (held if kind == "ok" else f"{text}；{held}"), "warn"
+        else:
+            held = None
         status = (row or {}).get("status")
         reading_failed = status in ("usage_failing", "plan_inactive", "auth_failed") or bool((row or {}).get("usage_read_failed"))
         windows = []
@@ -644,7 +650,7 @@ def account_cards() -> list[dict]:
         )
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,
-                      "status": status, "status_reason": (row or {}).get("reason"),
+                      "status": status, "status_reason": (row or {}).get("reason"), "retry_hold": bool(held),
                       "last_success_at": (row or {}).get("last_success_at"),
                       "fetched_at": fetched_at,
                       "plan": (row or {}).get("plan") or spec.get("plan"),
@@ -1321,6 +1327,7 @@ def harness_model_rows() -> list[dict]:
     latch = allocator.model_latch
     latches = latch.active(path=None if os.environ.get("ROUTER_MODEL_LATCH") else STATE_DIR / latch.FILE,
                            catalog=model_catalog.read(STATE_DIR / "model-catalog.json"))
+    retry_holds = provider_retry_holds(allocator)
     for (account, harness), models in groups.items():
         if not any(not bundle.get("discovery_unavailable") for entries in models.values() for _, _, bundle in entries):
             continue
@@ -1345,12 +1352,16 @@ def harness_model_rows() -> list[dict]:
                      "partial": any(flags) and not all(flags), "bundle_ids": [bid for _, bid, _ in bundles],
                      "bundle_refs": [(owner, bid) for owner, bid, _ in bundles]}
             group.update(_model_group_tags([b for _, _, b in bundles], flags))
-            unavailable = launch_unavailable_text(allocator, latches, account, bundles)
+            unavailable = (launch_unavailable_text(allocator, latches, account, bundles)
+                           or retry_model_text(allocator, retry_holds, account, bundles))
             if unavailable:
                 group["launch_unavailable"] = unavailable
             row["models"].append(group)
         failing = sum(1 for group in row["models"] if group.get("launch_unavailable"))
-        if failing and kind == "ok":
+        account_hold = retry_holds.get(account)
+        if account_hold and kind == "ok":
+            row["badge"], row["kind"] = retry_hold_text({account: account_hold}, account), "warn"
+        elif failing and kind == "ok":
             row["badge"], row["kind"] = _tr("{0} 个模型启动失败，已排除派发").format(failing), "warn"
         rows.append(row)
     present = {row['account'] for row in rows}
@@ -1377,6 +1388,55 @@ def launch_unavailable_text(allocator, latches: dict, account: str, bundles: lis
         if entry:
             retry = allocator.model_latch.retry_at(entry)
             return _tr("模型启动失败：不可用，下次重试 {0}").format(read_time_text(retry.isoformat() if retry else None))
+    return None
+
+
+def provider_retry_holds(allocator) -> dict:
+    """Accounts and models held out of dispatch because their provider kept retrying without progress."""
+    holds = allocator.provider_retry
+    found = holds.active(path=None if os.environ.get("ROUTER_PROVIDER_RETRY") else STATE_DIR / holds.FILE)
+    return found if isinstance(found, dict) else {}
+
+
+def _retry_what(entry: dict) -> str:
+    return _tr("提供方报错") if entry.get("failure_code") == "provider_turn_failed" else _tr("提供方持续重试")
+
+
+def retry_hold_text(holds: dict, account: str) -> str | None:
+    """The account list's note for an account (or its models) held for a provider failure: the provider's own message
+    and when the router tries again, or how to clear an account hold. None when nothing of the account is held."""
+    notes = []
+    for entry in sorted((v for v in holds.values() if v.get("account") == account),
+                        key=lambda v: (v.get("model") is not None, v.get("model") or "")):
+        message = entry.get("message") or _tr("无提供方消息")
+        if entry.get("model") is None and entry.get("retry_at"):
+            # Widened from guesses, not an `account` answer: it backs off like a model hold.
+            notes.append(_tr("{0}，整个账号已排除派发：{1}（下次重试 {2}，或点卡片上的“清除”）").format(
+                _retry_what(entry), message, read_time_text(entry.get("retry_at"))))
+        elif entry.get("model") is None:
+            notes.append(_tr("{0}，整个账号已排除派发：{1}（点卡片上的“清除”或运行 agentcompass hold --clear {2} 后再派发）").format(
+                _retry_what(entry), message, account))
+        else:
+            notes.append(_tr("{0} {1}，已排除派发：{2}（下次重试 {3}）").format(
+                model_label(entry["model"]), _retry_what(entry), message, read_time_text(entry.get("retry_at"))))
+    return "；".join(notes) or None
+
+
+def clear_retry_holds(account: str) -> bool:
+    """The account card's clear button: drop every provider-failure hold of the account (its own and its models')."""
+    allocator, _ = modules()
+    holds = allocator.provider_retry
+    return holds.clear(account, path=None if os.environ.get("ROUTER_PROVIDER_RETRY") else STATE_DIR / holds.FILE)
+
+
+def retry_model_text(allocator, holds: dict, account: str, bundles: list) -> str | None:
+    """The model list's note for a model held for a provider stuck retrying (its own hold, not the account's)."""
+    for owner, _, bundle in bundles:
+        for name in (owner, account):
+            entry = (holds.get(allocator.provider_retry.key(name, allocator.provider_retry.launch_model(bundle)))
+                     or holds.get(allocator.provider_retry.key(name, bundle.get("model"))))
+            if entry:
+                return _tr("{0}，已排除派发，下次重试 {1}").format(_retry_what(entry), read_time_text(entry.get("retry_at")))
     return None
 
 
