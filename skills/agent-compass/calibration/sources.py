@@ -6,9 +6,16 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
 - LMArena leaderboard dataset (Hugging Face lmarena-ai/leaderboard-dataset, `latest` split): WebDev, Agent and its
   sub-boards, Text (style control), Vision.
 - vals.ai SWE-bench Verified (per fix-time bucket) and Terminal-Bench 2.0 leaderboards (HTML).
-- Artificial Analysis models leaderboard (HTML): Intelligence Index per model variant, including effort variants.
+- Artificial Analysis models leaderboard (HTML): Intelligence Index per model variant, including effort variants, and
+  the page's embedded model records (cost and time per task, prices, sub-benchmarks).
+- OpenRouter `/api/v1/models` (prices), EQ-Bench Creative Writing v3, METR time horizons v1.1 and the OSWorld-Verified
+  results sheet: the five-axis measurements (`measurements.py`).
+
+`fetch` writes `fetch-manifest.json` beside the downloads: each file's url, fetched_at (UTC), sha256 and size, or the
+error when a source could not be fetched. A source that fails is recorded as missing, never replaced by an older copy.
 """
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -16,6 +23,7 @@ import re
 import sys
 import urllib.request
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 HF = 'https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/{}/latest-00000-of-00001.parquet'
@@ -23,7 +31,12 @@ ARENA_BOARDS = ('webdev', 'agent', 'agent_bash_reliability', 'agent_task_outcome
                 'text_style_control', 'vision')
 PAGES = {'swebench.html': 'https://www.vals.ai/benchmarks/swebench',
          'terminal-bench-2.html': 'https://www.vals.ai/benchmarks/terminal-bench-2',
-         'aa-models.html': 'https://artificialanalysis.ai/leaderboards/models'}
+         'aa-models.html': 'https://artificialanalysis.ai/leaderboards/models',
+         'openrouter-models.json': 'https://openrouter.ai/api/v1/models',
+         'eqbench-creative-writing.js': 'https://eqbench.com/creative_writing.js',
+         'metr-benchmark-results.yaml': 'https://metr.org/assets/benchmark_results_1_1.yaml',
+         'osworld-verified.xlsx': 'https://os-world.github.io/static/data/osworld_verified_results.xlsx'}
+MANIFEST = 'fetch-manifest.json'
 REPO = Path(__file__).resolve().parents[1]
 ACCOUNTS = REPO / 'references' / 'accounts.json'
 
@@ -37,10 +50,37 @@ def data_dir(arg=None):
 def fetch(target):
     agent = {'User-Agent': 'Mozilla/5.0 (agentcompass calibration)'}
     jobs = [(HF.format(b), target / f'{b}.parquet') for b in ARENA_BOARDS] + [(u, target / n) for n, u in PAGES.items()]
+    files = {}
     for url, path in jobs:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=60) as resp:
-            path.write_bytes(resp.read())
-        print(f'{path.name:36s} {path.stat().st_size:>9} bytes  {url}')
+        stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=60) as resp:
+                body = resp.read()
+        except Exception as exc:     # a failed source is recorded as missing; its stale copy must not be read
+            path.unlink(missing_ok=True)
+            files[path.name] = {'url': url, 'fetched_at': stamp, 'status': 'missing', 'error': f'{type(exc).__name__}: {exc}'}
+            print(f'{path.name:36s} MISSING  {url}  ({exc})')
+            continue
+        path.write_bytes(body)
+        files[path.name] = {'url': url, 'fetched_at': stamp, 'status': 'ok', 'bytes': len(body),
+                            'sha256': hashlib.sha256(body).hexdigest()}
+        print(f'{path.name:36s} {len(body):>9} bytes  {url}')
+    (target / MANIFEST).write_text(json.dumps({'files': files}, indent=1), encoding='utf-8')
+
+
+def manifest(target):
+    """{file name: manifest row}. Downloads made before the manifest existed get their url and file time."""
+    path = target / MANIFEST
+    if path.exists():
+        return json.loads(path.read_text(encoding='utf-8'))['files']
+    urls = {f'{b}.parquet': HF.format(b) for b in ARENA_BOARDS} | PAGES
+    out = {}
+    for name, url in urls.items():
+        f = target / name
+        out[name] = ({'url': url, 'status': 'ok', 'bytes': f.stat().st_size, 'sha256': hashlib.sha256(f.read_bytes()).hexdigest(),
+                      'fetched_at': datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).isoformat(timespec='seconds')}
+                     if f.exists() else {'url': url, 'status': 'missing', 'error': 'not downloaded'})
+    return out
 
 
 def accounts():
@@ -112,6 +152,96 @@ def artificial_analysis(target, field='index'):
             value = float(cells[3])
         out[base_name(cells[0])][EFFORT_WORDS.get(tag, tag)] = value
     return dict(out)
+
+
+AA_RSC_PUSH = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)', re.S)   # as refresh_speed_data
+
+
+def aa_records(target):
+    """The model records embedded in the AA leaderboard page (Next.js RSC stream): one dict per listed variant with
+    `name`, `intelligenceIndex`, `intelligenceIndexCostPerTask` (USD), `intelligenceIndexTimePerTask` (s), prices and
+    `scores` (sub-benchmarks, fractions)."""
+    raw = (target / 'aa-models.html').read_text(encoding='utf-8', errors='ignore')
+    stream = ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
+    dec, out, seen = json.JSONDecoder(), [], set()
+    for m in re.finditer(r'\{"slug":"', stream):
+        try:
+            obj, _ = dec.raw_decode(stream, m.start())
+        except ValueError:
+            continue
+        if 'intelligenceIndex' in obj and obj.get('name') not in seen:
+            seen.add(obj.get('name'))
+            out.append(obj)
+    return out
+
+
+def aa_effort(name):
+    """Effort a listed AA variant runs at ('' when the listing names none)."""
+    tag = variant(name).lower()
+    for part in (p.strip() for p in tag.split(',')):
+        if part in EFFORT_WORDS:
+            return EFFORT_WORDS[part]
+    return ''
+
+
+def openrouter(target):
+    """{model id: {'input', 'output', 'cache_read'} USD per million tokens} from OpenRouter's public model list."""
+    rows = json.loads((target / 'openrouter-models.json').read_text(encoding='utf-8')).get('data') or []
+    out = {}
+    for r in rows:
+        p = r.get('pricing') or {}
+        try:
+            out[r['id']] = {k: float(p[src]) * 1e6 for k, src in (('input', 'prompt'), ('output', 'completion'),
+                                                                     ('cache_read', 'input_cache_read')) if p.get(src) not in (None, '')}
+        except (TypeError, ValueError, KeyError):
+            continue
+    return out
+
+
+def eqbench(target):
+    """{model name: Elo} from EQ-Bench Creative Writing v3 (the CSV the leaderboard page embeds)."""
+    raw = (target / 'eqbench-creative-writing.js').read_text(encoding='utf-8', errors='ignore')
+    m = re.search(r'leaderboardDataCreativeWritingV3\s*=\s*`(.*?)`', raw, re.S)
+    out = {}
+    if not m:
+        return out
+    lines = [ln.strip() for ln in m.group(1).strip().splitlines() if ln.strip()]
+    head = lines[0].split(',')
+    for ln in lines[1:]:
+        cells = dict(zip(head, ln.split(',')))
+        try:
+            out[cells['model_name'].lstrip('*').strip()] = float(cells['elo_score'])
+        except (KeyError, ValueError):
+            continue
+    return out
+
+
+def metr(target):
+    """{METR run name: p50 time horizon in minutes} from METR's published time-horizon results (v1.1)."""
+    import yaml
+    doc = yaml.safe_load((target / 'metr-benchmark-results.yaml').read_text(encoding='utf-8'))
+    out = {}
+    for name, row in (doc.get('results') or {}).items():
+        est = (((row or {}).get('metrics') or {}).get('p50_horizon_length') or {}).get('estimate')
+        if isinstance(est, (int, float)):
+            out[name] = float(est)
+    return out
+
+
+def osworld(target):
+    """{model: success fraction} for OSWorld-Verified rows of a general model (no agent framework), best max-steps run."""
+    import openpyxl
+    ws = openpyxl.load_workbook(target / 'osworld-verified.xlsx', read_only=True).worksheets[0]
+    rows = list(ws.iter_rows(values_only=True))
+    head = list(rows[0])
+    col = {k: head.index(k) for k in ('Model', 'Approach type', 'Success rate')}
+    out = {}
+    for r in rows[1:]:
+        if r[col['Approach type']] != 'General model' or not isinstance(r[col['Success rate']], (int, float)):
+            continue
+        name, value = str(r[col['Model']]).strip(), float(r[col['Success rate']]) / 100
+        out[name] = max(value, out.get(name, 0.0))
+    return out
 
 
 def main():

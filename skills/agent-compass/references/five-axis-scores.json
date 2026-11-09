@@ -1,0 +1,8147 @@
+{
+ "schema": "agent-compass.five-axis-scores/1",
+ "generated_at": "2026-11-09T04:03:26+00:00",
+ "measurements_sha256": "7cbeb898e7dcf679bc58072a7e003719c4f7b9f520a6e4e383212bc98e7152c4",
+ "distrusted_sources": [],
+ "method": "Five-axis scores, tier, usd_per_hour and plan capacity from `references/public-measurements.json`.",
+ "backfill_fits": {
+  "divergence~aa.index": {
+   "a": 0.2911,
+   "b": 0.0118,
+   "r": 0.725,
+   "n": 24
+  },
+  "divergence~tier": {
+   "a": 0.3949,
+   "b": 0.0777,
+   "r": 0.3517,
+   "n": 22
+  },
+  "global_rigor~aa.index": {
+   "a": 0.5539,
+   "b": 0.0085,
+   "r": 0.8644,
+   "n": 26
+  },
+  "global_rigor~tier": {
+   "a": 0.0346,
+   "b": 0.27,
+   "r": 0.7638,
+   "n": 21
+  },
+  "module_precision~aa.index": {
+   "a": 0.1023,
+   "b": 0.0151,
+   "r": 0.8529,
+   "n": 26
+  },
+  "module_precision~tier": {
+   "a": 0.1523,
+   "b": 0.19,
+   "r": 0.5706,
+   "n": 25
+  },
+  "vision_tools~aa.index": {
+   "a": 0.3874,
+   "b": 0.0123,
+   "r": 0.4707,
+   "n": 21
+  },
+  "vision_tools~tier": {
+   "a": 0.4402,
+   "b": 0.1016,
+   "r": 0.192,
+   "n": 20
+  }
+ },
+ "capacity_conversion": {
+  "claude": {
+   "five_hour": {
+    "reference_model": "claude-opus-5-5",
+    "legacy_usd_per_hour": 7.5,
+    "aa_usd_per_hour": 21.746,
+    "factor": 2.8995
+   },
+   "seven_day": {
+    "reference_model": "claude-opus-5-5",
+    "legacy_usd_per_hour": 7.5,
+    "aa_usd_per_hour": 21.746,
+    "factor": 2.8995
+   },
+   "weekly_fable": {
+    "reference_model": "claude-fable-5-1",
+    "legacy_usd_per_hour": 18.7,
+    "aa_usd_per_hour": 34.631,
+    "factor": 1.8519
+   }
+  },
+  "codex": {
+   "usage": {
+    "reference_model": "gpt-6.1-sol",
+    "legacy_usd_per_hour": 2.6,
+    "aa_usd_per_hour": 5.482,
+    "factor": 2.1085
+   },
+   "five_hour": {
+    "reference_model": "gpt-6.1-sol",
+    "legacy_usd_per_hour": 2.6,
+    "aa_usd_per_hour": 5.482,
+    "factor": 2.1085
+   }
+  },
+  "pi": {
+   "usage": {
+    "reference_model": "gpt-6.1-sol",
+    "legacy_usd_per_hour": 2.6,
+    "aa_usd_per_hour": 5.482,
+    "factor": 2.1085
+   }
+  },
+  "antigravity": {
+   "gemini-weekly": {
+    "reference_model": "gemini-4-argon-high",
+    "legacy_usd_per_hour": 4.0,
+    "aa_usd_per_hour": 20.887,
+    "factor": 5.2218
+   },
+   "gemini-5h": {
+    "reference_model": "gemini-4-argon-high",
+    "legacy_usd_per_hour": 4.0,
+    "aa_usd_per_hour": 20.887,
+    "factor": 5.2218
+   },
+   "3p-weekly": {
+    "reference_model": "claude-opus-5-5",
+    "legacy_usd_per_hour": 7.5,
+    "aa_usd_per_hour": 21.746,
+    "factor": 2.8995
+   },
+   "3p-5h": {
+    "reference_model": "claude-opus-5-5",
+    "legacy_usd_per_hour": 7.5,
+    "aa_usd_per_hour": 21.746,
+    "factor": 2.8995
+   }
+  }
+ },
+ "capacity": {
+  "claude": {
+   "pro": {
+    "seven_day": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 156,
+     "comparison_only": {
+      "ref_hours": 20.8,
+      "capacity_usd_aa": 452.3
+     }
+    },
+    "five_hour": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 18,
+     "comparison_only": {
+      "ref_hours": 2.4,
+      "capacity_usd_aa": 52.2
+     }
+    }
+   },
+   "max5": {
+    "seven_day": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 1400,
+     "comparison_only": {
+      "ref_hours": 186.7,
+      "capacity_usd_aa": 4060.0
+     }
+    },
+    "five_hour": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 94,
+     "comparison_only": {
+      "ref_hours": 12.5,
+      "capacity_usd_aa": 271.8
+     }
+    },
+    "weekly_fable": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-fable-5-1",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 700,
+     "comparison_only": {
+      "ref_hours": 37.4,
+      "capacity_usd_aa": 1295.2
+     }
+    }
+   },
+   "max20": {
+    "seven_day": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 2380,
+     "comparison_only": {
+      "ref_hours": 317.3,
+      "capacity_usd_aa": 6900.0
+     }
+    },
+    "five_hour": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 376,
+     "comparison_only": {
+      "ref_hours": 50.1,
+      "capacity_usd_aa": 1089.5
+     }
+    },
+    "weekly_fable": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-fable-5-1",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 1190,
+     "comparison_only": {
+      "ref_hours": 63.6,
+      "capacity_usd_aa": 2202.5
+     }
+    }
+   }
+  },
+  "codex": {
+   "plus": {
+    "usage": {
+     "unit": "reference_model_hours",
+     "reference_model": "gpt-6.1-sol",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 67,
+     "comparison_only": {
+      "ref_hours": 25.8,
+      "capacity_usd_aa": 141.4
+     }
+    },
+    "five_hour": {
+     "unit": "reference_model_hours",
+     "reference_model": "gpt-6.1-sol",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 10,
+     "comparison_only": {
+      "ref_hours": 3.8,
+      "capacity_usd_aa": 20.8
+     }
+    }
+   },
+   "pro100": {
+    "usage": {
+     "unit": "reference_model_hours",
+     "reference_model": "gpt-6.1-sol",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 175,
+     "comparison_only": {
+      "ref_hours": 67.3,
+      "capacity_usd_aa": 368.9
+     }
+    }
+   },
+   "pro": {
+    "usage": {
+     "unit": "reference_model_hours",
+     "reference_model": "gpt-6.1-sol",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 325,
+     "comparison_only": {
+      "ref_hours": 125.0,
+      "capacity_usd_aa": 685.2
+     }
+    }
+   }
+  },
+  "antigravity": {
+   "ultra20": {
+    "gemini-weekly": {
+     "unit": "reference_model_hours",
+     "reference_model": "gemini-4-argon-high",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 625,
+     "comparison_only": {
+      "ref_hours": 156.2,
+      "capacity_usd_aa": 3262.5
+     }
+    },
+    "gemini-5h": {
+     "unit": "reference_model_hours",
+     "reference_model": "gemini-4-argon-high",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 182,
+     "comparison_only": {
+      "ref_hours": 45.5,
+      "capacity_usd_aa": 950.4
+     }
+    },
+    "3p-weekly": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 88,
+     "comparison_only": {
+      "ref_hours": 11.7,
+      "capacity_usd_aa": 254.4
+     }
+    },
+    "3p-5h": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 17.6,
+     "comparison_only": {
+      "ref_hours": 2.3,
+      "capacity_usd_aa": 50.0
+     }
+    }
+   },
+   "ultra5": {
+    "gemini-weekly": {
+     "unit": "reference_model_hours",
+     "reference_model": "gemini-4-argon-high",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 156,
+     "comparison_only": {
+      "ref_hours": 39.0,
+      "capacity_usd_aa": 814.6
+     }
+    },
+    "gemini-5h": {
+     "unit": "reference_model_hours",
+     "reference_model": "gemini-4-argon-high",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 45.5,
+     "comparison_only": {
+      "ref_hours": 11.4,
+      "capacity_usd_aa": 238.1
+     }
+    },
+    "3p-weekly": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 22,
+     "comparison_only": {
+      "ref_hours": 2.9,
+      "capacity_usd_aa": 63.1
+     }
+    },
+    "3p-5h": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 4.4,
+     "comparison_only": {
+      "ref_hours": 0.6,
+      "capacity_usd_aa": 13.0
+     }
+    }
+   },
+   "pro": {
+    "gemini-weekly": {
+     "unit": "reference_model_hours",
+     "reference_model": "gemini-4-argon-high",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 31,
+     "comparison_only": {
+      "ref_hours": 7.8,
+      "capacity_usd_aa": 162.9
+     }
+    },
+    "gemini-5h": {
+     "unit": "reference_model_hours",
+     "reference_model": "gemini-4-argon-high",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 9.1,
+     "comparison_only": {
+      "ref_hours": 2.3,
+      "capacity_usd_aa": 48.0
+     }
+    },
+    "3p-weekly": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 4.4,
+     "comparison_only": {
+      "ref_hours": 0.6,
+      "capacity_usd_aa": 13.0
+     }
+    },
+    "3p-5h": {
+     "unit": "reference_model_hours",
+     "reference_model": "claude-opus-5-5",
+     "ref_hours": null,
+     "status": "unknown",
+     "reason": "no public URL for the shipped figure (community or local measurement)",
+     "legacy_capacity_usd": 0.9,
+     "comparison_only": {
+      "ref_hours": 0.1,
+      "capacity_usd_aa": 2.2
+     }
+    }
+   }
+  }
+ },
+ "models": {
+  "deepseek-v4.1-flash-free": {
+   "tier": {
+    "value": 2.93,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py secondary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 2.209,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 2.209,
+     "max": 2.264,
+     "none": 3.007
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.0554,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.0554,
+       "sources": {
+        "eqbench.creative_writing_v3": 0.0554
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.648,
+     "status": "partial",
+     "components": {
+      "anti_hallucination": {
+       "value": 0.648,
+       "sources": {
+        "aa.omniscience_index": 0.648
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon",
+      "long_context"
+     ]
+    },
+    "module_precision": {
+     "value": 0.4762,
+     "status": "partial",
+     "components": {
+      "terminal": {
+       "value": 0.4762,
+       "sources": {
+        "aa.terminalbench_4": 0.4762
+       }
+      }
+     },
+     "missing_components": [
+      "coding"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.5,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "aa.mmmu_pro": 1.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.0554,
+    "global_rigor": 0.648,
+    "module_precision": 0.4762,
+    "vision_tools": 0.5
+   },
+   "economy_static": 0.872,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.8,
+    "usd_per_hour": 0.0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.45,
+     "global_rigor": 0.35,
+     "module_precision": 0.55
+    },
+    "capabilities": {
+     "reasoning": 0.48,
+     "coding": 0.5,
+     "exploration": 0.5,
+     "anti_hallucination": 0.45,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "claude-fable-5-1": {
+   "tier": {
+    "value": 4.08,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 34.631,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 34.631,
+     "low": 35.996,
+     "max": 34.297,
+     "medium": 34.729,
+     "xhigh": 34.349
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.9722,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.9997,
+       "sources": {
+        "lmarena.creative_writing": 0.9994,
+        "eqbench.creative_writing_v3": 1.0
+       }
+      },
+      "exploration": {
+       "value": 0.9446,
+       "sources": {
+        "lmarena.agent": 0.9446
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.9951,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.9902,
+       "sources": {
+        "aa.omniscience_index": 0.9902
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8774,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.8943,
+       "sources": {
+        "lmarena.webdev": 0.8943
+       }
+      },
+      "terminal": {
+       "value": 0.8605,
+       "sources": {
+        "aa.terminalbench_4": 0.8605
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.5,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.9722,
+    "global_rigor": 0.9951,
+    "module_precision": 0.8774,
+    "vision_tools": 0.5
+   },
+   "economy_static": 0.302,
+   "data_errors": [],
+   "legacy": {
+    "tier": 4.0,
+    "usd_per_hour": 18.7,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.92,
+     "global_rigor": 0.95,
+     "module_precision": 0.9
+    },
+    "capabilities": {
+     "reasoning": 0.98,
+     "coding": 0.78,
+     "exploration": 0.9,
+     "anti_hallucination": 0.9,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "claude-opus-5-5": {
+   "tier": {
+    "value": 4.6,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "anchor tier (calibration/README.md)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 21.746,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 21.746,
+     "low": 19.097,
+     "max": 23.816,
+     "medium": 20.728,
+     "xhigh": 22.685
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.9312,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8624,
+       "sources": {
+        "lmarena.creative_writing": 1.0,
+        "eqbench.creative_writing_v3": 0.7249
+       }
+      },
+      "exploration": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.agent": 1.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 1.0,
+       "sources": {
+        "aa.omniscience_index": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.9678,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.webdev": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.9357,
+       "sources": {
+        "aa.terminalbench_4": 0.9357
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0,
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.9312,
+    "global_rigor": 1.0,
+    "module_precision": 0.9678,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.408,
+   "data_errors": [],
+   "legacy": {
+    "tier": 4.6,
+    "usd_per_hour": 7.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.62,
+     "global_rigor": 0.98,
+     "module_precision": 0.92
+    },
+    "capabilities": {
+     "reasoning": 0.89,
+     "coding": 0.91,
+     "exploration": 0.88,
+     "anti_hallucination": 0.92,
+     "visual": 1.0,
+     "gui": 0.55
+    },
+    "visual": 1.0
+   }
+  },
+  "gpt-6.1-sol": {
+   "tier": {
+    "value": 3.6,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "anchor tier (calibration/README.md)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 5.482,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 5.482,
+     "low": 5.351,
+     "max": 3.842,
+     "medium": 5.609,
+     "xhigh": 5.006
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.8922,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8755,
+       "sources": {
+        "lmarena.creative_writing": 0.8755
+       }
+      },
+      "exploration": {
+       "value": 0.909,
+       "sources": {
+        "lmarena.agent": 0.909
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.9999,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.9997,
+       "sources": {
+        "aa.omniscience_index": 0.9997
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8673,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.8825,
+       "sources": {
+        "lmarena.webdev": 0.8825
+       }
+      },
+      "terminal": {
+       "value": 0.8521,
+       "sources": {
+        "aa.terminalbench_4": 0.8521
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9929,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9929,
+       "sources": {
+        "lmarena.vision": 0.9859,
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.8922,
+    "global_rigor": 0.9999,
+    "module_precision": 0.8673,
+    "vision_tools": 0.9929
+   },
+   "economy_static": 0.732,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.6,
+    "usd_per_hour": 2.6,
+    "duration_multiplier": 1.35,
+    "subjective": {
+     "divergence": 0.4,
+     "global_rigor": 0.25,
+     "module_precision": 0.95
+    },
+    "capabilities": {
+     "reasoning": 0.71,
+     "coding": 0.85,
+     "exploration": 0.62,
+     "anti_hallucination": 0.74,
+     "visual": 0.7,
+     "gui": 0.82
+    },
+    "visual": 0.7
+   }
+  },
+  "gpt-6-astra": {
+   "tier": {
+    "value": 4.2,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "anchor tier (calibration/README.md)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 20.06,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 20.06,
+     "low": 22.992,
+     "max": 16.569,
+     "medium": 23.395,
+     "xhigh": 19.159
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.9515,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.9362,
+       "sources": {
+        "lmarena.creative_writing": 0.8724,
+        "eqbench.creative_writing_v3": 1.0
+       }
+      },
+      "exploration": {
+       "value": 0.9668,
+       "sources": {
+        "lmarena.agent": 0.9668
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 1.0,
+       "sources": {
+        "aa.omniscience_index": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.9317,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.9695,
+       "sources": {
+        "lmarena.webdev": 0.9695
+       }
+      },
+      "terminal": {
+       "value": 0.8939,
+       "sources": {
+        "aa.terminalbench_4": 0.8939
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9832,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9832,
+       "sources": {
+        "lmarena.vision": 0.9664,
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.9515,
+    "global_rigor": 1.0,
+    "module_precision": 0.9317,
+    "vision_tools": 0.9832
+   },
+   "economy_static": 0.428,
+   "data_errors": [],
+   "legacy": {
+    "tier": 4.2,
+    "usd_per_hour": 22.6,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.68,
+     "global_rigor": 0.82,
+     "module_precision": 0.84
+    },
+    "capabilities": {
+     "reasoning": 0.8,
+     "coding": 0.79,
+     "exploration": 0.8,
+     "anti_hallucination": 0.78,
+     "visual": 0.8,
+     "gui": 0.95
+    },
+    "visual": 0.8
+   }
+  },
+  "gemini-4-argon-high": {
+   "tier": {
+    "value": 3.53,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": [
+     {
+      "source": "user",
+      "value": 4.0
+     }
+    ]
+   },
+   "usd_per_hour": {
+    "value": 20.887,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 20.887
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7238,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.5914,
+       "sources": {
+        "lmarena.creative_writing": 1.0,
+        "eqbench.creative_writing_v3": 0.1827
+       }
+      },
+      "exploration": {
+       "value": 0.8563,
+       "sources": {
+        "lmarena.agent": 0.8563
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 1.0,
+       "sources": {
+        "aa.omniscience_index": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8266,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.7093,
+       "sources": {
+        "lmarena.webdev": 0.7093
+       }
+      },
+      "terminal": {
+       "value": 0.944,
+       "sources": {
+        "aa.terminalbench_4": 0.944
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 50.41,
+      "a": 0.3874,
+      "b": 0.0123,
+      "r": 0.4707,
+      "n": 21
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.7238,
+    "global_rigor": 1.0,
+    "module_precision": 0.8266,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.418,
+   "data_errors": [],
+   "legacy": {
+    "tier": 4.0,
+    "usd_per_hour": 4.0,
+    "duration_multiplier": 1.35,
+    "subjective": {
+     "divergence": 0.96,
+     "global_rigor": 0.8,
+     "module_precision": 0.8
+    },
+    "capabilities": {
+     "reasoning": 0.78,
+     "coding": 0.83,
+     "exploration": 0.86,
+     "anti_hallucination": 0.81,
+     "visual": 0.75,
+     "gui": 0.62
+    },
+    "visual": 0.75
+   }
+  },
+  "claude-sonnet-5-5": {
+   "tier": {
+    "value": 3.9,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "anchor tier (calibration/README.md)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 13.81,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 13.81,
+     "low": 11.576,
+     "max": 19.333,
+     "medium": 12.958,
+     "xhigh": 16.263
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.9496,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.9132,
+       "sources": {
+        "lmarena.creative_writing": 0.9132
+       }
+      },
+      "exploration": {
+       "value": 0.9861,
+       "sources": {
+        "lmarena.agent": 0.9861
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.8911,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.9811,
+       "sources": {
+        "aa.lcr": 0.9811
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.8012,
+       "sources": {
+        "aa.omniscience_index": 0.8012
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8517,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.9765,
+       "sources": {
+        "lmarena.webdev": 0.9765
+       }
+      },
+      "terminal": {
+       "value": 0.7268,
+       "sources": {
+        "aa.terminalbench_4": 0.7268
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9743,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9743,
+       "sources": {
+        "lmarena.vision": 0.9743
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.9496,
+    "global_rigor": 0.8911,
+    "module_precision": 0.8517,
+    "vision_tools": 0.9743
+   },
+   "economy_static": 0.521,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.9,
+    "usd_per_hour": 4.4,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.6,
+     "global_rigor": 0.76,
+     "module_precision": 0.78
+    },
+    "capabilities": {
+     "reasoning": 0.74,
+     "coding": 0.82,
+     "exploration": 0.89,
+     "anti_hallucination": 0.73,
+     "visual": 0.6,
+     "gui": 0.55
+    },
+    "visual": 0.6
+   }
+  },
+  "grok-4.7": {
+   "tier": {
+    "value": 3.4,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "anchor tier (calibration/README.md)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 16.983,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 16.983,
+     "low": 16.487,
+     "xhigh": 17.952
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6763,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.704,
+       "sources": {
+        "lmarena.creative_writing": 0.7874,
+        "eqbench.creative_writing_v3": 0.6206
+       }
+      },
+      "exploration": {
+       "value": 0.6485,
+       "sources": {
+        "lmarena.agent": 0.6485
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.9351,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.9686,
+       "sources": {
+        "aa.lcr": 0.9686
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.9017,
+       "sources": {
+        "aa.omniscience_index": 0.9017
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.5006,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.5918,
+       "sources": {
+        "lmarena.webdev": 0.5918
+       }
+      },
+      "terminal": {
+       "value": 0.4094,
+       "sources": {
+        "aa.terminalbench_4": 0.4094
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.408,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.816,
+       "sources": {
+        "lmarena.vision": 0.816
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6763,
+    "global_rigor": 0.9351,
+    "module_precision": 0.5006,
+    "vision_tools": 0.408
+   },
+   "economy_static": 0.469,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.4,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.45,
+     "global_rigor": 0.4,
+     "module_precision": 0.58
+    },
+    "capabilities": {
+     "reasoning": 0.59,
+     "coding": 0.58,
+     "exploration": 0.6,
+     "anti_hallucination": 0.62,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "gemini-3.8-flash-high": {
+   "tier": {
+    "value": 3.0,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "anchor tier (calibration/README.md)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 31.256,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 31.256,
+     "medium": 31.431
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.614,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.5822,
+       "sources": {
+        "lmarena.creative_writing": 0.9942,
+        "eqbench.creative_writing_v3": 0.1702
+       }
+      },
+      "exploration": {
+       "value": 0.6459,
+       "sources": {
+        "lmarena.agent": 0.6459
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.8079,
+     "status": "measured",
+     "components": {
+      "long_horizon": {
+       "value": 0.582,
+       "sources": {
+        "vals.swebench_1_4h": 0.582
+       }
+      },
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.8417,
+       "sources": {
+        "aa.omniscience_index": 0.8417
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "module_precision": {
+     "value": 0.5289,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.732,
+       "sources": {
+        "lmarena.webdev": 0.4641,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.3258,
+       "sources": {
+        "aa.terminalbench_4": 0.3258
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0,
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.614,
+    "global_rigor": 0.8079,
+    "module_precision": 0.5289,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.324,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.0,
+    "usd_per_hour": 0.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.35,
+     "global_rigor": 0.35,
+     "module_precision": 0.65
+    },
+    "capabilities": {
+     "reasoning": 0.52,
+     "coding": 0.47,
+     "exploration": 0.5,
+     "anti_hallucination": 0.72,
+     "visual": 0.3,
+     "gui": 0.42
+    },
+    "visual": 0.3
+   }
+  },
+  "grok-bot": {
+   "tier": {
+    "value": 4.6,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "aligned with Opus by the user (accounts basis)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "global_rigor": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.0,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "grok-bot",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "grok-bot",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "grok-bot",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "grok-bot",
+     "field": "module_precision",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    }
+   ],
+   "legacy": {
+    "tier": 4.6,
+    "usd_per_hour": null,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.62,
+     "global_rigor": 0.98,
+     "module_precision": 0.92
+    },
+    "capabilities": {
+     "reasoning": 0.89,
+     "coding": 0.91,
+     "exploration": 0.88,
+     "anti_hallucination": 0.92,
+     "visual": 1.0,
+     "gui": 0.55
+    },
+    "visual": false
+   }
+  },
+  "dot": {
+   "tier": {
+    "value": 4.2,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "vendor statement that Dot runs on Astra (accounts basis)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "global_rigor": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.0,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "dot",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "dot",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "dot",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "dot",
+     "field": "module_precision",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    }
+   ],
+   "legacy": {
+    "tier": 4.2,
+    "usd_per_hour": null,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.68,
+     "global_rigor": 0.82,
+     "module_precision": 0.84
+    },
+    "capabilities": {
+     "reasoning": 0.8,
+     "coding": 0.79,
+     "exploration": 0.8,
+     "anti_hallucination": 0.78,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "gpt-6-pro": {
+   "tier": {
+    "value": 5.0,
+    "status": "ok",
+    "source": "user",
+    "as_of": "2026-11-04",
+    "method": "ceiling anchor 5.0 (accounts basis)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "global_rigor": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.0,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gpt-6-pro",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "gpt-6-pro",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "gpt-6-pro",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "gpt-6-pro",
+     "field": "module_precision",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    }
+   ],
+   "legacy": {
+    "tier": 5.0,
+    "usd_per_hour": null,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.95,
+     "global_rigor": 0.96,
+     "module_precision": 0.9
+    },
+    "capabilities": {
+     "reasoning": 1.0,
+     "coding": 0.9,
+     "exploration": 0.78,
+     "anti_hallucination": 0.95,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "claude-haiku-5-5": {
+   "tier": {
+    "value": 2.94,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 1.469,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 1.469,
+     "low": 1.205,
+     "max": 1.525,
+     "medium": 1.337,
+     "xhigh": 1.531
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6091,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.6241,
+       "sources": {
+        "lmarena.creative_writing": 0.6241
+       }
+      },
+      "exploration": {
+       "value": 0.5941,
+       "sources": {
+        "lmarena.agent": 0.5941
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.8271,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.9727,
+       "sources": {
+        "aa.lcr": 0.9727
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.6815,
+       "sources": {
+        "aa.omniscience_index": 0.6815
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.4218,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.4843,
+       "sources": {
+        "lmarena.webdev": 0.4843
+       }
+      },
+      "terminal": {
+       "value": 0.3592,
+       "sources": {
+        "aa.terminalbench_4": 0.3592
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.7552,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 29.87,
+      "a": 0.3874,
+      "b": 0.0123,
+      "r": 0.4707,
+      "n": 21
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.6091,
+    "global_rigor": 0.8271,
+    "module_precision": 0.4218,
+    "vision_tools": 0.7552
+   },
+   "economy_static": 0.911,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.94,
+    "usd_per_hour": 0.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.42,
+     "global_rigor": 0.53,
+     "module_precision": 0.67
+    },
+    "capabilities": {
+     "reasoning": 0.58,
+     "coding": 0.49,
+     "exploration": 0.62,
+     "anti_hallucination": 0.62,
+     "visual": 0.48,
+     "gui": 0.35
+    },
+    "visual": 0.48
+   }
+  },
+  "gpt-6.1-terra": {
+   "tier": {
+    "value": 3.24,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 3.875,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 3.875,
+     "low": 3.928,
+     "max": 4.281,
+     "medium": 3.892,
+     "none": 6.015,
+     "xhigh": 3.986
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.8794,
+     "status": "partial",
+     "components": {
+      "exploration": {
+       "value": 0.8794,
+       "sources": {
+        "lmarena.agent": 0.8794
+       }
+      }
+     },
+     "missing_components": [
+      "creative"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.9409,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.8818,
+       "sources": {
+        "aa.omniscience_index": 0.8818
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.6972,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.701,
+       "sources": {
+        "lmarena.webdev": 0.701
+       }
+      },
+      "terminal": {
+       "value": 0.6934,
+       "sources": {
+        "aa.terminalbench_4": 0.6934
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.8794,
+    "global_rigor": 0.9409,
+    "module_precision": 0.6972,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.795,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.2,
+    "usd_per_hour": 3.0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.5,
+     "global_rigor": 0.65,
+     "module_precision": 0.88
+    },
+    "capabilities": {
+     "reasoning": 0.73,
+     "coding": 0.65,
+     "exploration": 0.71,
+     "anti_hallucination": 0.75,
+     "visual": 0.72,
+     "gui": 0.8
+    },
+    "visual": 0.72
+   }
+  },
+  "gpt-6-sol": {
+   "tier": {
+    "value": 3.48,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.819,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8808,
+       "sources": {
+        "lmarena.creative_writing": 0.8121,
+        "eqbench.creative_writing_v3": 0.9495
+       }
+      },
+      "exploration": {
+       "value": 0.7571,
+       "sources": {
+        "lmarena.agent": 0.7571
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.9742,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 3.48,
+      "a": 0.0346,
+      "b": 0.27,
+      "r": 0.7638,
+      "n": 21
+     }
+    },
+    "module_precision": {
+     "value": 0.6863,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.6863,
+       "sources": {
+        "lmarena.webdev": 0.6863
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.8284,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.8284,
+       "sources": {
+        "lmarena.vision": 0.8284
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.819,
+    "global_rigor": 0.9742,
+    "module_precision": 0.6863,
+    "vision_tools": 0.8284
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gpt-6-sol",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 3.48,
+    "usd_per_hour": 2.6,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.4,
+     "global_rigor": 0.25,
+     "module_precision": 0.92
+    },
+    "capabilities": {
+     "reasoning": 0.69,
+     "coding": 0.66,
+     "exploration": 0.6,
+     "anti_hallucination": 0.72,
+     "visual": 0.68,
+     "gui": 0.8
+    },
+    "visual": 0.68
+   }
+  },
+  "gpt-6-luna": {
+   "tier": {
+    "value": 2.61,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 0.768,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 0.768,
+     "low": 0.493,
+     "max": 0.734,
+     "medium": 0.735,
+     "none": 2.079,
+     "xhigh": 0.86
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6854,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.743,
+       "sources": {
+        "lmarena.creative_writing": 0.743
+       }
+      },
+      "exploration": {
+       "value": 0.6277,
+       "sources": {
+        "lmarena.agent": 0.6277
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.7591,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.9979,
+       "sources": {
+        "aa.lcr": 0.9979
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.5202,
+       "sources": {
+        "aa.omniscience_index": 0.5202
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.2647,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.4542,
+       "sources": {
+        "lmarena.webdev": 0.4542
+       }
+      },
+      "terminal": {
+       "value": 0.0752,
+       "sources": {
+        "aa.terminalbench_4": 0.0752
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.8774,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.8774,
+       "sources": {
+        "lmarena.vision": 0.758,
+        "aa.mmmu_pro": 0.9967
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6854,
+    "global_rigor": 0.7591,
+    "module_precision": 0.2647,
+    "vision_tools": 0.8774
+   },
+   "economy_static": 0.951,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.61,
+    "usd_per_hour": 0.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.4,
+     "global_rigor": 0.45,
+     "module_precision": 0.68
+    },
+    "capabilities": {
+     "reasoning": 0.58,
+     "coding": 0.47,
+     "exploration": 0.57,
+     "anti_hallucination": 0.62,
+     "visual": 0.55,
+     "gui": 0.5
+    },
+    "visual": 0.55
+   }
+  },
+  "gpt-5.6-sol": {
+   "tier": {
+    "value": 3.33,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7152,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.7318,
+       "sources": {
+        "lmarena.creative_writing": 0.9375,
+        "eqbench.creative_writing_v3": 0.526
+       }
+      },
+      "exploration": {
+       "value": 0.6986,
+       "sources": {
+        "lmarena.agent": 0.6986
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 1.0,
+       "sources": {
+        "vals.swebench_1_4h": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7677,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.7677,
+       "sources": {
+        "lmarena.webdev": 0.5354,
+        "vals.swebench_lt15m": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.9726,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9726,
+       "sources": {
+        "lmarena.vision": 0.9726
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.7152,
+    "global_rigor": 1.0,
+    "module_precision": 0.7677,
+    "vision_tools": 0.9726
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gpt-5.6-sol",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 3.34,
+    "usd_per_hour": 2.4,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.4,
+     "global_rigor": 0.25,
+     "module_precision": 0.88
+    },
+    "capabilities": {
+     "reasoning": 0.67,
+     "coding": 0.54,
+     "exploration": 0.58,
+     "anti_hallucination": 0.7,
+     "visual": 0.65,
+     "gui": 0.75
+    },
+    "visual": 0.65
+   }
+  },
+  "gpt-5.6-terra": {
+   "tier": {
+    "value": 2.6,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5485,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.5594,
+       "sources": {
+        "lmarena.creative_writing": 0.8158,
+        "eqbench.creative_writing_v3": 0.303
+       }
+      },
+      "exploration": {
+       "value": 0.5377,
+       "sources": {
+        "lmarena.agent": 0.5377
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 1.0,
+       "sources": {
+        "vals.swebench_1_4h": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.6732,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.6732,
+       "sources": {
+        "lmarena.webdev": 0.3464,
+        "vals.swebench_lt15m": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.9339,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9339,
+       "sources": {
+        "lmarena.vision": 0.9339
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.5485,
+    "global_rigor": 1.0,
+    "module_precision": 0.6732,
+    "vision_tools": 0.9339
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gpt-5.6-terra",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.59,
+    "usd_per_hour": 2.7,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.48,
+     "global_rigor": 0.6,
+     "module_precision": 0.83
+    },
+    "capabilities": {
+     "reasoning": 0.69,
+     "coding": 0.36,
+     "exploration": 0.66,
+     "anti_hallucination": 0.71,
+     "visual": 0.67,
+     "gui": 0.74
+    },
+    "visual": 0.67
+   }
+  },
+  "gpt-5.6-luna": {
+   "tier": {
+    "value": 2.56,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5103,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.5103,
+       "sources": {
+        "lmarena.creative_writing": 0.7531,
+        "eqbench.creative_writing_v3": 0.2676
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.9524,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.9524,
+       "sources": {
+        "vals.swebench_1_4h": 0.9524
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.6714,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.6714,
+       "sources": {
+        "lmarena.webdev": 0.3427,
+        "vals.swebench_lt15m": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.894,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.894,
+       "sources": {
+        "lmarena.vision": 0.894
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.5103,
+    "global_rigor": 0.9524,
+    "module_precision": 0.6714,
+    "vision_tools": 0.894
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gpt-5.6-luna",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.55,
+    "usd_per_hour": 0.7,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.38,
+     "global_rigor": 0.42,
+     "module_precision": 0.65
+    },
+    "capabilities": {
+     "reasoning": 0.55,
+     "coding": 0.35,
+     "exploration": 0.54,
+     "anti_hallucination": 0.59,
+     "visual": 0.5,
+     "gui": 0.45
+    },
+    "visual": 0.5
+   }
+  },
+  "grok-4.7-build-fast": {
+   "tier": {
+    "value": 3.4,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py SAME_AS grok-4.7: Grok 4.7 on faster serving, available in Grok Build and Cursor (xAI launch coverage, 2026-09-21); no board lists it separately",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6591,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 3.4,
+      "a": 0.3949,
+      "b": 0.0777,
+      "r": 0.3517,
+      "n": 22
+     }
+    },
+    "global_rigor": {
+     "value": 0.9526,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 3.4,
+      "a": 0.0346,
+      "b": 0.27,
+      "r": 0.7638,
+      "n": 21
+     }
+    },
+    "module_precision": {
+     "value": 0.7983,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 3.4,
+      "a": 0.1523,
+      "b": 0.19,
+      "r": 0.5706,
+      "n": 25
+     }
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6591,
+    "global_rigor": 0.9526,
+    "module_precision": 0.7983,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "grok-4.7-build-fast",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 3.4,
+    "usd_per_hour": 0.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.55,
+     "global_rigor": 0.45,
+     "module_precision": 0.6
+    },
+    "capabilities": {
+     "reasoning": 0.54,
+     "coding": 0.58,
+     "exploration": 0.54,
+     "anti_hallucination": 0.55,
+     "visual": 0,
+     "gui": 0
+    },
+    "visual": false
+   }
+  },
+  "deepseek-v4-pro": {
+   "tier": {
+    "value": 2.87,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 4.367,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, median of the listed efforts ['max'] (no High listing)",
+    "by_effort": {
+     "max": 4.367,
+     "none": 3.538
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5154,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.4612,
+       "sources": {
+        "lmarena.creative_writing": 0.863,
+        "eqbench.creative_writing_v3": 0.0595
+       }
+      },
+      "exploration": {
+       "value": 0.5696,
+       "sources": {
+        "lmarena.agent": 0.5696
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.8592,
+     "status": "measured",
+     "components": {
+      "long_horizon": {
+       "value": 1.0,
+       "sources": {
+        "vals.swebench_1_4h": 1.0
+       }
+      },
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.5775,
+       "sources": {
+        "aa.omniscience_index": 0.5775
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "module_precision": {
+     "value": 0.4823,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.7306,
+       "sources": {
+        "lmarena.webdev": 0.4612,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.2339,
+       "sources": {
+        "aa.terminalbench_4": 0.2339
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.5154,
+    "global_rigor": 0.8592,
+    "module_precision": 0.4823,
+    "vision_tools": 0.0
+   },
+   "economy_static": 0.775,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.86,
+    "usd_per_hour": 1.2,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.62,
+     "global_rigor": 0.74,
+     "module_precision": 0.84
+    },
+    "capabilities": {
+     "reasoning": 0.78,
+     "coding": 0.47,
+     "exploration": 0.72,
+     "anti_hallucination": 0.75,
+     "visual": 0,
+     "gui": 0
+    },
+    "visual": false
+   }
+  },
+  "glm-5.3": {
+   "tier": {
+    "value": 3.06,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 8.03,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, median of the listed efforts ['low', 'max'] (no High listing)",
+    "by_effort": {
+     "low": 5.852,
+     "max": 10.209
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7266,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8467,
+       "sources": {
+        "lmarena.creative_writing": 0.895,
+        "eqbench.creative_writing_v3": 0.7984
+       }
+      },
+      "exploration": {
+       "value": 0.6064,
+       "sources": {
+        "lmarena.agent": 0.6064
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.896,
+     "status": "measured",
+     "components": {
+      "long_horizon": {
+       "value": 1.0,
+       "sources": {
+        "vals.swebench_1_4h": 1.0
+       }
+      },
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.6881,
+       "sources": {
+        "aa.omniscience_index": 0.6881
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "module_precision": {
+     "value": 0.7339,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.7745,
+       "sources": {
+        "lmarena.webdev": 0.5489,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.6934,
+       "sources": {
+        "aa.terminalbench_4": 0.6934
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.6719,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 23.11,
+      "a": 0.3874,
+      "b": 0.0123,
+      "r": 0.4707,
+      "n": 21
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.7266,
+    "global_rigor": 0.896,
+    "module_precision": 0.7339,
+    "vision_tools": 0.6719
+   },
+   "economy_static": 0.651,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.08,
+    "usd_per_hour": 1.0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.6,
+     "global_rigor": 0.72,
+     "module_precision": 0.8
+    },
+    "capabilities": {
+     "reasoning": 0.72,
+     "coding": 0.55,
+     "exploration": 0.74,
+     "anti_hallucination": 0.72,
+     "visual": 0.6,
+     "gui": 0.55
+    },
+    "visual": 0.6
+   }
+  },
+  "glm-5.3-flash-free": {
+   "tier": {
+    "value": 2.86,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 0.784,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 0.784
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6737,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8333,
+       "sources": {
+        "lmarena.creative_writing": 0.8333
+       }
+      },
+      "exploration": {
+       "value": 0.5141,
+       "sources": {
+        "lmarena.agent": 0.5141
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.8554,
+     "status": "measured",
+     "components": {
+      "long_horizon": {
+       "value": 0.9259,
+       "sources": {
+        "vals.swebench_1_4h": 0.9259
+       }
+      },
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.6402,
+       "sources": {
+        "aa.omniscience_index": 0.6402
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "module_precision": {
+     "value": 0.6505,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.758,
+       "sources": {
+        "lmarena.webdev": 0.516,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.543,
+       "sources": {
+        "aa.terminalbench_4": 0.543
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6737,
+    "global_rigor": 0.8554,
+    "module_precision": 0.6505,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.95,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.85,
+    "usd_per_hour": 0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.45,
+     "global_rigor": 0.42,
+     "module_precision": 0.58
+    },
+    "capabilities": {
+     "reasoning": 0.5,
+     "coding": 0.52,
+     "exploration": 0.52,
+     "anti_hallucination": 0.52,
+     "visual": 0.4,
+     "gui": 0.3
+    },
+    "visual": 0.4
+   }
+  },
+  "qwen3-coder-next": {
+   "tier": {
+    "value": 1.73,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py secondary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5293,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 1.73,
+      "a": 0.3949,
+      "b": 0.0777,
+      "r": 0.3517,
+      "n": 22
+     }
+    },
+    "global_rigor": {
+     "value": 0.5912,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.5912,
+       "sources": {
+        "aa.lcr": 0.5912
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "terminal": {
+       "value": 0.0,
+       "sources": {
+        "aa.terminalbench_4": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "coding"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.2972,
+     "status": "measured",
+     "components": {
+      "tools": {
+       "value": 0.8915,
+       "sources": {
+        "aa.tau2_bench": 0.8915
+       }
+      },
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": []
+    }
+   },
+   "scores": {
+    "divergence": 0.5293,
+    "global_rigor": 0.5912,
+    "module_precision": 0.0,
+    "vision_tools": 0.2972
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "qwen3-coder-next",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 1.71,
+    "usd_per_hour": 1.0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.48,
+     "global_rigor": 0.67,
+     "module_precision": 0.84
+    },
+    "capabilities": {
+     "reasoning": 0.7,
+     "coding": 0.82,
+     "exploration": 0.65,
+     "anti_hallucination": 0.66,
+     "visual": 0,
+     "gui": 0
+    },
+    "visual": false
+   }
+  },
+  "qwen3.8-max": {
+   "tier": {
+    "value": 3.15,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 9.736,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 9.736
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7631,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.9359,
+       "sources": {
+        "lmarena.creative_writing": 0.9359
+       }
+      },
+      "exploration": {
+       "value": 0.5902,
+       "sources": {
+        "lmarena.agent": 0.5902
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.814,
+     "status": "measured",
+     "components": {
+      "long_horizon": {
+       "value": 0.7143,
+       "sources": {
+        "vals.swebench_1_4h": 0.7143
+       }
+      },
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.7276,
+       "sources": {
+        "aa.omniscience_index": 0.7276
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "module_precision": {
+     "value": 0.745,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.8468,
+       "sources": {
+        "lmarena.webdev": 0.6937,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.6433,
+       "sources": {
+        "aa.terminalbench_4": 0.6433
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0,
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.7631,
+    "global_rigor": 0.814,
+    "module_precision": 0.745,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.606,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.14,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.67,
+     "global_rigor": 0.75,
+     "module_precision": 0.8
+    },
+    "capabilities": {
+     "reasoning": 0.78,
+     "coding": 0.65,
+     "exploration": 0.75,
+     "anti_hallucination": 0.74,
+     "visual": 0.65,
+     "gui": 0.48
+    },
+    "visual": 0.65
+   }
+  },
+  "kimi-k3.1-pro": {
+   "tier": {
+    "value": 3.47,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 5.787,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 5.787
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.8589,
+     "status": "measured",
+     "components": {
+      "exploration": {
+       "value": 0.7177,
+       "sources": {
+        "lmarena.agent": 0.7177
+       }
+      },
+      "creative": {
+       "value": 1.0,
+       "sources": {
+        "eqbench.creative_writing_v3": 1.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.9503,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.9005,
+       "sources": {
+        "aa.omniscience_index": 0.9005
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8563,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.7126,
+       "sources": {
+        "lmarena.webdev": 0.7126
+       }
+      },
+      "terminal": {
+       "value": 1.0,
+       "sources": {
+        "aa.terminalbench_4": 1.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.8589,
+    "global_rigor": 0.9503,
+    "module_precision": 0.8563,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.722,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.47,
+    "usd_per_hour": 1.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.72,
+     "global_rigor": 0.76,
+     "module_precision": 0.81
+    },
+    "capabilities": {
+     "reasoning": 0.79,
+     "coding": 0.69,
+     "exploration": 0.83,
+     "anti_hallucination": 0.74,
+     "visual": 0.68,
+     "gui": 0.5
+    },
+    "visual": 0.68
+   }
+  },
+  "kimi-k3": {
+   "tier": {
+    "value": 3.14,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7311,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8625,
+       "sources": {
+        "lmarena.creative_writing": 0.9063,
+        "eqbench.creative_writing_v3": 0.8188
+       }
+      },
+      "exploration": {
+       "value": 0.5998,
+       "sources": {
+        "lmarena.agent": 0.5998
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 1.0,
+       "sources": {
+        "vals.swebench_1_4h": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8193,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.8193,
+       "sources": {
+        "lmarena.webdev": 0.6385,
+        "vals.swebench_lt15m": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.7591,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 3.14,
+      "a": 0.4402,
+      "b": 0.1016,
+      "r": 0.192,
+      "n": 20
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.7311,
+    "global_rigor": 1.0,
+    "module_precision": 0.8193,
+    "vision_tools": 0.7591
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "kimi-k3",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 3.14,
+    "usd_per_hour": 1.2,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.7,
+     "global_rigor": 0.71,
+     "module_precision": 0.78
+    },
+    "capabilities": {
+     "reasoning": 0.74,
+     "coding": 0.61,
+     "exploration": 0.8,
+     "anti_hallucination": 0.7,
+     "visual": 0.62,
+     "gui": 0.45
+    },
+    "visual": 0.62
+   }
+  },
+  "minimax-m3": {
+   "tier": {
+    "value": 2.07,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 6.456,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 6.456
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5101,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.718,
+       "sources": {
+        "lmarena.creative_writing": 0.718
+       }
+      },
+      "exploration": {
+       "value": 0.3022,
+       "sources": {
+        "lmarena.agent": 0.3022
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.7048,
+     "status": "measured",
+     "components": {
+      "long_horizon": {
+       "value": 0.5291,
+       "sources": {
+        "vals.swebench_1_4h": 0.5291
+       }
+      },
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.5853,
+       "sources": {
+        "aa.omniscience_index": 0.5853
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "module_precision": {
+     "value": 0.4939,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.6214,
+       "sources": {
+        "lmarena.webdev": 0.2889,
+        "vals.swebench_lt15m": 0.954
+       }
+      },
+      "terminal": {
+       "value": 0.3664,
+       "sources": {
+        "vals.terminal_bench_2": 0.6993,
+        "aa.terminalbench_4": 0.0334
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9676,
+     "status": "measured",
+     "components": {
+      "vision": {
+       "value": 0.9345,
+       "sources": {
+        "lmarena.vision": 0.869,
+        "aa.mmmu_pro": 1.0
+       }
+      },
+      "gui": {
+       "value": 0.9719,
+       "sources": {
+        "osworld.verified": 0.9719
+       }
+      },
+      "tools": {
+       "value": 0.9964,
+       "sources": {
+        "aa.tau2_bench": 0.9964
+       }
+      }
+     },
+     "missing_components": []
+    }
+   },
+   "scores": {
+    "divergence": 0.5101,
+    "global_rigor": 0.7048,
+    "module_precision": 0.4939,
+    "vision_tools": 0.9676
+   },
+   "economy_static": 0.699,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.05,
+    "usd_per_hour": 1.0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.63,
+     "global_rigor": 0.7,
+     "module_precision": 0.82
+    },
+    "capabilities": {
+     "reasoning": 0.73,
+     "coding": 0.29,
+     "exploration": 0.75,
+     "anti_hallucination": 0.7,
+     "visual": 0.6,
+     "gui": 0.45
+    },
+    "visual": 0.6
+   }
+  },
+  "minimax-m3.1-flash": {
+   "tier": {
+    "value": 2.75,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 2.074,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 2.074
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5022,
+     "status": "partial",
+     "components": {
+      "exploration": {
+       "value": 0.5022,
+       "sources": {
+        "lmarena.agent": 0.5022
+       }
+      }
+     },
+     "missing_components": [
+      "creative"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.7886,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.5772,
+       "sources": {
+        "aa.omniscience_index": 0.5772
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.4441,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.4621,
+       "sources": {
+        "lmarena.webdev": 0.4621
+       }
+      },
+      "terminal": {
+       "value": 0.4261,
+       "sources": {
+        "aa.terminalbench_4": 0.4261
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.5022,
+    "global_rigor": 0.7886,
+    "module_precision": 0.4441,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.879,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.73,
+    "usd_per_hour": 0.6,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.58,
+     "global_rigor": 0.62,
+     "module_precision": 0.76
+    },
+    "capabilities": {
+     "reasoning": 0.66,
+     "coding": 0.47,
+     "exploration": 0.68,
+     "anti_hallucination": 0.65,
+     "visual": 0.55,
+     "gui": 0.4
+    },
+    "visual": 0.55
+   }
+  },
+  "doubao-seed-2-1-pro-260628": {
+   "tier": {
+    "value": 2.56,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5938,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 2.56,
+      "a": 0.3949,
+      "b": 0.0777,
+      "r": 0.3517,
+      "n": 22
+     }
+    },
+    "global_rigor": {
+     "value": 0.7258,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 2.56,
+      "a": 0.0346,
+      "b": 0.27,
+      "r": 0.7638,
+      "n": 21
+     }
+    },
+    "module_precision": {
+     "value": 0.3427,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.3427,
+       "sources": {
+        "lmarena.webdev": 0.3427
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.7002,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 2.56,
+      "a": 0.4402,
+      "b": 0.1016,
+      "r": 0.192,
+      "n": 20
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.5938,
+    "global_rigor": 0.7258,
+    "module_precision": 0.3427,
+    "vision_tools": 0.7002
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "doubao-seed-2-1-pro-260628",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.55,
+    "usd_per_hour": 0.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.66,
+     "global_rigor": 0.68,
+     "module_precision": 0.74
+    },
+    "capabilities": {
+     "reasoning": 0.72,
+     "coding": 0.35,
+     "exploration": 0.74,
+     "anti_hallucination": 0.7,
+     "visual": 0.65,
+     "gui": 0.5
+    },
+    "visual": 0.65
+   }
+  },
+  "mimo-v2.6-pro": {
+   "tier": {
+    "value": 3.34,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 0.388,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 0.388
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7553,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8622,
+       "sources": {
+        "lmarena.creative_writing": 0.8622
+       }
+      },
+      "exploration": {
+       "value": 0.6485,
+       "sources": {
+        "lmarena.agent": 0.6485
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.7973,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.5945,
+       "sources": {
+        "aa.omniscience_index": 0.5945
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.566,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.5556,
+       "sources": {
+        "lmarena.webdev": 0.5556
+       }
+      },
+      "terminal": {
+       "value": 0.5764,
+       "sources": {
+        "aa.terminalbench_4": 0.5764
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9225,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9225,
+       "sources": {
+        "lmarena.vision": 0.9225
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.7553,
+    "global_rigor": 0.7973,
+    "module_precision": 0.566,
+    "vision_tools": 0.9225
+   },
+   "economy_static": 0.975,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.15,
+    "usd_per_hour": 0.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.57,
+     "global_rigor": 0.67,
+     "module_precision": 0.8
+    },
+    "capabilities": {
+     "reasoning": 0.72,
+     "coding": 0.56,
+     "exploration": 0.7,
+     "anti_hallucination": 0.69,
+     "visual": 0.6,
+     "gui": 0.45
+    },
+    "visual": 0.6
+   }
+  },
+  "mimo-v2.6-flash-free": {
+   "tier": {
+    "value": 3.08,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 0.124,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 0.124
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6484,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.714,
+       "sources": {
+        "lmarena.creative_writing": 0.714
+       }
+      },
+      "exploration": {
+       "value": 0.5828,
+       "sources": {
+        "lmarena.agent": 0.5828
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.7364,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.935,
+       "sources": {
+        "aa.lcr": 0.935
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.5377,
+       "sources": {
+        "aa.omniscience_index": 0.5377
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.4814,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.5869,
+       "sources": {
+        "lmarena.webdev": 0.5869
+       }
+      },
+      "terminal": {
+       "value": 0.3759,
+       "sources": {
+        "aa.terminalbench_4": 0.3759
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9216,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9216,
+       "sources": {
+        "lmarena.vision": 0.9038,
+        "aa.mmmu_pro": 0.9394
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6484,
+    "global_rigor": 0.7364,
+    "module_precision": 0.4814,
+    "vision_tools": 0.9216
+   },
+   "economy_static": 0.992,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.1,
+    "usd_per_hour": 0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.45,
+     "global_rigor": 0.42,
+     "module_precision": 0.58
+    },
+    "capabilities": {
+     "reasoning": 0.51,
+     "coding": 0.58,
+     "exploration": 0.51,
+     "anti_hallucination": 0.5,
+     "visual": 0.4,
+     "gui": 0.3
+    },
+    "visual": 0.4
+   }
+  },
+  "nemotron-3-ultra-free": {
+   "tier": {
+    "value": 1.34,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.1644,
+     "status": "partial",
+     "components": {
+      "exploration": {
+       "value": 0.1644,
+       "sources": {
+        "lmarena.agent": 0.1644
+       }
+      }
+     },
+     "missing_components": [
+      "creative"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.4233,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.4233,
+       "sources": {
+        "vals.swebench_1_4h": 0.4233
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.9133,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.9133,
+       "sources": {
+        "vals.swebench_lt15m": 0.9133
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.1644,
+    "global_rigor": 0.4233,
+    "module_precision": 0.9133,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "nemotron-3-ultra-free",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 1.34,
+    "usd_per_hour": 0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.53,
+     "global_rigor": 0.62,
+     "module_precision": 0.71
+    },
+    "capabilities": {
+     "reasoning": 0.65,
+     "coding": 0.7,
+     "exploration": 0.65,
+     "anti_hallucination": 0.63,
+     "visual": 0,
+     "gui": 0
+    },
+    "visual": false
+   }
+  },
+  "nemotron-3.5-super-vl-free": {
+   "tier": {
+    "value": 1.99,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py secondary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 5.256,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 5.256
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.4521,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 13.62,
+      "a": 0.2911,
+      "b": 0.0118,
+      "r": 0.725,
+      "n": 24
+     }
+    },
+    "global_rigor": {
+     "value": 0.7383,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.8679,
+       "sources": {
+        "aa.lcr": 0.8679
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.6087,
+       "sources": {
+        "aa.omniscience_index": 0.6087
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "terminal": {
+       "value": 0.0,
+       "sources": {
+        "aa.terminalbench_4": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "coding"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.5551,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 13.62,
+      "a": 0.3874,
+      "b": 0.0123,
+      "r": 0.4707,
+      "n": 21
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.4521,
+    "global_rigor": 0.7383,
+    "module_precision": 0.0,
+    "vision_tools": 0.5551
+   },
+   "economy_static": 0.741,
+   "data_errors": [],
+   "legacy": {
+    "tier": 1.5,
+    "usd_per_hour": 0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.52,
+     "global_rigor": 0.59,
+     "module_precision": 0.66
+    },
+    "capabilities": {
+     "reasoning": 0.62,
+     "coding": 0.13,
+     "exploration": 0.63,
+     "anti_hallucination": 0.62,
+     "visual": 0.65,
+     "gui": 0.45
+    },
+    "visual": 0.65
+   }
+  },
+  "nemotron-3.5-lightning-free": {
+   "tier": {
+    "value": 1.31,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py secondary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 4.189,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, the only listing (no effort named)",
+    "by_effort": {
+     "default": 4.189
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.4466,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.4466,
+       "sources": {
+        "lmarena.creative_writing": 0.4466
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.4707,
+     "status": "measured",
+     "components": {
+      "long_horizon": {
+       "value": 0.1587,
+       "sources": {
+        "vals.swebench_1_4h": 0.1587
+       }
+      },
+      "long_context": {
+       "value": 0.7589,
+       "sources": {
+        "aa.lcr": 0.7589
+       }
+      },
+      "anti_hallucination": {
+       "value": 0.4944,
+       "sources": {
+        "aa.omniscience_index": 0.4944
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "module_precision": {
+     "value": 0.4027,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.797,
+       "sources": {
+        "vals.swebench_lt15m": 0.797
+       }
+      },
+      "terminal": {
+       "value": 0.0084,
+       "sources": {
+        "aa.terminalbench_4": 0.0084
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.4466,
+    "global_rigor": 0.4707,
+    "module_precision": 0.4027,
+    "vision_tools": 0.0
+   },
+   "economy_static": 0.782,
+   "data_errors": [],
+   "legacy": {
+    "tier": 1.29,
+    "usd_per_hour": 0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.42,
+     "global_rigor": 0.42,
+     "module_precision": 0.56
+    },
+    "capabilities": {
+     "reasoning": 0.5,
+     "coding": 0.54,
+     "exploration": 0.5,
+     "anti_hallucination": 0.48,
+     "visual": 0,
+     "gui": 0
+    },
+    "visual": false
+   }
+  },
+  "mistral-large-4": {
+   "tier": {
+    "value": 2.55,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 9.985,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 9.985,
+     "medium": 9.332
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.515,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.5972,
+       "sources": {
+        "lmarena.creative_writing": 0.5972
+       }
+      },
+      "exploration": {
+       "value": 0.4328,
+       "sources": {
+        "lmarena.agent": 0.4328
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.68,
+     "status": "partial",
+     "components": {
+      "anti_hallucination": {
+       "value": 0.68,
+       "sources": {
+        "aa.omniscience_index": 0.68
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon",
+      "long_context"
+     ]
+    },
+    "module_precision": {
+     "value": 0.4138,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.4182,
+       "sources": {
+        "lmarena.webdev": 0.4182
+       }
+      },
+      "terminal": {
+       "value": 0.4094,
+       "sources": {
+        "aa.terminalbench_4": 0.4094
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.854,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.854,
+       "sources": {
+        "lmarena.vision": 0.854
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.515,
+    "global_rigor": 0.68,
+    "module_precision": 0.4138,
+    "vision_tools": 0.854
+   },
+   "economy_static": 0.6,
+   "data_errors": [],
+   "legacy": {
+    "tier": 2.45,
+    "usd_per_hour": 1.2,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.65,
+     "global_rigor": 0.71,
+     "module_precision": 0.78
+    },
+    "capabilities": {
+     "reasoning": 0.74,
+     "coding": 0.4,
+     "exploration": 0.73,
+     "anti_hallucination": 0.71,
+     "visual": 0.65,
+     "gui": 0.45
+    },
+    "visual": 0.65
+   }
+  },
+  "muse-wonder-1.0": {
+   "tier": {
+    "value": 3.48,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py secondary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 30.383,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 30.383,
+     "max": 32.502
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7702,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 40.53,
+      "a": 0.2911,
+      "b": 0.0118,
+      "r": 0.725,
+      "n": 24
+     }
+    },
+    "global_rigor": {
+     "value": 0.8526,
+     "status": "partial",
+     "components": {
+      "anti_hallucination": {
+       "value": 0.8526,
+       "sources": {
+        "aa.omniscience_index": 0.8526
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon",
+      "long_context"
+     ]
+    },
+    "module_precision": {
+     "value": 0.6349,
+     "status": "partial",
+     "components": {
+      "terminal": {
+       "value": 0.6349,
+       "sources": {
+        "aa.terminalbench_4": 0.6349
+       }
+      }
+     },
+     "missing_components": [
+      "coding"
+     ]
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "aa.mmmu_pro": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.7702,
+    "global_rigor": 0.8526,
+    "module_precision": 0.6349,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.331,
+   "data_errors": [],
+   "legacy": {
+    "tier": 3.21,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.71,
+     "global_rigor": 0.73,
+     "module_precision": 0.77
+    },
+    "capabilities": {
+     "reasoning": 0.77,
+     "coding": 0.61,
+     "exploration": 0.79,
+     "anti_hallucination": 0.73,
+     "visual": 0.72,
+     "gui": 0.48
+    },
+    "visual": 0.72
+   }
+  },
+  "beam-free": {
+   "tier": {
+    "value": null,
+    "status": "missing",
+    "source": null
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "global_rigor": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.0,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "beam-free",
+     "field": "tier",
+     "reason": "no_trusted_source",
+     "level": "red",
+     "effect": "out of automatic routing; an explicit --model still dispatches it, with a warning"
+    },
+    {
+     "model": "beam-free",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "beam-free",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "beam-free",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "beam-free",
+     "field": "module_precision",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    }
+   ],
+   "legacy": {
+    "tier": 2.15,
+    "usd_per_hour": 0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.45,
+     "global_rigor": 0.45,
+     "module_precision": 0.58
+    },
+    "capabilities": {
+     "reasoning": 0.53,
+     "coding": 0.2,
+     "exploration": 0.53,
+     "anti_hallucination": 0.5,
+     "visual": 0,
+     "gui": 0
+    },
+    "visual": false
+   }
+  },
+  "flint-40b-free": {
+   "tier": {
+    "value": null,
+    "status": "missing",
+    "source": null
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "global_rigor": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.0,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "flint-40b-free",
+     "field": "tier",
+     "reason": "no_trusted_source",
+     "level": "red",
+     "effect": "out of automatic routing; an explicit --model still dispatches it, with a warning"
+    },
+    {
+     "model": "flint-40b-free",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "flint-40b-free",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "flint-40b-free",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "flint-40b-free",
+     "field": "module_precision",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    }
+   ],
+   "legacy": {
+    "tier": 2.8,
+    "usd_per_hour": 0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.4,
+     "global_rigor": 0.4,
+     "module_precision": 0.54
+    },
+    "capabilities": {
+     "reasoning": 0.48,
+     "coding": 0.52,
+     "exploration": 0.48,
+     "anti_hallucination": 0.46,
+     "visual": 0,
+     "gui": 0
+    },
+    "visual": false
+   }
+  },
+  "claude-haiku-4-5": {
+   "tier": {
+    "value": 1.25,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6915,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.6915,
+       "sources": {
+        "lmarena.creative_writing": 0.6915
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.3721,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 1.25,
+      "a": 0.0346,
+      "b": 0.27,
+      "r": 0.7638,
+      "n": 21
+     }
+    },
+    "module_precision": {
+     "value": 0.129,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.129,
+       "sources": {
+        "lmarena.webdev": 0.129
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.5672,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 1.25,
+      "a": 0.4402,
+      "b": 0.1016,
+      "r": 0.192,
+      "n": 20
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.6915,
+    "global_rigor": 0.3721,
+    "module_precision": 0.129,
+    "vision_tools": 0.5672
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "claude-haiku-4-5",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 1.21,
+    "usd_per_hour": 0.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.42,
+     "global_rigor": 0.5,
+     "module_precision": 0.64
+    },
+    "capabilities": {
+     "reasoning": 0.55,
+     "coding": 0.0,
+     "exploration": 0.59,
+     "anti_hallucination": 0.57,
+     "visual": 0.45,
+     "gui": 0.32
+    },
+    "visual": 0.45
+   }
+  },
+  "claude-opus-4-6": {
+   "tier": {
+    "value": 2.74,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6201,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.6201,
+       "sources": {
+        "lmarena.creative_writing": 1.0,
+        "eqbench.creative_writing_v3": 0.2402
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.7644,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.7644,
+       "sources": {
+        "metr.time_horizon_p50": 0.7644
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.3908,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.3908,
+       "sources": {
+        "lmarena.webdev": 0.3908
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6201,
+    "global_rigor": 0.7644,
+    "module_precision": 0.3908,
+    "vision_tools": 1.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "claude-opus-4-6",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.74,
+    "usd_per_hour": 7.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.6,
+     "global_rigor": 0.93,
+     "module_precision": 0.88
+    },
+    "capabilities": {
+     "reasoning": 0.85,
+     "coding": 0.41,
+     "exploration": 0.84,
+     "anti_hallucination": 0.88,
+     "visual": 0.95,
+     "gui": 0.52
+    },
+    "visual": 0.95
+   }
+  },
+  "claude-sonnet-4-6": {
+   "tier": {
+    "value": 2.58,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5556,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.5556,
+       "sources": {
+        "lmarena.creative_writing": 0.8702,
+        "eqbench.creative_writing_v3": 0.2411
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.5556,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.5556,
+       "sources": {
+        "vals.swebench_1_4h": 0.5556
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7849,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.6659,
+       "sources": {
+        "lmarena.webdev": 0.3486,
+        "vals.swebench_lt15m": 0.9831
+       }
+      },
+      "terminal": {
+       "value": 0.9039,
+       "sources": {
+        "vals.terminal_bench_2": 0.9039
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9527,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9734,
+       "sources": {
+        "lmarena.vision": 0.9734
+       }
+      },
+      "gui": {
+       "value": 0.9321,
+       "sources": {
+        "osworld.verified": 0.9321
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.5556,
+    "global_rigor": 0.5556,
+    "module_precision": 0.7849,
+    "vision_tools": 0.9527
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "claude-sonnet-4-6",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.57,
+    "usd_per_hour": 3.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.58,
+     "global_rigor": 0.73,
+     "module_precision": 0.76
+    },
+    "capabilities": {
+     "reasoning": 0.71,
+     "coding": 0.36,
+     "exploration": 0.83,
+     "anti_hallucination": 0.7,
+     "visual": 0.6,
+     "gui": 0.5
+    },
+    "visual": 0.6
+   }
+  },
+  "glm-5.2": {
+   "tier": {
+    "value": 3.0,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5623,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.53,
+       "sources": {
+        "lmarena.creative_writing": 0.8759,
+        "eqbench.creative_writing_v3": 0.1841
+       }
+      },
+      "exploration": {
+       "value": 0.5945,
+       "sources": {
+        "lmarena.agent": 0.5945
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.7407,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.7407,
+       "sources": {
+        "vals.swebench_1_4h": 0.7407
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7552,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.7552,
+       "sources": {
+        "lmarena.webdev": 0.5156,
+        "vals.swebench_lt15m": 0.9948
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.5623,
+    "global_rigor": 0.7407,
+    "module_precision": 0.7552,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "glm-5.2",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 3.0,
+    "usd_per_hour": 1.0,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.56,
+     "global_rigor": 0.68,
+     "module_precision": 0.74
+    },
+    "capabilities": {
+     "reasoning": 0.68,
+     "coding": 0.52,
+     "exploration": 0.7,
+     "anti_hallucination": 0.68,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "gpt-oss-120b": {
+   "tier": {
+    "value": 1.0,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py secondary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.2175,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.2175,
+       "sources": {
+        "lmarena.creative_writing": 0.4331,
+        "eqbench.creative_writing_v3": 0.002
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.4064,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.1587,
+       "sources": {
+        "vals.swebench_1_4h": 0.1587
+       }
+      },
+      "long_context": {
+       "value": 0.6541,
+       "sources": {
+        "aa.lcr": 0.6541
+       }
+      }
+     },
+     "missing_components": [
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.3342,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.5236,
+       "sources": {
+        "vals.swebench_lt15m": 0.5236
+       }
+      },
+      "terminal": {
+       "value": 0.1449,
+       "sources": {
+        "vals.terminal_bench_2": 0.2899,
+        "aa.terminalbench_4": 0.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.2458,
+     "status": "measured",
+     "components": {
+      "tools": {
+       "value": 0.7375,
+       "sources": {
+        "aa.tau2_bench": 0.7375
+       }
+      },
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": []
+    }
+   },
+   "scores": {
+    "divergence": 0.2175,
+    "global_rigor": 0.4064,
+    "module_precision": 0.3342,
+    "vision_tools": 0.2458
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gpt-oss-120b",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 1.0,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.5,
+     "global_rigor": 0.5,
+     "module_precision": 0.5
+    },
+    "capabilities": {
+     "reasoning": 0.55,
+     "coding": 0.55,
+     "exploration": 0.55,
+     "anti_hallucination": 0.5,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "gemini-3.1-flash-lite": {
+   "tier": {
+    "value": 1.0,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7664,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.7664,
+       "sources": {
+        "lmarena.creative_writing": 0.7664
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.2381,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.2381,
+       "sources": {
+        "vals.swebench_1_4h": 0.2381
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.4258,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.4764,
+       "sources": {
+        "lmarena.webdev": 0.086,
+        "vals.swebench_lt15m": 0.8668
+       }
+      },
+      "terminal": {
+       "value": 0.3752,
+       "sources": {
+        "vals.terminal_bench_2": 0.3752
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.8432,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.8432,
+       "sources": {
+        "lmarena.vision": 0.8432
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.7664,
+    "global_rigor": 0.2381,
+    "module_precision": 0.4258,
+    "vision_tools": 0.8432
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gemini-3.1-flash-lite",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 1.0,
+    "usd_per_hour": 0.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.315,
+     "global_rigor": 0.315,
+     "module_precision": 0.585
+    },
+    "capabilities": {
+     "reasoning": 0.468,
+     "coding": 0.0,
+     "exploration": 0.45,
+     "anti_hallucination": 0.648,
+     "visual": 0.27,
+     "gui": 0.378
+    },
+    "visual": 0.27
+   }
+  },
+  "kimi-k2.7-code": {
+   "tier": {
+    "value": 2.24,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.569,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 2.24,
+      "a": 0.3949,
+      "b": 0.0777,
+      "r": 0.3517,
+      "n": 22
+     }
+    },
+    "global_rigor": {
+     "value": 0.7768,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.5556,
+       "sources": {
+        "vals.swebench_1_4h": 0.5556
+       }
+      },
+      "long_context": {
+       "value": 0.9979,
+       "sources": {
+        "aa.lcr": 0.9979
+       }
+      }
+     },
+     "missing_components": [
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.3268,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.6369,
+       "sources": {
+        "lmarena.webdev": 0.2738,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.0167,
+       "sources": {
+        "aa.terminalbench_4": 0.0167
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "tools": {
+       "value": 1.0,
+       "sources": {
+        "aa.tau2_bench": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "vision",
+      "gui"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.569,
+    "global_rigor": 0.7768,
+    "module_precision": 0.3268,
+    "vision_tools": 1.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "kimi-k2.7-code",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.22,
+    "usd_per_hour": 1.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.648,
+     "global_rigor": 0.684,
+     "module_precision": 0.729
+    },
+    "capabilities": {
+     "reasoning": 0.711,
+     "coding": 0.27,
+     "exploration": 0.747,
+     "anti_hallucination": 0.666,
+     "visual": 0.612,
+     "gui": 0.45
+    },
+    "visual": 0.612
+   }
+  },
+  "qwen3.6-plus": {
+   "tier": {
+    "value": 2.16,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.745,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.745,
+       "sources": {
+        "lmarena.creative_writing": 0.745
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.4233,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.4233,
+       "sources": {
+        "vals.swebench_1_4h": 0.4233
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.6468,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.6115,
+       "sources": {
+        "lmarena.webdev": 0.2573,
+        "vals.swebench_lt15m": 0.9657
+       }
+      },
+      "terminal": {
+       "value": 0.6821,
+       "sources": {
+        "vals.terminal_bench_2": 0.6821
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.6596,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 2.16,
+      "a": 0.4402,
+      "b": 0.1016,
+      "r": 0.192,
+      "n": 20
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.745,
+    "global_rigor": 0.4233,
+    "module_precision": 0.6468,
+    "vision_tools": 0.6596
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "qwen3.6-plus",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.14,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.603,
+     "global_rigor": 0.675,
+     "module_precision": 0.72
+    },
+    "capabilities": {
+     "reasoning": 0.702,
+     "coding": 0.25,
+     "exploration": 0.675,
+     "anti_hallucination": 0.666,
+     "visual": 0.585,
+     "gui": 0.432
+    },
+    "visual": 0.585
+   }
+  },
+  "claude-opus-4-7": {
+   "tier": {
+    "value": 2.82,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6986,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.6986,
+       "sources": {
+        "lmarena.creative_writing": 0.9945,
+        "eqbench.creative_writing_v3": 0.4027
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.7143,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.7143,
+       "sources": {
+        "vals.swebench_1_4h": 0.7143
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8531,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.7062,
+       "sources": {
+        "lmarena.webdev": 0.4123,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 1.0,
+       "sources": {
+        "vals.terminal_bench_2": 1.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6986,
+    "global_rigor": 0.7143,
+    "module_precision": 0.8531,
+    "vision_tools": 1.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "claude-opus-4-7",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.82,
+    "usd_per_hour": 7.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.558,
+     "global_rigor": 0.882,
+     "module_precision": 0.828
+    },
+    "capabilities": {
+     "reasoning": 0.801,
+     "coding": 0.43,
+     "exploration": 0.792,
+     "anti_hallucination": 0.828,
+     "visual": 0.9,
+     "gui": 0.495
+    },
+    "visual": 0.9
+   }
+  },
+  "claude-opus-4-8": {
+   "tier": {
+    "value": 2.81,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.6076,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.6076,
+       "sources": {
+        "lmarena.creative_writing": 0.9357,
+        "eqbench.creative_writing_v3": 0.2795
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.7937,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.7937,
+       "sources": {
+        "vals.swebench_1_4h": 0.7937
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.8523,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.7047,
+       "sources": {
+        "lmarena.webdev": 0.4095,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 1.0,
+       "sources": {
+        "vals.terminal_bench_2": 1.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.6076,
+    "global_rigor": 0.7937,
+    "module_precision": 0.8523,
+    "vision_tools": 1.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "claude-opus-4-8",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.81,
+    "usd_per_hour": 7.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.558,
+     "global_rigor": 0.882,
+     "module_precision": 0.828
+    },
+    "capabilities": {
+     "reasoning": 0.801,
+     "coding": 0.42,
+     "exploration": 0.792,
+     "anti_hallucination": 0.828,
+     "visual": 0.9,
+     "gui": 0.495
+    },
+    "visual": 0.9
+   }
+  },
+  "grok-4.5": {
+   "tier": {
+    "value": 2.79,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.4744,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.4744,
+       "sources": {
+        "lmarena.creative_writing": 0.8811,
+        "eqbench.creative_writing_v3": 0.0677
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.8201,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.8201,
+       "sources": {
+        "vals.swebench_1_4h": 0.8201
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7016,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.7016,
+       "sources": {
+        "lmarena.webdev": 0.4031,
+        "vals.swebench_lt15m": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.496,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9919,
+       "sources": {
+        "lmarena.vision": 0.9919
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.4744,
+    "global_rigor": 0.8201,
+    "module_precision": 0.7016,
+    "vision_tools": 0.496
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "grok-4.5",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.79,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.405,
+     "global_rigor": 0.36,
+     "module_precision": 0.522
+    },
+    "capabilities": {
+     "reasoning": 0.531,
+     "coding": 0.42,
+     "exploration": 0.54,
+     "anti_hallucination": 0.558,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "grok-4.6": {
+   "tier": {
+    "value": 3.03,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7194,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.8492,
+       "sources": {
+        "lmarena.creative_writing": 0.8492
+       }
+      },
+      "exploration": {
+       "value": 0.5896,
+       "sources": {
+        "lmarena.agent": 0.5896
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 1.0,
+       "sources": {
+        "vals.swebench_1_4h": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7706,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.7706,
+       "sources": {
+        "lmarena.webdev": 0.5412,
+        "vals.swebench_lt15m": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.4577,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9153,
+       "sources": {
+        "lmarena.vision": 0.9153
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.7194,
+    "global_rigor": 1.0,
+    "module_precision": 0.7706,
+    "vision_tools": 0.4577
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "grok-4.6",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 3.02,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.405,
+     "global_rigor": 0.36,
+     "module_precision": 0.522
+    },
+    "capabilities": {
+     "reasoning": 0.531,
+     "coding": 0.54,
+     "exploration": 0.54,
+     "anti_hallucination": 0.558,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "gemini-3.1-pro-preview": {
+   "tier": {
+    "value": 2.21,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.4836,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.5073,
+       "sources": {
+        "lmarena.creative_writing": 0.9725,
+        "eqbench.creative_writing_v3": 0.0421
+       }
+      },
+      "exploration": {
+       "value": 0.4599,
+       "sources": {
+        "lmarena.agent": 0.4599
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.7212,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.4424,
+       "sources": {
+        "metr.time_horizon_p50": 0.4085,
+        "vals.swebench_1_4h": 0.4762
+       }
+      },
+      "long_context": {
+       "value": 1.0,
+       "sources": {
+        "aa.lcr": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.5763,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.6193,
+       "sources": {
+        "lmarena.webdev": 0.2387,
+        "vals.swebench_lt15m": 1.0
+       }
+      },
+      "terminal": {
+       "value": 0.5334,
+       "sources": {
+        "vals.terminal_bench_2": 1.0,
+        "aa.terminalbench_4": 0.0668
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0,
+        "aa.mmmu_pro": 1.0
+       }
+      },
+      "tools": {
+       "value": 1.0,
+       "sources": {
+        "aa.tau2_bench": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.4836,
+    "global_rigor": 0.7212,
+    "module_precision": 0.5763,
+    "vision_tools": 1.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gemini-3.1-pro-preview",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.18,
+    "usd_per_hour": 4.0,
+    "duration_multiplier": 1.35,
+    "subjective": {
+     "divergence": 0.864,
+     "global_rigor": 0.72,
+     "module_precision": 0.72
+    },
+    "capabilities": {
+     "reasoning": 0.702,
+     "coding": 0.22,
+     "exploration": 0.774,
+     "anti_hallucination": 0.729,
+     "visual": 0.675,
+     "gui": 0.558
+    },
+    "visual": 0.675
+   }
+  },
+  "gemini-3.7-flash": {
+   "tier": {
+    "value": 2.83,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.5524,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 0.5697,
+       "sources": {
+        "lmarena.creative_writing": 0.9904,
+        "eqbench.creative_writing_v3": 0.149
+       }
+      },
+      "exploration": {
+       "value": 0.5351,
+       "sources": {
+        "lmarena.agent": 0.5351
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.6349,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.6349,
+       "sources": {
+        "vals.swebench_1_4h": 0.6349
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7295,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.7295,
+       "sources": {
+        "lmarena.webdev": 0.476,
+        "vals.swebench_lt15m": 0.9831
+       }
+      }
+     },
+     "missing_components": [
+      "terminal"
+     ]
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.vision": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "gui",
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.5524,
+    "global_rigor": 0.6349,
+    "module_precision": 0.7295,
+    "vision_tools": 1.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "gemini-3.7-flash",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.83,
+    "usd_per_hour": 0.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.315,
+     "global_rigor": 0.315,
+     "module_precision": 0.585
+    },
+    "capabilities": {
+     "reasoning": 0.468,
+     "coding": 0.49,
+     "exploration": 0.45,
+     "anti_hallucination": 0.648,
+     "visual": 0.27,
+     "gui": 0.378
+    },
+    "visual": 0.27
+   }
+  },
+  "kimi-k2.6": {
+   "tier": {
+    "value": 2.49,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.4838,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.4838,
+       "sources": {
+        "lmarena.creative_writing": 0.8173,
+        "eqbench.creative_writing_v3": 0.1502
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.4497,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.4497,
+       "sources": {
+        "vals.swebench_1_4h": 0.4497
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7639,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.658,
+       "sources": {
+        "lmarena.webdev": 0.327,
+        "vals.swebench_lt15m": 0.9889
+       }
+      },
+      "terminal": {
+       "value": 0.8698,
+       "sources": {
+        "vals.terminal_bench_2": 0.8698
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.9587,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.9731,
+       "sources": {
+        "lmarena.vision": 0.9731
+       }
+      },
+      "gui": {
+       "value": 0.9444,
+       "sources": {
+        "osworld.verified": 0.9444
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.4838,
+    "global_rigor": 0.4497,
+    "module_precision": 0.7639,
+    "vision_tools": 0.9587
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "kimi-k2.6",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.48,
+    "usd_per_hour": 1.8,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.648,
+     "global_rigor": 0.684,
+     "module_precision": 0.729
+    },
+    "capabilities": {
+     "reasoning": 0.711,
+     "coding": 0.34,
+     "exploration": 0.747,
+     "anti_hallucination": 0.666,
+     "visual": 0.612,
+     "gui": 0.45
+    },
+    "visual": 0.612
+   }
+  },
+  "qwen3-max": {
+   "tier": {
+    "value": 1.16,
+    "status": "ok",
+    "source": "secondary.tier_fit",
+    "as_of": "2026-09-01",
+    "method": "tiers.py secondary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.7088,
+     "status": "partial",
+     "components": {
+      "creative": {
+       "value": 0.7088,
+       "sources": {
+        "lmarena.creative_writing": 0.7088
+       }
+      }
+     },
+     "missing_components": [
+      "exploration"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.3478,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 1.16,
+      "a": 0.0346,
+      "b": 0.27,
+      "r": 0.7638,
+      "n": 21
+     }
+    },
+    "module_precision": {
+     "value": 0.3752,
+     "status": "partial",
+     "components": {
+      "terminal": {
+       "value": 0.3752,
+       "sources": {
+        "vals.terminal_bench_2": 0.3752
+       }
+      }
+     },
+     "missing_components": [
+      "coding"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.558,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 1.16,
+      "a": 0.4402,
+      "b": 0.1016,
+      "r": 0.192,
+      "n": 20
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.7088,
+    "global_rigor": 0.3478,
+    "module_precision": 0.3752,
+    "vision_tools": 0.558
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "qwen3-max",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 1.15,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.603,
+     "global_rigor": 0.675,
+     "module_precision": 0.72
+    },
+    "capabilities": {
+     "reasoning": 0.702,
+     "coding": 0.585,
+     "exploration": 0.675,
+     "anti_hallucination": 0.666,
+     "visual": 0.585,
+     "gui": 0.432
+    },
+    "visual": 0.585
+   }
+  },
+  "qwen3.7-max": {
+   "tier": {
+    "value": 2.35,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.4048,
+     "status": "partial",
+     "components": {
+      "exploration": {
+       "value": 0.4048,
+       "sources": {
+        "lmarena.agent": 0.4048
+       }
+      }
+     },
+     "missing_components": [
+      "creative"
+     ]
+    },
+    "global_rigor": {
+     "value": 0.4233,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.4233,
+       "sources": {
+        "vals.swebench_1_4h": 0.4233
+       }
+      }
+     },
+     "missing_components": [
+      "long_context",
+      "anti_hallucination"
+     ]
+    },
+    "module_precision": {
+     "value": 0.7662,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.6341,
+       "sources": {
+        "lmarena.webdev": 0.3375,
+        "vals.swebench_lt15m": 0.9308
+       }
+      },
+      "terminal": {
+       "value": 0.8983,
+       "sources": {
+        "vals.terminal_bench_2": 0.8983
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 0.6789,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "tier",
+      "x": 2.35,
+      "a": 0.4402,
+      "b": 0.1016,
+      "r": 0.192,
+      "n": 20
+     }
+    }
+   },
+   "scores": {
+    "divergence": 0.4048,
+    "global_rigor": 0.4233,
+    "module_precision": 0.7662,
+    "vision_tools": 0.6789
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "qwen3.7-max",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    }
+   ],
+   "legacy": {
+    "tier": 2.33,
+    "usd_per_hour": 1.5,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.603,
+     "global_rigor": 0.675,
+     "module_precision": 0.72
+    },
+    "capabilities": {
+     "reasoning": 0.702,
+     "coding": 0.35,
+     "exploration": 0.675,
+     "anti_hallucination": 0.666,
+     "visual": 0.585,
+     "gui": 0.432
+    },
+    "visual": 0.585
+   }
+  },
+  "qwen3-flash-2025-07-28": {
+   "tier": {
+    "value": null,
+    "status": "missing",
+    "source": null
+   },
+   "usd_per_hour": {
+    "value": null,
+    "status": "missing",
+    "by_effort": {}
+   },
+   "axes": {
+    "divergence": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "creative",
+      "exploration"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "global_rigor": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "long_horizon",
+      "long_context",
+      "anti_hallucination"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "module_precision": {
+     "value": 0.0,
+     "status": "missing",
+     "components": {},
+     "missing_components": [
+      "coding",
+      "terminal"
+     ],
+     "flag": "yellow",
+     "reason": "no trusted source and no public predictor to backfill from"
+    },
+    "vision_tools": {
+     "value": 0.0,
+     "status": "partial",
+     "components": {
+      "vision": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      },
+      "gui": {
+       "value": 0.0,
+       "sources": {
+        "accounts.visual": 0.0
+       }
+      }
+     },
+     "missing_components": [
+      "tools"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.0,
+    "global_rigor": 0.0,
+    "module_precision": 0.0,
+    "vision_tools": 0.0
+   },
+   "economy_static": null,
+   "data_errors": [
+    {
+     "model": "qwen3-flash-2025-07-28",
+     "field": "tier",
+     "reason": "no_trusted_source",
+     "level": "red",
+     "effect": "out of automatic routing; an explicit --model still dispatches it, with a warning"
+    },
+    {
+     "model": "qwen3-flash-2025-07-28",
+     "field": "usd_per_hour",
+     "reason": "no_trusted_source",
+     "level": "red_if_billed",
+     "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+    },
+    {
+     "model": "qwen3-flash-2025-07-28",
+     "field": "divergence",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "qwen3-flash-2025-07-28",
+     "field": "global_rigor",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    },
+    {
+     "model": "qwen3-flash-2025-07-28",
+     "field": "module_precision",
+     "reason": "no_trusted_source",
+     "level": "yellow",
+     "effect": "scores 0 on this axis"
+    }
+   ],
+   "legacy": {
+    "tier": 2.8,
+    "usd_per_hour": 0.3,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.5,
+     "global_rigor": 0.5,
+     "module_precision": 0.5
+    },
+    "capabilities": {
+     "reasoning": 0.55,
+     "coding": 0.55,
+     "exploration": 0.55,
+     "anti_hallucination": 0.5,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "gemini-4-carbon": {
+   "tier": {
+    "value": 4.33,
+    "status": "ok",
+    "source": "lmarena.tier_fit",
+    "as_of": "2026-11-06",
+    "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
+    "alternatives": []
+   },
+   "usd_per_hour": {
+    "value": 16.198,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "as_of": "2026-11-09",
+    "fetched_at": "2026-11-09T03:43:49+00:00",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "cost per task x 3600 / time per task, High listing",
+    "by_effort": {
+     "high": 16.198,
+     "low": 18.025,
+     "medium": 15.538
+    }
+   },
+   "axes": {
+    "divergence": {
+     "value": 1.0,
+     "status": "measured",
+     "components": {
+      "creative": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.creative_writing": 1.0
+       }
+      },
+      "exploration": {
+       "value": 1.0,
+       "sources": {
+        "lmarena.agent": 1.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "global_rigor": {
+     "value": 0.999,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.9979,
+       "sources": {
+        "aa.lcr": 0.9979
+       }
+      },
+      "anti_hallucination": {
+       "value": 1.0,
+       "sources": {
+        "aa.omniscience_index": 1.0
+       }
+      }
+     },
+     "missing_components": [
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.9807,
+     "status": "measured",
+     "components": {
+      "coding": {
+       "value": 0.9613,
+       "sources": {
+        "lmarena.webdev": 0.9613
+       }
+      },
+      "terminal": {
+       "value": 1.0,
+       "sources": {
+        "aa.terminalbench_4": 1.0
+       }
+      }
+     },
+     "missing_components": []
+    },
+    "vision_tools": {
+     "value": 1.0,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "vision",
+      "gui",
+      "tools"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 60.03,
+      "a": 0.3874,
+      "b": 0.0123,
+      "r": 0.4707,
+      "n": 21
+     }
+    }
+   },
+   "scores": {
+    "divergence": 1.0,
+    "global_rigor": 0.999,
+    "module_precision": 0.9807,
+    "vision_tools": 1.0
+   },
+   "economy_static": 0.481,
+   "data_errors": [],
+   "legacy": {
+    "tier": 4.35,
+    "usd_per_hour": 4.0,
+    "duration_multiplier": 1.35,
+    "subjective": {
+     "divergence": 0.864,
+     "global_rigor": 0.72,
+     "module_precision": 0.72
+    },
+    "capabilities": {
+     "reasoning": 0.702,
+     "coding": 0.83,
+     "exploration": 0.774,
+     "anti_hallucination": 0.729,
+     "visual": 0.675,
+     "gui": 0.558
+    },
+    "visual": 0.675
+   }
+  }
+ },
+ "data_errors": [
+  {
+   "model": "grok-bot",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "grok-bot",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "grok-bot",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "grok-bot",
+   "field": "module_precision",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "dot",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "dot",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "dot",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "dot",
+   "field": "module_precision",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "gpt-6-pro",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gpt-6-pro",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "gpt-6-pro",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "gpt-6-pro",
+   "field": "module_precision",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "gpt-6-sol",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gpt-5.6-sol",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gpt-5.6-terra",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gpt-5.6-luna",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "grok-4.7-build-fast",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "qwen3-coder-next",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "kimi-k3",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "doubao-seed-2-1-pro-260628",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "nemotron-3-ultra-free",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "beam-free",
+   "field": "tier",
+   "reason": "no_trusted_source",
+   "level": "red",
+   "effect": "out of automatic routing; an explicit --model still dispatches it, with a warning"
+  },
+  {
+   "model": "beam-free",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "beam-free",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "beam-free",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "beam-free",
+   "field": "module_precision",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "flint-40b-free",
+   "field": "tier",
+   "reason": "no_trusted_source",
+   "level": "red",
+   "effect": "out of automatic routing; an explicit --model still dispatches it, with a warning"
+  },
+  {
+   "model": "flint-40b-free",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "flint-40b-free",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "flint-40b-free",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "flint-40b-free",
+   "field": "module_precision",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "claude-haiku-4-5",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "claude-opus-4-6",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "claude-sonnet-4-6",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "glm-5.2",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gpt-oss-120b",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gemini-3.1-flash-lite",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "kimi-k2.7-code",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "qwen3.6-plus",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "claude-opus-4-7",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "claude-opus-4-8",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "grok-4.5",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "grok-4.6",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gemini-3.1-pro-preview",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "gemini-3.7-flash",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "kimi-k2.6",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "qwen3-max",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "qwen3.7-max",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "qwen3-flash-2025-07-28",
+   "field": "tier",
+   "reason": "no_trusted_source",
+   "level": "red",
+   "effect": "out of automatic routing; an explicit --model still dispatches it, with a warning"
+  },
+  {
+   "model": "qwen3-flash-2025-07-28",
+   "field": "usd_per_hour",
+   "reason": "no_trusted_source",
+   "level": "red_if_billed",
+   "effect": "out of automatic routing on a billed account; free and unmetered accounts are unaffected"
+  },
+  {
+   "model": "qwen3-flash-2025-07-28",
+   "field": "divergence",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "qwen3-flash-2025-07-28",
+   "field": "global_rigor",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  },
+  {
+   "model": "qwen3-flash-2025-07-28",
+   "field": "module_precision",
+   "reason": "no_trusted_source",
+   "level": "yellow",
+   "effect": "scores 0 on this axis"
+  }
+ ]
+}

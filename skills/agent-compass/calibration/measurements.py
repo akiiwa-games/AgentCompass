@@ -1,0 +1,411 @@
+"""Public measurements per model, field and source: `references/public-measurements.json`.
+
+`python -X utf8 measurements.py [--data DIR] [--out PATH]`
+
+Every value carries its provenance (source, as_of, fetched_at, url, method). A source that was not fetched, or that
+does not list a model, adds nothing: there are no defaults here. The file is the input of `five_axis.py`; the router
+does not read it.
+
+Fields
+- `tier`: the tier fits of `tiers.py` (LMArena WebDev/Agent through the six anchors; SWE-bench, Terminal-Bench 2.0 and
+  the AA index as secondary fits), plus the user's anchor and judgment tiers (source `user`).
+- `usd_per_hour`: Artificial Analysis cost per task x 3600 / time per task, one entry per listed effort (audit report
+  round 046, section 2.3, method A).
+- `price`: input / output / cache-read USD per million tokens (OpenRouter, AA), for cross-checks only.
+- The four capability axes of the tray radar, one entry per (component, source):
+  - `divergence`: creative (LMArena Creative Writing, EQ-Bench Creative Writing v3), exploration (LMArena Agent).
+  - `global_rigor`: long horizon (METR p50 time horizon, SWE-bench Verified 1-4 h bucket), long context (AA-LCR),
+    anti-hallucination (AA Omniscience Index).
+  - `module_precision`: coding (SWE-bench Verified <15 min bucket, LMArena WebDev), terminal (AA Terminal-Bench 4.0,
+    vals.ai Terminal-Bench 2.0).
+  - `vision_tools`: vision (LMArena Vision, AA MMMU-Pro), GUI (OSWorld-Verified, general models only), tools
+    (AA tau2-bench). A model the data marks text-only scores 0 on vision and GUI (source `accounts.visual`).
+
+One conversion for every capability source (the floors.py rule): a model's success s on the source, divided by 90% of
+the best success any listed model reaches there, capped at 1. Reaching nine tenths of the best is full marks.
+- Percent and fraction boards: s is the success rate (per difficulty bucket where the board has buckets).
+- Elo boards: s is the expected win rate against the board's best model, 1 / (1 + 10^((best - rating) / 400)).
+- LMArena Agent reports a net difference in confirmed success that can be negative: s is the score above the board's
+  lowest score.
+- METR: s is the p50 time horizon (minutes) over the best model's.
+"""
+import argparse
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
+
+import efforts
+import sources
+import tiers
+
+X = 0.10             # floors.X: full marks at (1 - X) of the best success
+OUT = sources.REPO / 'references' / 'public-measurements.json'
+SCHEMA = 'agent-compass.public-measurements/1'
+
+# Names the automatic matcher cannot derive (a dated or differently worded listing of the same model).
+EXTRA_NAMES = {
+    'deepseek-v4.1-flash-free': {'aa': 'DeepSeek V4.1 Flash 1017'},
+    'deepseek-v4-pro': {'aa': 'DeepSeek V4 Pro 0813', 'swe': 'DeepSeek V4 Pro 0813'},
+    'muse-wonder-1.0': {'aa': 'Muse Wonder'},
+    'nemotron-3-ultra-free': {'aa': 'Nemotron 3 Ultra 550B A55B'},
+    'qwen3.8-max': {'aa': 'Qwen3.8 Max'},
+}
+# Tiers the user set (README: the anchors; accounts basis: the rest). Kept as source `user`, with the row's own basis.
+USER_TIERS = {**{k: 'anchor tier (calibration/README.md)' for k in tiers.ANCHORS},
+              'gemini-4-argon-high': 'hand-set tier (accounts basis cites AA v4.3.2; not a tiers.py fit)',
+              'grok-bot': 'aligned with Opus by the user (accounts basis)',
+              'dot': 'vendor statement that Dot runs on Astra (accounts basis)',
+              'gpt-6-pro': 'ceiling anchor 5.0 (accounts basis)'}
+USER_TIER_DATE = '2026-11-04'
+# Labels for the provenance `source` of each capability measurement: (axis, component, kind).
+CAPABILITY_SOURCES = {
+    'lmarena.creative_writing': ('divergence', 'creative', 'elo'),
+    'eqbench.creative_writing_v3': ('divergence', 'creative', 'elo'),
+    'lmarena.agent': ('divergence', 'exploration', 'shifted'),
+    'metr.time_horizon_p50': ('global_rigor', 'long_horizon', 'ratio'),
+    'vals.swebench_1_4h': ('global_rigor', 'long_horizon', 'fraction'),
+    'aa.lcr': ('global_rigor', 'long_context', 'fraction'),
+    'aa.omniscience_index': ('global_rigor', 'anti_hallucination', 'shifted'),
+    'vals.swebench_lt15m': ('module_precision', 'coding', 'fraction'),
+    'lmarena.webdev': ('module_precision', 'coding', 'elo'),
+    'aa.terminalbench_4': ('module_precision', 'terminal', 'fraction'),
+    'vals.terminal_bench_2': ('module_precision', 'terminal', 'fraction'),
+    'lmarena.vision': ('vision_tools', 'vision', 'elo'),
+    'aa.mmmu_pro': ('vision_tools', 'vision', 'fraction'),
+    'osworld.verified': ('vision_tools', 'gui', 'fraction'),
+    'aa.tau2_bench': ('vision_tools', 'tools', 'fraction'),
+}
+AXES = {'divergence': ('creative', 'exploration'),
+        'global_rigor': ('long_horizon', 'long_context', 'anti_hallucination'),
+        'module_precision': ('coding', 'terminal'),
+        'vision_tools': ('vision', 'gui', 'tools')}
+# The Omniscience Index (correct minus incorrect answers; abstaining scores 0) is the record's top-level `omniscience`. Its
+# non-hallucination rate alone is not used: it rewards abstaining (Haiku 5.5, Grok 4.7 and Argon lead it, Opus 5.5 sits
+# at 0.50).
+AA_SCORE = {'aa.lcr': 'artificial-analysis-long-context-reasoning', 'aa.omniscience_index': 'omniscience',
+            'aa.terminalbench_4': 'terminalbench-4-0', 'aa.mmmu_pro': 'mmmu-pro', 'aa.tau2_bench': 'tau2-bench'}
+FILE_OF = {'lmarena': None, 'eqbench': 'eqbench-creative-writing.js', 'metr': 'metr-benchmark-results.yaml',
+           'osworld': 'osworld-verified.xlsx', 'aa': 'aa-models.html', 'openrouter': 'openrouter-models.json'}
+ARENA_FILE = {'lmarena.creative_writing': 'text_style_control.parquet', 'lmarena.agent': 'agent.parquet',
+              'lmarena.webdev': 'webdev.parquet', 'lmarena.vision': 'vision.parquet'}
+VALS_FILE = {'vals.swebench_1_4h': 'swebench.html', 'vals.swebench_lt15m': 'swebench.html', 'vals.terminal_bench_2': 'terminal-bench-2.html'}
+
+
+def key(name):
+    return ''.join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def candidates(model):
+    """Normalised spellings a source may list `model` under: the id, without an effort suffix, without a free-listing
+    suffix (the same model served free), without a preview suffix. Exact matches only, never fuzzy."""
+    out = [model]
+    for suffix in ('-high', '-medium', '-low', '-free', '-preview'):
+        out += [m[: -len(suffix)] for m in list(out) if m.endswith(suffix)]
+    return [key(m) for m in out]
+
+
+class Matcher:
+    def __init__(self, names, strip=None):
+        self.by_key = {}
+        for n in names:
+            k = key(strip(n) if strip else n)
+            self.by_key.setdefault(k, n)
+
+    def find(self, model, explicit=None):
+        if explicit:
+            return explicit if key(explicit) in self.by_key else None
+        return next((self.by_key[k] for k in candidates(model) if k in self.by_key), None)
+
+
+def success(kind, value, board):
+    """(s, s_best) on the source's own scale; see the module docstring."""
+    vals = list(board.values())
+    if kind == 'elo':
+        best = max(vals)
+        return 1 / (1 + 10 ** ((best - value) / 400)), 0.5
+    if kind == 'shifted':
+        low = min(vals)
+        return value - low, max(vals) - low
+    return value, max(vals)
+
+
+def normalise(kind, value, board):
+    s, best = success(kind, value, board)
+    return round(min(1.0, max(0.0, s / ((1 - X) * best))) if best > 0 else 0.0, 4), round(s, 4), round(best, 4)
+
+
+def vals_date(target, page):
+    m = re.search(r'Updated (\d+)/(\d+)/(\d+)', sources._text((target / page).read_text(encoding='utf-8', errors='ignore')))
+    if not m:
+        return None
+    mo, d, y = (int(g) for g in m.groups())
+    return f'{y + 2000 if y < 100 else y:04d}-{mo:02d}-{d:02d}'
+
+
+class Builder:
+    def __init__(self, target, acc):
+        self.target, self.acc = target, acc
+        self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
+        self.manifest = sources.manifest(target)
+        self.source_rows, self.out, self.names = {}, {m: {} for m in self.models}, {m: {} for m in self.models}
+        self.missing = {}
+
+    def ok(self, filename):
+        return (self.manifest.get(filename) or {}).get('status') == 'ok' and (self.target / filename).exists()
+
+    def register(self, source, filename, as_of, method, count, note=None):
+        row = self.manifest.get(filename) or {}
+        self.source_rows[source] = {'file': filename, 'url': row.get('url'), 'fetched_at': row.get('fetched_at'),
+                                    'sha256': row.get('sha256'), 'as_of': as_of or (row.get('fetched_at') or '')[:10],
+                                    'as_of_kind': 'data date' if as_of else 'fetch date (the source publishes no data date)',
+                                    'method': method, 'models_listed': count, **({'note': note} if note else {})}
+
+    def add(self, model, field, source, value, method, **extra):
+        meta = self.source_rows[source]
+        entry = {'source': source, 'value': value, 'as_of': meta['as_of'], 'fetched_at': meta['fetched_at'],
+                 'url': meta['url'], 'method': method, **extra}
+        self.out[model].setdefault(field, []).append(entry)
+
+    def miss(self, source, filename, reason):
+        self.missing[source] = {'file': filename, 'reason': reason,
+                                'url': (self.manifest.get(filename) or {}).get('url') or sources.PAGES.get(filename)}
+
+    # --- capability boards ----------------------------------------------------------------------
+    def boards(self):
+        """{source: (board {name: raw}, as_of, method text, name-strip function)}"""
+        t, out = self.target, {}
+        arena_specs = {'lmarena.creative_writing': ('text_style_control', 'creative_writing'), 'lmarena.agent': ('agent', 'overall'),
+                       'lmarena.webdev': ('webdev', 'overall'), 'lmarena.vision': ('vision', 'overall')}
+        for src, (board, cat) in arena_specs.items():
+            if not self.ok(ARENA_FILE[src]):
+                self.miss(src, ARENA_FILE[src], 'not fetched'); continue
+            rows = sources.arena(t, board, cat)
+            out[src] = ({n: r[0] for n, r in rows.items()}, next(iter(rows.values()))[4] if rows else None,
+                        f'LMArena {board}/{cat}, best listed variant', None, {n: r[3] for n, r in rows.items()})
+        if self.ok('eqbench-creative-writing.js'):
+            out['eqbench.creative_writing_v3'] = (sources.eqbench(t), None, 'EQ-Bench Creative Writing v3 Elo',
+                                                  lambda n: n.split('/')[-1], {})
+        else:
+            self.miss('eqbench.creative_writing_v3', 'eqbench-creative-writing.js', 'not fetched')
+        if self.ok('metr-benchmark-results.yaml'):
+            out['metr.time_horizon_p50'] = (sources.metr(t), None, 'METR Horizon v1.1 p50 time horizon (minutes)',
+                                            lambda n: re.sub(r'_inspect$', '', n), {})
+        else:
+            self.miss('metr.time_horizon_p50', 'metr-benchmark-results.yaml', 'not fetched')
+        if self.ok('swebench.html'):
+            _, buckets = sources.vals(t, 'swebench.html')
+            date = vals_date(t, 'swebench.html')
+            for src, bucket in (('vals.swebench_1_4h', '1–4hr'), ('vals.swebench_lt15m', '<15min')):
+                board = {m: b[bucket][0] / b[bucket][1] for m, b in buckets.items() if bucket in b and b[bucket][1]}
+                out[src] = (board, date, f'vals.ai SWE-bench Verified, {bucket} fix-time bucket, resolved share', None,
+                            {m: f'{buckets[m][bucket][0]}/{buckets[m][bucket][1]}' for m in board})
+        else:
+            for src in ('vals.swebench_1_4h', 'vals.swebench_lt15m'):
+                self.miss(src, 'swebench.html', 'not fetched')
+        if self.ok('terminal-bench-2.html'):
+            tb2, _ = sources.vals(t, 'terminal-bench-2.html')
+            out['vals.terminal_bench_2'] = ({m: v / 100 for m, v in tb2.items()}, vals_date(t, 'terminal-bench-2.html'),
+                                            'vals.ai Terminal-Bench 2.0 accuracy', None, {})
+        else:
+            self.miss('vals.terminal_bench_2', 'terminal-bench-2.html', 'not fetched')
+        if self.ok('osworld-verified.xlsx'):
+            out['osworld.verified'] = (sources.osworld(t), None,
+                                       'OSWorld-Verified success rate, general models without an agent framework, best max-steps run',
+                                       lambda n: re.sub(r'\[1m\]$', '', n), {})
+        else:
+            self.miss('osworld.verified', 'osworld-verified.xlsx', 'not fetched')
+        if self.ok('aa-models.html'):
+            recs = self.aa_by_base()
+            for src, score in AA_SCORE.items():
+                board = {}
+                for base, (rec, eff) in recs.items():
+                    v = rec.get(score) if score == 'omniscience' else (rec.get('scores') or {}).get(score)
+                    if isinstance(v, (int, float)):
+                        board[base] = float(v)
+                out[src] = (board, None, f'Artificial Analysis `{score}` at the High variant (else the only listing)', None, {})
+        else:
+            for src in AA_SCORE:
+                self.miss(src, 'aa-models.html', 'not fetched')
+        return out
+
+    def aa_variants(self):
+        """{base name: {effort: record}} for AA listings whose variant tag is an effort or a date only."""
+        out = {}
+        for rec in sources.aa_records(self.target):
+            tag = sources.variant(rec['name'])
+            parts = [p.strip().lower() for p in tag.split(',') if p.strip()]
+            allowed = all(p in sources.EFFORT_WORDS or p in ('default fallback', 'with fallback') or re.fullmatch(r'\d{4}', p)
+                          for p in parts)
+            if not allowed:
+                continue
+            out.setdefault(sources.base_name(rec['name']), {})[sources.aa_effort(rec['name'])] = rec
+        return out
+
+    def aa_by_base(self):
+        """{base name: (record at High, else the effort-less listing, else the highest index; effort)}"""
+        out = {}
+        for base, by_eff in self.aa_variants().items():
+            eff = 'high' if 'high' in by_eff else ('' if '' in by_eff else max(by_eff, key=lambda e: by_eff[e].get('intelligenceIndex') or 0))
+            out[base] = (by_eff[eff], eff)
+        return out
+
+    def capabilities(self):
+        for src, (board, as_of, method, strip, listed) in self.boards().items():
+            axis, comp, kind = CAPABILITY_SOURCES[src]
+            filename = ARENA_FILE.get(src) or VALS_FILE.get(src) or FILE_OF[src.split('.')[0]]
+            self.register(src, filename, as_of, method, len(board))
+            match = Matcher(board, strip)
+            family = src.split('.')[0]
+            explicit_key = {'lmarena': 'arena', 'aa': 'aa', 'vals': 'swe' if 'swebench' in src else 'tb2'}.get(family)
+            for model in self.models:
+                exp = (EXTRA_NAMES.get(model) or {}).get(explicit_key) or (tiers.NAMES.get(model) or {}).get(explicit_key) \
+                    or (tiers.ANCHORS.get(model) if family in ('lmarena', 'aa') else None)
+                name = match.find(model, exp) or (match.find(model) if exp else None)
+                if name is None:
+                    continue
+                value, s, best = normalise(kind, board[name], board)
+                self.names[model][src] = name
+                self.add(model, axis, src, value, f'{method}; s/(0.9*best), capped at 1', component=comp,
+                         listed_as=listed.get(name, name), raw=round(board[name], 4), success=s, best_success=best)
+        self.conflicts = []
+        for model, info in self.models.items():
+            if info.get('text_only') or not info.get('visual'):
+                for comp in ('vision', 'gui'):
+                    listed = [e['source'] for e in self.out[model].get('vision_tools', []) if e.get('component') == comp]
+                    if listed:      # a board measured image input on a row the data marks text-only
+                        self.conflicts.append({'model': model, 'field': f'vision_tools.{comp}', 'reason': 'sources_disagree',
+                                               'detail': f'accounts row is text-only, but {", ".join(listed)} list the model'})
+                        continue
+                    self.out[model].setdefault('vision_tools', []).append(
+                        {'source': 'accounts.visual', 'value': 0.0, 'component': comp, 'as_of': self.acc.get('reviewed_at'),
+                         'url': None, 'method': 'the model row is text-only (no image input): vision and GUI are 0, not unknown'})
+
+    # --- tier -------------------------------------------------------------------------------------
+    def tier(self):
+        ef = efforts.Efforts(self.target, self.acc)
+        fitter = ef.fitter
+        webdev = self.manifest.get('webdev.parquet') or {}
+        self.register('lmarena.tier_fit', 'webdev.parquet', next(iter(fitter.boards['webdev'].values()))[4],
+                      'tiers.py: LMArena WebDev/Agent mapped through the six anchor rows, mean of the boards', len(fitter.boards['webdev']))
+        self.register('secondary.tier_fit', 'swebench.html', vals_date(self.target, 'swebench.html'),
+                      'tiers.py secondary: SWE-bench Verified, Terminal-Bench 2.0 and the AA index regressed on the primary tiers', None)
+        arena = Matcher(set(fitter.boards['webdev']) | set(fitter.boards['agent']))
+        swe, tb2, aa = Matcher(fitter.swe), Matcher(fitter.tb2), Matcher(fitter.aa)
+        for model, info in self.models.items():
+            if model in tiers.ANCHORS:
+                pass
+            else:
+                names = dict(tiers.NAMES.get(model) or {})
+                for k, m in (('arena', arena), ('swe', swe), ('tb2', tb2), ('aa', aa)):
+                    explicit = (EXTRA_NAMES.get(model) or {}).get(k) or names.get(k)
+                    found = m.find(model, explicit) or (m.find(model) if not explicit else None)
+                    if found:
+                        names[k] = found
+                    else:
+                        names.pop(k, None)
+                saved = tiers.NAMES.get(model)
+                tiers.NAMES[model] = names
+                try:
+                    e = fitter.fit(model)
+                finally:
+                    if saved is None:
+                        tiers.NAMES.pop(model, None)
+                    else:
+                        tiers.NAMES[model] = saved
+                if e['method'] == 'primary':
+                    high, corr = ef.high_tier(model, e['tier'])     # apply_rows.py: a best-variant (Max) fit moved to High
+                    self.add(model, 'tier', 'lmarena.tier_fit', high,
+                             'tiers.py primary fit' + (', moved to High by the AA effort gain (efforts.high_tier)' if corr else ''),
+                             fits=e['fits'], best_variant_tier=e['tier'], high_correction=corr, listed_as=names.get('arena'))
+                elif e['method'] == 'same_as':
+                    self.add(model, 'tier', 'secondary.tier_fit', e['tier'], f"tiers.py SAME_AS {e['same_as']}: {e['why']}",
+                             same_as=e['same_as'])
+                elif e['method'] == 'secondary':
+                    self.add(model, 'tier', 'secondary.tier_fit', e['tier'], 'tiers.py secondary fit',
+                             fits={k: v[1] for k, v in e['secondary'].items()},
+                             listed_as={k: names.get(k) for k in e['secondary']},
+                             vendor_reported={k: v[4] for k, v in e['secondary'].items() if v[4]})
+            if model in USER_TIERS:
+                self.out[model].setdefault('tier', []).append(
+                    {'source': 'user', 'value': info.get('tier'), 'as_of': USER_TIER_DATE, 'url': None, 'method': USER_TIERS[model]})
+
+    # --- price and usd per hour ------------------------------------------------------------------
+    def usd(self):
+        if not self.ok('aa-models.html'):
+            self.miss('aa.cost_time', 'aa-models.html', 'not fetched')
+            return
+        variants = self.aa_variants()
+        self.register('aa.cost_time', 'aa-models.html', None,
+                      'intelligenceIndexCostPerTask * 3600 / intelligenceIndexTimePerTask (audit round 046 section 2.3, method A)',
+                      len(variants))
+        self.register('aa.price', 'aa-models.html', None, 'AA listed price1mInputTokens / price1mOutputTokens / cacheHitPrice', len(variants))
+        self.register('aa.index', 'aa-models.html', None, 'AA Intelligence Index at the High variant (else the only listing)', len(variants))
+        match = Matcher(variants)
+        for model in self.models:
+            exp = (EXTRA_NAMES.get(model) or {}).get('aa') or (tiers.NAMES.get(model) or {}).get('aa') or tiers.ANCHORS.get(model)
+            base = match.find(model, exp) or (match.find(model) if exp else None)
+            if not base:
+                continue
+            self.names[model]['aa.cost_time'] = base
+            for eff, rec in sorted(variants[base].items()):
+                c, t = rec.get('intelligenceIndexCostPerTask'), rec.get('intelligenceIndexTimePerTask')
+                if c and t:
+                    self.add(model, 'usd_per_hour', 'aa.cost_time', round(c * 3600 / t, 3), 'cost per task x 3600 / time per task',
+                             effort=eff or 'default', listed_as=rec['name'], cost_per_task=round(c, 5), time_per_task_s=round(t, 2))
+            rec = variants[base].get('high') or next(iter(variants[base].values()))
+            if isinstance(rec.get('intelligenceIndex'), (int, float)):
+                self.add(model, 'intelligence_index', 'aa.index', round(rec['intelligenceIndex'], 2), 'AA Intelligence Index',
+                         listed_as=rec['name'])
+            price = {k: rec.get(src) for k, src in (('input', 'price1mInputTokens'), ('output', 'price1mOutputTokens'),
+                                                    ('cache_read', 'cacheHitPrice')) if isinstance(rec.get(src), (int, float))}
+            if price:
+                self.add(model, 'price', 'aa.price', price, 'USD per million tokens', listed_as=rec['name'])
+        if self.ok('openrouter-models.json'):
+            table = sources.openrouter(self.target)
+            self.register('openrouter.price', 'openrouter-models.json', None, 'OpenRouter /api/v1/models pricing (USD per million tokens)', len(table))
+            match = Matcher(table, lambda n: n.split('/')[-1])
+            for model in self.models:
+                name = match.find(model)
+                if name:
+                    self.add(model, 'price', 'openrouter.price', {k: round(v, 4) for k, v in table[name].items()},
+                             'USD per million tokens', listed_as=name)
+        else:
+            self.miss('openrouter.price', 'openrouter-models.json', 'not fetched')
+
+    def build(self):
+        self.tier()
+        self.capabilities()
+        self.usd()
+        missing_sources = {**self.missing}
+        for name, row in self.manifest.items():
+            if row.get('status') != 'ok':
+                missing_sources.setdefault(name, {'file': name, 'url': row.get('url'), 'reason': row.get('error')})
+        return {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                'conversion': f'capability value = min(1, s / ({1 - X:g} x best s)); see calibration/measurements.py',
+                'sources': self.source_rows, 'missing_sources': missing_sources, 'conflicts': self.conflicts,
+                'axes': {a: list(c) for a, c in AXES.items()},
+                'models': {m: f for m, f in self.out.items()}}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--data')
+    ap.add_argument('--out', default=str(OUT))
+    args = ap.parse_args()
+    doc = Builder(sources.data_dir(args.data), sources.accounts()).build()
+    Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
+    fields = ('tier', 'usd_per_hour', 'divergence', 'global_rigor', 'module_precision', 'vision_tools')
+    n = len(doc['models'])
+    print(f"{n} models -> {args.out}")
+    for f in fields:
+        print(f'  {f:18s} {sum(1 for v in doc["models"].values() if v.get(f))}/{n} models with at least one source')
+    for s, row in doc['missing_sources'].items():
+        print(f'  missing source {s}: {row.get("reason")}')
+
+
+if __name__ == '__main__':
+    sys.exit(main())

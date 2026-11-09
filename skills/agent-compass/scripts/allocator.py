@@ -657,7 +657,7 @@ def account_family(spec):
 def template_capacity_usd(spec, wid):
     """Fallback window USD capacity from plan-templates.json when `spec` does not carry `capacity_usd` directly."""
     family = account_family(spec)
-    if not family:
+    if not family or spec.get('capacity_unknown'):
         return None
     plan_key = provider_inventory.configured_plan(family, spec.get('plan')) if isinstance(spec, dict) else ''
     plan = provider_inventory.plan_defaults(None, family, plan_key) if plan_key else None
@@ -2043,6 +2043,140 @@ def subjective_fit(weights, subj):
     return sum(w * subj.get(dim, 0.5) for dim, w in weights.items()) / total
 
 
+# --- Five-axis shadow path (round 047, off by default) ---------------------------------------------------------------
+# `scoring.five_axis.enabled` turns it on. The model data then comes from references/five-axis-scores.json
+# (calibration/five_axis.py, public sources only): the tray radar's four capability axes, a public tier used only as the
+# gate, AA usd_per_hour and plan capacity in reference-model hours. Fit is one capability match over the axes the task
+# needs; route order, the subjective and the six-capability vectors and graded ability are not used. Missing data follows
+# the user's rule B (2026-11-09): no trusted tier, or no usd on a billed account, leaves automatic routing (a named model
+# still runs, with a warning); a missing axis scores 0.
+FIVE_AXIS_FILE = REFERENCES / 'five-axis-scores.json'
+FIVE_AXES = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
+FIVE_AXIS_THINKING = ('divergence', 'global_rigor', 'module_precision')
+FIVE_AXIS_DEFAULTS = {
+    'weights': {'fit': 0.4, 'ability': 0.0, 'continuity': 0.25},
+    'capacity': 'strict',        # strict: plan capacity without a public source is unknown; converted: shipped x AA ratio
+    # Task attributes -> how much each axis counts. Every term is a profile field; no work kind is named.
+    'demand': {
+        'divergence': {'by_level': {'1': 0.15, '2': 0.6, '3': 1.2}, 'exploration_style': 0.4, 'advisory_style': 0.3},
+        'global_rigor': {'base': 0.2, 'depth': 0.3, 'context_scale': 0.3, 'hallucination_risk': 0.3, 'error_cost': 0.2},
+        'module_precision': {'code_complexity': 0.9, 'engineering_style': 0.1},
+        'vision_tools': {'needs_visual': 1.0, 'needs_gui': 0.6, 'tool_work': 0.25, 'other': 0.1},
+    },
+}
+
+
+def five_axis_config(policy):
+    raw = (policy or {}).get('five_axis')
+    if not isinstance(raw, dict) or not raw.get('enabled'):
+        return None
+    cfg = {**FIVE_AXIS_DEFAULTS, **raw}
+    cfg['demand'] = {a: {**FIVE_AXIS_DEFAULTS['demand'][a], **((raw.get('demand') or {}).get(a) or {})} for a in FIVE_AXES}
+    return cfg
+
+
+def load_five_axis(path=None):
+    return json.loads(Path(path or FIVE_AXIS_FILE).read_text(encoding='utf-8'))
+
+
+def five_axis_overlay(accounts, data=None):
+    """A copy of `accounts` carrying the five-axis data, or `accounts` itself when the path is off.
+
+    Each model row gets `five_axis` {scores, tier_status, usd_status}; its tier and usd_per_hour become the public values
+    (missing ones are removed, not defaulted); the unsourced duration multiplier and local burn priors are dropped. Plan
+    capacity: `strict` removes every shipped figure (none has a public URL), so windows read live percentages only;
+    `converted` keeps the shipped figures rescaled by AA usd over the shipped usd of each window's reference model."""
+    cfg = five_axis_config(accounts.get('scoring'))
+    if cfg is None:
+        return accounts
+    import copy
+    data = data if data is not None else load_five_axis(cfg.get('path'))
+    out = copy.deepcopy(accounts)
+    rows = data.get('models') or {}
+    for name, info in (out.get('models') or {}).items():
+        if not isinstance(info, dict):
+            continue
+        row = rows.get(name) or {}
+        tier = (row.get('tier') or {}).get('value')
+        usd = (row.get('usd_per_hour') or {}).get('value')
+        info['five_axis'] = {'scores': {a: float((row.get('scores') or {}).get(a) or 0.0) for a in FIVE_AXES},
+                             'yellow': [a for a, ax in (row.get('axes') or {}).items() if ax.get('flag') == 'yellow'],
+                             'tier_status': 'ok' if tier is not None else 'missing',
+                             'usd_status': 'ok' if usd is not None else 'missing'}
+        if tier is not None:
+            info['tier'] = tier
+        if usd is not None:
+            info['usd_per_hour'] = usd
+        else:
+            info.pop('usd_per_hour', None)
+        info['duration_multiplier'] = 1.0
+        info.pop('burn_pct_per_worker_hour', None)
+    factors = data.get('capacity_conversion') or {}
+    for name, spec in (out.get('accounts') or {}).items():
+        if not isinstance(spec, dict) or not spec.get('windows') or spec.get('unmetered'):
+            continue
+        if cfg['capacity'] == 'converted':
+            family = provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_family(spec)
+            fam = factors.get(str(family or '').removesuffix('-resilient')) or {}
+            caps = dict(spec.get('capacity_usd') or {})
+            for wid in spec['windows']:
+                if wid not in caps:
+                    template = template_capacity_usd(spec, wid)
+                    if template:
+                        caps[wid] = template
+            scaled = {wid: round(cap * fam[wid]['factor'], 2) for wid, cap in caps.items()
+                      if (fam.get(wid) or {}).get('factor')}
+            spec['capacity_usd'] = scaled
+            spec.pop('capacity_change', None)
+            spec.pop('burn_pct_per_worker_hour', None)
+            if len(scaled) < len(spec['windows']):
+                spec['capacity_unknown'] = True
+        else:
+            for key in ('capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour'):
+                spec.pop(key, None)
+            spec['capacity_unknown'] = True
+    out['_five_axis'] = {'capacity': cfg['capacity'], 'generated_at': data.get('generated_at')}
+    return out
+
+
+def five_axis_demand(task, cfg):
+    """{axis: weight} the task puts on each capability axis, from its profile (or its work kind's traits without one)."""
+    prof = task.get('profile')
+    if prof:
+        depth, code, scale = prof['reasoning_depth'], prof['code_complexity'], prof['context_scale']
+        risk, cost, style = prof['hallucination_risk'], prof['error_cost'], prof['interaction_style']
+    else:
+        code, scale, risk, cost, style = KIND_TRAITS.get(task.get('kind'), KIND_TRAITS['other_or_mixed'])
+        depth = DEPTH_BY_DIFFICULTY.get(task.get('difficulty'), 2)
+    div = int(task.get('divergence') or 1)
+    d = cfg['demand']
+    dv, gr, mp, vt = d['divergence'], d['global_rigor'], d['module_precision'], d['vision_tools']
+    out = {
+        'divergence': float(dv['by_level'].get(str(div), 0.15)) + (dv['exploration_style'] if style == 'exploration' else 0.0)
+                      + (dv['advisory_style'] if style == 'advisory' else 0.0),
+        'global_rigor': gr['base'] + gr['depth'] * (depth - 1) / 3 + gr['context_scale'] * (scale - 1) / 2
+                        + gr['hallucination_risk'] * (risk - 1) / 2 + gr['error_cost'] * (min(cost, 3) - 1) / 2,
+        'module_precision': mp['code_complexity'] * code / 3 + (mp['engineering_style'] if style == 'engineering' else 0.0),
+        'vision_tools': ((vt['needs_visual'] if task.get('needs_visual') or task.get('needs_gui') else 0.0)
+                         + (vt['needs_gui'] if task.get('needs_gui') else 0.0)
+                         or (vt['tool_work'] if style == 'engineering' and code == 0 else vt['other'])),
+    }
+    return {a: round(w, 4) for a, w in out.items() if w > 0}
+
+
+def five_axis_match(demand, info, policy, curves, effort):
+    """Weighted mean of the model's axis scores over the task's demand. The thinking axes scale with this effort's
+    thinking coefficient (effective tier over the High tier, capped at 1), as effort_scaled_capabilities does."""
+    scores = ((info or {}).get('five_axis') or {}).get('scores') or {}
+    base = effort_ability(policy, curves, info, 'high')
+    ratio = effort_ability(policy, curves, info, effort) / base if base > 0 else 1.0
+    total = sum(demand.values())
+    if not total:
+        return 0.0, {}
+    eff = {a: clamp(scores.get(a, 0.0) * (ratio if a in FIVE_AXIS_THINKING else 1.0), 0.0, 1.0) for a in demand}
+    return sum(w * eff[a] for a, w in demand.items()) / total, eff
+
+
 HARNESS_CAPABILITIES = {
     'antigravity-resilient': {
         # No prompt image attachments; but the CLI's own read_file tool shows local image files to multimodal models.
@@ -2445,7 +2579,11 @@ def evaluate_bundle(bundle, task, ctx):
               'excluded': [], 'notes': [],
               'components': {**subjective_vector(info), 'capability': vision_tools_score(info)}, 'score': None}
     visual_override = (info.get('subjective') or {}).get('capability')
-    if visual_override is not None:
+    five = ctx.get('five_axis')
+    if five:
+        axes = (info.get('five_axis') or {}).get('scores') or {}
+        result['components'] = {**{a: axes.get(a, 0.0) for a in FIVE_AXIS_THINKING}, 'capability': axes.get('vision_tools', 0.0)}
+    elif visual_override is not None:
         result['components']['capability_override'] = visual_override
     else:
         caps = info.get('capabilities') or {}
@@ -2517,6 +2655,22 @@ def evaluate_bundle(bundle, task, ctx):
         exclude('explicit model constraint')
     if task.get('constraint_effort') and str(scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
         exclude('explicit effort constraint')
+    if five:
+        # Rule B: a gate or price field without a trusted public source leaves automatic routing; naming the model
+        # (--model, or its bundle) still dispatches it, with the data error as a warning.
+        state = info.get('five_axis') or {'tier_status': 'missing', 'usd_status': 'missing'}
+        billed = not (spec.get('unmetered') or spec.get('unlimited'))
+        named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
+        errors = (['tier has no trusted public source'] if state.get('tier_status') != 'ok' else []) + (
+            ['usd_per_hour has no trusted public source on a billed account'] if billed and state.get('usd_status') != 'ok' else [])
+        for error in errors:
+            if named:
+                result['notes'].append(f'data error: {error}; dispatched because it was named')
+                result.setdefault('data_errors', []).append(error)
+            else:
+                exclude(f'data error: {error} (out of automatic routing; name the model to dispatch it)')
+        if state.get('yellow'):
+            result['notes'].append('no trusted source for ' + ', '.join(state['yellow']) + ' (scored 0)')
     demand = task['demand']
     target = demand['required_ability']
     floor = demand['floor']
@@ -2671,6 +2825,12 @@ def evaluate_bundle(bundle, task, ctx):
                         exclude(f'{wid} {what} for {wait:.1f}h')
                     continue        # the work starts after the reset, when the short window is full again
                 continue            # running a standard short window dry only delays work until its reset; the weekly window prices the loss
+            if unit is None and five and spec.get('capacity_unknown') and state['remaining'] <= policy['safety_margin_pct']:
+                # Capacity unknown (five-axis strict): only the live percentage is read, so the reserve still holds.
+                exclude(f'{wid} has {state["remaining"]:.0f}% left, inside the {policy["safety_margin_pct"]}% reserve '
+                        '(capacity unknown, so the need cannot be priced)')
+                result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+                continue
             if unit is None:
                 result['notes'].append(f'{wid}: observed {state["remaining"]:.1f}% remaining'
                                        + (' (stale)' if acct_stale or state['stale'] else '')
@@ -2926,6 +3086,18 @@ def evaluate_bundle(bundle, task, ctx):
         # On non-routine work (depth >= 2), stepping below High (medium/low) sacrifices thinking depth even when a high
         # base tier still clears the floor; High therefore leads under normal quota and steps down only under scarcity.
         ability_score = clamp(ability_score - 0.2 * (high_ability - effective) / policy.get('ability_span', 0.6), 0, 1)
+    if five:
+        # One capability match replaces route order, the vectors and graded ability; tier stays the gate above.
+        match, _ = five_axis_match(task['five_axis_demand'], info, policy, curves, eff)
+        result['components']['five_axis_match'] = round(match, 3)
+        result['five_axis_demand'] = task['five_axis_demand']
+        fit = match
+        if task.get('realtime_loop') and resp_val is not None:
+            w_resp = clamp(float(responsiveness_config(policy).get('weight', 0.35)), 0.0, 1.0)
+            fit = (1.0 - w_resp) * fit + w_resp * resp_val
+        ability_score = 0.0
+        for key in ('shortfall', 'quality_bonus', 'route_fit', 'vector_fit', 'subjective_fit'):
+            result['components'].pop(key, None)
     result['components'].update({
         'fit': round(fit, 3),
         'ability': round(ability_score, 3),
@@ -3081,13 +3253,17 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
                now=now,
            )}
     ctx['bundles'].update(named_effort_bundles(task, ctx))
+    five = five_axis_config(policy) if accounts.get('_five_axis') else None     # set only by five_axis_overlay
+    if five:
+        ctx['five_axis'] = five
+        task = {**task, 'five_axis_demand': five_axis_demand(task, five)}
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()
                   if bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
     eligible = [c for c in candidates if not c['excluded']]
     # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
     # that value only. Opportunity cost is already in score units at the opportunity_exchange rate, so it is
     # subtracted as it is. No normalization over the candidate set.
-    weights = dict(policy['weights'])
+    weights = dict(five['weights'] if five else policy['weights'])
     weights['continuity'] *= policy['coupling_continuity_multiplier'][task['coupling']] if task['worker'] else 0
     kind = task['kind']
     for c in eligible:
@@ -3378,6 +3554,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     now = now or datetime.now(timezone.utc)
     usage = provider_inventory.merge_usage(usage, accounts, now)
     usage, accounts, applied = apply_overrides(load_overrides(now) if overrides is None else overrides, usage, accounts, now)
+    accounts = five_axis_overlay(accounts)
     policy = accounts['scoring']
     task = normalize_task(raw_task, policy, capabilities, accounts)
     if task['worker'] is None and task['chain_id'] and records:
