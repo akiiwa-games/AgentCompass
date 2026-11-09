@@ -651,6 +651,7 @@ def account_cards() -> list[dict]:
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,
                       "status": status, "status_reason": (row or {}).get("reason"), "retry_hold": bool(held),
+                      "retry_clear_pool": retry_clear_pool(retry_holds, name) if held else None,
                       "last_success_at": (row or {}).get("last_success_at"),
                       "fetched_at": fetched_at,
                       "plan": (row or {}).get("plan") or spec.get("plan"),
@@ -1359,8 +1360,11 @@ def harness_model_rows() -> list[dict]:
             row["models"].append(group)
         failing = sum(1 for group in row["models"] if group.get("launch_unavailable"))
         account_hold = retry_holds.get(account)
+        pool_holds = {k: v for k, v in retry_holds.items() if v.get("account") == account and retry_hold_pool(v)}
         if account_hold and kind == "ok":
             row["badge"], row["kind"] = retry_hold_text({account: account_hold}, account), "warn"
+        elif pool_holds and kind == "ok":
+            row["badge"], row["kind"] = retry_hold_text(pool_holds, account), "warn"
         elif failing and kind == "ok":
             row["badge"], row["kind"] = _tr("{0} 个模型启动失败，已排除派发").format(failing), "warn"
         rows.append(row)
@@ -1402,14 +1406,37 @@ def _retry_what(entry: dict) -> str:
     return _tr("提供方报错") if entry.get("failure_code") == "provider_turn_failed" else _tr("提供方持续重试")
 
 
+def retry_hold_pool(entry: dict) -> str | None:
+    """The quota pool an account-level hold covers (provider_retry.hold_pool), or None for the whole account."""
+    pool = entry.get("pool") if entry.get("model") is None else None
+    return pool["id"] if isinstance(pool, dict) and isinstance(pool.get("id"), str) and pool["id"] else None
+
+
+def retry_clear_pool(holds: dict, account: str) -> str | None:
+    """The pool the card's clear link clears: the first held pool, one at a time, unless the whole account is held."""
+    entries = [v for v in holds.values() if v.get("account") == account]
+    if any(v.get("model") is None and not retry_hold_pool(v) for v in entries):
+        return None
+    return min((p for p in map(retry_hold_pool, entries) if p), default=None)
+
+
 def retry_hold_text(holds: dict, account: str) -> str | None:
-    """The account list's note for an account (or its models) held for a provider failure: the provider's own message
-    and when the router tries again, or how to clear an account hold. None when nothing of the account is held."""
+    """The account list's note for an account (or a quota pool or model of it) held for a provider failure: the
+    provider's own message and when the router tries again, or how to clear an account or pool hold. None when nothing
+    of the account is held."""
     notes = []
     for entry in sorted((v for v in holds.values() if v.get("account") == account),
-                        key=lambda v: (v.get("model") is not None, v.get("model") or "")):
+                        key=lambda v: (v.get("model") is not None, retry_hold_pool(v) is not None,
+                                       retry_hold_pool(v) or v.get("model") or "")):
         message = entry.get("message") or _tr("无提供方消息")
-        if entry.get("model") is None and entry.get("retry_at"):
+        pool = retry_hold_pool(entry)
+        if pool and entry.get("retry_at"):
+            notes.append(_tr("{0}，额度池 {1} 已排除派发：{2}（下次重试 {3}，或点卡片上的“清除 {1}”）").format(
+                _retry_what(entry), pool, message, read_time_text(entry.get("retry_at"))))
+        elif pool:
+            notes.append(_tr("{0}，额度池 {1} 已排除派发：{2}（点卡片上的“清除 {1}”或运行 agentcompass hold --clear {3} 后再派发）").format(
+                _retry_what(entry), pool, message, f"{account}#{pool}"))
+        elif entry.get("model") is None and entry.get("retry_at"):
             # Widened from guesses, not an `account` answer: it backs off like a model hold.
             notes.append(_tr("{0}，整个账号已排除派发：{1}（下次重试 {2}，或点卡片上的“清除”）").format(
                 _retry_what(entry), message, read_time_text(entry.get("retry_at"))))
@@ -1422,21 +1449,30 @@ def retry_hold_text(holds: dict, account: str) -> str | None:
     return "；".join(notes) or None
 
 
-def clear_retry_holds(account: str) -> bool:
-    """The account card's clear button: drop every provider-failure hold of the account (its own and its models')."""
+def clear_retry_holds(account: str, pool: str | None = None) -> bool:
+    """The account card's clear button: drop every provider-failure hold of the account (its own and its models'), or
+    with `pool` that quota pool's hold and its models' only."""
     allocator, _ = modules()
     holds = allocator.provider_retry
-    return holds.clear(account, path=None if os.environ.get("ROUTER_PROVIDER_RETRY") else STATE_DIR / holds.FILE)
+    return holds.clear(account, path=None if os.environ.get("ROUTER_PROVIDER_RETRY") else STATE_DIR / holds.FILE,
+                       **({"pool": pool} if pool else {}))
 
 
 def retry_model_text(allocator, holds: dict, account: str, bundles: list) -> str | None:
-    """The model list's note for a model held for a provider stuck retrying (its own hold, not the account's)."""
+    """The model list's note for a model held for a provider failure: its own hold or its quota pool's (a hold of the
+    whole account badges the row instead)."""
+    retry = allocator.provider_retry
     for owner, _, bundle in bundles:
         for name in (owner, account):
-            entry = (holds.get(allocator.provider_retry.key(name, allocator.provider_retry.launch_model(bundle)))
-                     or holds.get(allocator.provider_retry.key(name, bundle.get("model"))))
-            if entry:
-                return _tr("{0}，已排除派发，下次重试 {1}").format(_retry_what(entry), read_time_text(entry.get("retry_at")))
+            entry = retry.entry_for({**bundle, "account": name}, {k: v for k, v in holds.items() if k != name})
+            if not entry:
+                continue
+            pool = retry_hold_pool(entry)
+            if pool:
+                when = (_tr("下次重试 {0}").format(read_time_text(entry.get("retry_at"))) if entry.get("retry_at")
+                        else _tr("点卡片上的“清除 {0}”后再派发").format(pool))
+                return _tr("额度池 {0} {1}，已排除派发，{2}").format(pool, _retry_what(entry), when)
+            return _tr("{0}，已排除派发，下次重试 {1}").format(_retry_what(entry), read_time_text(entry.get("retry_at")))
     return None
 
 

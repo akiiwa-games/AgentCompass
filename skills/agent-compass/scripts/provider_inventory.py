@@ -1473,12 +1473,16 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
     _assign_quota_owners(rows)
 
 
+# The variables that point an account directory elsewhere, with the directory each names by default.
+ACCOUNT_DIR_VARIABLES = (('CLAUDE_CONFIG_DIR', '.claude'), ('CLAUDE_SECURESTORAGE_CONFIG_DIR', '.claude'),
+                         ('CODEX_HOME', '.codex'), ('PI_CODING_AGENT_DIR', '.pi/agent'))
+
+
 def environment_rewrites_accounts(home, environ=None):
     """True when this process's environment points an account directory somewhere else (a worker started on another
     account). Discovery ignores those variables, but such a process does not speak for the machine's shared files."""
     environ = os.environ if environ is None else environ
-    for key, default in (('CLAUDE_CONFIG_DIR', '.claude'), ('CLAUDE_SECURESTORAGE_CONFIG_DIR', '.claude'),
-                         ('CODEX_HOME', '.codex'), ('PI_CODING_AGENT_DIR', '.pi/agent')):
+    for key, default in ACCOUNT_DIR_VARIABLES:
         value = environ.get(key)
         if value and _expand_home(value, Path(home)).resolve() != (Path(home) / default).resolve():
             return True

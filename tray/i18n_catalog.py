@@ -73,6 +73,14 @@ EN = {
     '{0} {1}，已排除派发：{2}（下次重试 {3}）': '{0}: {1}, excluded from dispatch: {2} (next retry {3})',
     '{0}，已排除派发，下次重试 {1}': '{0}, excluded from dispatch, next retry {1}',
     '清除': 'Clear',
+    '清除 {0}': 'Clear {0}',
+    '{0}，额度池 {1} 已排除派发：{2}（下次重试 {3}，或点卡片上的“清除 {1}”）':
+        '{0}, quota pool {1} excluded from dispatch: {2} (next retry {3}, or press Clear {1} on the card)',
+    '{0}，额度池 {1} 已排除派发：{2}（点卡片上的“清除 {1}”或运行 agentcompass hold --clear {3} 后再派发）':
+        '{0}, quota pool {1} excluded from dispatch: {2} (press Clear {1} on the card or run agentcompass hold --clear {3} to dispatch again)',
+    '额度池 {0} {1}，已排除派发，{2}': 'Quota pool {0}: {1}, excluded from dispatch, {2}',
+    '下次重试 {0}': 'next retry {0}',
+    '点卡片上的“清除 {0}”后再派发': 'press Clear {0} on the card to dispatch again',
     '正在清除提供方失败标记…': 'Clearing the provider failure hold…',
     '已清除提供方失败标记': 'Provider failure hold cleared',
     '没有需要清除的提供方失败标记': 'No provider failure hold to clear',

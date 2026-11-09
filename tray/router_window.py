@@ -1964,19 +1964,22 @@ class Panel:
         return widgets
 
     def retry_clear_button(self, parent, account):
-        """A card's 清除 link, shown only while the account (or a model of it) is held for a provider failure."""
+        """A card's 清除 link, shown only while the account (or a pool or model of it) is held for a provider failure.
+        With pools held it clears one pool at a time, the one it names (fill_quota_card sets `hold_pool`)."""
         button = self.tk.Label(parent, text=_tr("清除"), bg=theme.CARD, fg=theme.AMBER, font=(theme.FONT, 8, "underline"),
                                cursor="hand2", bd=0, padx=4, pady=0)
-        button.bind("<Button-1>", lambda _e, a=account: self.clear_retry_hold(a))
+        button.hold_pool = None
+        button.bind("<Button-1>", lambda _e, a=account, b=button: self.clear_retry_hold(a, b.hold_pool))
         return button
 
-    def clear_retry_hold(self, account):
+    def clear_retry_hold(self, account, pool=None):
         def done(_msg):
             self._cards_cache = None
             self.load_quota(True)
         def clear():
             # The status bar shows what this returns: a sentence, never the bare True/False ("1").
-            cleared = self.data_module().clear_retry_holds(account)
+            data = self.data_module()
+            cleared = data.clear_retry_holds(account, pool) if pool else data.clear_retry_holds(account)
             return _tr("已清除提供方失败标记") if cleared else _tr("没有需要清除的提供方失败标记")
         self.run(clear, self.say(lambda: done(None)), _tr("正在清除提供方失败标记…"))
 
@@ -1985,6 +1988,9 @@ class Panel:
         refreshable = bool(widgets.get("refreshable"))
         clear = widgets.get("clear")
         if clear is not None:
+            pool = card.get("retry_clear_pool") if card.get("retry_hold") else None
+            clear.hold_pool = pool
+            clear.configure(text=_tr("清除 {0}").format(pool) if pool else _tr("清除"))
             if widgets.get("clear_layout") == "grid":
                 clear.grid() if card.get("retry_hold") else clear.grid_remove()
             elif card.get("retry_hold"):
