@@ -96,6 +96,7 @@ EXTRA_NAMES = {
     'deepseek-v4-pro': {'aa': 'DeepSeek V4 Pro 0813', 'swe': 'DeepSeek V4 Pro 0813'},
     'muse-wonder-1.0': {'aa': 'Muse Wonder'},
     'nemotron-3-ultra-free': {'aa': 'Nemotron 3 Ultra 550B A55B'},
+    'nemotron-3.5-super-vl-free': {'arena': 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B', 'aa': 'Nemotron 3.5 Super VL'},
     'qwen3.8-max': {'aa': 'Qwen3.8 Max'},
 }
 # Tiers the user set (README: the anchors; accounts basis: the rest). Kept as source `user`, with the row's own basis.
@@ -177,19 +178,30 @@ def key(name):
 
 def candidates(model):
     """Normalised spellings a source may list `model` under: the id, without an effort suffix, without a free-listing
-    suffix (the same model served free), without a preview suffix. Exact matches only, never fuzzy."""
+    suffix (the same model served free), without a preview or `-1.0` suffix. Exact matches only, never fuzzy."""
     out = [model]
-    for suffix in ('-high', '-medium', '-low', '-free', '-preview'):
+    for suffix in ('-high', '-medium', '-low', '-free', '-preview', '-1.0'):
         out += [m[: -len(suffix)] for m in list(out) if m.endswith(suffix)]
     return [key(m) for m in out]
 
 
 class Matcher:
     def __init__(self, names, strip=None):
-        self.by_key = {}
+        self.by_key, dated = {}, {}
         for n in names:
-            k = key(strip(n) if strip else n)
-            self.by_key.setdefault(k, n)
+            base = sources.base_name(n)
+            s = strip(base) if strip else base
+            for raw in (s, base, strip(n) if strip else n, n):
+                k = key(raw)
+                if k:
+                    self.by_key.setdefault(k, n)
+            m = re.match(r'^(.*?)[-\s]+(\d{8}|\d{4})$', str(s).strip())
+            if m:
+                dk = key(m.group(1))
+                if dk and (dk not in dated or m.group(2) > dated[dk][0]):
+                    dated[dk] = (m.group(2), n)
+        for dk, (_, n) in dated.items():
+            self.by_key.setdefault(dk, n)
 
     def find(self, model, explicit=None):
         if explicit:
@@ -551,13 +563,17 @@ class Builder:
             return
         by_base = {}
         for r in page['rows']:
-            c, t = r.get('cost_per_task_usd'), r.get('time_per_task_min')
-            if isinstance(c, (int, float)) and isinstance(t, (int, float)) and t > 0:
+            if r.get('name'):
                 by_base.setdefault(sources.base_name(r['name']), []).append(r)
+        priced = {b: [r for r in rows if isinstance(r.get('cost_per_task_usd'), (int, float))
+                      and isinstance(r.get('time_per_task_min'), (int, float)) and r['time_per_task_min'] > 0]
+                  for b, rows in by_base.items()}
         self.register('arena.agent_sessions', fname, page.get('as_of'),
-                      'arena.ai Agent / Overall real sessions: Cost/Task (P50) / Time/Task (P50) x 60', len(by_base))
+                      'arena.ai Agent / Overall real sessions: Cost/Task (P50) / Time/Task (P50) x 60',
+                      sum(1 for rows in priced.values() if rows))
         self.source_rows['arena.agent_sessions']['sessions'] = page.get('sessions')
         self.source_rows['arena.agent_sessions']['url'] = (doc or {}).get('url') or arena_capture.URLS['agent']
+        unpriced = {}
         match = Matcher(by_base)
         for model in self.models:
             exp = ((EXTRA_NAMES.get(model) or {}).get('arena') or (tiers.NAMES.get(model) or {}).get('arena')
@@ -566,13 +582,22 @@ class Builder:
             if not base:
                 continue
             self.names[model]['arena.agent_sessions'] = base
-            for r in by_base[base]:
+            if not priced[base]:
+                r0 = by_base[base][0]
+                missing_cols = [col for col, key_ in (('Cost/Task', 'cost_per_task_usd'), ('Time/Task', 'time_per_task_min'))
+                                if not (isinstance(r0.get(key_), (int, float)) and r0[key_] > 0)]
+                unpriced[model] = {'listed_as': r0['name'], 'missing': missing_cols,
+                                   'reason': f"listed on arena.ai Agent / Overall as {r0['name']} without {' or '.join(missing_cols)}"}
+                continue
+            for r in priced[base]:
                 c, t = r['cost_per_task_usd'], r['time_per_task_min']
                 eff = sources.aa_effort(r['name']) or 'default'
                 self.add(model, 'usd_per_hour', 'arena.agent_sessions', round(c * 60.0 / t, 3),
                          'arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60',
                          effort=eff, listed_as=r['name'], cost_per_task_usd=round(c, 4),
                          time_per_task_min=round(t, 2), sessions=r.get('sessions'))
+        if unpriced:
+            self.source_rows['arena.agent_sessions']['unpriced'] = unpriced
 
     def repriced(self, model, price, listed):
         """`openrouter.cost_time`: each AA cost/time entry at the OpenRouter output price, where that price differs."""

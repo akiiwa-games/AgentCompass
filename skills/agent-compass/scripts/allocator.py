@@ -2347,19 +2347,20 @@ def five_axis_fit(scaled, demand, targets, shortfall_weight=1.0):
 
 
 def five_axis_wait_cost(wait_hours, demand, targets, policy):
-    """Score cost of waiting `wait_hours` for a window reset on the five-axis path (round 8, user 2026-11-09).
+    """Score cost of waiting `wait_hours` for a window reset on the five-axis path (rounds 8-9, user 2026-11-09).
 
-    Replaces the fixed 0.15 `deferred_start_penalty`. One hour of wait is priced at `score_per_displaced_worker_hour`
-    and scaled by `(1 - target)^2`, where `target` is the task's demand-weighted target score on 0..1: routine tasks
-    (low target, large headroom below 1) pay a high waiting cost and go to whoever is available now; high-demand tasks
-    (target near the anchor 0.8) pay little waiting cost and prefer waiting for a capable model.
+    Replaces the fixed 0.15 `deferred_start_penalty` when the caller allows waiting (`can_wait_hours > 0`). One hour of
+    wait is priced at `shortage_loss_per_worker_hour` and scaled linearly by `(1 - target)`, where `target` is the task's
+    demand-weighted target score on 0..1 (linear like `shortfall_weight = 1`, with no extra exponent): routine tasks
+    (low target) pay a high waiting cost and start now; high-demand tasks (target near the anchor 0.8) pay a smaller
+    waiting cost and prefer waiting for a capable model when `can_wait_hours` permits.
     """
     if not wait_hours or wait_hours <= 0:
         return 0.0
     total = sum(w for w in demand.values() if w > 0)
     target = sum(w * targets[a] for a, w in demand.items() if w > 0) / total if total else 0.0
     per_hour = exchange_rate(policy, 'shortage_loss_per_worker_hour')
-    return round(per_hour * float(wait_hours) * ((1.0 - target) ** 2), 4)
+    return round(per_hour * float(wait_hours) * (1.0 - target), 4)
 
 
 def five_axis_order(candidate):
@@ -3917,10 +3918,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         result['choice'] = 'none'
         return result
     can_wait = task['can_wait_hours']
-    five = bool(accounts.get('_five_axis'))
-    caller_wait_limit = isinstance(raw_task, dict) and raw_task.get('can_wait_hours') is not None
-    ready = (eligible if (five and not caller_wait_limit)
-             else [c for c in eligible if (c['available_in_hours'] or 0) <= can_wait])
+    ready = [c for c in eligible if (c['available_in_hours'] or 0) <= can_wait]
     pool = ready or eligible
     pinned_cand = (
         next((c for c in pool if c['id'] == task.get('pinned_bundle')), None)
@@ -3936,7 +3934,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         top, forced = resume, True        # a coupled chain finishes on its owner while that owner is not worn
     decision.update({'action': top['action'], 'needs_user_decision': False,
                      'continuity': 'high-coupling chain stays with its owner' if (forced and pinned_cand is None) else None})
-    if (top['available_in_hours'] or 0) > can_wait and (not five or caller_wait_limit):
+    if (top['available_in_hours'] or 0) > can_wait:
         # can_wait_hours is a limit, not a preference: say so instead of quietly starting later than allowed
         decision.update({'needs_user_decision': True, 'wait_hours': round(top['available_in_hours'], 1),
                          'reason': (f"The chain owner {top['id']} can resume in {top['available_in_hours']:.1f}h"

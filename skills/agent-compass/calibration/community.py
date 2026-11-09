@@ -20,15 +20,16 @@ The capacity ladder (round 5, user 2026-11-09: capacity is never left unknown; e
 1. a direct community measurement (`readings`; window ratios a community source states, such as Fable weekly = half
    the weekly limit, count as rung 1 derived);
 2. a community time-to-exhaust report (`EXHAUST`: hours of a named model before a window ran out) times that model's
-   option-B usd per hour;
+   arena real-session usd per hour (`arena.agent_sessions`, or option B `derived.community_mix` as labelled fallback
+   when arena does not list the model);
 3. a vendor-published plan multiplier (`multipliers`) applied to a measured sibling plan's window.
 Only when all three are empty is the window an error (`five_axis.capacity`, red and surfaced in routing notes).
 
-`mix` is the community real-traffic token split wokey values every plan at (user decision 2026-11-09, option B): the
+`mix` is the community real-traffic token split wokey values every plan at (option B fallback): the
 stated cache-read share of the fixed split (about 92%), and the output share of the non-cache-read tokens from the
 Max 20x row measured at that split (its non-cache-read and output tokens per week). `measurements.py` reprices AA's
-measured output throughput at this split (`derived.community_mix`), so usd per worker-hour sits on the scale the
-capacities are valued on.
+measured output throughput at this split (`derived.community_mix`), used only as a labelled fallback (`fallback: True`)
+for models not listed on `arena.ai` Agent / Overall with cost and time.
 
 Antigravity: Google AI Pro from the eneasf telemetry findings (one harness, September 2026; dollars at Google API rates
 with about 93% cache reads, the same scale as wokey's split). Not found (no community measurement published as of

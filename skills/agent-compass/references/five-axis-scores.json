@@ -1,43 +1,43 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-09T10:50:04+00:00",
- "measurements_sha256": "8de34b9844b79cdbb0c753abf50477bf026d71134d615070a64a7290b9e2eb6f",
+ "generated_at": "2026-11-09T11:33:50+00:00",
+ "measurements_sha256": "a8c2bd6ed066e150ae4ec902e3c554b6eea2561aa8777339de0ea643438447bc",
  "distrusted_sources": [],
  "source_priority": [],
  "user_overrides": [],
  "method": "Five-axis scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "backfill_fits": {
   "divergence.chat~aa.index": {
-   "a": 0.5151,
+   "a": 0.5187,
    "b": 0.0058,
-   "r": 0.7886,
-   "n": 20,
+   "r": 0.7972,
+   "n": 23,
    "y_min": 0.4666,
    "y_max": 0.8999
   },
   "divergence.creative~aa.index": {
-   "a": 0.2588,
-   "b": 0.01,
-   "r": 0.656,
-   "n": 22,
-   "y_min": 0.0802,
+   "a": 0.3051,
+   "b": 0.0092,
+   "r": 0.7172,
+   "n": 24,
+   "y_min": 0.332,
    "y_max": 1.0
   },
   "global_rigor.agentic~aa.index": {
-   "a": 0.5058,
+   "a": 0.5013,
    "b": 0.0049,
-   "r": 0.8764,
-   "n": 21,
-   "y_min": 0.5822,
+   "r": 0.8858,
+   "n": 24,
+   "y_min": 0.5424,
    "y_max": 0.8153
   },
   "global_rigor.long_horizon~aa.index": {
-   "a": 0.4555,
-   "b": 0.0075,
-   "r": 0.5855,
-   "n": 17,
-   "y_min": 0.1291,
-   "y_max": 0.904
+   "a": 0.5031,
+   "b": 0.0066,
+   "r": 0.5134,
+   "n": 18,
+   "y_min": 0.1413,
+   "y_max": 0.9894
   },
   "global_rigor.long_context~aa.index": {
    "a": 0.6936,
@@ -48,9 +48,9 @@
    "y_max": 0.8355
   },
   "global_rigor.anti_hallucination~aa.index": {
-   "a": 0.4309,
-   "b": 0.007,
-   "r": 0.8662,
+   "a": 0.4337,
+   "b": 0.0071,
+   "r": 0.87,
    "n": 26,
    "y_min": 0.4737,
    "y_max": 0.8626
@@ -64,76 +64,76 @@
    "y_max": 0.95
   },
   "module_precision.alignment~aa.index": {
-   "a": 0.6701,
-   "b": 0.0026,
-   "r": 0.5874,
-   "n": 13,
+   "a": 0.6636,
+   "b": 0.0027,
+   "r": 0.5745,
+   "n": 15,
    "y_min": 0.6654,
    "y_max": 0.8452
   },
   "vision_tools.vision~aa.index": {
-   "a": 0.5769,
-   "b": 0.0042,
-   "r": 0.6075,
-   "n": 19,
-   "y_min": 0.5888,
+   "a": 0.5471,
+   "b": 0.0049,
+   "r": 0.6963,
+   "n": 20,
+   "y_min": 0.5558,
    "y_max": 0.8717
   },
   "vision_tools.gui_design~aa.index": {
-   "a": 0.0236,
-   "b": 0.0122,
-   "r": 0.8921,
-   "n": 22,
-   "y_min": 0.204,
+   "a": 0.0196,
+   "b": 0.0123,
+   "r": 0.8952,
+   "n": 25,
+   "y_min": 0.1314,
    "y_max": 0.8
   },
   "vision_tools.gui~aa.index": {
-   "a": 0.509,
+   "a": 0.5071,
    "b": 0.0052,
-   "r": 0.8687,
-   "n": 21,
+   "r": 0.8807,
+   "n": 24,
    "y_min": 0.5493,
    "y_max": 0.8485
   },
   "vision_tools.tools~aa.index": {
-   "a": 0.3021,
-   "b": 0.0113,
-   "r": 0.7493,
+   "a": 0.3314,
+   "b": 0.0105,
+   "r": 0.7695,
    "n": 26,
    "y_min": 0.0106,
    "y_max": 0.9038
   },
   "divergence~aa.index": {
-   "a": 0.387,
-   "b": 0.0079,
-   "r": 0.7669,
-   "n": 22,
-   "y_min": 0.3803,
-   "y_max": 0.8917
+   "a": 0.4119,
+   "b": 0.0075,
+   "r": 0.8126,
+   "n": 24,
+   "y_min": 0.3993,
+   "y_max": 0.8944
   },
   "global_rigor~aa.index": {
-   "a": 0.5252,
-   "b": 0.0053,
-   "r": 0.8848,
+   "a": 0.5338,
+   "b": 0.0052,
+   "r": 0.8702,
    "n": 26,
-   "y_min": 0.4422,
-   "y_max": 0.8331
+   "y_min": 0.4353,
+   "y_max": 0.8324
   },
   "module_precision~aa.index": {
-   "a": 0.2666,
-   "b": 0.0103,
-   "r": 0.9506,
+   "a": 0.2732,
+   "b": 0.0101,
+   "r": 0.9457,
    "n": 26,
-   "y_min": 0.3529,
-   "y_max": 0.8743
+   "y_min": 0.3498,
+   "y_max": 0.8721
   },
   "vision_tools~aa.index": {
-   "a": 0.3614,
-   "b": 0.008,
-   "r": 0.9281,
+   "a": 0.3549,
+   "b": 0.0081,
+   "r": 0.9273,
    "n": 26,
-   "y_min": 0.341,
-   "y_max": 0.8207
+   "y_min": 0.3164,
+   "y_max": 0.8239
   }
  },
  "usd_basis": {
@@ -1832,32 +1832,38 @@
   "deepseek-v4.1-flash-free": {
    "axes": {
     "divergence": {
-     "value": 0.3803,
-     "status": "partial",
+     "value": 0.5415,
+     "status": "measured",
      "components": {
-      "creative": {
-       "value": 0.0802,
+      "chat": {
+       "value": 0.7292,
        "sources": {
-        "eqbench.creative_writing_v3": 0.0802
+        "lmarena.text_overall": 0.7292
        },
        "status": "measured"
       },
-      "chat": {
-       "value": 0.6805,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 28.64
-       }
+      "creative": {
+       "value": 0.3538,
+       "sources": {
+        "lmarena.creative_writing": 0.6275,
+        "eqbench.creative_writing_v3": 0.0802
+       },
+       "status": "measured"
       }
      },
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6985,
+     "value": 0.7053,
      "status": "partial",
      "components": {
+      "agentic": {
+       "value": 0.6724,
+       "sources": {
+        "arena.agent_code": 0.6724
+       },
+       "status": "measured"
+      },
       "anti_hallucination": {
        "value": 0.6642,
        "sources": {
@@ -1872,15 +1878,6 @@
         "arena.agent_alignment_deceptive_completion": 0.7302
        },
        "status": "measured"
-      },
-      "agentic": {
-       "value": 0.6451,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 28.64
-       }
       },
       "long_context": {
        "value": 0.7543,
@@ -1916,89 +1913,86 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.6603,
-     "status": "partial",
+     "value": 0.6634,
+     "status": "measured",
      "components": {
-      "vision": {
-       "value": 0.7429,
+      "gui_design": {
+       "value": 0.467,
        "sources": {
+        "lmarena.webdev": 0.467
+       },
+       "status": "measured"
+      },
+      "vision": {
+       "value": 0.7202,
+       "sources": {
+        "lmarena.vision": 0.6974,
         "aa.mmmu_pro": 0.7429
        },
        "status": "measured"
       },
       "tools": {
-       "value": 0.8669,
+       "value": 0.7778,
        "sources": {
+        "arena.agent_work_tools": 0.6888,
         "aa.automationbench": 0.8669
        },
        "status": "measured"
       },
-      "gui_design": {
-       "value": 0.3734,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 28.64
-       }
-      },
       "gui": {
-       "value": 0.6581,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 28.64
-       }
+       "value": 0.6888,
+       "sources": {
+        "arena.agent_work_gui": 0.6888
+       },
+       "status": "measured"
       }
      },
      "missing_components": []
     }
    },
    "scores": {
-    "divergence": 0.3803,
-    "global_rigor": 0.6985,
+    "divergence": 0.5415,
+    "global_rigor": 0.7053,
     "module_precision": 0.5632,
-    "vision_tools": 0.6603
+    "vision_tools": 0.6634
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 4.068,
+    "value": 1.084,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 4.068,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 1.084,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 4.068,
-       "max": 3.976,
-       "none": 3.515
-      }
+       "max": 1.084
+      },
+      "sessions": 78504
      }
     },
     "max_over_min": null,
-    "kind": "derived",
-    "fallback": true
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 28.64,
-   "economy_static": 0.787,
+   "economy_static": 0.933,
    "legacy_public_tier": {
-    "value": 2.92,
-    "source": "secondary.tier_fit",
+    "value": 3.21,
+    "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [],
@@ -2842,7 +2836,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.7215,
+     "value": 0.723,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -2868,7 +2862,7 @@
        "status": "measured"
       },
       "vision": {
-       "value": 0.7887,
+       "value": 0.7947,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -2884,7 +2878,7 @@
     "divergence": 0.6863,
     "global_rigor": 0.7565,
     "module_precision": 0.7853,
-    "vision_tools": 0.7215
+    "vision_tools": 0.723
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -3338,7 +3332,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6902,
+     "value": 0.6958,
      "status": "measured",
      "components": {
       "agentic": {
@@ -3357,10 +3351,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.5945,
+       "value": 0.6169,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.7155,
-        "vals.swebench_1_4h": 0.4735
+        "vals.swebench_1_4h": 0.5182
        },
        "status": "measured"
       },
@@ -3375,7 +3369,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.5078,
+     "value": 0.5191,
      "status": "measured",
      "components": {
       "alignment": {
@@ -3393,9 +3387,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5159,
+       "value": 0.5499,
        "sources": {
-        "vals.swebench_lt15m": 0.5159
+        "vals.swebench_lt15m": 0.5499
        },
        "status": "measured"
       }
@@ -3442,8 +3436,8 @@
    },
    "scores": {
     "divergence": 0.6331,
-    "global_rigor": 0.6902,
-    "module_precision": 0.5078,
+    "global_rigor": 0.6958,
+    "module_precision": 0.5191,
     "vision_tools": 0.6281
    },
    "missing_axes": [],
@@ -3573,7 +3567,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -3713,7 +3708,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -3831,7 +3827,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -3927,7 +3924,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6743,
+     "value": 0.6795,
      "status": "partial",
      "components": {
       "agentic": {
@@ -3952,7 +3949,7 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.6805,
+       "value": 0.7012,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -3964,7 +3961,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.5277,
+     "value": 0.525,
      "status": "partial",
      "components": {
       "terminal": {
@@ -3975,7 +3972,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7483,
+       "value": 0.7428,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -3987,7 +3984,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.5702,
+     "value": 0.568,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -4013,7 +4010,7 @@
        "status": "measured"
       },
       "vision": {
-       "value": 0.7024,
+       "value": 0.6938,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -4027,9 +4024,9 @@
    },
    "scores": {
     "divergence": 0.5395,
-    "global_rigor": 0.6743,
-    "module_precision": 0.5277,
-    "vision_tools": 0.5702
+    "global_rigor": 0.6795,
+    "module_precision": 0.525,
+    "vision_tools": 0.568
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -4094,11 +4091,11 @@
   "gpt-6.1-terra": {
    "axes": {
     "divergence": {
-     "value": 0.7218,
+     "value": 0.7307,
      "status": "backfilled",
      "components": {
       "chat": {
-       "value": 0.7601,
+       "value": 0.7655,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -4107,7 +4104,7 @@
        }
       },
       "creative": {
-       "value": 0.6836,
+       "value": 0.6958,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -4119,7 +4116,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7438,
+     "value": 0.7461,
      "status": "partial",
      "components": {
       "agentic": {
@@ -4144,7 +4141,7 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.7751,
+       "value": 0.7845,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -4156,7 +4153,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.687,
+     "value": 0.6845,
      "status": "partial",
      "components": {
       "terminal": {
@@ -4167,7 +4164,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7812,
+       "value": 0.7761,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -4216,9 +4213,9 @@
     }
    },
    "scores": {
-    "divergence": 0.7218,
-    "global_rigor": 0.7438,
-    "module_precision": 0.687,
+    "divergence": 0.7307,
+    "global_rigor": 0.7461,
+    "module_precision": 0.6845,
     "vision_tools": 0.6624
    },
    "missing_axes": [],
@@ -4679,7 +4676,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5835,
+     "value": 0.5939,
      "status": "partial",
      "components": {
       "agentic": {
@@ -4697,10 +4694,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.8427,
+       "value": 0.8844,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.803,
-        "vals.swebench_1_4h": 0.8824
+        "vals.swebench_1_4h": 0.9658
        },
        "status": "measured"
       }
@@ -4710,7 +4707,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4567,
+     "value": 0.469,
      "status": "partial",
      "components": {
       "alignment": {
@@ -4721,9 +4718,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5604,
+       "value": 0.5973,
        "sources": {
-        "vals.swebench_lt15m": 0.5604
+        "vals.swebench_lt15m": 0.5973
        },
        "status": "measured"
       }
@@ -4770,8 +4767,8 @@
    },
    "scores": {
     "divergence": 0.7062,
-    "global_rigor": 0.5835,
-    "module_precision": 0.4567,
+    "global_rigor": 0.5939,
+    "module_precision": 0.469,
     "vision_tools": 0.6208
    },
    "missing_axes": [],
@@ -4874,7 +4871,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.3802,
+     "value": 0.401,
      "status": "partial",
      "components": {
       "agentic": {
@@ -4885,9 +4882,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.8824,
+       "value": 0.9658,
        "sources": {
-        "vals.swebench_1_4h": 0.8824
+        "vals.swebench_1_4h": 0.9658
        },
        "status": "measured"
       }
@@ -4898,13 +4895,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.1858,
+     "value": 0.198,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.5574,
+       "value": 0.5941,
        "sources": {
-        "vals.swebench_lt15m": 0.5574
+        "vals.swebench_lt15m": 0.5941
        },
        "status": "measured"
       }
@@ -4952,8 +4949,8 @@
    },
    "scores": {
     "divergence": 0.6063,
-    "global_rigor": 0.3802,
-    "module_precision": 0.1858,
+    "global_rigor": 0.401,
+    "module_precision": 0.198,
     "vision_tools": 0.561
    },
    "missing_axes": [],
@@ -5056,13 +5053,13 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.1937,
+     "value": 0.212,
      "status": "partial",
      "components": {
       "long_horizon": {
-       "value": 0.7748,
+       "value": 0.848,
        "sources": {
-        "vals.swebench_1_4h": 0.7748
+        "vals.swebench_1_4h": 0.848
        },
        "status": "measured"
       }
@@ -5074,13 +5071,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.1848,
+     "value": 0.197,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.5545,
+       "value": 0.5909,
        "sources": {
-        "vals.swebench_lt15m": 0.5545
+        "vals.swebench_lt15m": 0.5909
        },
        "status": "measured"
       }
@@ -5117,8 +5114,8 @@
    },
    "scores": {
     "divergence": 0.5687,
-    "global_rigor": 0.1937,
-    "module_precision": 0.1848,
+    "global_rigor": 0.212,
+    "module_precision": 0.197,
     "vision_tools": 0.2221
    },
    "missing_axes": [],
@@ -5126,7 +5123,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -5258,7 +5256,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -5355,7 +5354,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7064,
+     "value": 0.7271,
      "status": "partial",
      "components": {
       "long_context": {
@@ -5373,14 +5372,14 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.904,
+       "value": 0.9894,
        "sources": {
-        "vals.swebench_1_4h": 0.904
+        "vals.swebench_1_4h": 0.9894
        },
        "status": "measured"
       },
       "agentic": {
-       "value": 0.618,
+       "value": 0.6153,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -5392,7 +5391,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.497,
+     "value": 0.5074,
      "status": "partial",
      "components": {
       "terminal": {
@@ -5403,14 +5402,14 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5604,
+       "value": 0.5973,
        "sources": {
-        "vals.swebench_lt15m": 0.5604
+        "vals.swebench_lt15m": 0.5973
        },
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7305,
+       "value": 0.7248,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -5422,7 +5421,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.5865,
+     "value": 0.5829,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -5440,7 +5439,7 @@
        "status": "measured"
       },
       "vision": {
-       "value": 0.6738,
+       "value": 0.6604,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -5449,7 +5448,7 @@
        }
       },
       "gui": {
-       "value": 0.629,
+       "value": 0.6279,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -5463,15 +5462,15 @@
    },
    "scores": {
     "divergence": 0.5336,
-    "global_rigor": 0.7064,
-    "module_precision": 0.497,
-    "vision_tools": 0.5865
+    "global_rigor": 0.7271,
+    "module_precision": 0.5074,
+    "vision_tools": 0.5829
    },
    "missing_axes": [],
    "usd_per_hour": {
     "value": 8.735,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "fallback (not listed on arena.ai Agent / Overall): source priority: derived.community_mix",
     "used": [
      "derived.community_mix"
     ],
@@ -5552,7 +5551,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7179,
+     "value": 0.7276,
      "status": "measured",
      "components": {
       "agentic": {
@@ -5571,10 +5570,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.7596,
+       "value": 0.7983,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.7014,
-        "vals.swebench_1_4h": 0.8179
+        "vals.swebench_1_4h": 0.8952
        },
        "status": "measured"
       },
@@ -5589,7 +5588,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.6251,
+     "value": 0.6374,
      "status": "measured",
      "components": {
       "alignment": {
@@ -5607,9 +5606,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5604,
+       "value": 0.5973,
        "sources": {
-        "vals.swebench_lt15m": 0.5604
+        "vals.swebench_lt15m": 0.5973
        },
        "status": "measured"
       }
@@ -5617,7 +5616,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.6194,
+     "value": 0.616,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -5643,7 +5642,7 @@
        "status": "measured"
       },
       "vision": {
-       "value": 0.674,
+       "value": 0.6606,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -5657,9 +5656,9 @@
    },
    "scores": {
     "divergence": 0.7538,
-    "global_rigor": 0.7179,
-    "module_precision": 0.6251,
-    "vision_tools": 0.6194
+    "global_rigor": 0.7276,
+    "module_precision": 0.6374,
+    "vision_tools": 0.616
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -5745,7 +5744,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6818,
+     "value": 0.6996,
      "status": "measured",
      "components": {
       "agentic": {
@@ -5770,9 +5769,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.7533,
+       "value": 0.8245,
        "sources": {
-        "vals.swebench_1_4h": 0.7533
+        "vals.swebench_1_4h": 0.8245
        },
        "status": "measured"
       }
@@ -5780,7 +5779,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.5813,
+     "value": 0.5912,
      "status": "partial",
      "components": {
       "terminal": {
@@ -5791,14 +5790,14 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5367,
+       "value": 0.572,
        "sources": {
-        "vals.swebench_lt15m": 0.5367
+        "vals.swebench_lt15m": 0.572
        },
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7429,
+       "value": 0.7373,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -5848,8 +5847,8 @@
    },
    "scores": {
     "divergence": 0.6723,
-    "global_rigor": 0.6818,
-    "module_precision": 0.5813,
+    "global_rigor": 0.6996,
+    "module_precision": 0.5912,
     "vision_tools": 0.6159
    },
    "missing_axes": [],
@@ -5991,7 +5990,7 @@
    "usd_per_hour": {
     "value": 17.059,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "fallback (not listed on arena.ai Agent / Overall): source priority: derived.community_mix",
     "used": [
      "derived.community_mix"
     ],
@@ -6099,7 +6098,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6571,
+     "value": 0.696,
      "status": "measured",
      "components": {
       "agentic": {
@@ -6109,24 +6108,26 @@
        },
        "status": "measured"
       },
-      "long_context": {
-       "value": 0.7774,
-       "sources": {
-        "aa.lcr": 0.7774
-       },
-       "status": "measured"
-      },
       "anti_hallucination": {
-       "value": 0.6207,
+       "value": 0.6941,
        "sources": {
+        "arena.agent_alignment_false_attribution": 0.7674,
         "aa.omniscience_index": 0.6207
        },
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.5811,
+       "value": 0.6634,
        "sources": {
-        "vals.swebench_1_4h": 0.5811
+        "arena.agent_alignment_deceptive_completion": 0.6908,
+        "vals.swebench_1_4h": 0.636
+       },
+       "status": "measured"
+      },
+      "long_context": {
+       "value": 0.7774,
+       "sources": {
+        "aa.lcr": 0.7774
        },
        "status": "measured"
       }
@@ -6134,9 +6135,16 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.615,
-     "status": "partial",
+     "value": 0.6109,
+     "status": "measured",
      "components": {
+      "alignment": {
+       "value": 0.7106,
+       "sources": {
+        "arena.agent_alignment": 0.7106
+       },
+       "status": "measured"
+      },
       "terminal": {
        "value": 0.55,
        "sources": {
@@ -6145,20 +6153,11 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5367,
+       "value": 0.572,
        "sources": {
-        "vals.swebench_lt15m": 0.5367
+        "vals.swebench_lt15m": 0.572
        },
        "status": "measured"
-      },
-      "alignment": {
-       "value": 0.7582,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 33.65
-       }
       }
      },
      "missing_components": []
@@ -6203,8 +6202,8 @@
    },
    "scores": {
     "divergence": 0.7236,
-    "global_rigor": 0.6571,
-    "module_precision": 0.615,
+    "global_rigor": 0.696,
+    "module_precision": 0.6109,
     "vision_tools": 0.6565
    },
    "missing_axes": [],
@@ -6270,7 +6269,7 @@
   "kimi-k3.1-pro": {
    "axes": {
     "divergence": {
-     "value": 0.8917,
+     "value": 0.8944,
      "status": "partial",
      "components": {
       "creative": {
@@ -6281,7 +6280,7 @@
        "status": "measured"
       },
       "chat": {
-       "value": 0.7833,
+       "value": 0.7889,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -6293,7 +6292,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7661,
+     "value": 0.7675,
      "status": "partial",
      "components": {
       "agentic": {
@@ -6318,7 +6317,7 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.8054,
+       "value": 0.8111,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -6330,7 +6329,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.8708,
+     "value": 0.8684,
      "status": "partial",
      "components": {
       "terminal": {
@@ -6341,7 +6340,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7917,
+       "value": 0.7868,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -6390,9 +6389,9 @@
     }
    },
    "scores": {
-    "divergence": 0.8917,
-    "global_rigor": 0.7661,
-    "module_precision": 0.8708,
+    "divergence": 0.8944,
+    "global_rigor": 0.7675,
+    "module_precision": 0.8684,
     "vision_tools": 0.7045
    },
    "missing_axes": [],
@@ -6480,7 +6479,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5465,
+     "value": 0.5565,
      "status": "partial",
      "components": {
       "agentic": {
@@ -6498,10 +6497,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.7683,
+       "value": 0.8079,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.6972,
-        "vals.swebench_1_4h": 0.8394
+        "vals.swebench_1_4h": 0.9187
        },
        "status": "measured"
       }
@@ -6511,7 +6510,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4173,
+     "value": 0.429,
      "status": "partial",
      "components": {
       "alignment": {
@@ -6522,9 +6521,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5307,
+       "value": 0.5657,
        "sources": {
-        "vals.swebench_lt15m": 0.5307
+        "vals.swebench_lt15m": 0.5657
        },
        "status": "measured"
       }
@@ -6566,8 +6565,8 @@
    },
    "scores": {
     "divergence": 0.7646,
-    "global_rigor": 0.5465,
-    "module_precision": 0.4173,
+    "global_rigor": 0.5565,
+    "module_precision": 0.429,
     "vision_tools": 0.4512
    },
    "missing_axes": [],
@@ -6676,7 +6675,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6371,
+     "value": 0.6421,
      "status": "measured",
      "components": {
       "agentic": {
@@ -6695,10 +6694,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.5463,
+       "value": 0.5666,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.6621,
-        "vals.swebench_1_4h": 0.4305
+        "vals.swebench_1_4h": 0.4711
        },
        "status": "measured"
       },
@@ -6713,7 +6712,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.4465,
+     "value": 0.4572,
      "status": "measured",
      "components": {
       "alignment": {
@@ -6732,9 +6731,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.4863,
+       "value": 0.5183,
        "sources": {
-        "vals.swebench_lt15m": 0.4863
+        "vals.swebench_lt15m": 0.5183
        },
        "status": "measured"
       }
@@ -6783,8 +6782,8 @@
    },
    "scores": {
     "divergence": 0.5872,
-    "global_rigor": 0.6371,
-    "module_precision": 0.4465,
+    "global_rigor": 0.6421,
+    "module_precision": 0.4572,
     "vision_tools": 0.4567
    },
    "missing_axes": [],
@@ -6850,11 +6849,11 @@
   "minimax-m3.1-flash": {
    "axes": {
     "divergence": {
-     "value": 0.6163,
+     "value": 0.6302,
      "status": "backfilled",
      "components": {
       "chat": {
-       "value": 0.6829,
+       "value": 0.6878,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -6863,7 +6862,7 @@
        }
       },
       "creative": {
-       "value": 0.5497,
+       "value": 0.5727,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -6875,7 +6874,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.654,
+     "value": 0.6593,
      "status": "partial",
      "components": {
       "agentic": {
@@ -6900,7 +6899,7 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.6744,
+       "value": 0.6958,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -6912,7 +6911,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.5553,
+     "value": 0.5525,
      "status": "partial",
      "components": {
       "terminal": {
@@ -6923,7 +6922,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7462,
+       "value": 0.7407,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -6972,9 +6971,9 @@
     }
    },
    "scores": {
-    "divergence": 0.6163,
-    "global_rigor": 0.654,
-    "module_precision": 0.5553,
+    "divergence": 0.6302,
+    "global_rigor": 0.6593,
+    "module_precision": 0.5525,
     "vision_tools": 0.6277
    },
    "missing_axes": [],
@@ -7108,7 +7107,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -7387,7 +7387,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6321,
+     "value": 0.638,
      "status": "partial",
      "components": {
       "agentic": {
@@ -7412,7 +7412,7 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.6568,
+       "value": 0.6804,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7424,7 +7424,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.5308,
+     "value": 0.528,
      "status": "partial",
      "components": {
       "terminal": {
@@ -7435,7 +7435,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7401,
+       "value": 0.7345,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7486,8 +7486,8 @@
    },
    "scores": {
     "divergence": 0.5961,
-    "global_rigor": 0.6321,
-    "module_precision": 0.5308,
+    "global_rigor": 0.638,
+    "module_precision": 0.528,
     "vision_tools": 0.6241
    },
    "missing_axes": [],
@@ -7564,7 +7564,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.2235,
+     "value": 0.2316,
      "status": "partial",
      "components": {
       "agentic": {
@@ -7575,9 +7575,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.3444,
+       "value": 0.3769,
        "sources": {
-        "vals.swebench_1_4h": 0.3444
+        "vals.swebench_1_4h": 0.3769
        },
        "status": "measured"
       }
@@ -7588,13 +7588,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.1552,
+     "value": 0.1654,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.4655,
+       "value": 0.4961,
        "sources": {
-        "vals.swebench_lt15m": 0.4655
+        "vals.swebench_lt15m": 0.4961
        },
        "status": "measured"
       }
@@ -7631,8 +7631,8 @@
    },
    "scores": {
     "divergence": 0.0,
-    "global_rigor": 0.2235,
-    "module_precision": 0.1552,
+    "global_rigor": 0.2316,
+    "module_precision": 0.1654,
     "vision_tools": 0.2823
    },
    "missing_axes": [
@@ -7729,34 +7729,37 @@
   "nemotron-3.5-super-vl-free": {
    "axes": {
     "divergence": {
-     "value": 0.4945,
-     "status": "backfilled",
+     "value": 0.5561,
+     "status": "measured",
      "components": {
       "chat": {
-       "value": 0.5938,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 13.62
-       }
+       "value": 0.5954,
+       "sources": {
+        "lmarena.text_overall": 0.5954
+       },
+       "status": "measured"
       },
       "creative": {
-       "value": 0.3952,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 13.62
-       }
+       "value": 0.5167,
+       "sources": {
+        "lmarena.creative_writing": 0.5167
+       },
+       "status": "measured"
       }
      },
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5885,
+     "value": 0.5873,
      "status": "partial",
      "components": {
+      "agentic": {
+       "value": 0.5424,
+       "sources": {
+        "arena.agent_code": 0.5424
+       },
+       "status": "measured"
+      },
       "long_context": {
        "value": 0.6677,
        "sources": {
@@ -7771,17 +7774,8 @@
        },
        "status": "measured"
       },
-      "agentic": {
-       "value": 0.5822,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 13.62
-       }
-      },
       "long_horizon": {
-       "value": 0.5581,
+       "value": 0.5934,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7793,7 +7787,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.3529,
+     "value": 0.3498,
      "status": "partial",
      "components": {
       "terminal": {
@@ -7804,7 +7798,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7058,
+       "value": 0.6997,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7816,58 +7810,53 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.4014,
-     "status": "partial",
+     "value": 0.4049,
+     "status": "measured",
      "components": {
-      "tools": {
-       "value": 0.1876,
+      "gui_design": {
+       "value": 0.1314,
        "sources": {
-        "aa.automationbench": 0.1876
+        "lmarena.webdev": 0.1314
        },
        "status": "measured"
       },
       "vision": {
-       "value": 0.6341,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 13.62
-       }
+       "value": 0.5558,
+       "sources": {
+        "lmarena.vision": 0.5558
+       },
+       "status": "measured"
       },
-      "gui_design": {
-       "value": 0.204,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 13.62
-       }
+      "tools": {
+       "value": 0.3734,
+       "sources": {
+        "arena.agent_work_tools": 0.5592,
+        "aa.automationbench": 0.1876
+       },
+       "status": "measured"
       },
       "gui": {
-       "value": 0.5799,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 13.62
-       }
+       "value": 0.5592,
+       "sources": {
+        "arena.agent_work_gui": 0.5592
+       },
+       "status": "measured"
       }
      },
      "missing_components": []
     }
    },
    "scores": {
-    "divergence": 0.4945,
-    "global_rigor": 0.5885,
-    "module_precision": 0.3529,
-    "vision_tools": 0.4014
+    "divergence": 0.5561,
+    "global_rigor": 0.5873,
+    "module_precision": 0.3498,
+    "vision_tools": 0.4049
    },
    "missing_axes": [],
    "usd_per_hour": {
     "value": 11.5,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "fallback (listed on arena.ai Agent / Overall as NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) without Cost/Task): source priority: derived.community_mix",
     "used": [
      "derived.community_mix"
     ],
@@ -7897,8 +7886,8 @@
    "intelligence_index": 13.62,
    "economy_static": 0.566,
    "legacy_public_tier": {
-    "value": 1.98,
-    "source": "secondary.tier_fit",
+    "value": 1.52,
+    "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [],
@@ -7946,7 +7935,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.4422,
+     "value": 0.4353,
      "status": "partial",
      "components": {
       "long_context": {
@@ -7964,14 +7953,14 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.1291,
+       "value": 0.1413,
        "sources": {
-        "vals.swebench_1_4h": 0.1291
+        "vals.swebench_1_4h": 0.1413
        },
        "status": "measured"
       },
       "agentic": {
-       "value": 0.5822,
+       "value": 0.5424,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -7983,7 +7972,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.366,
+     "value": 0.3728,
      "status": "partial",
      "components": {
       "terminal": {
@@ -7994,14 +7983,14 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.4062,
+       "value": 0.4329,
        "sources": {
-        "vals.swebench_lt15m": 0.4062
+        "vals.swebench_lt15m": 0.4329
        },
        "status": "measured"
       },
       "alignment": {
-       "value": 0.6846,
+       "value": 0.6783,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -8013,7 +8002,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.341,
+     "value": 0.3164,
      "status": "partial",
      "components": {
       "tools": {
@@ -8024,7 +8013,7 @@
        "status": "measured"
       },
       "vision": {
-       "value": 0.6001,
+       "value": 0.5742,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -8033,7 +8022,7 @@
        }
       },
       "gui_design": {
-       "value": 0.204,
+       "value": 0.1314,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -8056,15 +8045,15 @@
    },
    "scores": {
     "divergence": 0.3993,
-    "global_rigor": 0.4422,
-    "module_precision": 0.366,
-    "vision_tools": 0.341
+    "global_rigor": 0.4353,
+    "module_precision": 0.3728,
+    "vision_tools": 0.3164
    },
    "missing_axes": [],
    "usd_per_hour": {
     "value": 8.035,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "fallback (not listed on arena.ai Agent / Overall): source priority: derived.community_mix",
     "used": [
      "derived.community_mix"
     ],
@@ -8143,7 +8132,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.65,
+     "value": 0.6561,
      "status": "partial",
      "components": {
       "agentic": {
@@ -8161,7 +8150,7 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.6522,
+       "value": 0.6763,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -8182,7 +8171,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.5443,
+     "value": 0.5414,
      "status": "partial",
      "components": {
       "terminal": {
@@ -8193,7 +8182,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.7385,
+       "value": 0.7329,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -8243,8 +8232,8 @@
    },
    "scores": {
     "divergence": 0.528,
-    "global_rigor": 0.65,
-    "module_precision": 0.5443,
+    "global_rigor": 0.6561,
+    "module_precision": 0.5414,
     "vision_tools": 0.5546
    },
    "missing_axes": [],
@@ -8310,58 +8299,52 @@
   "muse-wonder-1.0": {
    "axes": {
     "divergence": {
-     "value": 0.7068,
-     "status": "backfilled",
+     "value": 0.7689,
+     "status": "measured",
      "components": {
       "chat": {
-       "value": 0.7491,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 40.53
-       }
+       "value": 0.8148,
+       "sources": {
+        "lmarena.text_overall": 0.8148
+       },
+       "status": "measured"
       },
       "creative": {
-       "value": 0.6646,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 40.53
-       }
+       "value": 0.7229,
+       "sources": {
+        "lmarena.creative_writing": 0.7464,
+        "eqbench.creative_writing_v3": 0.6995
+       },
+       "status": "measured"
       }
      },
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7357,
+     "value": 0.7307,
      "status": "partial",
      "components": {
-      "anti_hallucination": {
-       "value": 0.6996,
+      "agentic": {
+       "value": 0.6679,
        "sources": {
+        "arena.agent_code": 0.6679
+       },
+       "status": "measured"
+      },
+      "anti_hallucination": {
+       "value": 0.7438,
+       "sources": {
+        "arena.agent_alignment_false_attribution": 0.7879,
         "aa.omniscience_index": 0.6996
        },
        "status": "measured"
       },
-      "agentic": {
-       "value": 0.7029,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 40.53
-       }
-      },
       "long_horizon": {
-       "value": 0.7608,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 40.53
-       }
+       "value": 0.7316,
+       "sources": {
+        "arena.agent_alignment_deceptive_completion": 0.7316
+       },
+       "status": "measured"
       },
       "long_context": {
        "value": 0.7795,
@@ -8376,111 +8359,106 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.6596,
-     "status": "partial",
+     "value": 0.6441,
+     "status": "measured",
      "components": {
+      "alignment": {
+       "value": 0.7452,
+       "sources": {
+        "arena.agent_alignment": 0.7452
+       },
+       "status": "measured"
+      },
       "terminal": {
        "value": 0.5429,
        "sources": {
         "aa.terminalbench_4": 0.5429
        },
        "status": "measured"
-      },
-      "alignment": {
-       "value": 0.7762,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 40.53
-       }
       }
      },
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.7176,
-     "status": "partial",
+     "value": 0.6711,
+     "status": "measured",
      "components": {
+      "gui_design": {
+       "value": 0.4398,
+       "sources": {
+        "lmarena.webdev": 0.4398
+       },
+       "status": "measured"
+      },
+      "tools": {
+       "value": 0.7714,
+       "sources": {
+        "arena.agent_work_tools": 0.692,
+        "aa.automationbench": 0.8508
+       },
+       "status": "measured"
+      },
+      "gui": {
+       "value": 0.692,
+       "sources": {
+        "arena.agent_work_gui": 0.692
+       },
+       "status": "measured"
+      },
       "vision": {
        "value": 0.7811,
        "sources": {
         "aa.mmmu_pro": 0.7811
        },
        "status": "measured"
-      },
-      "tools": {
-       "value": 0.8508,
-       "sources": {
-        "aa.automationbench": 0.8508
-       },
-       "status": "measured"
-      },
-      "gui_design": {
-       "value": 0.5186,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 40.53
-       }
-      },
-      "gui": {
-       "value": 0.72,
-       "sources": {},
-       "status": "backfilled",
-       "backfill": {
-        "predictor": "aa.index",
-        "x": 40.53
-       }
       }
      },
      "missing_components": []
     }
    },
    "scores": {
-    "divergence": 0.7068,
-    "global_rigor": 0.7357,
-    "module_precision": 0.6596,
-    "vision_tools": 0.7176
+    "divergence": 0.7689,
+    "global_rigor": 0.7307,
+    "module_precision": 0.6441,
+    "vision_tools": 0.6711
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 59.076,
+    "value": 21.771,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 59.076,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 21.771,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 59.076,
-       "max": 58.63
-      }
+       "max": 21.771
+      },
+      "sessions": 13921
      }
     },
     "max_over_min": null,
-    "kind": "derived",
-    "fallback": true
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 40.53,
-   "economy_static": 0.202,
+   "economy_static": 0.408,
    "legacy_public_tier": {
-    "value": 3.47,
-    "source": "secondary.tier_fit",
+    "value": 3.19,
+    "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [],
@@ -8615,7 +8593,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "listed on arena.ai Agent / Overall as Beam 1.0 501B A23B without Cost/Task"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -8747,7 +8726,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -8843,28 +8823,45 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.0,
-     "status": "missing",
-     "components": {},
+     "value": 0.0589,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.2356,
+       "sources": {
+        "vals.swebench_1_4h": 0.2356
+       },
+       "status": "measured"
+      }
+     },
      "missing_components": [
       "agentic",
-      "long_horizon",
       "long_context",
       "anti_hallucination"
-     ],
-     "flag": "missing",
-     "reason": "no trusted source and no public predictor to backfill from"
+     ]
     },
     "module_precision": {
-     "value": 0.0,
-     "status": "missing",
-     "components": {},
+     "value": 0.2644,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.5056,
+       "sources": {
+        "vals.swebench_lt15m": 0.5056
+       },
+       "status": "measured"
+      },
+      "terminal": {
+       "value": 0.2877,
+       "sources": {
+        "vals.terminal_bench_2": 0.2877
+       },
+       "status": "measured"
+      }
+     },
      "missing_components": [
-      "terminal",
       "alignment"
-     ],
-     "flag": "missing",
-     "reason": "no trusted source and no public predictor to backfill from"
+     ]
     },
     "vision_tools": {
      "value": 0.0227,
@@ -8887,19 +8884,17 @@
    },
    "scores": {
     "divergence": 0.5538,
-    "global_rigor": 0.0,
-    "module_precision": 0.0,
+    "global_rigor": 0.0589,
+    "module_precision": 0.2644,
     "vision_tools": 0.0227
    },
-   "missing_axes": [
-    "global_rigor",
-    "module_precision"
-   ],
+   "missing_axes": [],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -8924,17 +8919,17 @@
     },
     {
      "model": "claude-haiku-4-5",
-     "field": "global_rigor",
-     "reason": "no_trusted_source",
-     "level": "red_if_demanded",
-     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+     "field": "global_rigor.agentic,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-haiku-4-5",
-     "field": "module_precision",
-     "reason": "no_trusted_source",
-     "level": "red_if_demanded",
-     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+     "field": "module_precision.alignment",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-haiku-4-5",
@@ -8989,28 +8984,45 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.0,
-     "status": "missing",
-     "components": {},
+     "value": 0.106,
+     "status": "partial",
+     "components": {
+      "long_horizon": {
+       "value": 0.424,
+       "sources": {
+        "vals.swebench_1_4h": 0.424
+       },
+       "status": "measured"
+      }
+     },
      "missing_components": [
       "agentic",
-      "long_horizon",
       "long_context",
       "anti_hallucination"
-     ],
-     "flag": "missing",
-     "reason": "no trusted source and no public predictor to backfill from"
+     ]
     },
     "module_precision": {
-     "value": 0.0,
-     "status": "missing",
-     "components": {},
+     "value": 0.331,
+     "status": "partial",
+     "components": {
+      "coding": {
+       "value": 0.553,
+       "sources": {
+        "vals.swebench_lt15m": 0.553
+       },
+       "status": "measured"
+      },
+      "terminal": {
+       "value": 0.4401,
+       "sources": {
+        "vals.terminal_bench_2": 0.4401
+       },
+       "status": "measured"
+      }
+     },
      "missing_components": [
-      "terminal",
       "alignment"
-     ],
-     "flag": "missing",
-     "reason": "no trusted source and no public predictor to backfill from"
+     ]
     },
     "vision_tools": {
      "value": 0.2645,
@@ -9039,19 +9051,17 @@
    },
    "scores": {
     "divergence": 0.6663,
-    "global_rigor": 0.0,
-    "module_precision": 0.0,
+    "global_rigor": 0.106,
+    "module_precision": 0.331,
     "vision_tools": 0.2645
    },
-   "missing_axes": [
-    "global_rigor",
-    "module_precision"
-   ],
+   "missing_axes": [],
    "usd_per_hour": {
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -9076,17 +9086,17 @@
     },
     {
      "model": "claude-opus-4-6",
-     "field": "global_rigor",
-     "reason": "no_trusted_source",
-     "level": "red_if_demanded",
-     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+     "field": "global_rigor.agentic,long_context,anti_hallucination",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-opus-4-6",
-     "field": "module_precision",
-     "reason": "no_trusted_source",
-     "level": "red_if_demanded",
-     "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+     "field": "module_precision.alignment",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-opus-4-6",
@@ -9141,13 +9151,13 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.113,
+     "value": 0.1237,
      "status": "partial",
      "components": {
       "long_horizon": {
-       "value": 0.452,
+       "value": 0.4947,
        "sources": {
-        "vals.swebench_1_4h": 0.452
+        "vals.swebench_1_4h": 0.4947
        },
        "status": "measured"
       }
@@ -9159,13 +9169,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.3165,
+     "value": 0.3275,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.5011,
+       "value": 0.5341,
        "sources": {
-        "vals.swebench_lt15m": 0.5011
+        "vals.swebench_lt15m": 0.5341
        },
        "status": "measured"
       },
@@ -9214,8 +9224,8 @@
    },
    "scores": {
     "divergence": 0.603,
-    "global_rigor": 0.113,
-    "module_precision": 0.3165,
+    "global_rigor": 0.1237,
+    "module_precision": 0.3275,
     "vision_tools": 0.357
    },
    "missing_axes": [],
@@ -9223,7 +9233,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -9313,7 +9324,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.316,
+     "value": 0.3302,
      "status": "partial",
      "components": {
       "agentic": {
@@ -9324,9 +9335,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.6026,
+       "value": 0.6596,
        "sources": {
-        "vals.swebench_1_4h": 0.6026
+        "vals.swebench_1_4h": 0.6596
        },
        "status": "measured"
       }
@@ -9337,13 +9348,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.169,
+     "value": 0.1801,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.507,
+       "value": 0.5404,
        "sources": {
-        "vals.swebench_lt15m": 0.507
+        "vals.swebench_lt15m": 0.5404
        },
        "status": "measured"
       }
@@ -9386,8 +9397,8 @@
    },
    "scores": {
     "divergence": 0.59,
-    "global_rigor": 0.316,
-    "module_precision": 0.169,
+    "global_rigor": 0.3302,
+    "module_precision": 0.1801,
     "vision_tools": 0.4309
    },
    "missing_axes": [],
@@ -9497,7 +9508,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.1581,
+     "value": 0.1611,
      "status": "partial",
      "components": {
       "long_context": {
@@ -9508,9 +9519,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.1291,
+       "value": 0.1413,
        "sources": {
-        "vals.swebench_1_4h": 0.1291
+        "vals.swebench_1_4h": 0.1413
        },
        "status": "measured"
       }
@@ -9521,7 +9532,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.113,
+     "value": 0.1188,
      "status": "partial",
      "components": {
       "terminal": {
@@ -9533,9 +9544,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.2669,
+       "value": 0.2844,
        "sources": {
-        "vals.swebench_lt15m": 0.2669
+        "vals.swebench_lt15m": 0.2844
        },
        "status": "measured"
       }
@@ -9566,15 +9577,15 @@
    },
    "scores": {
     "divergence": 0.3151,
-    "global_rigor": 0.1581,
-    "module_precision": 0.113,
+    "global_rigor": 0.1611,
+    "module_precision": 0.1188,
     "vision_tools": 0.0286
    },
    "missing_axes": [],
    "usd_per_hour": {
     "value": 12.827,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "fallback (not listed on arena.ai Agent / Overall): source priority: derived.community_mix",
     "used": [
      "derived.community_mix"
     ],
@@ -9676,13 +9687,13 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.0484,
+     "value": 0.053,
      "status": "partial",
      "components": {
       "long_horizon": {
-       "value": 0.1937,
+       "value": 0.212,
        "sources": {
-        "vals.swebench_1_4h": 0.1937
+        "vals.swebench_1_4h": 0.212
        },
        "status": "measured"
       }
@@ -9694,13 +9705,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.2093,
+     "value": 0.219,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.4418,
+       "value": 0.4709,
        "sources": {
-        "vals.swebench_lt15m": 0.4418
+        "vals.swebench_lt15m": 0.4709
        },
        "status": "measured"
       },
@@ -9743,8 +9754,8 @@
    },
    "scores": {
     "divergence": 0.6031,
-    "global_rigor": 0.0484,
-    "module_precision": 0.2093,
+    "global_rigor": 0.053,
+    "module_precision": 0.219,
     "vision_tools": 0.168
    },
    "missing_axes": [],
@@ -9752,7 +9763,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -9831,7 +9843,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.3049,
+     "value": 0.3156,
      "status": "partial",
      "components": {
       "long_context": {
@@ -9842,9 +9854,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.452,
+       "value": 0.4947,
        "sources": {
-        "vals.swebench_1_4h": 0.452
+        "vals.swebench_1_4h": 0.4947
        },
        "status": "measured"
       }
@@ -9855,7 +9867,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.1748,
+     "value": 0.1859,
      "status": "partial",
      "components": {
       "terminal": {
@@ -9866,9 +9878,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.51,
+       "value": 0.5435,
        "sources": {
-        "vals.swebench_lt15m": 0.51
+        "vals.swebench_lt15m": 0.5435
        },
        "status": "measured"
       }
@@ -9905,8 +9917,8 @@
    },
    "scores": {
     "divergence": 0.0,
-    "global_rigor": 0.3049,
-    "module_precision": 0.1748,
+    "global_rigor": 0.3156,
+    "module_precision": 0.1859,
     "vision_tools": 0.1258
    },
    "missing_axes": [
@@ -9915,7 +9927,7 @@
    "usd_per_hour": {
     "value": 12.168,
     "status": "ok",
-    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
+    "merge": "fallback (not listed on arena.ai Agent / Overall): source priority: derived.community_mix",
     "used": [
      "derived.community_mix"
     ],
@@ -10023,13 +10035,13 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.0861,
+     "value": 0.0942,
      "status": "partial",
      "components": {
       "long_horizon": {
-       "value": 0.3444,
+       "value": 0.3769,
        "sources": {
-        "vals.swebench_1_4h": 0.3444
+        "vals.swebench_1_4h": 0.3769
        },
        "status": "measured"
       }
@@ -10041,13 +10053,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.2769,
+     "value": 0.2877,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.4922,
+       "value": 0.5246,
        "sources": {
-        "vals.swebench_lt15m": 0.4922
+        "vals.swebench_lt15m": 0.5246
        },
        "status": "measured"
       },
@@ -10084,8 +10096,8 @@
    },
    "scores": {
     "divergence": 0.6058,
-    "global_rigor": 0.0861,
-    "module_precision": 0.2769,
+    "global_rigor": 0.0942,
+    "module_precision": 0.2877,
     "vision_tools": 0.0455
    },
    "missing_axes": [],
@@ -10093,7 +10105,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -10183,13 +10196,13 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.1453,
+     "value": 0.159,
      "status": "partial",
      "components": {
       "long_horizon": {
-       "value": 0.5811,
+       "value": 0.636,
        "sources": {
-        "vals.swebench_1_4h": 0.5811
+        "vals.swebench_1_4h": 0.636
        },
        "status": "measured"
       }
@@ -10201,13 +10214,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.345,
+     "value": 0.3564,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.5189,
+       "value": 0.553,
        "sources": {
-        "vals.swebench_lt15m": 0.5189
+        "vals.swebench_lt15m": 0.553
        },
        "status": "measured"
       },
@@ -10250,8 +10263,8 @@
    },
    "scores": {
     "divergence": 0.7041,
-    "global_rigor": 0.1453,
-    "module_precision": 0.345,
+    "global_rigor": 0.159,
+    "module_precision": 0.3564,
     "vision_tools": 0.2699
    },
    "missing_axes": [],
@@ -10259,7 +10272,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -10349,7 +10363,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.3586,
+     "value": 0.3662,
      "status": "partial",
      "components": {
       "anti_hallucination": {
@@ -10360,10 +10374,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.6762,
+       "value": 0.7067,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.7067,
-        "vals.swebench_1_4h": 0.6457
+        "vals.swebench_1_4h": 0.7067
        },
        "status": "measured"
       }
@@ -10374,7 +10388,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.5895,
+     "value": 0.601,
      "status": "measured",
      "components": {
       "alignment": {
@@ -10385,9 +10399,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5248,
+       "value": 0.5593,
        "sources": {
-        "vals.swebench_lt15m": 0.5248
+        "vals.swebench_lt15m": 0.5593
        },
        "status": "measured"
       },
@@ -10428,8 +10442,8 @@
    },
    "scores": {
     "divergence": 0.6375,
-    "global_rigor": 0.3586,
-    "module_precision": 0.5895,
+    "global_rigor": 0.3662,
+    "module_precision": 0.601,
     "vision_tools": 0.2556
    },
    "missing_axes": [],
@@ -10437,7 +10451,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -10520,13 +10535,13 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.1668,
+     "value": 0.1826,
      "status": "partial",
      "components": {
       "long_horizon": {
-       "value": 0.6672,
+       "value": 0.7303,
        "sources": {
-        "vals.swebench_1_4h": 0.6672
+        "vals.swebench_1_4h": 0.7303
        },
        "status": "measured"
       }
@@ -10538,13 +10553,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.1799,
+     "value": 0.1917,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.5396,
+       "value": 0.5751,
        "sources": {
-        "vals.swebench_lt15m": 0.5396
+        "vals.swebench_lt15m": 0.5751
        },
        "status": "measured"
       }
@@ -10581,8 +10596,8 @@
    },
    "scores": {
     "divergence": 0.5414,
-    "global_rigor": 0.1668,
-    "module_precision": 0.1799,
+    "global_rigor": 0.1826,
+    "module_precision": 0.1917,
     "vision_tools": 0.2506
    },
    "missing_axes": [],
@@ -10590,7 +10605,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -10679,7 +10695,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5659,
+     "value": 0.5758,
      "status": "partial",
      "components": {
       "agentic": {
@@ -10697,10 +10713,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.8061,
+       "value": 0.8457,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.7727,
-        "vals.swebench_1_4h": 0.8394
+        "vals.swebench_1_4h": 0.9187
        },
        "status": "measured"
       }
@@ -10710,7 +10726,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4428,
+     "value": 0.4549,
      "status": "partial",
      "components": {
       "alignment": {
@@ -10721,9 +10737,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5515,
+       "value": 0.5878,
        "sources": {
-        "vals.swebench_lt15m": 0.5515
+        "vals.swebench_lt15m": 0.5878
        },
        "status": "measured"
       }
@@ -10770,8 +10786,8 @@
    },
    "scores": {
     "divergence": 0.6593,
-    "global_rigor": 0.5659,
-    "module_precision": 0.4428,
+    "global_rigor": 0.5758,
+    "module_precision": 0.4549,
     "vision_tools": 0.5952
    },
    "missing_axes": [],
@@ -10874,7 +10890,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.4445,
+     "value": 0.4536,
      "status": "partial",
      "components": {
       "agentic": {
@@ -10892,9 +10908,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.3874,
+       "value": 0.424,
        "sources": {
-        "vals.swebench_1_4h": 0.3874
+        "vals.swebench_1_4h": 0.424
        },
        "status": "measured"
       }
@@ -10904,7 +10920,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.2642,
+     "value": 0.2753,
      "status": "partial",
      "components": {
       "terminal": {
@@ -10916,9 +10932,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.51,
+       "value": 0.5435,
        "sources": {
-        "vals.swebench_lt15m": 0.51
+        "vals.swebench_lt15m": 0.5435
        },
        "status": "measured"
       }
@@ -10968,8 +10984,8 @@
    },
    "scores": {
     "divergence": 0.5736,
-    "global_rigor": 0.4445,
-    "module_precision": 0.2642,
+    "global_rigor": 0.4536,
+    "module_precision": 0.2753,
     "vision_tools": 0.5056
    },
    "missing_axes": [],
@@ -11072,7 +11088,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5046,
+     "value": 0.5107,
      "status": "partial",
      "components": {
       "agentic": {
@@ -11090,10 +11106,10 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.6061,
+       "value": 0.6305,
        "sources": {
         "arena.agent_alignment_deceptive_completion": 0.6956,
-        "vals.swebench_1_4h": 0.5166
+        "vals.swebench_1_4h": 0.5654
        },
        "status": "measured"
       }
@@ -11103,7 +11119,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4055,
+     "value": 0.4165,
      "status": "partial",
      "components": {
       "alignment": {
@@ -11114,9 +11130,9 @@
        "status": "measured"
       },
       "coding": {
-       "value": 0.5011,
+       "value": 0.5341,
        "sources": {
-        "vals.swebench_lt15m": 0.5011
+        "vals.swebench_lt15m": 0.5341
        },
        "status": "measured"
       }
@@ -11163,8 +11179,8 @@
    },
    "scores": {
     "divergence": 0.6158,
-    "global_rigor": 0.5046,
-    "module_precision": 0.4055,
+    "global_rigor": 0.5107,
+    "module_precision": 0.4165,
     "vision_tools": 0.6016
    },
    "missing_axes": [],
@@ -11267,13 +11283,13 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.0915,
+     "value": 0.1001,
      "status": "partial",
      "components": {
       "long_horizon": {
-       "value": 0.3659,
+       "value": 0.4005,
        "sources": {
-        "vals.swebench_1_4h": 0.3659
+        "vals.swebench_1_4h": 0.4005
        },
        "status": "measured"
       }
@@ -11285,13 +11301,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.3119,
+     "value": 0.3229,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.5041,
+       "value": 0.5372,
        "sources": {
-        "vals.swebench_lt15m": 0.5041
+        "vals.swebench_lt15m": 0.5372
        },
        "status": "measured"
       },
@@ -11340,8 +11356,8 @@
    },
    "scores": {
     "divergence": 0.553,
-    "global_rigor": 0.0915,
-    "module_precision": 0.3119,
+    "global_rigor": 0.1001,
+    "module_precision": 0.3229,
     "vision_tools": 0.3547
    },
    "missing_axes": [],
@@ -11349,7 +11365,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -11494,7 +11511,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -11573,7 +11591,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.2353,
+     "value": 0.2434,
      "status": "partial",
      "components": {
       "agentic": {
@@ -11584,9 +11602,9 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.3444,
+       "value": 0.3769,
        "sources": {
-        "vals.swebench_1_4h": 0.3444
+        "vals.swebench_1_4h": 0.3769
        },
        "status": "measured"
       }
@@ -11597,13 +11615,13 @@
      ]
     },
     "module_precision": {
-     "value": 0.3067,
+     "value": 0.3171,
      "status": "partial",
      "components": {
       "coding": {
-       "value": 0.4744,
+       "value": 0.5056,
        "sources": {
-        "vals.swebench_lt15m": 0.4744
+        "vals.swebench_lt15m": 0.5056
        },
        "status": "measured"
       },
@@ -11652,8 +11670,8 @@
    },
    "scores": {
     "divergence": 0.0,
-    "global_rigor": 0.2353,
-    "module_precision": 0.3067,
+    "global_rigor": 0.2434,
+    "module_precision": 0.3171,
     "vision_tools": 0.3686
    },
    "missing_axes": [
@@ -11814,7 +11832,8 @@
     "value": null,
     "status": "missing",
     "sources": {},
-    "merge": null
+    "merge": null,
+    "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -11910,7 +11929,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.8331,
+     "value": 0.8324,
      "status": "partial",
      "components": {
       "agentic": {
@@ -11935,7 +11954,7 @@
        "status": "measured"
       },
       "long_horizon": {
-       "value": 0.904,
+       "value": 0.9012,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -11947,7 +11966,7 @@
      "missing_components": []
     },
     "module_precision": {
-     "value": 0.8743,
+     "value": 0.8721,
      "status": "partial",
      "components": {
       "terminal": {
@@ -11958,7 +11977,7 @@
        "status": "measured"
       },
       "alignment": {
-       "value": 0.8272,
+       "value": 0.8228,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -11970,7 +11989,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.8207,
+     "value": 0.8239,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -11996,7 +12015,7 @@
        "status": "measured"
       },
       "vision": {
-       "value": 0.8291,
+       "value": 0.842,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -12010,9 +12029,9 @@
    },
    "scores": {
     "divergence": 0.8763,
-    "global_rigor": 0.8331,
-    "module_precision": 0.8743,
-    "vision_tools": 0.8207
+    "global_rigor": 0.8324,
+    "module_precision": 0.8721,
+    "vision_tools": 0.8239
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -12449,17 +12468,17 @@
   },
   {
    "model": "claude-haiku-4-5",
-   "field": "global_rigor",
-   "reason": "no_trusted_source",
-   "level": "red_if_demanded",
-   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+   "field": "global_rigor.agentic,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-haiku-4-5",
-   "field": "module_precision",
-   "reason": "no_trusted_source",
-   "level": "red_if_demanded",
-   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+   "field": "module_precision.alignment",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-haiku-4-5",
@@ -12477,17 +12496,17 @@
   },
   {
    "model": "claude-opus-4-6",
-   "field": "global_rigor",
-   "reason": "no_trusted_source",
-   "level": "red_if_demanded",
-   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+   "field": "global_rigor.agentic,long_context,anti_hallucination",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-6",
-   "field": "module_precision",
-   "reason": "no_trusted_source",
-   "level": "red_if_demanded",
-   "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+   "field": "module_precision.alignment",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-6",
