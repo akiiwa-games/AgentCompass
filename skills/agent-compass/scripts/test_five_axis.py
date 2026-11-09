@@ -113,7 +113,24 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(info['five_axis']['usd_status'], 'missing')
         self.assertNotIn('usd_per_hour', info)
 
-    def test_capacity_is_rescaled_in_reference_model_hours(self):
+    def test_unsourced_usd_is_never_priced_at_the_default(self):
+        acc = copy.deepcopy(self.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        target = 'claude-sonnet-5-5'
+        doc = document(acc['models'], **{target: row(0.8, None)})
+        out = allocator.five_axis_overlay(acc, doc)
+        info = allocator.model_spec(out, target)
+        self.assertEqual(allocator.model_usd_per_hour(target, info), 0.0)
+        self.assertEqual(allocator.unit_rate({'windows': {'w': {}}}, 'w', target, 'high', acc['scoring'], info=info), 0.0)
+        auto = self.plan(acc, doc, profile={'axis_demand': demand(0, 1, 2, 0)})
+        self.assertTrue(all(any('usd_per_hour has no cited source on a metered account' in e for e in c['excluded'])
+                            for c in self.rows_for(auto, target)))
+        named = self.plan(acc, doc, profile={'axis_demand': demand(0, 1, 2, 0)}, constraints={'model': target})
+        chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
+        self.assertEqual(allocator.canonical(chosen['bundle']['model'], acc), target)
+        self.assertIn('its cost is not priced', ' '.join(chosen['notes']))
+
+    def test_capacity_is_scaled_by_the_data_conversion_factor(self):
         acc = copy.deepcopy(self.accounts)
         acc['scoring']['five_axis'] = {'enabled': True}
         shipped = acc['accounts']['claude'].get('capacity_usd', {}).get('seven_day') \
@@ -152,8 +169,10 @@ class FiveAxisTests(unittest.TestCase):
         fallback, source = allocator.five_axis_demand({'profile': dict(PROFILE)})
         self.assertEqual(source, 'profile_fields_fallback')
         self.assertEqual(fallback['module_precision'], 2)
-        trivial, _ = allocator.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}})
-        self.assertEqual(trivial['global_rigor'], 1)
+        trivial, source = allocator.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}})
+        self.assertEqual(trivial, fallback)        # an all-zero answer is replaced by the fallback ...
+        self.assertNotEqual(source, 'classifier')   # ... and labelled as one (review F5)
+        self.assertIn('fallback', source)
 
     def test_scorer_asks_for_axis_demand_only_while_the_path_is_on(self):
         caps = {'routes': {'general_implementation': {}, 'other_or_mixed': {}}}
@@ -167,6 +186,81 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(off, route_judge.scorer_schema(allocator, caps))     # the shipped policy leaves it off
 
 
+class AnchorRelativeTests(unittest.TestCase):
+    """Review F1 and F3 (2026-11-09): values are relative to the anchor at the source, so a new top model moves no
+    floor; a backfill fit needs enough measured points; local flags and samples are not sources."""
+
+    @classmethod
+    def setUpClass(cls):
+        import five_axis
+        import measurements
+        cls.fa, cls.ms = five_axis, measurements
+
+    def boards(self):
+        anchor = self.ms.ANCHOR
+        raw = {'arena.text': {anchor: 1500.0, 'b': 1400.0, 'c': 1450.0, 'd': 1300.0},
+               'aa.frac': {anchor: 0.70, 'b': 0.50, 'c': 0.60, 'd': 0.40},
+               'aa.net': {anchor: 30.0, 'b': -10.0, 'c': 10.0, 'd': 0.0},
+               'vals.frac': {'b': 0.45, 'c': 0.55, 'd': 0.35, 'e': 0.25}}      # no anchor: bridged on b, c, d
+        kinds = {'arena.text': ('elo', 1.0), 'aa.frac': ('fraction', 1.0), 'aa.net': ('net', 100.0),
+                 'vals.frac': ('fraction', 1.0)}
+        comps = {'arena.text': ('global_rigor', 'reasoning'), 'aa.frac': ('global_rigor', 'long_context'),
+                 'aa.net': ('global_rigor', 'anti_hallucination'), 'vals.frac': ('global_rigor', 'long_horizon')}
+        return raw, kinds, comps
+
+    def test_a_new_top_model_moves_no_value_and_no_floor(self):
+        raw, kinds, comps = self.boards()
+        before, _, failed = self.ms.anchor_boards(raw, kinds, comps)
+        self.assertEqual(failed, {})
+        self.assertEqual(before['arena.text'][self.ms.ANCHOR], self.ms.ANCHOR_VALUE)
+        grown = {src: dict(board) for src, board in raw.items()}
+        grown['arena.text']['newtop'] = max(raw['arena.text'].values()) + 100       # +100 Elo over the board
+        grown['aa.frac']['newtop'], grown['aa.net']['newtop'] = 0.95, 60.0
+        # vals.frac (bridged) keeps its reference while the new model is not on it; a model listed on a bridged board and
+        # an anchored one joins the bridge median (documented in measurements.py).
+        after, _, _ = self.ms.anchor_boards(grown, kinds, comps)
+        for src, values in before.items():
+            self.assertEqual({m: after[src][m] for m in values}, values, src)
+        # The floor is a share of the anchor level on the task's demand: unchanged anchor scores, unchanged gate.
+        acc = sim.fresh_accounts(shipped_template(), snapshot())
+        acc['scoring']['five_axis'] = {'enabled': True}
+        cfg = allocator.five_axis_config(acc['scoring'])
+        task = {'difficulty': 'hard', 'critical': False}
+        gates = []
+        for extra in ({}, {'newtop': row(1.0, 30.0)}):
+            out = allocator.five_axis_overlay(acc, document(acc['models'], **{self.ms.ANCHOR: row(0.8, 21.7)}, **extra))
+            gates.append(allocator.five_axis_gate(task, demand(1, 2, 2, 0), out['_five_axis'], cfg))
+        self.assertEqual(gates[0], gates[1])
+
+    def test_board_best_scaling_would_have_drifted(self):
+        """The round-2 conversion (win rate against the board best) moves b relative to the anchor; this one does not."""
+        old = lambda board, m: 1 / (1 + 10 ** ((max(board.values()) - board[m]) / 400))
+        raw, kinds, comps = self.boards()
+        board = raw['arena.text']
+        ratio = old(board, 'b') / old(board, self.ms.ANCHOR)
+        board_new = {**board, 'newtop': max(board.values()) + 100}
+        self.assertLess(old(board_new, 'b') / old(board_new, self.ms.ANCHOR), ratio - 0.03)
+
+    def test_a_backfill_fit_needs_enough_points_and_a_positive_slope(self):
+        few = [(10.0 * i, 0.1 * i) for i in range(1, self.fa.MIN_FIT_POINTS)]
+        self.assertIsNone(self.fa.Scorer.fit(few))
+        enough = [(10.0 * i, 0.1 * i) for i in range(1, self.fa.MIN_FIT_POINTS + 1)]
+        self.assertIsNotNone(self.fa.Scorer.fit(enough))
+        falling = [(10.0 * i, 1 - 0.1 * i) for i in range(1, self.fa.MIN_FIT_POINTS + 1)]
+        self.assertIsNone(self.fa.Scorer.fit(falling))
+
+    def test_shipped_data_has_no_local_flag_or_sample_sources(self):
+        import json
+        ref = Path(__file__).resolve().parents[1] / 'references'
+        meas = json.loads((ref / 'public-measurements.json').read_text(encoding='utf-8'))
+        used = {e['source'] for fields in meas['models'].values() for entries in fields.values() for e in entries}
+        self.assertFalse(used & {'accounts.visual', 'packaged.accounts', 'community.burn'})
+        scores = json.loads((ref / 'five-axis-scores.json').read_text(encoding='utf-8'))
+        self.assertEqual(scores['floors']['anchor'], self.ms.ANCHOR)
+        self.assertAlmostEqual(min(scores['models'][self.ms.ANCHOR]['scores'][a] for a in ('divergence', 'module_precision')),
+                               self.ms.ANCHOR_VALUE, places=2)
+
+
 class SourceMergeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -177,21 +271,21 @@ class SourceMergeTests(unittest.TestCase):
         return [{'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'value': 20.0},
                 {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'low', 'value': 18.0},
                 {'source': 'openrouter.cost_time', 'kind': 'vendor', 'effort': 'high', 'value': 10.0},
-                {'source': 'packaged.accounts', 'kind': 'community', 'effort': 'high', 'value': 8.0}]
+                {'source': 'community.example', 'kind': 'community', 'effort': 'high', 'value': 8.0}]
 
     def test_usd_is_the_median_of_cited_sources_or_the_first_priority(self):
         merged = self.fa.pick_usd(self.entries())
         self.assertEqual(merged['value'], 10.0)
-        self.assertEqual(sorted(merged['used']), ['aa.cost_time', 'openrouter.cost_time', 'packaged.accounts'])
-        self.assertEqual(merged['sources']['packaged.accounts']['kind'], 'community')
-        self.assertEqual(self.fa.pick_usd(self.entries(), ['packaged.accounts'])['value'], 8.0)
+        self.assertEqual(sorted(merged['used']), ['aa.cost_time', 'community.example', 'openrouter.cost_time'])
+        self.assertEqual(merged['sources']['community.example']['kind'], 'community')
+        self.assertEqual(self.fa.pick_usd(self.entries(), ['community.example'])['value'], 8.0)
         self.assertEqual(self.fa.pick_usd([])['status'], 'missing')
 
     def test_distrust_removes_a_source_from_every_field(self):
         meas = {'models': {'m': {'usd_per_hour': self.entries(), 'divergence': [
             {'source': 'eqbench.creative_writing_v3', 'component': 'creative', 'value': 0.2},
             {'source': 'lmarena.creative_writing', 'component': 'creative', 'value': 0.8}]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=['packaged.accounts', 'eqbench.creative_writing_v3'])
+        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=['community.example', 'eqbench.creative_writing_v3'])
         usd = self.fa.pick_usd(scorer.trusted(meas['models']['m']['usd_per_hour']))
         self.assertEqual(usd['value'], 15.0)
         self.assertEqual(scorer.components(meas['models']['m'], 'divergence')['creative']['value'], 0.8)
