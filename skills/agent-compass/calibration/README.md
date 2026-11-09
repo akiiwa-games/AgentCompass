@@ -11,8 +11,10 @@ them, and they need `numpy`, `pandas` and `pyarrow`. Raw downloads stay out of g
 | `apply_rows.py [ids]` | Writes measured rows into `references/accounts.json` and the reference fixture. A tier measured at a best variant such as "(Max)" is moved to High with the AA effort curves. Unmeasured models get `unmeasured_models.generic`. |
 | `efforts.py [--apply]` | Builds effort curves from the AA effort variants: k tier per index point from the AA-to-tier slope, plus burn from cost per task. |
 | `floors.py` | Refits the ability floors (90% of the best model's success, with bootstrap bands), checks the frontier evidence, and reports where public boards disagree with the anchors. |
-| `measurements.py` | Writes `references/public-measurements.json`: per model, field and source, every public value with its provenance (source, as_of, fetched_at, url, method). Fields: tier fits, AA usd_per_hour per effort, prices, and the four capability axes of the tray radar, each source converted to 0..1 by the floors rule (success over 90% of the best). A source that was not fetched or does not list a model adds nothing. |
-| `five_axis.py [--distrust SOURCE]` | Writes `references/five-axis-scores.json` from the measurements: axis scores (backfilled from the AA index or a public tier when an axis has no source, else 0 and flagged yellow), tier (public fit, else the user's), High usd_per_hour, data errors (rule B) and plan capacity in reference-model hours (unknown without a public URL). Read by the router only when `scoring.five_axis.enabled` is set (off by default). |
+| `measurements.py` | Writes `references/public-measurements.json`: per model, field and source, every public value with its provenance (source, kind vendor / benchmark / community, as_of, fetched_at, url, method). Fields: tier fits (kept for comparison), usd_per_hour from every cited source (AA cost per task / time, OpenRouter price x AA tokens per task, community packaged values with a stated $/h basis, community burn per window), prices, and the four capability axes of the tray radar, each source scaled as a share of the board best (Elo boards through win probability against the best). The old tier signal lives in the axes: LMArena WebDev in module_precision.coding, Agent in divergence.exploration, Text overall in global_rigor.reasoning. A source that was not fetched or does not list a model adds nothing. |
+| `five_axis.py [--distrust SOURCE] [--source-priority SOURCE] [--user-overrides FILE]` | Writes `references/five-axis-scores.json`: axis scores (components averaged; a missing component backfilled from the AA index or the public tier fit, then the axis; still nothing = 0 and a rule-B data error), LMArena components corrected to High with the AA effort ratio, vendor-statement inheritance (cited), merged usd_per_hour (median over the cited sources, or the first trusted source in `--source-priority`), duration multiplier (1.0 when a source includes time), plan capacity in reference-model hours, and the difficulty floors from `five_axis_floors.py`. `--distrust` drops a source from every field. Read by the router only when `scoring.five_axis.enabled` is set (off by default). |
+| `five_axis_floors.py` | Calibrates the five-axis difficulty floors as shares of the anchor model's demand-weighted level (anchor-relative, so a board-wide rescale does not move who qualifies) plus a per-axis floor on strongly demanded axes, so the qualifying set per difficulty stays close to today's tier gate on the classifier calibration cases and `five_axis_tasks.py`. Reports the agreement and every model that enters or leaves a band. |
+| `five_axis_tasks.py` | Synthetic task profiles with hand-labelled `axis_demand`, shared by the floor calibration and `audit/five_axis_parity.py`. |
 
 ## Refit
 
@@ -32,7 +34,7 @@ fetch time and sha256, and records a source it could not fetch as missing):
 ```
 python -X utf8 sources.py fetch
 python -X utf8 measurements.py
-python -X utf8 five_axis.py                   # --distrust <source id> leaves a source out
+python -X utf8 five_axis.py                   # --distrust <source id> leaves a source out; floors recalibrate here
 python -X utf8 ../../../audit/five_axis_parity.py --md parity.md
 ```
 

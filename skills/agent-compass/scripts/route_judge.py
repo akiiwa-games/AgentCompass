@@ -1025,7 +1025,13 @@ def scorer_schema(allocator, capabilities):
     base = allocator.TASK_PROFILE_SCHEMA
     props = {'work_kind': {'type': 'string', 'enum': routes, 'description': 'Canonical route classification for the task.'},
              **base['properties']}
-    return {'type': 'object', 'properties': props, 'required': ['work_kind'] + list(base['required'])}
+    required = ['work_kind'] + list(base['required'])
+    enabled = getattr(allocator, 'five_axis_scorer_enabled', None)
+    if enabled and enabled():
+        # The five-axis path (round 047, off by default) takes the task's axis demand from the classifier itself.
+        props['axis_demand'] = allocator.FIVE_AXIS_DEMAND_SCHEMA
+        required.append('axis_demand')
+    return {'type': 'object', 'properties': props, 'required': required}
 
 
 def load_classifier_cases():
