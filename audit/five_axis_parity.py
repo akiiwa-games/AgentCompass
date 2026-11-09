@@ -1,4 +1,4 @@
-"""Sampled routing parity: today's router against the five-axis path (round 047, round 5). Read-only.
+"""Sampled routing parity: today's router against the five-axis path (round 047, round 6). Read-only.
 
     python -X utf8 audit/five_axis_parity.py [--json out.json] [--md out.md]
 
@@ -9,9 +9,9 @@ usage documents, so the input is what `roll` would feed the allocator). Three al
 - old: shipped behaviour (`scoring.five_axis` absent).
 - new: five-axis path as shipped in five-axis-scores.json: axis-demand gate, community capacity, usd on the community
   token-mix basis (option B), capacity ladder, gate level blend, tie-break opportunity cost then ability surplus
-  (round 5), overqualification weight 0.05.
+  (round 5), no overqualification term and a pacing shadow price on every long window (round 6).
 - new_benchmark_usd: the same with usd on the AA/OpenRouter benchmark basis (the round-3 scale), to isolate option B.
-- new_oq0: the new path with overqualification_weight 0.
+- new_no_pacing: the new path with `pace` off (shortage-only economy: nothing charged while a window is far from empty).
 - new_no_eqbench: the new path with EQ-Bench Creative Writing distrusted.
 
 `none` decisions record their cause: the exclusion reasons of every candidate, grouped (digits stripped).
@@ -55,7 +55,7 @@ EXTRA_CATALOGS = {'pi': ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra'], 'dot': 
 EXTRA_STATES = {'claude fable-weekly tight': [('claude', ('weekly_fable',), 'tight')]}
 STATES = ('ample', 'claude scarce', 'codex scarce', 'antigravity gemini scarce', 'claude tight', 'codex tight',
           'claude fable-weekly tight', '5h-only scarce')
-NEW = ('new', 'new_benchmark_usd', 'new_oq0', 'new_no_eqbench')
+NEW = ('new', 'new_benchmark_usd', 'new_no_pacing', 'new_no_eqbench')
 NEAR = 0.01     # within 1% of a floor
 
 
@@ -70,7 +70,7 @@ def algos(folder):
         paths[name].write_text(json.dumps(five_axis.build(meas, sources.accounts(), plans, **kwargs)), encoding='utf-8')
     return {'old': None, 'new': {'enabled': True},
             'new_benchmark_usd': {'enabled': True, 'path': str(paths['benchmark-usd'])},
-            'new_oq0': {'enabled': True, 'overqualification_weight': 0.0},
+            'new_no_pacing': {'enabled': True, 'pace': False},
             'new_no_eqbench': {'enabled': True, 'path': str(paths['no-eqbench'])}}
 
 
@@ -166,6 +166,25 @@ def driver(new_dec, old_label, new_label):
     return {'kind': 'score', 'main': main, 'terms': terms}
 
 
+def fable_vs_opus(decision):
+    """The best Fable 5.1 and Opus 5.5 candidates of one decision (any account or effort) and the score margin."""
+    best = {}
+    for c in decision['ranking']:
+        if c['score'] is None:
+            continue
+        model = str(c['bundle'].get('model') or '')
+        key = 'fable' if 'fable-5-1' in model or model.startswith('fable') else 'opus' if 'opus-5-5' in model else None
+        if key and (key not in best or c['score'] > best[key]['score']):
+            k = c['components']
+            best[key] = {'label': label(c['bundle']), 'bundle': c['id'], 'score': c['score'], 'fit': k.get('fit'),
+                         'opportunity_cost': k.get('opportunity_cost'), 'level': k.get('five_axis_level')}
+    if 'fable' not in best:
+        return None
+    out = {'fable': best['fable'], 'opus': best.get('opus')}
+    out['margin'] = round(best['fable']['score'] - best['opus']['score'], 4) if best.get('opus') else None
+    return out
+
+
 def none_cause(decision):
     """For a decision with no selection: {reason group: candidates}, each candidate counted under its first exclusion."""
     if decision.get('selected_bundle'):
@@ -202,6 +221,7 @@ def run(variants_cfg):
                 for name in NEW:
                     out[f'{name}_driver'] = driver(decisions[name], out['old'], out[name])
                 out['new_floor'] = near_floor(decisions['new'])
+                out['fable_vs_opus'] = fable_vs_opus(decisions['new'])
                 for name in ('old',) + NEW:
                     out[f'{name}_none'] = none_cause(decisions[name])
                 rows.append(out)
@@ -223,12 +243,12 @@ def markdown(rows):
     names = ('old',) + NEW
     share = {n: Counter(r[n] for r in rows) for n in names}
     n = len(rows)
-    lines = [f'# Five-axis sampled parity, round 5 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
+    lines = [f'# Five-axis sampled parity, round 6 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
     lines += ['## Selection share (model@account)', '',
-              '| model@account | old | new (usd option B) | new, benchmark usd | new, oq 0 | new without EQ-Bench |',
+              '| model@account | old | new (usd option B) | new, benchmark usd | new, no pacing | new without EQ-Bench |',
               '| :--- | ---: | ---: | ---: | ---: | ---: |']
     for k in sorted(set().union(*share.values()), key=lambda k: (-share['old'][k], -share['new'][k])):
-        lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_benchmark_usd'][k]} | {share['new_oq0'][k]} | "
+        lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_benchmark_usd'][k]} | {share['new_no_pacing'][k]} | "
                      f"{share['new_no_eqbench'][k]} |")
     lines += ['', '| | ' + ' | '.join(NEW) + ' |', '| :--- | ' + ' | '.join('---:' for _ in NEW) + ' |',
               '| changed vs old | ' + ' | '.join(str(sum(r[x] != r['old'] for r in rows)) for x in NEW) + ' |',
@@ -272,6 +292,25 @@ def markdown(rows):
             lines.append(f'- {name}: {len(hits)} — ' + ', '.join(f"{k} ({v})" for k, v in Counter(
                 f"{r['task']} / {r['state']}" for r in hits).most_common(8)))
         lines.append('')
+    lines += ['## Fable 5.1 against Opus 5.5 (new)', '']
+    duel = [r for r in rows if r.get('fable_vs_opus')]
+    ahead = [r for r in duel if r['fable_vs_opus']['margin'] is not None and r['fable_vs_opus']['margin'] > 0]
+    won = [r for r in rows if 'fable' in r['new']]
+    lines += [f'- decisions with a scored Fable candidate: {len(duel)}; Fable scores above the best Opus: {len(ahead)}; '
+              f'Fable chosen: {len(won)}', '']
+    if ahead:
+        lines += ['| fleet | state | task | Fable bundle | score | fit | opp. cost | best Opus | score | fit | opp. cost | margin | chosen |',
+                  '| :--- | :--- | :--- | :--- | ---: | ---: | ---: | :--- | ---: | ---: | ---: | ---: | :--- |']
+        for r in sorted(ahead, key=lambda r: -r['fable_vs_opus']['margin']):
+            f, o = r['fable_vs_opus']['fable'], r['fable_vs_opus']['opus']
+            lines.append(f"| {r['fleet']} | {r['state']} | {r['task']} | {f['bundle']} | {f['score']} | {f['fit']} | "
+                         f"{f['opportunity_cost']} | {o['bundle']} | {o['score']} | {o['fit']} | {o['opportunity_cost']} | "
+                         f"{r['fable_vs_opus']['margin']} | {r['new']} |")
+    margins = sorted(r['fable_vs_opus']['margin'] for r in duel if r['fable_vs_opus']['margin'] is not None)
+    if margins:
+        lines += ['', f'Fable minus best Opus over every decision with both scored: max {margins[-1]}, '
+                      f'median {margins[len(margins) // 2]}, min {margins[0]}']
+    lines.append('')
     drivers = Counter(why(r, 'new') for r in rows if r['new'] != r['old'])
     lines += ['## Main drivers of changed selections (new)', '', '| driver | decisions |', '| :--- | ---: |']
     lines += [f'| {k} | {v} |' for k, v in drivers.most_common()]

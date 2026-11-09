@@ -10,10 +10,12 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
 - Each axis is the mean of its components, each component the mean of its trusted sources (`measurements.py` converts
   every source the same way, relative to the anchor model: 0.8 x s / s_anchor, so a new top model moves nothing). A
   component no trusted source measures is backfilled from public data, a linear fit of the component on the AA
-  Intelligence Index over the models that have it, else on the public LMArena tier fit; a fit needs MIN_FIT_POINTS
-  measured points and a positive slope (review F1: one public point is not a fit). Without a fit the component stays
-  missing and the axis averages the components it has (a yellow data note). An axis with no component at all is
-  backfilled the same way on the axis; still empty, it scores 0 and is `missing`. A task that demands a missing axis
+  Intelligence Index over the models that have it; a fit needs MIN_FIT_POINTS measured points and a positive slope
+  (review F1: one public point is not a fit), and a backfilled value stays inside the range the measured points reach
+  (round 6: a fit extrapolated past the best measured model gave Fable long_horizon 1.0). The public tier fit is no
+  longer a predictor: tier is folded into the axes (round 2), so predicting an axis from it would count it twice.
+  Without a fit the component stays missing and the axis averages the components it has (a yellow data note). An
+  axis with no component at all is backfilled the same way on the axis; still empty, it scores 0 and is `missing`. A task that demands a missing axis
   leaves automatic routing for that model (an explicit --model still dispatches it).
 - A model whose own boards are empty inherits another model's thinking axes only when a vendor statement names the
   underlying model (`INHERIT`, cited); otherwise it is --model only.
@@ -76,7 +78,7 @@ INHERIT = {
             'cited_in': 'references/accounts.json scoring.basis (reviewed 2026-10-27)', 'url': None},
 }
 PUBLIC_TIER_SOURCES = ('lmarena.tier_fit', 'secondary.tier_fit')
-PREDICTORS = ('aa.index', 'tier')      # backfill predictors in order of preference
+PREDICTORS = ('aa.index',)      # backfill predictors in order of preference (round 6: not the folded-away tier)
 MIN_FIT_POINTS = 8      # measured points a backfill regression needs (review F1)
 
 
@@ -157,19 +159,13 @@ class Scorer:
         return {c: {'value': mean(list(srcs.values())), 'sources': srcs, 'status': 'measured'} for c, srcs in comps.items()}
 
     def predictors(self, fields):
-        """{predictor: x} for the public predictors the model has: the AA index, the public LMArena tier fit."""
-        out = {}
+        """{predictor: x} for the public predictors the model has: the AA index."""
         idx = self.trusted(fields.get('intelligence_index'))
-        if idx:
-            out['aa.index'] = idx[0]['value']
-        tier = [e for e in self.trusted(fields.get('tier')) if e['source'] in PUBLIC_TIER_SOURCES]
-        if tier:
-            out['tier'] = tier[0]['value']
-        return out
+        return {'aa.index': idx[0]['value']} if idx else {}
 
     @staticmethod
     def backfill(fits, key, preds):
-        """(predictor, x, fit) for the first predictor, AA index then tier, the model has and that has a usable fit."""
+        """(predictor, x, fit) for the first predictor the model has that has a usable fit."""
         for name in PREDICTORS:
             if name in preds and fits.get((*key, name)):
                 return name, preds[name], fits[(*key, name)]
@@ -183,7 +179,13 @@ class Scorer:
         b, a = np.polyfit(x, y, 1)
         if b <= 0:      # ability falling with the index is not a usable predictor
             return None
-        return {'a': float(a), 'b': float(b), 'r': float(np.corrcoef(x, y)[0, 1]), 'n': len(points)}
+        return {'a': float(a), 'b': float(b), 'r': float(np.corrcoef(x, y)[0, 1]), 'n': len(points),
+                'y_min': float(y.min()), 'y_max': float(y.max())}
+
+    @staticmethod
+    def predict(f, x):
+        """The fit at x, kept inside the range its measured points reach (round 6: no extrapolation past them)."""
+        return round(float(np.clip(f['a'] + f['b'] * x, f['y_min'], f['y_max'])), 4)
 
     def score(self):
         rows = {}
@@ -198,15 +200,14 @@ class Scorer:
                     pts = [(r['preds'][name], r['comps'][a][c]['value']) for r in rows.values()
                            if c in r['comps'][a] and r['comps'][a][c]['status'] == 'measured' and name in r['preds']]
                     fits[(a, c, name)] = self.fit(pts)
-        # Component backfill: every unmeasured component from the component's fit on the AA index, else on the public
-        # LMArena tier fit (each fit over every measured model that has that predictor), so a partial axis does not
-        # average only its measured components.
+        # Component backfill: every unmeasured component from the component's fit on the AA index (over every measured
+        # model that has it), so a partial axis does not average only its measured components.
         for r in rows.values():
             for a, comps in AXES.items():
                 for c in comps:
                     name, x, f = self.backfill(fits, (a, c), r['preds'])
                     if c not in r['comps'][a] and f:
-                        r['comps'][a][c] = {'value': round(float(np.clip(f['a'] + f['b'] * x, 0, 1)), 4), 'sources': {},
+                        r['comps'][a][c] = {'value': self.predict(f, x), 'sources': {},
                                             'status': 'backfilled', 'backfill': {'predictor': name, 'x': x}}
         for r in rows.values():
             r['axes'] = {}
@@ -217,7 +218,7 @@ class Scorer:
                           else 'partial' if measured else 'backfilled')
                 r['axes'][a] = {'value': mean([r['comps'][a][c]['value'] for c in present]), 'status': status,
                                 'components': r['comps'][a], 'missing_components': [c for c in comps if c not in present]}
-        # Axis backfill for a model with no component on the axis: the axis fit on the index, else on the public tier.
+        # Axis backfill for a model with no component on the axis: the axis fit on the index.
         for a in AXES:
             for name in PREDICTORS:
                 pts = [(r['preds'][name], r['axes'][a]['value']) for r in rows.values()
@@ -229,7 +230,7 @@ class Scorer:
                     continue
                 name, x, f = self.backfill(fits, (a, None), r['preds'])
                 if f:
-                    ax.update(value=round(float(np.clip(f['a'] + f['b'] * x, 0, 1)), 4), status='backfilled',
+                    ax.update(value=self.predict(f, x), status='backfilled',
                               backfill={'predictor': name, 'x': x, 'level': 'axis'})
                 else:
                     ax.update(value=0.0, flag='missing', reason='no trusted source and no public predictor to backfill from')
