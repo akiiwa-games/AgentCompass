@@ -679,6 +679,8 @@ def resolve_creation(dispatch_id, creation, now=None, path=None):
             event(row, 'create_failed', now, 'host_creation_failed:' + cause)
             if not creation.get('outcome_unknown'):
                 row['failure_class'] = creation.get('failure_class') or 'unknown'
+                if isinstance(creation.get('failure_code'), str):
+                    row['failure_code'] = creation['failure_code']
             row['creation'] = {'phase': phase}
         elif creation is None and now >= create_deadline(row):
             event(row, 'create_failed', now, 'host_never_admitted_create')
@@ -847,6 +849,12 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             pass  # Best effort, and this observation is already saved.
         try:
             account_state.clear_latch(row['bundle'].get('account'), launched_at=row.get('launched_at') or row.get('created_at'))
+        except OSError:
+            pass
+        import model_latch
+        try:
+            model_latch.clear(row['bundle'].get('account'), model_latch.launch_model(row['bundle']),
+                              launched_at=row.get('launched_at') or row.get('created_at'))
         except OSError:
             pass
     return row

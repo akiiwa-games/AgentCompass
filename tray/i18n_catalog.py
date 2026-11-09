@@ -63,6 +63,8 @@ EN = {
     '反选': 'Invert',
     '清空': 'Clear',
     '未检测到': 'Not detected',
+    '模型启动失败：不可用，下次重试 {0}': 'Model launch failed: unavailable, next retry {0}',
+    '{0} 个模型启动失败，已排除派发': '{0} model(s) failed to launch, excluded from dispatch',
     '默认分': 'Default score',
     '估价': 'Estimated price',
     '未验证': 'Unverified',

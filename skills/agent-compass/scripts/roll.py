@@ -504,7 +504,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                       'spawn_agent, or invoke_subagent again. ' + notice) if not failed else
                      ('Paseo launch failed: ' + (receipt.get('error') or 'worker failed') + '. ' +
                       ('Repair the local notifier dependencies/state directory, then roll the brief again.'
-                       if receipt.get('error') == 'notification_start_failed' else notice)),
+                       if receipt.get('error') == 'notification_start_failed' else receipt.get('next_action') or notice)),
                 worker=dict(receipt, provider=decision['selected_bundle']['provider'])), \
         1 if failed else 0
 
@@ -762,7 +762,7 @@ def compact(result, status, detail_path):
         out['error'] = 'scorer_unavailable'
         cause = result.get('cause') or ((result.get('route') or {}).get('reason')) or result.get('reason') or 'scorer_unavailable'
     else:
-        cause = result.get('error') or worker.get('error') or worker.get('read_error')
+        cause = result.get('error') or worker.get('cause') or worker.get('error') or worker.get('read_error')
     if cause and status in ('error', 'blocked', 'pending'):
         out['cause'] = str(cause)[:300]
     if (result.get('route') or {}).get('warnings'):
@@ -829,6 +829,9 @@ def run(args, judge):
     result, code = _run(args, judge)
     status = status_of(result, code)
     result = dict(result, status=status)
+    # The file on disk and --verbose carry the same cause and next action as the compact answer.
+    summary = compact(result, status, None)
+    result.update({k: summary[k] for k in ('cause', 'next_action') if summary.get(k) and k not in result})
     if getattr(args, 'verbose', False):
         return result, code
     if status == 'dry_run':

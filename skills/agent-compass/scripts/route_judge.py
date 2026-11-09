@@ -2067,6 +2067,9 @@ def record_constraint(args, task=None):
                if allocator.launch_failures.enabled() else None)
     if cooling:
         raise ValueError(f"{args.account}/{pin.model} is cooling down ({cooling}). Tell the user; do not substitute another model.")
+    latched_model = allocator.model_latch.reason(quota_bundle, allocator.model_latch.active(now=now))
+    if latched_model:
+        raise ValueError(f"{args.account}/{pin.model}: {latched_model}. Tell the user; do not substitute another model.")
     c_model = resolved['key'] if direct else allocator.model_leaf(pin.model)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:

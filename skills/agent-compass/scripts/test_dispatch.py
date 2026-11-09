@@ -2794,5 +2794,150 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertIn('safe to roll', roll.compact(result, 'error', 'x')['next_action'])
 
 
+class ModelLatchTests(unittest.TestCase):
+    """2026-11-09: agy stopped offering Gemini 4 Argon, discovery still listed it, and three rolls in a row picked it and
+    failed. A create the provider refused with a structured model code latches that model out of routing."""
+    setUp_dispatch, snapshot = DispatchTests.setUp, DispatchTests.snapshot
+    issue, prepare = DispatchTests.issue, DispatchTests.prepare
+    brief = RollTests.brief
+
+    def setUp(self):
+        self.setUp_dispatch()
+        self.store = self.root / 'model-unavailable.json'
+        env = patch.dict(os.environ, {'ROUTER_MODEL_LATCH': str(self.store), 'ROUTER_STATE_DIR': str(self.root)})
+        env.start()
+        self.addCleanup(env.stop)
+        self.creates, self.choices = [], []
+        self.refusal = {'ok': False, 'sent': False, 'error': 'host_creation_failed', 'failure_class': 'unknown',
+                        'failure_code': 'INVALID_MODEL'}
+
+    def host(self, request):
+        if request['operation'] == 'create':
+            self.creates.append(request['request']['provider'])
+            return dict(self.refusal)
+        return {'ok': True, 'agent': None, 'creation': None}
+
+    def roll(self, host=None):
+        """One real roll: the fake judge plans with the allocator, so a latch changes what is chosen."""
+        import argparse
+        import roll
+        brief = self.root / 'task.md'
+        brief.write_bytes(self.brief.encode('utf-8'))
+        args = argparse.Namespace(brief=brief, file=[], apply_to=None, local_only=None, hours=0.5, title=None,
+            workspace=None, task_id=f'test-task-{len(self.choices)}', wait=0, parent_id=None, parent_host=None,
+            parent_address=None, provider=None, model=None, effort=None, basis=None, usage_cache=None, dry_run=False,
+            verbose=False, task=None, new_worker=True, resume=None, fast=False, keep_whole=None, access=None,
+            allow_concurrent=None, account=None)
+
+        def plan_stage(document, _):
+            planned = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
+            self.choices.append(planned['choice'])
+            return dict(planned, **registry.issue(planned, document['task'], self.now)), 0
+        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
+                                   'usage_snapshot': staticmethod(lambda _: self.usage),
+                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
+                                   'cli_prefix': staticmethod(lambda name: [name])})
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'ROUTER_PARENT_AGENT_ID': ''}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \
+                patch.object(flow, 'paseo_reachable', return_value=True), \
+                patch.object(flow, 'host_call', host or self.host), \
+                patch.object(allocator, 'load_accounts', return_value=self.accounts):
+            return roll.run(args, judge)
+
+    def test_a_refused_model_is_not_chosen_by_the_next_roll_and_the_roll_says_why(self):
+        import model_latch
+        first, code = self.roll()
+        self.assertEqual((first['status'], code), ('error', 1))
+        self.assertEqual(self.choices[0], 'lab_sonnet55_high')
+        self.assertEqual(self.creates[0], 'claude-lab/claude-sonnet-5-5')
+        self.assertIn('INVALID_MODEL', first['cause'])
+        self.assertIn('excludes it', first['next_action'])
+        self.assertEqual(set(model_latch.active()), {'claude-lab/claude-sonnet-5-5'})
+        second, _ = self.roll()
+        self.assertNotIn(self.choices[1], ('lab_sonnet55_high', 'lab_sonnet55_medium'))   # every effort of that model
+        self.assertEqual(len(self.creates), 2)
+        self.assertNotIn('claude-lab/claude-sonnet-5-5', self.creates[1:])
+        self.assertTrue(any(w.startswith('claude-lab/claude-sonnet-5-5: model launch failed: unavailable')
+                            for w in second['warnings']), second)
+        # The user's model checkboxes are untouched: the latch lives in its own file.
+        self.assertFalse((self.root / 'accounts-override.json').exists())
+        plan = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
+        excluded = next(c for c in plan['ranking'] if c['id'] == 'lab_sonnet55_high')['excluded']
+        self.assertTrue(any('next retry at' in e for e in excluded), excluded)
+
+    def test_a_failure_without_a_model_code_latches_nothing(self):
+        import model_latch
+        self.refusal.update(failure_code='PROVIDER_CRASHED')
+        self.roll()
+        self.refusal.pop('failure_code')
+        self.roll()
+        self.assertEqual(model_latch.active(), {})
+
+    def test_a_worker_that_errors_after_create_gets_a_cause_and_a_next_action(self):
+        # The incident path: Paseo created the agent, it ran for a moment, then stopped in error with only text.
+        def host(request):
+            if request['operation'] == 'create':
+                self.creates.append(request['request']['provider'])
+                return {'ok': True, 'sent': True, 'agent': None}
+            row = registry.inspect(request['dispatch_id'])
+            return {'ok': True, 'agent': self.snapshot(row, 'error', id=request['dispatch_id'],
+                                                         updatedAt=registry.stamp(registry.utcnow() + timedelta(seconds=5)),
+                                                         lastError='invalid model selection')}
+        result, code = self.roll(host)
+        self.assertEqual((result['status'], code), ('error', 1))
+        self.assertEqual(result['cause'], 'worker_failed')
+        self.assertIn('get_agent_activity', result['next_action'])
+        self.assertNotIn('completion notification will be sent', result['next_action'])
+        detail = json.loads(Path(result['details']).read_text(encoding='utf-8'))
+        self.assertEqual((detail['cause'], detail['next_action']), (result['cause'], result['next_action']))
+        import model_latch
+        self.assertEqual(model_latch.active(), {})   # Error text is never read, so nothing is latched from it.
+
+    def test_each_unlock_condition(self):
+        import model_latch
+        from datetime import datetime, timezone
+        t0 = datetime(2026, 11, 9, 2, 46, tzinfo=timezone.utc)
+        bundle = {'account': 'antigravity', 'provider': 'antigravity-resilient', 'model': 'gemini-4-argon',
+                  'launch_model': 'gemini-4-argon-high'}
+        entry = model_latch.record(bundle, 'INVALID_MODEL', at=t0, source='d1')
+        self.assertEqual(entry['model'], 'gemini-4-argon-high')
+        self.assertIsNone(model_latch.record(bundle, 'unknown', at=t0))
+        latched = {'antigravity/gemini-4-argon-high'}
+        # Retry time: data, the same period as an account latch.
+        retry = t0 + timedelta(hours=model_latch.RETRY_HOURS)
+        self.assertEqual(model_latch.RETRY_HOURS, model_latch.account_state.LATCH_RETRY_HOURS)
+        self.assertEqual(set(model_latch.active(now=retry - timedelta(seconds=1), catalog={})), latched)
+        self.assertEqual(model_latch.active(now=retry, catalog={}), {})
+        self.assertIn(retry.isoformat(timespec='minutes'), model_latch.reason(bundle, model_latch.active(now=t0, catalog={})))
+        # Discovery: only a probe made after the latch that lists the model.
+        def catalog(checked, models):
+            return {'providers': {'antigravity-resilient': {'ok': True, 'type': 'paseo_provider',
+                                                            'checked_at': checked.timestamp(), 'models': models}}}
+        listed = [{'id': 'gemini-4-argon-high'}]
+        self.assertEqual(set(model_latch.active(now=t0, catalog=catalog(t0 - timedelta(minutes=1), listed))), latched)
+        self.assertEqual(set(model_latch.active(now=t0, catalog=catalog(t0 + timedelta(minutes=1), []))), latched)
+        self.assertEqual(model_latch.active(now=t0, catalog=catalog(t0 + timedelta(minutes=1), listed)), {})
+        # A start: only one launched after the latch, on the same model.
+        self.assertFalse(model_latch.clear('antigravity', 'gemini-4-argon-high', launched_at=(t0 - timedelta(seconds=1)).isoformat()))
+        self.assertFalse(model_latch.clear('antigravity', 'gemini-4-argon-low', launched_at=(t0 + timedelta(seconds=1)).isoformat()))
+        self.assertTrue(model_latch.clear('antigravity', 'gemini-4-argon-high', launched_at=(t0 + timedelta(seconds=1)).isoformat()))
+        # By hand.
+        model_latch.record(bundle, 'invalid_model', at=t0)
+        self.assertTrue(model_latch.clear('antigravity', 'gemini-4-argon-high'))
+        self.assertEqual(model_latch.active(now=t0, catalog={}), {})
+
+    def test_a_started_worker_on_the_latched_model_clears_it(self):
+        import model_latch
+        row = self.prepare(self.issue())
+        registry.claim(row['request'], now=self.now)
+        model_latch.record(self.bundle, 'INVALID_MODEL', at=self.now - timedelta(minutes=1))
+        self.assertTrue(model_latch.active())
+        registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+        self.assertEqual(model_latch.active(), {})
+        plan = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
+        self.assertEqual(plan['choice'], 'lab_sonnet55_high')
+
+
 if __name__ == '__main__':
     unittest.main()

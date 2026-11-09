@@ -2394,6 +2394,8 @@ class Panel:
             marks = [_tr(tag) for tag in model.get("tags", [])]
             if model.get("availability") == "missing":
                 marks.append(_tr("未检测到"))
+            if model.get("launch_unavailable"):
+                marks.append(model["launch_unavailable"])
             text = model["model_label"] + (" · " + " · ".join(marks) if marks else "")
             var = tk.BooleanVar(value=model["enabled"])
             if model["partial"]:

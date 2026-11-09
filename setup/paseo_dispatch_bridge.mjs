@@ -276,6 +276,13 @@ export function creationFailureClass(creation) {
   return 'unknown';
 }
 
+// The provider's own error code as the daemon recorded it (a plugin's ProviderActionError code, e.g. INVALID_MODEL).
+// An identifier, not text: anything else stays private. The router decides what a code means.
+export function creationFailureCode(creation) {
+  const code = creation?.errorCode;
+  return typeof code === 'string' && /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/.test(code) ? {failure_code: code} : {};
+}
+
 // The daemon owns a create across socket lifetimes and keeps its outcome under the idempotency key, so the answer the
 // creating bridge was killed before receiving can still be read. Only a fixed vocabulary leaves this adapter.
 export async function creationRecord(client, key) {
@@ -289,7 +296,7 @@ export async function creationRecord(client, key) {
   if (!snapshot) return null;
   return {phase: snapshot.phase, outcome_unknown: Boolean(snapshot.outcomeUnknown), agent_id: snapshot.agentId ?? null,
     agent_created: Boolean(snapshot.agent),
-    ...(snapshot.phase === 'failed' ? {failure_class: creationFailureClass(snapshot)} : {})};
+    ...(snapshot.phase === 'failed' ? {failure_class: creationFailureClass(snapshot), ...creationFailureCode(snapshot)} : {})};
 }
 
 async function findWorkspaceDirectory(client, workspaceId) {
@@ -387,7 +394,7 @@ export async function execute(client, input, notify = ensureNotification) {
         // failure authorizes reservation release. Timeouts remain ambiguous.
         stopWatcher(input, 'host_creation_failed');
         return {ok: false, sent: false, error: 'host_creation_failed', failure_class: creationFailureClass(creation),
-          completion_notification: {...completion_notification, status: 'creation_failed'}};
+          ...creationFailureCode(creation), completion_notification: {...completion_notification, status: 'creation_failed'}};
       }
       // A timeout can follow successful creation; never report definite failure here.
       return {ok: false, sent: true, error: 'create_outcome_uncertain_reconcile_by_label', completion_notification};

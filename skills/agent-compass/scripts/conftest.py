@@ -31,3 +31,9 @@ def offline_public_data(monkeypatch):
 def isolated_launch_failures(monkeypatch):
     """Tests never read or write the machine's launch-failure cooldowns; test_launch_failures opts back in."""
     monkeypatch.setenv('ROUTER_LAUNCH_FAILURES', 'off')
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_latches(monkeypatch):
+    """Tests never read or write the machine's latched models; model-latch tests point it at their own file."""
+    monkeypatch.setenv('ROUTER_MODEL_LATCH', 'off')

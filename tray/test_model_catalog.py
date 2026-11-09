@@ -126,3 +126,26 @@ def test_bulk_selection_changes_all_efforts_once_and_skips_unrouted(tmp_path, mo
     router_data.set_harness_models('codex', 'codex', 'all')
     assert router_data.modules()[0].load_accounts()['accounts']['codex']['bundles']['sol_medium']['disabled'] is False
     assert 'new-model' not in json.loads(target.read_text())['accounts']['codex']['bundles']
+
+
+def test_a_model_a_launch_reported_missing_is_marked_in_the_model_list_without_touching_settings(tmp_path, monkeypatch):
+    # 2026-11-09: three rolls picked a model agy no longer offered; the model list must say so and when it is retried.
+    import model_latch
+    from datetime import datetime, timedelta, timezone
+    target = settings(tmp_path, monkeypatch)
+    monkeypatch.delenv('ROUTER_MODEL_LATCH', raising=False)
+    store = target.parent / model_latch.FILE
+    at = datetime.now(timezone.utc)
+    model_latch.record({'account': 'codex', 'provider': 'codex', 'model': 'gpt-6.1-sol'}, 'INVALID_MODEL', at=at, path=store)
+    monkeypatch.setattr(router_data, 'account_badge', lambda *args: ('就绪', 'ok'))
+    row = next(row for row in router_data.harness_model_rows() if row['harness'] == 'codex')
+    sol = next(model for model in row['models'] if model['model'] == 'gpt-6.1-sol')
+    retry = (at + timedelta(hours=model_latch.RETRY_HOURS)).astimezone().strftime('%m-%d %H:%M')
+    assert sol['launch_unavailable'] == f'模型启动失败：不可用，下次重试 {retry}'
+    assert row['kind'] == 'warn' and '启动失败' in row['badge']
+    assert not target.exists()   # the latch is not a setting
+    # Discovery listing the model again after the latch lifts the mark.
+    (target.parent / 'model-catalog.json').write_text(json.dumps({'providers': {'codex': {
+        'ok': True, 'type': 'paseo_provider', 'checked_at': at.timestamp() + 60, 'models': [{'id': 'gpt-6.1-sol'}]}}}))
+    row = next(row for row in router_data.harness_model_rows() if row['harness'] == 'codex')
+    assert not any(model.get('launch_unavailable') for model in row['models'])

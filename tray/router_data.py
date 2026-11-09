@@ -1317,6 +1317,10 @@ def harness_model_rows() -> list[dict]:
             model = allocator.canonical(bundle.get("model") or bid, accounts)
             groups.setdefault((account, harness), {}).setdefault(model, []).append((owner, bid, bundle))
     rows = []
+    import model_catalog
+    latch = allocator.model_latch
+    latches = latch.active(path=None if os.environ.get("ROUTER_MODEL_LATCH") else STATE_DIR / latch.FILE,
+                           catalog=model_catalog.read(STATE_DIR / "model-catalog.json"))
     for (account, harness), models in groups.items():
         if not any(not bundle.get("discovery_unavailable") for entries in models.values() for _, _, bundle in entries):
             continue
@@ -1341,7 +1345,13 @@ def harness_model_rows() -> list[dict]:
                      "partial": any(flags) and not all(flags), "bundle_ids": [bid for _, bid, _ in bundles],
                      "bundle_refs": [(owner, bid) for owner, bid, _ in bundles]}
             group.update(_model_group_tags([b for _, _, b in bundles], flags))
+            unavailable = launch_unavailable_text(allocator, latches, account, bundles)
+            if unavailable:
+                group["launch_unavailable"] = unavailable
             row["models"].append(group)
+        failing = sum(1 for group in row["models"] if group.get("launch_unavailable"))
+        if failing and kind == "ok":
+            row["badge"], row["kind"] = _tr("{0} 个模型启动失败，已排除派发").format(failing), "warn"
         rows.append(row)
     present = {row['account'] for row in rows}
     for account, spec in table.items():
@@ -1355,8 +1365,19 @@ def harness_model_rows() -> list[dict]:
                 'models': [], 'providers': [account], 'cwd_regex': '', 'allowed_cwd': [], 'cwd_pattern': ''})
     order = {name: index for index, name in enumerate(HARNESS_ORDER)}
     rows = sorted(rows, key=lambda row: (order.get(row["harness"], len(order)), row["account"]))
-    import model_catalog
     return decorate_model_rows(rows, accounts, model_catalog.read(STATE_DIR / "model-catalog.json"))
+
+
+def launch_unavailable_text(allocator, latches: dict, account: str, bundles: list) -> str | None:
+    """The model list's note for a model a launch reported as not existing; None when no bundle of it is latched.
+    The latch lives in its own state file, never in the user's model settings."""
+    for owner, _, bundle in bundles:
+        entry = (allocator.model_latch.entry_for({**bundle, "account": owner}, latches)
+                 or allocator.model_latch.entry_for({**bundle, "account": account}, latches))
+        if entry:
+            retry = allocator.model_latch.retry_at(entry)
+            return _tr("模型启动失败：不可用，下次重试 {0}").format(read_time_text(retry.isoformat() if retry else None))
+    return None
 
 
 def _model_group_tags(bundles: list[dict], flags: list[bool]) -> dict:

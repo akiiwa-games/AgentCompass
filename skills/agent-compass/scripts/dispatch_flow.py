@@ -49,6 +49,11 @@ STALLED_NEXT = ('Paseo still reports this create as running past its deadline an
                 'appear. Keep observing with next_argv; restarting the Paseo daemon settles it. Do not roll again.')
 CREATE_FAILED_NEXT = ('Paseo confirms it created no worker for this dispatch and none can appear later. '
                       'It is safe to roll this brief again.')
+MODEL_LATCHED_NEXT = (' The provider reported that model {model} does not exist on {account} ({code}), so routing excludes it '
+                      'until {retry}: rolling again picks another model. Tell the user it is unavailable.')
+WORKER_FAILED_NEXT = ('Paseo created this worker and it ended in error, so nothing is running this brief. Read its error '
+                      '(get_agent_activity on agent_id) and tell the user before rolling again: the router does not read '
+                      'error text, so it may choose the same model again.')
 REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispatch observed it. The dispatch is over and '
                 'holds nothing. The worker may have done part of the work: check that before rolling this brief again.')
 
@@ -91,6 +96,13 @@ def public(row, now=None):
         out['resumed'] = True
     if row['state'] == 'create_failed':
         out['next_action'] = CREATE_FAILED_NEXT
+        import model_latch
+        if model_latch.means_unavailable(row.get('failure_code')):
+            out['next_action'] += MODEL_LATCHED_NEXT.format(
+                model=model_latch.launch_model(row['bundle']), account=row['bundle'].get('account'),
+                code=row['failure_code'], retry=model_latch.retry_text({'observed_at': row.get('updated_at')}))
+    elif row['state'] == 'failed' and row.get('agent_id'):
+        out['next_action'] = WORKER_FAILED_NEXT
     elif row['state'] == 'canceled' and (row.get('creation') or {}).get('removed'):
         out['next_action'] = REMOVED_NEXT
     elif creating(row):
@@ -120,12 +132,17 @@ def settle_create(row, creation, now, path):
     if transitioned and settled.get('failure_class'):
         import account_state
         import launch_failures
+        import model_latch
         try:
             launch_failures.record(settled['bundle'], settled['failure_class'])
             account_state.record_launch_error(settled['bundle']['account'], None, code=settled['failure_class'],
                                               source=settled['dispatch_id'])
         except OSError:
             pass  # A cooldown is best effort: a busy store must not stop this observation or the roll that made it.
+        try:
+            model_latch.record(settled['bundle'], settled.get('failure_code'), source=settled['dispatch_id'])
+        except OSError:
+            pass
     return settled
 
 
@@ -240,7 +257,9 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         elif response.get('sent') is False:
             launch_error = response.get('error')
             if launch_error == 'host_creation_failed':
-                row = settle_create(row, {'phase': 'failed', 'failure_class': response.get('failure_class') or 'unknown'}, None, path)
+                row = settle_create(row, {'phase': 'failed', 'failure_class': response.get('failure_class') or 'unknown',
+                                          **({'failure_code': response['failure_code']}
+                                             if isinstance(response.get('failure_code'), str) else {})}, None, path)
             else:
                 cause = ':'.join(str(p) for p in (launch_error, response.get('failure_class')) if p)
                 row = registry.release(dispatch_id, parent_id,
@@ -270,6 +289,11 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         result['error'] = launch_error
     elif row['state'] == 'create_failed':
         result['error'] = 'create_failed'
+    elif row['state'] == 'failed' and row.get('agent_id'):
+        result['error'] = 'worker_failed'
+    if row['state'] == 'create_failed':
+        # Fixed vocabulary only: the bridge's class and the provider's own code, never its text.
+        result['cause'] = ':'.join(str(p) for p in (result['error'], row.get('failure_class'), row.get('failure_code')) if p)
     if not queried_host and row.get('launched_at') and row.get('agent_id'):
         # A terminal registry row can outlive a stopped notifier. Observation
         # recovers its durable receipt without reissuing the create request.

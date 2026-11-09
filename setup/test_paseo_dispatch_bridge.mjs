@@ -293,6 +293,24 @@ test('the creation record is read through a schema-valid one-shot request, keepi
   await assert.rejects(creationRecord({sendCorrelatedSessionRequest: async () => ({snapshot: null, error: 'boom'})}, 'd'), /creation_unobservable/);
 });
 
+test("a definitive create failure forwards the provider's own error code, never its text", async () => {
+  // 2026-11-09: the Antigravity plugin's ProviderActionError("INVALID_MODEL") reaches the daemon's creation record as errorCode.
+  const refused = {kind: 'agent', idempotencyKey: 'd', phase: 'failed', outcomeUnknown: false, agentId: 'd',
+    error: 'Unknown Antigravity model: gemini-4-argon-high secret-canary', errorCode: 'INVALID_MODEL'};
+  const recorded = await creationRecord({sendCorrelatedSessionRequest: async () => ({snapshot: refused})}, 'd');
+  assert.equal(recorded.failure_code, 'INVALID_MODEL');
+  const fake = {fetchAgent: async () => ({agent: {cwd: '/fixture'}}),
+    createAgent: async options => { options.onEvent(refused); throw new Error('secret-canary'); }};
+  const created = await execute(fake, {operation: 'create', dispatch_id: 'd', parent_id: 'parent',
+    request: {provider: 'antigravity-resilient/gemini-4-argon-high'}}, async () => ({status: 'watching'}));
+  assert.equal(created.error, 'host_creation_failed');
+  assert.equal(created.failure_code, 'INVALID_MODEL');
+  assert(!JSON.stringify([recorded, created]).includes('canary'));
+  // Something that is not an identifier is text, and stays private.
+  const prose = await creationRecord({sendCorrelatedSessionRequest: async () => ({snapshot: {...refused, errorCode: 'model is gone'}})}, 'd');
+  assert.equal('failure_code' in prose, false);
+});
+
 test('observe reports the creation record when no agent exists, and finds an agent created meanwhile', async () => {
   const none = {fetchAgents: async () => ({entries: []}), fetchAgent: async () => null,
     sendCorrelatedSessionRequest: async () => ({snapshot: {phase: 'accepted', agentId: 'd'}})};
