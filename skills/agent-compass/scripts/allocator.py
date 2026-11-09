@@ -2182,6 +2182,11 @@ def five_axis_overlay(accounts, data=None):
         family = str(provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_family(spec) or '')
         family = family.removesuffix('-resilient')
         plan = provider_inventory.configured_plan(family, spec.get('plan'))
+        if family == 'pi':      # Pi signs in with ChatGPT and spends the Codex account's allowance: its plan's windows
+            family, plan = 'codex', next((provider_inventory.configured_plan('codex', s.get('plan'))
+                                          for n, s in (out.get('accounts') or {}).items() if isinstance(s, dict)
+                                          and str(provider_inventory.account_family(n, out, out.get('_discovery') or {})
+                                                  or account_family(s) or '') == 'codex'), plan)
         rows_ = (community.get(family) or {}).get(plan) or {}
         caps = {wid: float(rows_[wid]['capacity_usd']) for wid in spec['windows']
                 if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
@@ -2264,6 +2269,17 @@ def five_axis_level(scores, demand, ratio=1.0):
     return sum(w * eff[a] for a, w in demand.items() if w > 0) / total, eff
 
 
+def five_axis_gate_level(scores, demand, ratio=1.0, blend=0.0):
+    """(level the floor is read on, {axis: effort-scaled score}): the demand-weighted level blended with the equal-weight
+    level of all four axes by the calibrated `level_blend` (round 5: the demanded axes alone split models the old tier
+    gate kept together, hard agreement 0.82; per-axis floors still hold every strongly demanded axis)."""
+    level, eff = five_axis_level(scores, demand, ratio)
+    if not blend:
+        return level, eff
+    flat = sum(eff[a] for a in FIVE_AXES) / len(FIVE_AXES)
+    return (1.0 - blend) * level + blend * flat, eff
+
+
 def five_axis_gate(task, demand, overlay, cfg):
     """The task's floor on the axis scale: the calibrated share of the anchor model's level on this demand (critical work
     has its own share), and a per-axis floor for every strongly demanded axis (the difficulty's axis ratio x share x the
@@ -2273,19 +2289,22 @@ def five_axis_gate(task, demand, overlay, cfg):
     difficulty = task['difficulty']
     base = float((floors.get('ratio') or {}).get(difficulty, 0.0))
     share = float((floors.get('critical_ratio') or {}).get(difficulty, base)) if task['critical'] else base
-    level, eff = five_axis_level(anchor, demand)
+    blend = float(floors.get('level_blend') or 0.0)
+    level, eff = five_axis_gate_level(anchor, demand, 1.0, blend)
     axis_ratio = floors.get('axis_ratio', 0.9)     # one value per difficulty since round 4; a scalar before
     axis_ratio = float(axis_ratio.get(difficulty, 0.9) if isinstance(axis_ratio, dict) else axis_ratio)
     strong = {a: round(axis_ratio * share * eff[a], 4) for a, w in demand.items() if w >= cfg['strong_level']}
     return {'floor': round(base * level, 4), 'gate': round(share * level, 4), 'anchor': floors.get('anchor'),
-            'anchor_level': round(level, 4), 'share': share, 'axis_floors': strong,
+            'anchor_level': round(level, 4), 'share': share, 'axis_floors': strong, 'level_blend': blend,
             'axis_per_tier': float(floors.get('axis_per_tier') or 0.2)}
 
 
 def five_axis_order(candidate):
-    """Sort key on the five-axis path: score, then cost per worker-hour ascending, then ability above the floor."""
+    """Sort key on the five-axis path: score, then opportunity cost (quota scarcity) ascending, then ability above the
+    floor descending (round 5, user-approved: a cost-ascending tie-break handed every saturated tie to free models; with
+    ample quota the strongest qualifying model wins as today, free models take over only when paid windows are scarce)."""
     k = candidate['components']
-    return (-candidate['score'], (candidate.get('five_axis_price') or {}).get('usd_per_hour', 0.0),
+    return (-candidate['score'], round(k.get('opportunity_cost', 0.0), 4),
             -(k.get('five_axis_level', 0.0) - k.get('five_axis_gate', 0.0)))
 
 
@@ -2727,7 +2746,8 @@ def evaluate_bundle(bundle, task, ctx):
         unmeasured = [a for a, w in task['five_axis_demand'].items()
                       if w >= five['demanded_level'] and a in ((info.get('five_axis') or {}).get('missing', list(FIVE_AXES)))]
         unmeasured_named = bool(unmeasured) and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
-        levels = {e: five_axis_level(axes, task['five_axis_demand'], five_axis_effort_ratio(info, policy, curves, e))[0]
+        levels = {e: five_axis_gate_level(axes, task['five_axis_demand'], five_axis_effort_ratio(info, policy, curves, e),
+                                          task['five_gate'].get('level_blend', 0.0))[0]
                   for e in set(EFFORT_ORDER) | {'none', 'default'} | set((curves or {}).get('ability') or {})}
         level_high = levels['high']
         info = {**info, 'tier': level_high}
@@ -3003,8 +3023,8 @@ def evaluate_bundle(bundle, task, ctx):
                                   step_usd=None, unit=None)
                 row.update(chain_pct=0.0, stale=state['stale'], capacity_unknown=True)
                 opportunity += row['opportunity_cost']
-                result['notes'].append(f'{wid}: capacity unknown; scarcity from the live {state["remaining"]:.0f}% and the '
-                                       f'reset in {state["reset_hours"]:.1f}h')
+                result['notes'].append(f'{wid}: data error: no cited capacity (capacity ladder empty); scarcity from the live '
+                                       f'{state["remaining"]:.0f}% and the reset in {state["reset_hours"]:.1f}h')
                 if binding is None or (row['opportunity_cost'], -row['after']) > (binding['opportunity_cost'], -binding['after']):
                     binding = row
                 continue
@@ -3482,8 +3502,8 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
             c['score'] = round(c['score'] - policy['deferred_start_penalty'], 4)
     apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
     if five:
-        # Equal scores (fit saturates on minimum-sufficient work) go to the cheaper candidate per worker-hour, then the
-        # one with more ability above the floor; list order no longer decides (round 047, round 4).
+        # Equal scores (fit saturates on minimum-sufficient work) go to the candidate drawing on the least scarce quota,
+        # then the one with more ability above the floor; list order no longer decides (round 047, rounds 4-5).
         eligible.sort(key=five_axis_order)
     else:
         eligible.sort(key=lambda c: -c['score'])

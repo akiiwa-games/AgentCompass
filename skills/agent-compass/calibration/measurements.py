@@ -507,6 +507,8 @@ class Builder:
         self.source_rows.update(rows)
         self.mix = mix
         return {'unit': 'usd of API-priced real usage per full window', 'observations': obs, 'rules': rules,
+                'exhaust': community.EXHAUST, 'exhaust_rejected': community.EXHAUST_REJECTED,
+                'hourly_checks': getattr(community.extract, 'hourly', []),
                 'errors': errors, 'not_found': community.NOT_FOUND, 'token_mix': mix}
 
     def community_mix(self):

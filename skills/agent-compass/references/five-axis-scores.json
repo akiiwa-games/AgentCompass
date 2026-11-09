@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-09T05:50:23+00:00",
- "measurements_sha256": "064288600d4d582641af057f0fddd83fa6aacbaeffc33f82e53bc7492833af0c",
+ "generated_at": "2026-11-09T06:38:25+00:00",
+ "measurements_sha256": "9b54fbbb195812e727da71c713f0d0365fec3164ece6ad642e03fd2782ac7a48",
  "distrusted_sources": [],
  "source_priority": [],
  "user_overrides": [],
@@ -182,8 +182,9 @@
      "unit": "usd",
      "capacity_usd": 11.92,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.claude",
@@ -194,7 +195,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -204,8 +206,9 @@
      "unit": "usd",
      "capacity_usd": 155.0,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.claude",
@@ -216,7 +219,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -226,27 +230,107 @@
    "max5": {
     "five_hour": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 110.0,
+     "status": "stale",
+     "rung": 1,
+     "age_days": 30,
+     "merge": "median of 1 value(s), rung 1",
+     "sources": [
+      {
+       "source": "community.finops.claude_max20",
+       "kind": "community",
+       "value": 110.0,
+       "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+       "as_of": "2026-10-10",
+       "fetched_at": "2026-11-09T06:36:08+00:00",
+       "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
+       "age_days": 30,
+       "stale": true,
+       "rung": 1
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 2.2,
+     "cross_check": {
+      "rung": 3,
+      "value": 59.6,
+      "method": "5 x claude/pro five_hour (The Max plan includes five times the Pro plan's usage every five hours and every week)",
+      "ratio_to_value": 0.54
+     }
     },
     "seven_day": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 1217.0,
+     "status": "stale",
+     "rung": 1,
+     "age_days": 30,
+     "merge": "median of 1 value(s), rung 1",
+     "sources": [
+      {
+       "source": "community.finops.claude_max20",
+       "kind": "community",
+       "value": 1217.0,
+       "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+       "as_of": "2026-10-10",
+       "fetched_at": "2026-11-09T06:36:08+00:00",
+       "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
+       "age_days": 30,
+       "stale": true,
+       "rung": 1
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 24.7,
+     "cross_check": {
+      "rung": 3,
+      "value": 775.0,
+      "method": "5 x claude/pro seven_day (The Max plan includes five times the Pro plan's usage every five hours and every week)",
+      "ratio_to_value": 0.64
+     }
     },
     "weekly_fable": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 608.5,
+     "status": "stale",
+     "rung": 1,
+     "age_days": 30,
+     "merge": "median of 1 value(s), rung 1",
+     "sources": [
+      {
+       "source": "community.wokey.claude",
+       "kind": "derived",
+       "value": 608.5,
+       "url": "https://wokey.ai/claude-usage-limits",
+       "as_of": "2026-11-02",
+       "fetched_at": "2026-11-09T05:34:15+00:00",
+       "method": "0.5 x the seven_day (Fable 5.1 can use only half the weekly limit; https://newsletter.semianalysis.com/p/anthropic-subscriptions-offer-5x (SemiAnalysis, 2026-10-05))",
+       "derived_from": [
+        {
+         "source": "community.finops.claude_max20",
+         "kind": "community",
+         "value": 1217.0,
+         "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+         "as_of": "2026-10-10",
+         "fetched_at": "2026-11-09T06:36:08+00:00",
+         "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
+         "age_days": 30,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 30,
+       "stale": true,
+       "rung": 1
+      }
+     ],
      "reference_model": "claude-fable-5-1",
-     "ref_hours": null
+     "ref_hours": 7.3,
+     "cross_check": {
+      "rung": 3,
+      "value": 387.5,
+      "method": "5 x claude/pro weekly_fable (The Max plan includes five times the Pro plan's usage every five hours and every week)",
+      "ratio_to_value": 0.64
+     }
     }
    },
    "max20": {
@@ -254,8 +338,9 @@
      "unit": "usd",
      "capacity_usd": 271.75,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.claude",
@@ -266,7 +351,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -276,8 +362,9 @@
      "unit": "usd",
      "capacity_usd": 1704.5,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 2 community value(s)",
+     "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.claude",
@@ -288,7 +375,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       },
       {
        "source": "community.finops.claude_max20",
@@ -296,10 +384,11 @@
        "value": 1860.0,
        "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
        "as_of": "2026-10-10",
-       "fetched_at": "2026-11-09T05:34:16+00:00",
+       "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "one heavy user's measured full week at API-equivalent prices",
        "age_days": 30,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -309,8 +398,9 @@
      "unit": "usd",
      "capacity_usd": 852.25,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.claude",
@@ -319,7 +409,7 @@
        "url": "https://wokey.ai/claude-usage-limits",
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
-       "method": "0.5 x the merged seven_day (Fable 5.1 can use only half the weekly limit; https://newsletter.semianalysis.com/p/anthropic-subscriptions-offer-5x (SemiAnalysis, 2026-10-05))",
+       "method": "0.5 x the seven_day (Fable 5.1 can use only half the weekly limit; https://newsletter.semianalysis.com/p/anthropic-subscriptions-offer-5x (SemiAnalysis, 2026-10-05))",
        "derived_from": [
         {
          "source": "community.wokey.claude",
@@ -330,7 +420,8 @@
          "fetched_at": "2026-11-09T05:34:15+00:00",
          "method": "median measured account week at API rates (cache included)",
          "age_days": 7,
-         "stale": false
+         "stale": false,
+         "rung": 1
         },
         {
          "source": "community.finops.claude_max20",
@@ -338,14 +429,16 @@
          "value": 1860.0,
          "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
          "as_of": "2026-10-10",
-         "fetched_at": "2026-11-09T05:34:16+00:00",
+         "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "one heavy user's measured full week at API-equivalent prices",
          "age_days": 30,
-         "stale": true
+         "stale": true,
+         "rung": 1
         }
        ],
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "claude-fable-5-1",
@@ -355,29 +448,109 @@
    "max": {
     "five_hour": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 110.0,
+     "status": "stale",
+     "rung": 1,
+     "age_days": 30,
+     "merge": "median of 1 value(s), rung 1",
+     "sources": [
+      {
+       "source": "community.finops.claude_max20",
+       "kind": "community",
+       "value": 110.0,
+       "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+       "as_of": "2026-10-10",
+       "fetched_at": "2026-11-09T06:36:08+00:00",
+       "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
+       "age_days": 30,
+       "stale": true,
+       "rung": 1
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null,
+     "ref_hours": 2.2,
+     "cross_check": {
+      "rung": 3,
+      "value": 59.6,
+      "method": "5 x claude/pro five_hour (The Max plan includes five times the Pro plan's usage every five hours and every week)",
+      "ratio_to_value": 0.54
+     },
      "alias_of": "max5"
     },
     "seven_day": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 1217.0,
+     "status": "stale",
+     "rung": 1,
+     "age_days": 30,
+     "merge": "median of 1 value(s), rung 1",
+     "sources": [
+      {
+       "source": "community.finops.claude_max20",
+       "kind": "community",
+       "value": 1217.0,
+       "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+       "as_of": "2026-10-10",
+       "fetched_at": "2026-11-09T06:36:08+00:00",
+       "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
+       "age_days": 30,
+       "stale": true,
+       "rung": 1
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null,
+     "ref_hours": 24.7,
+     "cross_check": {
+      "rung": 3,
+      "value": 775.0,
+      "method": "5 x claude/pro seven_day (The Max plan includes five times the Pro plan's usage every five hours and every week)",
+      "ratio_to_value": 0.64
+     },
      "alias_of": "max5"
     },
     "weekly_fable": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 608.5,
+     "status": "stale",
+     "rung": 1,
+     "age_days": 30,
+     "merge": "median of 1 value(s), rung 1",
+     "sources": [
+      {
+       "source": "community.wokey.claude",
+       "kind": "derived",
+       "value": 608.5,
+       "url": "https://wokey.ai/claude-usage-limits",
+       "as_of": "2026-11-02",
+       "fetched_at": "2026-11-09T05:34:15+00:00",
+       "method": "0.5 x the seven_day (Fable 5.1 can use only half the weekly limit; https://newsletter.semianalysis.com/p/anthropic-subscriptions-offer-5x (SemiAnalysis, 2026-10-05))",
+       "derived_from": [
+        {
+         "source": "community.finops.claude_max20",
+         "kind": "community",
+         "value": 1217.0,
+         "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+         "as_of": "2026-10-10",
+         "fetched_at": "2026-11-09T06:36:08+00:00",
+         "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
+         "age_days": 30,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 30,
+       "stale": true,
+       "rung": 1
+      }
+     ],
      "reference_model": "claude-fable-5-1",
-     "ref_hours": null,
+     "ref_hours": 7.3,
+     "cross_check": {
+      "rung": 3,
+      "value": 387.5,
+      "method": "5 x claude/pro weekly_fable (The Max plan includes five times the Pro plan's usage every five hours and every week)",
+      "ratio_to_value": 0.64
+     },
      "alias_of": "max5"
     }
    }
@@ -388,8 +561,9 @@
      "unit": "usd",
      "capacity_usd": 61.0,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 2 community value(s)",
+     "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.codex",
@@ -400,7 +574,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       },
       {
        "source": "community.finops.codex_plus",
@@ -411,7 +586,8 @@
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
        "age_days": 30,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gpt-6.1-sol",
@@ -421,8 +597,9 @@
      "unit": "usd",
      "capacity_usd": 10.0,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.codex",
@@ -433,7 +610,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "gpt-6.1-sol",
@@ -445,8 +623,9 @@
      "unit": "usd",
      "capacity_usd": 61.0,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 2 community value(s)",
+     "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.codex",
@@ -457,7 +636,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       },
       {
        "source": "community.finops.codex_plus",
@@ -468,7 +648,8 @@
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
        "age_days": 30,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gpt-6.1-sol",
@@ -479,8 +660,9 @@
      "unit": "usd",
      "capacity_usd": 10.0,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.codex",
@@ -491,7 +673,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "gpt-6.1-sol",
@@ -504,8 +687,9 @@
      "unit": "usd",
      "capacity_usd": 265.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 31,
-     "merge": "median of 2 community value(s)",
+     "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
        "source": "community.finops.codex_pro100",
@@ -516,7 +700,8 @@
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of a heavy user's logged full weekly windows at API prices",
        "age_days": 31,
-       "stale": true
+       "stale": true,
+       "rung": 1
       },
       {
        "source": "community.inventive.codex",
@@ -527,11 +712,18 @@
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "midpoint of the measured weekly range at API prices",
        "age_days": 36,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 19.4
+     "ref_hours": 19.4,
+     "cross_check": {
+      "rung": 3,
+      "value": 305.0,
+      "method": "5 x codex/plus usage (This new tier offers 5x more Codex usage than Plus (OpenAI announcement, 2026-04-09))",
+      "ratio_to_value": 1.15
+     }
     }
    },
    "pro": {
@@ -539,8 +731,9 @@
      "unit": "usd",
      "capacity_usd": 615.5,
      "status": "ok",
+     "rung": 1,
      "age_days": 7,
-     "merge": "median of 2 community value(s)",
+     "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
        "source": "community.wokey.codex",
@@ -551,7 +744,8 @@
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
        "age_days": 7,
-       "stale": false
+       "stale": false,
+       "rung": 1
       },
       {
        "source": "community.inventive.codex",
@@ -562,7 +756,8 @@
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "measured weekly window at API prices",
        "age_days": 36,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gpt-6.1-sol",
@@ -574,69 +769,309 @@
    "ultra20": {
     "gemini-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 400.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 400.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro gemini-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 20.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null
+     "ref_hours": 12.5
     },
     "gemini-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 2580.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 2580.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro gemini-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 129.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null
+     "ref_hours": 80.9
     },
     "3p-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 400.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 400.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro 3p-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 20.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 8.1
     },
     "3p-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 2580.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 2580.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro 3p-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 129.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 52.4
     }
    },
    "ultra5": {
     "gemini-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 100.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 100.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "5 x antigravity/pro gemini-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 20.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null
+     "ref_hours": 3.1
     },
     "gemini-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 645.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 645.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "5 x antigravity/pro gemini-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 129.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null
+     "ref_hours": 20.2
     },
     "3p-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 100.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 100.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "5 x antigravity/pro 3p-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 20.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 2.0
     },
     "3p-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 645.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 645.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "5 x antigravity/pro 3p-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 129.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 13.1
     }
    },
    "pro": {
@@ -644,8 +1079,9 @@
      "unit": "usd",
      "capacity_usd": 20.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -656,7 +1092,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gemini-4-argon-high",
@@ -666,8 +1103,9 @@
      "unit": "usd",
      "capacity_usd": 129.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -678,7 +1116,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gemini-4-argon-high",
@@ -688,8 +1127,9 @@
      "unit": "usd",
      "capacity_usd": 20.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -700,7 +1140,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -710,8 +1151,9 @@
      "unit": "usd",
      "capacity_usd": 129.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -722,7 +1164,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -732,38 +1175,158 @@
    "ultra": {
     "gemini-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 400.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 400.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro gemini-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 20.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null,
+     "ref_hours": 12.5,
      "alias_of": "ultra20"
     },
     "gemini-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 2580.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 2580.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro gemini-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 129.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null,
+     "ref_hours": 80.9,
      "alias_of": "ultra20"
     },
     "3p-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 400.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 400.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro 3p-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 20.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null,
+     "ref_hours": 8.1,
      "alias_of": "ultra20"
     },
     "3p-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 2580.0,
+     "status": "stale",
+     "rung": 3,
+     "age_days": 62,
+     "merge": "median of 1 value(s), rung 3",
+     "sources": [
+      {
+       "source": "vendor.google.ultra",
+       "kind": "derived",
+       "value": 2580.0,
+       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
+       "as_of": "2026-11-09",
+       "fetched_at": "2026-11-09T06:36:09+00:00",
+       "method": "20 x antigravity/pro 3p-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
+       "derived_from": [
+        {
+         "source": "community.eneasf.antigravity",
+         "kind": "community",
+         "value": 129.0,
+         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+         "as_of": "2026-09-08",
+         "fetched_at": "2026-11-09T05:49:38+00:00",
+         "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
+         "age_days": 62,
+         "stale": true,
+         "rung": 1
+        }
+       ],
+       "age_days": 62,
+       "stale": true,
+       "rung": 3
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null,
+     "ref_hours": 52.4,
      "alias_of": "ultra20"
     }
    },
@@ -772,8 +1335,9 @@
      "unit": "usd",
      "capacity_usd": 20.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -784,7 +1348,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gemini-4-argon-high",
@@ -795,8 +1360,9 @@
      "unit": "usd",
      "capacity_usd": 129.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -807,7 +1373,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "gemini-4-argon-high",
@@ -818,8 +1385,9 @@
      "unit": "usd",
      "capacity_usd": 20.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -830,7 +1398,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -841,8 +1410,9 @@
      "unit": "usd",
      "capacity_usd": 129.0,
      "status": "stale",
+     "rung": 1,
      "age_days": 62,
-     "merge": "median of 1 community value(s)",
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
        "source": "community.eneasf.antigravity",
@@ -853,7 +1423,8 @@
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
        "age_days": 62,
-       "stale": true
+       "stale": true,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
@@ -865,110 +1436,11 @@
  },
  "capacity_stale_days": 21,
  "capacity_not_found": {
-  "claude/max5": "wokey is still collecting Max 5x accounts (no figure); finops gives only a bound (a Max 20x week is at most about 1.5x a Max 5x week)",
-  "antigravity/ultra5, ultra20": "only Google AI Pro is measured (eneasf telemetry, September 2026); the same project sets Ultra 5x to 5x Pro by assumption (its ADR-041), which is not a measurement; forum reports give times to exhaustion only (discuss.ai.google.dev, March 2026)",
+  "claude/max5 (rung 1)": "wokey is still collecting Max 5x accounts; finops measures a weekly lower bound and two full sessions (used), so rung 3 is a cross-check only",
+  "antigravity/ultra5, ultra20 (rungs 1-2)": "only Google AI Pro is measured (eneasf telemetry, September 2026; its Ultra 5x figures are 5x Pro by assumption, ADR-041); time-to-exhaust reports are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies",
   "pi/*": "Pi spends a Codex account allowance; the plan behind it is not known"
  },
  "capacity_errors": [
-  {
-   "field": "capacity",
-   "family": "claude",
-   "plan": "max5",
-   "window": "five_hour",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "claude",
-   "plan": "max5",
-   "window": "seven_day",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "claude",
-   "plan": "max5",
-   "window": "weekly_fable",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra20",
-   "window": "gemini-5h",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra20",
-   "window": "gemini-weekly",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra20",
-   "window": "3p-5h",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra20",
-   "window": "3p-weekly",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra5",
-   "window": "gemini-5h",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra5",
-   "window": "gemini-weekly",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra5",
-   "window": "3p-5h",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "ultra5",
-   "window": "3p-weekly",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
   {
    "field": "capacity",
    "source": "community.eneasf.antigravity",
@@ -994,6 +1466,8 @@
    "as_of": "2026-10-10",
    "threshold_days": 21,
    "windows": [
+    "claude/max5/five_hour",
+    "claude/max5/seven_day",
     "claude/max20/seven_day"
    ],
    "effect": "still used in the median; refresh the source"
@@ -1124,7 +1598,7 @@
    "kind": "community",
    "as_of": "2026-10-10",
    "as_of_kind": "data date",
-   "fetched_at": "2026-11-09T05:34:16+00:00",
+   "fetched_at": "2026-11-09T06:36:08+00:00",
    "age_days": 30,
    "stale": true
   },
@@ -1293,8 +1767,49 @@
    "fetched_at": "2026-11-09T03:43:49+00:00",
    "age_days": 158,
    "stale": true
+  },
+  "vendor.anthropic.max": {
+   "kind": "vendor",
+   "as_of": "2026-11-09",
+   "as_of_kind": "fetch date (no data date found on the page)",
+   "fetched_at": "2026-11-09T06:36:12+00:00",
+   "age_days": 0,
+   "stale": false
+  },
+  "vendor.google.ultra": {
+   "kind": "vendor",
+   "as_of": "2026-11-09",
+   "as_of_kind": "fetch date (no data date found on the page)",
+   "fetched_at": "2026-11-09T06:36:09+00:00",
+   "age_days": 0,
+   "stale": false
+  },
+  "vendor.openai.pro100": {
+   "kind": "vendor",
+   "as_of": "2026-11-09",
+   "as_of_kind": "fetch date (no data date found on the page)",
+   "fetched_at": "2026-11-09T06:36:13+00:00",
+   "age_days": 0,
+   "stale": false
   }
  },
+ "usd_checks": [
+  {
+   "model": "gpt-6.1-sol",
+   "value": 27.5,
+   "hours": 7.2,
+   "usd": 198.0,
+   "source": "community.finops.codex_pro100",
+   "kind": "community",
+   "url": "https://finopsllm.com/research/codex-pro-100-heavy-user-resets-log",
+   "as_of": "2026-10-09",
+   "method": "API value of the heaviest logged window / the hours it lasted (one heavy Codex session, GPT-6 / 6.1 Sol about 85% of the value, 97.6% of input cached)",
+   "quote": "7.2 h 100% $198 Upgrade from Plus",
+   "basis": "community_mix",
+   "basis_value": 13.688,
+   "community_over_basis": 2.01
+  }
+ ],
  "models": {
   "deepseek-v4.1-flash-free": {
    "axes": {
@@ -12144,31 +12659,32 @@
  "floors": {
   "anchor": "claude-opus-5-5",
   "ratio": {
-   "routine": 0.615,
-   "hard": 0.85,
-   "coupled": 0.955,
-   "frontier": 0.96
+   "routine": 0.61,
+   "hard": 0.7475,
+   "coupled": 0.8775,
+   "frontier": 0.9425
   },
   "critical_ratio": {
-   "routine": 0.6952,
-   "hard": 0.9525,
-   "coupled": 0.9925,
-   "frontier": 0.98
+   "routine": 0.6896,
+   "hard": 0.8025,
+   "coupled": 0.88,
+   "frontier": 0.9825
   },
   "axis_ratio": {
-   "routine": 1.0,
-   "hard": 0.75,
-   "coupled": 0.7,
-   "frontier": 1.0
+   "routine": 0.7,
+   "hard": 0.7,
+   "coupled": 0.9,
+   "frontier": 0.95
   },
+  "level_blend": 1.0,
   "axis_per_tier": 0.1548,
   "agreement": {
    "coupled": {
-    "share": 0.955,
-    "axis_ratio": 0.7,
+    "share": 0.8775,
+    "axis_ratio": 0.9,
     "pairs": 468,
     "cases": 9,
-    "agreement": 0.919,
+    "agreement": 0.968,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-opus-5-5",
@@ -12181,16 +12697,20 @@
     "qualify_new_all_cases": [
      "claude-fable-5-1",
      "claude-opus-5-5",
+     "claude-sonnet-5-5",
+     "gemini-4-argon-high",
      "gemini-4-carbon",
+     "gpt-6-astra",
+     "gpt-6.1-sol",
      "kimi-k3.1-pro"
     ]
    },
    "coupled critical": {
-    "share": 0.9925,
-    "axis_ratio": 0.7,
+    "share": 0.88,
+    "axis_ratio": 0.9,
     "pairs": 104,
     "cases": 2,
-    "agreement": 0.933,
+    "agreement": 0.962,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-opus-5-5",
@@ -12200,13 +12720,19 @@
      "gpt-6-astra"
     ],
     "qualify_new_all_cases": [
+     "claude-fable-5-1",
      "claude-opus-5-5",
-     "gemini-4-carbon"
+     "claude-sonnet-5-5",
+     "gemini-4-argon-high",
+     "gemini-4-carbon",
+     "gpt-6-astra",
+     "gpt-6.1-sol",
+     "kimi-k3.1-pro"
     ]
    },
    "frontier": {
-    "share": 0.96,
-    "axis_ratio": 1.0,
+    "share": 0.9425,
+    "axis_ratio": 0.95,
     "pairs": 416,
     "cases": 8,
     "agreement": 0.962,
@@ -12224,8 +12750,8 @@
     ]
    },
    "frontier critical": {
-    "share": 0.98,
-    "axis_ratio": 1.0,
+    "share": 0.9825,
+    "axis_ratio": 0.95,
     "pairs": 52,
     "cases": 1,
     "agreement": 1.0,
@@ -12239,11 +12765,11 @@
     ]
    },
    "hard": {
-    "share": 0.85,
-    "axis_ratio": 0.75,
+    "share": 0.7475,
+    "axis_ratio": 0.7,
     "pairs": 2600,
     "cases": 50,
-    "agreement": 0.821,
+    "agreement": 0.926,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-haiku-5-5",
@@ -12284,17 +12810,26 @@
      "claude-sonnet-5-5",
      "gemini-4-argon-high",
      "gemini-4-carbon",
+     "glm-5.3",
+     "gpt-5.6-sol",
      "gpt-6-astra",
+     "gpt-6-sol",
      "gpt-6.1-sol",
-     "kimi-k3.1-pro"
+     "gpt-6.1-terra",
+     "grok-4.7-build-fast",
+     "kimi-k3",
+     "kimi-k3.1-pro",
+     "mimo-v2.6-pro",
+     "muse-wonder-1.0",
+     "qwen3.8-max"
     ]
    },
    "hard critical": {
-    "share": 0.9525,
-    "axis_ratio": 0.75,
+    "share": 0.8025,
+    "axis_ratio": 0.7,
     "pairs": 156,
     "cases": 3,
-    "agreement": 0.859,
+    "agreement": 0.885,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-opus-5-5",
@@ -12322,23 +12857,29 @@
     "qualify_new_all_cases": [
      "claude-fable-5-1",
      "claude-opus-5-5",
+     "claude-sonnet-5-5",
      "gemini-4-argon-high",
      "gemini-4-carbon",
+     "glm-5.3",
      "gpt-5.6-sol",
      "gpt-6-astra",
+     "gpt-6-sol",
      "gpt-6.1-sol",
      "gpt-6.1-terra",
      "grok-4.7-build-fast",
+     "kimi-k3",
      "kimi-k3.1-pro",
-     "muse-wonder-1.0"
+     "mimo-v2.6-pro",
+     "muse-wonder-1.0",
+     "qwen3.8-max"
     ]
    },
    "routine": {
-    "share": 0.615,
-    "axis_ratio": 1.0,
+    "share": 0.61,
+    "axis_ratio": 0.7,
     "pairs": 1040,
     "cases": 20,
-    "agreement": 0.923,
+    "agreement": 1.0,
     "qualify_today": [
      "claude-fable-5-1",
      "claude-haiku-5-5",
@@ -12388,9 +12929,11 @@
      "claude-opus-4-7",
      "claude-opus-4-8",
      "claude-opus-5-5",
+     "claude-sonnet-4-6",
      "claude-sonnet-5-5",
      "deepseek-v4-pro",
      "deepseek-v4.1-flash-free",
+     "doubao-seed-2-1-pro-260628",
      "gemini-3.7-flash",
      "gemini-3.8-flash-high",
      "gemini-4-argon-high",
@@ -12402,6 +12945,7 @@
      "gpt-5.6-sol",
      "gpt-5.6-terra",
      "gpt-6-astra",
+     "gpt-6-luna",
      "gpt-6-sol",
      "gpt-6.1-sol",
      "gpt-6.1-terra",
@@ -12409,6 +12953,7 @@
      "grok-4.6",
      "grok-4.7",
      "grok-4.7-build-fast",
+     "kimi-k2.6",
      "kimi-k3",
      "kimi-k3.1-pro",
      "mimo-v2.6-flash-free",
@@ -12416,48 +12961,13 @@
      "minimax-m3.1-flash",
      "mistral-large-4",
      "muse-wonder-1.0",
+     "qwen3.7-max",
      "qwen3.8-max"
     ]
    }
   },
   "changes": {
    "coupled": {
-    "claude-sonnet-5-5": {
-     "enters": 0,
-     "leaves": 9,
-     "cases": 9,
-     "why_leaves": "memory_diagnosis: level 0.719 vs anchor 0.800 (needs share 0.955, reaches 0.898)"
-    },
-    "gemini-4-argon-high": {
-     "enters": 0,
-     "leaves": 6,
-     "cases": 9,
-     "why_leaves": "memory_diagnosis: level 0.746 vs anchor 0.800 (needs share 0.955, reaches 0.933)"
-    },
-    "gpt-6-astra": {
-     "enters": 0,
-     "leaves": 1,
-     "cases": 9,
-     "why_leaves": "cross-module refactor: level 0.755 vs anchor 0.800 (needs share 0.955, reaches 0.944)"
-    },
-    "gpt-6-sol": {
-     "enters": 3,
-     "leaves": 0,
-     "cases": 9,
-     "why_leaves": null
-    },
-    "gpt-6.1-sol": {
-     "enters": 0,
-     "leaves": 8,
-     "cases": 9,
-     "why_leaves": "memory_diagnosis: level 0.739 vs anchor 0.800 (needs share 0.955, reaches 0.923)"
-    },
-    "grok-4.7-build-fast": {
-     "enters": 1,
-     "leaves": 0,
-     "cases": 9,
-     "why_leaves": null
-    },
     "kimi-k3.1-pro": {
      "enters": 9,
      "leaves": 0,
@@ -12465,36 +12975,24 @@
      "why_leaves": null
     },
     "muse-wonder-1.0": {
-     "enters": 1,
+     "enters": 6,
      "leaves": 0,
      "cases": 9,
      "why_leaves": null
     }
    },
    "coupled critical": {
-    "claude-fable-5-1": {
-     "enters": 0,
-     "leaves": 1,
+    "gpt-6.1-sol": {
+     "enters": 2,
+     "leaves": 0,
      "cases": 2,
-     "why_leaves": "coupled_cross_module_refactor: level 0.790 vs anchor 0.800 (needs share 0.9925, reaches 0.988)"
+     "why_leaves": null
     },
-    "claude-sonnet-5-5": {
-     "enters": 0,
-     "leaves": 2,
+    "kimi-k3.1-pro": {
+     "enters": 2,
+     "leaves": 0,
      "cases": 2,
-     "why_leaves": "coupled_cross_module_refactor: level 0.689 vs anchor 0.800 (needs share 0.9925, reaches 0.861)"
-    },
-    "gemini-4-argon-high": {
-     "enters": 0,
-     "leaves": 2,
-     "cases": 2,
-     "why_leaves": "coupled_cross_module_refactor: level 0.759 vs anchor 0.800 (needs share 0.9925, reaches 0.948)"
-    },
-    "gpt-6-astra": {
-     "enters": 0,
-     "leaves": 2,
-     "cases": 2,
-     "why_leaves": "coupled_cross_module_refactor: level 0.752 vs anchor 0.800 (needs share 0.9925, reaches 0.940)"
+     "why_leaves": null
     }
    },
    "frontier": {
@@ -12514,198 +13012,126 @@
    "frontier critical": {},
    "hard": {
     "claude-haiku-5-5": {
-     "enters": 1,
-     "leaves": 2,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.658 vs anchor 0.800 (needs share 0.85, reaches 0.823)"
+     "why_leaves": "read-only diff review: level 0.541 vs anchor 0.800 (needs share 0.7475, reaches 0.676)"
     },
     "claude-opus-4-6": {
-     "enters": 10,
-     "leaves": 1,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "run tests and fix failures: level 0.524 vs anchor 0.800 (needs share 0.85, reaches 0.655)"
+     "why_leaves": "read-only diff review: level 0.583 vs anchor 0.800 (needs share 0.7475, reaches 0.728)"
     },
     "claude-opus-4-7": {
-     "enters": 10,
-     "leaves": 1,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "run tests and fix failures: level 0.504 vs anchor 0.800 (needs share 0.85, reaches 0.630)"
+     "why_leaves": "read-only diff review: level 0.587 vs anchor 0.800 (needs share 0.7475, reaches 0.734)"
     },
     "claude-opus-4-8": {
-     "enters": 10,
-     "leaves": 1,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "run tests and fix failures: level 0.510 vs anchor 0.800 (needs share 0.85, reaches 0.638)"
+     "why_leaves": "read-only diff review: level 0.572 vs anchor 0.800 (needs share 0.7475, reaches 0.715)"
     },
     "deepseek-v4-pro": {
-     "enters": 6,
-     "leaves": 2,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.673 vs anchor 0.800 (needs share 0.85, reaches 0.841)"
+     "why_leaves": "read-only diff review: level 0.556 vs anchor 0.800 (needs share 0.7475, reaches 0.695)"
     },
     "deepseek-v4.1-flash-free": {
-     "enters": 6,
-     "leaves": 2,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.601 vs anchor 0.800 (needs share 0.85, reaches 0.751)"
+     "why_leaves": "read-only diff review: level 0.572 vs anchor 0.800 (needs share 0.7475, reaches 0.714)"
     },
     "gemini-3.7-flash": {
-     "enters": 4,
-     "leaves": 2,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.649 vs anchor 0.800 (needs share 0.85, reaches 0.811)"
+     "why_leaves": "read-only diff review: level 0.576 vs anchor 0.800 (needs share 0.7475, reaches 0.720)"
     },
     "gemini-3.8-flash-high": {
-     "enters": 7,
-     "leaves": 2,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.674 vs anchor 0.800 (needs share 0.85, reaches 0.842)"
+     "why_leaves": "read-only diff review: level 0.593 vs anchor 0.800 (needs share 0.7475, reaches 0.741)"
     },
     "glm-5.2": {
-     "enters": 6,
-     "leaves": 2,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.667 vs anchor 0.800 (needs share 0.85, reaches 0.834)"
+     "why_leaves": "read-only diff review: level 0.591 vs anchor 0.800 (needs share 0.7475, reaches 0.739)"
     },
     "glm-5.3": {
-     "enters": 18,
-     "leaves": 1,
+     "enters": 47,
+     "leaves": 0,
      "cases": 50,
-     "why_leaves": "run tests and fix failures: level 0.626 vs anchor 0.800 (needs share 0.85, reaches 0.783)"
+     "why_leaves": null
     },
     "glm-5.3-flash-free": {
-     "enters": 14,
-     "leaves": 1,
-     "cases": 50,
-     "why_leaves": "run tests and fix failures: level 0.581 vs anchor 0.800 (needs share 0.85, reaches 0.726)"
-    },
-    "gpt-5.6-luna": {
-     "enters": 2,
+     "enters": 21,
      "leaves": 0,
      "cases": 50,
      "why_leaves": null
-    },
-    "gpt-5.6-sol": {
-     "enters": 0,
-     "leaves": 33,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.560 vs anchor 0.800 (needs share 0.85, reaches 0.700)"
-    },
-    "gpt-5.6-terra": {
-     "enters": 6,
-     "leaves": 0,
-     "cases": 50,
-     "why_leaves": null
-    },
-    "gpt-6-sol": {
-     "enters": 0,
-     "leaves": 27,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.620 vs anchor 0.800 (needs share 0.85, reaches 0.775)"
-    },
-    "gpt-6.1-terra": {
-     "enters": 0,
-     "leaves": 30,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.622 vs anchor 0.800 (needs share 0.85, reaches 0.778)"
     },
     "grok-4.5": {
-     "enters": 1,
-     "leaves": 2,
+     "enters": 0,
+     "leaves": 3,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.655 vs anchor 0.800 (needs share 0.85, reaches 0.819)"
+     "why_leaves": "read-only diff review: level 0.561 vs anchor 0.800 (needs share 0.7475, reaches 0.701)"
     },
     "grok-4.6": {
-     "enters": 15,
-     "leaves": 1,
+     "enters": 21,
+     "leaves": 0,
      "cases": 50,
-     "why_leaves": "run tests and fix failures: level 0.583 vs anchor 0.800 (needs share 0.85, reaches 0.729)"
+     "why_leaves": null
     },
     "grok-4.7": {
      "enters": 0,
-     "leaves": 33,
+     "leaves": 26,
      "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.496 vs anchor 0.800 (needs share 0.85, reaches 0.619)"
-    },
-    "grok-4.7-build-fast": {
-     "enters": 0,
-     "leaves": 30,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.599 vs anchor 0.800 (needs share 0.85, reaches 0.748)"
-    },
-    "kimi-k3": {
-     "enters": 0,
-     "leaves": 30,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.549 vs anchor 0.800 (needs share 0.85, reaches 0.686)"
+     "why_leaves": "markdown_inlined_spec_self_contained_code: module_precision 0.388 vs anchor 0.800 (needs share 0.7475, reaches 0.693)"
     },
     "mimo-v2.6-flash-free": {
      "enters": 0,
-     "leaves": 42,
+     "leaves": 26,
      "cases": 50,
-     "why_leaves": "markdown_web_research_with_output_path: level 0.639 vs anchor 0.800 (needs share 0.85, reaches 0.799)"
-    },
-    "mimo-v2.6-pro": {
-     "enters": 0,
-     "leaves": 33,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.557 vs anchor 0.800 (needs share 0.85, reaches 0.696)"
+     "why_leaves": "markdown_inlined_spec_self_contained_code: module_precision 0.372 vs anchor 0.800 (needs share 0.7475, reaches 0.664)"
     },
     "minimax-m3.1-flash": {
-     "enters": 7,
-     "leaves": 2,
+     "enters": 21,
+     "leaves": 0,
      "cases": 50,
-     "why_leaves": "security review of a module: level 0.661 vs anchor 0.800 (needs share 0.85, reaches 0.827)"
-    },
-    "muse-wonder-1.0": {
-     "enters": 0,
-     "leaves": 29,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.623 vs anchor 0.800 (needs share 0.85, reaches 0.778)"
-    },
-    "qwen3.8-max": {
-     "enters": 0,
-     "leaves": 33,
-     "cases": 50,
-     "why_leaves": "markdown_inlined_spec_self_contained_code: level 0.558 vs anchor 0.800 (needs share 0.85, reaches 0.698)"
+     "why_leaves": null
     }
    },
    "hard critical": {
-    "claude-sonnet-5-5": {
-     "enters": 0,
-     "leaves": 3,
-     "cases": 3,
-     "why_leaves": "realtime_loop_orderbook_watch_cn: level 0.724 vs anchor 0.800 (needs share 0.9525, reaches 0.904)"
-    },
-    "deepseek-v4.1-flash-free": {
-     "enters": 1,
-     "leaves": 0,
-     "cases": 3,
-     "why_leaves": null
-    },
     "gemini-3.8-flash-high": {
      "enters": 0,
      "leaves": 2,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.737 vs anchor 0.800 (needs share 0.9525, reaches 0.921)"
+     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.593 vs anchor 0.800 (needs share 0.8025, reaches 0.741)"
     },
     "glm-5.2": {
      "enters": 0,
      "leaves": 2,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.715 vs anchor 0.800 (needs share 0.9525, reaches 0.893)"
+     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.591 vs anchor 0.800 (needs share 0.8025, reaches 0.739)"
+    },
+    "glm-5.3": {
+     "enters": 1,
+     "leaves": 0,
+     "cases": 3,
+     "why_leaves": null
     },
     "gpt-5.6-sol": {
      "enters": 1,
      "leaves": 0,
      "cases": 3,
      "why_leaves": null
-    },
-    "gpt-6-sol": {
-     "enters": 0,
-     "leaves": 1,
-     "cases": 3,
-     "why_leaves": "realtime_loop_orderbook_watch_cn: level 0.748 vs anchor 0.800 (needs share 0.9525, reaches 0.935)"
     },
     "gpt-6.1-terra": {
      "enters": 1,
@@ -12715,29 +13141,29 @@
     },
     "grok-4.6": {
      "enters": 0,
-     "leaves": 1,
+     "leaves": 2,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.737 vs anchor 0.800 (needs share 0.9525, reaches 0.922)"
+     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.622 vs anchor 0.800 (needs share 0.8025, reaches 0.778)"
     },
     "grok-4.7": {
      "enters": 0,
      "leaves": 3,
      "cases": 3,
-     "why_leaves": "realtime_loop_orderbook_watch_cn: level 0.703 vs anchor 0.800 (needs share 0.9525, reaches 0.878)"
+     "why_leaves": "realtime_loop_orderbook_watch_cn: level 0.615 vs anchor 0.800 (needs share 0.8025, reaches 0.769)"
+    },
+    "kimi-k3": {
+     "enters": 1,
+     "leaves": 0,
+     "cases": 3,
+     "why_leaves": null
     },
     "mimo-v2.6-flash-free": {
      "enters": 0,
      "leaves": 2,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.714 vs anchor 0.800 (needs share 0.9525, reaches 0.892)"
+     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.603 vs anchor 0.800 (needs share 0.8025, reaches 0.753)"
     },
     "mimo-v2.6-pro": {
-     "enters": 0,
-     "leaves": 1,
-     "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.754 vs anchor 0.800 (needs share 0.9525, reaches 0.942)"
-    },
-    "minimax-m3.1-flash": {
      "enters": 1,
      "leaves": 0,
      "cases": 3,
@@ -12750,80 +13176,13 @@
      "why_leaves": null
     },
     "qwen3.8-max": {
-     "enters": 0,
-     "leaves": 2,
+     "enters": 1,
+     "leaves": 0,
      "cases": 3,
-     "why_leaves": "realtime_loop_api_orderbook_arbitrage_cn: level 0.730 vs anchor 0.800 (needs share 0.9525, reaches 0.913)"
+     "why_leaves": null
     }
    },
-   "routine": {
-    "claude-sonnet-4-6": {
-     "enters": 0,
-     "leaves": 4,
-     "cases": 20,
-     "why_leaves": "normal_quota_mention_negative: level 0.452 vs anchor 0.800 (needs share 0.615, reaches 0.565)"
-    },
-    "doubao-seed-2-1-pro-260628": {
-     "enters": 0,
-     "leaves": 4,
-     "cases": 20,
-     "why_leaves": "normal_quota_mention_negative: level 0.477 vs anchor 0.800 (needs share 0.615, reaches 0.596)"
-    },
-    "gemini-3.1-pro-preview": {
-     "enters": 16,
-     "leaves": 0,
-     "cases": 20,
-     "why_leaves": null
-    },
-    "gpt-6-luna": {
-     "enters": 0,
-     "leaves": 4,
-     "cases": 20,
-     "why_leaves": "normal_quota_mention_negative: level 0.410 vs anchor 0.800 (needs share 0.615, reaches 0.512)"
-    },
-    "kimi-k2.6": {
-     "enters": 0,
-     "leaves": 4,
-     "cases": 20,
-     "why_leaves": "normal_quota_mention_negative: level 0.428 vs anchor 0.800 (needs share 0.615, reaches 0.535)"
-    },
-    "kimi-k2.7-code": {
-     "enters": 5,
-     "leaves": 0,
-     "cases": 20,
-     "why_leaves": null
-    },
-    "minimax-m3": {
-     "enters": 16,
-     "leaves": 0,
-     "cases": 20,
-     "why_leaves": null
-    },
-    "nemotron-3-ultra-free": {
-     "enters": 2,
-     "leaves": 0,
-     "cases": 20,
-     "why_leaves": null
-    },
-    "nemotron-3.5-super-vl-free": {
-     "enters": 5,
-     "leaves": 0,
-     "cases": 20,
-     "why_leaves": null
-    },
-    "qwen3.6-plus": {
-     "enters": 16,
-     "leaves": 0,
-     "cases": 20,
-     "why_leaves": null
-    },
-    "qwen3.7-max": {
-     "enters": 0,
-     "leaves": 4,
-     "cases": 20,
-     "why_leaves": "normal_quota_mention_negative: level 0.418 vs anchor 0.800 (needs share 0.615, reaches 0.523)"
-    }
-   }
+   "routine": {}
   },
   "calibrated_on": {
    "cases": [
@@ -12835,6 +13194,13 @@
    "demand": "classifier cases: allocator.five_axis_fallback_levels; synthetic profiles: hand-labelled axis_demand",
    "today": "shipped tier at High vs route ability_floor + critical headroom"
   },
-  "drift": "Every capability value is relative to the anchor model at the source (measurements.py: 0.8 x s / s_anchor; Elo boards as twice the win rate against the anchor), so a new model at the top of a board changes no other model value, no anchor level and no floor. Floors move when the anchor model is replaced, when a board re-rates existing models, or when a backfill fit gains points."
+  "drift": "Every capability value is relative to the anchor model at the source (measurements.py: 0.8 x s / s_anchor; Elo boards as twice the win rate against the anchor), so a new model at the top of a board changes no other model value, no anchor level and no floor. Floors move when the anchor model is replaced, when a board re-rates existing models, or when a backfill fit gains points.",
+  "level_blend_search": {
+   "0": 4208,
+   "0.25": 4282,
+   "0.5": 4432,
+   "0.75": 4532,
+   "1": 4591
+  }
  }
 }

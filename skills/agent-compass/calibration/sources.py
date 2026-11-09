@@ -39,7 +39,8 @@ PAGES = {'swebench.html': 'https://www.vals.ai/benchmarks/swebench',
          'eqbench-creative-writing.js': 'https://eqbench.com/creative_writing.js',
          'metr-benchmark-results.yaml': 'https://metr.org/assets/benchmark_results_1_1.yaml',
          'osworld-verified.xlsx': 'https://os-world.github.io/static/data/osworld_verified_results.xlsx'}
-# Community real-usage measurements of subscription window capacity, read by community.py (round 047, round 4).
+# Window capacity pages read by community.py: community real-usage measurements (round 047, round 4) and the vendor
+# plan multipliers of the capacity ladder (round 5).
 COMMUNITY_PAGES = {'community-wokey-claude.html': 'https://wokey.ai/claude-usage-limits',
                    'community-wokey-codex.html': 'https://wokey.ai/codex-usage-limits',
                    'community-finops-codex-plus.html': 'https://finopsllm.com/research/codex-usage-limits-chatgpt-pro',
@@ -47,7 +48,11 @@ COMMUNITY_PAGES = {'community-wokey-claude.html': 'https://wokey.ai/claude-usage
                    'community-finops-claude-max20.html': 'https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit',
                    'community-inventive-codex.html': 'https://inventivehq.com/blog/codex-subscription-usage-measured',
                    'community-eneasf-antigravity.md':
-                       'https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md'}
+                       'https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md',
+                   # vendor plan multipliers (capacity ladder rung 3, round 5)
+                   'vendor-google-ultra.html': 'https://support.google.com/googleone/answer/16286513?hl=en',
+                   'vendor-anthropic-max.html': 'https://support.claude.com/en/articles/11049741-what-is-the-max-plan',
+                   'vendor-openai-pro100.html': 'https://community.openai.com/t/introducing-new-100-month-pro-tier/1378752'}
 PAGES.update(COMMUNITY_PAGES)
 MANIFEST = 'fetch-manifest.json'
 REPO = Path(__file__).resolve().parents[1]
