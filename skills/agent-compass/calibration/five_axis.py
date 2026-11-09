@@ -1,4 +1,4 @@
-"""Five-axis scores, usd_per_hour, duration, plan capacity and difficulty floors from `references/public-measurements.json`.
+"""Five-axis scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.
 
 `python -X utf8 five_axis.py [--distrust SOURCE ...] [--source-priority A,B,...] [--user-overrides PATH] [--out PATH]`
 
@@ -6,7 +6,8 @@ Writes `references/five-axis-scores.json`, which the router reads only when `sco
 default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of 2026-11-09):
 
 - No scalar tier. The four capability axes (divergence, global_rigor, module_precision, vision_tools) are the only
-  model ability; difficulty floors are requirements on the axes a task demands (`floors`, calibrated below).
+  model ability (round 7: the only dimension system; no difficulty floors, the router fits the scores to the task's
+  demand continuously against targets of the anchor value x demand / 3, written here as `anchor`).
 - Each axis is the mean of its components, each component the mean of its trusted sources (`measurements.py` converts
   every source the same way, relative to the anchor model: 0.8 x s / s_anchor, so a new top model moves nothing). A
   component no trusted source measures is backfilled from public data, a linear fit of the component on the AA
@@ -471,8 +472,7 @@ def legacy(info):
     return {k: info.get(k) for k in ('tier', 'usd_per_hour', 'duration_multiplier', 'subjective', 'capabilities', 'visual')}
 
 
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), floors=True, usd_basis='community_mix',
-          now=None):
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), usd_basis='community_mix', now=None):
     scorer = Scorer(meas, acc, distrust, overrides)
     rows, fits = scorer.score()
     usd = USD_BASES[usd_basis]['fn'](scorer, rows, meas, priority)
@@ -516,10 +516,8 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
                            'community_over_basis': (round(h['value'] / usd[h['model']]['value'], 2)
                                                     if (usd.get(h['model']) or {}).get('value') else None)}
                           for h in (meas.get('capacity') or {}).get('hourly_checks') or ()],
+           'anchor': {'model': measurements.ANCHOR, 'value': measurements.ANCHOR_VALUE},
            'models': models, 'data_errors': errors}
-    if floors:
-        import five_axis_floors
-        doc['floors'] = five_axis_floors.calibrate(doc, acc)
     return doc
 
 
@@ -552,8 +550,6 @@ def main():
             print(f'capacity {fam}/{plan}: ' + ', '.join(
                 f"{w}={r['capacity_usd'] if r['capacity_usd'] is not None else '-'}({r['status']}, rung {r['rung']})"
                 for w, r in wins.items()))
-    fl = doc.get('floors') or {}
-    print('floors:', json.dumps({k: fl.get(k) for k in ('anchor', 'ratio', 'critical_ratio', 'axis_ratio', 'agreement')}))
 
 
 if __name__ == '__main__':
