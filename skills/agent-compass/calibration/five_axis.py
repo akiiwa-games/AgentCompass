@@ -31,10 +31,12 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
   observation, no value: the window's capacity is unknown (a red data error) and the router prices its scarcity from
   the live percentage only; the packaged template figure is not a fallback. A source older than STALE_DAYS (data date,
   else fetch date) is a yellow note; a source not fetched, or whose sentence is gone, contributes nothing (red).
-- usd_per_hour has a pluggable basis (`--usd-basis`, `USD_BASES`): `benchmark` (the AA/OpenRouter merge above; the
-  default until the user picks a basis on the community scale) and `community` (measured community usd per worker-hour;
-  a model without one is `derived` from a measured model of the same provider times the benchmark usd ratio, both
-  citations kept; neither is mode B). Each window's reference-model hours are its capacity over that model's usd.
+- usd_per_hour has a pluggable basis (`--usd-basis`, `USD_BASES`). Default `community_mix` (option B, user
+  2026-11-09): `derived.community_mix` only, AA's measured output speed per hour priced at the community token mix
+  wokey values the capacities at, so cost and capacity share one real-usage scale; a model without it is mode B.
+  `benchmark` (the AA/OpenRouter merge above) and `community` (measured community usd per worker-hour, else `derived`
+  from a measured same-provider model x the benchmark ratio, both citations; option A) stay for comparison. Each
+  window's reference-model hours are its capacity over that model's usd.
 - economy is priced by the router at run time; `economy_static` = 1 / (1 + usd / 15) is the tray's static view.
 """
 import argparse
@@ -56,7 +58,7 @@ SCHEMA = 'agent-compass.five-axis-scores/2'
 AXES = measurements.AXES
 THINKING = ('divergence', 'global_rigor', 'module_precision')
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
-TIME_BASED = ('aa.cost_time', 'openrouter.cost_time')
+TIME_BASED = ('aa.cost_time', 'openrouter.cost_time', 'derived.community_mix')
 # Window -> the model whose hours count the window's capacity (the plan's own flagship on that pool).
 REFERENCE_MODELS = {
     'claude': {'five_hour': 'claude-opus-5-5', 'seven_day': 'claude-opus-5-5', 'weekly_fable': 'claude-fable-5-1'},
@@ -407,11 +409,22 @@ def usd_community(scorer, rows, meas, priority):
             for m in rows}
 
 
+def usd_community_mix(scorer, rows, meas, priority):
+    """Option B (user, 2026-11-09): only `derived.community_mix`, AA throughput at the community token mix."""
+    return {m: pick_usd([e for e in scorer.trusted(r['fields'].get('usd_per_hour')) if e['source'] == 'derived.community_mix'])
+            for m, r in rows.items()}
+
+
 USD_BASES = {
+    'community_mix': {'fn': usd_community_mix,
+                      'scale': 'derived real usage: AA output speed per hour at the community token mix (wokey fixed split, '
+                               'about 92% cache reads) and AA list prices',
+                      'note': 'option B, user 2026-11-09: the same token mix the community capacities are valued at; a '
+                              'model AA does not list with speed and all three prices has no usd (mode B)'},
     'benchmark': {'fn': usd_benchmark, 'scale': 'AA benchmark tokens at list prices (AA cost/time; OpenRouter repricing)',
-                  'note': 'not the community real-usage scale of the capacities; default until the user picks a basis'},
+                  'note': 'not the community real-usage scale of the capacities; kept for comparison'},
     'community': {'fn': usd_community, 'scale': 'community real-usage measurements per worker-hour, else derived',
-                  'note': 'option A: a model with no measured or derivable value is mode B'},
+                  'note': 'option A (not chosen): a model with no measured or derivable value is mode B'},
 }
 
 
@@ -419,7 +432,7 @@ def legacy(info):
     return {k: info.get(k) for k in ('tier', 'usd_per_hour', 'duration_multiplier', 'subjective', 'capabilities', 'visual')}
 
 
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), floors=True, usd_basis='benchmark',
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), floors=True, usd_basis='community_mix',
           now=None):
     scorer = Scorer(meas, acc, distrust, overrides)
     rows, fits = scorer.score()
@@ -473,7 +486,7 @@ def main():
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
     ap.add_argument('--source-priority', default='', help='comma-separated usd sources; the first with a value wins over the median')
     ap.add_argument('--user-overrides', help='JSON list of dated {model, axis, value, as_of, note} overrides (source `user`)')
-    ap.add_argument('--usd-basis', default='benchmark', choices=sorted(USD_BASES))
+    ap.add_argument('--usd-basis', default='community_mix', choices=sorted(USD_BASES))
     ap.add_argument('--out', default=str(OUT))
     args = ap.parse_args()
     raw = Path(args.measurements).read_bytes()

@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-09T05:39:45+00:00",
+ "generated_at": "2026-11-09T05:50:23+00:00",
  "conversion": "capability value = min(1, 0.8 x s / s_anchor), anchor claude-opus-5-5; see calibration/measurements.py",
  "sources": {
   "lmarena.tier_fit": {
@@ -471,6 +471,47 @@
    "kind": "community",
    "models_listed": null,
    "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
+  },
+  "community.eneasf.antigravity": {
+   "file": "community-eneasf-antigravity.md",
+   "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+   "fetched_at": "2026-11-09T05:49:38+00:00",
+   "sha256": "7d8c3509646ca7b15df931abf8c8041148c0dcd88e40a9b555bf52598d331dd1",
+   "as_of": "2026-09-08",
+   "as_of_kind": "data date",
+   "kind": "community",
+   "models_listed": null,
+   "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
+  },
+  "derived.community_mix": {
+   "file": "aa-models.html",
+   "url": "https://artificialanalysis.ai/leaderboards/models",
+   "fetched_at": "2026-11-09T03:43:49+00:00",
+   "sha256": "6c2541f91db29b9250f04fe0baaf16fed2272845bc38ff697cf907effdc59c11",
+   "as_of": "2026-11-02",
+   "as_of_kind": "the older of the mix data date and the AA fetch date",
+   "method": "outputSpeed x 3600 x (output price + 17.18 x input price + 209.1 x cache-read price) / 1e6",
+   "models_listed": null,
+   "kind": "derived",
+   "citations": [
+    {
+     "what": "output speed and list prices",
+     "source": "aa.price",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "as_of": "2026-11-09"
+    },
+    {
+     "what": "community token mix",
+     "source": "community.wokey.claude",
+     "url": "https://wokey.ai/claude-usage-limits",
+     "as_of": "2026-11-02",
+     "quotes": [
+      "value every plan at one fixed traffic split: Claude Code traffic on Wokey in the week to 2026-11-02, about 92% of tokens cache reads",
+      "Claude Max 20x $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M",
+      "Claude Max 20x: 92% cache reads"
+     ]
+    }
+   ]
   }
  },
  "missing_sources": {
@@ -660,6 +701,58 @@
     "fetched_at": "2026-11-09T05:34:17+00:00",
     "method": "midpoint of the measured weekly range at API prices",
     "quote": "Pro $100: about $330–380 a week"
+   },
+   {
+    "family": "antigravity",
+    "plan": "pro",
+    "window": "gemini-5h",
+    "value": 20.0,
+    "source": "community.eneasf.antigravity",
+    "kind": "community",
+    "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+    "as_of": "2026-09-08",
+    "fetched_at": "2026-11-09T05:49:38+00:00",
+    "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
+    "quote": "yields a \\$20.00 USD 5-hour burst allowance"
+   },
+   {
+    "family": "antigravity",
+    "plan": "pro",
+    "window": "gemini-weekly",
+    "value": 129.0,
+    "source": "community.eneasf.antigravity",
+    "kind": "community",
+    "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+    "as_of": "2026-09-08",
+    "fetched_at": "2026-11-09T05:49:38+00:00",
+    "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
+    "quote": "USD 5-hour burst allowance and a \\$129.00 USD weekly allowance"
+   },
+   {
+    "family": "antigravity",
+    "plan": "pro",
+    "window": "3p-weekly",
+    "value": 129.0,
+    "source": "community.eneasf.antigravity",
+    "kind": "community",
+    "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+    "as_of": "2026-09-08",
+    "fetched_at": "2026-11-09T05:49:38+00:00",
+    "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
+    "quote": "Capacity: $129.00 / week │ │ Capacity: $129.00 / week │ │ Burst: $20.00 / 5h │ │ Burst: $20.00 / 5h"
+   },
+   {
+    "family": "antigravity",
+    "plan": "pro",
+    "window": "3p-5h",
+    "value": 20.0,
+    "source": "community.eneasf.antigravity",
+    "kind": "community",
+    "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+    "as_of": "2026-09-08",
+    "fetched_at": "2026-11-09T05:49:38+00:00",
+    "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
+    "quote": "Capacity: $129.00 / week │ │ Capacity: $129.00 / week │ │ Burst: $20.00 / 5h │ │ Burst: $20.00 / 5h"
    }
   ],
   "rules": [
@@ -680,8 +773,25 @@
   "errors": [],
   "not_found": {
    "claude/max5": "wokey is still collecting Max 5x accounts (no figure); finops gives only a bound (a Max 20x week is at most about 1.5x a Max 5x week)",
-   "antigravity/*": "no community API-dollar measurement of Google AI Pro / Ultra Antigravity quota found",
+   "antigravity/ultra5, ultra20": "only Google AI Pro is measured (eneasf telemetry, September 2026); the same project sets Ultra 5x to 5x Pro by assumption (its ADR-041), which is not a measurement; forum reports give times to exhaustion only (discuss.ai.google.dev, March 2026)",
    "pi/*": "Pi spends a Codex account allowance; the plan behind it is not known"
+  },
+  "token_mix": {
+   "cache_read": 0.92,
+   "input": 0.0756,
+   "output": 0.0044,
+   "split_week_to": "2026-11-02",
+   "source": "community.wokey.claude",
+   "kind": "community",
+   "url": "https://wokey.ai/claude-usage-limits",
+   "as_of": "2026-11-02",
+   "fetched_at": "2026-11-09T05:34:15+00:00",
+   "quotes": [
+    "value every plan at one fixed traffic split: Claude Code traffic on Wokey in the week to 2026-11-02, about 92% of tokens cache reads",
+    "Claude Max 20x $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M",
+    "Claude Max 20x: 92% cache reads"
+   ],
+   "method": "cache-read share as stated for the fixed split; the other tokens split into input (uncached input and cache writes, priced at the input price) and output by the Max 20x row measured at that split (180M non-cache-read, 9.9M output a week)"
   }
  },
  "models": {
@@ -849,6 +959,66 @@
      "method": "AA cost/time repriced at the OpenRouter output price 0.567 (AA lists 1.2) per million tokens",
      "effort": "none",
      "listed_as": "deepseek/deepseek-v4.1-flash"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 4.068,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "DeepSeek V4.1 Flash 1017 (High)",
+     "output_tokens_per_hour": 534679,
+     "usd_per_million_output_at_mix": 7.609,
+     "prices": {
+      "output": 1.2,
+      "input": 0.3,
+      "cache_read": 0.006
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.976,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "DeepSeek V4.1 Flash 1017 (Max)",
+     "output_tokens_per_hour": 522589,
+     "usd_per_million_output_at_mix": 7.609,
+     "prices": {
+      "output": 1.2,
+      "input": 0.3,
+      "cache_read": 0.006
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.515,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "none",
+     "listed_as": "DeepSeek V4.1 Flash 1017 (Non-reasoning)",
+     "output_tokens_per_hour": 461936,
+     "usd_per_million_output_at_mix": 7.609,
+     "prices": {
+      "output": 1.2,
+      "input": 0.3,
+      "cache_read": 0.006
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -1129,6 +1299,106 @@
      "listed_as": "Claude Fable 5.1 (Xhigh, Default Fallback)",
      "cost_per_task": 10.84747,
      "time_per_task_s": 1136.88
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 83.126,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Claude Fable 5.1 (High, Default Fallback)",
+     "output_tokens_per_hour": 303279,
+     "usd_per_million_output_at_mix": 274.091,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 0.25
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 83.492,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Claude Fable 5.1 (Low, Default Fallback)",
+     "output_tokens_per_hour": 304614,
+     "usd_per_million_output_at_mix": 274.091,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 0.25
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 85.323,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "Claude Fable 5.1 (Max, Default Fallback)",
+     "output_tokens_per_hour": 311296,
+     "usd_per_million_output_at_mix": 274.091,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 0.25
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 83.048,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Claude Fable 5.1 (Medium, Default Fallback)",
+     "output_tokens_per_hour": 302995,
+     "usd_per_million_output_at_mix": 274.091,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 0.25
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 84.24,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "Claude Fable 5.1 (Xhigh, Default Fallback)",
+     "output_tokens_per_hour": 307343,
+     "usd_per_million_output_at_mix": 274.091,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 0.25
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -1400,6 +1670,106 @@
      "listed_as": "Claude Opus 5.5 (Xhigh, Default Fallback)",
      "cost_per_task": 6.04719,
      "time_per_task_s": 959.64
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 49.219,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Claude Opus 5.5 (High, Default Fallback)",
+     "output_tokens_per_hour": 377029,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 48.707,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Claude Opus 5.5 (Low, Default Fallback)",
+     "output_tokens_per_hour": 373102,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 53.688,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "Claude Opus 5.5 (Max, Default Fallback)",
+     "output_tokens_per_hour": 411260,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 48.372,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Claude Opus 5.5 (Medium, Default Fallback)",
+     "output_tokens_per_hour": 370541,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 50.636,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "Claude Opus 5.5 (Xhigh, Default Fallback)",
+     "output_tokens_per_hour": 387878,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -1658,6 +2028,106 @@
      "listed_as": "GPT-6.1 Sol (Xhigh)",
      "cost_per_task": 0.76399,
      "time_per_task_s": 549.46
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 13.688,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "GPT-6.1 Sol (High)",
+     "output_tokens_per_hour": 209698,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 12.629,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "GPT-6.1 Sol (Low)",
+     "output_tokens_per_hour": 193479,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 13.371,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Sol (Max)",
+     "output_tokens_per_hour": 204851,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 13.771,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "GPT-6.1 Sol (Medium)",
+     "output_tokens_per_hour": 210980,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 12.933,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "GPT-6.1 Sol (Xhigh)",
+     "output_tokens_per_hour": 198137,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -1929,6 +2399,106 @@
      "listed_as": "GPT-6 Astra (Xhigh)",
      "cost_per_task": 3.65893,
      "time_per_task_s": 687.5
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 61.746,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "GPT-6 Astra (High)",
+     "output_tokens_per_hour": 143293,
+     "usd_per_million_output_at_mix": 430.909,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 63.504,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "GPT-6 Astra (Low)",
+     "output_tokens_per_hour": 147373,
+     "usd_per_million_output_at_mix": 430.909,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 59.422,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "GPT-6 Astra (Max)",
+     "output_tokens_per_hour": 137900,
+     "usd_per_million_output_at_mix": 430.909,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 66.599,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "GPT-6 Astra (Medium)",
+     "output_tokens_per_hour": 154555,
+     "usd_per_million_output_at_mix": 430.909,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 60.299,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "GPT-6 Astra (Xhigh)",
+     "output_tokens_per_hour": 139935,
+     "usd_per_million_output_at_mix": 430.909,
+     "prices": {
+      "output": 50,
+      "input": 10,
+      "cache_read": 1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -2149,6 +2719,26 @@
      "method": "AA cost/time repriced at the OpenRouter output price 10 (AA lists 20) per million tokens",
      "effort": "high",
      "listed_as": "google/gemini-4-argon"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 31.901,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Gemini 4 Argon (High)",
+     "output_tokens_per_hour": 244363,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -2394,6 +2984,106 @@
      "listed_as": "Claude Sonnet 5.5 (Xhigh, Default Fallback)",
      "cost_per_task": 4.09198,
      "time_per_task_s": 905.82
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 32.186,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Claude Sonnet 5.5 (High, Default Fallback)",
+     "output_tokens_per_hour": 493101,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 30.82,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Claude Sonnet 5.5 (Low, Default Fallback)",
+     "output_tokens_per_hour": 472167,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 35.94,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "Claude Sonnet 5.5 (Max, Default Fallback)",
+     "output_tokens_per_hour": 550616,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 33.313,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Claude Sonnet 5.5 (Medium, Default Fallback)",
+     "output_tokens_per_hour": 510360,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 31.702,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "Claude Sonnet 5.5 (Xhigh, Default Fallback)",
+     "output_tokens_per_hour": 485678,
+     "usd_per_million_output_at_mix": 65.273,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -2626,6 +3316,66 @@
      "listed_as": "Grok 4.7 (Xhigh)",
      "cost_per_task": 7.77154,
      "time_per_task_s": 1558.43
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 35.472,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Grok 4.7 (High)",
+     "output_tokens_per_hour": 244787,
+     "usd_per_million_output_at_mix": 144.909,
+     "prices": {
+      "output": 6,
+      "input": 2,
+      "cache_read": 0.5
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 34.885,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Grok 4.7 (Low)",
+     "output_tokens_per_hour": 240734,
+     "usd_per_million_output_at_mix": 144.909,
+     "prices": {
+      "output": 6,
+      "input": 2,
+      "cache_read": 0.5
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 34.991,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "Grok 4.7 (Xhigh)",
+     "output_tokens_per_hour": 241469,
+     "usd_per_million_output_at_mix": 144.909,
+     "prices": {
+      "output": 6,
+      "input": 2,
+      "cache_read": 0.5
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -2906,6 +3656,66 @@
      "method": "AA cost/time repriced at the OpenRouter output price 4.125 (AA lists 3.75) per million tokens",
      "effort": "medium",
      "listed_as": "google/gemini-3.8-flash"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 12.869,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Gemini 3.8 Flash (High)",
+     "output_tokens_per_hour": 398201,
+     "usd_per_million_output_at_mix": 32.318,
+     "prices": {
+      "output": 3.75,
+      "input": 0.75,
+      "cache_read": 0.075
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 11.557,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Gemini 3.8 Flash (Low)",
+     "output_tokens_per_hour": 357586,
+     "usd_per_million_output_at_mix": 32.318,
+     "prices": {
+      "output": 3.75,
+      "input": 0.75,
+      "cache_read": 0.075
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 13.32,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Gemini 3.8 Flash (Medium)",
+     "output_tokens_per_hour": 412150,
+     "usd_per_million_output_at_mix": 32.318,
+     "prices": {
+      "output": 3.75,
+      "input": 0.75,
+      "cache_read": 0.075
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -3183,6 +3993,106 @@
      "listed_as": "Claude Haiku 5.5 (Xhigh)",
      "cost_per_task": 0.24836,
      "time_per_task_s": 584.16
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.517,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Claude Haiku 5.5 (High)",
+     "output_tokens_per_hour": 816108,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.34,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Claude Haiku 5.5 (Low)",
+     "output_tokens_per_hour": 775186,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.612,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "Claude Haiku 5.5 (Max)",
+     "output_tokens_per_hour": 838196,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.347,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Claude Haiku 5.5 (Medium)",
+     "output_tokens_per_hour": 776814,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.616,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "Claude Haiku 5.5 (Xhigh)",
+     "output_tokens_per_hour": 839223,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -3431,6 +4341,126 @@
      "listed_as": "GPT-6.1 Terra (Xhigh)",
      "cost_per_task": 0.40069,
      "time_per_task_s": 361.92
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.169,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "GPT-6.1 Terra (High)",
+     "output_tokens_per_hour": 250290,
+     "usd_per_million_output_at_mix": 32.636,
+     "prices": {
+      "output": 5,
+      "input": 1,
+      "cache_read": 0.05
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 7.946,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "GPT-6.1 Terra (Low)",
+     "output_tokens_per_hour": 243465,
+     "usd_per_million_output_at_mix": 32.636,
+     "prices": {
+      "output": 5,
+      "input": 1,
+      "cache_read": 0.05
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.706,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Terra (Max)",
+     "output_tokens_per_hour": 266760,
+     "usd_per_million_output_at_mix": 32.636,
+     "prices": {
+      "output": 5,
+      "input": 1,
+      "cache_read": 0.05
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.184,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "GPT-6.1 Terra (Medium)",
+     "output_tokens_per_hour": 250778,
+     "usd_per_million_output_at_mix": 32.636,
+     "prices": {
+      "output": 5,
+      "input": 1,
+      "cache_read": 0.05
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.246,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "none",
+     "listed_as": "GPT-6.1 Terra (Non-reasoning)",
+     "output_tokens_per_hour": 252659,
+     "usd_per_million_output_at_mix": 32.636,
+     "prices": {
+      "output": 5,
+      "input": 1,
+      "cache_read": 0.05
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.505,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "GPT-6.1 Terra (Xhigh)",
+     "output_tokens_per_hour": 260603,
+     "usd_per_million_output_at_mix": 32.636,
+     "prices": {
+      "output": 5,
+      "input": 1,
+      "cache_read": 0.05
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -3846,6 +4876,126 @@
      "listed_as": "GPT-6 Luna (Xhigh)",
      "cost_per_task": 0.10409,
      "time_per_task_s": 435.59
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.49,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "GPT-6 Luna (High)",
+     "output_tokens_per_hour": 345774,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.368,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "GPT-6 Luna (Low)",
+     "output_tokens_per_hour": 317514,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.568,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "GPT-6 Luna (Max)",
+     "output_tokens_per_hour": 363902,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.487,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "GPT-6 Luna (Medium)",
+     "output_tokens_per_hour": 345149,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.262,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "none",
+     "listed_as": "GPT-6 Luna (Non-reasoning)",
+     "output_tokens_per_hour": 292833,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.563,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "GPT-6 Luna (Xhigh)",
+     "output_tokens_per_hour": 362766,
+     "usd_per_million_output_at_mix": 4.309,
+     "prices": {
+      "output": 0.5,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -4553,6 +5703,46 @@
      "method": "AA cost/time repriced at the OpenRouter output price 1.91052 (AA lists 3.96) per million tokens",
      "effort": "none",
      "listed_as": "deepseek/deepseek-v4-pro"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.735,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "DeepSeek V4 Pro 0813 (Max)",
+     "output_tokens_per_hour": 243724,
+     "usd_per_million_output_at_mix": 35.84,
+     "prices": {
+      "output": 3.96,
+      "input": 1.32,
+      "cache_read": 0.044
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 9.292,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "none",
+     "listed_as": "DeepSeek V4 Pro 0813 (Non-reasoning)",
+     "output_tokens_per_hour": 259265,
+     "usd_per_million_output_at_mix": 35.84,
+     "prices": {
+      "output": 3.96,
+      "input": 1.32,
+      "cache_read": 0.044
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -4816,6 +6006,46 @@
      "method": "AA cost/time repriced at the OpenRouter output price 1.4 (AA lists 4.4) per million tokens",
      "effort": "max",
      "listed_as": "z-ai/glm-5.3"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 15.997,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "GLM-5.3 (Low)",
+     "output_tokens_per_hour": 193160,
+     "usd_per_million_output_at_mix": 82.818,
+     "prices": {
+      "output": 4.4,
+      "input": 1.4,
+      "cache_read": 0.26
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 20.083,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "GLM-5.3 (Max)",
+     "output_tokens_per_hour": 242497,
+     "usd_per_million_output_at_mix": 82.818,
+     "prices": {
+      "output": 4.4,
+      "input": 1.4,
+      "cache_read": 0.26
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -5055,6 +6285,26 @@
      "method": "AA cost/time repriced at the OpenRouter output price 0.083 (AA lists 0.5) per million tokens",
      "effort": "default",
      "listed_as": "z-ai/glm-5.3-flash"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.686,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "GLM-5.3-Flash",
+     "output_tokens_per_hour": 180295,
+     "usd_per_million_output_at_mix": 9.35,
+     "prices": {
+      "output": 0.5,
+      "input": 0.15,
+      "cache_read": 0.03
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -5210,6 +6460,28 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "qwen/qwen3-coder-next"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 17.059,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Qwen3 Coder Next",
+     "output_tokens_per_hour": 258797,
+     "usd_per_million_output_at_mix": 65.917,
+     "prices": {
+      "output": 1,
+      "input": 0.31,
+      "cache_read": 0.28500000000000003
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ]
   },
@@ -5409,6 +6681,26 @@
      "listed_as": "Qwen3.8 Max (0902)",
      "cost_per_task": 10.02389,
      "time_per_task_s": 3706.41
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 15.368,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Qwen3.8 Max (0902)",
+     "output_tokens_per_hour": 165891,
+     "usd_per_million_output_at_mix": 92.636,
+     "prices": {
+      "output": 6,
+      "input": 2,
+      "cache_read": 0.25
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -5584,6 +6876,26 @@
      "listed_as": "Kimi K3.1 Pro",
      "cost_per_task": 3.6812,
      "time_per_task_s": 2290.08
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 9.787,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Kimi K3.1 Pro",
+     "output_tokens_per_hour": 113560,
+     "usd_per_million_output_at_mix": 86.182,
+     "prices": {
+      "output": 10,
+      "input": 2,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -5997,6 +7309,26 @@
      "listed_as": "MiniMax-M3",
      "cost_per_task": 1.2851,
      "time_per_task_s": 716.64
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.683,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "MiniMax-M3",
+     "output_tokens_per_hour": 459399,
+     "usd_per_million_output_at_mix": 18.9,
+     "prices": {
+      "output": 1.2,
+      "input": 0.3,
+      "cache_read": 0.06
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -6173,6 +7505,26 @@
      "listed_as": "MiniMax-M3.1-Flash",
      "cost_per_task": 0.49097,
      "time_per_task_s": 852.28
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.685,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "MiniMax-M3.1-Flash",
+     "output_tokens_per_hour": 583652,
+     "usd_per_million_output_at_mix": 6.314,
+     "prices": {
+      "output": 0.6,
+      "input": 0.15,
+      "cache_read": 0.015
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -6409,6 +7761,26 @@
      "listed_as": "MiMo-V2.6-Pro",
      "cost_per_task": 0.25718,
      "time_per_task_s": 2385.79
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.662,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Pro",
+     "output_tokens_per_hour": 182691,
+     "usd_per_million_output_at_mix": 9.097,
+     "prices": {
+      "output": 0.87,
+      "input": 0.435,
+      "cache_read": 0.0036
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -6624,6 +7996,26 @@
      "listed_as": "MiMo-V2.6-Flash",
      "cost_per_task": 0.12853,
      "time_per_task_s": 3728.09
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 0.416,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Flash",
+     "output_tokens_per_hour": 127278,
+     "usd_per_million_output_at_mix": 3.271,
+     "prices": {
+      "output": 0.28,
+      "input": 0.14,
+      "cache_read": 0.0028
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -6823,6 +8215,26 @@
      "listed_as": "Nemotron 3.5 Super VL",
      "cost_per_task": 0.51963,
      "time_per_task_s": 355.9
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 11.5,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Nemotron 3.5 Super VL",
+     "output_tokens_per_hour": 823728,
+     "usd_per_million_output_at_mix": 13.961,
+     "prices": {
+      "output": 0.5,
+      "input": 0.175,
+      "cache_read": 0.05
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -7013,6 +8425,26 @@
      "listed_as": "Nemotron 3.5 Lightning",
      "cost_per_task": 0.28981,
      "time_per_task_s": 249.07
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 8.035,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Nemotron 3.5 Lightning",
+     "output_tokens_per_hour": 939859,
+     "usd_per_million_output_at_mix": 8.549,
+     "prices": {
+      "output": 0.2,
+      "input": 0.06,
+      "cache_read": 0.035
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -7214,6 +8646,46 @@
      "listed_as": "Mistral Large 4 (Medium)",
      "cost_per_task": 1.4121,
      "time_per_task_s": 544.75
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 11.416,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Mistral Large 4 (High)",
+     "output_tokens_per_hour": 396884,
+     "usd_per_million_output_at_mix": 28.764,
+     "prices": {
+      "output": 2.1,
+      "input": 0.7,
+      "cache_read": 0.07
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 10.706,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Mistral Large 4 (Medium)",
+     "output_tokens_per_hour": 372219,
+     "usd_per_million_output_at_mix": 28.764,
+     "prices": {
+      "output": 2.1,
+      "input": 0.7,
+      "cache_read": 0.07
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -7348,6 +8820,46 @@
      "listed_as": "Muse Wonder (Max)",
      "cost_per_task": 6.95204,
      "time_per_task_s": 770.02
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 59.076,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Muse Wonder (High)",
+     "output_tokens_per_hour": 452531,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 58.63,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "Muse Wonder (Max)",
+     "output_tokens_per_hour": 449112,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [
@@ -8050,6 +9562,48 @@
      "method": "USD per million tokens",
      "listed_as": "openai/gpt-oss-120b"
     }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 12.827,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "gpt-oss-120b (High)",
+     "output_tokens_per_hour": 532537,
+     "usd_per_million_output_at_mix": 24.086,
+     "prices": {
+      "output": 0.6,
+      "input": 0.15,
+      "cache_read": 0.1
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 16.827,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "gpt-oss-120b (Low)",
+     "output_tokens_per_hour": 582683,
+     "usd_per_million_output_at_mix": 28.879,
+     "prices": {
+      "output": 0.595,
+      "input": 0.125,
+      "cache_read": 0.125
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    }
    ]
   },
   "gemini-3.1-flash-lite": {
@@ -8329,6 +9883,28 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "moonshotai/kimi-k2.7-code"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 12.168,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Kimi K2.7 Code",
+     "output_tokens_per_hour": 202623,
+     "usd_per_million_output_at_mix": 60.05,
+     "prices": {
+      "output": 4,
+      "input": 0.95,
+      "cache_read": 0.19
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ]
   },
@@ -9251,6 +10827,28 @@
      "method": "USD per million tokens",
      "listed_as": "google/gemini-3.1-pro-preview"
     }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 34.432,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Gemini 3.1 Pro Preview",
+     "output_tokens_per_hour": 390469,
+     "usd_per_million_output_at_mix": 88.182,
+     "prices": {
+      "output": 12,
+      "input": 2,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    }
    ]
   },
   "gemini-3.7-flash": {
@@ -9915,6 +11513,66 @@
      "listed_as": "Gemini 4 Carbon (Medium)",
      "cost_per_task": 6.58578,
      "time_per_task_s": 1525.89
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 33.474,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Gemini 4 Carbon (High)",
+     "output_tokens_per_hour": 256413,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 28.213,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Gemini 4 Carbon (Low)",
+     "output_tokens_per_hour": 216118,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 31.727,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Gemini 4 Carbon (Medium)",
+     "output_tokens_per_hour": 243035,
+     "usd_per_million_output_at_mix": 130.545,
+     "prices": {
+      "output": 20,
+      "input": 4,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
     }
    ],
    "intelligence_index": [

@@ -1,4 +1,4 @@
-"""Sampled routing parity: today's router against the five-axis path (round 047, round 2). Read-only.
+"""Sampled routing parity: today's router against the five-axis path (round 047, round 4). Read-only.
 
     python -X utf8 audit/five_axis_parity.py [--json out.json] [--md out.md]
 
@@ -7,10 +7,13 @@ runs under several synthetic quota states on three fresh-install fleets (route_s
 usage documents, so the input is what `roll` would feed the allocator). Three algorithms:
 
 - old: shipped behaviour (`scoring.five_axis` absent).
-- new: five-axis path: axis-demand gate (tier folded into the axes), merged cited usd, capacity in reference-model hours.
-- new_no_eqbench: the same with EQ-Bench Creative Writing distrusted (five_axis.py --distrust eqbench.creative_writing_v3).
-- new_oq005, new_oq0: the new path with overqualification_weight 0.05 and 0 (default 0.08), side by side (review 2026-11-09:
-  this weight alone decides the Fable / Astra / Sol shares).
+- new: five-axis path as shipped in five-axis-scores.json: axis-demand gate, community capacity, usd on the community
+  token-mix basis (option B), tie-break cost then ability surplus, overqualification weight 0.05.
+- new_benchmark_usd: the same with usd on the AA/OpenRouter benchmark basis (the round-3 scale), to isolate option B.
+- new_oq0: the new path with overqualification_weight 0 (ties still go to the cheaper candidate).
+- new_no_eqbench: the new path with EQ-Bench Creative Writing distrusted.
+
+`none` decisions record their cause: the exclusion reasons of every candidate, grouped (digits stripped).
 
 Each new decision also records how close it sits to a floor: the winner's demanded-axis level over its gate, and every
 candidate (scored or excluded by a floor) within 1% of its floor.
@@ -51,7 +54,7 @@ EXTRA_CATALOGS = {'pi': ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra'], 'dot': 
 EXTRA_STATES = {'claude fable-weekly tight': [('claude', ('weekly_fable',), 'tight')]}
 STATES = ('ample', 'claude scarce', 'codex scarce', 'antigravity gemini scarce', 'claude tight', 'codex tight',
           'claude fable-weekly tight', '5h-only scarce')
-NEW = ('new', 'new_no_eqbench', 'new_oq005', 'new_oq0')
+NEW = ('new', 'new_benchmark_usd', 'new_oq0', 'new_no_eqbench')
 NEAR = 0.01     # within 1% of a floor
 
 
@@ -60,12 +63,14 @@ def algos(folder):
     import sources
     meas = json.loads((SKILL / 'references' / 'public-measurements.json').read_text(encoding='utf-8'))
     plans = json.loads((SKILL / 'references' / 'plan-templates.json').read_text(encoding='utf-8'))
-    doc = five_axis.build(meas, sources.accounts(), plans, ['eqbench.creative_writing_v3'])
-    path = Path(folder) / 'five-axis-no-eqbench.json'
-    path.write_text(json.dumps(doc), encoding='utf-8')
-    return {'old': None, 'new': {'enabled': True}, 'new_no_eqbench': {'enabled': True, 'path': str(path)},
-            'new_oq005': {'enabled': True, 'overqualification_weight': 0.05},
-            'new_oq0': {'enabled': True, 'overqualification_weight': 0.0}}
+    paths = {}
+    for name, kwargs in (('no-eqbench', {'distrust': ['eqbench.creative_writing_v3']}), ('benchmark-usd', {'usd_basis': 'benchmark'})):
+        paths[name] = Path(folder) / f'five-axis-{name}.json'
+        paths[name].write_text(json.dumps(five_axis.build(meas, sources.accounts(), plans, **kwargs)), encoding='utf-8')
+    return {'old': None, 'new': {'enabled': True},
+            'new_benchmark_usd': {'enabled': True, 'path': str(paths['benchmark-usd'])},
+            'new_oq0': {'enabled': True, 'overqualification_weight': 0.0},
+            'new_no_eqbench': {'enabled': True, 'path': str(paths['no-eqbench'])}}
 
 
 def fleet_accounts(name):
@@ -160,6 +165,18 @@ def driver(new_dec, old_label, new_label):
     return {'kind': 'score', 'main': main, 'terms': terms}
 
 
+def none_cause(decision):
+    """For a decision with no selection: {reason group: candidates}, each candidate counted under its first exclusion."""
+    if decision.get('selected_bundle'):
+        return None
+    out = Counter()
+    for c in decision.get('ranking') or ():
+        reasons = c.get('excluded') or []
+        if reasons:
+            out[re.sub(r'\s+', ' ', re.sub(r'[\d.]+', '#', str(reasons[0])))[:110]] += 1
+    return dict(out.most_common())
+
+
 def run(variants_cfg):
     rows = []
     for fleet in FLEETS:
@@ -184,6 +201,8 @@ def run(variants_cfg):
                 for name in NEW:
                     out[f'{name}_driver'] = driver(decisions[name], out['old'], out[name])
                 out['new_floor'] = near_floor(decisions['new'])
+                for name in ('old',) + NEW:
+                    out[f'{name}_none'] = none_cause(decisions[name])
                 rows.append(out)
     return rows
 
@@ -203,16 +222,28 @@ def markdown(rows):
     names = ('old',) + NEW
     share = {n: Counter(r[n] for r in rows) for n in names}
     n = len(rows)
-    lines = [f'# Five-axis sampled parity, round 2 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
+    lines = [f'# Five-axis sampled parity, round 4 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
     lines += ['## Selection share (model@account)', '',
-              '| model@account | old | new (oq 0.08) | new oq 0.05 | new oq 0 | new without EQ-Bench |',
+              '| model@account | old | new (usd option B) | new, benchmark usd | new, oq 0 | new without EQ-Bench |',
               '| :--- | ---: | ---: | ---: | ---: | ---: |']
     for k in sorted(set().union(*share.values()), key=lambda k: (-share['old'][k], -share['new'][k])):
-        lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_oq005'][k]} | {share['new_oq0'][k]} | "
+        lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_benchmark_usd'][k]} | {share['new_oq0'][k]} | "
                      f"{share['new_no_eqbench'][k]} |")
     lines += ['', '| | ' + ' | '.join(NEW) + ' |', '| :--- | ' + ' | '.join('---:' for _ in NEW) + ' |',
               '| changed vs old | ' + ' | '.join(str(sum(r[x] != r['old'] for r in rows)) for x in NEW) + ' |',
-              '| changed vs new (oq 0.08) | ' + ' | '.join(str(sum(r[x] != r['new'] for r in rows)) for x in NEW) + ' |', '']
+              '| changed vs new | ' + ' | '.join(str(sum(r[x] != r['new'] for r in rows)) for x in NEW) + ' |', '']
+    lines += ['## `none` decisions and their causes', '', '| algorithm | none | per fleet |', '| :--- | ---: | :--- |']
+    for name in names:
+        per = Counter(r['fleet'] for r in rows if r[name] == 'none')
+        lines.append(f"| {name} | {share[name]['none']} | " + ', '.join(f'{f}: {per[f]}' for f in FLEETS) + ' |')
+    for name in ('old', 'new', 'new_benchmark_usd'):
+        causes = Counter()
+        for r in rows:
+            for reason, k in (r.get(f'{name}_none') or {}).items():
+                causes[reason] += k
+        lines += ['', f'Exclusion reasons over the candidates of `none` decisions ({name}; candidate counts):', '']
+        lines += [f'- {k}: {v}' for k, v in causes.most_common(12)]
+    lines.append('')
     win_near = [r for r in rows if r['new_floor']['winner_margin'] is not None and r['new_floor']['winner_margin'] <= NEAR]
     any_near = [r for r in rows if r['new_floor']['near']]
     lines += [f'## Decisions within {NEAR:.0%} of a floor (new)', '',
@@ -231,6 +262,7 @@ def markdown(rows):
             lines.append(f'| {s} | ' + ' | '.join(f'{o[a]}→{w[a]}' for a in accts) + ' |')
         lines.append('')
     for title, test in (('Terra', lambda m: 'terra' in m), ('Flash', lambda m: 'gemini-3.8-flash' in m),
+                        ('Fable', lambda m: 'fable' in m),
                         ('free models', lambda m: m.endswith('@opencode') or m.split('@')[0].endswith('-free')),
                         ('dot / grok / pi', lambda m: account_of(m) in ('dot', 'grok', 'pi'))):
         lines += [f'## Where {title} win', '']

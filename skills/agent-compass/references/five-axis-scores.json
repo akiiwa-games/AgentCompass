@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-09T05:39:45+00:00",
- "measurements_sha256": "2325248e96f119a05a4d74fb7311a889bbb1ea09789689ac6e86a199e4d10611",
+ "generated_at": "2026-11-09T05:50:23+00:00",
+ "measurements_sha256": "064288600d4d582641af057f0fddd83fa6aacbaeffc33f82e53bc7492833af0c",
  "distrusted_sources": [],
  "source_priority": [],
  "user_overrides": [],
@@ -171,9 +171,9 @@
   }
  },
  "usd_basis": {
-  "name": "benchmark",
-  "scale": "AA benchmark tokens at list prices (AA cost/time; OpenRouter repricing)",
-  "note": "not the community real-usage scale of the capacities; default until the user picks a basis"
+  "name": "community_mix",
+  "scale": "derived real usage: AA output speed per hour at the community token mix (wokey fixed split, about 92% cache reads) and AA list prices",
+  "note": "option B, user 2026-11-09: the same token mix the community capacities are valued at; a model AA does not list with speed and all three prices has no usd (mode B)"
  },
  "capacity": {
   "claude": {
@@ -198,7 +198,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 0.5
+     "ref_hours": 0.2
     },
     "seven_day": {
      "unit": "usd",
@@ -220,7 +220,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 7.1
+     "ref_hours": 3.1
     }
    },
    "max5": {
@@ -270,7 +270,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 12.5
+     "ref_hours": 5.5
     },
     "seven_day": {
      "unit": "usd",
@@ -303,7 +303,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 78.4
+     "ref_hours": 34.6
     },
     "weekly_fable": {
      "unit": "usd",
@@ -349,7 +349,7 @@
       }
      ],
      "reference_model": "claude-fable-5-1",
-     "ref_hours": 24.6
+     "ref_hours": 10.3
     }
    },
    "max": {
@@ -415,7 +415,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 11.1
+     "ref_hours": 4.5
     },
     "five_hour": {
      "unit": "usd",
@@ -437,7 +437,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 1.8
+     "ref_hours": 0.7
     }
    },
    "team": {
@@ -472,7 +472,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 11.1,
+     "ref_hours": 4.5,
      "alias_of": "plus"
     },
     "five_hour": {
@@ -495,7 +495,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 1.8,
+     "ref_hours": 0.7,
      "alias_of": "plus"
     }
    },
@@ -531,7 +531,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 48.3
+     "ref_hours": 19.4
     }
    },
    "pro": {
@@ -566,7 +566,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 112.3
+     "ref_hours": 45.0
     }
    }
   },
@@ -642,35 +642,91 @@
    "pro": {
     "gemini-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 20.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 20.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null
+     "ref_hours": 0.6
     },
     "gemini-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 129.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 129.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null
+     "ref_hours": 4.0
     },
     "3p-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 20.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 20.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 0.4
     },
     "3p-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 129.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 129.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null
+     "ref_hours": 2.6
     }
    },
    "ultra": {
@@ -714,38 +770,94 @@
    "default": {
     "gemini-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 20.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 20.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null,
+     "ref_hours": 0.6,
      "alias_of": "pro"
     },
     "gemini-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 129.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 129.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": null,
+     "ref_hours": 4.0,
      "alias_of": "pro"
     },
     "3p-5h": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 20.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 20.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null,
+     "ref_hours": 0.4,
      "alias_of": "pro"
     },
     "3p-weekly": {
      "unit": "usd",
-     "capacity_usd": null,
-     "status": "missing",
-     "sources": [],
+     "capacity_usd": 129.0,
+     "status": "stale",
+     "age_days": 62,
+     "merge": "median of 1 community value(s)",
+     "sources": [
+      {
+       "source": "community.eneasf.antigravity",
+       "kind": "community",
+       "value": 129.0,
+       "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
+       "as_of": "2026-09-08",
+       "fetched_at": "2026-11-09T05:49:38+00:00",
+       "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
+       "age_days": 62,
+       "stale": true
+      }
+     ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": null,
+     "ref_hours": 2.6,
      "alias_of": "pro"
     }
    }
@@ -754,7 +866,7 @@
  "capacity_stale_days": 21,
  "capacity_not_found": {
   "claude/max5": "wokey is still collecting Max 5x accounts (no figure); finops gives only a bound (a Max 20x week is at most about 1.5x a Max 5x week)",
-  "antigravity/*": "no community API-dollar measurement of Google AI Pro / Ultra Antigravity quota found",
+  "antigravity/ultra5, ultra20": "only Google AI Pro is measured (eneasf telemetry, September 2026); the same project sets Ultra 5x to 5x Pro by assumption (its ADR-041), which is not a measurement; forum reports give times to exhaustion only (discuss.ai.google.dev, March 2026)",
   "pi/*": "Pi spends a Codex account allowance; the plan behind it is not known"
  },
  "capacity_errors": [
@@ -859,39 +971,19 @@
   },
   {
    "field": "capacity",
-   "family": "antigravity",
-   "plan": "pro",
-   "window": "gemini-5h",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "pro",
-   "window": "gemini-weekly",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "pro",
-   "window": "3p-5h",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
-  },
-  {
-   "field": "capacity",
-   "family": "antigravity",
-   "plan": "pro",
-   "window": "3p-weekly",
-   "level": "red",
-   "reason": "no_community_source",
-   "effect": "capacity unknown: the router prices the window from its live percentage and reset time only; the packaged template figure is not a fallback"
+   "source": "community.eneasf.antigravity",
+   "level": "yellow",
+   "reason": "stale_source",
+   "age_days": 62,
+   "as_of": "2026-09-08",
+   "threshold_days": 21,
+   "windows": [
+    "antigravity/pro/gemini-5h",
+    "antigravity/pro/gemini-weekly",
+    "antigravity/pro/3p-5h",
+    "antigravity/pro/3p-weekly"
+   ],
+   "effect": "still used in the median; refresh the source"
   },
   {
    "field": "capacity",
@@ -1020,6 +1112,14 @@
    "age_days": 0,
    "stale": false
   },
+  "community.eneasf.antigravity": {
+   "kind": "community",
+   "as_of": "2026-09-08",
+   "as_of_kind": "data date",
+   "fetched_at": "2026-11-09T05:49:38+00:00",
+   "age_days": 62,
+   "stale": true
+  },
   "community.finops.claude_max20": {
    "kind": "community",
    "as_of": "2026-10-10",
@@ -1065,6 +1165,14 @@
    "as_of": "2026-11-02",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:15+00:00",
+   "age_days": 7,
+   "stale": false
+  },
+  "derived.community_mix": {
+   "kind": "derived",
+   "as_of": "2026-11-02",
+   "as_of_kind": "the older of the mix data date and the AA fetch date",
+   "fetched_at": "2026-11-09T03:43:49+00:00",
    "age_days": 7,
    "stale": false
   },
@@ -1309,51 +1417,37 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 1.627,
+    "value": 4.068,
     "status": "ok",
-    "merge": "median of 2 cited source(s)",
+    "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time",
-     "openrouter.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 2.209,
+     "derived.community_mix": {
+      "value": 4.068,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 2.209,
-       "max": 2.264,
-       "none": 3.007
-      }
-     },
-     "openrouter.cost_time": {
-      "value": 1.044,
-      "how": "High listing",
-      "kind": "vendor",
-      "as_of": "2026-11-09",
-      "url": "https://openrouter.ai/api/v1/models",
-      "method": "AA cost/time repriced at the OpenRouter output price 0.567 (AA lists 1.2) per million tokens",
-      "by_effort": {
-       "high": 1.044,
-       "max": 1.07,
-       "none": 1.421
+       "high": 4.068,
+       "max": 3.976,
+       "none": 3.515
       }
      }
     },
-    "max_over_min": 2.12
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time, openrouter.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 28.64,
-   "economy_static": 0.902,
+   "economy_static": 0.787,
    "legacy_public_tier": {
     "value": 2.93,
     "source": "secondary.tier_fit",
@@ -1502,26 +1596,26 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 34.631,
+    "value": 83.126,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 34.631,
+     "derived.community_mix": {
+      "value": 83.126,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 34.631,
-       "low": 35.996,
-       "max": 34.297,
-       "medium": 34.729,
-       "xhigh": 34.349
+       "high": 83.126,
+       "low": 83.492,
+       "max": 85.323,
+       "medium": 83.048,
+       "xhigh": 84.24
       }
      }
     },
@@ -1529,12 +1623,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 47.17,
-   "economy_static": 0.302,
+   "economy_static": 0.153,
    "legacy_public_tier": {
     "value": 4.08,
     "source": "lmarena.tier_fit",
@@ -1677,26 +1771,26 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 21.746,
+    "value": 49.219,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 21.746,
+     "derived.community_mix": {
+      "value": 49.219,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 21.746,
-       "low": 19.097,
-       "max": 23.816,
-       "medium": 20.728,
-       "xhigh": 22.685
+       "high": 49.219,
+       "low": 48.707,
+       "max": 53.688,
+       "medium": 48.372,
+       "xhigh": 50.636
       }
      }
     },
@@ -1704,12 +1798,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 51.84,
-   "economy_static": 0.408,
+   "economy_static": 0.234,
    "legacy_public_tier": {
     "value": 4.6,
     "source": "user",
@@ -1858,26 +1952,26 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 5.482,
+    "value": 13.688,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 5.482,
+     "derived.community_mix": {
+      "value": 13.688,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 5.482,
-       "low": 5.351,
-       "max": 3.842,
-       "medium": 5.609,
-       "xhigh": 5.006
+       "high": 13.688,
+       "low": 12.629,
+       "max": 13.371,
+       "medium": 13.771,
+       "xhigh": 12.933
       }
      }
     },
@@ -1885,12 +1979,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 50.33,
-   "economy_static": 0.732,
+   "economy_static": 0.523,
    "legacy_public_tier": {
     "value": 3.6,
     "source": "user",
@@ -2040,26 +2134,26 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 20.06,
+    "value": 61.746,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 20.06,
+     "derived.community_mix": {
+      "value": 61.746,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 20.06,
-       "low": 22.992,
-       "max": 16.569,
-       "medium": 23.395,
-       "xhigh": 19.159
+       "high": 61.746,
+       "low": 63.504,
+       "max": 59.422,
+       "medium": 66.599,
+       "xhigh": 60.299
       }
      }
     },
@@ -2067,12 +2161,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 54.85,
-   "economy_static": 0.428,
+   "economy_static": 0.195,
    "legacy_public_tier": {
     "value": 4.2,
     "source": "user",
@@ -2230,47 +2324,35 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 15.666,
+    "value": 31.901,
     "status": "ok",
-    "merge": "median of 2 cited source(s)",
+    "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time",
-     "openrouter.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 20.887,
+     "derived.community_mix": {
+      "value": 31.901,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 20.887
-      }
-     },
-     "openrouter.cost_time": {
-      "value": 10.444,
-      "how": "High listing",
-      "kind": "vendor",
-      "as_of": "2026-11-09",
-      "url": "https://openrouter.ai/api/v1/models",
-      "method": "AA cost/time repriced at the OpenRouter output price 10 (AA lists 20) per million tokens",
-      "by_effort": {
-       "high": 10.444
+       "high": 31.901
       }
      }
     },
-    "max_over_min": 2.0
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time, openrouter.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 50.41,
-   "economy_static": 0.489,
+   "economy_static": 0.32,
    "legacy_public_tier": {
     "value": 3.53,
     "source": "lmarena.tier_fit",
@@ -2411,26 +2493,26 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 13.81,
+    "value": 32.186,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 13.81,
+     "derived.community_mix": {
+      "value": 32.186,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 13.81,
-       "low": 11.576,
-       "max": 19.333,
-       "medium": 12.958,
-       "xhigh": 16.263
+       "high": 32.186,
+       "low": 30.82,
+       "max": 35.94,
+       "medium": 33.313,
+       "xhigh": 31.702
       }
      }
     },
@@ -2438,12 +2520,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 41.52,
-   "economy_static": 0.521,
+   "economy_static": 0.318,
    "legacy_public_tier": {
     "value": 3.9,
     "source": "user",
@@ -2592,24 +2674,24 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 16.983,
+    "value": 35.472,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 16.983,
+     "derived.community_mix": {
+      "value": 35.472,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 16.983,
-       "low": 16.487,
-       "xhigh": 17.952
+       "high": 35.472,
+       "low": 34.885,
+       "xhigh": 34.991
       }
      }
     },
@@ -2617,12 +2699,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 35.21,
-   "economy_static": 0.469,
+   "economy_static": 0.297,
    "legacy_public_tier": {
     "value": 3.4,
     "source": "user",
@@ -2778,49 +2860,37 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 32.819,
+    "value": 12.869,
     "status": "ok",
-    "merge": "median of 2 cited source(s)",
+    "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time",
-     "openrouter.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 31.256,
+     "derived.community_mix": {
+      "value": 12.869,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 31.256,
-       "medium": 31.431
-      }
-     },
-     "openrouter.cost_time": {
-      "value": 34.382,
-      "how": "High listing",
-      "kind": "vendor",
-      "as_of": "2026-11-09",
-      "url": "https://openrouter.ai/api/v1/models",
-      "method": "AA cost/time repriced at the OpenRouter output price 4.125 (AA lists 3.75) per million tokens",
-      "by_effort": {
-       "high": 34.382,
-       "medium": 34.574
+       "high": 12.869,
+       "low": 11.557,
+       "medium": 13.32
       }
      }
     },
-    "max_over_min": 1.1
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time, openrouter.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 30.85,
-   "economy_static": 0.314,
+   "economy_static": 0.538,
    "legacy_public_tier": {
     "value": 3.0,
     "source": "user",
@@ -3364,26 +3434,26 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 1.469,
+    "value": 3.517,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 1.469,
+     "derived.community_mix": {
+      "value": 3.517,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 1.469,
-       "low": 1.205,
-       "max": 1.525,
-       "medium": 1.337,
-       "xhigh": 1.531
+       "high": 3.517,
+       "low": 3.34,
+       "max": 3.612,
+       "medium": 3.347,
+       "xhigh": 3.616
       }
      }
     },
@@ -3391,12 +3461,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 29.87,
-   "economy_static": 0.911,
+   "economy_static": 0.81,
    "legacy_public_tier": {
     "value": 2.94,
     "source": "lmarena.tier_fit",
@@ -3548,27 +3618,27 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 3.875,
+    "value": 8.169,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 3.875,
+     "derived.community_mix": {
+      "value": 8.169,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 3.875,
-       "low": 3.928,
-       "max": 4.281,
-       "medium": 3.892,
-       "none": 6.015,
-       "xhigh": 3.986
+       "high": 8.169,
+       "low": 7.946,
+       "max": 8.706,
+       "medium": 8.184,
+       "none": 8.246,
+       "xhigh": 8.505
       }
      }
     },
@@ -3576,12 +3646,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 42.43,
-   "economy_static": 0.795,
+   "economy_static": 0.647,
    "legacy_public_tier": {
     "value": 3.24,
     "source": "lmarena.tier_fit",
@@ -3906,27 +3976,27 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 0.768,
+    "value": 1.49,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 0.768,
+     "derived.community_mix": {
+      "value": 1.49,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 0.768,
-       "low": 0.493,
-       "max": 0.734,
-       "medium": 0.735,
-       "none": 2.079,
-       "xhigh": 0.86
+       "high": 1.49,
+       "low": 1.368,
+       "max": 1.568,
+       "medium": 1.487,
+       "none": 1.262,
+       "xhigh": 1.563
       }
      }
     },
@@ -3934,12 +4004,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 21.43,
-   "economy_static": 0.951,
+   "economy_static": 0.91,
    "legacy_public_tier": {
     "value": 2.61,
     "source": "lmarena.tier_fit",
@@ -4801,49 +4871,36 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 3.237,
+    "value": 8.735,
     "status": "ok",
-    "merge": "median of 2 cited source(s)",
+    "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time",
-     "openrouter.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 4.367,
+     "derived.community_mix": {
+      "value": 8.735,
       "how": "median of the listed efforts ['max']",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "max": 4.367,
-       "none": 3.538
-      }
-     },
-     "openrouter.cost_time": {
-      "value": 2.107,
-      "how": "median of the listed efforts ['max']",
-      "kind": "vendor",
-      "as_of": "2026-11-09",
-      "url": "https://openrouter.ai/api/v1/models",
-      "method": "AA cost/time repriced at the OpenRouter output price 1.91052 (AA lists 3.96) per million tokens",
-      "by_effort": {
-       "max": 2.107,
-       "none": 1.707
+       "max": 8.735,
+       "none": 9.292
       }
      }
     },
-    "max_over_min": 2.07
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time, openrouter.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 23.06,
-   "economy_static": 0.823,
+   "economy_static": 0.632,
    "legacy_public_tier": {
     "value": 2.87,
     "source": "lmarena.tier_fit",
@@ -4993,49 +5050,36 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 5.292,
+    "value": 18.04,
     "status": "ok",
-    "merge": "median of 2 cited source(s)",
+    "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time",
-     "openrouter.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 8.03,
+     "derived.community_mix": {
+      "value": 18.04,
       "how": "median of the listed efforts ['low', 'max']",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "low": 5.852,
-       "max": 10.209
-      }
-     },
-     "openrouter.cost_time": {
-      "value": 2.555,
-      "how": "median of the listed efforts ['low', 'max']",
-      "kind": "vendor",
-      "as_of": "2026-11-09",
-      "url": "https://openrouter.ai/api/v1/models",
-      "method": "AA cost/time repriced at the OpenRouter output price 1.4 (AA lists 4.4) per million tokens",
-      "by_effort": {
-       "low": 1.862,
-       "max": 3.248
+       "low": 15.997,
+       "max": 20.083
       }
      }
     },
-    "max_over_min": 3.14
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time, openrouter.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 23.11,
-   "economy_static": 0.739,
+   "economy_static": 0.454,
    "legacy_public_tier": {
     "value": 3.06,
     "source": "lmarena.tier_fit",
@@ -5182,47 +5226,35 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 0.457,
+    "value": 1.686,
     "status": "ok",
-    "merge": "median of 2 cited source(s)",
+    "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time",
-     "openrouter.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 0.784,
+     "derived.community_mix": {
+      "value": 1.686,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 0.784
-      }
-     },
-     "openrouter.cost_time": {
-      "value": 0.13,
-      "how": "the only listing (no effort named)",
-      "kind": "vendor",
-      "as_of": "2026-11-09",
-      "url": "https://openrouter.ai/api/v1/models",
-      "method": "AA cost/time repriced at the OpenRouter output price 0.083 (AA lists 0.5) per million tokens",
-      "by_effort": {
-       "default": 0.13
+       "default": 1.686
       }
      }
     },
-    "max_over_min": 6.03
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time, openrouter.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 27.8,
-   "economy_static": 0.97,
+   "economy_static": 0.899,
    "legacy_public_tier": {
     "value": 2.86,
     "source": "lmarena.tier_fit",
@@ -5383,32 +5415,41 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 17.059,
+    "status": "ok",
+    "merge": "median of 1 cited source(s)",
+    "used": [
+     "derived.community_mix"
+    ],
+    "sources": {
+     "derived.community_mix": {
+      "value": 17.059,
+      "how": "the only listing (no effort named)",
+      "kind": "derived",
+      "as_of": "2026-11-02",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "method": "AA output speed x community token mix at AA list prices",
+      "by_effort": {
+       "default": 17.059
+      }
+     }
+    },
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes derived.community_mix",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.468,
    "legacy_public_tier": {
     "value": 1.73,
     "source": "secondary.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
-    {
-     "model": "qwen3-coder-next",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
     {
      "model": "qwen3-coder-next",
      "field": "vision_tools.gui",
@@ -5550,22 +5591,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 9.736,
+    "value": 15.368,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 9.736,
+     "derived.community_mix": {
+      "value": 15.368,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 9.736
+       "default": 15.368
       }
      }
     },
@@ -5573,12 +5614,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 33.65,
-   "economy_static": 0.606,
+   "economy_static": 0.494,
    "legacy_public_tier": {
     "value": 3.15,
     "source": "lmarena.tier_fit",
@@ -5728,22 +5769,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 5.787,
+    "value": 9.787,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 5.787,
+     "derived.community_mix": {
+      "value": 9.787,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 5.787
+       "default": 9.787
       }
      }
     },
@@ -5751,12 +5792,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 46.45,
-   "economy_static": 0.722,
+   "economy_static": 0.605,
    "legacy_public_tier": {
     "value": 3.47,
     "source": "lmarena.tier_fit",
@@ -6088,22 +6129,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 6.456,
+    "value": 8.683,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 6.456,
+     "derived.community_mix": {
+      "value": 8.683,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 6.456
+       "default": 8.683
       }
      }
     },
@@ -6111,12 +6152,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 18.88,
-   "economy_static": 0.699,
+   "economy_static": 0.633,
    "legacy_public_tier": {
     "value": 2.07,
     "source": "lmarena.tier_fit",
@@ -6260,22 +6301,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 2.074,
+    "value": 3.685,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 2.074,
+     "derived.community_mix": {
+      "value": 3.685,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 2.074
+       "default": 3.685
       }
      }
     },
@@ -6283,12 +6324,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 29.06,
-   "economy_static": 0.879,
+   "economy_static": 0.803,
    "legacy_public_tier": {
     "value": 2.75,
     "source": "lmarena.tier_fit",
@@ -6619,22 +6660,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 0.388,
+    "value": 1.662,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 0.388,
+     "derived.community_mix": {
+      "value": 1.662,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 0.388
+       "default": 1.662
       }
      }
     },
@@ -6642,12 +6683,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 29.89,
-   "economy_static": 0.975,
+   "economy_static": 0.9,
    "legacy_public_tier": {
     "value": 3.34,
     "source": "lmarena.tier_fit",
@@ -6796,22 +6837,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 0.124,
+    "value": 0.416,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 0.124,
+     "derived.community_mix": {
+      "value": 0.416,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 0.124
+       "default": 0.416
       }
      }
     },
@@ -6819,12 +6860,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 26.73,
-   "economy_static": 0.992,
+   "economy_static": 0.973,
    "legacy_public_tier": {
     "value": 3.08,
     "source": "lmarena.tier_fit",
@@ -7161,22 +7202,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 5.256,
+    "value": 11.5,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 5.256,
+     "derived.community_mix": {
+      "value": 11.5,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 5.256
+       "default": 11.5
       }
      }
     },
@@ -7184,12 +7225,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 13.62,
-   "economy_static": 0.741,
+   "economy_static": 0.566,
    "legacy_public_tier": {
     "value": 1.99,
     "source": "secondary.tier_fit",
@@ -7339,22 +7380,22 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 4.189,
+    "value": 8.035,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 4.189,
+     "derived.community_mix": {
+      "value": 8.035,
       "how": "the only listing (no effort named)",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "default": 4.189
+       "default": 8.035
       }
      }
     },
@@ -7362,12 +7403,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 5.53,
-   "economy_static": 0.782,
+   "economy_static": 0.651,
    "legacy_public_tier": {
     "value": 1.31,
     "source": "secondary.tier_fit",
@@ -7517,23 +7558,23 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 9.985,
+    "value": 11.416,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 9.985,
+     "derived.community_mix": {
+      "value": 11.416,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 9.985,
-       "medium": 9.332
+       "high": 11.416,
+       "medium": 10.706
       }
      }
     },
@@ -7541,12 +7582,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 26.12,
-   "economy_static": 0.6,
+   "economy_static": 0.568,
    "legacy_public_tier": {
     "value": 2.55,
     "source": "lmarena.tier_fit",
@@ -7704,23 +7745,23 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 30.383,
+    "value": 59.076,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 30.383,
+     "derived.community_mix": {
+      "value": 59.076,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 30.383,
-       "max": 32.502
+       "high": 59.076,
+       "max": 58.63
       }
      }
     },
@@ -7728,12 +7769,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 40.53,
-   "economy_static": 0.331,
+   "economy_static": 0.202,
    "legacy_public_tier": {
     "value": 3.48,
     "source": "secondary.tier_fit",
@@ -8871,32 +8912,42 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 12.827,
+    "status": "ok",
+    "merge": "median of 1 cited source(s)",
+    "used": [
+     "derived.community_mix"
+    ],
+    "sources": {
+     "derived.community_mix": {
+      "value": 12.827,
+      "how": "High listing",
+      "kind": "derived",
+      "as_of": "2026-11-02",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "method": "AA output speed x community token mix at AA list prices",
+      "by_effort": {
+       "high": 12.827,
+       "low": 16.827
+      }
+     }
+    },
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes derived.community_mix",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.539,
    "legacy_public_tier": {
     "value": 1.0,
     "source": "secondary.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
-    {
-     "model": "gpt-oss-120b",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
     {
      "model": "gpt-oss-120b",
      "field": "vision_tools.gui",
@@ -9222,32 +9273,41 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 12.168,
+    "status": "ok",
+    "merge": "median of 1 cited source(s)",
+    "used": [
+     "derived.community_mix"
+    ],
+    "sources": {
+     "derived.community_mix": {
+      "value": 12.168,
+      "how": "the only listing (no effort named)",
+      "kind": "derived",
+      "as_of": "2026-11-02",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "method": "AA output speed x community token mix at AA list prices",
+      "by_effort": {
+       "default": 12.168
+      }
+     }
+    },
+    "max_over_min": null
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes derived.community_mix",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.552,
    "legacy_public_tier": {
     "value": 2.24,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
-    {
-     "model": "kimi-k2.7-code",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
     {
      "model": "kimi-k2.7-code",
      "field": "vision_tools.gui",
@@ -10271,32 +10331,41 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 34.432,
+    "status": "ok",
+    "merge": "median of 1 cited source(s)",
+    "used": [
+     "derived.community_mix"
+    ],
+    "sources": {
+     "derived.community_mix": {
+      "value": 34.432,
+      "how": "the only listing (no effort named)",
+      "kind": "derived",
+      "as_of": "2026-11-02",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "method": "AA output speed x community token mix at AA list prices",
+      "by_effort": {
+       "default": 34.432
+      }
+     }
+    },
+    "max_over_min": null
    },
    "duration_multiplier": {
-    "value": 1.35,
-    "source": "accounts.duration_multiplier",
-    "kind": "community",
-    "method": "shipped duration_multiplier, kept: no time-based usd source for this model"
+    "value": 1.0,
+    "source": "usd merge includes derived.community_mix",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.303,
    "legacy_public_tier": {
     "value": 2.21,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
-    {
-     "model": "gemini-3.1-pro-preview",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
     {
      "model": "gemini-3.1-pro-preview",
      "field": "vision_tools.gui",
@@ -11283,24 +11352,24 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 16.198,
+    "value": 33.474,
     "status": "ok",
     "merge": "median of 1 cited source(s)",
     "used": [
-     "aa.cost_time"
+     "derived.community_mix"
     ],
     "sources": {
-     "aa.cost_time": {
-      "value": 16.198,
+     "derived.community_mix": {
+      "value": 33.474,
       "how": "High listing",
-      "kind": "benchmark",
-      "as_of": "2026-11-09",
+      "kind": "derived",
+      "as_of": "2026-11-02",
       "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "cost per task x 3600 / time per task",
+      "method": "AA output speed x community token mix at AA list prices",
       "by_effort": {
-       "high": 16.198,
-       "low": 18.025,
-       "medium": 15.538
+       "high": 33.474,
+       "low": 28.213,
+       "medium": 31.727
       }
      }
     },
@@ -11308,12 +11377,12 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes aa.cost_time",
+    "source": "usd merge includes derived.community_mix",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 60.03,
-   "economy_static": 0.481,
+   "economy_static": 0.309,
    "legacy_public_tier": {
     "value": 4.33,
     "source": "lmarena.tier_fit",
@@ -11646,13 +11715,6 @@
   },
   {
    "model": "qwen3-coder-next",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-  },
-  {
-   "model": "qwen3-coder-next",
    "field": "vision_tools.gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
@@ -11884,13 +11946,6 @@
   },
   {
    "model": "gpt-oss-120b",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-  },
-  {
-   "model": "gpt-oss-120b",
    "field": "vision_tools.gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
@@ -11909,13 +11964,6 @@
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "kimi-k2.7-code",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
   },
   {
    "model": "kimi-k2.7-code",
@@ -11993,13 +12041,6 @@
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gemini-3.1-pro-preview",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
   },
   {
    "model": "gemini-3.1-pro-preview",

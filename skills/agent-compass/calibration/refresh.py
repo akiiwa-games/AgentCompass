@@ -34,7 +34,7 @@ import sources
 LEVEL = {'ok': 0, 'unused': 0, 'stale': 1, 'missing': 2}   # unused: fetched, left out by design (METR)
 
 
-def rebuild(target, usd_basis='benchmark', now=None, meas_out=measurements.OUT, scores_out=five_axis.OUT):
+def rebuild(target, usd_basis='community_mix', now=None, meas_out=measurements.OUT, scores_out=five_axis.OUT):
     acc = sources.accounts()
     meas = measurements.Builder(target, acc).build()
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
@@ -80,7 +80,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--data')
     ap.add_argument('--no-fetch', action='store_true', help='rebuild from the downloads already in DIR')
-    ap.add_argument('--usd-basis', default='benchmark', choices=sorted(five_axis.USD_BASES))
+    ap.add_argument('--usd-basis', default='community_mix', choices=sorted(five_axis.USD_BASES))
     ap.add_argument('--report', help='also write the source-age table (markdown) here')
     args = ap.parse_args()
     target = sources.data_dir(args.data)
