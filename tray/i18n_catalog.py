@@ -805,6 +805,8 @@ EN = {
     'AgentCompass {0} · 命令行 {1}（版本不一致）': 'AgentCompass {0} · command line {1} (version mismatch)',
     'AgentCompass {0} · 命令行 {1}': 'AgentCompass {0} · command line {1}',
     '可更新到 {0}': 'Update available: {0}',
+    '更新到 {0}（当前 {1}）': 'Update to {0} (current {1})',
+    '检查更新（当前 {0}）': 'Check for updates (current {0})',
     '检查更新失败：{0}': 'Update check failed: {0}',
     '已是最新版本（{0}）': 'Up to date ({0})',
     '安装包缺少 sha256 校验值，已拒绝安装': 'Installer is missing sha256 digest; installation refused',

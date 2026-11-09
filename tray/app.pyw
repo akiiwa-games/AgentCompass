@@ -51,9 +51,6 @@ VERSION = {
     "status_line": f"AgentCompass {_LOCAL_VER}",
 }
 _NOTIFIED_RELEASE_TAG = ""
-RESTART_LOCK = threading.Lock()
-_RESTART_IN_FLIGHT = False
-_RESTART_POPEN_REF = None
 
 # plugin id -> STATE key of its label
 PLUGIN_STATE = {"usage-float": "float", "chatgpt-web": "web", "gemini-web": "gemini",
@@ -367,49 +364,6 @@ def open_panel(icon=None, item=None) -> None:
         log_error(exc)
 
 
-def restart_tray(icon=None, item=None) -> bool:
-    """Let an independent helper close this tray and replace it after the mutex is released."""
-    import subprocess
-    import component_launch
-    import deploy
-
-    global _RESTART_IN_FLIGHT, _RESTART_POPEN_REF
-    with RESTART_LOCK:
-        if (_RESTART_IN_FLIGHT and _RESTART_POPEN_REF is subprocess.Popen) or deploy.restart_in_progress():
-            log_info("restart_tray skipped: restart already in progress")
-            return False
-        _RESTART_IN_FLIGHT = True
-        _RESTART_POPEN_REF = subprocess.Popen
-    try:
-        if not hasattr(subprocess.Popen, "_mock_name") or services.STATE_DIR != (Path.home() / ".agent-compass"):
-            deploy.write_restart_marker(version=VERSION.get("tray_version") or updates.local_version())
-    except Exception as exc:
-        log_error(exc)
-    if icon is not None:
-        try:
-            icon.title = f"AgentCompass · {_tr('正在重启托盘…')}"
-        except Exception:
-            pass
-        try:
-            notify(icon, _tr("正在重启托盘…"))
-        except Exception:
-            pass
-    try:
-        subprocess.Popen(
-            component_launch.command("deploy", "restart"),
-            creationflags=services.CREATE_NO_WINDOW | services.CREATE_NEW_PROCESS_GROUP,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        with RESTART_LOCK:
-            _RESTART_IN_FLIGHT = False
-            _RESTART_POPEN_REF = None
-        raise
-    return True
-
-
 def notify_if_restarted(icon: pystray.Icon) -> bool:
     import deploy
 
@@ -479,12 +433,25 @@ def build_menu() -> Menu:
     if shown:
         items.append(Menu.SEPARATOR)
         items += [plugin_item(plugin) for plugin in shown]
-    version_text = lambda item: VERSION.get("menu_label") or f"AgentCompass {VERSION.get('tray_version', '0.0.0')}"
+    # One product line: it updates when a newer release is known, otherwise it checks for one.
+    def product_text(item):
+        current = VERSION.get("display_version") or f"AgentCompass {VERSION.get('tray_version', '0.0.0')}"
+        current = current.removeprefix("AgentCompass ")
+        if VERSION.get("update_available") and VERSION.get("remote_tag"):
+            return _tr("更新到 {0}（当前 {1}）").format(VERSION["remote_tag"], current)
+        return _tr("检查更新（当前 {0}）").format(current)
+
+    update_now = run(updates.update_agentcompass)
+
+    def product_action(icon, item):
+        if VERSION.get("update_available") and VERSION.get("remote_tag"):
+            update_now(icon, item)
+        else:
+            check_product_update(icon, item)
+
     items += [
         Menu.SEPARATOR,
-        MenuItem(version_text, check_product_update),
-        MenuItem(_tr("更新 AgentCompass"), run(updates.update_agentcompass)),
-        MenuItem(tr("重启托盘", "Restart tray"), restart_tray),
+        MenuItem(product_text, product_action),
         MenuItem(_tr("退出"), quit_tray),
     ]
     return Menu(*items)
@@ -518,8 +485,7 @@ def main() -> None:
     import os
 
     ui_theme.identify_process()
-    global PLUGINS, _RESTART_IN_FLIGHT
-    _RESTART_IN_FLIGHT = False
+    global PLUGINS
     log_info(f"tray starting pid={os.getpid()} attach_only={'--attach-only' in sys.argv}")
     if not single_instance():
         log_info("tray startup skipped: another instance holds the mutex")

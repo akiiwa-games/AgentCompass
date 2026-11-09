@@ -90,22 +90,21 @@ class FrozenRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'Python'):
             grok_bot_cli.python()
 
-    def test_menu_restart_launches_independent_frozen_helper(self):
+    def test_restart_helper_runs_independently_frozen_or_not(self):
+        self.assertEqual(launch.command('deploy', 'restart'), [sys.executable, '--run-component', 'deploy', 'restart'])
+        with mock.patch.object(sys, 'frozen', False), mock.patch.object(sys, 'executable', 'C:/Python/python.exe'):
+            self.assertEqual(launch.command('deploy', 'restart'), [str(Path('C:/Python/pythonw.exe')),
+                             str(Path(launch.__file__).with_name('deploy.py')), 'restart'])
+
+    def test_frozen_menu_offers_the_product_line_in_english(self):
         loader = importlib.machinery.SourceFileLoader('frozen_test_app', str(Path(__file__).with_name('app.pyw')))
         spec = importlib.util.spec_from_loader(loader.name, loader)
         app = importlib.util.module_from_spec(spec)
         loader.exec_module(app)
-        with mock.patch.object(subprocess, 'Popen') as popen:
-            app.restart_tray()
-        self.assertEqual(popen.call_args.args[0], [sys.executable, '--run-component', 'deploy', 'restart'])
-        with mock.patch.object(sys, 'frozen', False), mock.patch.object(sys, 'executable', 'C:/Python/python.exe'), \
-                mock.patch.object(subprocess, 'Popen') as popen:
-            app.restart_tray()
-        self.assertEqual(popen.call_args.args[0], [str(Path('C:/Python/pythonw.exe')),
-                         str(Path(launch.__file__).with_name('deploy.py')), 'restart'])
         with mock.patch.object(app.i18n, 'get_language', return_value='en'):
-            self.assertIn('Restart tray', [item.text for item in app.build_menu().items])
-
+            texts = [item.text for item in app.build_menu().items]
+        self.assertTrue(any(text.startswith('Check for updates (current ') for text in texts))
+        self.assertNotIn('Restart tray', texts)
 
 if __name__ == '__main__':
     unittest.main()

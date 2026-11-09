@@ -54,7 +54,6 @@ class TrayTestCase(unittest.TestCase):
             ("PRIORITY", {"label": "重置前优先", "entries": [], "targets": []}),
             ("PLUGINS", app.plugins.defaults()),
             ("VERSION", default_version),
-            ("_RESTART_IN_FLIGHT", False),
             ("_NOTIFIED_RELEASE_TAG", ""),
         ):
             patcher = mock.patch.object(app, name, value)
@@ -83,7 +82,7 @@ class MenuTests(TrayTestCase):
         self.assertCountEqual(self.shown(), [
             "打开 AgentCompass", "重置前优先", "Usage Float：运行中",
             "ChatGPT Web：运行中", "Gemini Web：已停止", "EasyTier：运行中（2 个对端）",
-            "AgentCompass 0.3.8", "更新 AgentCompass", "重启托盘", "退出"])
+            "检查更新（当前 0.3.8）", "退出"])
         items = self.items()
         self.assertTrue(items[0].default)
 
@@ -105,7 +104,7 @@ class MenuTests(TrayTestCase):
             row["enabled"] = False
         self.assertEqual(
             self.shown(),
-            ["打开 AgentCompass", "重置前优先", "AgentCompass 0.3.8", "更新 AgentCompass", "重启托盘", "退出"],
+            ["打开 AgentCompass", "重置前优先", "检查更新（当前 0.3.8）", "退出"],
         )
 
     def test_menu_is_two_levels_at_most_and_plugins_have_no_submenu(self):
@@ -135,25 +134,24 @@ class MenuTests(TrayTestCase):
             "status_line": "可更新到 v0.3.9",
         }):
             app.refresh_version(icon, force=False, network=True)
-        self.assertIn("AgentCompass 0.3.8 · 命令行 0.3.5（版本不一致） · 可更新到 v0.3.9", self.shown())
+        self.assertIn("更新到 v0.3.9（当前 0.3.8 · 命令行 0.3.5（版本不一致））", self.shown())
         icon.notify.assert_called_once_with("AgentCompass · 可更新到 v0.3.9", "AgentCompass")
 
-    def test_one_click_update_agentcompass_menu_item_triggers_update(self):
-        with mock.patch.object(app.updates, "update_agentcompass", return_value="已更新") as upd:
-            act = self.click(self.by_text()["更新 AgentCompass"])
+    def test_product_line_updates_when_a_release_is_known_and_checks_otherwise(self):
+        with mock.patch.object(app, "check_product_update") as check, \
+                mock.patch.object(app.updates, "update_agentcompass") as upd:
+            act = self.click(self.by_text()["检查更新（当前 0.3.8）"])
+            act.assert_not_called()
+            check.assert_called_once()
+            app.VERSION.update(update_available=True, remote_tag="v0.3.9")
+            act = self.click(self.by_text()["更新到 v0.3.9（当前 0.3.8）"])
             act.assert_called_once()
         upd.assert_called_once()
+        self.assertNotIn("重启托盘", self.shown())
 
-    def test_restart_tray_is_single_flight_and_emits_feedback_on_click_and_after_restart(self):
-        icon = mock.Mock()
-        with mock.patch("subprocess.Popen") as popen, mock.patch("deploy.restart_in_progress", return_value=False):
-            first = app.restart_tray(icon)
-            second = app.restart_tray(icon)
-        self.assertTrue(first)
-        self.assertFalse(second)
-        self.assertEqual(popen.call_count, 1)
-        self.assertIn("正在重启托盘…", icon.title)
-        icon.notify.assert_called_once_with("正在重启托盘…", "AgentCompass")
+    def test_tray_announces_a_restart_once_after_coming_back(self):
+        import deploy
+        deploy.write_restart_marker(version="0.3.8")
 
         # When the new tray starts up, it consumes the restart marker and emits the post-restart notification
         new_icon = mock.Mock()
