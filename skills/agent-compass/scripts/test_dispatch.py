@@ -2941,11 +2941,15 @@ class ModelLatchTests(unittest.TestCase):
 
 class ProviderRetryTests(unittest.TestCase):
     """2026-11-09: an opencode free-model worker sat `running` on "Provider retry (attempt 1): Free usage exceeded,
-    subscribe to Go" while the account looked ready and the router kept choosing opencode. The bridge stops such a
-    worker with failure_code provider_retry_stuck; the classifier, never code, decides what the message blocks."""
+    subscribe to Go" while the account looked ready and the router kept choosing opencode; after opencode 2.x the same
+    limit fails the turn at once. The bridge records either with the provider's message; the classifier, never code,
+    decides what it blocks."""
     setUp_dispatch, snapshot = DispatchTests.setUp, DispatchTests.snapshot
     issue, prepare = DispatchTests.issue, DispatchTests.prepare
     MESSAGE = 'Free usage exceeded, subscribe to Go'
+    # opencode 2.2.6 on LS, daemon log `handleStreamEvent: turn_failed`, 2026-11-09.
+    V2_MESSAGE = ('Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, '
+                  'or switch models.')
 
     def setUp(self):
         import provider_retry
@@ -2957,21 +2961,23 @@ class ProviderRetryTests(unittest.TestCase):
         self.scopes, self.asked = [], []
         self.real_classify = provider_retry.classify_scope
 
-        def classify(account, provider, model, message):
-            self.asked.append((account, provider, model, message))
+        def classify(account, provider, model, message, failure):
+            self.asked.append((account, provider, model, message, failure))
             return (self.scopes.pop(0) if self.scopes else 'unknown'), {'source': 'system_one', 'scorer_type': 'fake'}
         classifier = patch.object(provider_retry, 'classify_scope', side_effect=classify)
         classifier.start()
         self.addCleanup(classifier.stop)
         self.other = dict(allocator.bundles(self.accounts)['lab_opus55_high'], bundle_id='lab_opus55_high')
+        self.third = dict(allocator.bundles(self.accounts)['lab_fable51_high'], bundle_id='lab_fable51_high')
 
     def stuck(self, at, **changes):
         return {'reason': 'provider retry stuck', 'failure_code': 'provider_retry_stuck', 'provider_message': self.MESSAGE,
                 'next': None, 'attempts': 5, 'retrying_since': (at - timedelta(minutes=5)).isoformat(),
-                'at': at.isoformat(), **changes}
+                'at': at.isoformat(), 'partial_work': False, 'cancelled': True, **changes}
 
-    def launched(self):
-        row = self.prepare(self.issue())
+    def launched(self, task_id=None):
+        task = {**self.task, 'task_id': task_id} if task_id else None
+        row = self.prepare(self.issue(task=task), task=task)
         registry.claim(row['request'], now=self.now)
         return row
 
@@ -2988,26 +2994,66 @@ class ProviderRetryTests(unittest.TestCase):
         done = registry.observe(row['dispatch_id'], self.snapshot(row, status='idle', attentionReason='finished'),
                                 now=self.now + timedelta(seconds=30), terminal=self.stuck(at))
         self.assertEqual((done['state'], done['failure_code']), ('failed', 'provider_retry_stuck'))
-        self.assertEqual(flow.public(done)['next_action'], flow.RETRY_STUCK_NEXT)
-        self.assertEqual(self.asked, [('claude-lab', 'claude-lab', 'claude-sonnet-5-5', self.MESSAGE)])
+        self.assertIn(flow.RETRY_STUCK_CLEAN, flow.public(done)['next_action'])
+        self.assertEqual(self.asked, [('claude-lab', 'claude-lab', 'claude-sonnet-5-5', self.MESSAGE, 'provider_retry_stuck')])
         held = provider_retry.active(now=at)
         self.assertEqual(set(held), {'claude-lab/claude-sonnet-5-5'})   # unknown scope starts at the model
         self.assertEqual(held['claude-lab/claude-sonnet-5-5']['retry_at'], (at + timedelta(seconds=120)).isoformat())
         plan, excluded = self.excluded('lab_sonnet55_high')
         self.assertTrue(any(self.MESSAGE in e for e in excluded), excluded)
         self.assertNotIn(plan['choice'], ('lab_sonnet55_high', 'lab_sonnet55_medium'))
-        self.assertTrue(any(w.startswith('claude-lab/claude-sonnet-5-5: provider kept retrying') and self.MESSAGE in w
-                            for w in plan['decision']['warnings']), plan['decision'])
+        self.assertTrue(any(w.startswith('claude-lab/claude-sonnet-5-5: provider failure hold') and self.MESSAGE in w
+                            and 'agentcompass hold --clear' in w for w in plan['decision']['warnings']), plan['decision'])
         # Observing the same terminal again records nothing more.
         registry.observe(row['dispatch_id'], self.snapshot(row, status='idle'), now=self.now + timedelta(seconds=40),
                          terminal=self.stuck(at))
         self.assertEqual(len(self.asked), 1)
 
-    def test_an_account_scope_holds_every_model_until_a_later_dispatch_there_completes(self):
+    def test_the_parent_is_told_about_partial_work_and_a_failed_stop(self):
+        for detail, expected in (({'partial_work': True, 'cancelled': True}, flow.RETRY_STUCK_PARTIAL),
+                                 ({'partial_work': False, 'cancelled': False}, flow.RETRY_STUCK_RUNNING),
+                                 ({}, flow.RETRY_STUCK_PARTIAL)):   # an old receipt without the flags may have worked
+            with self.subTest(detail=detail):
+                row = {'state': 'failed', 'agent_id': 'a', 'failure_code': 'provider_retry_stuck',
+                       'failure_detail': detail, 'dispatch_id': 'd', 'bundle': self.bundle}
+                self.assertIn('part of the work' if expected != flow.RETRY_STUCK_RUNNING else 'cancel_agent',
+                              flow.public(row)['next_action'])
+                self.assertTrue(flow.public(row)['next_action'].endswith(expected))
+        self.assertNotIn('roll this brief again and the router', flow.RETRY_STUCK_PARTIAL)
+
+    def test_a_turn_that_failed_with_the_provider_message_is_classified_and_held_the_same_way(self):
         import provider_retry
         self.scopes = ['account']
-        # Launched after the stuck sighting but before it was recorded: routing cannot start one once the hold exists.
         row = self.launched()
+        registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+        at = self.now + timedelta(seconds=15)
+        terminal = {'reason': 'error', 'status': 'error', 'attentionReason': 'error', 'at': at.isoformat(),
+                    'failure_code': 'provider_turn_failed', 'provider_message': self.V2_MESSAGE}
+        done = registry.observe(row['dispatch_id'], self.snapshot(row, status='error'),
+                                now=self.now + timedelta(seconds=20), terminal=terminal)
+        self.assertEqual((done['state'], done['failure_code']), ('failed', 'provider_turn_failed'))
+        self.assertEqual(flow.public(done)['next_action'], flow.TURN_FAILED_NEXT)
+        self.assertEqual(self.asked[0][3:], (self.V2_MESSAGE, 'provider_turn_failed'))
+        held = provider_retry.active(now=self.now + timedelta(days=30))
+        self.assertEqual(list(held), ['claude-lab'])
+        self.assertEqual((held['claude-lab']['failure_code'], held['claude-lab']['message']),
+                         ('provider_turn_failed', self.V2_MESSAGE))
+        _, excluded = self.excluded('lab_opus55_high')
+        self.assertTrue(any('provider turn failed' in e and self.V2_MESSAGE in e for e in excluded), excluded)
+
+    def test_an_error_the_classifier_reads_as_not_the_provider_holds_nothing(self):
+        import provider_retry
+        self.scopes = ['none']
+        terminal = {'failure_code': 'provider_turn_failed', 'provider_message': 'ENOENT: no such file tests/x.py',
+                    'at': self.now.isoformat()}
+        self.assertIsNone(provider_retry.record(self.bundle, terminal, dispatch_id='d-none'))
+        self.assertEqual(provider_retry.active(now=self.now), {})
+        self.assertIsNone(provider_retry.record(self.bundle, terminal, dispatch_id='d-none'))   # read once
+        self.assertEqual(len(self.asked), 1)
+
+    def test_an_account_scope_holds_every_model_until_cleared_or_a_named_model_there_completes(self):
+        import provider_retry
+        self.scopes = ['account']
         at = self.now - timedelta(minutes=1)
         entry = provider_retry.record(self.bundle, self.stuck(at), dispatch_id='d-stuck')
         self.assertEqual((entry['model'], entry['scope_source'], entry['retry_at']), (None, 'classifier', None))
@@ -3017,15 +3063,26 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertIn(self.MESSAGE, provider_retry.reason(self.other, provider_retry.active(now=later)))
         _, excluded = self.excluded('lab_opus55_high')
         self.assertTrue(any('on this account' in e for e in excluded), excluded)
-        with self.assertRaisesRegex(ValueError, 'provider kept retrying'):
-            self.prepare(self.issue(task={**self.task, 'task_id': 'another-task'}), task={**self.task, 'task_id': 'another-task'})
-        # A dispatch launched before the hold says nothing about it.
-        self.assertFalse(provider_retry.clear('claude-lab', 'claude-sonnet-5-5',
-                                              launched_at=(at - timedelta(seconds=1)).isoformat()))
+        with self.assertRaisesRegex(ValueError, 'provider failure hold'):
+            self.launched('routed-task')   # routing's own pick is refused
+        # A model the user names is the probe: prepare lets it through, and its completion lifts the hold.
+        task = {**self.task, 'task_id': 'probe-task'}
+        row = self.prepare(self.issue(task=task, constraint='user_override'), task=task)
+        registry.claim(row['request'], now=self.now)
         registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
         self.assertTrue(provider_retry.active(now=self.now))   # a running worker is no success: a stuck one runs too
+        self.assertFalse(provider_retry.clear('claude-lab', 'claude-sonnet-5-5',   # launched before the hold: no proof
+                                              launched_at=(at - timedelta(seconds=1)).isoformat()))
         registry.observe(row['dispatch_id'], self.snapshot(row, status='idle', attentionReason='finished'),
                          now=self.now + timedelta(seconds=30))
+        self.assertEqual(provider_retry.active(now=self.now), {})
+
+    def test_the_clear_command_lifts_a_hold(self):
+        import provider_retry
+        self.scopes = ['account']
+        provider_retry.record(self.bundle, self.stuck(self.now), dispatch_id='d-clear')
+        self.assertFalse(provider_retry.clear_key('codex'))
+        self.assertEqual(provider_retry.main(['--clear', 'claude-lab']), 0)
         self.assertEqual(provider_retry.active(now=self.now), {})
 
     def test_unknown_scope_widens_to_the_account_when_a_second_model_fails_the_same_way(self):
@@ -3037,6 +3094,20 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertEqual((widened['model'], widened['scope_source'], widened['retry_at']), (None, 'widened', None))
         self.assertEqual(widened['models'], ['claude-opus-5-5', 'claude-sonnet-5-5'])
         self.assertIn('claude-lab', provider_retry.active(now=at + timedelta(days=1)))
+
+    def test_a_transient_or_model_hold_never_widens_a_later_unknown_one(self):
+        # Review F1: offline, opencode retries `fetch failed`; the classifier reads A as transient, then cannot be reached
+        # for B (unknown). That must not become a permanent account hold.
+        import provider_retry
+        for first in ('transient', 'model'):
+            with self.subTest(first=first):
+                self.store.unlink(missing_ok=True)
+                self.scopes = [first, 'unknown']
+                provider_retry.record(self.bundle, self.stuck(self.now), dispatch_id=f'a-{first}')
+                entry = provider_retry.record(self.other, self.stuck(self.now + timedelta(minutes=1)),
+                                              dispatch_id=f'b-{first}')
+                self.assertEqual((entry['model'], entry['scope_source']), ('claude-opus-5-5', 'unknown_default'))
+                self.assertNotIn('claude-lab', provider_retry.active(now=self.now + timedelta(days=1)))
 
     def test_a_scope_the_classifier_names_is_not_widened(self):
         import provider_retry
@@ -3083,7 +3154,6 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'launching')   # the registry decides its state
 
     def test_the_scope_comes_from_the_configured_classifier_and_a_silent_one_reads_as_unknown(self):
-        import provider_retry
         import route_judge
         asked = []   # the real classify_scope, with the classifier backend faked
 
@@ -3093,9 +3163,11 @@ class ProviderRetryTests(unittest.TestCase):
         with patch.object(route_judge, 'scorer_accounts', return_value=['claude']), \
                 patch.object(route_judge, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
                 patch.object(route_judge, 'run_structured', side_effect=run):
-            scope, meta = self.real_classify('opencode', 'opencode', 'glm-5.3-flash-free', self.MESSAGE)
+            scope, meta = self.real_classify('opencode', 'opencode', 'glm-5.3-flash-free', self.V2_MESSAGE,
+                                             'provider_turn_failed')
         self.assertEqual((scope, meta['source']), ('account', 'system_one'))
-        self.assertIn(self.MESSAGE, asked[0])
+        self.assertIn(self.V2_MESSAGE, asked[0])
+        self.assertIn('provider_turn_failed', asked[0])
         with patch.object(route_judge, 'scorer_accounts', return_value=['claude']), \
                 patch.object(route_judge, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
                 patch.object(route_judge, 'run_structured', return_value=({'scope': 'quota'}, 'claude', 'haiku')):

@@ -1895,6 +1895,9 @@ class Panel:
                              cursor="hand2", bd=0, padx=2, pady=0)
             again.bind("<Button-1>", lambda _e, a=card["account"]: self.refresh_usage([a]))
             again.grid(row=0, column=3, sticky="e")
+        clear = self.retry_clear_button(top, card["account"])
+        clear.grid(row=0, column=4, sticky="e")
+        clear.grid_remove()
 
         win_widgets = []
         for _ in card["windows"]:
@@ -1920,6 +1923,7 @@ class Panel:
             "account": card["account"],
             "refreshable": refreshable,
             "again": again,
+            "clear": clear, "clear_layout": "grid",
             "read_at": read_at,
             "dot": dot,
             "name": name,
@@ -1943,11 +1947,13 @@ class Panel:
         name.pack(side="left")
         detail = tk.Label(inner, text="", bg=theme.CARD, fg=theme.MUTED, font=(theme.FONT, 8), padx=4, pady=0)
         detail.pack(side="left")
+        clear = self.retry_clear_button(inner, card["account"])
         widgets = {
             "outer": outer,
             "account": card["account"],
             "refreshable": refreshable,
             "again": None,
+            "clear": clear, "clear_layout": "pack",
             "dot": dot,
             "name": name,
             "detail": detail,
@@ -1957,9 +1963,31 @@ class Panel:
         self._bind_quota_interactions(outer, widgets, card["account"], refreshable)
         return widgets
 
+    def retry_clear_button(self, parent, account):
+        """A card's 清除 link, shown only while the account (or a model of it) is held for a provider failure."""
+        button = self.tk.Label(parent, text=_tr("清除"), bg=theme.CARD, fg=theme.AMBER, font=(theme.FONT, 8, "underline"),
+                               cursor="hand2", bd=0, padx=4, pady=0)
+        button.bind("<Button-1>", lambda _e, a=account: self.clear_retry_hold(a))
+        return button
+
+    def clear_retry_hold(self, account):
+        def done(_msg):
+            self._cards_cache = None
+            self.load_quota(True)
+        self.run(lambda: self.data_module().clear_retry_holds(account), self.say(lambda: done(None)),
+                 _tr("正在清除提供方失败标记…"))
+
     @staticmethod
     def fill_quota_card(widgets, card):
         refreshable = bool(widgets.get("refreshable"))
+        clear = widgets.get("clear")
+        if clear is not None:
+            if widgets.get("clear_layout") == "grid":
+                clear.grid() if card.get("retry_hold") else clear.grid_remove()
+            elif card.get("retry_hold"):
+                clear.pack(side="left")
+            else:
+                clear.pack_forget()
         widgets["tooltip_text"] = quota_tooltip_text(card, None, refreshable)
         is_failing = card.get("status") in ("usage_failing", "plan_inactive", "auth_failed")
         dot_fg = (theme.AMBER if is_failing or card.get("kind") == "warn"

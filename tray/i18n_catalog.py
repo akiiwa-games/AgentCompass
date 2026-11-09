@@ -66,10 +66,14 @@ EN = {
     '模型启动失败：不可用，下次重试 {0}': 'Model launch failed: unavailable, next retry {0}',
     '{0} 个模型启动失败，已排除派发': '{0} model(s) failed to launch, excluded from dispatch',
     '无提供方消息': 'no provider message',
-    '提供方持续重试，整个账号已排除派发：{0}（成功派发或手动清除前不再尝试）':
-        'Provider kept retrying, whole account excluded from dispatch: {0} (not tried again until a dispatch succeeds or it is cleared)',
-    '{0} 提供方持续重试，已排除派发：{1}（下次重试 {2}）': '{0}: provider kept retrying, excluded from dispatch: {1} (next retry {2})',
-    '提供方持续重试，已排除派发，下次重试 {0}': 'Provider kept retrying, excluded from dispatch, next retry {0}',
+    '提供方报错': 'Provider error',
+    '提供方持续重试': 'Provider kept retrying',
+    '{0}，整个账号已排除派发：{1}（点卡片上的“清除”或运行 agentcompass hold --clear {2} 后再派发）':
+        '{0}, whole account excluded from dispatch: {1} (press Clear on the card or run agentcompass hold --clear {2} to dispatch again)',
+    '{0} {1}，已排除派发：{2}（下次重试 {3}）': '{0}: {1}, excluded from dispatch: {2} (next retry {3})',
+    '{0}，已排除派发，下次重试 {1}': '{0}, excluded from dispatch, next retry {1}',
+    '清除': 'Clear',
+    '正在清除提供方失败标记…': 'Clearing the provider failure hold…',
     '默认分': 'Default score',
     '估价': 'Estimated price',
     '未验证': 'Unverified',

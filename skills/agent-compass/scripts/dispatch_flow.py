@@ -55,9 +55,19 @@ WORKER_FAILED_NEXT = ('Paseo created this worker and it ended in error, so nothi
                       '(get_agent_activity on agent_id) and tell the user before rolling again: the router does not read '
                       'error text, so it may choose the same model again.')
 RETRY_STUCK_NEXT = ('Its provider kept retrying one request without progress, so AgentCompass stopped the turn and holds '
-                    'that model (with backoff) or its whole account (until a dispatch there completes or the hold is '
-                    'cleared) out of dispatch; plan/roll warnings and the tray account list show the provider message. '
-                    'Nothing is running this brief: roll it again and the router picks another model.')
+                    'that model (with backoff) or its whole account (until cleared with the tray clear button or '
+                    '`agentcompass hold --clear`) out of dispatch; plan/roll warnings and the tray account list show the '
+                    'provider message. ')
+TURN_FAILED_NEXT = ('Its provider ended the turn with an error. AgentCompass had its classifier read the provider message: '
+                    'when it means the provider refuses this model or account, that model or account is held out of '
+                    'dispatch (plan/roll warnings and the tray account list show it; clear with the tray clear button or '
+                    '`agentcompass hold --clear`). Read its error (get_agent_activity on agent_id) and check whether it '
+                    'did part of the work before rolling this brief again.')
+RETRY_STUCK_CLEAN = 'The worker did no work before it got stuck: roll this brief again and the router picks another model.'
+RETRY_STUCK_PARTIAL = ('The worker had already done part of the work (it is stopped, not removed): check its activity '
+                       '(get_agent_activity on agent_id) and its worktree before rolling this brief again.')
+RETRY_STUCK_RUNNING = ('Stopping the worker failed, so it may still be running and resume once the provider recovers: stop '
+                       'it with cancel_agent on agent_id and check what it did before rolling this brief again.')
 REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispatch observed it. The dispatch is over and '
                 'holds nothing. The worker may have done part of the work: check that before rolling this brief again.')
 
@@ -106,7 +116,9 @@ def public(row, now=None):
                 model=model_latch.launch_model(row['bundle']), account=row['bundle'].get('account'),
                 code=row['failure_code'], retry=model_latch.retry_text({'observed_at': row.get('updated_at')}))
     elif row['state'] == 'failed' and row.get('agent_id'):
-        out['next_action'] = RETRY_STUCK_NEXT if row.get('failure_code') == 'provider_retry_stuck' else WORKER_FAILED_NEXT
+        out['next_action'] = (retry_stuck_next(row) if row.get('failure_code') == 'provider_retry_stuck'
+                              else TURN_FAILED_NEXT if row.get('failure_code') == 'provider_turn_failed'
+                              else WORKER_FAILED_NEXT)
     elif row['state'] == 'canceled' and (row.get('creation') or {}).get('removed'):
         out['next_action'] = REMOVED_NEXT
     elif creating(row):
@@ -116,6 +128,14 @@ def public(row, now=None):
         late = bool((row.get('creation') or {}).get('in_flight')) and (now or registry.utcnow()) >= registry.create_deadline(row)
         out['next_action'] = STALLED_NEXT if late else CREATING_NEXT
     return out
+
+
+def retry_stuck_next(row):
+    detail = row.get('failure_detail') or {}
+    if detail.get('cancelled') is False:
+        return RETRY_STUCK_NEXT + RETRY_STUCK_RUNNING
+    # An old receipt without the flag may have worked: say so rather than invite a blind re-roll.
+    return RETRY_STUCK_NEXT + (RETRY_STUCK_CLEAN if detail.get('partial_work') is False else RETRY_STUCK_PARTIAL)
 
 
 def creating(row):

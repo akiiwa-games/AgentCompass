@@ -33,6 +33,7 @@ delegate work:
   usage       collect provider usage once into the router's cache (no Usage Float needed); `usage --show` prints what routing reads
   record      record a route the user forced (user-named model or effort)
   override    add, list or clear a temporary routing boost
+  hold        list accounts/models held after a provider failed a worker; `hold --clear ACCOUNT[/MODEL]` lifts one
 
 install and health:
   setup       first-run onboarding (--dry-run previews)
@@ -125,6 +126,15 @@ def data_command(args: list[str]) -> int:
     script = locations.skill_root() / "agent-compass" / "scripts" / "public_data.py"
     if not script.is_file():
         sys.stderr.write(f"public_data.py was not found ({script})\n")
+        return 2
+    return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), *args])
+
+
+def hold_command(args: list[str]) -> int:
+    """List or clear provider-retry holds (skills/agent-compass/scripts/provider_retry.py)."""
+    script = locations.skill_root() / "agent-compass" / "scripts" / "provider_retry.py"
+    if not script.is_file():
+        sys.stderr.write(f"provider_retry.py was not found ({script})\n")
         return 2
     return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), *args])
 
@@ -241,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
             return plan_passthrough(rest)
         if command == "data":
             return data_command(rest)
+        if command == "hold":
+            return hold_command(rest)
         if command == "usage" and "--show" not in rest:
             return usage_command(rest)
         if command in RUNNERS:

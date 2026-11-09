@@ -1398,19 +1398,31 @@ def provider_retry_holds(allocator) -> dict:
     return found if isinstance(found, dict) else {}
 
 
+def _retry_what(entry: dict) -> str:
+    return _tr("提供方报错") if entry.get("failure_code") == "provider_turn_failed" else _tr("提供方持续重试")
+
+
 def retry_hold_text(holds: dict, account: str) -> str | None:
-    """The account list's note for an account (or its models) held for a provider stuck retrying: the provider's own
-    message and when the router tries again. None when nothing of the account is held."""
+    """The account list's note for an account (or its models) held for a provider failure: the provider's own message
+    and when the router tries again, or how to clear an account hold. None when nothing of the account is held."""
     notes = []
     for entry in sorted((v for v in holds.values() if v.get("account") == account),
                         key=lambda v: (v.get("model") is not None, v.get("model") or "")):
         message = entry.get("message") or _tr("无提供方消息")
         if entry.get("model") is None:
-            notes.append(_tr("提供方持续重试，整个账号已排除派发：{0}（成功派发或手动清除前不再尝试）").format(message))
+            notes.append(_tr("{0}，整个账号已排除派发：{1}（点卡片上的“清除”或运行 agentcompass hold --clear {2} 后再派发）").format(
+                _retry_what(entry), message, account))
         else:
-            notes.append(_tr("{0} 提供方持续重试，已排除派发：{1}（下次重试 {2}）").format(
-                model_label(entry["model"]), message, read_time_text(entry.get("retry_at"))))
+            notes.append(_tr("{0} {1}，已排除派发：{2}（下次重试 {3}）").format(
+                model_label(entry["model"]), _retry_what(entry), message, read_time_text(entry.get("retry_at"))))
     return "；".join(notes) or None
+
+
+def clear_retry_holds(account: str) -> bool:
+    """The account card's clear button: drop every provider-failure hold of the account (its own and its models')."""
+    allocator, _ = modules()
+    holds = allocator.provider_retry
+    return holds.clear(account, path=None if os.environ.get("ROUTER_PROVIDER_RETRY") else STATE_DIR / holds.FILE)
 
 
 def retry_model_text(allocator, holds: dict, account: str, bundles: list) -> str | None:
@@ -1420,7 +1432,7 @@ def retry_model_text(allocator, holds: dict, account: str, bundles: list) -> str
             entry = (holds.get(allocator.provider_retry.key(name, allocator.provider_retry.launch_model(bundle)))
                      or holds.get(allocator.provider_retry.key(name, bundle.get("model"))))
             if entry:
-                return _tr("提供方持续重试，已排除派发，下次重试 {0}").format(read_time_text(entry.get("retry_at")))
+                return _tr("{0}，已排除派发，下次重试 {1}").format(_retry_what(entry), read_time_text(entry.get("retry_at")))
     return None
 
 

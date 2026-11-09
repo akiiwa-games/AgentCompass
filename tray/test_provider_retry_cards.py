@@ -40,8 +40,9 @@ class ProviderRetryCardTests(unittest.TestCase):
         self.assertEqual(card['kind'], 'warn')
         self.assertTrue(card['retry_hold'])
         self.assertIn(MESSAGE, card['badge'])
-        self.assertIn('整个账号已排除派发', card['badge'])
-        self.assertIn('手动清除', card['badge'])   # no retry time: it waits for a success or a clear
+        self.assertIn('提供方持续重试，整个账号已排除派发', card['badge'])
+        self.assertIn('agentcompass hold --clear opencode', card['badge'])   # no retry time: it says how to clear it
+        self.assertNotIn('成功派发', card['badge'])
         self.assertNotEqual(router_window.card_title(card), card['label'])   # the card itself says it is in trouble
 
     def test_a_model_hold_names_the_model_and_its_next_retry(self):
@@ -51,6 +52,31 @@ class ProviderRetryCardTests(unittest.TestCase):
         self.assertEqual(card['kind'], 'warn')
         self.assertIn(MESSAGE, card['badge'])
         self.assertIn(retry.astimezone().strftime('%m-%d %H:%M'), card['badge'])
+
+    def test_a_failed_turn_hold_says_the_provider_errored(self):
+        message = 'Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.'
+        card = self.card({'opencode': {'account': 'opencode', 'model': None, 'message': message, 'retry_at': None,
+                                       'failure_code': 'provider_turn_failed'}})
+        self.assertIn('提供方报错，整个账号已排除派发', card['badge'])
+        self.assertIn(message, card['badge'])
+
+    def test_the_card_clear_button_shows_only_while_held_and_clears_the_account(self):
+        clear = Mock()
+        widgets = {'clear': clear, 'clear_layout': 'pack', 'windows': [], 'refreshable': False}
+        card = {'account': 'opencode', 'label': 'OpenCode', 'kind': 'warn', 'badge': 'x', 'windows': [],
+                'retry_hold': True}
+        router_window.Panel.fill_quota_card(widgets, card)
+        clear.pack.assert_called_once_with(side='left')
+        router_window.Panel.fill_quota_card(widgets, {**card, 'retry_hold': False})
+        clear.pack_forget.assert_called_once_with()
+        grid = Mock()
+        router_window.Panel.fill_quota_card({'clear': grid, 'clear_layout': 'grid', 'windows': [], 'refreshable': False},
+                                            card)
+        grid.grid.assert_called_once_with()
+        allocator = Mock()
+        with patch.object(router_data, 'modules', return_value=(allocator, Mock())):
+            router_data.clear_retry_holds('opencode')
+        self.assertEqual(allocator.provider_retry.clear.call_args.args, ('opencode',))
 
     def test_no_hold_leaves_the_card_alone_and_another_problem_keeps_its_text(self):
         card = self.card({})
@@ -77,6 +103,12 @@ def test_the_model_list_marks_a_held_model_and_badges_a_held_account(tmp_path, m
     sol = next(model for model in row['models'] if model['model'] == 'gpt-6.1-sol')
     retry = datetime.fromisoformat(entry['retry_at']).astimezone().strftime('%m-%d %H:%M')
     assert sol['launch_unavailable'] == f'提供方持续重试，已排除派发，下次重试 {retry}'
+    assert router_data.clear_retry_holds('codex') is True
+    assert not any(model.get('launch_unavailable') for model in next(
+        row for row in router_data.harness_model_rows() if row['harness'] == 'codex')['models'])
+    entry = provider_retry.record(bundle, {'failure_code': 'provider_retry_stuck', 'provider_message': MESSAGE,
+                                           'at': at.isoformat()},
+                                  dispatch_id='d1b', classify=lambda *args: ('model', {'source': 'system_one'}))
     assert not target.exists()   # a hold is not a setting
     provider_retry.record({**bundle, 'model': 'gpt-6.1-terra'}, {'failure_code': 'provider_retry_stuck',
                           'provider_message': MESSAGE, 'at': at.isoformat()},

@@ -586,7 +586,10 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             raise ValueError('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
         if decision.get('constraint') == 'user_override':
-            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint'))
+            import provider_retry
+            # A named model on a held account or model is the probe that can lift the hold (provider_retry).
+            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
+                                                                     provider_retry.EXCLUSION_PREFIX))
                           and ': responsiveness ' not in e]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
@@ -745,9 +748,10 @@ def finished_before(terminal, launched_at):
         return False
 
 
-def retry_stuck(terminal, launched_at):
-    """The bridge's notifier stopped this launch because its provider kept retrying without progress."""
-    if not isinstance(terminal, dict) or terminal.get('failure_code') != 'provider_retry_stuck':
+def provider_failed(terminal, launched_at):
+    """The bridge's notifier saw this launch fail at its provider: stopped while the provider kept retrying without
+    progress, or its turn ended with the provider's error."""
+    if not isinstance(terminal, dict) or terminal.get('failure_code') not in ('provider_retry_stuck', 'provider_turn_failed'):
         return False
     at = terminal.get('at')
     try:
@@ -819,11 +823,12 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if undelivered:
             reason = None
         target = None
-        stuck = retry_stuck(terminal, row['launched_at'])
+        stuck = provider_failed(terminal, row['launched_at'])
         if stuck:
-            # The bridge stopped a turn its provider kept retrying: whatever the host says after that stop, it failed.
+            # The provider failed this turn (or the bridge stopped it retrying): whatever the host says after, it failed.
             target = 'failed'
             row['failure_code'] = terminal['failure_code']
+            row['failure_detail'] = {k: terminal[k] for k in ('partial_work', 'cancelled') if k in terminal}
         elif finished_before(terminal, row['launched_at']) and status != 'running':
             target = 'completed'
         elif status == 'error' or reason == 'error' or snapshot.get('providerUnavailable'):

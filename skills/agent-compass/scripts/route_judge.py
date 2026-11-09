@@ -2169,9 +2169,8 @@ def record_constraint(args, task=None):
     latched_model = allocator.model_latch.reason(quota_bundle, allocator.model_latch.active(now=now))
     if latched_model:
         raise ValueError(f"{args.account}/{pin.model}: {latched_model}. Tell the user; do not substitute another model.")
+    # A model the user names on a held account or model is the probe that can lift the hold: it goes, with a warning.
     retrying = allocator.provider_retry.reason(quota_bundle, allocator.provider_retry.active(now=now))
-    if retrying:
-        raise ValueError(f"{args.account}/{pin.model}: {retrying}. Tell the user; do not substitute another model.")
     c_model = resolved['key'] if direct else allocator.model_leaf(pin.model)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:
@@ -2206,6 +2205,9 @@ def record_constraint(args, task=None):
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
+    if retrying:
+        warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a completed "
+                    "dispatch lifts the hold", *warnings]
     if warnings:
         result['warnings'] = warnings
     if fast_requested:
@@ -2532,7 +2534,7 @@ def plan_stage(document, args):
         try:
             # A worker the bridge stopped for a stuck provider retry is held before this plan, not after the next reconcile.
             provider_retry.ingest()
-        except OSError:
+        except Exception:  # noqa: BLE001 - a hold that cannot be recorded now is recorded by the next observation
             pass
     now = datetime.now(timezone.utc)
     usage = usage_snapshot(args.usage_cache, None, now)
