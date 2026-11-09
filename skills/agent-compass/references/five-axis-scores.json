@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-09T07:44:58+00:00",
- "measurements_sha256": "af3e1ac041b9bd6a6618ee0677e2832006169ff5008d0b6fc20563db3c1776aa",
+ "generated_at": "2026-11-09T10:50:04+00:00",
+ "measurements_sha256": "8de34b9844b79cdbb0c753abf50477bf026d71134d615070a64a7290b9e2eb6f",
  "distrusted_sources": [],
  "source_priority": [],
  "user_overrides": [],
@@ -138,8 +138,8 @@
  },
  "usd_basis": {
   "name": "community_mix",
-  "scale": "derived real usage: AA output speed per hour at the community token mix (wokey fixed split, about 92% cache reads) and AA list prices",
-  "note": "option B, user 2026-11-09: the same token mix the community capacities are valued at; a model AA does not list with speed and all three prices has no usd (mode B)"
+  "scale": "arena.ai Agent / Overall real sessions (Cost/Task P50 / Time/Task P50 x 60, kind community); option B (AA output speed x community token mix at list prices) as labelled fallback",
+  "note": "round 8, user 2026-11-09: primary = arena.agent_sessions; fallback = derived.community_mix (fallback: True) when arena does not list the model with cost and time"
  },
  "capacity": {
   "claude": {
@@ -166,7 +166,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 0.2
+     "ref_hours": 0.5
     },
     "seven_day": {
      "unit": "usd",
@@ -190,7 +190,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 3.1
+     "ref_hours": 6.8
     }
    },
    "max5": {
@@ -216,7 +216,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 2.2,
+     "ref_hours": 4.8,
      "cross_check": {
       "rung": 3,
       "value": 59.6,
@@ -246,7 +246,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 24.7,
+     "ref_hours": 53.2,
      "cross_check": {
       "rung": 3,
       "value": 775.0,
@@ -290,7 +290,7 @@
       }
      ],
      "reference_model": "claude-fable-5-1",
-     "ref_hours": 7.3,
+     "ref_hours": 16.9,
      "cross_check": {
       "rung": 3,
       "value": 387.5,
@@ -322,7 +322,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 5.5
+     "ref_hours": 11.9
     },
     "seven_day": {
      "unit": "usd",
@@ -358,7 +358,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 34.6
+     "ref_hours": 74.6
     },
     "weekly_fable": {
      "unit": "usd",
@@ -408,7 +408,7 @@
       }
      ],
      "reference_model": "claude-fable-5-1",
-     "ref_hours": 10.3
+     "ref_hours": 23.6
     }
    },
    "max": {
@@ -434,7 +434,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 2.2,
+     "ref_hours": 4.8,
      "cross_check": {
       "rung": 3,
       "value": 59.6,
@@ -465,7 +465,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 24.7,
+     "ref_hours": 53.2,
      "cross_check": {
       "rung": 3,
       "value": 775.0,
@@ -510,7 +510,7 @@
       }
      ],
      "reference_model": "claude-fable-5-1",
-     "ref_hours": 7.3,
+     "ref_hours": 16.9,
      "cross_check": {
       "rung": 3,
       "value": 387.5,
@@ -557,7 +557,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 4.5
+     "ref_hours": 10.0
     },
     "five_hour": {
      "unit": "usd",
@@ -581,7 +581,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 0.7
+     "ref_hours": 1.6
     }
    },
    "team": {
@@ -619,7 +619,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 4.5,
+     "ref_hours": 10.0,
      "alias_of": "plus"
     },
     "five_hour": {
@@ -644,7 +644,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 0.7,
+     "ref_hours": 1.6,
      "alias_of": "plus"
     }
    },
@@ -683,7 +683,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 19.4,
+     "ref_hours": 43.3,
      "cross_check": {
       "rung": 3,
       "value": 305.0,
@@ -727,7 +727,7 @@
       }
      ],
      "reference_model": "gpt-6.1-sol",
-     "ref_hours": 45.0
+     "ref_hours": 100.5
     }
    }
   },
@@ -769,7 +769,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 12.5
+     "ref_hours": 60.1
     },
     "gemini-weekly": {
      "unit": "usd",
@@ -807,7 +807,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 80.9
+     "ref_hours": 387.5
     },
     "3p-5h": {
      "unit": "usd",
@@ -845,7 +845,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 8.1
+     "ref_hours": 17.5
     },
     "3p-weekly": {
      "unit": "usd",
@@ -883,7 +883,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 52.4
+     "ref_hours": 112.9
     }
    },
    "ultra5": {
@@ -923,7 +923,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 3.1
+     "ref_hours": 15.0
     },
     "gemini-weekly": {
      "unit": "usd",
@@ -961,7 +961,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 20.2
+     "ref_hours": 96.9
     },
     "3p-5h": {
      "unit": "usd",
@@ -999,7 +999,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 2.0
+     "ref_hours": 4.4
     },
     "3p-weekly": {
      "unit": "usd",
@@ -1037,7 +1037,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 13.1
+     "ref_hours": 28.2
     }
    },
    "pro": {
@@ -1063,7 +1063,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 0.6
+     "ref_hours": 3.0
     },
     "gemini-weekly": {
      "unit": "usd",
@@ -1087,7 +1087,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 4.0
+     "ref_hours": 19.4
     },
     "3p-5h": {
      "unit": "usd",
@@ -1111,7 +1111,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 0.4
+     "ref_hours": 0.9
     },
     "3p-weekly": {
      "unit": "usd",
@@ -1135,7 +1135,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 2.6
+     "ref_hours": 5.6
     }
    },
    "ultra": {
@@ -1175,7 +1175,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 12.5,
+     "ref_hours": 60.1,
      "alias_of": "ultra20"
     },
     "gemini-weekly": {
@@ -1214,7 +1214,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 80.9,
+     "ref_hours": 387.5,
      "alias_of": "ultra20"
     },
     "3p-5h": {
@@ -1253,7 +1253,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 8.1,
+     "ref_hours": 17.5,
      "alias_of": "ultra20"
     },
     "3p-weekly": {
@@ -1292,7 +1292,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 52.4,
+     "ref_hours": 112.9,
      "alias_of": "ultra20"
     }
    },
@@ -1319,7 +1319,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 0.6,
+     "ref_hours": 3.0,
      "alias_of": "pro"
     },
     "gemini-weekly": {
@@ -1344,7 +1344,7 @@
       }
      ],
      "reference_model": "gemini-4-argon-high",
-     "ref_hours": 4.0,
+     "ref_hours": 19.4,
      "alias_of": "pro"
     },
     "3p-5h": {
@@ -1369,7 +1369,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 0.4,
+     "ref_hours": 0.9,
      "alias_of": "pro"
     },
     "3p-weekly": {
@@ -1394,7 +1394,7 @@
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 2.6,
+     "ref_hours": 5.6,
      "alias_of": "pro"
     }
    }
@@ -1578,6 +1578,14 @@
   },
   "arena.agent_code": {
    "kind": "benchmark",
+   "as_of": "2026-11-08",
+   "as_of_kind": "data date",
+   "fetched_at": "2026-11-09T07:23:07+00:00",
+   "age_days": 1,
+   "stale": false
+  },
+  "arena.agent_sessions": {
+   "kind": "community",
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
@@ -1812,8 +1820,8 @@
    "method": "API value of the heaviest logged window / the hours it lasted (one heavy Codex session, GPT-6 / 6.1 Sol about 85% of the value, 97.6% of input cached)",
    "quote": "7.2 h 100% $198 Upgrade from Plus",
    "basis": "community_mix",
-   "basis_value": 13.688,
-   "community_over_basis": 2.01
+   "basis_value": 6.125,
+   "community_over_basis": 4.49
   }
  ],
  "anchor": {
@@ -1888,7 +1896,7 @@
     },
     "module_precision": {
      "value": 0.5632,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.7192,
@@ -1905,9 +1913,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.6603,
@@ -1959,7 +1965,7 @@
    "usd_per_hour": {
     "value": 4.068,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -1978,7 +1984,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -1993,15 +2001,7 @@
     "source": "secondary.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "deepseek-v4.1-flash-free",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 2.8,
     "usd_per_hour": 0.0,
@@ -2084,7 +2084,7 @@
     },
     "module_precision": {
      "value": 0.753,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.7702,
@@ -2101,9 +2101,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.797,
@@ -2150,53 +2148,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 83.126,
+    "value": 36.11,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 83.126,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 36.11,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 83.126,
-       "low": 83.492,
-       "max": 85.323,
-       "medium": 83.048,
-       "xhigh": 84.24
-      }
+       "max": 36.11
+      },
+      "sessions": 17468
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 47.17,
-   "economy_static": 0.153,
+   "economy_static": 0.293,
    "legacy_public_tier": {
     "value": 4.21,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "claude-fable-5-1",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 4.0,
     "usd_per_hour": 18.7,
@@ -2279,7 +2268,7 @@
     },
     "module_precision": {
      "value": 0.8,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.8,
@@ -2296,9 +2285,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.8,
@@ -2346,53 +2333,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 49.219,
+    "value": 22.859,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 49.219,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 22.859,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 49.219,
-       "low": 48.707,
-       "max": 53.688,
-       "medium": 48.372,
-       "xhigh": 50.636
-      }
+       "max": 22.859
+      },
+      "sessions": 14358
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 51.84,
-   "economy_static": 0.234,
+   "economy_static": 0.396,
    "legacy_public_tier": {
     "value": 4.6,
     "source": "user",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "claude-opus-5-5",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 4.6,
     "usd_per_hour": 7.5,
@@ -2474,7 +2452,7 @@
     },
     "module_precision": {
      "value": 0.7869,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.8452,
@@ -2491,9 +2469,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.7301,
@@ -2541,53 +2517,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 13.688,
+    "value": 6.125,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 13.688,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 6.125,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 13.688,
-       "low": 12.629,
-       "max": 13.371,
-       "medium": 13.771,
-       "xhigh": 12.933
-      }
+       "max": 6.125
+      },
+      "sessions": 30514
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 50.33,
-   "economy_static": 0.523,
+   "economy_static": 0.71,
    "legacy_public_tier": {
     "value": 3.6,
     "source": "user",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "gpt-6.1-sol",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.6,
     "usd_per_hour": 2.6,
@@ -2670,7 +2637,7 @@
     },
     "module_precision": {
      "value": 0.8042,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.8442,
@@ -2687,9 +2654,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.7484,
@@ -2737,53 +2702,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 61.746,
+    "value": 28.853,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 61.746,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 28.853,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 61.746,
-       "low": 63.504,
-       "max": 59.422,
-       "medium": 66.599,
-       "xhigh": 60.299
-      }
+       "max": 28.853
+      },
+      "sessions": 15520
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 54.85,
-   "economy_static": 0.195,
+   "economy_static": 0.342,
    "legacy_public_tier": {
     "value": 4.2,
     "source": "user",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "gpt-6-astra",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 4.2,
     "usd_per_hour": 22.6,
@@ -2866,7 +2822,7 @@
     },
     "module_precision": {
      "value": 0.7853,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.7635,
@@ -2883,9 +2839,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.7215,
@@ -2934,49 +2888,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 31.901,
+    "value": 6.658,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 31.901,
+     "arena.agent_sessions": {
+      "value": 6.658,
       "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 31.901
-      }
+       "high": 6.658
+      },
+      "sessions": 53301
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 50.41,
-   "economy_static": 0.32,
+   "economy_static": 0.693,
    "legacy_public_tier": {
     "value": 3.52,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "gemini-4-argon-high",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 4.0,
     "usd_per_hour": 4.0,
@@ -3058,7 +3007,7 @@
     },
     "module_precision": {
      "value": 0.6929,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.7644,
@@ -3075,9 +3024,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.7372,
@@ -3124,53 +3071,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 32.186,
+    "value": 12.825,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 32.186,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 12.825,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 32.186,
-       "low": 30.82,
-       "max": 35.94,
-       "medium": 33.313,
-       "xhigh": 31.702
-      }
+       "max": 12.825
+      },
+      "sessions": 8670
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 41.52,
-   "economy_static": 0.318,
+   "economy_static": 0.539,
    "legacy_public_tier": {
     "value": 3.9,
     "source": "user",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "claude-sonnet-5-5",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.9,
     "usd_per_hour": 4.4,
@@ -3253,7 +3191,7 @@
     },
     "module_precision": {
      "value": 0.5726,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.7952,
@@ -3270,9 +3208,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.6115,
@@ -3319,51 +3255,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 35.472,
+    "value": 10.778,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 35.472,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 10.778,
+      "how": "median of the listed efforts ['xhigh']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 35.472,
-       "low": 34.885,
-       "xhigh": 34.991
-      }
+       "xhigh": 10.778
+      },
+      "sessions": 18848
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 35.21,
-   "economy_static": 0.297,
+   "economy_static": 0.582,
    "legacy_public_tier": {
     "value": 3.4,
     "source": "user",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "grok-4.7",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.4,
     "usd_per_hour": 1.5,
@@ -3519,37 +3448,38 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 12.869,
+    "value": 4.953,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 12.869,
+     "arena.agent_sessions": {
+      "value": 4.953,
       "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 12.869,
-       "low": 11.557,
-       "medium": 13.32
-      }
+       "high": 4.953
+      },
+      "sessions": 52722
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 30.85,
-   "economy_static": 0.538,
+   "economy_static": 0.752,
    "legacy_public_tier": {
     "value": 3.0,
     "source": "user",
@@ -3607,7 +3537,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -3866,7 +3795,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -4056,9 +3984,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.5702,
@@ -4107,53 +4033,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 3.517,
+    "value": 2.667,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 3.517,
+     "arena.agent_sessions": {
+      "value": 2.667,
       "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 3.517,
-       "low": 3.34,
-       "max": 3.612,
-       "medium": 3.347,
-       "xhigh": 3.616
-      }
+       "high": 2.667
+      },
+      "sessions": 31731
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 29.87,
-   "economy_static": 0.81,
+   "economy_static": 0.849,
    "legacy_public_tier": {
     "value": 2.95,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "claude-haiku-5-5",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 2.94,
     "usd_per_hour": 0.8,
@@ -4259,9 +4176,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.6624,
@@ -4308,54 +4223,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 8.169,
+    "value": 5.393,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 8.169,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 5.393,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 8.169,
-       "low": 7.946,
-       "max": 8.706,
-       "medium": 8.184,
-       "none": 8.246,
-       "xhigh": 8.505
-      }
+       "max": 5.393
+      },
+      "sessions": 23276
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 42.43,
-   "economy_static": 0.647,
+   "economy_static": 0.736,
    "legacy_public_tier": {
     "value": 3.27,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "gpt-6.1-terra",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.2,
     "usd_per_hour": 3.0,
@@ -4401,7 +4306,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7902,
+     "value": 0.5926,
      "status": "partial",
      "components": {
       "agentic": {
@@ -4431,7 +4336,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.8423,
+     "value": 0.4212,
      "status": "partial",
      "components": {
       "alignment": {
@@ -4443,7 +4348,6 @@
       }
      },
      "missing_components": [
-      "coding",
       "terminal"
      ]
     },
@@ -4485,25 +4389,44 @@
    },
    "scores": {
     "divergence": 0.7373,
-    "global_rigor": 0.7902,
-    "module_precision": 0.8423,
+    "global_rigor": 0.5926,
+    "module_precision": 0.4212,
     "vision_tools": 0.6288
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 17.226,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 17.226,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "max": 17.226
+      },
+      "sessions": 12836
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.465,
    "legacy_public_tier": {
     "value": 3.48,
     "source": "lmarena.tier_fit",
@@ -4512,24 +4435,17 @@
    "data_errors": [
     {
      "model": "gpt-6-sol",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
-    {
-     "model": "gpt-6-sol",
      "field": "global_rigor.long_context",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gpt-6-sol",
-     "field": "module_precision.coding,terminal",
+     "field": "module_precision.terminal",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -4613,7 +4529,7 @@
     },
     "module_precision": {
      "value": 0.4542,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.8442,
@@ -4630,9 +4546,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.5225,
@@ -4680,54 +4594,46 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 1.49,
+    "value": 0.885,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 1.49,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 0.885,
+      "how": "median of the listed efforts ['low', 'max', 'medium']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 1.49,
-       "low": 1.368,
-       "max": 1.568,
-       "medium": 1.487,
-       "none": 1.262,
-       "xhigh": 1.563
-      }
+       "max": 0.885,
+       "medium": 1.059,
+       "low": 0.766
+      },
+      "sessions": 228261
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 21.43,
-   "economy_static": 0.91,
+   "economy_static": 0.944,
    "legacy_public_tier": {
     "value": 2.59,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "gpt-6-luna",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 2.61,
     "usd_per_hour": 0.8,
@@ -4773,7 +4679,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.778,
+     "value": 0.5835,
      "status": "partial",
      "components": {
       "agentic": {
@@ -4804,7 +4710,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.685,
+     "value": 0.4567,
      "status": "partial",
      "components": {
       "alignment": {
@@ -4864,25 +4770,44 @@
    },
    "scores": {
     "divergence": 0.7062,
-    "global_rigor": 0.778,
-    "module_precision": 0.685,
+    "global_rigor": 0.5835,
+    "module_precision": 0.4567,
     "vision_tools": 0.6208
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 25.95,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 25.95,
+      "how": "median of the listed efforts ['xhigh']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "xhigh": 25.95
+      },
+      "sessions": 45371
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.366,
    "legacy_public_tier": {
     "value": 3.33,
     "source": "lmarena.tier_fit",
@@ -4891,24 +4816,17 @@
    "data_errors": [
     {
      "model": "gpt-5.6-sol",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
-    {
-     "model": "gpt-5.6-sol",
      "field": "global_rigor.long_context",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gpt-5.6-sol",
      "field": "module_precision.terminal",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -4956,7 +4874,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7603,
+     "value": 0.3802,
      "status": "partial",
      "components": {
       "agentic": {
@@ -4980,7 +4898,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.5574,
+     "value": 0.1858,
      "status": "partial",
      "components": {
       "coding": {
@@ -5034,25 +4952,44 @@
    },
    "scores": {
     "divergence": 0.6063,
-    "global_rigor": 0.7603,
-    "module_precision": 0.5574,
+    "global_rigor": 0.3802,
+    "module_precision": 0.1858,
     "vision_tools": 0.561
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 13.929,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 13.929,
+      "how": "median of the listed efforts ['xhigh']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "xhigh": 13.929
+      },
+      "sessions": 44425
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.519,
    "legacy_public_tier": {
     "value": 2.59,
     "source": "lmarena.tier_fit",
@@ -5061,24 +4998,17 @@
    "data_errors": [
     {
      "model": "gpt-5.6-terra",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
-    {
-     "model": "gpt-5.6-terra",
      "field": "global_rigor.long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gpt-5.6-terra",
      "field": "module_precision.terminal,alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -5126,7 +5056,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7748,
+     "value": 0.1937,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -5144,7 +5074,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.5545,
+     "value": 0.1848,
      "status": "partial",
      "components": {
       "coding": {
@@ -5161,7 +5091,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.4441,
+     "value": 0.2221,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -5187,9 +5117,9 @@
    },
    "scores": {
     "divergence": 0.5687,
-    "global_rigor": 0.7748,
-    "module_precision": 0.5545,
-    "vision_tools": 0.4441
+    "global_rigor": 0.1937,
+    "module_precision": 0.1848,
+    "vision_tools": 0.2221
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -5224,21 +5154,21 @@
      "field": "global_rigor.agentic,long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gpt-5.6-luna",
      "field": "module_precision.terminal,alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gpt-5.6-luna",
      "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -5292,7 +5222,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -5542,7 +5471,7 @@
    "usd_per_hour": {
     "value": 8.735,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -5560,7 +5489,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -5732,36 +5663,38 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 18.04,
+    "value": 4.378,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 18.04,
-      "how": "median of the listed efforts ['low', 'max']",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 4.378,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "low": 15.997,
-       "max": 20.083
-      }
+       "max": 4.378
+      },
+      "sessions": 95597
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 23.11,
-   "economy_static": 0.454,
+   "economy_static": 0.774,
    "legacy_public_tier": {
     "value": 3.08,
     "source": "lmarena.tier_fit",
@@ -5921,35 +5854,38 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 1.686,
+    "value": 1.5,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 1.686,
+     "arena.agent_sessions": {
+      "value": 1.5,
       "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 1.686
-      }
+       "default": 1.5
+      },
+      "sessions": 95526
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 27.8,
-   "economy_static": 0.899,
+   "economy_static": 0.909,
    "legacy_public_tier": {
     "value": 2.85,
     "source": "lmarena.tier_fit",
@@ -5990,7 +5926,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.4548,
+     "value": 0.1137,
      "status": "partial",
      "components": {
       "long_context": {
@@ -6020,12 +5956,11 @@
       }
      },
      "missing_components": [
-      "coding",
       "alignment"
      ]
     },
     "vision_tools": {
-     "value": 0.1434,
+     "value": 0.0358,
      "status": "partial",
      "components": {
       "tools": {
@@ -6046,9 +5981,9 @@
    },
    "scores": {
     "divergence": 0.0,
-    "global_rigor": 0.4548,
+    "global_rigor": 0.1137,
     "module_precision": 0.0,
-    "vision_tools": 0.1434
+    "vision_tools": 0.0358
    },
    "missing_axes": [
     "divergence"
@@ -6056,7 +5991,7 @@
    "usd_per_hour": {
     "value": 17.059,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -6073,7 +6008,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -6101,21 +6038,21 @@
      "field": "global_rigor.agentic,long_horizon,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "qwen3-coder-next",
-     "field": "module_precision.coding,alignment",
+     "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "qwen3-coder-next",
      "field": "vision_tools.vision,gui_design,gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -6272,35 +6209,38 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 15.368,
+    "value": 4.913,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 15.368,
+     "arena.agent_sessions": {
+      "value": 4.913,
       "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 15.368
-      }
+       "default": 4.913
+      },
+      "sessions": 80457
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 33.65,
-   "economy_static": 0.494,
+   "economy_static": 0.753,
    "legacy_public_tier": {
     "value": 3.14,
     "source": "lmarena.tier_fit",
@@ -6410,9 +6350,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.7045,
@@ -6459,49 +6397,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 9.787,
+    "value": 9.75,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 9.787,
-      "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 9.75,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 9.787
-      }
+       "max": 9.75
+      },
+      "sessions": 22581
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 46.45,
-   "economy_static": 0.605,
+   "economy_static": 0.606,
    "legacy_public_tier": {
     "value": 3.47,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "kimi-k3.1-pro",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.47,
     "usd_per_hour": 1.8,
@@ -6547,7 +6480,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7287,
+     "value": 0.5465,
      "status": "partial",
      "components": {
       "agentic": {
@@ -6578,7 +6511,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.626,
+     "value": 0.4173,
      "status": "partial",
      "components": {
       "alignment": {
@@ -6601,7 +6534,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.6016,
+     "value": 0.4512,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -6633,25 +6566,44 @@
    },
    "scores": {
     "divergence": 0.7646,
-    "global_rigor": 0.7287,
-    "module_precision": 0.626,
-    "vision_tools": 0.6016
+    "global_rigor": 0.5465,
+    "module_precision": 0.4173,
+    "vision_tools": 0.4512
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 5.742,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 5.742,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "max": 5.742
+      },
+      "sessions": 160495
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.723,
    "legacy_public_tier": {
     "value": 3.13,
     "source": "lmarena.tier_fit",
@@ -6660,31 +6612,24 @@
    "data_errors": [
     {
      "model": "kimi-k3",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
-    {
-     "model": "kimi-k3",
      "field": "global_rigor.long_context",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "kimi-k3",
      "field": "module_precision.terminal",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "kimi-k3",
      "field": "vision_tools.vision",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -6844,35 +6789,38 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 8.683,
+    "value": 5.829,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 8.683,
+     "arena.agent_sessions": {
+      "value": 5.829,
       "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 8.683
-      }
+       "default": 5.829
+      },
+      "sessions": 44355
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 18.88,
-   "economy_static": 0.633,
+   "economy_static": 0.72,
    "legacy_public_tier": {
     "value": 2.08,
     "source": "lmarena.tier_fit",
@@ -6984,9 +6932,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.6277,
@@ -7033,49 +6979,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 3.685,
+    "value": 1.582,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 3.685,
+     "arena.agent_sessions": {
+      "value": 1.582,
       "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 3.685
-      }
+       "default": 1.582
+      },
+      "sessions": 13089
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 29.06,
-   "economy_static": 0.803,
+   "economy_static": 0.905,
    "legacy_public_tier": {
     "value": 2.76,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "minimax-m3.1-flash",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 2.73,
     "usd_per_hour": 0.6,
@@ -7127,7 +7068,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -7135,7 +7075,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "vision_tools": {
-     "value": 0.2427,
+     "value": 0.0607,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -7157,7 +7097,7 @@
     "divergence": 0.0,
     "global_rigor": 0.0,
     "module_precision": 0.0,
-    "vision_tools": 0.2427
+    "vision_tools": 0.0607
    },
    "missing_axes": [
     "divergence",
@@ -7217,7 +7157,7 @@
      "field": "vision_tools.vision,gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -7301,7 +7241,7 @@
     },
     "module_precision": {
      "value": 0.6046,
-     "status": "partial",
+     "status": "measured",
      "components": {
       "alignment": {
        "value": 0.7163,
@@ -7318,9 +7258,7 @@
        "status": "measured"
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.6162,
@@ -7367,49 +7305,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 1.662,
+    "value": 0.63,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 1.662,
+     "arena.agent_sessions": {
+      "value": 0.63,
       "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 1.662
-      }
+       "default": 0.63
+      },
+      "sessions": 49297
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 29.89,
-   "economy_static": 0.9,
+   "economy_static": 0.96,
    "legacy_public_tier": {
     "value": 3.15,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "mimo-v2.6-pro",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.15,
     "usd_per_hour": 0.8,
@@ -7511,9 +7444,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.6241,
@@ -7561,49 +7492,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 0.416,
+    "value": 0.275,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 0.416,
+     "arena.agent_sessions": {
+      "value": 0.275,
       "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 0.416
-      }
+       "default": 0.275
+      },
+      "sessions": 32025
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 26.73,
-   "economy_static": 0.973,
+   "economy_static": 0.982,
    "legacy_public_tier": {
     "value": 3.08,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "mimo-v2.6-flash-free",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.1,
     "usd_per_hour": 0,
@@ -7638,7 +7564,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.447,
+     "value": 0.2235,
      "status": "partial",
      "components": {
       "agentic": {
@@ -7662,7 +7588,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4655,
+     "value": 0.1552,
      "status": "partial",
      "components": {
       "coding": {
@@ -7679,7 +7605,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.5647,
+     "value": 0.2823,
      "status": "partial",
      "components": {
       "tools": {
@@ -7705,40 +7631,52 @@
    },
    "scores": {
     "divergence": 0.0,
-    "global_rigor": 0.447,
-    "module_precision": 0.4655,
-    "vision_tools": 0.5647
+    "global_rigor": 0.2235,
+    "module_precision": 0.1552,
+    "vision_tools": 0.2823
    },
    "missing_axes": [
     "divergence"
    ],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 1.8,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 1.8,
+      "how": "the only listing (no effort named)",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "default": 1.8
+      },
+      "sessions": 13691
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.893,
    "legacy_public_tier": {
     "value": 1.47,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
-    {
-     "model": "nemotron-3-ultra-free",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
     {
      "model": "nemotron-3-ultra-free",
      "field": "divergence",
@@ -7751,21 +7689,21 @@
      "field": "global_rigor.long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "nemotron-3-ultra-free",
      "field": "module_precision.terminal,alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "nemotron-3-ultra-free",
      "field": "vision_tools.vision,gui_design",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -7875,9 +7813,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.4014,
@@ -7931,7 +7867,7 @@
    "usd_per_hour": {
     "value": 11.5,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -7948,7 +7884,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -7963,15 +7901,7 @@
     "source": "secondary.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "nemotron-3.5-super-vl-free",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 1.5,
     "usd_per_hour": 0,
@@ -8134,7 +8064,7 @@
    "usd_per_hour": {
     "value": 8.035,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -8151,7 +8081,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -8270,9 +8202,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.5546,
@@ -8319,50 +8249,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 11.416,
+    "value": 4.364,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 11.416,
-      "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+     "arena.agent_sessions": {
+      "value": 4.364,
+      "how": "the only listing (no effort named)",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 11.416,
-       "medium": 10.706
-      }
+       "default": 4.364
+      },
+      "sessions": 5559
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 26.12,
-   "economy_static": 0.568,
+   "economy_static": 0.775,
    "legacy_public_tier": {
     "value": 2.54,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "mistral-large-4",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 2.45,
     "usd_per_hour": 1.2,
@@ -8472,9 +8396,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.7176,
@@ -8526,7 +8448,7 @@
    "usd_per_hour": {
     "value": 59.076,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -8544,7 +8466,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -8559,15 +8483,7 @@
     "source": "secondary.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "muse-wonder-1.0",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 3.21,
     "usd_per_hour": 1.5,
@@ -8612,7 +8528,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7011,
+     "value": 0.5258,
      "status": "partial",
      "components": {
       "agentic": {
@@ -8642,7 +8558,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.724,
+     "value": 0.362,
      "status": "partial",
      "components": {
       "alignment": {
@@ -8654,12 +8570,11 @@
       }
      },
      "missing_components": [
-      "coding",
       "terminal"
      ]
     },
     "vision_tools": {
-     "value": 0.4735,
+     "value": 0.3551,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -8691,9 +8606,9 @@
    },
    "scores": {
     "divergence": 0.5773,
-    "global_rigor": 0.7011,
-    "module_precision": 0.724,
-    "vision_tools": 0.4735
+    "global_rigor": 0.5258,
+    "module_precision": 0.362,
+    "vision_tools": 0.3551
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -8728,21 +8643,21 @@
      "field": "global_rigor.long_context",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "beam-free",
-     "field": "module_precision.coding,terminal",
+     "field": "module_precision.terminal",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "beam-free",
      "field": "vision_tools.vision",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -8796,7 +8711,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -8946,7 +8860,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -8954,7 +8867,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "vision_tools": {
-     "value": 0.0909,
+     "value": 0.0227,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -8976,7 +8889,7 @@
     "divergence": 0.5538,
     "global_rigor": 0.0,
     "module_precision": 0.0,
-    "vision_tools": 0.0909
+    "vision_tools": 0.0227
    },
    "missing_axes": [
     "global_rigor",
@@ -9028,7 +8941,7 @@
      "field": "vision_tools.vision,gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -9093,7 +9006,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -9101,7 +9013,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "vision_tools": {
-     "value": 0.5291,
+     "value": 0.2645,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -9129,7 +9041,7 @@
     "divergence": 0.6663,
     "global_rigor": 0.0,
     "module_precision": 0.0,
-    "vision_tools": 0.5291
+    "vision_tools": 0.2645
    },
    "missing_axes": [
     "global_rigor",
@@ -9181,7 +9093,7 @@
      "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -9229,7 +9141,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.452,
+     "value": 0.113,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -9247,7 +9159,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4748,
+     "value": 0.3165,
      "status": "partial",
      "components": {
       "coding": {
@@ -9270,7 +9182,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.476,
+     "value": 0.357,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -9302,9 +9214,9 @@
    },
    "scores": {
     "divergence": 0.603,
-    "global_rigor": 0.452,
-    "module_precision": 0.4748,
-    "vision_tools": 0.476
+    "global_rigor": 0.113,
+    "module_precision": 0.3165,
+    "vision_tools": 0.357
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -9339,21 +9251,21 @@
      "field": "global_rigor.agentic,long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-sonnet-4-6",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-sonnet-4-6",
      "field": "vision_tools.tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -9401,7 +9313,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6319,
+     "value": 0.316,
      "status": "partial",
      "components": {
       "agentic": {
@@ -9425,7 +9337,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.507,
+     "value": 0.169,
      "status": "partial",
      "components": {
       "coding": {
@@ -9442,7 +9354,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.5746,
+     "value": 0.4309,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -9474,25 +9386,44 @@
    },
    "scores": {
     "divergence": 0.59,
-    "global_rigor": 0.6319,
-    "module_precision": 0.507,
-    "vision_tools": 0.5746
+    "global_rigor": 0.316,
+    "module_precision": 0.169,
+    "vision_tools": 0.4309
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 4.55,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 4.55,
+      "how": "median of the listed efforts ['max']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "max": 4.55
+      },
+      "sessions": 98965
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.767,
    "legacy_public_tier": {
     "value": 3.0,
     "source": "lmarena.tier_fit",
@@ -9501,31 +9432,24 @@
    "data_errors": [
     {
      "model": "glm-5.2",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
-    {
-     "model": "glm-5.2",
      "field": "global_rigor.long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "glm-5.2",
      "field": "module_precision.terminal,alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "glm-5.2",
      "field": "vision_tools.vision",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -9573,7 +9497,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.3161,
+     "value": 0.1581,
      "status": "partial",
      "components": {
       "long_context": {
@@ -9597,7 +9521,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.1695,
+     "value": 0.113,
      "status": "partial",
      "components": {
       "terminal": {
@@ -9621,7 +9545,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.1143,
+     "value": 0.0286,
      "status": "partial",
      "components": {
       "tools": {
@@ -9642,15 +9566,15 @@
    },
    "scores": {
     "divergence": 0.3151,
-    "global_rigor": 0.3161,
-    "module_precision": 0.1695,
-    "vision_tools": 0.1143
+    "global_rigor": 0.1581,
+    "module_precision": 0.113,
+    "vision_tools": 0.0286
    },
    "missing_axes": [],
    "usd_per_hour": {
     "value": 12.827,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -9668,7 +9592,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -9689,21 +9615,21 @@
      "field": "global_rigor.agentic,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gpt-oss-120b",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gpt-oss-120b",
      "field": "vision_tools.vision,gui_design,gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -9750,7 +9676,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.1937,
+     "value": 0.0484,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -9768,7 +9694,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.314,
+     "value": 0.2093,
      "status": "partial",
      "components": {
       "coding": {
@@ -9791,7 +9717,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.336,
+     "value": 0.168,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -9817,9 +9743,9 @@
    },
    "scores": {
     "divergence": 0.6031,
-    "global_rigor": 0.1937,
-    "module_precision": 0.314,
-    "vision_tools": 0.336
+    "global_rigor": 0.0484,
+    "module_precision": 0.2093,
+    "vision_tools": 0.168
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -9854,21 +9780,21 @@
      "field": "global_rigor.agentic,long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gemini-3.1-flash-lite",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gemini-3.1-flash-lite",
      "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -9905,7 +9831,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.6099,
+     "value": 0.3049,
      "status": "partial",
      "components": {
       "long_context": {
@@ -9929,7 +9855,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.2621,
+     "value": 0.1748,
      "status": "partial",
      "components": {
       "terminal": {
@@ -9952,7 +9878,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.2516,
+     "value": 0.1258,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -9979,9 +9905,9 @@
    },
    "scores": {
     "divergence": 0.0,
-    "global_rigor": 0.6099,
-    "module_precision": 0.2621,
-    "vision_tools": 0.2516
+    "global_rigor": 0.3049,
+    "module_precision": 0.1748,
+    "vision_tools": 0.1258
    },
    "missing_axes": [
     "divergence"
@@ -9989,7 +9915,7 @@
    "usd_per_hour": {
     "value": 12.168,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "fallback (not listed with cost/time on arena.ai Agent): median of 1 cited source(s)",
     "used": [
      "derived.community_mix"
     ],
@@ -10006,7 +9932,9 @@
       }
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
    },
    "duration_multiplier": {
     "value": 1.0,
@@ -10034,21 +9962,21 @@
      "field": "global_rigor.agentic,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "kimi-k2.7-code",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "kimi-k2.7-code",
      "field": "vision_tools.vision,gui",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -10095,7 +10023,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.3444,
+     "value": 0.0861,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -10113,7 +10041,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4153,
+     "value": 0.2769,
      "status": "partial",
      "components": {
       "coding": {
@@ -10136,7 +10064,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.182,
+     "value": 0.0455,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -10156,9 +10084,9 @@
    },
    "scores": {
     "divergence": 0.6058,
-    "global_rigor": 0.3444,
-    "module_precision": 0.4153,
-    "vision_tools": 0.182
+    "global_rigor": 0.0861,
+    "module_precision": 0.2769,
+    "vision_tools": 0.0455
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10193,21 +10121,21 @@
      "field": "global_rigor.agentic,long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "qwen3.6-plus",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "qwen3.6-plus",
      "field": "vision_tools.vision,gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -10255,7 +10183,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5811,
+     "value": 0.1453,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -10273,7 +10201,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.5175,
+     "value": 0.345,
      "status": "partial",
      "components": {
       "coding": {
@@ -10296,7 +10224,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.5397,
+     "value": 0.2699,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -10322,9 +10250,9 @@
    },
    "scores": {
     "divergence": 0.7041,
-    "global_rigor": 0.5811,
-    "module_precision": 0.5175,
-    "vision_tools": 0.5397
+    "global_rigor": 0.1453,
+    "module_precision": 0.345,
+    "vision_tools": 0.2699
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10359,21 +10287,21 @@
      "field": "global_rigor.agentic,long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-opus-4-7",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-opus-4-7",
      "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -10421,7 +10349,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7172,
+     "value": 0.3586,
      "status": "partial",
      "components": {
       "anti_hallucination": {
@@ -10474,7 +10402,7 @@
      "missing_components": []
     },
     "vision_tools": {
-     "value": 0.5113,
+     "value": 0.2556,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -10500,9 +10428,9 @@
    },
    "scores": {
     "divergence": 0.6375,
-    "global_rigor": 0.7172,
+    "global_rigor": 0.3586,
     "module_precision": 0.5895,
-    "vision_tools": 0.5113
+    "vision_tools": 0.2556
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10537,14 +10465,14 @@
      "field": "global_rigor.agentic,long_context",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "claude-opus-4-8",
      "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -10592,7 +10520,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6672,
+     "value": 0.1668,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -10610,7 +10538,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.5396,
+     "value": 0.1799,
      "status": "partial",
      "components": {
       "coding": {
@@ -10627,7 +10555,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.5013,
+     "value": 0.2506,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -10653,9 +10581,9 @@
    },
    "scores": {
     "divergence": 0.5414,
-    "global_rigor": 0.6672,
-    "module_precision": 0.5396,
-    "vision_tools": 0.5013
+    "global_rigor": 0.1668,
+    "module_precision": 0.1799,
+    "vision_tools": 0.2506
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10690,21 +10618,21 @@
      "field": "global_rigor.agentic,long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "grok-4.5",
      "field": "module_precision.terminal,alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "grok-4.5",
      "field": "vision_tools.gui,tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -10751,7 +10679,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7546,
+     "value": 0.5659,
      "status": "partial",
      "components": {
       "agentic": {
@@ -10782,7 +10710,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.6642,
+     "value": 0.4428,
      "status": "partial",
      "components": {
       "alignment": {
@@ -10842,25 +10770,44 @@
    },
    "scores": {
     "divergence": 0.6593,
-    "global_rigor": 0.7546,
-    "module_precision": 0.6642,
+    "global_rigor": 0.5659,
+    "module_precision": 0.4428,
     "vision_tools": 0.5952
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 12.971,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 12.971,
+      "how": "median of the listed efforts ['xhigh']",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "xhigh": 12.971
+      },
+      "sessions": 30247
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.536,
    "legacy_public_tier": {
     "value": 3.0,
     "source": "lmarena.tier_fit",
@@ -10869,24 +10816,17 @@
    "data_errors": [
     {
      "model": "grok-4.6",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
-    {
-     "model": "grok-4.6",
      "field": "global_rigor.long_context",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "grok-4.6",
      "field": "module_precision.terminal",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -10934,7 +10874,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.5926,
+     "value": 0.4445,
      "status": "partial",
      "components": {
       "agentic": {
@@ -10964,7 +10904,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.3962,
+     "value": 0.2642,
      "status": "partial",
      "components": {
       "terminal": {
@@ -11028,41 +10968,44 @@
    },
    "scores": {
     "divergence": 0.5736,
-    "global_rigor": 0.5926,
-    "module_precision": 0.3962,
+    "global_rigor": 0.4445,
+    "module_precision": 0.2642,
     "vision_tools": 0.5056
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 34.432,
+    "value": 12.222,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 34.432,
+     "arena.agent_sessions": {
+      "value": 12.222,
       "how": "the only listing (no effort named)",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "default": 34.432
-      }
+       "default": 12.222
+      },
+      "sessions": 87553
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": 0.303,
+   "economy_static": 0.551,
    "legacy_public_tier": {
     "value": 2.23,
     "source": "lmarena.tier_fit",
@@ -11074,14 +11017,14 @@
      "field": "global_rigor.anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gemini-3.1-pro-preview",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -11129,7 +11072,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.6728,
+     "value": 0.5046,
      "status": "partial",
      "components": {
       "agentic": {
@@ -11160,7 +11103,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.6082,
+     "value": 0.4055,
      "status": "partial",
      "components": {
       "alignment": {
@@ -11220,25 +11163,44 @@
    },
    "scores": {
     "divergence": 0.6158,
-    "global_rigor": 0.6728,
-    "module_precision": 0.6082,
+    "global_rigor": 0.5046,
+    "module_precision": 0.4055,
     "vision_tools": 0.6016
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 5.889,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 5.889,
+      "how": "High listing",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "high": 5.889
+      },
+      "sessions": 63336
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.718,
    "legacy_public_tier": {
     "value": 2.82,
     "source": "lmarena.tier_fit",
@@ -11247,24 +11209,17 @@
    "data_errors": [
     {
      "model": "gemini-3.7-flash",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
-    {
-     "model": "gemini-3.7-flash",
      "field": "global_rigor.long_context",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "gemini-3.7-flash",
      "field": "module_precision.terminal",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -11312,7 +11267,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.3659,
+     "value": 0.0915,
      "status": "partial",
      "components": {
       "long_horizon": {
@@ -11330,7 +11285,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.4678,
+     "value": 0.3119,
      "status": "partial",
      "components": {
       "coding": {
@@ -11353,7 +11308,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.473,
+     "value": 0.3547,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -11385,9 +11340,9 @@
    },
    "scores": {
     "divergence": 0.553,
-    "global_rigor": 0.3659,
-    "module_precision": 0.4678,
-    "vision_tools": 0.473
+    "global_rigor": 0.0915,
+    "module_precision": 0.3119,
+    "vision_tools": 0.3547
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -11422,21 +11377,21 @@
      "field": "global_rigor.agentic,long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "kimi-k2.6",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "kimi-k2.6",
      "field": "vision_tools.tools",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -11496,7 +11451,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "module_precision": {
-     "value": 0.1862,
+     "value": 0.0931,
      "status": "partial",
      "components": {
       "terminal": {
@@ -11508,7 +11463,6 @@
       }
      },
      "missing_components": [
-      "coding",
       "alignment"
      ]
     },
@@ -11529,7 +11483,7 @@
    "scores": {
     "divergence": 0.5703,
     "global_rigor": 0.0,
-    "module_precision": 0.1862,
+    "module_precision": 0.0931,
     "vision_tools": 0.0
    },
    "missing_axes": [
@@ -11572,10 +11526,10 @@
     },
     {
      "model": "qwen3-max",
-     "field": "module_precision.coding,alignment",
+     "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "qwen3-max",
@@ -11619,7 +11573,7 @@
      "reason": "no trusted source and no public predictor to backfill from"
     },
     "global_rigor": {
-     "value": 0.4706,
+     "value": 0.2353,
      "status": "partial",
      "components": {
       "agentic": {
@@ -11643,7 +11597,7 @@
      ]
     },
     "module_precision": {
-     "value": 0.46,
+     "value": 0.3067,
      "status": "partial",
      "components": {
       "coding": {
@@ -11666,7 +11620,7 @@
      ]
     },
     "vision_tools": {
-     "value": 0.4914,
+     "value": 0.3686,
      "status": "partial",
      "components": {
       "gui_design": {
@@ -11698,40 +11652,52 @@
    },
    "scores": {
     "divergence": 0.0,
-    "global_rigor": 0.4706,
-    "module_precision": 0.46,
-    "vision_tools": 0.4914
+    "global_rigor": 0.2353,
+    "module_precision": 0.3067,
+    "vision_tools": 0.3686
    },
    "missing_axes": [
     "divergence"
    ],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null
+    "value": 11.053,
+    "status": "ok",
+    "merge": "source priority: arena.agent_sessions",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "sources": {
+     "arena.agent_sessions": {
+      "value": 11.053,
+      "how": "the only listing (no effort named)",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+      "by_effort": {
+       "default": 11.053
+      },
+      "sessions": 43146
+     }
+    },
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": null,
-    "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "source": "usd merge includes arena.agent_sessions",
+    "kind": "benchmark",
+    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": null,
-   "economy_static": null,
+   "economy_static": 0.576,
    "legacy_public_tier": {
     "value": 2.33,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
-    {
-     "model": "qwen3.7-max",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-    },
     {
      "model": "qwen3.7-max",
      "field": "divergence",
@@ -11744,21 +11710,21 @@
      "field": "global_rigor.long_context,anti_hallucination",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "qwen3.7-max",
      "field": "module_precision.alignment",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     },
     {
      "model": "qwen3.7-max",
      "field": "vision_tools.vision",
      "reason": "component_unmeasured_no_fit",
      "level": "yellow",
-     "effect": "the axis averages the components it has"
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
     }
    ],
    "legacy": {
@@ -11812,7 +11778,6 @@
      "status": "missing",
      "components": {},
      "missing_components": [
-      "coding",
       "terminal",
       "alignment"
      ],
@@ -12002,9 +11967,7 @@
        }
       }
      },
-     "missing_components": [
-      "coding"
-     ]
+     "missing_components": []
     },
     "vision_tools": {
      "value": 0.8207,
@@ -12053,51 +12016,44 @@
    },
    "missing_axes": [],
    "usd_per_hour": {
-    "value": 33.474,
+    "value": 8.66,
     "status": "ok",
-    "merge": "median of 1 cited source(s)",
+    "merge": "source priority: arena.agent_sessions",
     "used": [
-     "derived.community_mix"
+     "arena.agent_sessions"
     ],
     "sources": {
-     "derived.community_mix": {
-      "value": 33.474,
+     "arena.agent_sessions": {
+      "value": 8.66,
       "how": "High listing",
-      "kind": "derived",
-      "as_of": "2026-11-02",
-      "url": "https://artificialanalysis.ai/leaderboards/models",
-      "method": "AA output speed x community token mix at AA list prices",
+      "kind": "community",
+      "as_of": "2026-11-08",
+      "url": "https://arena.ai/leaderboard/agent",
+      "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
       "by_effort": {
-       "high": 33.474,
-       "low": 28.213,
-       "medium": 31.727
-      }
+       "high": 8.66
+      },
+      "sessions": 53721
      }
     },
-    "max_over_min": null
+    "max_over_min": null,
+    "kind": "community",
+    "fallback": false
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "source": "usd merge includes arena.agent_sessions",
     "kind": "benchmark",
     "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
    },
    "intelligence_index": 60.03,
-   "economy_static": 0.309,
+   "economy_static": 0.634,
    "legacy_public_tier": {
     "value": 4.34,
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [
-    {
-     "model": "gemini-4-carbon",
-     "field": "module_precision.coding",
-     "reason": "component_unmeasured_no_fit",
-     "level": "yellow",
-     "effect": "the axis averages the components it has"
-    }
-   ],
+   "data_errors": [],
    "legacy": {
     "tier": 4.35,
     "usd_per_hour": 4.0,
@@ -12121,62 +12077,6 @@
  },
  "data_errors": [
   {
-   "model": "deepseek-v4.1-flash-free",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "claude-fable-5-1",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "claude-opus-5-5",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gpt-6.1-sol",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gpt-6-astra",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gemini-4-argon-high",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "claude-sonnet-5-5",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "grok-4.7",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
    "model": "grok-bot",
    "field": "usd_per_hour",
    "reason": "no_cited_source",
@@ -12261,88 +12161,46 @@
    "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
   },
   {
-   "model": "claude-haiku-5-5",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gpt-6.1-terra",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gpt-6-sol",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
-  },
-  {
    "model": "gpt-6-sol",
    "field": "global_rigor.long_context",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-6-sol",
-   "field": "module_precision.coding,terminal",
+   "field": "module_precision.terminal",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gpt-6-luna",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gpt-5.6-sol",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-5.6-sol",
    "field": "global_rigor.long_context",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-5.6-sol",
    "field": "module_precision.terminal",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gpt-5.6-terra",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-5.6-terra",
    "field": "global_rigor.long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-5.6-terra",
    "field": "module_precision.terminal,alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-5.6-luna",
@@ -12356,21 +12214,21 @@
    "field": "global_rigor.agentic,long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-5.6-luna",
    "field": "module_precision.terminal,alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-5.6-luna",
    "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "grok-4.7-build-fast",
@@ -12419,63 +12277,42 @@
    "field": "global_rigor.agentic,long_horizon,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3-coder-next",
-   "field": "module_precision.coding,alignment",
+   "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3-coder-next",
    "field": "vision_tools.vision,gui_design,gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "kimi-k3.1-pro",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "kimi-k3",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k3",
    "field": "global_rigor.long_context",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k3",
    "field": "module_precision.terminal",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k3",
    "field": "vision_tools.vision",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "minimax-m3.1-flash",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "doubao-seed-2-1-pro-260628",
@@ -12510,28 +12347,7 @@
    "field": "vision_tools.vision,gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "mimo-v2.6-pro",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "mimo-v2.6-flash-free",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "nemotron-3-ultra-free",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "nemotron-3-ultra-free",
@@ -12545,42 +12361,21 @@
    "field": "global_rigor.long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "nemotron-3-ultra-free",
    "field": "module_precision.terminal,alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "nemotron-3-ultra-free",
    "field": "vision_tools.vision,gui_design",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "nemotron-3.5-super-vl-free",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "mistral-large-4",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "muse-wonder-1.0",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "beam-free",
@@ -12594,21 +12389,21 @@
    "field": "global_rigor.long_context",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "beam-free",
-   "field": "module_precision.coding,terminal",
+   "field": "module_precision.terminal",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "beam-free",
    "field": "vision_tools.vision",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "flint-40b-free",
@@ -12671,7 +12466,7 @@
    "field": "vision_tools.vision,gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-6",
@@ -12699,7 +12494,7 @@
    "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-sonnet-4-6",
@@ -12713,70 +12508,63 @@
    "field": "global_rigor.agentic,long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-sonnet-4-6",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-sonnet-4-6",
    "field": "vision_tools.tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "glm-5.2",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "glm-5.2",
    "field": "global_rigor.long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "glm-5.2",
    "field": "module_precision.terminal,alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "glm-5.2",
    "field": "vision_tools.vision",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-oss-120b",
    "field": "global_rigor.agentic,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-oss-120b",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gpt-oss-120b",
    "field": "vision_tools.vision,gui_design,gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gemini-3.1-flash-lite",
@@ -12790,21 +12578,21 @@
    "field": "global_rigor.agentic,long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gemini-3.1-flash-lite",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gemini-3.1-flash-lite",
    "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k2.7-code",
@@ -12818,21 +12606,21 @@
    "field": "global_rigor.agentic,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k2.7-code",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k2.7-code",
    "field": "vision_tools.vision,gui",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3.6-plus",
@@ -12846,21 +12634,21 @@
    "field": "global_rigor.agentic,long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3.6-plus",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3.6-plus",
    "field": "vision_tools.vision,gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-7",
@@ -12874,21 +12662,21 @@
    "field": "global_rigor.agentic,long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-7",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-7",
    "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-8",
@@ -12902,14 +12690,14 @@
    "field": "global_rigor.agentic,long_context",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "claude-opus-4-8",
    "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "grok-4.5",
@@ -12923,77 +12711,63 @@
    "field": "global_rigor.agentic,long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "grok-4.5",
    "field": "module_precision.terminal,alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "grok-4.5",
    "field": "vision_tools.gui,tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "grok-4.6",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "grok-4.6",
    "field": "global_rigor.long_context",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "grok-4.6",
    "field": "module_precision.terminal",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gemini-3.1-pro-preview",
    "field": "global_rigor.anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gemini-3.1-pro-preview",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
-  },
-  {
-   "model": "gemini-3.7-flash",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gemini-3.7-flash",
    "field": "global_rigor.long_context",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "gemini-3.7-flash",
    "field": "module_precision.terminal",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k2.6",
@@ -13007,21 +12781,21 @@
    "field": "global_rigor.agentic,long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k2.6",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "kimi-k2.6",
    "field": "vision_tools.tools",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3-max",
@@ -13039,10 +12813,10 @@
   },
   {
    "model": "qwen3-max",
-   "field": "module_precision.coding,alignment",
+   "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3-max",
@@ -13050,13 +12824,6 @@
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
    "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
-  },
-  {
-   "model": "qwen3.7-max",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
   },
   {
    "model": "qwen3.7-max",
@@ -13070,21 +12837,21 @@
    "field": "global_rigor.long_context,anti_hallucination",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3.7-max",
    "field": "module_precision.alignment",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3.7-max",
    "field": "vision_tools.vision",
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
-   "effect": "the axis averages the components it has"
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
   },
   {
    "model": "qwen3-flash-2025-07-28",
@@ -13120,13 +12887,6 @@
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
    "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
-  },
-  {
-   "model": "gemini-4-carbon",
-   "field": "module_precision.coding",
-   "reason": "component_unmeasured_no_fit",
-   "level": "yellow",
-   "effect": "the axis averages the components it has"
   }
  ]
 }
