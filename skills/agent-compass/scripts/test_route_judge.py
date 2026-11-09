@@ -975,11 +975,13 @@ class SelectableScorerTests(unittest.TestCase):
         questions = request['questions']
         self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'context_scale',
                                           'divergence', 'hallucination_risk', 'error_cost', 'needs_visual', 'needs_gui', 'local_only',
-                                          'realtime_loop', 'wants_fast', 'read_only_review', 'effort_band', 'urgency', 'multi_task', 'task_count'})
+                                          'realtime_loop', 'wants_fast', 'read_only_review', 'access', 'effort_band', 'urgency',
+                                          'multi_task', 'task_count'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
         self.assertEqual(set(questions['interaction_style']['criteria']), set(self.allocator.INTERACTION_STYLES))
+        self.assertEqual((questions['access']['type'], set(questions['access']['criteria'])), ('choice', {'read-only', 'write'}))
         for name, (low, high) in self.allocator.PROFILE_INTEGERS.items():
             q = questions[name]
             self.assertEqual((q['type'], len(q['criteria']), isinstance(q['criteria'], list)), ('score', high - low + 1, True), name)
@@ -999,12 +1001,16 @@ class SelectableScorerTests(unittest.TestCase):
         answers['needs_gui'] = {'type': 'noul', 'noul': 0.49}
         answers['local_only'] = 0.5
         answers['work_kind'] = 'debug_review'
+        answers['access'] = {'choice': 'write'}
         p2 = router.parse_jev_response({'answers': answers}, self.allocator)
-        self.assertEqual((p2['reasoning_depth'], p2['code_complexity'], p2['needs_gui'], p2['needs_visual'], p2['local_only'], p2['work_kind']),
-                         (4, 3, False, False, True, 'debug_review'))
+        self.assertEqual((p2['reasoning_depth'], p2['code_complexity'], p2['needs_gui'], p2['needs_visual'], p2['local_only'],
+                          p2['work_kind'], p2['access']),
+                         (4, 3, False, False, True, 'debug_review', 'write'))
         self.assertNotIn('reason', p2)
         for broken in ({'answers': {**answers, 'work_kind': {'choice': 'make_coffee'}}},
                        {'answers': {**answers, 'interaction_style': {'choice': 'vibes'}}},
+                       {'answers': {**answers, 'access': {'choice': 'sudo'}}},
+                       {'answers': {**answers, 'access': {'choice': 'read-only'}, 'code_complexity': {'score': 2.0}}},
                        {'answers': {k: v for k, v in answers.items() if k != 'error_cost'}},
                        {'answers': {k: v for k, v in answers.items() if k != 'wants_fast'}},
                        {'answers': {k: v for k, v in answers.items() if k != 'read_only_review'}},

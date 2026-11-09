@@ -101,12 +101,19 @@ def build_task(args, text, parent):
         if not local_only_reason:
             raise ValueError('--local-only requires a non-empty reason.')
         task['needs'] = {'local_only': True, 'local_only_reason': local_only_reason}
+    elif getattr(args, 'workspace', None):
+        ws = str(args.workspace).strip()
+        if ws:
+            task['needs'] = {'local_only': True, 'local_only_reason': f'inferred from --workspace {ws}'}
     if getattr(args, 'file', None) or getattr(args, 'apply_to', None):
         task.setdefault('needs', {})['file_transfer'] = True
     if getattr(args, 'fast', False):
         task.setdefault('needs', {})['fast'] = True
     if getattr(args, 'can_wait_hours', None) is not None:
-        task['can_wait_hours'] = float(args.can_wait_hours)
+        cwh = args.can_wait_hours
+        if not (isinstance(cwh, (int, float)) and not isinstance(cwh, bool) and cwh >= 0 and cwh != float('inf') and cwh == cwh):
+            raise ValueError('--can-wait-hours must be a non-negative number of hours.')
+        task['can_wait_hours'] = float(cwh)
     return task
 
 
@@ -276,20 +283,19 @@ def dot(args, out, prompt_file):
     files = [str(f) for f in args.file]
     apply_to = ['--apply-to', str(args.apply_to or Path.cwd())] if files else []
     command = python(DOT_RUNNER, 'run', '--prompt-file', str(prompt_file),
-                     *[x for f in files for x in ('--file', f)], *apply_to,
-                     *(['--wait', str(args.wait)] if args.wait > 0 else ['--no-wait']))
+                     *[x for f in files for x in ('--file', f)], *apply_to, '--no-wait')
     proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
-                          timeout=args.wait + 180)
+                          timeout=180)
     found = re.search(r'task_id=(\S+)', proc.stderr)
     launched = bool(found) or proc.returncode == 0
     result = dict(out, launched=launched, dispatch_mode='dot',
                   caller_action='already_launched_do_not_respawn' if launched else 'check_error',
                   worker={'provider': 'dot', 'task_id': found.group(1) if found else None, 'exit': proc.returncode,
-                          'reply': proc.stdout[-6000:] if args.wait > 0 else None, 'stderr': proc.stderr[-1500:] or None})
+                          'reply': None, 'stderr': proc.stderr[-1500:] or None})
     if launched:
         result['next'] = ('Worker is ALREADY launched on Dot by roll. Do NOT call create_agent, Agent, '
                           'spawn_agent, or invoke_subagent; use continuation_argv or read worker.reply.')
-    if found and (args.wait <= 0 or proc.returncode == 3):
+    if found:
         result['continuation_argv'] = entry.argv('dot', 'status', '--task-id', found.group(1), '--wait', '120', *apply_to)
     return result, 0 if proc.returncode in (0, 3) else 1
 
@@ -299,23 +305,15 @@ def consult(args, out, prompt_file):
     target = base.with_name(f'{base.stem}-consult-{time.strftime("%Y%m%d-%H%M%S")}')
     given = ['--prompt', str(prompt_file), '--out', str(target)]
     command = entry.argv('chatgpt-web', *given)
-    if args.wait <= 0:
-        # A browser consultation blocks for up to 30 minutes; hand over the one command instead of backgrounding it.
-        return dict(out, launched=False, dispatch_mode='chatgpt-web', caller_action='run_next_argv', next_argv=command,
-                    next='Run next_argv (blocks until the answer is in <out>/response.md), or roll again with --wait 1800.'), 0
-    proc = subprocess.run(python(CONSULT_BRIDGE, *given, '--timeout', str(int(args.wait))), capture_output=True, text=True,
-                          encoding='utf-8', errors='replace', timeout=args.wait + 120)
-    answer = target / 'response.md'
-    return dict(out, launched=True, dispatch_mode='chatgpt-web', caller_action='already_launched_do_not_respawn',
-                worker={'provider': 'chatgpt-web', 'out': str(target), 'exit': proc.returncode,
-                'answer_file': str(answer) if answer.is_file() else None, 'stderr': proc.stderr[-1500:] or None}), \
-        0 if proc.returncode == 0 else 1
+    # A browser consultation blocks for up to 30 minutes; hand over the one command instead of backgrounding it.
+    return dict(out, launched=False, dispatch_mode='chatgpt-web', caller_action='run_next_argv', next_argv=command,
+                next='Run next_argv (blocks until the answer is in <out>/response.md).'), 0
 
 
 def grok_bot(args, out, prompt_file, task, bundle):
     """Same external-runner receipt/continuation surface as Dot; no Paseo adapter."""
     import run_grok_bot as runner
-    if args.file or args.apply_to or args.local_only:
+    if args.file or args.apply_to or args.local_only or getattr(args, 'workspace', None):
         raise ValueError('grok-bot runs remotely and accepts text only; local-only/file-transfer options are unsupported.')
     if bundle.get('model') != 'grok-bot' or bundle.get('account') != 'grok-bot' or bundle.get('effort'):
         raise ValueError('Use --provider grok-bot --account grok-bot --model grok-bot without an effort; upstream owns model selection.')
@@ -323,12 +321,6 @@ def grok_bot(args, out, prompt_file, task, bundle):
         receipt = runner.submit(prompt_file.read_text(encoding='utf-8'), out['parent_id'], task['task_id'])
     except (runner.TransportError, OSError, ValueError) as exc:
         return dict(out, launched=False, dispatch_mode='grok-bot', caller_action='check_error', error=str(exc)), 1
-    if args.wait > 0 and receipt['state'] not in ('completed', 'failed'):
-        try:
-            receipt = runner.status(receipt['task_id'], args.wait)
-        except (runner.TransportError, OSError, ValueError) as exc:
-            # A continuation failure cannot invalidate the durable send receipt.
-            receipt = {**receipt, 'read_error': str(exc)}
     delivery = receipt['delivery']
     completed = receipt['state'] == 'completed'
     result = dict(out, launched=True if completed or delivery == 'accepted' else False if delivery == 'rejected' else None,
@@ -342,11 +334,22 @@ def grok_bot(args, out, prompt_file, task, bundle):
 
 
 def task_access(args, read_only_review=None):
-    """--access wins, then the classifier's read_only_review, and anything else writes: a wrong block is loud and has a
-    way out, a wrong exemption silently lets a second writer in. interaction_style says nothing about writing."""
+    """--access wins, then the classifier's access / read_only_review, and anything else writes: a wrong block is loud
+    and has a way out, a wrong exemption silently lets a second writer in. interaction_style says nothing about writing."""
     explicit = getattr(args, 'access', None)
     if explicit:
         return 'read_only' if explicit == 'read-only' else 'write'
+    if isinstance(read_only_review, dict):
+        classified = read_only_review.get('access')
+        if classified in ('read-only', 'read_only'):
+            return 'read_only'
+        if classified == 'write':
+            return 'write'
+        read_only_review = read_only_review.get('read_only_review')
+    if read_only_review in ('read-only', 'read_only'):
+        return 'read_only'
+    if read_only_review == 'write':
+        return 'write'
     return 'read_only' if read_only_review is True else 'write'
 
 
@@ -371,8 +374,7 @@ def workspace_blocked(out, workspace, holders):
     return dict(out, launched=False, dispatch_mode='paseo', caller_action='resolve_workspace_writer',
                 error='workspace_has_active_writer', blocked_by=holders,
                 next=f'Nothing was launched: workspace {workspace} already has a writer: {named}. Wait for it to finish, then roll '
-                     'this brief again. If this brief only reads, roll it with --access read-only. To run both in one workspace '
-                     'anyway, roll it with --allow-concurrent "<why>"; the reason goes to the ledger.'), 2
+                     'this brief again, or create a separate worktree for parallel work. If this brief only reads, roll it with --access read-only.'), 2
 
 
 def paseo(args, out, decision, task, text, parent, usage, judge=None):
@@ -383,8 +385,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         or task.get('profile')
     )
     is_ro_review = is_readonly_review_profile(decision_profile)
-    access = task_access(args, decision_profile.get('read_only_review') if isinstance(decision_profile, dict) else None)
-    allow_concurrent = (getattr(args, 'allow_concurrent', None) or '').strip()
+    access = task_access(args, decision_profile if isinstance(decision_profile, dict) else None)
     workspace = args.workspace
     landing = None
     if workspace and access == 'write':
@@ -392,12 +393,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         if unavailable:
             out = dict(out, assumptions=[*out.get('assumptions', []),
                                          f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
-        if holders and not allow_concurrent:
+        if holders:
             return workspace_blocked(out, workspace, holders)
-        if holders and judge is not None:
-            judge.append_ledger({'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': 'allow_concurrent', 'parent_id': parent,
-                                 'task_id': task.get('task_id'), 'workspace': workspace, 'reason': allow_concurrent[:300],
-                                 'holders': holders})
     resume_agent_id = None
     explicit_id = (getattr(args, 'resume', None) or '').strip()
     if explicit_id and getattr(args, 'new_worker', False):
@@ -453,12 +450,12 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     try:
         row = registry.prepare(decision['decision_id'], task, launch, usage,
                                resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None,
-                               access=access, allow_concurrent=allow_concurrent or None,
+                               access=access,
                                new_worker=bool(getattr(args, 'new_worker', False)),
                                cwd=landing)
     except registry.WorkspaceBusy as busy:
         return workspace_blocked(out, busy.workspace, busy.holders)
-    receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=args.wait)
+    receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=0)
     if (
         receipt.get('state') == 'failed'
         and receipt.get('error') == 'parent_agent_not_found'
@@ -685,20 +682,12 @@ def cli(args, out, bundle, text, judge):
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=f'The {executable} CLI could not start ({exc})' + native), 1
     worker = {'provider': bundle['provider'], 'cli': executable, 'pid': process.pid,
-              'output': str(run / 'output.txt'), 'stderr': str(run / 'stderr.txt')}
-    try:
-        worker['exit'] = process.wait(timeout=args.wait) if args.wait > 0 else None
-    except subprocess.TimeoutExpired:
-        worker['exit'] = None
-    if worker['exit'] is None:
-        return dict(out, launched=True, dispatch_mode='cli', caller_action='already_launched_do_not_respawn',
-                    worker=worker,
-                    next='No automatic completion notification is installed for this CLI worker. '
-                         f'The worker runs as PID {process.pid}; the caller must watch worker.output and worker.stderr. You own this process: '
-                         'wait for it, or stop it before you finish.'), 0
-    worker['reply'] = (run / 'output.txt').read_bytes().decode('utf-8', 'replace')[-6000:]
+              'output': str(run / 'output.txt'), 'stderr': str(run / 'stderr.txt'), 'exit': None}
     return dict(out, launched=True, dispatch_mode='cli', caller_action='already_launched_do_not_respawn',
-                worker=worker), 0 if worker['exit'] == 0 else 1
+                worker=worker,
+                next='No automatic completion notification is installed for this CLI worker. '
+                     f'The worker runs as PID {process.pid}; the caller must watch worker.output and worker.stderr. You own this process: '
+                     'wait for it, or stop it before you finish.'), 0
 
 
 def status_of(result, code):
@@ -779,6 +768,8 @@ def compact(result, status, detail_path):
         out['task_count'] = result.get('task_count')
     if result.get('start_after_hours') is not None:
         out['start_after_hours'] = result['start_after_hours']
+        if result.get('caller_action') == 'wait_for_reset':
+            out['caller_action'] = 'wait_for_reset'
     if result.get('blocked_by'):
         out['blocked_by'] = result['blocked_by']
     if result.get('assumptions'):
@@ -793,8 +784,8 @@ def compact(result, status, detail_path):
 
 
 # Flags that describe one brief; a batch takes only the shared ones and each brief is rolled as written.
-BATCH_ONLY_ALONE = ('task_id', 'title', 'hours', 'local_only', 'keep_whole', 'file', 'apply_to', 'provider', 'account',
-                    'model', 'effort', 'basis', 'wait', 'resume', 'allow_concurrent')
+BATCH_ONLY_ALONE = ('task_id', 'title', 'hours', 'can_wait_hours', 'local_only', 'keep_whole', 'file', 'apply_to', 'provider', 'account',
+                    'model', 'effort', 'basis', 'resume')
 
 
 def run_batch(args, judge):

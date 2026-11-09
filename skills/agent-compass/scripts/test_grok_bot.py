@@ -426,23 +426,20 @@ class GrokBotTests(unittest.TestCase):
         snapshot = provider_inventory.discover(home, env)
         self.assertEqual(snapshot['accounts']['grok-bot']['status'], 'missing_configuration')
 
-    def test_roll_delivery_and_wait_recovery_preserve_receipts_without_replay(self):
+    def test_roll_delivery_preserves_receipts_without_replay(self):
         prompt = self.root / 'prompt.md'
         prompt.write_text('Task')
         bundle = {'provider': 'grok-bot', 'account': 'grok-bot', 'model': 'grok-bot'}
         cases = [
-            ('accepted', 'accepted', True, None),
-            ('unknown', 'unknown', None, None),
-            ('rejected', 'failed', False, None),
-            ('accepted', 'accepted', True, TimeoutError('Override store is busy')),
-            ('accepted', 'accepted', True, OSError('Receipt temporarily unreadable')),
+            ('accepted', 'accepted', True),
+            ('unknown', 'unknown', None),
+            ('rejected', 'failed', False),
         ]
-        for delivery, state, launched, error in cases:
+        for delivery, state, launched in cases:
             receipt = {'task_id': 'a' * 32, 'state': state, 'delivery': delivery}
-            args = SimpleNamespace(file=[], apply_to=None, local_only=None, wait=30 if error else 0)
-            with self.subTest(delivery=delivery, error=type(error).__name__), \
-                    patch.object(runner, 'submit', return_value=receipt) as submit, \
-                    patch.object(runner, 'status', side_effect=error) as status:
+            args = SimpleNamespace(file=[], apply_to=None, local_only=None)
+            with self.subTest(delivery=delivery), \
+                    patch.object(runner, 'submit', return_value=receipt) as submit:
                 result, code = roll.grok_bot(args, {'parent_id': 'parent'}, prompt, {'task_id': 'task'}, bundle)
             submit.assert_called_once()
             self.assertIs(result['launched'], launched)
@@ -450,13 +447,6 @@ class GrokBotTests(unittest.TestCase):
             self.assertEqual(code, 1 if delivery == 'rejected' else 0)
             self.assertEqual('continuation_argv' in result, delivery != 'rejected')
             self.assertNotIn('read_error', receipt)
-            if error:
-                status.assert_called_once_with(receipt['task_id'], 30)
-                self.assertEqual(result['caller_action'], 'already_launched_do_not_respawn')
-                self.assertEqual(result['worker'], {**receipt, 'read_error': str(error)})
-                self.assertIn(receipt['task_id'], result['continuation_argv'])
-            else:
-                status.assert_not_called()
         for option, value in [('file', [prompt]), ('local_only', 'local dependency'), ('apply_to', self.root)]:
             with self.subTest(option=option), patch.object(runner, 'submit', side_effect=AssertionError('no send')):
                 with self.assertRaises(ValueError):
@@ -514,7 +504,7 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
         command = [sys.executable, '-X', 'utf8', '-c', script, str(Path(roll.__file__).parent), str(fake_cli),
                    'roll', '--brief', str(brief), '--hours', '0.02', '--provider', 'grok-bot',
                    '--account', 'grok-bot', '--model', 'grok-bot', '--basis', 'Fixture explicit Bot request',
-                   '--usage-cache', str(usage), '--wait', '0', '--verbose']
+                   '--usage-cache', str(usage), '--verbose']
         dry = subprocess.run(command + ['--dry-run'], capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
         result = json.loads(dry.stdout)

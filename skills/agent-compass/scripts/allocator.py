@@ -1112,6 +1112,11 @@ READ_ONLY_REVIEW_QUESTION = (
     'even if the reviewer saves its review report file to a specified output path). False when the worker implements, '
     'fixes, or refactors code (including fixing issues found by a prior review), runs operational/release commands, '
     'or performs general exploration/research that is not a code/diff/release audit.')
+ACCESS_LEVELS = ('read-only', 'write')
+ACCESS_QUESTION = (
+    'Whether this brief only reads, inspects, reviews, or analyzes without modifying workspace files or state '
+    '("read-only"), or writes, edits, creates, or deletes workspace files or runs mutating commands ("write"). '
+    'Any brief with read_only_review=true is "read-only"; any brief with code_complexity > 0 is "write".')
 DEPTH_BY_DIFFICULTY = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 4}
 DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
 HARD_BY_DEFAULT = ('debug_review', 'general_implementation', 'frontend_implementation', 'computer_use',
@@ -1178,6 +1183,7 @@ TASK_PROFILE_SCHEMA = {
         'realtime_loop': {'type': 'boolean', 'description': REALTIME_LOOP_QUESTION},
         'wants_fast': {'type': 'boolean', 'description': WANTS_FAST_QUESTION},
         'read_only_review': {'type': 'boolean', 'description': READ_ONLY_REVIEW_QUESTION},
+        'access': {'type': 'string', 'enum': list(ACCESS_LEVELS), 'description': ACCESS_QUESTION},
         'interaction_style': {'type': 'string', 'enum': list(INTERACTION_STYLES), 'description': (
             'engineering = write or change software; exploration = explore a codebase, run experiments or backtests, '
             'analyze logs or data; text_only = pure text in and out or public web lookup; advisory = direction '
@@ -1195,7 +1201,7 @@ TASK_PROFILE_SCHEMA = {
         'multi_task': {'type': 'boolean', 'description': MULTI_TASK_QUESTION},
         'task_count': {'type': 'string', 'enum': list(TASK_COUNTS), 'description': TASK_COUNT_QUESTION},
     },
-    'required': list(PROFILE_INTEGERS) + list(PROFILE_FLAGS) + ['expected_hours', 'hours_confidence', 'urgency', 'interaction_style',
+    'required': list(PROFILE_INTEGERS) + list(PROFILE_FLAGS) + ['access', 'expected_hours', 'hours_confidence', 'urgency', 'interaction_style',
                                                                  'multi_task', 'task_count'],
 }
 # kind -> (code_complexity, context_scale, hallucination_risk, error_cost, interaction_style) for the profile schema
@@ -1261,6 +1267,16 @@ def validate_profile(raw):
         raise ValueError(
             f"task.profile.read_only_review true contradicts task.profile.code_complexity {profile.get('code_complexity')!r} (must be 0)"
         )
+    if raw.get('access') is not None:
+        if raw['access'] not in ACCESS_LEVELS:
+            raise ValueError('task.profile.access must be one of ' + ', '.join(ACCESS_LEVELS))
+        if raw['access'] == 'read-only' and profile.get('code_complexity') != 0:
+            raise ValueError(
+                f"task.profile.access 'read-only' contradicts task.profile.code_complexity {profile.get('code_complexity')!r} (must be 0)"
+            )
+        if profile.get('read_only_review') is True and raw['access'] == 'write':
+            raise ValueError("task.profile.access 'write' contradicts task.profile.read_only_review true")
+        profile['access'] = raw['access']
     # The hours/urgency estimate is optional: legacy fixtures and scorers that cannot produce it (Jev) leave it out.
     hours = raw.get('expected_hours')
     if hours is not None:

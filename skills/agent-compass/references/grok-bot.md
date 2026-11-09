@@ -91,7 +91,7 @@ python -X utf8 skills/agent-compass/grok-bot/install_cli.py --check
 python -X utf8 skills/agent-compass/scripts/run_grok_bot.py doctor
 python -X utf8 skills/agent-compass/scripts/run_grok_bot.py configure --bot-id <exact-bot-id-from-doctor>
 agentcompass providers
-agentcompass roll --brief <task.md> --hours 0.1 --wait 30
+agentcompass roll --brief <task.md> --hours 0.1
 ```
 
 The first four lines are Grok Bot's own installer and setup tool, which `agentcompass` does not wrap; they only exist at these paths in a source checkout (an installed package ships the same files under `agentcompass/data/skills/agent-compass/`). In a checkout without an install, write `python -X utf8 agentcompass` for `agentcompass` (from the repository root that is a valid path).
@@ -100,7 +100,7 @@ No provider flags are needed for automatic selection. To honor a user explicitly
 requesting Grok Bot, the existing override remains available:
 
 ```powershell
-agentcompass roll --brief <task.md> --hours 0.1 --provider grok-bot --account grok-bot --model grok-bot --basis 'User requested Grok Bot' --wait 30
+agentcompass roll --brief <task.md> --hours 0.1 --provider grok-bot --account grok-bot --model grok-bot --basis 'User requested Grok Bot'
 ```
 
 Use a dedicated Bot for AgentCompass tasks. Configure validates the ID with an

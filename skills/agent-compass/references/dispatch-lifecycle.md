@@ -60,9 +60,9 @@ The rule goes by workspace ID. Directories only warn: many normal parallel dispa
 
 A resume stays in its workspace too: with `--workspace W`, a compatible worker living elsewhere is not resumed (`worker_workspace_mismatch`) and the dispatch creates a new worker in W instead.
 
-Read-only work coexists with a writer. A brief is a writer unless `--access read-only` says otherwise. `interaction_style` does not decide this: it does not separate reading from writing. Titles and task text are never matched. Nothing enforces read-only on the worker, so `--access read-only` is the caller's statement.
+Read-only work coexists with a writer. The System-One classifier decides `access` (`read-only` or `write`), and `--access read-only|write` (in `--help-all`) overrides it if needed. `interaction_style` does not decide this: it does not separate reading from writing. Titles and task text are never matched in code.
 
-`blocked_by` lists each holder (`dispatch_id`, `state`, `agent_id`, `task_id`, `title`). `next_action` gives the three ways out: wait for it and roll again; `--access read-only` if the brief only reads; `--allow-concurrent "<why>"` to run both anyway, which writes a ledger row (`stage: allow_concurrent`, with the reason and the holders) and keeps the reason on the dispatch.
+`blocked_by` lists each holder (`dispatch_id`, `state`, `agent_id`, `task_id`, `title`). `next_action` gives the ways out: wait for the current writer to finish and roll again, create a separate worktree for parallel work, or pass `--access read-only` if the brief only reads.
 
 ### Repeating a brief
 
@@ -72,7 +72,7 @@ A repeated `roll` of an open brief hands back that dispatch (`pending`, `next_ar
 
 A cooldown is best effort. If its store cannot be written, the dispatch still settles and the failure goes uncounted.
 
-`launch --watch-seconds N` returns the current state (`pending` or `started`) within N seconds: each bridge call is cut at what is left, and it starts no further observation with under 5 s left, so it can return up to 5 s early. Only the first observation can exceed that limit: under 1 s of watch, such as 0, it gets up to 5 s so it still reads the host. `roll --wait`, and `launch` on a `prepared` row, are the same watch, except that sending a create may take its full 25 s whatever the wait, and the first observation can follow it, so up to about 30 s. `poll-seconds` only spaces the observations.
+`launch --watch-seconds N` returns the current state (`pending` or `started`) within N seconds: each bridge call is cut at what is left, and it starts no further observation with under 5 s left, so it can return up to 5 s early. Only the first observation can exceed that limit: under 1 s of watch, such as 0, it gets up to 5 s so it still reads the host. `roll` (which passes `watch_seconds=0`) and `launch` on a `prepared` row are the same watch, except that sending a create may take its full 25 s, and the first observation can follow it, so up to about 30 s. `poll-seconds` only spaces the observations.
 
 ## 2. In-Flight Quota Deduction
 

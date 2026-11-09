@@ -279,7 +279,7 @@ def g_herdr():
         check("a live parent terminal exists", bool(parent))
         task = TASK + " [guest-1]\nFIXTURE-SCENARIO: ok\n完整原文 unchanged\r\n"
         before = len(worker_records())
-        rolled = agentcompass("roll", "--task", task, "--wait", "0", env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll")
+        rolled = agentcompass("roll", "--task", task, env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll")
         doc = parse(rolled.stdout)
         details = parse(Path(doc["details"]).read_text(encoding="utf-8")) if doc.get("details") and Path(doc["details"]).is_file() else {}
         check("roll launched on the herdr surface with a public status command", doc.get("status") == "launched" and details.get("dispatch_mode") == "herdr" and isinstance(doc.get("next_argv"), list), (rolled.stdout + rolled.stderr)[:500])
@@ -312,7 +312,7 @@ def g_herdr():
         check("the real parent terminal received the worker's report through hc send", bool(got), mailbox.read_text(encoding="utf-8", errors="replace")[-300:] if mailbox.is_file() else "no mailbox")
         export_evidence(terminals)
         # The Windows exec trampoline question: does `completed` come from the fixture finishing, or from the launcher exiting?
-        slow = parse(agentcompass("roll", "--task", TASK + " [guest-slow]\nFIXTURE-SCENARIO: slow\n", "--wait", "0", env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll-slow").stdout)
+        slow = parse(agentcompass("roll", "--task", TASK + " [guest-slow]\nFIXTURE-SCENARIO: slow\n", env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll-slow").stdout)
         slow_details = parse(Path(slow["details"]).read_text(encoding="utf-8")) if slow.get("details") and Path(slow["details"]).is_file() else {}
         if (slow_details.get("worker") or {}).get("terminal"):
             terminals.append(slow_details["worker"]["terminal"])
@@ -338,13 +338,13 @@ def g_herdr():
         gone_terminal = hc("get", worker.get("terminal") or "none", "--json", env=env)
         check("after cleanup the terminal no longer exists on the core", gone_terminal.returncode != 0, gone_terminal.stdout[:200])
         count = len(worker_records())
-        replay = parse(agentcompass("roll", "--task", task, "--wait", "0", env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll-after-cleanup").stdout)
+        replay = parse(agentcompass("roll", "--task", task, env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll-after-cleanup").stdout)
         replay_details = parse(Path(replay["details"]).read_text(encoding="utf-8")) if replay.get("details") and Path(replay["details"]).is_file() else {}
         check("rolling the same assignment after cleanup starts nothing and reports the cleaned operation",
               len(worker_records()) == count and (replay_details.get("worker") or {}).get("state") == "cleaned", replay)
         # exit codes and program states, hang + cleanup
         def lifecycle(scenario, wanted):
-            rolled2 = parse(agentcompass("roll", "--task", TASK + " [guest-" + scenario + "]" + chr(10) + "FIXTURE-SCENARIO: " + scenario + chr(10), "--wait", "0",
+            rolled2 = parse(agentcompass("roll", "--task", TASK + " [guest-" + scenario + "]" + chr(10) + "FIXTURE-SCENARIO: " + scenario + chr(10),
                                          env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll-" + scenario).stdout)
             det = parse(Path(rolled2["details"]).read_text(encoding="utf-8")) if rolled2.get("details") and Path(rolled2["details"]).is_file() else {}
             if (det.get("worker") or {}).get("terminal"):
@@ -376,7 +376,7 @@ def g_herdr():
         lose_env = base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent, PATH=str(faulty) + os.pathsep + os.environ["PATH"])
         lost_task = TASK + " [guest-lost-reply]\nFIXTURE-SCENARIO: slow\n"
         starts = len([r for r in worker_records() if r["scenario"] == "slow"])
-        lost = parse(agentcompass("roll", "--task", lost_task, "--wait", "0", env=lose_env, label="roll-lost").stdout)
+        lost = parse(agentcompass("roll", "--task", lost_task, env=lose_env, label="roll-lost").stdout)
         lost_details = parse(Path(lost["details"]).read_text(encoding="utf-8")) if lost.get("details") and Path(lost["details"]).is_file() else {}
         receipt = (lost_details.get("worker") or {})
         receipt_file = Path(receipt["request"]) if receipt.get("request") else None
@@ -389,7 +389,7 @@ def g_herdr():
         check("the terminal exists under the receipt's deterministic name, owned by the parent", named.get("name") == record.get("name") and named.get("parent") == parent, named)
         ran = wait_for(lambda: len([r for r in worker_records() if r["scenario"] == "slow"]) > starts, 30)
         check("the provider really started once although the reply was lost", bool(ran), [r["scenario"] for r in worker_records()])
-        again = parse(agentcompass("roll", "--task", lost_task, "--wait", "0", env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll-lost-again").stdout)
+        again = parse(agentcompass("roll", "--task", lost_task, env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent), label="roll-lost-again").stdout)
         time.sleep(4)
         check("rolling the same assignment again starts nothing: same receipt, no second provider or terminal",
               len([r for r in worker_records() if r["scenario"] == "slow"]) == starts + 1 and again.get("status") in ("pending", "launched")
@@ -407,7 +407,7 @@ def g_herdr():
         # parent death kills the child
         second = terminal(hc("run", "--bg", "--json", "--name", "guest-parent-2", python, "-u", BASE / "parent_program.py", BASE / "mailbox2.txt", env=env)).get("address")
         terminals.append(second)
-        hang_cmd = [str(VENV / "Scripts" / "agentcompass.exe"), "roll", "--task", TASK + " [guest-hang]\nFIXTURE-SCENARIO: hang\n", "--wait", "0"]
+        hang_cmd = [str(VENV / "Scripts" / "agentcompass.exe"), "roll", "--task", TASK + " [guest-hang]\nFIXTURE-SCENARIO: hang\n"]
         twins = [subprocess.Popen(hang_cmd, cwd=str(BASE), env=base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=second), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   text=True, encoding="utf-8", errors="replace") for _ in range(2)]
         twin_docs = [parse(t.communicate(timeout=180)[0]) for t in twins]
