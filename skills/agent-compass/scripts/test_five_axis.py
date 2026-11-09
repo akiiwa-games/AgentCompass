@@ -1,8 +1,9 @@
-"""The five-axis path (round 047, rounds 2-6): off by default; when on, the tier is folded into the axes, usd merges cited
-sources, capacity comes down the cited ladder (community, time-to-exhaust, vendor multiplier; an empty ladder is a data
-error that still prices scarcity live), every long window charges burn x a pacing shadow price (no overqualification
-term), ties go to the lower opportunity cost then the larger surplus, and the classifier may answer the axis demand
-itself."""
+"""The five-axis path (round 047, rounds 2-7): off by default; when on, the axes are the only dimension system (no tier,
+vectors, route lists, harness factors or difficulty floors; round 7), quality is the continuous fit of the axis scores to
+the demand with a shortfall penalty, usd merges cited sources, capacity comes down the cited ladder (community,
+time-to-exhaust, vendor multiplier; an empty ladder is a data error that still prices scarcity live), every long window
+charges burn x a pacing shadow price, ties go to the lower opportunity cost then the higher level, and the classifier may
+answer the axis demand itself."""
 import copy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,9 +29,7 @@ PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'dive
            'error_cost': 2, 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
            'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering', 'multi_task': False,
            'task_count': '1', 'expected_hours': 1.0}
-FLOORS = {'anchor': 'claude-opus-5-5', 'ratio': {'routine': 0.6, 'hard': 0.8, 'coupled': 0.9, 'frontier': 0.95},
-          'critical_ratio': {'routine': 0.65, 'hard': 0.85, 'coupled': 0.93, 'frontier': 0.97}, 'axis_ratio': 0.9,
-          'axis_per_tier': 0.16}
+ANCHOR = {'model': 'claude-opus-5-5', 'value': 0.8}
 
 
 def demand(div, rigor, code, vision):
@@ -47,7 +46,7 @@ def document(models, **override):
     rows = {name: row() for name, info in models.items() if isinstance(info, dict)}
     rows['claude-opus-5-5'] = row(1.0, 15.0)
     rows.update(override)
-    return {'models': rows, 'floors': FLOORS, 'capacity': CAPACITY}
+    return {'models': rows, 'anchor': ANCHOR, 'capacity': CAPACITY}
 
 
 def window(usd, age=3, ref=None):
@@ -92,17 +91,98 @@ class FiveAxisTests(unittest.TestCase):
         top = next(c for c in decision['ranking'] if c['score'] is not None)
         self.assertNotIn('five_axis_level', top['components'])
 
-    def test_gate_follows_the_demanded_axes_not_a_scalar_tier(self):
-        # Sol: precise coder, weak divergence. It clears a hard coding task and fails a hard creative one.
+    def test_the_fit_follows_the_demanded_axes_continuously_and_no_floor_excludes(self):
+        # Sol: precise coder, weak divergence. Round 7: nothing excludes it on a creative task; its fit pays for the
+        # shortfall on the demanded axis instead, continuously.
         doc = document(self.accounts['models'], **{'gpt-6.1-sol': row(demand(0.2, 0.9, 1.0, 0.5))})
         coding = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 1, 2, 0)})
         creative = self.plan(self.accounts, doc, profile={'axis_demand': demand(3, 1, 0, 0), 'code_complexity': 0})
         sol_high = lambda d: next(c for c in self.rows_for(d, 'gpt-6.1-sol') if c['bundle'].get('effort') == 'high')
-        self.assertFalse([e for e in sol_high(coding)['excluded'] if 'floor' in e])
-        reasons = ' '.join(sol_high(creative)['excluded'])
-        self.assertIn('below the hard floor', reasons)
-        self.assertIn('divergence', reasons)        # the strongly demanded axis has its own floor
-        self.assertEqual(creative['decision']['task']['difficulty'], 'hard')
+        for d in (coding, creative):
+            self.assertFalse([e for c in d['ranking'] for e in c['excluded'] if 'floor' in e])
+            self.assertFalse([c for c in d['ranking'] if c.get('below_floor')])
+        self.assertEqual(sol_high(creative)['excluded'], [])
+        self.assertGreater(sol_high(creative)['five_axis_fit']['divergence']['shortfall'], 0.5)
+        self.assertGreater(sol_high(coding)['components']['fit'], sol_high(creative)['components']['fit'] + 0.3)
+        self.assertEqual(sol_high(coding)['components']['five_axis_shortfall'], 0.0)
+
+    def test_fit_is_the_demand_weighted_score_minus_the_shortfall_below_the_anchor_target(self):
+        targets = allocator.five_axis_targets(demand(3, 1, 0, 2))
+        self.assertEqual(targets, {'divergence': 0.8, 'global_rigor': round(0.8 / 3, 4), 'vision_tools': round(1.6 / 3, 4)})
+        scaled = {'divergence': 0.7, 'global_rigor': 0.9, 'module_precision': 0.1, 'vision_tools': 0.5}
+        fit, rows = allocator.five_axis_fit(scaled, demand(3, 1, 0, 2), targets, 1.0)
+        expected = (3 * (0.7 - 0.1) + 1 * 0.9 + 2 * (0.5 - (1.6 / 3 - 0.5))) / 6
+        self.assertAlmostEqual(fit, expected, places=4)
+        self.assertNotIn('module_precision', rows)           # an undemanded axis does not count
+        # Continuous: a small score change moves the fit by a small amount on both sides of the target.
+        for axis, eps in (('divergence', 0.01), ('vision_tools', -0.04)):
+            nudged = allocator.five_axis_fit({**scaled, axis: scaled[axis] + eps}, demand(3, 1, 0, 2), targets, 1.0)[0]
+            self.assertLess(abs(nudged - fit), 2 * abs(eps))
+            self.assertEqual(nudged > fit, eps > 0)
+
+    def test_no_other_dimension_set_moves_the_five_axis_decision(self):
+        """Round 7 (user): in the five-axis path nothing but the axes scores or gates on quality. Perturb every other
+        dimension set (tier, subjective and capability vectors, the visual ability, route preference/restriction/
+        capability lists, route and policy ability floors, harness quality factors, the free-usage bonus, bundle `when`
+        scopes, graded-ability spans, effort penalty and quality-bonus weights): every candidate's score and exclusions
+        must stay the same. Fails as soon as one of them reaches the five-axis path again."""
+        doc = document(self.accounts['models'], **{'gpt-6.1-sol': row(demand(0.6, 0.9, 1.0, 0.5), usd=4.0),
+                                                   'claude-sonnet-5-5': row(demand(0.7, 0.75, 0.7, 0.8), usd=9.0)})
+        tasks = [{'profile': {'axis_demand': demand(0, 1, 2, 0)}},
+                 {'profile': {'axis_demand': demand(3, 2, 0, 0), 'code_complexity': 0, 'interaction_style': 'exploration'}},
+                 {'profile': {'axis_demand': demand(1, 3, 3, 0), 'reasoning_depth': 3, 'code_complexity': 3, 'error_cost': 3,
+                              'hallucination_risk': 3}},
+                 {'profile': {'axis_demand': demand(0, 1, 1, 2), 'needs_visual': True}, 'work_kind': 'visual_analysis'}]
+        bent = copy.deepcopy(self.accounts)
+        for i, info in enumerate(m for m in bent['models'].values() if isinstance(m, dict)):
+            info['tier'] = 1.0 + (i * 7) % 5
+            info['subjective'] = {k: (i % 3) / 2 for k in ('quality', 'divergence', 'rigor', 'capability', 'speed')}
+            info['capabilities'] = {'visual': i % 2, 'gui': (i + 1) % 2, 'reasoning': 0.1 * (i % 10)}
+            info['visual'] = bool(i % 2)
+            info['score_estimated'] = bool(i % 3)
+        policy = bent['scoring']
+        policy['harness_factors'] = {'default': 0.3, 'by_harness': {'claude': 2.0, 'codex': 0.1}}
+        policy['ability_floor'] = {k: 9.0 for k in policy['ability_floor']}
+        policy['route_ability_floor'] = {'code_implementation': {'routine': 9.5}}
+        policy['ability_score_origin'] = {k: 0.0 for k in policy['ability_floor']}
+        policy.update(ability_span=0.05, extra_effort_penalty=0.5, high_precision_effort_weight=2.0, unlimited_bonus=0.9)
+        policy.setdefault('profile', {}).update(saturation_span=0.01, vector_weight=1.0,
+                                                subjective={'weight': 1.0, 'vector_weight': 0.0, 'route_weight': 0.0})
+        for spec in bent['accounts'].values():
+            if isinstance(spec, dict):
+                spec['free_usage_bonus'] = True
+                for b in (spec.get('bundles') or {}).values():
+                    if isinstance(b, dict):
+                        b['when'] = {'min_difficulty': 'frontier', 'max_reasoning_depth': 1}
+        caps = copy.deepcopy(allocator.load_capabilities(accounts=self.accounts))
+        bent_caps = copy.deepcopy(caps)
+        for route in bent_caps['routes'].values():
+            route['preferred'] = ['dot', 'grok-4.7']
+            route['restrict_models'] = True
+            route['capability_fit'] = {'gui': 1.0}
+            route['strict_order'] = True
+            route['ability_floor'] = {'routine': 9.0, 'hard': 9.0, 'coupled': 9.0, 'frontier': 9.0}
+
+        def run(accounts, capabilities, task):
+            acc = copy.deepcopy(accounts)
+            acc['scoring']['five_axis'] = {'enabled': True}
+            original = allocator.load_five_axis
+            allocator.load_five_axis = lambda path=None: doc
+            try:
+                t = copy.deepcopy(task)
+                profile = {**PROFILE, **t.pop('profile', {})}
+                d = allocator.plan({'objective': 't', 'profile': profile, **t}, self.usage(acc), NOW, accounts=acc,
+                                   capabilities=copy.deepcopy(capabilities), overrides=[], records=[],
+                                   host_policy_config=self.policy)
+            finally:
+                allocator.load_five_axis = original
+            return d['choice'], {c['id']: (c['score'], tuple(c['excluded'])) for c in d['ranking']}
+
+        for task in tasks:
+            shipped, perturbed = run(self.accounts, caps, task), run(bent, bent_caps, task)
+            self.assertEqual(shipped[0], perturbed[0], task)
+            diff = {k: (v, perturbed[1].get(k)) for k, v in shipped[1].items() if perturbed[1].get(k) != v}
+            self.assertEqual(diff, {}, task)
 
     def test_missing_demanded_axis_leaves_automatic_routing_but_a_named_model_runs(self):
         target = 'claude-sonnet-5-5'
@@ -168,31 +248,21 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(out['accounts']['antigravity']['capacity_usd'], {})
         self.assertTrue(out['accounts']['antigravity']['capacity_unknown'])
 
-    def test_gate_reads_a_per_difficulty_axis_ratio(self):
-        cfg = allocator.five_axis_config({'five_axis': {'enabled': True}})
-        anchor = dict.fromkeys(allocator.FIVE_AXES, 0.8)
-        overlay = {'floors': {**FLOORS, 'axis_ratio': {'routine': 1.0, 'hard': 0.9, 'coupled': 0.7, 'frontier': 1.0}},
-                   'anchor_scores': anchor}
-        gates = {d: allocator.five_axis_gate({'difficulty': d, 'critical': False}, demand(0, 2, 2, 0), overlay, cfg)
-                 for d in ('hard', 'coupled')}
-        self.assertAlmostEqual(gates['coupled']['axis_floors']['global_rigor'], round(0.7 * 0.9 * 0.8, 4))
-        self.assertAlmostEqual(gates['hard']['axis_floors']['global_rigor'], round(0.9 * 0.8 * 0.8, 4))
-        scalar = allocator.five_axis_gate({'difficulty': 'coupled', 'critical': False}, demand(0, 2, 2, 0),
-                                          {'floors': FLOORS, 'anchor_scores': anchor}, cfg)
-        self.assertAlmostEqual(scalar['axis_floors']['global_rigor'], round(0.9 * 0.9 * 0.8, 4))
-
-    def test_equal_scores_go_to_the_lower_opportunity_cost_then_the_larger_surplus(self):
+    def test_equal_scores_go_to_the_lower_opportunity_cost_then_the_higher_level(self):
         # Round 5: the price no longer breaks ties (it handed every saturated tie to free models); quota scarcity does,
-        # then the stronger qualifying model, so in the ample state the strongest qualifying model wins.
+        # then the stronger model (round 7: its level, no floor to count from).
         def cand(name, usd, level, oc=0.0, score=0.5):
             return {'id': name, 'score': score, 'five_axis_price': {'usd_per_hour': usd},
-                    'components': {'five_axis_level': level, 'five_axis_gate': 0.5, 'opportunity_cost': oc}}
+                    'components': {'five_axis_level': level, 'opportunity_cost': oc}}
         pool = [cand('free', 0.0, 0.55), cand('dear_scarce', 20.0, 0.95, oc=0.3), cand('cheap', 5.0, 0.6),
                 cand('dear', 20.0, 0.9), cand('best', 30.0, 0.9, score=0.6), cand('free_scarce', 0.0, 0.55, oc=0.1)]
         self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
                          ['best', 'dear', 'cheap', 'free', 'free_scarce', 'dear_scarce'])
         self.assertNotIn('overqualification_weight', allocator.FIVE_AXIS_DEFAULTS)     # round 6: no such term
         self.assertFalse(hasattr(allocator, 'five_axis_overqualification'))
+        for gone in ('five_axis_gate', 'five_axis_gate_level'):                     # round 7: no floors
+            self.assertFalse(hasattr(allocator, gone), gone)
+        self.assertNotIn('strong_level', allocator.FIVE_AXIS_DEFAULTS)
 
     POLICY = {'safety_margin_pct': 5, 'demand_pace_floor_ratio': 0.5}
 
@@ -253,18 +323,6 @@ class FiveAxisTests(unittest.TestCase):
         self.assertTrue(all(c['components']['opportunity_cost'] > 0 for c in claude))
         self.assertTrue(all((c.get('capacity') or {}).get('pacing') for c in claude))
         self.assertFalse([c for c in d['ranking'] if c['components'].get('overqualification')])
-
-    def test_gate_level_blends_in_the_equal_weight_level(self):
-        axes = {'divergence': 0.2, 'global_rigor': 1.0, 'module_precision': 1.0, 'vision_tools': 0.4}
-        dm = demand(0, 2, 2, 0)
-        level, _ = allocator.five_axis_level(axes, dm)
-        self.assertEqual(allocator.five_axis_gate_level(axes, dm)[0], level)
-        self.assertAlmostEqual(allocator.five_axis_gate_level(axes, dm, 1.0, 1.0)[0], 0.65)
-        self.assertAlmostEqual(allocator.five_axis_gate_level(axes, dm, 1.0, 0.5)[0], 0.5 * level + 0.5 * 0.65)
-        cfg = allocator.five_axis_config({'five_axis': {'enabled': True}})
-        gate = allocator.five_axis_gate({'difficulty': 'hard', 'critical': False}, dm,
-                                        {'floors': {**FLOORS, 'level_blend': 1.0}, 'anchor_scores': axes}, cfg)
-        self.assertEqual((gate['level_blend'], gate['anchor_level']), (1.0, 0.65))
 
     def test_capacity_unknown_window_still_prices_scarcity_from_live_percent_and_reset(self):
         acc = copy.deepcopy(self.accounts)
@@ -336,7 +394,7 @@ class AnchorRelativeTests(unittest.TestCase):
                  'aa.net': ('global_rigor', 'anti_hallucination'), 'vals.frac': ('global_rigor', 'long_horizon')}
         return raw, kinds, comps
 
-    def test_a_new_top_model_moves_no_value_and_no_floor(self):
+    def test_a_new_top_model_moves_no_value_and_no_target(self):
         raw, kinds, comps = self.boards()
         before, _, failed = self.ms.anchor_boards(raw, kinds, comps)
         self.assertEqual(failed, {})
@@ -349,16 +407,15 @@ class AnchorRelativeTests(unittest.TestCase):
         after, _, _ = self.ms.anchor_boards(grown, kinds, comps)
         for src, values in before.items():
             self.assertEqual({m: after[src][m] for m in values}, values, src)
-        # The floor is a share of the anchor level on the task's demand: unchanged anchor scores, unchanged gate.
+        # The fit's targets are the anchor value x demand / 3: a new top model moves none of them.
         acc = sim.fresh_accounts(shipped_template(), snapshot())
         acc['scoring']['five_axis'] = {'enabled': True}
-        cfg = allocator.five_axis_config(acc['scoring'])
-        task = {'difficulty': 'hard', 'critical': False}
-        gates = []
+        targets = []
         for extra in ({}, {'newtop': row(1.0, 30.0)}):
             out = allocator.five_axis_overlay(acc, document(acc['models'], **{self.ms.ANCHOR: row(0.8, 21.7)}, **extra))
-            gates.append(allocator.five_axis_gate(task, demand(1, 2, 2, 0), out['_five_axis'], cfg))
-        self.assertEqual(gates[0], gates[1])
+            targets.append(allocator.five_axis_targets(demand(1, 2, 2, 0), out['_five_axis']['anchor_value']))
+        self.assertEqual(targets[0], targets[1])
+        self.assertEqual(targets[0]['global_rigor'], round(self.ms.ANCHOR_VALUE * 2 / 3, 4))
 
     def test_board_best_scaling_would_have_drifted(self):
         """The round-2 conversion (win rate against the board best) moves b relative to the anchor; this one does not."""
@@ -395,7 +452,8 @@ class AnchorRelativeTests(unittest.TestCase):
         used = {e['source'] for fields in meas['models'].values() for entries in fields.values() for e in entries}
         self.assertFalse(used & {'accounts.visual', 'packaged.accounts', 'community.burn'})
         scores = json.loads((ref / 'five-axis-scores.json').read_text(encoding='utf-8'))
-        self.assertEqual(scores['floors']['anchor'], self.ms.ANCHOR)
+        self.assertEqual(scores['anchor'], {'model': self.ms.ANCHOR, 'value': self.ms.ANCHOR_VALUE})
+        self.assertNotIn('floors', scores)                  # round 7: no difficulty floors
         self.assertAlmostEqual(min(scores['models'][self.ms.ANCHOR]['scores'][a] for a in ('divergence', 'module_precision')),
                                self.ms.ANCHOR_VALUE, places=2)
 
@@ -656,6 +714,66 @@ class DerivedUsdTests(unittest.TestCase):
         self.assertEqual(usd['m']['value'], entries[0]['value'])
         self.assertEqual(usd['unlisted']['status'], 'missing')
         self.assertEqual(self.fa.pick_duration(usd['m'], {'duration_multiplier': 1.35})['value'], 1.0)
+
+
+
+class ArenaCaptureTests(unittest.TestCase):
+    """arena.ai boards transcribed from the user's browser (round 7): parsed from the page text, dated, and mapped."""
+    @classmethod
+    def setUpClass(cls):
+        import arena_capture
+        import measurements
+        cls.ac, cls.ms = arena_capture, measurements
+
+    @staticmethod
+    def agent_page(nets):
+        rows = []
+        for i, net in enumerate(nets, 1):
+            cells = '\n\t\n'.join(f'{v}%\n±0.50%' for v in (net, 3.0, 4.0, 5.0, 6.0, 0.9))
+            rows.append(f'{i}\n{i}\n{i + 1}\n\t\nModel {chr(64 + i)} (Max)\nLab · Proprietary\n\t\n{cells}\n'
+                        f'\t1,234\t$2.00\t30 min\t50K\t$1 / $5\n')
+        return ('Agent Arena | Capabilities\nCode\nNov 8, 2026\n9,999 sessions\n' + f'{len(nets)} models\n'
+                + 'Rank\n\t\nModel\n\t\nNet Improvement\n\t\nCost/Task (P50)\n\t\nPrice $/M\n\n\n' + '\n'.join(rows))
+
+    def test_an_agent_page_parses_and_its_lost_minus_signs_are_rebuilt_from_the_rank_order(self):
+        page = self.ac.parse_agent(self.agent_page([9.5, 4.0, 1.2, 0.3, 2.0, 7.5]))   # the capture drops the minus
+        self.assertEqual((page['as_of'], page['sessions'], len(page['rows'])), ('2026-11-08', 9999, 6))
+        self.assertEqual([r['net_improvement'][0] for r in page['rows']], [9.5, 4.0, 1.2, 0.3, -2.0, -7.5])
+        self.assertTrue(page['rows'][3]['sign_ambiguous'])
+        self.assertEqual(self.ac.usd_per_hour(page['rows'])['Model A (Max)'], 4.0)       # $2 per 30-minute task
+        with self.assertRaises(ValueError):           # magnitudes that fall, rise and fall again cannot be signed
+            self.ac.parse_agent(self.agent_page([9.5, 1.0, 3.0, 2.0]))
+
+    def test_the_run_together_alignment_page_splits_rank_name_lab_and_rates(self):
+        text = ('Agent Arena | Alignment IndexOctober 16, 202679,468 sessions2 modelsRankModelAlignment Index'
+                'Unauthorized actionFalse attributionDeceptive completion'
+                '114GPT-6.1 SolOpenAI87.9±1.50.89%0.53–1.48%1.98%1.47–2.68%2.34%1.77–3.10%'
+                '214Claude Sonnet 5.5 HighAnthropic79.5±1.11.83%1.40–2.38%5.84%5.04–6.76%9.53%8.54–10.61%Footer')
+        page = self.ac.parse_alignment(text)
+        self.assertEqual((page['as_of'], page['sessions']), ('2026-10-16', 79468))
+        self.assertEqual([(r['name'], r['lab']) for r in page['rows']], [('GPT-6.1 Sol', 'OpenAI'), ('Claude Sonnet 5.5 High', 'Anthropic')])
+        self.assertEqual(page['rows'][1]['deceptive_completion'], [9.53, 8.54, 10.61])
+        self.assertEqual(page['rows'][0]['alignment_index'], [87.9, 1.5])
+
+    def test_the_users_mapping_of_the_agent_boards_onto_the_axes(self):
+        cap = self.ms.CAPABILITY_SOURCES
+        self.assertEqual(cap['arena.agent_code'][:2], ('global_rigor', 'agentic'))
+        self.assertEqual({cap[s][:2] for s in ('arena.agent_work_tools', 'arena.agent_work_gui')},
+                         {('vision_tools', 'tools'), ('vision_tools', 'gui')})
+        self.assertEqual(cap['arena.agent_alignment'][:2], ('module_precision', 'alignment'))
+        self.assertEqual(cap['arena.agent_alignment_false_attribution'][:2], ('global_rigor', 'anti_hallucination'))
+        self.assertEqual(cap['arena.agent_alignment_deceptive_completion'][:2], ('global_rigor', 'long_horizon'))
+        self.assertEqual(cap['lmarena.webdev'][:2], ('vision_tools', 'gui_design'))
+        self.assertEqual(cap['lmarena.text_overall'][:2], ('divergence', 'chat'))
+        self.assertNotIn('lmarena.agent', cap)         # Agent / Overall is a cross-check only
+
+    def test_a_tab_that_was_never_captured_is_a_surfaced_missing_source(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            builder = self.ms.Builder(Path(tmp), {'models': {}})
+            builder.boards()
+        for src in self.ms.ARENA_CAPTURES:
+            self.assertIn('not captured', builder.missing[src]['reason'], src)
 
 
 if __name__ == '__main__':

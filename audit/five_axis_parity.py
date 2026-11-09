@@ -1,4 +1,4 @@
-"""Sampled routing parity: today's router against the five-axis path (round 047, round 6). Read-only.
+"""Sampled routing parity: today's router against the five-axis path (round 047, round 7). Read-only.
 
     python -X utf8 audit/five_axis_parity.py [--json out.json] [--md out.md]
 
@@ -7,17 +7,19 @@ runs under several synthetic quota states on three fresh-install fleets (route_s
 usage documents, so the input is what `roll` would feed the allocator). Three algorithms:
 
 - old: shipped behaviour (`scoring.five_axis` absent).
-- new: five-axis path as shipped in five-axis-scores.json: axis-demand gate, community capacity, usd on the community
-  token-mix basis (option B), capacity ladder, gate level blend, tie-break opportunity cost then ability surplus
-  (round 5), no overqualification term and a pacing shadow price on every long window (round 6).
+- new: five-axis path as shipped in five-axis-scores.json: community capacity, usd on the community token-mix basis
+  (option B), capacity ladder, a pacing shadow price on every long window (round 6); round 7: the axes are the only
+  dimension system and quality is the continuous demand fit with shortfall_weight 1 (no difficulty floors), ties to
+  the lower opportunity cost then the higher level.
 - new_benchmark_usd: the same with usd on the AA/OpenRouter benchmark basis (the round-3 scale), to isolate option B.
 - new_no_pacing: the new path with `pace` off (shortage-only economy: nothing charged while a window is far from empty).
-- new_no_eqbench: the new path with EQ-Bench Creative Writing distrusted.
+- new_shortfall_2: the new path with shortfall_weight 2 (a point below a demanded target costs 3 instead of 2).
 
 `none` decisions record their cause: the exclusion reasons of every candidate, grouped (digits stripped).
 
-Each new decision also records how close it sits to a floor: the winner's demanded-axis level over its gate, and every
-candidate (scored or excluded by a floor) within 1% of its floor.
+Each new decision on a non-routine task also records whether a clearly weaker model won it: the winner's demand-weighted
+axis level more than WEAKER below the strongest scored candidate's, with the score margin and what bought it (fit lost
+against opportunity cost saved).
 
 This is a sample, not the 180k-row grid (LEAN rules, 2026-11-07).
 """
@@ -55,8 +57,8 @@ EXTRA_CATALOGS = {'pi': ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra'], 'dot': 
 EXTRA_STATES = {'claude fable-weekly tight': [('claude', ('weekly_fable',), 'tight')]}
 STATES = ('ample', 'claude scarce', 'codex scarce', 'antigravity gemini scarce', 'claude tight', 'codex tight',
           'claude fable-weekly tight', '5h-only scarce')
-NEW = ('new', 'new_benchmark_usd', 'new_no_pacing', 'new_no_eqbench')
-NEAR = 0.01     # within 1% of a floor
+NEW = ('new', 'new_benchmark_usd', 'new_no_pacing', 'new_shortfall_2')
+WEAKER = 0.05   # axis units below the strongest scored candidate's level: a clearly weaker model
 
 
 def algos(folder):
@@ -65,13 +67,13 @@ def algos(folder):
     meas = json.loads((SKILL / 'references' / 'public-measurements.json').read_text(encoding='utf-8'))
     plans = json.loads((SKILL / 'references' / 'plan-templates.json').read_text(encoding='utf-8'))
     paths = {}
-    for name, kwargs in (('no-eqbench', {'distrust': ['eqbench.creative_writing_v3']}), ('benchmark-usd', {'usd_basis': 'benchmark'})):
+    for name, kwargs in (('benchmark-usd', {'usd_basis': 'benchmark'}),):
         paths[name] = Path(folder) / f'five-axis-{name}.json'
         paths[name].write_text(json.dumps(five_axis.build(meas, sources.accounts(), plans, **kwargs)), encoding='utf-8')
     return {'old': None, 'new': {'enabled': True},
             'new_benchmark_usd': {'enabled': True, 'path': str(paths['benchmark-usd'])},
             'new_no_pacing': {'enabled': True, 'pace': False},
-            'new_no_eqbench': {'enabled': True, 'path': str(paths['no-eqbench'])}}
+            'new_shortfall_2': {'enabled': True, 'shortfall_weight': 2.0}}
 
 
 def fleet_accounts(name):
@@ -98,34 +100,48 @@ def top_components(decision):
         return None
     c = top['components']
     keep = ('fit', 'ability', 'opportunity_cost', 'overqualification', 'effort_penalty', 'free_usage', 'five_axis_level',
-            'five_axis_gate', 'route_fit', 'vector_fit', 'subjective_fit', 'reset_bonus', 'shortfall')
+            'five_axis_shortfall', 'route_fit', 'vector_fit', 'subjective_fit', 'reset_bonus', 'shortfall')
     return {'id': top['id'], 'score': top['score'], **{k: c[k] for k in keep if k in c}}
 
 
-FLOOR_MSG = re.compile(r'(?:demanded-axis level|\w+) ([\d.]+) below (?:the \w+ floor|its per-axis floor) ([\d.]+)')
+def base_model(model):
+    """The model without an effort suffix (Antigravity lists Opus at High as its own row)."""
+    return re.sub(r'-(low|medium|high|xhigh|max)$', '', str(model))
 
 
-def near_floor(decision):
-    """{winner_margin, near: [candidates within NEAR of a floor, relative]} for one five-axis decision."""
-    near, winner = [], None
-    for c in decision['ranking']:
-        lbl = label(c.get('bundle'))
-        k = c.get('components') or {}
-        if c['score'] is not None and k.get('five_axis_gate'):
-            margin = k['five_axis_level'] / k['five_axis_gate'] - 1
-            if c['id'] == decision.get('choice'):
-                winner = round(margin, 4)
-            if abs(margin) <= NEAR:
-                near.append((lbl, round(margin, 4)))
-            continue
-        for e in c.get('excluded') or ():
-            m = FLOOR_MSG.search(e)
-            if m and float(m.group(2)) > 0:
-                margin = float(m.group(1)) / float(m.group(2)) - 1
-                if abs(margin) <= NEAR:
-                    near.append((lbl, round(margin, 4)))
-                break
-    return {'winner_margin': winner, 'near': near}
+def weaker_win(decision, cls):
+    """On a non-routine task: the winner against the strongest scored candidate (highest demand-weighted level), when the
+    winner is more than WEAKER below it; else None."""
+    if cls.startswith('routine'):
+        return None
+    scored = [c for c in decision['ranking'] if c['score'] is not None and 'five_axis_level' in c['components']]
+    win = next((c for c in scored if c['id'] == decision.get('choice')), None)
+    if not win:
+        return None
+    # Model against model, each at its best scored effort: a lower effort of the strongest model is not a weaker model.
+    top = {}
+    for c in scored:
+        m = base_model(c['bundle']['model'])
+        if m not in top or c['components']['five_axis_level'] > top[m]['components']['five_axis_level']:
+            top[m] = c
+    best = max(top.values(), key=lambda c: c['components']['five_axis_level'])
+    own = top[base_model(win['bundle']['model'])]
+    gap = best['components']['five_axis_level'] - own['components']['five_axis_level']
+    if gap <= WEAKER:
+        return None
+    # The margin is against the strongest model's best-scoring bundle (its effort that the economy liked most).
+    rival = max((c for c in scored if base_model(c['bundle']['model']) == base_model(best['bundle']['model'])
+                 and c['bundle']['account'] == best['bundle']['account']), key=lambda c: c['score'])
+    k, b = win['components'], rival['components']
+    return {'winner': label(win['bundle']), 'winner_effort': win['bundle'].get('effort'), 'winner_level': k['five_axis_level'],
+            'winner_best_level': own['components']['five_axis_level'],
+            'strongest': label(rival['bundle']), 'strongest_effort': rival['bundle'].get('effort'),
+            'strongest_level': best['components']['five_axis_level'], 'gap': round(gap, 4),
+            'score_margin': round(win['score'] - rival['score'], 4),
+            'other': round((win['score'] - rival['score']) - (0.4 * (k['fit'] - b['fit']) + b['opportunity_cost'] - k['opportunity_cost']), 4),
+            'fit_lost': round(0.4 * (b['fit'] - k['fit']), 4),
+            'cost_saved': round(b['opportunity_cost'] - k['opportunity_cost'], 4),
+            'demand': win.get('five_axis_demand')}
 
 
 def candidate(decision, model_label):
@@ -220,7 +236,7 @@ def run(variants_cfg):
                     out[f'{name}_top'] = top_components(d)
                 for name in NEW:
                     out[f'{name}_driver'] = driver(decisions[name], out['old'], out[name])
-                out['new_floor'] = near_floor(decisions['new'])
+                out['new_weaker'] = weaker_win(decisions['new'], cls)
                 out['fable_vs_opus'] = fable_vs_opus(decisions['new'])
                 for name in ('old',) + NEW:
                     out[f'{name}_none'] = none_cause(decisions[name])
@@ -243,13 +259,13 @@ def markdown(rows):
     names = ('old',) + NEW
     share = {n: Counter(r[n] for r in rows) for n in names}
     n = len(rows)
-    lines = [f'# Five-axis sampled parity, round 6 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
+    lines = [f'# Five-axis sampled parity, round 7 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
     lines += ['## Selection share (model@account)', '',
-              '| model@account | old | new (usd option B) | new, benchmark usd | new, no pacing | new without EQ-Bench |',
+              '| model@account | old | new (usd option B) | new, benchmark usd | new, no pacing | new, shortfall weight 2 |',
               '| :--- | ---: | ---: | ---: | ---: | ---: |']
     for k in sorted(set().union(*share.values()), key=lambda k: (-share['old'][k], -share['new'][k])):
         lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_benchmark_usd'][k]} | {share['new_no_pacing'][k]} | "
-                     f"{share['new_no_eqbench'][k]} |")
+                     f"{share['new_shortfall_2'][k]} |")
     lines += ['', '| | ' + ' | '.join(NEW) + ' |', '| :--- | ' + ' | '.join('---:' for _ in NEW) + ' |',
               '| changed vs old | ' + ' | '.join(str(sum(r[x] != r['old'] for r in rows)) for x in NEW) + ' |',
               '| changed vs new | ' + ' | '.join(str(sum(r[x] != r['new'] for r in rows)) for x in NEW) + ' |', '']
@@ -265,13 +281,23 @@ def markdown(rows):
         lines += ['', f'Exclusion reasons over the candidates of `none` decisions ({name}; candidate counts):', '']
         lines += [f'- {k}: {v}' for k, v in causes.most_common(12)]
     lines.append('')
-    win_near = [r for r in rows if r['new_floor']['winner_margin'] is not None and r['new_floor']['winner_margin'] <= NEAR]
-    any_near = [r for r in rows if r['new_floor']['near']]
-    lines += [f'## Decisions within {NEAR:.0%} of a floor (new)', '',
-              f'- winner within {NEAR:.0%} above its gate: {len(win_near)} of {n}',
-              f'- any candidate within {NEAR:.0%} of its floor (a re-rating of that size could flip it): {len(any_near)} of {n}',
-              '- most frequent near-floor candidates: ' + ', '.join(f'{k} ({v})' for k, v in Counter(
-                  lbl for r in any_near for lbl, _ in r['new_floor']['near']).most_common(10)), '']
+    weak = [r for r in rows if r.get('new_weaker')]
+    hard = [r for r in rows if not r['class'].startswith('routine')]
+    lines += [f'## Non-routine tasks won by a clearly weaker model (new; level more than {WEAKER} below the strongest scored)', '',
+              f'- {len(weak)} of {len(hard)} non-routine decisions', '']
+    if weak:
+        lines += ['Strongest = the highest-level model at its best effort; its bundle shown is the effort that scored best, '
+                  'against which fit lost (0.4 x fit), cost saved (opportunity cost) and the margin are read; other = the rest '
+                  '(reset bonus, deferred start, continuity).', '',
+                  '| fleet | state | task | demand d/r/m/v | winner | level | strongest (best-scoring effort) | best level | gap | fit lost | cost saved | other | margin |',
+                  '| :--- | :--- | :--- | :--- | :--- | ---: | :--- | ---: | ---: | ---: | ---: | ---: | ---: |']
+        for r in sorted(weak, key=lambda r: -r['new_weaker']['gap']):
+            w = r['new_weaker']
+            dm = '/'.join(str((w['demand'] or {}).get(a, '?')) for a in allocator.FIVE_AXES)
+            lines.append(f"| {r['fleet']} | {r['state']} | {r['task']} | {dm} | {w['winner']} {w['winner_effort']} | "
+                         f"{w['winner_level']} | {w['strongest']} {w['strongest_effort']} | {w['strongest_level']} | {w['gap']} | "
+                         f"{w['fit_lost']} | {w['cost_saved']} | {w['other']} | {w['score_margin']} |")
+        lines.append('')
     for fleet in FLEETS:
         sub = [r for r in rows if r['fleet'] == fleet]
         lines += [f'## Account split per state, {fleet} (old → new)', '']

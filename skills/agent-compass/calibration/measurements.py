@@ -18,23 +18,29 @@ Fields
     real-traffic token mix (wokey's fixed split, about 92% cache reads; community.py) and AA's list prices, so usd per
     worker-hour is on the scale the community capacities are valued on. Cites AA and the wokey mix.
 - `price`: input / output / cache-read USD per million tokens (OpenRouter, AA), for cross-checks only.
-- The four capability axes of the tray radar, one entry per (component, source):
-  - `divergence`: creative (LMArena Creative Writing, EQ-Bench Creative Writing v3), exploration (LMArena Agent).
-  - `global_rigor`: reasoning (LMArena Text overall), long horizon (METR p50 time horizon, SWE-bench Verified 1-4 h
-    bucket), long context (AA-LCR), anti-hallucination (AA Omniscience Index).
-  - `module_precision`: coding (SWE-bench Verified <15 min bucket, LMArena WebDev), terminal (AA Terminal-Bench 4.0,
-    vals.ai Terminal-Bench 2.0).
-  - `vision_tools`: vision (LMArena Vision, AA MMMU-Pro), GUI (OSWorld-Verified, general models only), tools
-    (AA tau2-bench, AA AutomationBench). A model scores 0 on vision and GUI only from a cited vendor statement that it
+- The four capability axes of the tray radar, one entry per (component, source). The user's mapping of 2026-11-09
+  (round 7): the arena.ai Agent boards measure the axes their category names, captured from the user's browser
+  (`arena_capture.py`; arena.ai is behind bot protection), the chat boards and the other public boards stay components:
+  - `divergence`: chat (LMArena Text overall), creative (LMArena Creative Writing, EQ-Bench Creative Writing v3).
+  - `global_rigor`: agentic (arena.ai Agent / Code, Net Improvement), long horizon (METR p50 time horizon, SWE-bench
+    Verified 1-4 h bucket, arena.ai Alignment deceptive completion), long context (AA-LCR), anti-hallucination
+    (AA Omniscience Index, arena.ai Alignment false attribution).
+  - `module_precision`: coding (SWE-bench Verified <15 min bucket), terminal (AA Terminal-Bench 4.0, vals.ai
+    Terminal-Bench 2.0), alignment (arena.ai Alignment Index: acting only as asked, reporting faithfully).
+  - `vision_tools`: vision (LMArena Vision, AA MMMU-Pro), GUI design (LMArena WebDev), GUI (OSWorld-Verified, general
+    models only; arena.ai Agent / Work), tools (AA tau2-bench, AA AutomationBench, arena.ai Agent / Work).
+  The Alignment Index is split by what it measures: the index itself (unauthorized actions, false attribution and
+  deceptive completion together) is module precision; of its rates, false attribution (misstating what the user said)
+  is a fabricated claim, anti-hallucination, and deceptive completion (reporting unfinished work as done) is the
+  long-horizon failure. arena.ai Agent / Overall and Agent / Chat are cross-checks only, not components. A model scores 0 on vision and GUI only from a cited vendor statement that it
     takes no image input (accounts row `text_only_source` {url, as_of, statement}, source `vendor.text_only`); the
     local `visual` / `text_only` routing flags are not a source (review F1, 2026-11-09), so without a statement and
     without a board the component is missing. A public board that lists the model wins over a statement.
 
 Where the old tier came from: its primary fit is LMArena WebDev and Agent through the anchors, moved from the best
-listed variant to High by the AA effort gain (efforts.high_tier). WebDev is module_precision.coding, Agent is
-divergence.exploration, and LMArena Text overall joins global_rigor as `reasoning` (the general-reasoning signal the
-tier carried). The High correction now scales every LMArena component of the model by High tier / best-variant tier
-(LMArena lists each model at its best variant), so the axes are read at High as the tier was.
+listed variant to High by the AA effort gain (efforts.high_tier). The High correction scales every LMArena component
+and the arena.ai Agent category values of the model by High tier / best-variant tier (both list each model at its best
+variant), so the axes are read at High as the tier was; the Alignment Index names no variant and is not corrected.
 
 One conversion for every capability source, relative to the anchor model (ANCHOR, Opus 5.5) rather than to the board's
 best, so a new model at the top of a board moves no other model's value (review F3, 2026-11-09; round 2 divided by the
@@ -42,8 +48,9 @@ board best, which an Elo board does not scale linearly): value = ANCHOR_VALUE x 
 sits at ANCHOR_VALUE (0.8) on every component it is measured on, so 1.0 is 1.25 times the anchor.
 - Percent and fraction boards: s is the success rate (per difficulty bucket where the board has buckets).
 - Elo boards: s / s_anchor is twice the expected win rate against the anchor, 2 / (1 + 10^((anchor - rating) / 400)).
-- Net-difference boards (LMArena Agent: confirmed success minus failure, -1..1; AA Omniscience Index: correct minus
-  incorrect, -100..100): s is the share of positive outcomes, (1 + d / bound) / 2, a fixed map with no board term.
+- Net-difference boards (arena.ai Agent Net Improvement, -100..100 %; AA Omniscience Index: correct minus incorrect,
+  -100..100): s is the share of positive outcomes, (1 + d / bound) / 2, a fixed map with no board term.
+- arena.ai Alignment: the index is a 0-100 score (s = index / 100); its failure rates are percentages (s = 1 - rate).
 - METR: s is the p50 time horizon in minutes.
 - A board that does not list the anchor is bridged: its reference success is the median, over at least MIN_BRIDGE of
   our models it lists, of s x ANCHOR_VALUE / the model's anchored value on the same component (else the same axis) from
@@ -68,20 +75,23 @@ from pathlib import Path
 
 import numpy as np
 
+import arena_capture
 import community
 import efforts
 import sources
 import tiers
 
-ANCHOR = 'claude-opus-5-5'      # every capability value is relative to this model (five_axis_floors anchors the floors on it)
+ANCHOR = 'claude-opus-5-5'      # every capability value is relative to this model (the router's fit targets too)
 ANCHOR_VALUE = 0.8              # the anchor's value on each component; 1.0 = 1.25 x the anchor
 MIN_BRIDGE = 3                  # shared models needed to bridge a board that does not list the anchor
-NET_BOUND = {'lmarena.agent': 1.0, 'aa.omniscience_index': 100.0}
+NET_BOUND = {'arena.agent_code': 100.0, 'arena.agent_work_tools': 100.0, 'arena.agent_work_gui': 100.0,
+             'aa.omniscience_index': 100.0}
 OUT = sources.REPO / 'references' / 'public-measurements.json'
 SCHEMA = 'agent-compass.public-measurements/1'
 
 # Names the automatic matcher cannot derive (a dated or differently worded listing of the same model).
 EXTRA_NAMES = {
+    'beam-free': {'arena': 'Beam 1.0 501B A23B'},       # the Alignment Index lists it as `Beam` (matched automatically)
     'deepseek-v4.1-flash-free': {'aa': 'DeepSeek V4.1 Flash 1017'},
     'deepseek-v4-pro': {'aa': 'DeepSeek V4 Pro 0813', 'swe': 'DeepSeek V4 Pro 0813'},
     'muse-wonder-1.0': {'aa': 'Muse Wonder'},
@@ -97,34 +107,56 @@ USER_TIERS = {**{k: 'anchor tier (calibration/README.md)' for k in tiers.ANCHORS
 USER_TIER_DATE = '2026-11-04'
 # Labels for the provenance `source` of each capability measurement: (axis, component, kind).
 CAPABILITY_SOURCES = {
-    'lmarena.text_overall': ('global_rigor', 'reasoning', 'elo'),
+    'lmarena.text_overall': ('divergence', 'chat', 'elo'),
     'lmarena.creative_writing': ('divergence', 'creative', 'elo'),
     'eqbench.creative_writing_v3': ('divergence', 'creative', 'elo'),
-    'lmarena.agent': ('divergence', 'exploration', 'net'),
+    'arena.agent_code': ('global_rigor', 'agentic', 'net'),
     'metr.time_horizon_p50': ('global_rigor', 'long_horizon', 'ratio'),
     'vals.swebench_1_4h': ('global_rigor', 'long_horizon', 'fraction'),
+    'arena.agent_alignment_deceptive_completion': ('global_rigor', 'long_horizon', 'fraction'),
     'aa.lcr': ('global_rigor', 'long_context', 'fraction'),
     'aa.omniscience_index': ('global_rigor', 'anti_hallucination', 'net'),
+    'arena.agent_alignment_false_attribution': ('global_rigor', 'anti_hallucination', 'fraction'),
     'vals.swebench_lt15m': ('module_precision', 'coding', 'fraction'),
-    'lmarena.webdev': ('module_precision', 'coding', 'elo'),
     'aa.terminalbench_4': ('module_precision', 'terminal', 'fraction'),
     'vals.terminal_bench_2': ('module_precision', 'terminal', 'fraction'),
+    'arena.agent_alignment': ('module_precision', 'alignment', 'fraction'),
     'lmarena.vision': ('vision_tools', 'vision', 'elo'),
     'aa.mmmu_pro': ('vision_tools', 'vision', 'fraction'),
+    'lmarena.webdev': ('vision_tools', 'gui_design', 'elo'),
     'osworld.verified': ('vision_tools', 'gui', 'fraction'),
+    'arena.agent_work_gui': ('vision_tools', 'gui', 'net'),
     'aa.tau2_bench': ('vision_tools', 'tools', 'fraction'),
     'aa.automationbench': ('vision_tools', 'tools', 'fraction'),
+    'arena.agent_work_tools': ('vision_tools', 'tools', 'net'),
 }
+# arena.ai boards transcribed from the user's browser (arena_capture.py): source -> (capture, category, value, method).
+ARENA_CAPTURES = {
+    'arena.agent_code': ('agent', 'Code', lambda r: (r.get('net_improvement') or [None])[0],
+                         'arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant'),
+    'arena.agent_work_tools': ('agent', 'Work', lambda r: (r.get('net_improvement') or [None])[0],
+                               'arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant'),
+    'arena.agent_work_gui': ('agent', 'Work', lambda r: (r.get('net_improvement') or [None])[0],
+                             'arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant'),
+    'arena.agent_alignment': ('alignment', None, lambda r: r['alignment_index'][0] / 100.0,
+                              'arena.ai Agent Alignment Index (Best Aligned Agents), index / 100'),
+    'arena.agent_alignment_false_attribution': ('alignment', None, lambda r: 1.0 - r['false_attribution'][0] / 100.0,
+                                                'arena.ai Agent Alignment, 1 - false attribution rate'),
+    'arena.agent_alignment_deceptive_completion': ('alignment', None, lambda r: 1.0 - r['deceptive_completion'][0] / 100.0,
+                                                   'arena.ai Agent Alignment, 1 - deceptive completion rate'),
+}
+# arena.ai sources listed at the model's best variant, read at High like LMArena (the Alignment Index names no variant).
+HIGH_CORRECTED = ('lmarena.', 'arena.agent_code', 'arena.agent_work_')
 # The kind of each source (decision 2, 2026-11-09): vendor = the vendor's own statement or price list, benchmark = a
 # third-party measurement, community = a community or packaged estimate with a stated basis.
 SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark', 'derived.community_mix': 'derived',
                'secondary.tier_fit': 'benchmark', 'user': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
                'openrouter.cost_time': 'vendor',
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'aa.index': 'benchmark'}
-AXES = {'divergence': ('creative', 'exploration'),
-        'global_rigor': ('reasoning', 'long_horizon', 'long_context', 'anti_hallucination'),
-        'module_precision': ('coding', 'terminal'),
-        'vision_tools': ('vision', 'gui', 'tools')}
+AXES = {'divergence': ('chat', 'creative'),
+        'global_rigor': ('agentic', 'long_horizon', 'long_context', 'anti_hallucination'),
+        'module_precision': ('coding', 'terminal', 'alignment'),
+        'vision_tools': ('vision', 'gui_design', 'gui', 'tools')}
 # The Omniscience Index (correct minus incorrect answers; abstaining scores 0) is the record's top-level `omniscience`. Its
 # non-hallucination rate alone is not used: it rewards abstaining (Haiku 5.5, Grok 4.7 and Argon lead it, Opus 5.5 sits
 # at 0.50).
@@ -133,8 +165,9 @@ AA_SCORE = {'aa.lcr': 'artificial-analysis-long-context-reasoning', 'aa.omniscie
             'aa.automationbench': 'automationbench-aa'}
 FILE_OF = {'lmarena': None, 'eqbench': 'eqbench-creative-writing.js', 'metr': 'metr-benchmark-results.yaml',
            'osworld': 'osworld-verified.xlsx', 'aa': 'aa-models.html', 'openrouter': 'openrouter-models.json'}
-ARENA_FILE = {'lmarena.text_overall': 'text_style_control.parquet', 'lmarena.creative_writing': 'text_style_control.parquet', 'lmarena.agent': 'agent.parquet',
-              'lmarena.webdev': 'webdev.parquet', 'lmarena.vision': 'vision.parquet'}
+ARENA_FILE = {'lmarena.text_overall': 'text_style_control.parquet', 'lmarena.creative_writing': 'text_style_control.parquet',
+              'lmarena.webdev': 'webdev.parquet', 'lmarena.vision': 'vision.parquet',
+              **{src: arena_capture.FILES[spec[0]] for src, spec in ARENA_CAPTURES.items()}}
 VALS_FILE = {'vals.swebench_1_4h': 'swebench.html', 'vals.swebench_lt15m': 'swebench.html', 'vals.terminal_bench_2': 'terminal-bench-2.html'}
 
 
@@ -160,7 +193,7 @@ class Matcher:
 
     def find(self, model, explicit=None):
         if explicit:
-            return explicit if key(explicit) in self.by_key else None
+            return self.by_key.get(key(explicit))       # the board's own listing of that name
         return next((self.by_key[k] for k in candidates(model) if k in self.by_key), None)
 
 
@@ -264,7 +297,7 @@ class Builder:
         """{source: (board {name: raw}, as_of, method text, name-strip function)}"""
         t, out = self.target, {}
         arena_specs = {'lmarena.text_overall': ('text_style_control', 'overall'),
-                       'lmarena.creative_writing': ('text_style_control', 'creative_writing'), 'lmarena.agent': ('agent', 'overall'),
+                       'lmarena.creative_writing': ('text_style_control', 'creative_writing'),
                        'lmarena.webdev': ('webdev', 'overall'), 'lmarena.vision': ('vision', 'overall')}
         for src, (board, cat) in arena_specs.items():
             if not self.ok(ARENA_FILE[src]):
@@ -272,6 +305,19 @@ class Builder:
             rows = sources.arena(t, board, cat)
             out[src] = ({n: r[0] for n, r in rows.items()}, next(iter(rows.values()))[4] if rows else None,
                         f'LMArena {board}/{cat}, best listed variant', None, {n: r[3] for n, r in rows.items()})
+        for src, (kind, category, value, method) in ARENA_CAPTURES.items():
+            doc = arena_capture.read(t, kind) if self.ok(arena_capture.FILES[kind]) else None
+            page = ((doc or {}).get('categories') or {}).get(category) if category else doc
+            if not page:
+                self.miss(src, arena_capture.FILES[kind], f'not captured: transcribe {arena_capture.URLS[kind]}'
+                          + (f' ({category})' if category else '') + ' in the browser and run arena_capture.py import')
+                continue
+            rows = arena_capture.best_variant(page['rows'], value)
+            out[src] = ({n: v for n, (v, _) in rows.items()}, page['as_of'],
+                        f'{method}; transcribed {(doc or {}).get("captured_at", "")[:10]} by {(doc or {}).get("transcribed_by")}'
+                        + (f'; {page["sign_rule"]}' if page.get('sign_rule') else ''),
+                        (lambda n: re.sub(r'\s+(High|Max|xHigh|Medium|Low)$', '', n)) if kind == 'alignment' else None,
+                        {n: r['name'] for n, (_, r) in rows.items()})
         if self.ok('eqbench-creative-writing.js'):
             out['eqbench.creative_writing_v3'] = (sources.eqbench(t), None, 'EQ-Bench Creative Writing v3 Elo',
                                                   lambda n: n.split('/')[-1], {})
@@ -346,11 +392,11 @@ class Builder:
             self.register(src, filename, as_of, method, len(board))
             match = Matcher(board, strip)
             family = src.split('.')[0]
-            explicit_key = {'lmarena': 'arena', 'aa': 'aa', 'vals': 'swe' if 'swebench' in src else 'tb2'}.get(family)
+            explicit_key = {'lmarena': 'arena', 'arena': 'arena', 'aa': 'aa', 'vals': 'swe' if 'swebench' in src else 'tb2'}.get(family)
             raw[src], names[src] = {}, {}
             for model in self.models:
                 exp = (EXTRA_NAMES.get(model) or {}).get(explicit_key) or (tiers.NAMES.get(model) or {}).get(explicit_key) \
-                    or (tiers.ANCHORS.get(model) if family in ('lmarena', 'aa') else None)
+                    or (tiers.ANCHORS.get(model) if family in ('lmarena', 'arena', 'aa') else None)
                 name = match.find(model, exp) or (match.find(model) if exp else None)
                 if name is not None:
                     raw[src][model], names[src][model] = board[name], name
@@ -365,9 +411,9 @@ class Builder:
             self.source_rows[src]['anchor'] = refs[src]
             for model, value in board_values.items():
                 extra = {}
-                ratio = self.high_ratio.get(model) if src.startswith('lmarena.') else None
+                ratio = self.high_ratio.get(model) if src.startswith(HIGH_CORRECTED) else None
                 if ratio is not None and ratio != 1.0:
-                    # LMArena lists the best variant; read it at High as the tier fit does (efforts.high_tier).
+                    # LMArena and the arena.ai Agent tables list the best variant; read it at High as the tier fit does.
                     extra = {'best_variant_value': value, 'high_ratio': ratio}
                     value = round(min(1.0, value * ratio), 4)
                 name = names[src][model]

@@ -69,10 +69,12 @@ def fetch(target, only=None):
     """Download every source (or the file names in `only`, keeping the other manifest rows as they are)."""
     agent = {'User-Agent': 'Mozilla/5.0 (agentcompass calibration)'}
     jobs = [(HF.format(b), target / f'{b}.parquet') for b in ARENA_BOARDS] + [(u, target / n) for n, u in PAGES.items()]
-    files = {}
+    known = dict(manifest(target)) if (target / MANIFEST).exists() else {}
+    # Boards transcribed from the user's browser (arena_capture.py) are imported, not fetched: a fetch keeps their rows.
+    files = {n: r for n, r in known.items() if r.get('kind') == 'transcribed'}
     if only:
         jobs = [(u, p) for u, p in jobs if p.name in set(only)]
-        files = dict(manifest(target)) if (target / MANIFEST).exists() else {}
+        files = known
     for url, path in jobs:
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
         try:

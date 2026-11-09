@@ -1,4 +1,4 @@
-"""A week of steady demand through the five-axis path (round 047, round 6). Read-only.
+"""A week of steady demand through the five-axis path (round 047, rounds 6-7). Read-only.
 
     python -X utf8 audit/five_axis_pacing_sim.py [--json out.json] [--md out.md] [--every HOURS]
 
@@ -86,7 +86,7 @@ def run(fleet, economy, every):
                     used[bundle['account']][wid] += 100.0 * chosen['expected_usd'] / cap
             row.update(usd=chosen['expected_usd'], usd_per_hour=(chosen.get('five_axis_price') or {}).get('usd_per_hour'),
                        components={k: chosen['components'].get(k) for k in ('fit', 'opportunity_cost', 'five_axis_level',
-                                                                              'five_axis_gate')},
+                                                                              'five_axis_shortfall')},
                        pacing=((chosen.get('capacity') or {}).get('pacing')))
             row['edge'] = edge(d, chosen)
         rows.append(row)
@@ -115,7 +115,7 @@ def third(t):
 
 
 def markdown(results, every):
-    out = [f'# Five-axis weekly pacing simulation, round 6 (one task every {every:g}h, {int(WEEK // every)} tasks a week)', '']
+    out = [f'# Five-axis weekly pacing simulation, round 7 (one task every {every:g}h, {int(WEEK // every)} tasks a week)', '']
     for fleet, by_econ in results.items():
         out += [f'## {fleet}', '']
         for econ, (rows, final) in by_econ.items():

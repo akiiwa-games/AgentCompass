@@ -2104,14 +2104,17 @@ def subjective_fit(weights, subj):
 
 # --- Five-axis path (round 047, off by default) ------------------------------------------------------------------------
 # `scoring.five_axis.enabled` turns it on. Model data then comes from references/five-axis-scores.json
-# (calibration/five_axis.py, cited sources only). User decisions of 2026-11-09, round 2:
-# - No scalar tier. A task demands levels 0..3 on the four capability axes (the classifier's `axis_demand`; without
-#   it, the fallback mapping below). A model's ability on the task is the demand-weighted mean of its axis scores, the
-#   thinking axes scaled by its effort curve. The task's difficulty floor is a share of the anchor model's level on the
-#   same demand (calibrated in five_axis_floors.py, so a new leaderboard top that lowers every score moves the floor
-#   with it), and every strongly demanded axis has its own floor. Ranking uses the level above the floor.
+# (calibration/five_axis.py, cited sources only). User decisions of 2026-11-09:
+# - One dimension system (round 7). A task demands levels 0..3 on the four capability axes (the classifier's
+#   `axis_demand`; without it, the fallback mapping below) and nothing else scores or gates on quality: no scalar tier,
+#   no subjective or capability vectors, no route preference or restriction lists, no harness quality factors, no
+#   difficulty floors, no free-usage bonus. Benchmarks and boards are only components of the axes.
+# - Quality is the continuous fit of the model's axis scores (thinking axes scaled by its effort curve) to the demand
+#   (five_axis_fit): the demand-weighted mean of the scores, minus `shortfall_weight` x the shortfall below each
+#   demanded axis's target (the anchor model's value x demand / 3). No floor excludes a model; the economy decides.
 # - Missing data (rule B): a demanded axis with no data at all, or no cited usd on a billed account, leaves automatic
-#   routing; a named model still runs, with the data error as a warning.
+#   routing; a named model still runs, with the data error as a warning. With availability and holds, that is the
+#   only exclusion.
 # - Plan capacity is the cited figure of the capacity ladder (community, time-to-exhaust, vendor multiplier), priced at
 #   the merged usd scale; a window with an empty ladder is a data error that still prices scarcity from its live
 #   percentage and reset time.
@@ -2124,10 +2127,11 @@ FIVE_AXIS_THINKING = ('divergence', 'global_rigor', 'module_precision')
 # effort_curves basis: an `ability` step is the AA Intelligence Index change times 0.0495 tier per index point. Without
 # a tier, the same step is a relative change of the model's own index.
 FIVE_AXIS_INDEX_PER_TIER = 1 / 0.0495
+FIVE_AXIS_ANCHOR_VALUE = 0.8     # the anchor model's value on every axis (calibration/measurements.py ANCHOR_VALUE)
 FIVE_AXIS_DEFAULTS = {
     'weights': {'fit': 0.4, 'ability': 0.0, 'continuity': 0.25},
-    'strong_level': 2,           # an axis demanded at this level or above has its own floor
     'demanded_level': 1,         # rule B: an axis demanded at this level or above must have data
+    'shortfall_weight': 1.0,     # extra fit lost per point of axis score below the demanded target (round 7)
     'pace': True,                # the pacing cost of each long window (round 6); False = shortage-only, for audits
     'pace_smoothing': 0.1,       # k in the pacing price's (used + k) / (elapsed + k): keeps the period start finite
 }
@@ -2258,10 +2262,9 @@ def five_axis_overlay(accounts, data=None):
                 if isinstance(info, dict) and isinstance(info.get('burn_pct_per_worker_hour'), dict):
                     info['burn_pct_per_worker_hour'] = {w: r for w, r in info['burn_pct_per_worker_hour'].items()
                                                         if w not in unknown}
-    anchor = (data.get('floors') or {}).get('anchor')
-    out['_five_axis'] = {'generated_at': data.get('generated_at'), 'floors': data.get('floors') or {},
-                         'anchor_scores': ((rows.get(anchor) or {}).get('scores') or {}) if anchor else {},
-                         'median_index': median_index}
+    anchor = data.get('anchor') or {}
+    out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor.get('model'),
+                         'anchor_value': float(anchor.get('value') or FIVE_AXIS_ANCHOR_VALUE), 'median_index': median_index}
     return out
 
 
@@ -2289,14 +2292,14 @@ def five_axis_fallback_levels(task):
 
 def five_axis_demand(task):
     """({axis: level 0..3}, source): the classifier's axis_demand, else the fallback mapping. An all-zero answer gives
-    no floor and no fit, so it is replaced by the fallback and labelled as such (review F5), never as 'classifier'."""
+    no fit, so it is replaced by the fallback and labelled as such (review F5), never as 'classifier'."""
     given = (task.get('profile') or {}).get('axis_demand')
     fallback = 'profile_fields_fallback' if task.get('profile') else 'kind_traits_fallback'
     if given and any(given.values()):
         return dict(given), 'classifier'
     demand = five_axis_fallback_levels(task)
     source = f'{fallback} (classifier axis_demand all zero)' if given else fallback
-    if not any(demand.values()):        # a trivial task still asks the least rigor, so a floor and a fit exist
+    if not any(demand.values()):        # a trivial task still asks the least rigor, so a fit exists
         demand['global_rigor'] = 1
         source += ' + minimum global_rigor 1'
     return demand, source
@@ -2322,43 +2325,35 @@ def five_axis_level(scores, demand, ratio=1.0):
     return sum(w * eff[a] for a, w in demand.items() if w > 0) / total, eff
 
 
-def five_axis_gate_level(scores, demand, ratio=1.0, blend=0.0):
-    """(level the floor is read on, {axis: effort-scaled score}): the demand-weighted level blended with the equal-weight
-    level of all four axes by the calibrated `level_blend` (round 5: the demanded axes alone split models the old tier
-    gate kept together, hard agreement 0.82; per-axis floors still hold every strongly demanded axis)."""
-    level, eff = five_axis_level(scores, demand, ratio)
-    if not blend:
-        return level, eff
-    flat = sum(eff[a] for a in FIVE_AXES) / len(FIVE_AXES)
-    return (1.0 - blend) * level + blend * flat, eff
+def five_axis_targets(demand, anchor_value=FIVE_AXIS_ANCHOR_VALUE):
+    """{axis: target score} for every demanded axis: the anchor model's value x demand / 3, so demand 3 asks for the
+    anchor's level and demand 1 a third of it. Scores are anchor-relative at the source, so the targets do not move
+    when a new model tops a board."""
+    return {a: round(anchor_value * w / 3.0, 4) for a, w in demand.items() if w > 0}
 
 
-def five_axis_gate(task, demand, overlay, cfg):
-    """The task's floor on the axis scale: the calibrated share of the anchor model's level on this demand (critical work
-    has its own share), and a per-axis floor for every strongly demanded axis (the difficulty's axis ratio x share x the
-    anchor's score on it)."""
-    floors = overlay.get('floors') or {}
-    anchor = overlay.get('anchor_scores') or {}
-    difficulty = task['difficulty']
-    base = float((floors.get('ratio') or {}).get(difficulty, 0.0))
-    share = float((floors.get('critical_ratio') or {}).get(difficulty, base)) if task['critical'] else base
-    blend = float(floors.get('level_blend') or 0.0)
-    level, eff = five_axis_gate_level(anchor, demand, 1.0, blend)
-    axis_ratio = floors.get('axis_ratio', 0.9)     # one value per difficulty since round 4; a scalar before
-    axis_ratio = float(axis_ratio.get(difficulty, 0.9) if isinstance(axis_ratio, dict) else axis_ratio)
-    strong = {a: round(axis_ratio * share * eff[a], 4) for a, w in demand.items() if w >= cfg['strong_level']}
-    return {'floor': round(base * level, 4), 'gate': round(share * level, 4), 'anchor': floors.get('anchor'),
-            'anchor_level': round(level, 4), 'share': share, 'axis_floors': strong, 'level_blend': blend,
-            'axis_per_tier': float(floors.get('axis_per_tier') or 0.2)}
+def five_axis_fit(scaled, demand, targets, shortfall_weight=1.0):
+    """(fit, {axis: row}): the demand-weighted mean over the demanded axes of score - shortfall_weight x
+    max(0, target - score). Continuous and increasing in every demanded score; a shortfall costs (1 + weight) per
+    point, a surplus earns 1 per point. Undemanded axes do not count."""
+    total = sum(w for w in demand.values() if w > 0)
+    rows, value = {}, 0.0
+    for a, w in demand.items():
+        if w <= 0:
+            continue
+        short = max(0.0, targets[a] - scaled[a])
+        rows[a] = {'demand': w, 'score': round(scaled[a], 4), 'target': targets[a], 'shortfall': round(short, 4)}
+        value += w * (scaled[a] - shortfall_weight * short)
+    return (value / total if total else 0.0), rows
 
 
 def five_axis_order(candidate):
-    """Sort key on the five-axis path: score, then opportunity cost (quota scarcity) ascending, then ability above the
-    floor descending (round 5, user-approved: a cost-ascending tie-break handed every saturated tie to free models; with
-    ample quota the strongest qualifying model wins as today, free models take over only when paid windows are scarce)."""
+    """Sort key on the five-axis path: score, then opportunity cost (quota scarcity) ascending, then the demand-weighted
+    axis level descending (round 5, user-approved; round 7: no floor to measure it from), then the sibling harness place
+    (the same model, account and effort on another harness; never decides between models)."""
     k = candidate['components']
-    return (-candidate['score'], round(k.get('opportunity_cost', 0.0), 4),
-            -(k.get('five_axis_level', 0.0) - k.get('five_axis_gate', 0.0)))
+    return (-candidate['score'], round(k.get('opportunity_cost', 0.0), 4), -k.get('five_axis_level', 0.0),
+            k.get('harness_place', 0))
 
 
 HARNESS_CAPABILITIES = {
@@ -2767,16 +2762,11 @@ def evaluate_bundle(bundle, task, ctx):
     if five:
         axes = (info.get('five_axis') or {}).get('scores') or {}
         result['components'] = {**{a: axes.get(a, 0.0) for a in FIVE_AXIS_THINKING}, 'capability': axes.get('vision_tools', 0.0)}
-        # The tier folded into the axes: this model's ability on this task at each effort is its demand-weighted axis
-        # level. Carried as a task-specific tier and an `ability_mult` curve, so the gate, the realtime step-down and
-        # the effort machinery below read it unchanged; the model's own tier is not read.
+        # The tier folded into the axes: this model's level on this task at each effort is its demand-weighted axis
+        # level. Carried as a task-specific tier and an `ability_mult` curve, so the effort machinery below reads it
+        # unchanged; the model's own tier is not read, and the level decides nothing but the last tie-break.
         five_info, five_curves = info, curves
-        # Rule B: a named model whose demanded axis has no data is dispatched anyway; its floor cannot be evaluated.
-        unmeasured = [a for a, w in task['five_axis_demand'].items()
-                      if w >= five['demanded_level'] and a in ((info.get('five_axis') or {}).get('missing', list(FIVE_AXES)))]
-        unmeasured_named = bool(unmeasured) and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
-        levels = {e: five_axis_gate_level(axes, task['five_axis_demand'], five_axis_effort_ratio(info, policy, curves, e),
-                                          task['five_gate'].get('level_blend', 0.0))[0]
+        levels = {e: five_axis_level(axes, task['five_axis_demand'], five_axis_effort_ratio(info, policy, curves, e))[0]
                   for e in set(EFFORT_ORDER) | {'none', 'default'} | set((curves or {}).get('ability') or {})}
         level_high = levels['high']
         info = {**info, 'tier': level_high}
@@ -2839,11 +2829,13 @@ def evaluate_bundle(bundle, task, ctx):
     if info.get('text_only') and task.get('file_transfer'):
         exclude('this text-only runner cannot transfer or apply local files')
     route = capabilities['routes'].get(kind) or {}
-    if route.get('restrict_models') is True and route.get('preferred'):
+    # Route lists and the models table's visual ability are another dimension set: the five-axis path reads neither
+    # (round 7); vision is the vision_tools axis, and a model with no vision data leaves routing by rule B.
+    if not five and route.get('restrict_models') is True and route.get('preferred'):
         allowed = {canonical(m, accounts) for m in route['preferred']}
         if model not in allowed:
             exclude(f'{kind} is a specialist route')
-    if task['needs_visual'] and not info.get('visual'):
+    if not five and task['needs_visual'] and not info.get('visual'):
         exclude('task needs visual input')
     # Harness input limits apply to every bundle on the harness, manual or auto (HARNESS_CAPABILITIES).
     harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
@@ -2875,8 +2867,7 @@ def evaluate_bundle(bundle, task, ctx):
     floor = demand['floor']
     headroom = critical_headroom(policy, task['difficulty']) if task['critical'] else 0.0
     if five:
-        target, floor = task['five_gate']['gate'], task['five_gate']['floor']
-        headroom = target - floor
+        target = floor = headroom = 0.0       # no difficulty floor on the five-axis path (round 7)
     gate = floor + headroom
     eff = scoring_effort(bundle, info)
     resp_val = resp_source = stepped_from = None
@@ -2897,24 +2888,11 @@ def evaluate_bundle(bundle, task, ctx):
     result['components']['ability_value'] = round(ability, 2)
     effective = ability
     high_ability = effort_ability(policy, curves, info, 'high')
-    if five and unmeasured_named:
-        result['notes'].append(f'floor not evaluated: no trusted data for the demanded axis {", ".join(unmeasured)}')
-    elif ability < gate - (1e-9 if five else 0.0):
+    if not five and ability < gate:
         result['below_floor'] = True
-        if five:
-            exclude(f'demanded-axis level {ability:.3f} below the {task["difficulty"]} floor {gate:.3f}'
-                    f' ({task["five_gate"]["share"]:g} x {task["five_gate"]["anchor"]} {task["five_gate"]["anchor_level"]:.3f})'
-                    + (f' after the realtime step-down from {stepped_from} to {eff}' if stepped_from else ''))
-        else:
-            exclude(f'ability {ability:.1f} below the {task["difficulty"]} floor {floor}'
-                    + (f' plus the {headroom:g} headroom critical work needs' if task['critical'] else '')
-                    + (f' after the realtime step-down from {stepped_from} to {eff}' if stepped_from else ''))
-    if five:
-        _, scaled = five_axis_level(axes, task['five_axis_demand'], five_axis_effort_ratio(five_info, policy, five_curves, eff))
-        for axis, need in task['five_gate']['axis_floors'].items():
-            if scaled[axis] < need - 1e-9 and not (unmeasured_named and axis in unmeasured):
-                result['below_floor'] = True
-                exclude(f'{axis} {scaled[axis]:.3f} below its per-axis floor {need:.3f} at {eff}')
+        exclude(f'ability {ability:.1f} below the {task["difficulty"]} floor {floor}'
+                + (f' plus the {headroom:g} headroom critical work needs' if task['critical'] else '')
+                + (f' after the realtime step-down from {stepped_from} to {eff}' if stepped_from else ''))
     if task.get('realtime_loop'):
         resp_cfg = responsiveness_config(policy)
         result['components']['responsiveness_source'] = resp_source
@@ -2985,7 +2963,7 @@ def evaluate_bundle(bundle, task, ctx):
     # Free capacity is priced as zero opportunity cost below. The extra free-usage preference is declared per account
     # in public data (`free_usage_bonus`), and only for a measured model row (not `score_estimated`) whose ability meets
     # the required ability; other free accounts compete on their zero opportunity cost alone.
-    if spec.get('free_usage_bonus') and not info.get('score_estimated') and ability >= target:
+    if not five and spec.get('free_usage_bonus') and not info.get('score_estimated') and ability >= target:
         result['components']['free_usage'] = policy['unlimited_bonus']
     boost = sum(float(o.get('boost') or 0) for o in ctx.get('overrides', ())
                 if o['account'] == bundle['account'] and (not o.get('model') or canonical(o['model'], accounts) == model)
@@ -3160,7 +3138,7 @@ def evaluate_bundle(bundle, task, ctx):
                 max_ex_opp = float(policy.get('fast_max_extra_opportunity_cost', 0.015))
                 plentiful_ref = float(policy.get('fast_plentiful_usable_pct', 45.0))
                 sprint_thresh = float(policy.get('fast_sprint_sunk_threshold', 0.25))
-                is_sprint = bool(in_horizon and (task['difficulty'] != 'routine' or task.get('wants_fast'))
+                is_sprint = bool(in_horizon and (five or task['difficulty'] != 'routine' or task.get('wants_fast'))
                                  and f_shortage <= max_sh
                                  and f_sunk >= (0.05 if task.get('wants_fast') else sprint_thresh))
                 is_plentiful = bool(task.get('wants_fast') and f_usable >= plentiful_ref
@@ -3218,125 +3196,120 @@ def evaluate_bundle(bundle, task, ctx):
         else:
             action = 'resume' if resumes else 'switch'
     result['action'] = action
-    fit = fit_score(kind, model, capabilities, accounts)
-    if (route.get('preferred') and canonical(route['preferred'][0], accounts) == 'dot'
-            and (task['local_only'] or 'dot_text' in ctx['unavailable']) and model != 'dot'):
-        fit = fit_score(kind, model, {'routes': {kind: {**route, 'preferred': route['preferred'][1:]}}}, accounts)
-    visual = info.get('visual')
-    if (task['needs_visual'] and kind != 'visual_analysis' and not route.get('capability_fit')
-            and isinstance(visual, (int, float)) and not isinstance(visual, bool)):
-        fit = (fit + visual) / 2     # the user's visual ability order counts alongside the work kind's fit
-    if task['profile'] is not None and (not route.get('strict_order') or route.get('capability_fit')):
-        # A user-ranked strict order (visual_analysis) stays as stated; elsewhere the profile's needs share the fit.
-        # Route fit is not capped. Listed place, ability, the capability vector and the subjective vector decide.
-        vfit = vector_fit(task['requirements'], effort_scaled_capabilities(info, policy, curves, eff))
-        s_weights = task.get('subjective_weights') or {}
-        s_cfg = (policy.get('profile') or {}).get('subjective') if isinstance(info.get('subjective'), dict) else None
-        result['components']['route_fit'] = round(fit, 3)
-        result['components']['vector_fit'] = round(vfit, 3)
-        if s_weights and isinstance(s_cfg, dict):
-            subj_scale = min(1.0, effective / high_ability) if high_ability > 0 else 1.0
-            sfit = subjective_fit(s_weights, {k: v * subj_scale for k, v in subjective_vector(info).items()})
-            result['components']['subjective_fit'] = round(sfit, 3)
-            w_s = float(s_cfg.get('weight', 0.65))
-            w_v = float(s_cfg.get('vector_weight', 0.2))
-            w_r = float(s_cfg.get('route_weight', max(0.0, 1.0 - w_s - w_v)))
-            fit = w_r * fit + w_v * vfit + w_s * sfit
-        else:
-            weight = (policy.get('profile') or {}).get('vector_weight', 0.5)
-            fit = (1 - weight) * fit + weight * vfit
-    if task.get('realtime_loop') and resp_val is not None:
-        if task.get('needs_gui') and not route.get('capability_fit'):
-            cu_cap = (capabilities['routes'].get('computer_use') or {}).get('capability_fit') or {'gui': 1.0}
-            gui_fit = capability_score(cu_cap, model, accounts)
-            result['components']['gui_fit'] = round(gui_fit, 3)
-            fit = 0.5 * fit + 0.5 * gui_fit
-        w_resp = clamp(float(responsiveness_config(policy).get('weight', 0.35)), 0.0, 1.0)
-        fit = (1.0 - w_resp) * fit + w_resp * resp_val
-    cfg = demand_config(policy)
-    sunk_weight = (binding or {}).get('reset_sunk_weight', 0.0)
-    sprint_sunk = 0.0 if task['difficulty'] == 'routine' else sunk_weight
-    effort_scale = burn_scale(policy, curves, eff)
-    # Near a reset with surplus quota the extra burn of a higher effort is quota that would lapse, so it is not charged
-    # on non-routine work; routine (depth 1) work keeps its effort and overqualification discipline.
-    effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0) * (1.0 - sprint_sunk), 4)
-    if effort_penalty:
-        result['components']['effort_penalty'] = effort_penalty
-    effort_gain = max(0.0, effective - high_ability)
-    saturation = float((policy.get('profile') or {}).get('saturation_span', 0.3))
-    if sprint_sunk > 0 and effort_gain > 0:
-        sprint_quality = round(float(cfg['sprint_effort_weight']) * sprint_sunk * clamp(effort_gain / saturation, 0, 1), 4)
-        if sprint_quality:
-            result['components']['sprint_quality'] = sprint_quality
-    # Effort buys ability credit only up to what the task asks of it: above High, up to the required ability. A task
-    # that High already satisfies gets nothing from xhigh/max, and the more it demands the more of the curve counts.
-    credited = min(effective, max(high_ability, target))
-    shortfall = max(0.0, target - effective)
-    if shortfall:
-        result['components']['shortfall'] = round(float(cfg['shortfall_weight']) * shortfall, 4)
-    result['components']['required_ability'] = round(target, 3)
-    span = policy.get('ability_span', 0.6)
-    if kind in ('frontend_implementation', 'complex_build_plan', 'direction_reasoning') and not task['high_precision']:
-        # Once sufficient reasoning is available, UI and planning/scheme quality are decided by route and subjective fit.
-        span = (policy.get('profile') or {}).get('saturation_span', 0.3)
-    # Graded ability counts from the difficulty's score origin, not from the gate: the measured floors only decide who may
-    # take the work, so lowering a floor does not flatten the quality difference between the models above it.
-    # Never below the gate: a floor raised above the shipped origin (the tray edits floors) must not hand the models
-    # that only just clear it a free share of the ability score.
-    origin = max(floor, float((policy.get('ability_score_origin') or {}).get(task['difficulty'], floor)))
-    ability_score = clamp((credited - origin - ((gate - floor) if task['high_precision'] else 0.0)) / span, 0, 1)
-    if task['high_precision']:
-        result['components']['quality_bonus'] = round(float(policy.get('high_precision_effort_weight', 0.14)) * effort_gain, 4)
-    if task['minimum_sufficient']:
-        # Ordinary profiled work: meeting the floor is sufficient, so every model at or above it gets full ability
-        # (2026-10-27: Flash at exactly the routine floor scored 0 and lost to anything 0.3 above it), and list price
-        # is charged for ability beyond floor + saturation_span, so a sufficient cheaper model wins when quota is plentiful.
-        config = policy.get('profile') or {}
-        span = config.get('saturation_span', 0.3)
-        ability_score = 1.0 if effective >= gate else 0.0
-        # Excess is measured from the task's required ability, not the bare floor: heavier properties raise the
-        # saturation interval, so a strong model's surplus shrinks as the work gets harder.
-        excess = clamp((effective - target - span) / config.get('overqualification_span', 0.6), 0, 1)
-        usd = 0.0 if spec.get('unlimited') or spec.get('unmetered') else model_usd_per_hour(model, info) * max(effort_scale, 0.0)
-        # The price factor is no longer capped at the reference price (2026-10-27), so a $22.6/h model pays 2.26x what a
-        # $10/h one does. GUI work keeps the old cap, and above reasoning_depth 1 is exempt: tier measures reasoning, and
-        # the GUI specialist is what that work needs. A small GUI task stays open to Sol and Flash (computer_use route).
-        price = 1.0 if spec.get('billing') == 'unknown' else usd / config.get('overqualification_ref_usd_per_hour', 10.0)
-        gui = task['kind'] == 'computer_use' or bool((task['profile'] or {}).get('needs_gui'))
-        gui_capable = capability_vector(info).get('gui', 0.0) >= 0.7
-        price = min(1.0, price) if (gui and gui_capable) else min(config.get('overqualification_price_cap', 3.0), price)
-        if ((gui and gui_capable) or kind == 'frontend_implementation') and (task['profile'] or {}).get('reasoning_depth', 1) >= 2:
-            price = 0.0
-        overqualified = round(config.get('overqualification_weight', 0.08) * excess * price * (1.0 - sprint_sunk), 4)
-        if overqualified:
-            result['components']['overqualification'] = overqualified
-    if task['difficulty'] != 'routine' and effective < high_ability:
-        # On non-routine work (depth >= 2), stepping below High (medium/low) sacrifices thinking depth even when a high
-        # base tier still clears the floor; High therefore leads under normal quota and steps down only under scarcity.
-        ability_score = clamp(ability_score - 0.2 * (high_ability - effective) / policy.get('ability_span', 0.6), 0, 1)
     if five:
-        # One capability match replaces route order, the vectors and graded ability: the demanded-axis level above the
-        # floor, as a share of the room above it. On ordinary profiled work (`minimum_sufficient`) meeting the floor is
-        # sufficient, as on the shipped path: the fit is full one saturation span above the floor. No overqualification
-        # term (round 6, user: a hand-made rule); the burn against each window's pacing price decides between the
-        # models that clear the floor.
-        if task['minimum_sufficient']:
-            span = float((policy.get('profile') or {}).get('saturation_span', 0.3))     # axis units here (rank())
-            fit = clamp((effective - gate) / span, 0.0, 1.0) if span > 0 else float(effective >= gate)
-        else:
-            fit = clamp((effective - gate) / (1.0 - gate), 0.0, 1.0) if gate < 1.0 else float(effective >= gate)
-        result['components'].update(five_axis_level=round(effective, 4), five_axis_gate=round(gate, 4))
+        # Round 7 (user 2026-11-09): quality is the continuous fit of the axis scores at this effort to the demand, and
+        # nothing else: no route order, vectors, graded ability, effort penalty, sprint quality or step-down rule (the
+        # effort's extra burn is priced in its usd and its gain in the effort-scaled axes). The economy decides.
+        _, scaled = five_axis_level(axes, task['five_axis_demand'], five_axis_effort_ratio(five_info, policy, five_curves, eff))
+        fit, axis_rows = five_axis_fit(scaled, task['five_axis_demand'], task['five_axis_targets'], float(five['shortfall_weight']))
+        result['components'].update(five_axis_level=round(effective, 4),
+                                    five_axis_shortfall=round(sum(r['demand'] * r['shortfall'] for r in axis_rows.values())
+                                                              / max(1, sum(r['demand'] for r in axis_rows.values())), 4))
         result['five_axis_demand'] = task['five_axis_demand']
-        if task.get('realtime_loop') and resp_val is not None:
-            w_resp = clamp(float(responsiveness_config(policy).get('weight', 0.35)), 0.0, 1.0)
-            fit = (1.0 - w_resp) * fit + w_resp * resp_val
+        result['five_axis_fit'] = axis_rows
         ability_score = 0.0
-        for key in ('shortfall', 'quality_bonus', 'route_fit', 'vector_fit', 'subjective_fit', 'overqualification'):
-            result['components'].pop(key, None)
+        effort_scale = burn_scale(policy, curves, eff)
+        sprint_sunk = (binding or {}).get('reset_sunk_weight', 0.0)
         usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or spec.get('billing') == 'unknown' else \
             model_usd_per_hour(model, info) * max(effort_scale, 0.0)
-        result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4), 'sprint_sunk': sprint_sunk,
-                                     'minimum_sufficient': bool(task['minimum_sufficient'])}
+        result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4), 'sprint_sunk': sprint_sunk}
+    else:
+        fit = fit_score(kind, model, capabilities, accounts)
+        if (route.get('preferred') and canonical(route['preferred'][0], accounts) == 'dot'
+                and (task['local_only'] or 'dot_text' in ctx['unavailable']) and model != 'dot'):
+            fit = fit_score(kind, model, {'routes': {kind: {**route, 'preferred': route['preferred'][1:]}}}, accounts)
+        visual = info.get('visual')
+        if (task['needs_visual'] and kind != 'visual_analysis' and not route.get('capability_fit')
+                and isinstance(visual, (int, float)) and not isinstance(visual, bool)):
+            fit = (fit + visual) / 2     # the user's visual ability order counts alongside the work kind's fit
+        if task['profile'] is not None and (not route.get('strict_order') or route.get('capability_fit')):
+            # A user-ranked strict order (visual_analysis) stays as stated; elsewhere the profile's needs share the fit.
+            # Route fit is not capped. Listed place, ability, the capability vector and the subjective vector decide.
+            vfit = vector_fit(task['requirements'], effort_scaled_capabilities(info, policy, curves, eff))
+            s_weights = task.get('subjective_weights') or {}
+            s_cfg = (policy.get('profile') or {}).get('subjective') if isinstance(info.get('subjective'), dict) else None
+            result['components']['route_fit'] = round(fit, 3)
+            result['components']['vector_fit'] = round(vfit, 3)
+            if s_weights and isinstance(s_cfg, dict):
+                subj_scale = min(1.0, effective / high_ability) if high_ability > 0 else 1.0
+                sfit = subjective_fit(s_weights, {k: v * subj_scale for k, v in subjective_vector(info).items()})
+                result['components']['subjective_fit'] = round(sfit, 3)
+                w_s = float(s_cfg.get('weight', 0.65))
+                w_v = float(s_cfg.get('vector_weight', 0.2))
+                w_r = float(s_cfg.get('route_weight', max(0.0, 1.0 - w_s - w_v)))
+                fit = w_r * fit + w_v * vfit + w_s * sfit
+            else:
+                weight = (policy.get('profile') or {}).get('vector_weight', 0.5)
+                fit = (1 - weight) * fit + weight * vfit
+        if task.get('realtime_loop') and resp_val is not None:
+            if task.get('needs_gui') and not route.get('capability_fit'):
+                cu_cap = (capabilities['routes'].get('computer_use') or {}).get('capability_fit') or {'gui': 1.0}
+                gui_fit = capability_score(cu_cap, model, accounts)
+                result['components']['gui_fit'] = round(gui_fit, 3)
+                fit = 0.5 * fit + 0.5 * gui_fit
+            w_resp = clamp(float(responsiveness_config(policy).get('weight', 0.35)), 0.0, 1.0)
+            fit = (1.0 - w_resp) * fit + w_resp * resp_val
+        cfg = demand_config(policy)
+        sunk_weight = (binding or {}).get('reset_sunk_weight', 0.0)
+        sprint_sunk = 0.0 if task['difficulty'] == 'routine' else sunk_weight
+        effort_scale = burn_scale(policy, curves, eff)
+        # Near a reset with surplus quota the extra burn of a higher effort is quota that would lapse, so it is not charged
+        # on non-routine work; routine (depth 1) work keeps its effort and overqualification discipline.
+        effort_penalty = round(policy.get('extra_effort_penalty', 0.0) * max(0.0, effort_scale - 1.0) * (1.0 - sprint_sunk), 4)
+        if effort_penalty:
+            result['components']['effort_penalty'] = effort_penalty
+        effort_gain = max(0.0, effective - high_ability)
+        saturation = float((policy.get('profile') or {}).get('saturation_span', 0.3))
+        if sprint_sunk > 0 and effort_gain > 0:
+            sprint_quality = round(float(cfg['sprint_effort_weight']) * sprint_sunk * clamp(effort_gain / saturation, 0, 1), 4)
+            if sprint_quality:
+                result['components']['sprint_quality'] = sprint_quality
+        # Effort buys ability credit only up to what the task asks of it: above High, up to the required ability. A task
+        # that High already satisfies gets nothing from xhigh/max, and the more it demands the more of the curve counts.
+        credited = min(effective, max(high_ability, target))
+        shortfall = max(0.0, target - effective)
+        if shortfall:
+            result['components']['shortfall'] = round(float(cfg['shortfall_weight']) * shortfall, 4)
+        result['components']['required_ability'] = round(target, 3)
+        span = policy.get('ability_span', 0.6)
+        if kind in ('frontend_implementation', 'complex_build_plan', 'direction_reasoning') and not task['high_precision']:
+            # Once sufficient reasoning is available, UI and planning/scheme quality are decided by route and subjective fit.
+            span = (policy.get('profile') or {}).get('saturation_span', 0.3)
+        # Graded ability counts from the difficulty's score origin, not from the gate: the measured floors only decide who may
+        # take the work, so lowering a floor does not flatten the quality difference between the models above it.
+        # Never below the gate: a floor raised above the shipped origin (the tray edits floors) must not hand the models
+        # that only just clear it a free share of the ability score.
+        origin = max(floor, float((policy.get('ability_score_origin') or {}).get(task['difficulty'], floor)))
+        ability_score = clamp((credited - origin - ((gate - floor) if task['high_precision'] else 0.0)) / span, 0, 1)
+        if task['high_precision']:
+            result['components']['quality_bonus'] = round(float(policy.get('high_precision_effort_weight', 0.14)) * effort_gain, 4)
+        if task['minimum_sufficient']:
+            # Ordinary profiled work: meeting the floor is sufficient, so every model at or above it gets full ability
+            # (2026-10-27: Flash at exactly the routine floor scored 0 and lost to anything 0.3 above it), and list price
+            # is charged for ability beyond floor + saturation_span, so a sufficient cheaper model wins when quota is plentiful.
+            config = policy.get('profile') or {}
+            span = config.get('saturation_span', 0.3)
+            ability_score = 1.0 if effective >= gate else 0.0
+            # Excess is measured from the task's required ability, not the bare floor: heavier properties raise the
+            # saturation interval, so a strong model's surplus shrinks as the work gets harder.
+            excess = clamp((effective - target - span) / config.get('overqualification_span', 0.6), 0, 1)
+            usd = 0.0 if spec.get('unlimited') or spec.get('unmetered') else model_usd_per_hour(model, info) * max(effort_scale, 0.0)
+            # The price factor is no longer capped at the reference price (2026-10-27), so a $22.6/h model pays 2.26x what a
+            # $10/h one does. GUI work keeps the old cap, and above reasoning_depth 1 is exempt: tier measures reasoning, and
+            # the GUI specialist is what that work needs. A small GUI task stays open to Sol and Flash (computer_use route).
+            price = 1.0 if spec.get('billing') == 'unknown' else usd / config.get('overqualification_ref_usd_per_hour', 10.0)
+            gui = task['kind'] == 'computer_use' or bool((task['profile'] or {}).get('needs_gui'))
+            gui_capable = capability_vector(info).get('gui', 0.0) >= 0.7
+            price = min(1.0, price) if (gui and gui_capable) else min(config.get('overqualification_price_cap', 3.0), price)
+            if ((gui and gui_capable) or kind == 'frontend_implementation') and (task['profile'] or {}).get('reasoning_depth', 1) >= 2:
+                price = 0.0
+            overqualified = round(config.get('overqualification_weight', 0.08) * excess * price * (1.0 - sprint_sunk), 4)
+            if overqualified:
+                result['components']['overqualification'] = overqualified
+        if task['difficulty'] != 'routine' and effective < high_ability:
+            # On non-routine work (depth >= 2), stepping below High (medium/low) sacrifices thinking depth even when a high
+            # base tier still clears the floor; High therefore leads under normal quota and steps down only under scarcity.
+            ability_score = clamp(ability_score - 0.2 * (high_ability - effective) / policy.get('ability_span', 0.6), 0, 1)
     result['components'].update({
         'fit': round(fit, 3),
         'ability': round(ability_score, 3),
@@ -3496,15 +3469,11 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     if five:
         ctx['five_axis'] = five
         demand, demand_source = five_axis_demand(task)
-        gate = five_axis_gate(task, demand, accounts['_five_axis'], five)
-        task = {**task, 'five_axis_demand': demand, 'five_axis_demand_source': demand_source, 'five_gate': gate}
-        # Spans written in tier points (sprint quality, graded ability) are read on the axis scale.
-        scale = gate['axis_per_tier']
-        profile_cfg = dict(policy.get('profile') or {})
-        profile_cfg['saturation_span'] = float(profile_cfg.get('saturation_span', 0.3)) * scale
-        ctx['policy'] = {**policy, 'profile': profile_cfg, 'ability_span': float(policy.get('ability_span', 0.6)) * scale}
+        targets = five_axis_targets(demand, accounts['_five_axis'].get('anchor_value', FIVE_AXIS_ANCHOR_VALUE))
+        task = {**task, 'five_axis_demand': demand, 'five_axis_demand_source': demand_source, 'five_axis_targets': targets}
+    # A bundle's `when` scope names a difficulty or a reasoning depth: not read on the five-axis path (round 7).
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()
-                  if bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
+                  if five or bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
     eligible = [c for c in candidates if not c['excluded']]
     # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
     # that value only. Opportunity cost is already in score units at the opportunity_exchange rate, so it is
@@ -3514,7 +3483,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     kind = task['kind']
     for c in eligible:
         parts = {k: c['components'][k] for k in weights}
-        quality = harness_quality_factor(c['bundle'], kind, policy, accounts)
+        quality = 1.0 if five else harness_quality_factor(c['bundle'], kind, policy, accounts)
         c['components']['harness_factor'] = round(quality, 4)
         value = fit_ability_value(parts, weights)
         score = (sum(weights[k] * parts[k] for k in weights) + c['components'].get('free_usage', 0)
@@ -3529,12 +3498,13 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
         c['score'] = round(score, 4)
         if c['available_in_hours']:
             c['score'] = round(c['score'] - policy['deferred_start_penalty'], 4)
-    apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
     if five:
-        # Equal scores (fit saturates on minimum-sufficient work) go to the candidate drawing on the least scarce quota,
-        # then the one with more ability above the floor; list order no longer decides (round 047, rounds 4-5).
+        # Equal scores go to the candidate drawing on the least scarce quota, then the higher axis level; the harness
+        # order only separates siblings of one model, account and effort, as a tie-break and never in the score.
+        harness_places(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'))
         eligible.sort(key=five_axis_order)
     else:
+        apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
         eligible.sort(key=lambda c: -c['score'])
     exchange = opportunity_exchange(policy)
     return candidates, eligible, {'weights': {k: round(v, 3) for k, v in weights.items()},
@@ -3554,6 +3524,26 @@ def sibling_key(candidate):
 def harness_group(candidate):
     """Siblings that would also do the same thing: resuming the owner is not the same choice as starting its twin."""
     return sibling_key(candidate) + (candidate['action'],)
+
+
+def harness_places(eligible, kind, policy, capabilities, style=None):
+    """Five-axis path: each candidate's place behind its best sibling (same account, model, effort and action) in the
+    harness order apply_harness_order reads, as `harness_place`; the score is not touched."""
+    by_style = ((policy.get('profile') or {}).get('harness_by_style') or {}).get(style) if style else None
+    order = (capabilities['routes'].get(kind) or {}).get('harness_order') or by_style or policy.get('harness_order') or []
+
+    def place(candidate):
+        b = candidate['bundle']
+        harness = b.get('harness') or bundle_harness(b, b.get('account'), b.get('id'))
+        return order.index(harness) if harness in order else order.index(b.get('provider')) if b.get('provider') in order else len(order)
+
+    groups = {}
+    for c in eligible:
+        groups.setdefault(harness_group(c), []).append(c)
+    for siblings in groups.values():
+        best = min(place(c) for c in siblings)
+        for c in siblings:
+            c['components']['harness_place'] = place(c) - best
 
 
 def apply_harness_order(eligible, kind, policy, capabilities, style=None, weights=None):
@@ -3905,15 +3895,18 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         # The floor is a hard gate at every difficulty, so nothing below it is offered instead. When a bundle that clears it
         # is held back only by quota, say when that quota returns, so the parent can wait rather than pick a lower tier.
         waits = sorted((h, c['id']) for c in candidates if c['excluded'] and (h := quota_wait_hours(c, usage)) is not None)
+        five = bool(accounts.get('_five_axis'))       # no difficulty floor on the five-axis path (round 7)
         admitted = [c for c in candidates if not c.get('below_floor') and 'excluded by host policy' not in c['excluded']]
-        if not admitted:
+        if not admitted and not five:
             decision['reason'] = (f'No bundle on the usable accounts clears the {task["difficulty"]} floor '
                                   f'{task["demand"]["floor"]:g}; nothing below it is offered instead. ' + decision['reason'])
         if waits:
             hours, bundle_id = waits[0]
             decision['next_reset'] = {'bundle': bundle_id, 'hours': round(hours, 1),
                                       'at': (now + timedelta(hours=hours)).isoformat()}
-            decision['reason'] += (f'. Nothing below the {task["difficulty"]} floor is offered instead; {bundle_id} clears it '
+            decision['reason'] += (f'. {bundle_id} is held back by quota that returns in {hours:.1f}h: wait, or decide otherwise.'
+                                   if five else
+                                   f'. Nothing below the {task["difficulty"]} floor is offered instead; {bundle_id} clears it '
                                    f'and its quota returns in {hours:.1f}h: wait, or decide otherwise.')
         if named_block:
             # What the user named cannot run. Say why and stop; nothing else stands in for it.
@@ -3980,14 +3973,19 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     top_model = row_key(top['bundle']['model'], accounts)
     offered = sorted({c['bundle'].get('effort') for c in candidates if row_key(c['bundle']['model'], accounts) == top_model
                       and c['bundle'].get('effort') in EFFORT_ORDER}, key=EFFORT_ORDER.index) or EFFORT_ORDER
-    saturating = saturating_effort(policy, model_curves(accounts, top['bundle']['model']), model_spec(accounts, top['bundle']['model']),
-                                   task['demand']['required_ability'], offered)
-    # The ceiling past which more thinking buys nothing for this task on the chosen model: High unless the task's
-    # required ability needs more, None when even the model's top effort falls short.
-    deeper = any(EFFORT_ORDER.index(e) > EFFORT_ORDER.index('high') for e in offered if e in EFFORT_ORDER)
-    decision['task']['max_recommended_effort'] = (
-        ('high' if not deeper else None) if saturating is None
-        else 'high' if EFFORT_ORDER.index(saturating) <= EFFORT_ORDER.index('high') else saturating)
+    if accounts.get('_five_axis'):
+        # No required ability on the five-axis path (round 7): the fit and the economy chose this effort.
+        chosen = top['bundle'].get('effort')
+        decision['task']['max_recommended_effort'] = chosen if chosen in EFFORT_ORDER else None
+    else:
+        saturating = saturating_effort(policy, model_curves(accounts, top['bundle']['model']), model_spec(accounts, top['bundle']['model']),
+                                       task['demand']['required_ability'], offered)
+        # The ceiling past which more thinking buys nothing for this task on the chosen model: High unless the task's
+        # required ability needs more, None when even the model's top effort falls short.
+        deeper = any(EFFORT_ORDER.index(e) > EFFORT_ORDER.index('high') for e in offered if e in EFFORT_ORDER)
+        decision['task']['max_recommended_effort'] = (
+            ('high' if not deeper else None) if saturating is None
+            else 'high' if EFFORT_ORDER.index(saturating) <= EFFORT_ORDER.index('high') else saturating)
     result['choice'] = top['id']
     result['selected_bundle'] = dict(top['bundle'], bundle_id=top['id'], expected_usd=top.get('expected_usd'),
                                      expected_hours=top.get('expected_hours'))
