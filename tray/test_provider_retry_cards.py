@@ -97,6 +97,59 @@ class ProviderRetryCardTests(unittest.TestCase):
             router_data.clear_retry_holds('opencode')
         self.assertEqual(allocator.provider_retry.clear.call_args.args, ('opencode',))
 
+    def test_a_pool_hold_names_the_pool_and_the_clear_link_clears_that_pool(self):
+        # 2026-11-09: OpenCode Go and the Zen free models are separate quotas under one provider.
+        pool = {'id': 'opencode', 'prefix': 'opencode', 'provider': 'opencode', 'models': ['opencode/beam-free']}
+        holds = {'opencode#opencode': {'account': 'opencode', 'model': None, 'pool': pool, 'message': MESSAGE,
+                                       'retry_at': None, 'failure_code': 'provider_turn_failed'}}
+        card = self.card(holds)
+        self.assertEqual((card['kind'], card['retry_hold'], card['retry_clear_pool']), ('warn', True, 'opencode'))
+        self.assertIn('提供方报错，额度池 opencode 已排除派发', card['badge'])
+        self.assertIn('agentcompass hold --clear opencode#opencode', card['badge'])
+        self.assertNotIn('整个账号', card['badge'])
+        retry = datetime.now(timezone.utc) + timedelta(minutes=2)
+        go = {'id': 'opencode-go', 'prefix': 'opencode-go', 'provider': 'opencode', 'models': []}
+        both = self.card({**holds, 'opencode#opencode-go': {'account': 'opencode', 'model': None, 'pool': go,
+                                                            'message': 'Go limit', 'retry_at': retry.isoformat()}})
+        self.assertIn('额度池 opencode-go 已排除派发：Go limit', both['badge'])
+        self.assertEqual(both['retry_clear_pool'], 'opencode')   # one pool at a time, the one the link names
+        whole = self.card({**holds, 'opencode': {'account': 'opencode', 'model': None, 'message': MESSAGE}})
+        self.assertIsNone(whole['retry_clear_pool'])   # the whole account is held: the link clears everything
+
+        clear = Mock()
+        widgets = {'clear': clear, 'clear_layout': 'pack', 'windows': [], 'refreshable': False}
+        router_window.Panel.fill_quota_card(widgets, {**card, 'label': 'OpenCode'})
+        self.assertEqual(clear.hold_pool, 'opencode')
+        clear.configure.assert_called_with(text=router_window._tr('清除 {0}').format('opencode'))
+        router_window.Panel.fill_quota_card(widgets, {**card, 'label': 'OpenCode', 'retry_clear_pool': None})
+        self.assertIsNone(clear.hold_pool)
+        clear.configure.assert_called_with(text=router_window._tr('清除'))
+
+        panel = Mock()
+        router_window.Panel.clear_retry_hold(panel, 'opencode', 'opencode')
+        panel.run.call_args.args[0]()
+        panel.data_module.return_value.clear_retry_holds.assert_called_once_with('opencode', 'opencode')
+        allocator = Mock()
+        with patch.object(router_data, 'modules', return_value=(allocator, Mock())):
+            router_data.clear_retry_holds('opencode', 'opencode')
+        self.assertEqual(allocator.provider_retry.clear.call_args.args, ('opencode',))
+        self.assertEqual(allocator.provider_retry.clear.call_args.kwargs['pool'], 'opencode')
+
+    def test_the_model_list_marks_the_models_of_a_held_pool_only(self):
+        import provider_retry
+        allocator = Mock(provider_retry=provider_retry)
+        pool = {'id': 'opencode', 'prefix': 'opencode', 'provider': 'opencode', 'models': ['opencode/beam-free']}
+        holds = {'opencode#opencode': {'account': 'opencode', 'model': None, 'pool': pool, 'message': MESSAGE,
+                                       'retry_at': None}}
+        zen = [('opencode', 'z', {'provider': 'opencode', 'model': 'iceman-free', 'launch_model': 'opencode/iceman-free'})]
+        go = [('opencode', 'g', {'provider': 'opencode', 'model': 'kimi-k3', 'launch_model': 'opencode-go/kimi-k3'})]
+        text = router_data.retry_model_text(allocator, holds, 'opencode', zen)
+        self.assertIn('额度池 opencode 提供方持续重试，已排除派发', text)
+        self.assertIsNone(router_data.retry_model_text(allocator, holds, 'opencode', go))
+        # A hold of the whole account badges the row, not each model.
+        self.assertIsNone(router_data.retry_model_text(
+            allocator, {'opencode': {'account': 'opencode', 'model': None, 'message': MESSAGE}}, 'opencode', zen))
+
     def test_no_hold_leaves_the_card_alone_and_another_problem_keeps_its_text(self):
         card = self.card({})
         self.assertEqual((card['kind'], card['retry_hold']), ('ok', False))

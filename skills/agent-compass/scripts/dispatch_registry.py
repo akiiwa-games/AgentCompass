@@ -903,7 +903,8 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     if target == 'completed' and provider_replied(terminal, row.get('launched_at')):
         try:
             provider_retry.clear(row['bundle'].get('account'), provider_retry.launch_model(row['bundle']),
-                                 include_account=True, launched_at=row.get('launched_at') or row.get('created_at'))
+                                 include_account=True, launched_at=row.get('launched_at') or row.get('created_at'),
+                                 bundle=row['bundle'])
         except OSError:
             pass
     if target in ('started', 'completed'):

@@ -3111,6 +3111,24 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertIn('task_input', provider_retry.SCOPE_SCHEMA['properties']['scope']['enum'])
         self.assertIn('`task_input`', provider_retry.SCOPE_INSTRUCTIONS)
 
+    def test_an_account_answer_on_antigravity_holds_only_the_quota_pool_of_the_failed_model(self):
+        # 2026-11-09: Antigravity's Gemini and third-party models draw different windows; the record reads the installed
+        # accounts itself to find the pool, and routing keeps the other pool.
+        import provider_retry
+        self.scopes = ['account']
+        third = dict(allocator.bundles(self.accounts)['agy_opus55_high'], bundle_id='agy_opus55_high')
+        entry = provider_retry.record(third, self.stuck(self.now), dispatch_id='d-agy')
+        self.assertEqual(set(provider_retry.active(now=self.now)), {'antigravity#3p-5h+3p-weekly'})
+        self.assertEqual(entry['pool']['windows'], {'3p-5h': [{'models_except': ['gemini']}],
+                                                    '3p-weekly': [{'models_except': ['gemini']}]})
+        _, excluded = self.excluded('agy_sonnet55_high')
+        self.assertTrue(any('quota pool 3p-5h+3p-weekly' in e and self.MESSAGE in e for e in excluded), excluded)
+        _, excluded = self.excluded('flash_high')
+        self.assertFalse(any(e.startswith(provider_retry.EXCLUSION_PREFIX) for e in excluded), excluded)
+        plan = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)
+        self.assertTrue(any(w.startswith('antigravity#3p-5h+3p-weekly: provider failure hold on this quota pool')
+                            for w in plan['decision']['warnings']), plan['decision']['warnings'])
+
     def test_clearing_one_model_keeps_the_account_hold(self):
         # Review 2 R7: `hold --clear ACCOUNT/MODEL` is that model's hold only.
         import provider_retry

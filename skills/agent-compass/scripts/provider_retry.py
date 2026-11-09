@@ -12,22 +12,31 @@ None is special-cased here. This module records each such dispatch once in <stat
     the provider refusing or failing to serve, e.g. a tool or code error), `task_input` (this task's own input was
     refused, e.g. a prompt too long for the model), or `unknown`. `none` and `task_input` hold nothing, and a failed
     turn read that way is the worker's error, not the provider's (`outcome_code`).
-    No code reads the message. `unknown`, or no classifier answer, holds the model and widens to the account once a
-    second model of the same account is held the same way, i.e. a recent hold whose scope was also `unknown` (a
+    No code reads the message. `unknown`, or no classifier answer, holds the model and widens to its pool once a
+    second model of the same pool is held the same way, i.e. a recent hold whose scope was also `unknown` (a
     `transient` or `model` hold never widens anything); `transient` and `model` hold only the model.
+  - Pools: one account (one Paseo provider) can hold several independent quotas, so an `account` answer, or a widened
+    guess, holds the quota pool that contains the failed model, keyed `account#pool`, and the whole account only when
+    the account has a single pool. The pools come from structure, never from names (`pool_of`): models that draw a
+    common quota window are one pool (allocator.bundle_pools: the windows' `models`/`models_except` scopes, the usage
+    readings' own `models`, a bundle's explicit `draws`; Antigravity's Gemini and third-party windows), and where one
+    provider of the account launches models under several provider prefixes of its own (`opencode/...` Zen free models
+    and `opencode-go/...` Go models: OpenCode's own provider ids), each prefix is its own pool. Widening never crosses
+    a pool: a guess about one quota says nothing about another.
   - Every hold backs off like a failing usage reading (usage_core.failure_retry_seconds): 2 minutes, doubling with
     each consecutive hold of the same key, capped at the idle poll interval; a later `next` from the provider wins.
     Past its retry time the next roll may pick it again and so re-probes it. That includes an account hold widened
     from two `unknown` answers: guesses never hold an account for good.
-  - Only an account hold the classifier itself scoped `account` has no retry time (`indefinite`): a quota that blocks
-    the whole account (2026-11-09: opencode "Free usage exceeded" on a free model never used before, after a long
+  - Only an account or pool hold the classifier itself scoped `account` has no retry time (`indefinite`): a quota that
+    blocks the whole account (2026-11-09: opencode "Free usage exceeded" on a free model never used before, after a long
     idle) does not lift by waiting.
-  - Lifting: the tray's clear button, `agentcompass hold --clear ACCOUNT` (every hold of it) or `ACCOUNT/MODEL` (that
-    model's hold only); a probe: routing never picks a held bundle, but a model the user names explicitly
-    (`roll --model`) is dispatched anyway, and a dispatch launched after the hold whose turn ended on the model's reply
-    clears the account's hold and that model's (dispatch_registry.observe; a start, a stop or a cancel does not); or,
-    on an account with a usage reader, a good usage reading newer than the hold, or a different credential (re-login),
-    which lifts the account hold and its model holds (`lift_after_reading`, from provider_inventory.apply).
+  - Lifting: the tray's clear button (one pool at a time when pools are held), `agentcompass hold --clear ACCOUNT`
+    (every hold of it), `ACCOUNT#POOL` (that pool's hold and its models') or `ACCOUNT/MODEL` (that model's hold only);
+    a probe: routing never picks a held bundle, but a model the user names explicitly (`roll --model`) is dispatched
+    anyway, and a dispatch launched after the hold whose turn ended on the model's reply clears the account's hold,
+    its pool's and that model's (dispatch_registry.observe; a start, a stop or a cancel does not); or, on an account
+    with a usage reader, a good usage reading newer than a hold, or a different credential (re-login), which lifts that
+    account or pool hold and its model holds (`lift_after_reading`, from provider_inventory.apply).
 The message is stored, capped, because the account list must show it; nothing here decides from it.
 """
 from datetime import datetime, timedelta, timezone
@@ -131,6 +140,126 @@ def key(account, model=None):
     return account if model is None else f'{account}/{model}'
 
 
+POOL_SEPARATOR = '#'
+
+
+def pool_key(account, pool_id):
+    return f'{account}{POOL_SEPARATOR}{pool_id}'
+
+
+def hold_pool(entry):
+    """The pool an account-level hold covers, or None for a hold of the whole account (or of a model)."""
+    pool = entry.get('pool') if isinstance(entry, dict) and entry.get('model') is None else None
+    return pool if isinstance(pool, dict) and isinstance(pool.get('id'), str) and pool['id'] else None
+
+
+def entry_key(entry):
+    """The key a hold is stored and cleared under: `account`, `account#pool` or `account/model`."""
+    pool = hold_pool(entry)
+    return pool_key(entry['account'], pool['id']) if pool else key(entry['account'], entry.get('model'))
+
+
+def _prefix(model):
+    """The provider prefix of a launch model id (`opencode-go` in `opencode-go/kimi-k3`), else None."""
+    head, sep, rest = str(model or '').partition('/')
+    return head if sep and head and rest else None
+
+
+def pool_of(bundle, accounts, observed=None):
+    """The quota pool of the bundle's account that contains its model, or None when the account has a single pool.
+
+    Structure only: the account's bundles are its models. Where one provider of the account launches models under
+    more than one provider prefix of its own (OpenCode's `opencode/` and `opencode-go/`), each prefix is a bucket;
+    within a bucket, models drawing a common quota window (allocator.bundle_pools, `observed` being the account's
+    usage reading by window id) are one pool, and models drawing no window share one. The pool keeps its member models
+    and, when windows split the bucket, each window's scope, so `in_pool` can place a model without the accounts.
+    """
+    account, model = (bundle or {}).get('account'), launch_model(bundle)
+    specs = (accounts or {}).get('accounts') if isinstance((accounts or {}).get('accounts'), dict) else {}
+    spec = specs.get(account) if isinstance(account, str) else None
+    if not isinstance(spec, dict) or not isinstance(model, str):
+        return None
+    import allocator
+    import window_scope
+    members = {}
+    for bid, row in (spec.get('bundles') or {}).items():
+        if isinstance(row, dict) and isinstance(launch_model(row), str):
+            members.setdefault(launch_model(row), {**row, 'id': bid, 'account': account})
+    members.setdefault(model, dict(bundle))
+    prefixes = {}
+    for row in members.values():
+        prefixes.setdefault(row.get('provider') or account, set()).add(_prefix(launch_model(row)))
+
+    def bucket(row):
+        provider = row.get('provider') or account
+        return (provider, _prefix(launch_model(row))) if len(prefixes[provider]) > 1 else None
+    observed = observed if isinstance(observed, dict) else {}
+    groups = []   # (bucket, member models, windows drawn)
+    for name, row in sorted(members.items()):
+        own, windows = bucket(row), set(allocator.bundle_pools(row, accounts, observed))
+        joined = [g for g in groups if g[0] == own and (g[2] & windows or not (g[2] or windows))]
+        groups = [g for g in groups if g not in joined] + [
+            (own, {name}.union(*(g[1] for g in joined)), windows.union(*(g[2] for g in joined)))]
+    if len(groups) < 2:
+        return None
+    own, models, windows = next(g for g in groups if model in g[1])
+    split = sum(1 for g in groups if g[0] == own) > 1
+    parts = ([own[1] or own[0]] if own else []) + (['+'.join(sorted(windows)) or 'no-window'] if split else [])
+    pool = {'id': ':'.join(parts) or 'rest', 'models': sorted(models)}
+    if own:
+        pool.update(provider=own[0], prefix=own[1])
+    if split and windows:
+        configured = spec.get('windows') if isinstance(spec.get('windows'), dict) else {}
+        pool['windows'] = {wid: [scope for scope in (window_scope.scope_of(configured.get(wid)),
+                                                     window_scope.scope_of(observed.get(wid))) if scope]
+                           for wid in sorted(windows)}
+    return pool
+
+
+def in_pool(bundle, pool):
+    """Does this bundle's model draw on the pool (`pool_of`)? Its member models, else the same provider prefix and a
+    window of the pool it draws (explicit `draws`, else the window's scope)."""
+    model = launch_model(bundle)
+    if not isinstance(pool, dict) or not isinstance(model, str):
+        return False
+    if model in (pool.get('models') or ()):
+        return True
+    if 'prefix' in pool and ((bundle.get('provider') or bundle.get('account')) != pool.get('provider')
+                             or _prefix(model) != pool.get('prefix')):
+        return False
+    windows = pool.get('windows') if isinstance(pool.get('windows'), dict) else None
+    if not windows:
+        return 'prefix' in pool
+    draws = bundle.get('draws')
+    if isinstance(draws, (list, tuple)):
+        return bool(set(draws) & set(windows))
+    import window_scope
+    names = (bundle.get('model') or '', model)
+    return any(scopes and window_scope.binds_any(names, *scopes) for scopes in windows.values())
+
+
+def resolve_pool(bundle, accounts=None):
+    """`pool_of` against the installed accounts and the account's cached usage reading; None (the whole account) when
+    they cannot be read."""
+    try:
+        import allocator
+        if accounts is None:
+            accounts = allocator.load_accounts()
+        observed = {}
+        try:
+            import usage_cache
+            spec = (accounts.get('accounts') or {}).get(bundle.get('account')) or {}
+            row = usage_cache.providers().get(bundle.get('account')) or {}
+            for window in row.get('windows') or ():
+                if isinstance(window, dict) and window.get('id'):
+                    observed.setdefault(allocator.canonical_window_id(spec, window['id']), window)
+        except Exception:   # no readable reading: the configured scopes alone
+            observed = {}
+        return pool_of(bundle, accounts, observed)
+    except Exception:
+        return None
+
+
 def validate_scope(answer):
     scope = (answer or {}).get('scope') if isinstance(answer, dict) else None
     if scope not in SCOPES:
@@ -163,7 +292,7 @@ def _account_hold(entry):
 
 
 def indefinite(entry):
-    """Held until lifted, never by waiting: only an account hold the classifier itself scoped `account`."""
+    """Held until lifted, never by waiting: only an account or pool hold the classifier itself scoped `account`."""
     return _account_hold(entry) and entry.get('scope') == 'account'
 
 
@@ -196,9 +325,10 @@ def _recent(entry, now):
     return retry is not None and retry > now - timedelta(hours=STREAK_HOURS)
 
 
-def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None):
-    """Hold the bundle's model or account for a `provider_retry_stuck` terminal sighting. Once per dispatch; returns
-    the entry written, or None when nothing was (disabled, recorded before, or not this failure)."""
+def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None, accounts=None):
+    """Hold the bundle's model, pool or account for a provider failure sighting. Once per dispatch; returns the entry
+    written, or None when nothing was (disabled, recorded before, or not this failure). `accounts` places the model in
+    its pool (`resolve_pool`); without it the installed accounts are read."""
     failure = failure if isinstance(failure, dict) else {}
     account, model = (bundle or {}).get('account'), launch_model(bundle)
     code = failure.get('failure_code')
@@ -214,6 +344,8 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None):
     # The classifier can take seconds: ask it before taking the lock.
     scope, meta = (classify or classify_scope)(account, provider, model, message, code)
     scope = scope if scope in SCOPES else 'unknown'
+    # Reading the accounts can take a moment too, and a scope that holds nothing needs no pool.
+    pool = resolve_pool(bundle, accounts) if scope not in NO_HOLD else None
     at = _time(at) or _time(failure.get('at')) or datetime.now(timezone.utc)
     nxt = _time(failure.get('next'))
     with override_store.locked(path):
@@ -226,22 +358,24 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None):
             override_store.write(path, doc)
             return None
         entries = doc['entries']
-        # Only another model held for the same unknown reason widens: a transient blip or a model-only refusal on it
-        # says nothing about the account.
+        # Only another model of the same pool held for the same unknown reason widens: a transient blip or a
+        # model-only refusal on it says nothing about the account, and a guess about one quota nothing about another.
         others = sorted(v.get('model') for k, v in entries.items()
                         if isinstance(v, dict) and v.get('account') == account and v.get('model') not in (None, model)
-                        and v.get('scope') == 'unknown' and _recent(v, at))
+                        and v.get('scope') == 'unknown' and _recent(v, at)
+                        and (pool is None or _in_held_pool(v, pool)))
         widened = scope == 'unknown' and bool(others)
-        held = key(account) if scope == 'account' or widened else key(account, model)
+        wide = scope == 'account' or widened
+        held = (pool_key(account, pool['id']) if pool else key(account)) if wide else key(account, model)
         previous = entries.get(held) if isinstance(entries.get(held), dict) else {}
         streak = int(previous.get('streak') or 0) + 1 if _recent(previous, at) else 1
         retry = None
         # Only the classifier's own `account` answer holds without a retry time; a widened guess backs off.
-        if not (held == key(account) and scope == 'account'):
+        if not (wide and scope == 'account'):
             retry = at + timedelta(seconds=retry_seconds(streak))
             if nxt and nxt > retry:
                 retry = nxt
-        entry = {'account': account, 'provider': provider, 'model': None if held == key(account) else model,
+        entry = {'account': account, 'provider': provider, 'model': None if wide else model,
                  'failure_code': code, 'scope': scope,
                  'scope_source': 'widened' if widened else ('classifier' if scope != 'unknown' else 'unknown_default'),
                  'classifier': {k: meta.get(k) for k in ('source', 'scorer_type', 'provider', 'model', 'reason',
@@ -250,7 +384,10 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None):
                  'attempts': failure.get('attempts'), 'retrying_since': failure.get('retrying_since'),
                  'observed_at': at.isoformat(), 'streak': streak, 'retry_at': retry.isoformat() if retry else None,
                  'source': dispatch_id}
-        if held == key(account):
+        if pool:
+            # A pool hold covers the pool; a model hold remembers its pool, so lifting the pool lifts it too.
+            entry.update({'pool': pool} if wide else {'pool_id': pool['id']})
+        if wide:
             entry['models'] = sorted({*(previous.get('models') or ()), *others, model})
             # The login the hold was taken under: a re-login with another credential lifts it (lift_after_reading).
             credential = account_state._latch_context(account)[0]
@@ -280,25 +417,47 @@ def active(*, now=None, path=None):
             if isinstance(v, dict) and (indefinite(v) or (_time(v.get('retry_at')) or now) > now)}
 
 
+def pool_holds(entries, account):
+    """The account's pool holds among `entries`, by key."""
+    return {k: v for k, v in sorted((entries or {}).items())
+            if isinstance(v, dict) and v.get('account') == account and hold_pool(v)}
+
+
+def _model_bundle(entry):
+    return {'account': entry.get('account'), 'provider': entry.get('provider'), 'model': entry.get('model'),
+            'launch_model': entry.get('model')}
+
+
+def _in_held_pool(entry, pool):
+    """Is this hold `pool`'s own, or a model hold of a model in `pool`?"""
+    if entry.get('model') is None:
+        return (hold_pool(entry) or {}).get('id') == pool.get('id')
+    return entry.get('pool_id') == pool.get('id') or in_pool(_model_bundle(entry), pool)
+
+
 def entry_for(bundle, entries):
-    """The hold that keeps this bundle out: its account's, else its model's."""
+    """The hold that keeps this bundle out: its account's, else its pool's, else its model's."""
     if not entries:
         return None
     account = (bundle or {}).get('account')
-    return entries.get(key(account)) or entries.get(key(account, launch_model(bundle))) \
+    if entries.get(key(account)):
+        return entries[key(account)]
+    pooled = next((v for v in pool_holds(entries, account).values() if in_pool(bundle, hold_pool(v))), None)
+    return pooled or entries.get(key(account, launch_model(bundle))) \
         or entries.get(key(account, (bundle or {}).get('model')))
 
 
 def retry_text(entry):
     """When the router tries the held key again; an indefinite hold waits for a lift."""
     if indefinite(entry):
-        return ('held until cleared (tray clear button or `agentcompass hold --clear ACCOUNT`), a model named on it '
-                'completes, or (accounts with a usage reader) a good usage reading after it or a re-login')
+        return (f'held until cleared (tray clear button or `{CLEAR_COMMAND} {entry_key(entry)}`), a model named on '
+                'it completes, or (accounts with a usage reader) a good usage reading after it or a re-login')
     return f"next retry at {(entry or {}).get('retry_at') or 'unknown'}"
 
 
 def describe(entry):
-    scope = 'account' if _account_hold(entry) else 'model'
+    pool = hold_pool(entry)
+    scope = f"quota pool {pool['id']} of the account" if pool else 'account' if _account_hold(entry) else 'model'
     what = 'turn failed' if entry.get('failure_code') == TURN_FAILED_CODE else 'kept retrying without progress'
     return (f"{EXCLUSION_PREFIX} on this {scope}: provider {what} ({entry.get('message') or 'no message'}); "
             f"{retry_text(entry)}")
@@ -309,7 +468,7 @@ def reason(bundle, entries):
     entry = entry_for(bundle, entries)
     if not entry:
         return None
-    return describe(entry) + f"; clear with `{CLEAR_COMMAND} {key(entry['account'], entry.get('model'))}`"
+    return describe(entry) + f"; clear with `{CLEAR_COMMAND} {entry_key(entry)}`"
 
 
 def warnings(entries, allowed=None):
@@ -318,19 +477,34 @@ def warnings(entries, allowed=None):
             for k, v in sorted((entries or {}).items()) if allowed is None or allowed(v.get('account'))]
 
 
-def clear(account, model=None, *, include_account=False, launched_at=None, path=None):
-    """Drop every hold of the account when `model` is None; else `model`'s hold only, and the account's own too with
-    `include_account` (a completed probe). With `launched_at`, only holds observed before that launch: a dispatch
-    that began before the hold says nothing about it."""
+def _pool_members(entries, account, pool_id):
+    """Keys of `pool_id`'s hold and of the model holds in that pool."""
+    pool = hold_pool(entries.get(pool_key(account, pool_id))) or {'id': pool_id}
+    return [k for k, v in entries.items() if isinstance(v, dict) and v.get('account') == account
+            and _in_held_pool(v, pool)]
+
+
+def clear(account, model=None, *, include_account=False, launched_at=None, path=None, pool=None, bundle=None):
+    """Drop every hold of the account when neither `model` nor `pool` is given; with `pool` (an id), that pool's hold
+    and its models' holds; else `model`'s hold only, and with `include_account` (a completed probe) also the account's
+    own and the pool hold that covers the model (placed by `bundle` when given). With `launched_at`, only holds
+    observed before that launch: a dispatch that began before the hold says nothing about it."""
     path = path or store_path()
     if not enabled() or not isinstance(account, str) or not path.exists():
         return False
     launched = _time(launched_at) if launched_at is not None else None
-    wanted = (None, model) if include_account else (model,)
+    probe = {**(bundle or {}), 'account': account, 'launch_model': model}
+
+    def wanted(v):
+        if model is None or v.get('model') == model:
+            return True
+        held = hold_pool(v)
+        return include_account and v.get('model') is None and (held is None or in_pool(probe, held))
     with override_store.locked(path):
         doc = _read(path)
+        members = set(_pool_members(doc['entries'], account, pool)) if pool is not None else None
         keys = [k for k, v in doc['entries'].items() if isinstance(v, dict) and v.get('account') == account
-                and (model is None or v.get('model') in wanted)
+                and (k in members if members is not None else wanted(v))
                 and (launched_at is None or (launched and (_time(v.get('observed_at')) or launched) < launched))]
         if not keys:
             return False
@@ -350,31 +524,41 @@ def _lifts(entry, last_good, credential_key):
     return bool(good and observed and good > observed)
 
 
+def _lifted(entries, account, last_good, credential_key):
+    """Keys a reading lifts: every hold of the account when its account hold lifts, else each lifting pool hold with
+    its pool's model holds."""
+    if _lifts(entries.get(key(account)), last_good, credential_key):
+        return [k for k, v in entries.items() if isinstance(v, dict) and v.get('account') == account]
+    return sorted({k for pool_hold in pool_holds(entries, account).values()
+                   if _lifts(pool_hold, last_good, credential_key)
+                   for k in _pool_members(entries, account, hold_pool(pool_hold)['id'])})
+
+
 def lift_after_reading(account, *, last_good=None, credential_key=None, path=None):
     """Re-login recovery for an account with a usage reader (provider_inventory.apply): a good usage reading newer than
-    the account's hold, or a credential other than the one it was taken under, lifts the account hold and its model
-    holds. Compare-and-clear: a hold recorded after the read is kept. Returns whether anything was lifted."""
+    the account's hold or one of its pool holds, or a credential other than the one that hold was taken under, lifts
+    that hold and its model holds (the pool's, for a pool hold). Compare-and-clear: a hold recorded after the read is
+    kept. Returns whether anything was lifted."""
     path = path or store_path()
     if not enabled() or not isinstance(account, str) or not path.exists():
         return False
     try:
-        entry = _read(path)['entries'].get(key(account))
+        if not _lifted(_read(path)['entries'], account, last_good, credential_key):
+            return False
     except PermissionError:
-        return False
-    if not _lifts(entry, last_good, credential_key):
         return False
     with override_store.locked(path):
         doc = _read(path)
-        entry = doc['entries'].get(key(account))
-        if not _lifts(entry, last_good, credential_key):
+        lifted = _lifted(doc['entries'], account, last_good, credential_key)
+        if not lifted:
             return False
-        doc['entries'] = {k: v for k, v in doc['entries'].items()
-                          if not (isinstance(v, dict) and v.get('account') == account)}
+        for k in lifted:
+            doc['entries'].pop(k)
         override_store.write(path, doc)
     return True
 
 
-def ingest(*, classify=None, registry_path=None, notifications=None, path=None):
+def ingest(*, classify=None, registry_path=None, notifications=None, path=None, accounts=None):
     """Record every stuck-retry sighting the bridge's watchers wrote that is not recorded yet, so a roll excludes it
     before the registry next observes that dispatch. Returns the entries written."""
     if not enabled():
@@ -399,23 +583,37 @@ def ingest(*, classify=None, registry_path=None, notifications=None, path=None):
             row = dispatch_registry.inspect(dispatch_id, registry_path)
         except (ValueError, OSError):
             continue
-        entry = record(row.get('bundle'), terminal, dispatch_id=dispatch_id, classify=classify, path=path)
+        if accounts is None:
+            try:   # read once for every sighting, to place each failed model in its pool
+                import allocator
+                accounts = allocator.load_accounts()
+            except Exception:
+                accounts = {}
+        entry = record(row.get('bundle'), terminal, dispatch_id=dispatch_id, classify=classify, path=path,
+                       accounts=accounts)
         if entry:
             written.append(entry)
     return written
 
 
 def clear_key(value):
-    """Clear `ACCOUNT` (every hold of it) or `ACCOUNT/MODEL` (that model's hold only) by hand."""
-    account_name, _, model_name = str(value or '').partition('/')
-    return clear(account_name, model_name or None) if account_name else False
+    """Clear `ACCOUNT` (every hold of it), `ACCOUNT#POOL` (that pool's hold and its models') or `ACCOUNT/MODEL` (that
+    model's hold only) by hand."""
+    head, _, model_name = str(value or '').partition('/')
+    account_name, _, pool_id = head.partition(POOL_SEPARATOR)
+    if not account_name:
+        return False
+    if pool_id:
+        return clear(account_name, pool=pool_id)
+    return clear(account_name, model_name or None)
 
 
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(prog='agentcompass hold', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--clear', metavar='ACCOUNT[/MODEL]', help='Clear one held model, or ACCOUNT for all its holds')
+    parser.add_argument('--clear', metavar='ACCOUNT[#POOL|/MODEL]',
+                        help='Clear one held model, one held quota pool, or ACCOUNT for all its holds')
     args = parser.parse_args(argv)
     if args.clear and not clear_key(args.clear):
         print(f'nothing held for {args.clear}')
