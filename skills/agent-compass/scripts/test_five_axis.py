@@ -354,7 +354,10 @@ class CommunityCapacityTests(unittest.TestCase):
     WOKEY = ('<html><body><p>Data updated 2026-11-02</p><p>Claude Pro ($20/mo)</p><p>: ≈ $155 of API use a week '
              '(IQR $146–173) · 24.2M uncached tokens · ≈ 13 full 5-hour windows</p>'
              '<p>Claude Max 20x ($200/mo)</p><p>: ≈ $1,549 of API use a week (IQR) · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
-             '<p>Fable 5.1 can use only half the weekly limit.</p></body></html>')
+             '<p>Fable 5.1 can use only half the weekly limit.</p>'
+             '<p>value every plan at one fixed traffic split: Claude Code traffic on Wokey in the week to 2026-11-02, about '
+             '92% of tokens cache reads.</p><p>Claude Max 20x $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M '
+             '$272</p><p>Claude Max 20x: 92% cache reads, 1.98B tokens a week</p></body></html>')
 
     def pages(self, folder, wokey=WOKEY):
         import tempfile
@@ -370,7 +373,7 @@ class CommunityCapacityTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as folder:
             target, files = self.pages(folder)
-            rows, obs, rules, errors = self.cm.extract(target, files)
+            rows, obs, rules, errors, mix = self.cm.extract(target, files)
         got = {(o['plan'], o['window']): o for o in obs if o['source'] == 'community.wokey.claude'}
         self.assertEqual(got[('pro', 'seven_day')]['value'], 155.0)
         self.assertEqual(got[('pro', 'five_hour')]['value'], round(155 / 13, 2))
@@ -379,6 +382,11 @@ class CommunityCapacityTests(unittest.TestCase):
         self.assertEqual({o['kind'] for o in got.values()}, {'community'})
         self.assertEqual(rules[0]['window'], 'weekly_fable')
         self.assertEqual(rows['community.wokey.claude']['fetched_at'], '2026-11-09T01:00:00+00:00')
+        # The community token mix (option B): 92% cache reads stated, the rest split by the Max 20x row (9.9M of 180M).
+        self.assertEqual(mix['cache_read'], 0.92)
+        self.assertAlmostEqual(mix['output'], 0.08 * 9.9 / 180, places=5)
+        self.assertAlmostEqual(mix['input'] + mix['output'] + mix['cache_read'], 1.0, places=4)
+        self.assertEqual((mix['as_of'], mix['kind']), ('2026-11-02', 'community'))
         # The other pages were not fetched: red, and they give no value.
         missing = {e['source'] for e in errors if e['reason'] == 'source_missing'}
         self.assertEqual(missing, set(self.cm.SOURCES) - {'community.wokey.claude'})
@@ -388,11 +396,21 @@ class CommunityCapacityTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as folder:
             target, files = self.pages(folder, self.WOKEY.replace('Claude Max 20x', 'Claude Max 25x'))
-            _, obs, _, errors = self.cm.extract(target, files)
+            _, obs, _, errors, _ = self.cm.extract(target, files)
         self.assertFalse([o for o in obs if o['plan'] == 'max20'])
+        self.assertIn('mix_not_found', {e['reason'] for e in errors})       # the mix row is the Max 20x row too
         lost = [e for e in errors if e['reason'] == 'reading_not_found']
         self.assertEqual({(e['plan'], e['window']) for e in lost}, {('max20', 'seven_day'), ('max20', 'five_hour')})
         self.assertTrue(all(e['level'] == 'red' for e in lost))
+
+    def test_a_two_track_diagram_gives_a_value_only_when_both_tracks_agree(self):
+        same = ('Capacity: $129.00 / week │ │ Capacity: $129.00 / week │ │ Burst: $20.00 / 5h │ │ Burst: $20.00 / 5h',)
+        import re
+        m = re.search(self.cm.DIAGRAM, same[0])
+        self.assertEqual((self.cm.both_tracks(0)(m.groups()), self.cm.both_tracks(2)(m.groups())), (129.0, 20.0))
+        m = re.search(self.cm.DIAGRAM, same[0].replace('Capacity: $129.00 / week │ │ Capacity: $129.00', 'Capacity: $129.00 / week │ │ Capacity: $175.00'))
+        with self.assertRaises(ValueError):
+            self.cm.both_tracks(0)(m.groups())
 
     def meas(self, fresh_as_of='2026-11-02', old_as_of='2026-10-01'):
         def ob(plan, wid, value, src, as_of):
@@ -486,6 +504,38 @@ class DerivedUsdTests(unittest.TestCase):
         self.assertEqual(usd['claude-opus-5-5']['status'], 'missing')
         bench = self.fa.USD_BASES['benchmark']['fn'](scorer, rows, meas, None)
         self.assertEqual(bench['claude-opus-5-5']['value'], 20.0)
+
+    def test_community_mix_basis_reprices_aa_throughput_at_the_community_split(self):
+        import measurements
+        builder = measurements.Builder.__new__(measurements.Builder)
+        builder.target, builder.manifest = Path('.'), {'aa-models.html': {'status': 'ok', 'url': 'https://aa', 'fetched_at': '2026-11-09'}}
+        builder.ok = lambda name: True
+        builder.source_rows = {'aa.cost_time': {'file': 'aa-models.html', 'url': 'https://aa', 'fetched_at': '2026-11-09T00:00:00+00:00',
+                                                'sha256': None, 'as_of': '2026-11-09'}}
+        builder.mix = {'cache_read': 0.92, 'input': 0.0756, 'output': 0.0044, 'source': 'community.wokey.claude',
+                       'url': 'https://wokey.ai/claude-usage-limits', 'as_of': '2026-11-02', 'quotes': []}
+        builder.names = {'m': {'aa.cost_time': 'M'}, 'unlisted': {}}
+        builder.out = {'m': {}, 'unlisted': {}}
+        builder.missing = {}
+        builder.aa_variants = lambda: {'M': {'high': {'name': 'M (high)', 'outputSpeed': 100.0, 'price1mOutputTokens': 20.0,
+                                                      'price1mInputTokens': 4.0, 'cacheHitPrice': 0.2},
+                                             'low': {'name': 'M (low)', 'outputSpeed': 100.0, 'price1mOutputTokens': 20.0,
+                                                     'price1mInputTokens': 4.0}}}      # no cache price: no entry
+        builder.community_mix()
+        entries = builder.out['m']['usd_per_hour']
+        self.assertEqual([e['effort'] for e in entries], ['high'])
+        per_m = 20.0 + 0.0756 / 0.0044 * 4.0 + 0.92 / 0.0044 * 0.2
+        self.assertAlmostEqual(entries[0]['value'], round(100 * 3600 / 1e6 * per_m, 3))
+        self.assertEqual(entries[0]['kind'], 'derived')
+        cites = builder.source_rows['derived.community_mix']['citations']
+        self.assertEqual({c['source'] for c in cites}, {'aa.price', 'community.wokey.claude'})
+        self.assertEqual(builder.source_rows['derived.community_mix']['as_of'], '2026-11-02')
+        self.assertNotIn('usd_per_hour', builder.out['unlisted'])
+        scorer = self.fa.Scorer({'models': builder.out}, {'models': {'m': {}, 'unlisted': {}}})
+        usd = self.fa.USD_BASES['community_mix']['fn'](scorer, {k: {'fields': v} for k, v in builder.out.items()}, {}, None)
+        self.assertEqual(usd['m']['value'], entries[0]['value'])
+        self.assertEqual(usd['unlisted']['status'], 'missing')
+        self.assertEqual(self.fa.pick_duration(usd['m'], {'duration_multiplier': 1.35})['value'], 1.0)
 
 
 if __name__ == '__main__':

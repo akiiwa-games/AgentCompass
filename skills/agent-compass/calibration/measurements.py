@@ -14,6 +14,9 @@ Fields
   - `aa.cost_time` (benchmark): Artificial Analysis cost per task x 3600 / time per task (round 046, section 2.3, method A).
   - `openrouter.cost_time` (vendor price on benchmark tokens): the AA figure repriced at the OpenRouter output price,
     only where that price differs from AA's (an equal price adds no independent evidence).
+  - `derived.community_mix` (derived, round 4 option B): AA's measured output speed per hour priced at the community
+    real-traffic token mix (wokey's fixed split, about 92% cache reads; community.py) and AA's list prices, so usd per
+    worker-hour is on the scale the community capacities are valued on. Cites AA and the wokey mix.
 - `price`: input / output / cache-read USD per million tokens (OpenRouter, AA), for cross-checks only.
 - The four capability axes of the tray radar, one entry per (component, source):
   - `divergence`: creative (LMArena Creative Writing, EQ-Bench Creative Writing v3), exploration (LMArena Agent).
@@ -114,7 +117,7 @@ CAPABILITY_SOURCES = {
 }
 # The kind of each source (decision 2, 2026-11-09): vendor = the vendor's own statement or price list, benchmark = a
 # third-party measurement, community = a community or packaged estimate with a stated basis.
-SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark',
+SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark', 'derived.community_mix': 'derived',
                'secondary.tier_fit': 'benchmark', 'user': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
                'openrouter.cost_time': 'vendor',
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'aa.index': 'benchmark'}
@@ -500,16 +503,56 @@ class Builder:
 
     # --- window capacity (community real usage) ---------------------------------------------------
     def capacity(self):
-        rows, obs, rules, errors = community.extract(self.target, self.manifest)
+        rows, obs, rules, errors, mix = community.extract(self.target, self.manifest)
         self.source_rows.update(rows)
+        self.mix = mix
         return {'unit': 'usd of API-priced real usage per full window', 'observations': obs, 'rules': rules,
-                'errors': errors, 'not_found': community.NOT_FOUND}
+                'errors': errors, 'not_found': community.NOT_FOUND, 'token_mix': mix}
+
+    def community_mix(self):
+        """`derived.community_mix` usd per worker-hour (option B, user 2026-11-09): AA's measured output speed per hour
+        times the vendor list price of one output token's share of the community token mix (output + input + cache
+        reads, community.token_mix). Needs the mix, the output speed and all three AA prices; else no entry."""
+        mix = getattr(self, 'mix', None)
+        if not mix or not self.ok('aa-models.html'):
+            self.miss('derived.community_mix', 'aa-models.html', 'no community token mix' if not mix else 'not fetched')
+            return
+        per_out = {k: mix[k] / mix['output'] for k in ('input', 'cache_read')}
+        aa = self.source_rows['aa.cost_time']
+        self.source_rows['derived.community_mix'] = {
+            'file': aa['file'], 'url': aa['url'], 'fetched_at': aa['fetched_at'], 'sha256': aa['sha256'],
+            'as_of': min(mix['as_of'], aa['as_of']), 'as_of_kind': 'the older of the mix data date and the AA fetch date',
+            'method': (f"outputSpeed x 3600 x (output price + {per_out['input']:.2f} x input price + "
+                       f"{per_out['cache_read']:.1f} x cache-read price) / 1e6"),
+            'models_listed': None, 'kind': 'derived',
+            'citations': [{'what': 'output speed and list prices', 'source': 'aa.price', 'url': aa['url'], 'as_of': aa['as_of']},
+                          {'what': 'community token mix', 'source': mix['source'], 'url': mix['url'], 'as_of': mix['as_of'],
+                           'quotes': mix['quotes']}]}
+        variants = self.aa_variants()
+        for model, base in self.names.items():
+            base = base.get('aa.cost_time')
+            if not base:
+                continue
+            for eff, rec in sorted(variants[base].items()):
+                speed = rec.get('outputSpeed')
+                prices = [rec.get(k) for k in ('price1mOutputTokens', 'price1mInputTokens', 'cacheHitPrice')]
+                if not isinstance(speed, (int, float)) or speed <= 0 or not all(isinstance(x, (int, float)) for x in prices):
+                    continue
+                p_out, p_in, p_cr = prices
+                per_m_output = p_out + per_out['input'] * p_in + per_out['cache_read'] * p_cr
+                self.add(model, 'usd_per_hour', 'derived.community_mix', round(speed * 3600 / 1e6 * per_m_output, 3),
+                         'AA output speed x community token mix at AA list prices', effort=eff or 'default',
+                         listed_as=rec['name'], output_tokens_per_hour=round(speed * 3600),
+                         usd_per_million_output_at_mix=round(per_m_output, 3),
+                         prices={'output': p_out, 'input': p_in, 'cache_read': p_cr}, mix_source=mix['source'],
+                         mix_as_of=mix['as_of'])
 
     def build(self):
         self.tier()
         self.capabilities()
         self.usd()
         capacity = self.capacity()
+        self.community_mix()
         missing_sources = {**self.missing}
         for name, row in self.manifest.items():
             if row.get('status') != 'ok':

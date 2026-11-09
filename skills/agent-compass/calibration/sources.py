@@ -10,7 +10,8 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
   the page's embedded model records (cost and time per task, prices, sub-benchmarks).
 - OpenRouter `/api/v1/models` (prices), EQ-Bench Creative Writing v3, METR time horizons v1.1 and the OSWorld-Verified
   results sheet: the five-axis measurements (`measurements.py`).
-- Community real-usage measurements of subscription window capacity (wokey.ai, finopsllm.com, inventivehq.com):
+- Community real-usage measurements of subscription window capacity (wokey.ai, finopsllm.com, inventivehq.com,
+  the eneasf Antigravity telemetry findings):
   `community.py`. `refresh.py` re-runs fetch, measurements and five_axis on a schedule and reports source age.
 
 `fetch` writes `fetch-manifest.json` beside the downloads: each file's url, fetched_at (UTC), sha256 and size, or the
@@ -44,7 +45,9 @@ COMMUNITY_PAGES = {'community-wokey-claude.html': 'https://wokey.ai/claude-usage
                    'community-finops-codex-plus.html': 'https://finopsllm.com/research/codex-usage-limits-chatgpt-pro',
                    'community-finops-codex-pro100.html': 'https://finopsllm.com/research/codex-pro-100-heavy-user-resets-log',
                    'community-finops-claude-max20.html': 'https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit',
-                   'community-inventive-codex.html': 'https://inventivehq.com/blog/codex-subscription-usage-measured'}
+                   'community-inventive-codex.html': 'https://inventivehq.com/blog/codex-subscription-usage-measured',
+                   'community-eneasf-antigravity.md':
+                       'https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md'}
 PAGES.update(COMMUNITY_PAGES)
 MANIFEST = 'fetch-manifest.json'
 REPO = Path(__file__).resolve().parents[1]
