@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-09T07:44:58+00:00",
+ "generated_at": "2026-11-09T10:19:57+00:00",
  "conversion": "capability value = min(1, 0.8 x s / s_anchor), anchor claude-opus-5-5; see calibration/measurements.py",
  "sources": {
   "lmarena.tier_fit": {
@@ -449,6 +449,18 @@
    "method": "AA cost per task x (OpenRouter output price / AA output price) x 3600 / AA time per task",
    "models_listed": 461,
    "kind": "vendor"
+  },
+  "arena.agent_sessions": {
+   "file": "arena-agent-categories.json",
+   "url": "https://arena.ai/leaderboard/agent",
+   "fetched_at": "2026-11-09T07:23:07+00:00",
+   "sha256": "36b37be024340295b58ce33909b50c7ceb27aae40b89eee0f2dc940d433f7df0",
+   "as_of": "2026-11-08",
+   "as_of_kind": "data date",
+   "method": "arena.ai Agent / Overall real sessions: Cost/Task (P50) / Time/Task (P50) x 60",
+   "models_listed": 51,
+   "kind": "community",
+   "sessions": 2750973
   },
   "community.wokey.claude": {
    "file": "community-wokey-claude.html",
@@ -1622,6 +1634,20 @@
      "time_per_task_s": 1136.88
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 36.11,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "Claude Fable 5.1 (Max)",
+     "cost_per_task_usd": 6.56,
+     "time_per_task_min": 10.9,
+     "sessions": 17468
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 83.126,
@@ -2058,6 +2084,20 @@
      "time_per_task_s": 959.64
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 22.859,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "Claude Opus 5.5 (Max)",
+     "cost_per_task_usd": 6.21,
+     "time_per_task_min": 16.3,
+     "sessions": 14358
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 49.219,
@@ -2479,6 +2519,20 @@
      "listed_as": "GPT-6.1 Sol (Xhigh)",
      "cost_per_task": 0.76399,
      "time_per_task_s": 549.46
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 6.125,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Sol (Max)",
+     "cost_per_task_usd": 0.98,
+     "time_per_task_min": 9.6,
+     "sessions": 30514
     },
     {
      "source": "derived.community_mix",
@@ -2917,6 +2971,20 @@
      "time_per_task_s": 687.5
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 28.853,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "GPT-6 Astra (Max)",
+     "cost_per_task_usd": 6.54,
+     "time_per_task_min": 13.6,
+     "sessions": 15520
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 61.746,
@@ -3302,6 +3370,20 @@
      "listed_as": "google/gemini-4-argon"
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 6.658,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "high",
+     "listed_as": "Gemini 4 Argon (High)",
+     "cost_per_task_usd": 0.81,
+     "time_per_task_min": 7.3,
+     "sessions": 53301
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 31.901,
@@ -3630,6 +3712,20 @@
      "listed_as": "Claude Sonnet 5.5 (Xhigh, Default Fallback)",
      "cost_per_task": 4.09198,
      "time_per_task_s": 905.82
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 12.825,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "Claude Sonnet 5.5 (Max)",
+     "cost_per_task_usd": 3.42,
+     "time_per_task_min": 16.0,
+     "sessions": 8670
     },
     {
      "source": "derived.community_mix",
@@ -4027,6 +4123,20 @@
      "listed_as": "Grok 4.7 (Xhigh)",
      "cost_per_task": 7.77154,
      "time_per_task_s": 1558.43
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 10.778,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "xhigh",
+     "listed_as": "Grok 4.7 (xHigh)",
+     "cost_per_task_usd": 2.91,
+     "time_per_task_min": 16.2,
+     "sessions": 18848
     },
     {
      "source": "derived.community_mix",
@@ -4434,6 +4544,20 @@
      "listed_as": "google/gemini-3.8-flash"
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.953,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "high",
+     "listed_as": "Gemini 3.8 Flash (High)",
+     "cost_per_task_usd": 0.71,
+     "time_per_task_min": 8.6,
+     "sessions": 52722
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 12.869,
@@ -4795,6 +4919,20 @@
      "listed_as": "Claude Haiku 5.5 (Xhigh)",
      "cost_per_task": 0.24836,
      "time_per_task_s": 584.16
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 2.667,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "high",
+     "listed_as": "Claude Haiku 5.5 (High)",
+     "cost_per_task_usd": 0.08,
+     "time_per_task_min": 1.8,
+     "sessions": 31731
     },
     {
      "source": "derived.community_mix",
@@ -5173,6 +5311,20 @@
      "time_per_task_s": 361.92
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 5.393,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Terra (Max)",
+     "cost_per_task_usd": 0.8,
+     "time_per_task_min": 8.9,
+     "sessions": 23276
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 8.169,
@@ -5521,6 +5673,22 @@
      "method": "USD per million tokens",
      "listed_as": "openai/gpt-6-sol"
     }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 17.226,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "GPT-6 Sol (Max)",
+     "cost_per_task_usd": 1.78,
+     "time_per_task_min": 6.2,
+     "sessions": 12836
+    }
    ]
   },
   "gpt-6-luna": {
@@ -5840,6 +6008,48 @@
      "listed_as": "GPT-6 Luna (Xhigh)",
      "cost_per_task": 0.10409,
      "time_per_task_s": 435.59
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 0.885,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "GPT-6 Luna (Max)",
+     "cost_per_task_usd": 0.09,
+     "time_per_task_min": 6.1,
+     "sessions": 228261
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.059,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "medium",
+     "listed_as": "GPT-6 Luna (Medium)",
+     "cost_per_task_usd": 0.03,
+     "time_per_task_min": 1.7,
+     "sessions": 76341
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 0.766,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "low",
+     "listed_as": "GPT-6 Luna (Low)",
+     "cost_per_task_usd": 0.01,
+     "time_per_task_min": 0.78,
+     "sessions": 43861
     },
     {
      "source": "derived.community_mix",
@@ -6216,6 +6426,22 @@
      "method": "USD per million tokens",
      "listed_as": "openai/gpt-5.6-sol"
     }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 25.95,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "xhigh",
+     "listed_as": "GPT-5.6 Sol (xHigh)",
+     "cost_per_task_usd": 1.73,
+     "time_per_task_min": 4.0,
+     "sessions": 45371
+    }
    ]
   },
   "gpt-5.6-terra": {
@@ -6389,6 +6615,22 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "openai/gpt-5.6-terra"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 13.929,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "xhigh",
+     "listed_as": "GPT-5.6 Terra (xHigh)",
+     "cost_per_task_usd": 0.65,
+     "time_per_task_min": 2.8,
+     "sessions": 44425
     }
    ]
   },
@@ -7114,6 +7356,20 @@
      "listed_as": "z-ai/glm-5.3"
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.378,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "GLM-5.3 (Max)",
+     "cost_per_task_usd": 1.08,
+     "time_per_task_min": 14.8,
+     "sessions": 95597
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 15.997,
@@ -7417,6 +7673,20 @@
      "method": "AA cost/time repriced at the OpenRouter output price 0.083 (AA lists 0.5) per million tokens",
      "effort": "default",
      "listed_as": "z-ai/glm-5.3-flash"
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.5,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "GLM-5.3-Flash",
+     "cost_per_task_usd": 0.17,
+     "time_per_task_min": 6.8,
+     "sessions": 95526
     },
     {
      "source": "derived.community_mix",
@@ -7841,6 +8111,20 @@
      "time_per_task_s": 3706.41
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.913,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "Qwen3.8-Max",
+     "cost_per_task_usd": 1.22,
+     "time_per_task_min": 14.9,
+     "sessions": 80457
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 15.368,
@@ -8060,6 +8344,20 @@
      "listed_as": "Kimi K3.1 Pro",
      "cost_per_task": 3.6812,
      "time_per_task_s": 2290.08
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 9.75,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "Kimi K3.1 Pro (Max)",
+     "cost_per_task_usd": 1.3,
+     "time_per_task_min": 8.0,
+     "sessions": 22581
     },
     {
      "source": "derived.community_mix",
@@ -8322,6 +8620,22 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "moonshotai/kimi-k3"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 5.742,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "Kimi K3 (Max)",
+     "cost_per_task_usd": 0.89,
+     "time_per_task_min": 9.3,
+     "sessions": 160495
     }
    ]
   },
@@ -8627,6 +8941,20 @@
      "time_per_task_s": 716.64
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 5.829,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "MiniMax-M3",
+     "cost_per_task_usd": 0.34,
+     "time_per_task_min": 3.5,
+     "sessions": 44355
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 8.683,
@@ -8845,6 +9173,20 @@
      "listed_as": "MiniMax-M3.1-Flash",
      "cost_per_task": 0.49097,
      "time_per_task_s": 852.28
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.582,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "MiniMax-M3.1-Flash",
+     "cost_per_task_usd": 0.24,
+     "time_per_task_min": 9.1,
+     "sessions": 13089
     },
     {
      "source": "derived.community_mix",
@@ -9168,6 +9510,20 @@
      "time_per_task_s": 2385.79
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 0.63,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Pro",
+     "cost_per_task_usd": 0.17,
+     "time_per_task_min": 16.2,
+     "sessions": 49297
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 1.662,
@@ -9429,6 +9785,20 @@
      "time_per_task_s": 3728.09
     },
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 0.275,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Flash",
+     "cost_per_task_usd": 0.07,
+     "time_per_task_min": 15.3,
+     "sessions": 32025
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 0.416,
@@ -9579,6 +9949,22 @@
      "listed_as": "157/194",
      "raw": 0.8093,
      "reference": 1.3908
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.8,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "Nemotron 3 Ultra",
+     "cost_per_task_usd": 0.12,
+     "time_per_task_min": 4.0,
+     "sessions": 13691
     }
    ]
   },
@@ -10129,6 +10515,20 @@
      "listed_as": "Mistral Large 4 (Medium)",
      "cost_per_task": 1.4121,
      "time_per_task_s": 544.75
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.364,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "Mistral Large 4",
+     "cost_per_task_usd": 0.32,
+     "time_per_task_min": 4.4,
+     "sessions": 5559
     },
     {
      "source": "derived.community_mix",
@@ -11020,6 +11420,22 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "z-ai/glm-5.2"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.55,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "max",
+     "listed_as": "GLM-5.2 (Max)",
+     "cost_per_task_usd": 0.91,
+     "time_per_task_min": 12.0,
+     "sessions": 98965
     }
    ]
   },
@@ -12342,6 +12758,22 @@
      "method": "USD per million tokens",
      "listed_as": "x-ai/grok-4.6"
     }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 12.971,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "xhigh",
+     "listed_as": "Grok 4.6 (xHigh)",
+     "cost_per_task_usd": 1.47,
+     "time_per_task_min": 6.8,
+     "sessions": 30247
+    }
    ]
   },
   "gemini-3.1-pro-preview": {
@@ -12611,6 +13043,20 @@
    ],
    "usd_per_hour": [
     {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 12.222,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "Gemini 3.1 Pro Preview",
+     "cost_per_task_usd": 0.55,
+     "time_per_task_min": 2.7,
+     "sessions": 87553
+    },
+    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 34.432,
@@ -12842,6 +13288,22 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "google/gemini-3.7-flash"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 5.889,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "high",
+     "listed_as": "Gemini 3.7 Flash (High)",
+     "cost_per_task_usd": 0.53,
+     "time_per_task_min": 5.4,
+     "sessions": 63336
     }
    ]
   },
@@ -13199,6 +13661,22 @@
      "method": "USD per million tokens",
      "listed_as": "qwen/qwen3.7-max"
     }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 11.053,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "Qwen3.7-Max",
+     "cost_per_task_usd": 0.35,
+     "time_per_task_min": 1.9,
+     "sessions": 43146
+    }
    ]
   },
   "qwen3-flash-2025-07-28": {},
@@ -13413,6 +13891,20 @@
      "listed_as": "Gemini 4 Carbon (Medium)",
      "cost_per_task": 6.58578,
      "time_per_task_s": 1525.89
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 8.66,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "high",
+     "listed_as": "Gemini 4 Carbon (High)",
+     "cost_per_task_usd": 1.53,
+     "time_per_task_min": 10.6,
+     "sessions": 53721
     },
     {
      "source": "derived.community_mix",

@@ -259,9 +259,9 @@ def markdown(rows):
     names = ('old',) + NEW
     share = {n: Counter(r[n] for r in rows) for n in names}
     n = len(rows)
-    lines = [f'# Five-axis sampled parity, round 7 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
+    lines = [f'# Five-axis sampled parity, round 8 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
     lines += ['## Selection share (model@account)', '',
-              '| model@account | old | new (usd option B) | new, benchmark usd | new, no pacing | new, shortfall weight 2 |',
+              '| model@account | old | new (arena usd) | new, benchmark usd | new, no pacing | new, shortfall weight 2 |',
               '| :--- | ---: | ---: | ---: | ---: | ---: |']
     for k in sorted(set().union(*share.values()), key=lambda k: (-share['old'][k], -share['new'][k])):
         lines.append(f"| {k} | {share['old'][k]} | {share['new'][k]} | {share['new_benchmark_usd'][k]} | {share['new_no_pacing'][k]} | "

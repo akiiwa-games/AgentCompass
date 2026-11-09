@@ -145,7 +145,8 @@ class FiveAxisTests(unittest.TestCase):
         policy['ability_floor'] = {k: 9.0 for k in policy['ability_floor']}
         policy['route_ability_floor'] = {'code_implementation': {'routine': 9.5}}
         policy['ability_score_origin'] = {k: 0.0 for k in policy['ability_floor']}
-        policy.update(ability_span=0.05, extra_effort_penalty=0.5, high_precision_effort_weight=2.0, unlimited_bonus=0.9)
+        policy.update(ability_span=0.05, extra_effort_penalty=0.5, high_precision_effort_weight=2.0, unlimited_bonus=0.9,
+                      deferred_start_penalty=9.0)
         policy.setdefault('profile', {}).update(saturation_span=0.01, vector_weight=1.0,
                                                 subjective={'weight': 1.0, 'vector_weight': 0.0, 'route_weight': 0.0})
         for spec in bent['accounts'].values():
@@ -371,6 +372,29 @@ class FiveAxisTests(unittest.TestCase):
         self.assertNotIn('axis_demand', off['properties'])
         self.assertEqual(off, route_judge.scorer_schema(allocator, caps))     # the shipped policy leaves it off
 
+    def test_waiting_cost_scales_with_demand_instead_of_fixed_deferred_start_penalty(self):
+        """Round 8 (user): no fixed 0.15 delay penalty on the five-axis path. Routine tasks pay a high waiting cost and
+        go to whoever is available now; high-demand tasks pay a small waiting cost and prefer waiting for the capable
+        model's short-window reset."""
+        policy = self.accounts['scoring']
+        low_t = allocator.five_axis_targets(demand(0, 1, 1, 0))
+        high_t = allocator.five_axis_targets(demand(3, 3, 0, 0))
+        low_wait = allocator.five_axis_wait_cost(3.0, demand(0, 1, 1, 0), low_t, policy)
+        high_wait = allocator.five_axis_wait_cost(3.0, demand(3, 3, 0, 0), high_t, policy)
+        self.assertGreater(low_wait, high_wait * 10)
+        self.assertGreater(high_wait, 0.0)
+        doc = document(self.accounts['models'],
+                       **{'claude-opus-5-5': row(demand(0.8, 0.8, 0.8, 0.8), usd=22.86),
+                          'gpt-6.1-sol': row(demand(0.7, 0.79, 0.79, 0.73), usd=6.12)})
+        routine = self.plan(self.accounts, doc, state='5h-only scarce', profile={'axis_demand': demand(0, 1, 1, 0)})
+        frontier = self.plan(self.accounts, doc, state='5h-only scarce',
+                             profile={'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0})
+        self.assertEqual(routine['decision']['action'], 'start')
+        self.assertEqual(routine['selected_bundle']['account'], 'codex')
+        self.assertEqual(frontier['decision']['action'], 'defer')
+        self.assertEqual(frontier['selected_bundle']['account'], 'claude')
+        self.assertGreater(frontier['decision']['start_after_hours'], 0.0)
+
 
 class AnchorRelativeTests(unittest.TestCase):
     """Review F1 and F3 (2026-11-09): values are relative to the anchor at the source, so a new top model moves no
@@ -456,6 +480,23 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertNotIn('floors', scores)                  # round 7: no difficulty floors
         self.assertAlmostEqual(min(scores['models'][self.ms.ANCHOR]['scores'][a] for a in ('divergence', 'module_precision')),
                                self.ms.ANCHOR_VALUE, places=2)
+
+    def test_partial_axis_counts_missing_expected_components_as_zero(self):
+        """Round 8 (user): pessimistic unknowns for partial axes. A model backed by a single component on an axis where
+        the anchor has two components (e.g. module_precision from Alignment alone, no terminal and no AA index fit)
+        counts the missing component as 0."""
+        meas = {'models': {
+            self.ms.ANCHOR: {'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.8},
+                                                  {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]},
+            'single_board': {'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.724}]},
+        }}
+        scorer = self.fa.Scorer(meas, {'models': {self.ms.ANCHOR: {}, 'single_board': {}}})
+        rows, _ = scorer.score()
+        self.assertEqual(rows[self.ms.ANCHOR]['axes']['module_precision']['value'], 0.8)
+        ax = rows['single_board']['axes']['module_precision']
+        self.assertEqual(ax['status'], 'partial')
+        self.assertEqual(ax['missing_components'], ['terminal'])
+        self.assertAlmostEqual(ax['value'], 0.724 / 2, places=4)
 
 
 class SourceMergeTests(unittest.TestCase):
@@ -712,8 +753,20 @@ class DerivedUsdTests(unittest.TestCase):
         scorer = self.fa.Scorer({'models': builder.out}, {'models': {'m': {}, 'unlisted': {}}})
         usd = self.fa.USD_BASES['community_mix']['fn'](scorer, {k: {'fields': v} for k, v in builder.out.items()}, {}, None)
         self.assertEqual(usd['m']['value'], entries[0]['value'])
+        self.assertTrue(usd['m']['fallback'])
+        self.assertEqual(usd['m']['kind'], 'derived')
         self.assertEqual(usd['unlisted']['status'], 'missing')
         self.assertEqual(self.fa.pick_duration(usd['m'], {'duration_multiplier': 1.35})['value'], 1.0)
+        # Round 8: when arena.agent_sessions is present, it is the primary source (kind community, fallback False).
+        builder.out['m']['usd_per_hour'].append({'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max',
+                                                 'value': 6.125, 'as_of': '2026-11-08', 'url': 'https://arena.ai/leaderboard/agent',
+                                                 'method': 'Cost/Task (P50) / Time/Task (P50) x 60', 'sessions': 1234})
+        usd_arena = self.fa.USD_BASES['community_mix']['fn'](scorer, {k: {'fields': v} for k, v in builder.out.items()}, {}, None)
+        self.assertEqual(usd_arena['m']['value'], 6.125)
+        self.assertEqual(usd_arena['m']['used'], ['arena.agent_sessions'])
+        self.assertEqual(usd_arena['m']['kind'], 'community')
+        self.assertFalse(usd_arena['m']['fallback'])
+        self.assertEqual(usd_arena['m']['sources']['arena.agent_sessions']['sessions'], 1234)
 
 
 

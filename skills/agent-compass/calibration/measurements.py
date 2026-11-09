@@ -151,7 +151,7 @@ HIGH_CORRECTED = ('lmarena.', 'arena.agent_code', 'arena.agent_work_')
 # third-party measurement, community = a community or packaged estimate with a stated basis.
 SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark', 'derived.community_mix': 'derived',
                'secondary.tier_fit': 'benchmark', 'user': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
-               'openrouter.cost_time': 'vendor',
+               'openrouter.cost_time': 'vendor', 'arena.agent_sessions': 'community',
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'aa.index': 'benchmark'}
 AXES = {'divergence': ('chat', 'creative'),
         'global_rigor': ('agentic', 'long_horizon', 'long_context', 'anti_hallucination'),
@@ -535,6 +535,44 @@ class Builder:
                     self.repriced(model, table[name], name)
         else:
             self.miss('openrouter.price', 'openrouter-models.json', 'not fetched')
+        self.arena_usd()
+
+    def arena_usd(self):
+        """`arena.agent_sessions` usd per worker-hour (round 8, user 2026-11-09): arena.ai Agent / Overall real sessions,
+        Cost/Task (P50) / Time/Task (P50) x 60 per listed model/effort variant."""
+        fname = arena_capture.FILES['agent']
+        if not self.ok(fname):
+            self.miss('arena.agent_sessions', fname, 'not captured: arena_capture.py import ...')
+            return
+        doc = arena_capture.read(self.target, 'agent')
+        page = ((doc or {}).get('categories') or {}).get('Overall')
+        if not page or not page.get('rows'):
+            self.miss('arena.agent_sessions', fname, 'Agent / Overall not in capture')
+            return
+        by_base = {}
+        for r in page['rows']:
+            c, t = r.get('cost_per_task_usd'), r.get('time_per_task_min')
+            if isinstance(c, (int, float)) and isinstance(t, (int, float)) and t > 0:
+                by_base.setdefault(sources.base_name(r['name']), []).append(r)
+        self.register('arena.agent_sessions', fname, page.get('as_of'),
+                      'arena.ai Agent / Overall real sessions: Cost/Task (P50) / Time/Task (P50) x 60', len(by_base))
+        self.source_rows['arena.agent_sessions']['sessions'] = page.get('sessions')
+        self.source_rows['arena.agent_sessions']['url'] = (doc or {}).get('url') or arena_capture.URLS['agent']
+        match = Matcher(by_base)
+        for model in self.models:
+            exp = ((EXTRA_NAMES.get(model) or {}).get('arena') or (tiers.NAMES.get(model) or {}).get('arena')
+                   or tiers.ANCHORS.get(model))
+            base = match.find(model, exp) or (match.find(model) if exp else None)
+            if not base:
+                continue
+            self.names[model]['arena.agent_sessions'] = base
+            for r in by_base[base]:
+                c, t = r['cost_per_task_usd'], r['time_per_task_min']
+                eff = sources.aa_effort(r['name']) or 'default'
+                self.add(model, 'usd_per_hour', 'arena.agent_sessions', round(c * 60.0 / t, 3),
+                         'arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60',
+                         effort=eff, listed_as=r['name'], cost_per_task_usd=round(c, 4),
+                         time_per_task_min=round(t, 2), sessions=r.get('sessions'))
 
     def repriced(self, model, price, listed):
         """`openrouter.cost_time`: each AA cost/time entry at the OpenRouter output price, where that price differs."""

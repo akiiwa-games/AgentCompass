@@ -63,7 +63,7 @@ SCHEMA = 'agent-compass.five-axis-scores/2'
 AXES = measurements.AXES
 THINKING = ('divergence', 'global_rigor', 'module_precision')
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
-TIME_BASED = ('aa.cost_time', 'openrouter.cost_time', 'derived.community_mix')
+TIME_BASED = ('arena.agent_sessions', 'aa.cost_time', 'openrouter.cost_time', 'derived.community_mix')
 # Window -> the model whose hours count the window's capacity (the plan's own flagship on that pool).
 REFERENCE_MODELS = {
     'claude': {'five_hour': 'claude-opus-5-5', 'seven_day': 'claude-opus-5-5', 'weekly_fable': 'claude-fable-5-1'},
@@ -111,6 +111,8 @@ def pick_usd(entries, priority=None):
         values[src] = {'value': value, 'how': how, 'kind': rows[0].get('kind'), 'as_of': rows[0].get('as_of'),
                        'url': rows[0].get('url'), 'method': rows[0].get('method'),
                        'by_effort': {r.get('effort') or 'default': r['value'] for r in rows}}
+        if rows[0].get('sessions') is not None:
+            values[src]['sessions'] = rows[0]['sessions']
     chosen = next((s for s in priority or () if s in values), None)
     if chosen:
         value, merge = values[chosen]['value'], f'source priority: {chosen}'
@@ -210,15 +212,24 @@ class Scorer:
                     if c not in r['comps'][a] and f:
                         r['comps'][a][c] = {'value': self.predict(f, x), 'sources': {},
                                             'status': 'backfilled', 'backfill': {'predictor': name, 'x': x}}
+        # Pessimistic unknowns for partial axes (round 8, user): any expected component of the axis that remains
+        # unmeasured and has no backfill fit counts as 0, so a single board (e.g. Alignment alone) cannot carry the axis.
+        anchor_comps = (rows.get(measurements.ANCHOR) or {}).get('comps') or {}
+        expected = {a: [c for c in comps if c in (anchor_comps.get(a) or {})
+                        or any(fits.get((a, c, n)) for n in PREDICTORS)] or list(comps)
+                    for a, comps in AXES.items()}
         for r in rows.values():
             r['axes'] = {}
             for a, comps in AXES.items():
                 present = [c for c in comps if c in r['comps'][a]]
                 measured = [c for c in present if r['comps'][a][c]['status'] == 'measured']
-                status = ('missing' if not present else 'measured' if len(measured) == len(comps)
-                          else 'partial' if measured else 'backfilled')
-                r['axes'][a] = {'value': mean([r['comps'][a][c]['value'] for c in present]), 'status': status,
-                                'components': r['comps'][a], 'missing_components': [c for c in comps if c not in present]}
+                denom = [c for c in comps if c in present or c in expected[a]]
+                missing = [c for c in denom if c not in present]
+                status = ('missing' if not present else 'measured' if len(measured) == len(denom)
+                          else 'partial' if (measured or missing) else 'backfilled')
+                vals = [r['comps'][a][c]['value'] if c in r['comps'][a] else 0.0 for c in denom] if present else []
+                r['axes'][a] = {'value': mean(vals), 'status': status,
+                                'components': r['comps'][a], 'missing_components': missing}
         # Axis backfill for a model with no component on the axis: the axis fit on the index.
         for a in AXES:
             for name in PREDICTORS:
@@ -431,13 +442,13 @@ def derive_usd(measured, bench):
 
 
 def usd_benchmark(scorer, rows, meas, priority):
-    return {m: pick_usd(scorer.trusted(r['fields'].get('usd_per_hour')), priority) for m, r in rows.items()}
+    return {m: pick_usd([e for e in scorer.trusted(r['fields'].get('usd_per_hour'))
+                         if e.get('kind') in ('benchmark', 'vendor')], priority) for m, r in rows.items()}
 
 
 def usd_community(scorer, rows, meas, priority):
     """Measured community usd per worker-hour (usd_per_hour entries of kind `community`), else `derived`, else missing."""
-    bench = {m: pick_usd([e for e in scorer.trusted(r['fields'].get('usd_per_hour')) if e.get('kind') != 'community'],
-                         priority) for m, r in rows.items()}       # the ratio is benchmark against benchmark only
+    bench = usd_benchmark(scorer, rows, meas, priority)            # the ratio is benchmark against benchmark only
     measured = {}
     for m, r in rows.items():
         entries = [e for e in scorer.trusted(r['fields'].get('usd_per_hour')) if e.get('kind') == 'community']
@@ -450,17 +461,32 @@ def usd_community(scorer, rows, meas, priority):
 
 
 def usd_community_mix(scorer, rows, meas, priority):
-    """Option B (user, 2026-11-09): only `derived.community_mix`, AA throughput at the community token mix."""
-    return {m: pick_usd([e for e in scorer.trusted(r['fields'].get('usd_per_hour')) if e['source'] == 'derived.community_mix'])
-            for m, r in rows.items()}
+    """Round 8 (user, 2026-11-09): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 ÷
+    Time/Task P50 × 60, kind `community`) is the primary source; option B (`derived.community_mix`, AA throughput ×
+    community token mix × list price) is a labelled fallback (`fallback: True`) for models arena does not list."""
+    out = {}
+    for m, r in rows.items():
+        trusted = scorer.trusted(r['fields'].get('usd_per_hour'))
+        arena = [e for e in trusted if e['source'] == 'arena.agent_sessions']
+        if arena:
+            picked = pick_usd(trusted if priority else arena, priority or ['arena.agent_sessions'])
+            is_fb = picked.get('used') != ['arena.agent_sessions']
+            out[m] = {**picked, 'kind': 'derived' if is_fb else 'community', 'fallback': is_fb}
+            continue
+        fb = pick_usd([e for e in trusted if e['source'] == 'derived.community_mix'])
+        if fb['value'] is not None:
+            fb = {**fb, 'kind': 'derived', 'fallback': True,
+                  'merge': 'fallback (not listed with cost/time on arena.ai Agent): ' + (fb.get('merge') or 'derived.community_mix')}
+        out[m] = fb
+    return out
 
 
 USD_BASES = {
     'community_mix': {'fn': usd_community_mix,
-                      'scale': 'derived real usage: AA output speed per hour at the community token mix (wokey fixed split, '
-                               'about 92% cache reads) and AA list prices',
-                      'note': 'option B, user 2026-11-09: the same token mix the community capacities are valued at; a '
-                              'model AA does not list with speed and all three prices has no usd (mode B)'},
+                      'scale': 'arena.ai Agent / Overall real sessions (Cost/Task P50 / Time/Task P50 x 60, kind community); '
+                               'option B (AA output speed x community token mix at list prices) as labelled fallback',
+                      'note': 'round 8, user 2026-11-09: primary = arena.agent_sessions; fallback = derived.community_mix '
+                              '(fallback: True) when arena does not list the model with cost and time'},
     'benchmark': {'fn': usd_benchmark, 'scale': 'AA benchmark tokens at list prices (AA cost/time; OpenRouter repricing)',
                   'note': 'not the community real-usage scale of the capacities; kept for comparison'},
     'community': {'fn': usd_community, 'scale': 'community real-usage measurements per worker-hour, else derived',
@@ -491,7 +517,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
             elif ax.get('missing_components') and ax['status'] != 'inherited':
                 model_errors.append({'model': m, 'field': f"{a}.{','.join(ax['missing_components'])}",
                                      'reason': 'component_unmeasured_no_fit', 'level': 'yellow',
-                                     'effect': 'the axis averages the components it has'})
+                                     'effect': 'missing components count as 0 in the axis mean (pessimistic partial axis)'})
         errors += model_errors
         idx = scorer.trusted(r['fields'].get('intelligence_index'))
         u = usd[m]['value']
