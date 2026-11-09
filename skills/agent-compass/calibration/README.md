@@ -11,6 +11,8 @@ them, and they need `numpy`, `pandas` and `pyarrow`. Raw downloads stay out of g
 | `apply_rows.py [ids]` | Writes measured rows into `references/accounts.json` and the reference fixture. A tier measured at a best variant such as "(Max)" is moved to High with the AA effort curves. Unmeasured models get `unmeasured_models.generic`. |
 | `efforts.py [--apply]` | Builds effort curves from the AA effort variants: k tier per index point from the AA-to-tier slope, plus burn from cost per task. |
 | `floors.py` | Refits the ability floors (90% of the best model's success, with bootstrap bands), checks the frontier evidence, and reports where public boards disagree with the anchors. |
+| `measurements.py` | Writes `references/public-measurements.json`: per model, field and source, every public value with its provenance (source, as_of, fetched_at, url, method). Fields: tier fits, AA usd_per_hour per effort, prices, and the four capability axes of the tray radar, each source converted to 0..1 by the floors rule (success over 90% of the best). A source that was not fetched or does not list a model adds nothing. |
+| `five_axis.py [--distrust SOURCE]` | Writes `references/five-axis-scores.json` from the measurements: axis scores (backfilled from the AA index or a public tier when an axis has no source, else 0 and flagged yellow), tier (public fit, else the user's), High usd_per_hour, data errors (rule B) and plan capacity in reference-model hours (unknown without a public URL). Read by the router only when `scoring.five_axis.enabled` is set (off by default). |
 
 ## Refit
 
@@ -22,6 +24,16 @@ python -X utf8 apply_rows.py                  # rows in tiers.NAMES
 python -X utf8 efforts.py --apply             # curves for efforts.AA_NAMES
 python -X utf8 ../scripts/capability_catalog.py
 python -X utf8 ../scripts/public_data.py manifest --write
+```
+
+Five-axis data (shadow path, round 047; `sources.py fetch` also writes `fetch-manifest.json` with each file's url,
+fetch time and sha256, and records a source it could not fetch as missing):
+
+```
+python -X utf8 sources.py fetch
+python -X utf8 measurements.py
+python -X utf8 five_axis.py                   # --distrust <source id> leaves a source out
+python -X utf8 ../../../audit/five_axis_parity.py --md parity.md
 ```
 
 To add a model, put its source names in `tiers.NAMES`. Add it to `efforts.AA_NAMES` too if AA lists its effort
