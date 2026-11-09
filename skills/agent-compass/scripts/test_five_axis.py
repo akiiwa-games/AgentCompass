@@ -1,6 +1,7 @@
-"""The five-axis path (round 047, rounds 2-4): off by default; when on, the tier is folded into the axes, usd merges cited
-sources, capacity is the community figure (unknown windows keep scarcity), ties go to the cheaper candidate, and the
-classifier may answer the axis demand itself."""
+"""The five-axis path (round 047, rounds 2-5): off by default; when on, the tier is folded into the axes, usd merges cited
+sources, capacity comes down the cited ladder (community, time-to-exhaust, vendor multiplier; an empty ladder is a data
+error that still prices scarcity live), ties go to the lower opportunity cost then the larger surplus, and the classifier
+may answer the axis demand itself."""
 import copy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -143,6 +144,7 @@ class FiveAxisTests(unittest.TestCase):
         acc = copy.deepcopy(self.accounts)
         acc['scoring']['five_axis'] = {'enabled': True}
         acc['accounts']['claude']['capacity_change'] = {'seven_day': {'at': '2026-11-01T00:00:00Z', 'usd': 9999.0}}
+        acc['accounts']['pi']['family'] = 'pi'      # discovery is off here; on a host it names the family
         out = allocator.five_axis_overlay(acc, document(acc['models']))
         spec = out['accounts']['claude']
         self.assertEqual(spec['capacity_usd'], {'seven_day': 1700.0, 'five_hour': 270.0})
@@ -155,6 +157,9 @@ class FiveAxisTests(unittest.TestCase):
         self.assertNotIn('weekly_fable', spec.get('burn_pct_per_worker_hour') or {})
         self.assertEqual(out['accounts']['codex']['capacity_usd'], {'usage': 615.0})
         self.assertFalse(out['accounts']['codex'].get('capacity_unknown'))
+        # Pi signs in with ChatGPT: the Codex account's plan and windows.
+        self.assertEqual(out['accounts']['pi']['capacity_usd'], {'usage': 615.0})
+        self.assertEqual(out['accounts']['pi']['capacity_source']['usage']['plan'], 'pro')
         # Antigravity has no community source: every window unknown.
         self.assertEqual(out['accounts']['antigravity']['capacity_usd'], {})
         self.assertTrue(out['accounts']['antigravity']['capacity_unknown'])
@@ -172,15 +177,29 @@ class FiveAxisTests(unittest.TestCase):
                                           {'floors': FLOORS, 'anchor_scores': anchor}, cfg)
         self.assertAlmostEqual(scalar['axis_floors']['global_rigor'], round(0.9 * 0.9 * 0.8, 4))
 
-    def test_equal_scores_go_to_the_cheaper_then_the_larger_surplus(self):
-        def cand(name, usd, level, score=0.5):
+    def test_equal_scores_go_to_the_lower_opportunity_cost_then_the_larger_surplus(self):
+        # Round 5: the price no longer breaks ties (it handed every saturated tie to free models); quota scarcity does,
+        # then the stronger qualifying model, so in the ample state the strongest qualifying model wins.
+        def cand(name, usd, level, oc=0.0, score=0.5):
             return {'id': name, 'score': score, 'five_axis_price': {'usd_per_hour': usd},
-                    'components': {'five_axis_level': level, 'five_axis_gate': 0.5}}
-        pool = [cand('dear', 20.0, 0.9), cand('cheap_low', 5.0, 0.6), cand('cheap_high', 5.0, 0.8), cand('free', 0.0, 0.55),
-                cand('best', 30.0, 0.9, score=0.6)]
+                    'components': {'five_axis_level': level, 'five_axis_gate': 0.5, 'opportunity_cost': oc}}
+        pool = [cand('free', 0.0, 0.55), cand('dear_scarce', 20.0, 0.95, oc=0.3), cand('cheap', 5.0, 0.6),
+                cand('dear', 20.0, 0.9), cand('best', 30.0, 0.9, score=0.6), cand('free_scarce', 0.0, 0.55, oc=0.1)]
         self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
-                         ['best', 'free', 'cheap_high', 'cheap_low', 'dear'])
+                         ['best', 'dear', 'cheap', 'free', 'free_scarce', 'dear_scarce'])
         self.assertEqual(allocator.FIVE_AXIS_DEFAULTS['overqualification_weight'], 0.05)
+
+    def test_gate_level_blends_in_the_equal_weight_level(self):
+        axes = {'divergence': 0.2, 'global_rigor': 1.0, 'module_precision': 1.0, 'vision_tools': 0.4}
+        dm = demand(0, 2, 2, 0)
+        level, _ = allocator.five_axis_level(axes, dm)
+        self.assertEqual(allocator.five_axis_gate_level(axes, dm)[0], level)
+        self.assertAlmostEqual(allocator.five_axis_gate_level(axes, dm, 1.0, 1.0)[0], 0.65)
+        self.assertAlmostEqual(allocator.five_axis_gate_level(axes, dm, 1.0, 0.5)[0], 0.5 * level + 0.5 * 0.65)
+        cfg = allocator.five_axis_config({'five_axis': {'enabled': True}})
+        gate = allocator.five_axis_gate({'difficulty': 'hard', 'critical': False}, dm,
+                                        {'floors': {**FLOORS, 'level_blend': 1.0}, 'anchor_scores': axes}, cfg)
+        self.assertEqual((gate['level_blend'], gate['anchor_level']), (1.0, 0.65))
 
     def test_capacity_unknown_window_still_prices_scarcity_from_live_percent_and_reset(self):
         acc = copy.deepcopy(self.accounts)
@@ -195,7 +214,8 @@ class FiveAxisTests(unittest.TestCase):
             d = self.plan(acc, doc, state=state, profile={'axis_demand': demand(0, 1, 2, 0)})
             rows = [c for c in d['ranking'] if c['bundle']['account'] == 'codex' and not c['excluded']]
             self.assertTrue(rows, state)
-            self.assertIn('capacity unknown; scarcity from the live', ' '.join(rows[0]['notes']))
+            self.assertIn('data error: no cited capacity (capacity ladder empty); scarcity from the live',
+                          ' '.join(rows[0]['notes']))
             return rows[0]['components']['opportunity_cost']
 
         ample, tight = codex_cost('ample'), codex_cost('codex tight')
@@ -444,11 +464,35 @@ class CommunityCapacityTests(unittest.TestCase):
         self.assertEqual(len(fable['sources'][0]['derived_from']), 2)
         stale = [e for e in errors if e['reason'] == 'stale_source']
         self.assertEqual([(e['source'], e['level'], e['age_days']) for e in stale], [('community.b', 'yellow', 39)])
-        # Max 5x has no observation: missing (red), and the `max` alias shows the same without a second error.
+        # Max 5x has nothing on any rung: a red data error, and the `max` alias shows the same without a second error.
         self.assertIsNone(caps['claude']['max5']['seven_day']['capacity_usd'])
+        self.assertEqual(caps['claude']['max5']['seven_day']['status'], 'error')
         self.assertEqual(caps['claude']['max']['seven_day']['alias_of'], 'max5')
-        red = {(e['plan'], e['window']) for e in errors if e['reason'] == 'no_community_source'}
+        red = {(e['plan'], e['window']) for e in errors if e['reason'] == 'capacity_ladder_empty'}
         self.assertEqual(red, {('max5', 'five_hour'), ('max5', 'seven_day')})
+        self.assertEqual(week['rung'], 1)
+
+    def test_the_ladder_takes_exhaust_reports_then_vendor_multipliers_and_keeps_the_cross_check(self):
+        now = datetime(2026, 11, 9, tzinfo=timezone.utc)
+        meas = self.meas()
+        meas['capacity']['rules'].append({'type': 'plan_multiplier', 'family': 'claude', 'plan': 'max5', 'of_plan': 'max20',
+                                          'factor': 0.25, 'statement': 'a quarter', 'source': 'vendor.x', 'kind': 'vendor',
+                                          'url': 'https://example.org/vendor', 'as_of': '2026-11-08'})
+        meas['capacity']['exhaust'] = [{'family': 'claude', 'plan': 'max5', 'window': 'five_hour', 'model': 'claude-opus-5-5',
+                                        'hours': 4.0, 'source': 'community.c', 'kind': 'community',
+                                        'url': 'https://example.org/c', 'as_of': '2026-11-05', 'quote': 'ran out after 4h'}]
+        caps, errors = self.fa.capacity(meas, self.PLANS, {'claude-opus-5-5': {'value': 20.0}}, now)
+        five = caps['claude']['max5']['five_hour']
+        self.assertEqual((five['rung'], five['capacity_usd'], five['sources'][0]['kind']), (2, 80.0, 'derived'))
+        self.assertEqual(five['cross_check']['value'], round(0.25 * 270.0, 2))
+        week = caps['claude']['max5']['seven_day']
+        self.assertEqual((week['rung'], week['capacity_usd']), (3, 425.0))
+        self.assertEqual(week['sources'][0]['derived_from'][0]['source'], 'community.a')
+        self.assertNotIn('cross_check', week)
+        self.assertFalse([e for e in errors if e['reason'] == 'capacity_ladder_empty'])
+        # An exhaust report of a model with no usd gives no value: the vendor rung takes over.
+        caps, _ = self.fa.capacity(meas, self.PLANS, {}, now)
+        self.assertEqual(caps['claude']['max5']['five_hour']['rung'], 3)
 
     def test_all_sources_stale_turns_the_window_stale_and_refresh_exits_yellow_or_red(self):
         now = datetime(2026, 12, 15, tzinfo=timezone.utc)

@@ -16,6 +16,14 @@ Derived values say how they were derived:
 - `rules` carry ratios between windows that a source states (Fable 5.1 can use half of the Claude weekly limit,
   SemiAnalysis 2026-10-05 as quoted by wokey), applied by `five_axis.capacity` to the merged base window.
 
+The capacity ladder (round 5, user 2026-11-09: capacity is never left unknown; each value records its rung):
+1. a direct community measurement (`readings`; window ratios a community source states, such as Fable weekly = half
+   the weekly limit, count as rung 1 derived);
+2. a community time-to-exhaust report (`EXHAUST`: hours of a named model before a window ran out) times that model's
+   option-B usd per hour;
+3. a vendor-published plan multiplier (`multipliers`) applied to a measured sibling plan's window.
+Only when all three are empty is the window an error (`five_axis.capacity`, red and surfaced in routing notes).
+
 `mix` is the community real-traffic token split wokey values every plan at (user decision 2026-11-09, option B): the
 stated cache-read share of the fixed split (about 92%), and the output share of the non-cache-read tokens from the
 Max 20x row measured at that split (its non-cache-read and output tokens per week). `measurements.py` reprices AA's
@@ -123,12 +131,21 @@ SOURCES = {
             ('codex', 'pro100', 'usage', r'A full Pro \$100 week priced at a median \$(\d+)', weekly,
              'median of a heavy user\'s logged full weekly windows at API prices'),
         ],
+        # community usd per worker-hour, the check row of the option-B usd (round 5): the heaviest logged window
+        'hourly': [{'model': 'gpt-6.1-sol', 'pattern': r'([\d.]+) h 100% \$(\d+) Upgrade from Plus',
+                    'method': 'API value of the heaviest logged window / the hours it lasted (one heavy Codex session, '
+                              'GPT-6 / 6.1 Sol about 85% of the value, 97.6% of input cached)'}],
     },
     'community.finops.claude_max20': {
         'file': 'community-finops-claude-max20.html', 'date': LONG,
         'readings': [
             ('claude', 'max20', 'seven_day', r'About \$([\d.]+k) of API-equivalent usage at today', weekly,
              'one heavy user\'s measured full week at API-equivalent prices'),
+            ('claude', 'max5', 'seven_day', r'How big is the Claude Max 5x weekly limit\? At least \$([\d,]+) of API usage a week',
+             weekly, 'measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never '
+                     'reached the weekly cap'),
+            ('claude', 'max5', 'five_hour', r'the \$(\d+) and \$(\d+) windows are what a full, deliberate session holds',
+             midpoint, 'midpoint of the two full Max 5x sessions the page measured at the 5-hour limit'),
         ],
     },
     'community.inventive.codex': {
@@ -156,13 +173,48 @@ SOURCES = {
              'Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks'),
         ],
     },
+    'vendor.google.ultra': {
+        'file': 'vendor-google-ultra.html', 'kind': 'vendor', 'date': None, 'readings': [],
+        'multipliers': [
+            {'family': 'antigravity', 'plan': plan, 'of_plan': 'pro', 'factor': factor,
+             'pattern': r'you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan',
+             'statement': 'Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google '
+                          'Antigravity compared to the Google AI Pro plan'}
+            for plan, factor in (('ultra5', 5), ('ultra20', 20))],
+    },
+    'vendor.anthropic.max': {
+        'file': 'vendor-anthropic-max.html', 'kind': 'vendor', 'date': None, 'readings': [],
+        'multipliers': [{'family': 'claude', 'plan': 'max5', 'of_plan': 'pro', 'factor': 5,
+                         'pattern': r"five times the Pro plan's usage every five hours and every week",
+                         'statement': "The Max plan includes five times the Pro plan's usage every five hours and every week"}],
+    },
+    'vendor.openai.pro100': {
+        'file': 'vendor-openai-pro100.html', 'kind': 'vendor', 'date': None, 'readings': [],
+        'multipliers': [{'family': 'codex', 'plan': 'pro100', 'of_plan': 'plus', 'factor': 5,
+                         'pattern': r'This new tier offers 5x more Codex usage than Plus',
+                         'statement': 'This new tier offers 5x more Codex usage than Plus (OpenAI announcement, 2026-04-09)'}],
+    },
 }
+# Rung 2: community time-to-exhaust reports (hours of a named model until a window ran out). None qualifies as of
+# 2026-11-09; the candidates found and why each was set aside (cited, so the next refresh can revisit them):
+EXHAUST = []
+EXHAUST_REJECTED = [
+    {'url': 'https://discuss.ai.google.dev/t/135526', 'claim': 'Antigravity Ultra: Claude quota at 0-20% after 90-120 minutes '
+     'of Opus 4.6 (several users, March 2026)', 'why': 'Opus 4.6 on the single Ultra plan before the May 2026 split into '
+     'Ultra 5x / 20x; parallel agents unstated'},
+    {'url': 'https://discuss.ai.google.dev/t/137107', 'claim': 'Antigravity Ultra: Claude quota reached within 30 minutes',
+     'why': 'same period and plan; no model or concurrency given'},
+    {'url': 'https://discuss.ai.google.dev/t/142252', 'claim': 'Opus 4.6 quota gone in 10-20 minutes (2 hours earlier)',
+     'why': 'reports conflict by 6x on the same plan; Opus 4.6 era'},
+    {'url': 'https://deepakness.com/raw/antigravity-limits/', 'claim': 'Google AI Pro: Opus 4.5 hit the 5-hour limit after '
+     'about 2 hours (2026-01-09)', 'why': 'January 2026 limits (cut since); Pro is measured directly (eneasf)'},
+]
 NOT_FOUND = {
-    'claude/max5': 'wokey is still collecting Max 5x accounts (no figure); finops gives only a bound (a Max 20x week is at '
-                   'most about 1.5x a Max 5x week)',
-    'antigravity/ultra5, ultra20': 'only Google AI Pro is measured (eneasf telemetry, September 2026); the same '
-                                   'project sets Ultra 5x to 5x Pro by assumption (its ADR-041), which is not a measurement; '
-                                   'forum reports give times to exhaustion only (discuss.ai.google.dev, March 2026)',
+    'claude/max5 (rung 1)': 'wokey is still collecting Max 5x accounts; finops measures a weekly lower bound and two '
+                            'full sessions (used), so rung 3 is a cross-check only',
+    'antigravity/ultra5, ultra20 (rungs 1-2)': 'only Google AI Pro is measured (eneasf telemetry, September 2026; its '
+                                               'Ultra 5x figures are 5x Pro by assumption, ADR-041); time-to-exhaust reports '
+                                               'are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies',
     'pi/*': 'Pi spends a Codex account allowance; the plan behind it is not known',
 }
 
@@ -196,8 +248,9 @@ def token_mix(text, spec, sid, row):
 
 
 def extract(target, manifest):
-    """(sources {id: row}, observations, rules, errors, mix). An error has `level` red (no value from it) or yellow."""
-    rows, obs, rules, errors, mix = {}, [], [], [], None
+    """(sources {id: row}, observations, rules, errors, mix); community usd-per-hour check rows go into
+    `extract.hourly`. An error has `level` red (no value from it) or yellow."""
+    rows, obs, rules, errors, mix, hourly = {}, [], [], [], None, []
     for sid, spec in SOURCES.items():
         meta = manifest.get(spec['file']) or {}
         path = target / spec['file']
@@ -208,13 +261,15 @@ def extract(target, manifest):
                            'effect': 'no value from this source; windows it fed fall back to their other sources or unknown'})
             continue
         text = sources._text(path.read_text(encoding='utf-8', errors='ignore'))
-        as_of = page_date(text, spec['date'])
+        as_of = page_date(text, spec['date']) if spec['date'] else None
+        kind = spec.get('kind', 'community')
         rows[sid] = {'file': spec['file'], 'url': url, 'fetched_at': meta.get('fetched_at'), 'sha256': meta.get('sha256'),
                      'as_of': as_of or (meta.get('fetched_at') or '')[:10],
                      'as_of_kind': 'data date' if as_of else 'fetch date (no data date found on the page)',
-                     'kind': 'community', 'models_listed': None,
-                     'method': 'community real-usage measurement of subscription window capacity (calibration/community.py)'}
-        if not as_of:
+                     'kind': kind, 'models_listed': None,
+                     'method': ('community real-usage measurement of subscription window capacity' if kind == 'community'
+                                else 'vendor-published plan multiplier (capacity ladder rung 3)') + ' (calibration/community.py)'}
+        if not as_of and spec['date']:
             errors.append({'source': sid, 'url': url, 'level': 'yellow', 'reason': 'no_data_date',
                            'effect': 'its age is counted from the fetch date'})
         for family, plan, window, pattern, value, method in spec['readings']:
@@ -229,7 +284,7 @@ def extract(target, manifest):
                                'family': family, 'plan': plan, 'window': window, 'detail': detail,
                                'effect': 'no value from it'})
                 continue
-            obs.append({'family': family, 'plan': plan, 'window': window, 'value': round(figure, 2),
+            obs.append({'family': family, 'plan': plan, 'window': window, 'value': round(figure, 2), 'rung': 1,
                         'source': sid, 'kind': 'community', 'url': url, 'as_of': rows[sid]['as_of'],
                         'fetched_at': rows[sid]['fetched_at'], 'method': method, 'quote': m.group(0)[:200]})
         if spec.get('mix'):
@@ -237,6 +292,25 @@ def extract(target, manifest):
             if mix is None:
                 errors.append({'source': sid, 'url': url, 'level': 'red', 'reason': 'mix_not_found',
                                'effect': 'no community token mix: usd per hour on the community_mix basis is missing'})
+        for h in spec.get('hourly', ()):
+            m = re.search(h['pattern'], text)
+            if not m:
+                errors.append({'source': sid, 'url': url, 'level': 'yellow', 'reason': 'hourly_not_found',
+                               'effect': 'no community usd-per-hour check row from this source'})
+                continue
+            hours, usd = float(m.group(1)), num(m.group(2))
+            hourly.append({'model': h['model'], 'value': round(usd / hours, 2), 'hours': hours, 'usd': usd, 'source': sid,
+                           'kind': 'community', 'url': url, 'as_of': rows[sid]['as_of'], 'method': h['method'],
+                           'quote': m.group(0)})
+        for mult in spec.get('multipliers', ()):
+            if not re.search(mult['pattern'], text):
+                errors.append({'source': sid, 'url': url, 'level': 'red', 'reason': 'statement_not_found',
+                               'family': mult['family'], 'plan': mult['plan'],
+                               'effect': 'the multiplier is not applied (rung 3 of the capacity ladder)'})
+                continue
+            rules.append({k: v for k, v in mult.items() if k != 'pattern'} |
+                         {'type': 'plan_multiplier', 'source': sid, 'kind': kind, 'url': url, 'as_of': rows[sid]['as_of'],
+                          'fetched_at': rows[sid]['fetched_at']})
         for rule in spec.get('rules', ()):
             m = re.search(rule['pattern'], text)
             if not m:
@@ -245,6 +319,7 @@ def extract(target, manifest):
                                'effect': 'the window is not derived from this statement'})
                 continue
             rules.append({k: v for k, v in rule.items() if k != 'pattern'} |
-                         {'source': sid, 'kind': 'community', 'url': url, 'as_of': rows[sid]['as_of'],
+                         {'type': 'window_ratio', 'source': sid, 'kind': 'community', 'url': url, 'as_of': rows[sid]['as_of'],
                           'fetched_at': rows[sid]['fetched_at']})
+    extract.hourly = hourly
     return rows, obs, rules, errors, mix

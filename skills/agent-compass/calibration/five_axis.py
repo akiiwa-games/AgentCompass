@@ -25,12 +25,14 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
   automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced.
 - duration_multiplier is 1.0 when a time-based source (AA cost/time, OpenRouter repricing of it) is in the merge, since
   its hourly figure already prices the model's own pace; otherwise the shipped multiplier stays, cited as community.
-- Plan capacity is the community real-usage measurement (round 4, user 2026-11-09: "都用社区真实使用量 且保持最新"):
-  per window of each plan in plan-templates.json, the median of the cited community observations (`measurements.py`
-  `capacity`, read by `community.py`), or a stated ratio of another window (Fable weekly = half the weekly limit). No
-  observation, no value: the window's capacity is unknown (a red data error) and the router prices its scarcity from
-  the live percentage only; the packaged template figure is not a fallback. A source older than STALE_DAYS (data date,
-  else fetch date) is a yellow note; a source not fetched, or whose sentence is gone, contributes nothing (red).
+- Plan capacity comes down a ladder (rounds 4-5, user 2026-11-09: "都用社区真实使用量 且保持最新"; capacity is never
+  left unknown), per window of each plan in plan-templates.json, recording the rung: 1 the median of the cited community
+  observations (`community.py`), or a window ratio a community source states (Fable weekly = half the weekly limit);
+  2 a community time-to-exhaust report x the reported model's usd; 3 a vendor-published plan multiplier x the sibling
+  plan's value (also kept as a cross-check where a lower rung won). All three empty is a red data error surfaced in
+  routing notes (the live percentage still prices scarcity); the packaged template figure is never a fallback. A source
+  older than STALE_DAYS (data date, else fetch date) is a yellow note; a source not fetched, or whose sentence is gone,
+  contributes nothing (red).
 - usd_per_hour has a pluggable basis (`--usd-basis`, `USD_BASES`). Default `community_mix` (option B, user
   2026-11-09): `derived.community_mix` only, AA's measured output speed per hour priced at the community token mix
   wokey values the capacities at, so cost and capacity share one real-usage scale; a model without it is mode B.
@@ -265,33 +267,63 @@ def age_days(as_of, now):
         return None
 
 
-def window_capacity(fam, plan, wid, obs, rules, usd, now):
-    """One window of one plan: the median of its community observations, else a stated ratio of another window."""
-    entries = []
-    for o in obs.get((fam, plan, wid), ()):
-        age = age_days(o.get('as_of'), now)
-        entries.append({k: o.get(k) for k in ('source', 'kind', 'value', 'url', 'as_of', 'fetched_at', 'method')} |
-                       {'age_days': age, 'stale': age is None or age > STALE_DAYS})
-    rule = rules.get((fam, wid))
+def cite(o, now, **extra):
+    age = age_days(o.get('as_of'), now)
+    return ({k: o.get(k) for k in ('source', 'kind', 'value', 'url', 'as_of', 'fetched_at', 'method')} |
+            {'age_days': age, 'stale': age is None or age > STALE_DAYS} | extra)
+
+
+def window_capacity(fam, plan, wid, ctx, rung_max=3):
+    """One window of one plan down the capacity ladder (round 5): rung 1 the community observations (else a window
+    ratio a community source states, rung 1 derived), rung 2 time-to-exhaust reports x the reported model's usd, rung 3
+    a vendor plan multiplier x the sibling plan's value. The first rung with a value wins; rung 3 is also recorded as a
+    cross-check where a lower rung won."""
+    now, usd = ctx['now'], ctx['usd']
+    entries, rung = [cite(o, now, rung=1) for o in ctx['obs'].get((fam, plan, wid), ())], 1
+    rule = ctx['ratios'].get((fam, wid))
     if not entries and rule:
-        base = window_capacity(fam, plan, rule['of_window'], obs, {}, usd, now)
+        base = window_capacity(fam, plan, rule['of_window'], {**ctx, 'ratios': {}}, rung_max)
         if base['capacity_usd'] is not None:
-            age = max(age_days(rule.get('as_of'), now) or 0, base['age_days'])   # the statement's and the base's newest
-            entries.append({'source': rule['source'], 'kind': 'derived', 'value': round(rule['ratio'] * base['capacity_usd'], 2),
-                            'url': rule['url'], 'as_of': rule['as_of'], 'fetched_at': rule.get('fetched_at'),
-                            'method': f"{rule['ratio']:g} x the merged {rule['of_window']} ({rule['statement']}; "
-                                      f"{rule['original']})",
-                            'derived_from': base['sources'], 'age_days': age, 'stale': age > STALE_DAYS})
+            age = max(age_days(rule.get('as_of'), now) or 0, base['age_days'])
+            entries, rung = [{'source': rule['source'], 'kind': 'derived', 'value': round(rule['ratio'] * base['capacity_usd'], 2),
+                              'url': rule['url'], 'as_of': rule['as_of'], 'fetched_at': rule.get('fetched_at'),
+                              'method': f"{rule['ratio']:g} x the {rule['of_window']} ({rule['statement']}; {rule['original']})",
+                              'derived_from': base['sources'], 'age_days': age, 'stale': age > STALE_DAYS,
+                              'rung': base['rung']}], base['rung']
+    if not entries and rung_max >= 2:
+        for r in ctx['exhaust'].get((fam, plan, wid), ()):
+            rate = (usd.get(r['model']) or {}).get('value')
+            if rate:
+                entries.append(cite(r, now, rung=2, kind='derived', value=round(r['hours'] * rate, 2),
+                                    method=f"{r['hours']:g} h of {r['model']} until the window ran out x its usd {rate:g}/h "
+                                           f"({ctx['basis']})", report=r.get('quote')))
+        rung = 2
+    mult = ctx['mults'].get((fam, plan))
+    sibling = None
+    if mult and rung_max >= 3:
+        base = window_capacity(fam, mult['of_plan'], wid, {**ctx, 'mults': {}}, 2)
+        if base['capacity_usd'] is not None:
+            age = max(age_days(mult.get('as_of'), now) or 0, base['age_days'])
+            sibling = {'source': mult['source'], 'kind': 'derived', 'value': round(mult['factor'] * base['capacity_usd'], 2),
+                       'url': mult['url'], 'as_of': mult['as_of'], 'fetched_at': mult.get('fetched_at'),
+                       'method': f"{mult['factor']:g} x {fam}/{mult['of_plan']} {wid} ({mult['statement']})",
+                       'derived_from': base['sources'], 'age_days': age, 'stale': age > STALE_DAYS, 'rung': 3}
+    if not entries and sibling:
+        entries, rung, sibling = [sibling], 3, None
     ref = (REFERENCE_MODELS.get(fam) or {}).get(wid)
     ref_usd = ((usd.get(ref) or {}).get('value')) if ref else None
     if not entries:
-        return {'unit': 'usd', 'capacity_usd': None, 'status': 'missing', 'sources': [], 'reference_model': ref,
-                'ref_hours': None}
+        return {'unit': 'usd', 'capacity_usd': None, 'status': 'error', 'rung': None, 'sources': [], 'reference_model': ref,
+                'ref_hours': None, 'age_days': None}
     value = round(statistics.median(e['value'] for e in entries), 2)
     newest = min(e['age_days'] if e['age_days'] is not None else 10 ** 6 for e in entries)
-    return {'unit': 'usd', 'capacity_usd': value, 'status': 'stale' if newest > STALE_DAYS else 'ok',
-            'age_days': newest, 'merge': f'median of {len(entries)} community value(s)', 'sources': entries,
-            'reference_model': ref, 'ref_hours': round(value / ref_usd, 1) if ref_usd else None}
+    row = {'unit': 'usd', 'capacity_usd': value, 'status': 'stale' if newest > STALE_DAYS else 'ok', 'rung': rung,
+           'age_days': newest, 'merge': f'median of {len(entries)} value(s), rung {rung}', 'sources': entries,
+           'reference_model': ref, 'ref_hours': round(value / ref_usd, 1) if ref_usd else None}
+    if sibling:
+        row['cross_check'] = {'rung': 3, 'value': sibling['value'], 'method': sibling['method'],
+                              'ratio_to_value': round(sibling['value'] / value, 2) if value else None}
+    return row
 
 
 def resolve_plan(table, plan):
@@ -305,14 +337,20 @@ def resolve_plan(table, plan):
     return target, alias
 
 
-def capacity(meas, plans, usd, now=None):
-    """({family: {plan: {window: capacity row}}}, data errors) from the community observations in `meas`."""
+def capacity(meas, plans, usd, now=None, basis='community_mix'):
+    """({family: {plan: {window: capacity row}}}, data errors) down the capacity ladder from `meas`."""
     now = now or datetime.now(timezone.utc)
     cap = meas.get('capacity') or {}
     obs = {}
     for o in cap.get('observations') or ():
         obs.setdefault((o['family'], o['plan'], o['window']), []).append(o)
-    rules = {(r['family'], r['window']): r for r in cap.get('rules') or ()}
+    rules = cap.get('rules') or ()
+    ctx = {'now': now, 'usd': usd, 'obs': obs, 'basis': basis,
+           'ratios': {(r['family'], r['window']): r for r in rules if r.get('type', 'window_ratio') == 'window_ratio'},
+           'mults': {(r['family'], r['plan']): r for r in rules if r.get('type') == 'plan_multiplier'},
+           'exhaust': {}}
+    for r in cap.get('exhaust') or ():
+        ctx['exhaust'].setdefault((r['family'], r['plan'], r['window']), []).append(r)
     errors = [{'field': 'capacity', **e} for e in cap.get('errors') or ()]
     out, stale = {}, {}
     for fam, table in plans.items():
@@ -323,19 +361,19 @@ def capacity(meas, plans, usd, now=None):
                 continue
             target, alias = resolve_plan(table, plan)
             for wid in (table.get(target) or {}).get('windows') or {}:
-                row = window_capacity(fam, target, wid, obs, rules, usd, now)
+                row = window_capacity(fam, target, wid, ctx)
                 if alias:
                     row['alias_of'] = alias
                 out.setdefault(fam, {}).setdefault(plan, {})[wid] = row
                 if alias:
                     continue
-                if row['status'] == 'missing':
+                if row['status'] == 'error':
                     errors.append({'field': 'capacity', 'family': fam, 'plan': plan, 'window': wid, 'level': 'red',
-                                   'reason': 'no_community_source',
-                                   'effect': 'capacity unknown: the router prices the window from its live percentage and '
-                                             'reset time only; the packaged template figure is not a fallback'})
+                                   'reason': 'capacity_ladder_empty',
+                                   'effect': 'no community measurement, time-to-exhaust report or vendor multiplier: a data '
+                                             'error surfaced in routing notes; the live percentage still prices scarcity'})
                 for e in row['sources']:
-                    if e['stale'] and e['kind'] == 'community':
+                    if e['stale'] and e['kind'] in ('community', 'vendor'):
                         stale.setdefault(e['source'], {'age_days': e['age_days'], 'as_of': e['as_of'], 'windows': []})
                         stale[e['source']]['windows'].append(f'{fam}/{plan}/{wid}')
     for src, row in sorted(stale.items()):
@@ -437,7 +475,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
     scorer = Scorer(meas, acc, distrust, overrides)
     rows, fits = scorer.score()
     usd = USD_BASES[usd_basis]['fn'](scorer, rows, meas, priority)
-    caps, cap_errors = capacity(meas, plans, usd, now)
+    caps, cap_errors = capacity(meas, plans, usd, now, usd_basis)
     models, errors = {}, []
     for m, r in rows.items():
         model_errors = []
@@ -473,6 +511,10 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
            'capacity': caps, 'capacity_stale_days': STALE_DAYS,
            'capacity_not_found': (meas.get('capacity') or {}).get('not_found') or {},
            'capacity_errors': cap_errors, 'source_ages': source_ages(meas, now),
+           'usd_checks': [{**h, 'basis': usd_basis, 'basis_value': (usd.get(h['model']) or {}).get('value'),
+                           'community_over_basis': (round(h['value'] / usd[h['model']]['value'], 2)
+                                                    if (usd.get(h['model']) or {}).get('value') else None)}
+                          for h in (meas.get('capacity') or {}).get('hourly_checks') or ()],
            'models': models, 'data_errors': errors}
     if floors:
         import five_axis_floors
@@ -507,7 +549,8 @@ def main():
     for fam, plans in doc['capacity'].items():
         for plan, wins in plans.items():
             print(f'capacity {fam}/{plan}: ' + ', '.join(
-                f"{w}={r['capacity_usd'] if r['capacity_usd'] is not None else '-'}({r['status']})" for w, r in wins.items()))
+                f"{w}={r['capacity_usd'] if r['capacity_usd'] is not None else '-'}({r['status']}, rung {r['rung']})"
+                for w, r in wins.items()))
     fl = doc.get('floors') or {}
     print('floors:', json.dumps({k: fl.get(k) for k in ('anchor', 'ratio', 'critical_ratio', 'axis_ratio', 'agreement')}))
 

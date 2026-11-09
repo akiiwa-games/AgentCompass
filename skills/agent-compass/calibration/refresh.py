@@ -8,9 +8,10 @@
   value is never carried over silently from an earlier download.
 - Rebuild: `measurements.py` then `five_axis.py` on that directory; every value keeps its data date (`as_of`) and the
   fetch time of its file (`fetched_at`).
-- Report: per source its kind, data date, age in days and status: `ok`; `stale` (older than five_axis.STALE_DAYS, a
+- Report: the community usd-per-hour check rows against the usd basis (community / option B), then per source its
+  kind, data date, age in days and status: `ok`; `stale` (older than five_axis.STALE_DAYS, a
   yellow note: still used); `missing` (not fetched, or a community sentence no longer on the page: red, no value).
-  Capacity windows left without a community value are listed as red.
+  Capacity windows with an empty capacity ladder are listed as red.
 
 Exit status: 0 all fresh, 1 something stale (yellow), 2 something missing (red), so a scheduler can alert on it.
 
@@ -67,8 +68,16 @@ def staleness(doc):
     return rows, {0: 'ok', 1: 'stale', 2: 'missing'}[worst]
 
 
-def markdown(rows, generated_at):
-    out = [f'Source ages at {generated_at} (stale after {five_axis.STALE_DAYS} days)', '',
+def markdown(rows, generated_at, checks=()):
+    out = []
+    if checks:
+        out += ['Community usd per worker-hour / the usd basis (a check of option B; 1.0 = agreement)', '',
+                '| Model | Community $/h | Basis | Basis $/h | Community / basis | Source | Data date |',
+                '| :--- | ---: | :--- | ---: | ---: | :--- | :--- |']
+        out += [f"| {c['model']} | {c['value']} | {c['basis']} | {c['basis_value']} | {c['community_over_basis']} | {c['source']} "
+                f"| {c['as_of']} |" for c in checks]
+        out.append('')
+    out += [f'Source ages at {generated_at} (stale after {five_axis.STALE_DAYS} days)', '',
            '| Source / window | Kind | Data date | Age (days) | Status | Note |', '| :--- | :--- | :--- | ---: | :--- | :--- |']
     for r in rows:
         out.append(f"| {r['what']} | {r['kind'] or ''} | {r['as_of'] or ''} | {'' if r['age_days'] is None else r['age_days']} "
@@ -88,7 +97,7 @@ def main():
         sources.fetch(target)
     _, doc = rebuild(target, args.usd_basis)
     rows, worst = staleness(doc)
-    text = markdown(rows, datetime.now(timezone.utc).isoformat(timespec='seconds'))
+    text = markdown(rows, datetime.now(timezone.utc).isoformat(timespec='seconds'), doc.get('usd_checks') or ())
     print(text)
     if args.report:
         Path(args.report).write_text(text, encoding='utf-8', newline='\n')

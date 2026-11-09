@@ -20,6 +20,10 @@ Calibration (the user's rule: in the ample state the qualifying set per difficul
   critical pairs (a difficulty without critical cases keeps today's floor-plus-headroom over floor); the `axis_ratio`
   with the most agreement at that difficulty wins, ties to the one that drops fewest of today's qualifiers, then the
   lower ratio. Ties in a share take the middle of the best run.
+- The gate level blends the demand-weighted level with the equal-weight level of all four axes (`level_blend`,
+  allocator.five_axis_gate_level); the blend on LEVEL_BLENDS with the most agreeing pairs over every band wins (round 5:
+  the demanded axes alone held hard agreement at 0.82 whatever the axis ratio, because they split models the old tier
+  gate kept together).
 - Monotone by construction: a harder difficulty never asks a lower share or a lower per-axis floor (axis_ratio x share)
   than an easier one, and a critical task never less than its difficulty.
 - `axis_per_tier` is the slope of the equal-weight axis level on the shipped tier: it converts spans written in tier
@@ -44,6 +48,7 @@ SYNTHETIC = ('dot', 'grok-bot', 'gpt-6-pro')       # tiers that are routing alig
 DIFFICULTIES = ('routine', 'hard', 'coupled', 'frontier')
 RATIOS = np.round(np.arange(0.30, 1.0001, 0.0025), 4)
 AXIS_RATIOS = (0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0)
+LEVEL_BLENDS = (0.0, 0.25, 0.5, 0.75, 1.0)     # weight of the equal-weight level in the gate level (round 5)
 
 
 def cases(acc):
@@ -81,10 +86,10 @@ def models(doc, acc):
     return out
 
 
-def max_share(scores, anchor, demand, axis_ratio):
+def max_share(scores, anchor, demand, axis_ratio, blend=0.0):
     """The largest floor share at which the model still qualifies on this demand, and the binding term."""
-    level, eff = allocator.five_axis_level(scores, demand)
-    a_level, a_eff = allocator.five_axis_level(anchor, demand)
+    level, eff = allocator.five_axis_gate_level(scores, demand, 1.0, blend)
+    a_level, a_eff = allocator.five_axis_gate_level(anchor, demand, 1.0, blend)
     terms = [(level / a_level if a_level > 0 else 0.0, f'level {level:.3f} vs anchor {a_level:.3f}')]
     for axis, w in demand.items():
         if w >= allocator.FIVE_AXIS_DEFAULTS['strong_level'] and a_eff[axis] > 0:
@@ -104,6 +109,19 @@ def best_share(pairs, low=0.0):
 
 
 def calibrate(doc, acc):
+    """The floors at the level blend with the most agreeing (case, model) pairs over all bands (ties: the lower blend)."""
+    runs = {}
+    for blend in LEVEL_BLENDS:
+        out = calibrate_at(doc, acc, blend)
+        runs[blend] = (sum(round(v['agreement'] * v['pairs']) for v in out['agreement'].values() if v['agreement'] is not None),
+                       out)
+    blend = max(LEVEL_BLENDS, key=lambda b: (runs[b][0], -b))
+    out = runs[blend][1]
+    out['level_blend_search'] = {f'{b:g}': runs[b][0] for b in LEVEL_BLENDS}
+    return out
+
+
+def calibrate_at(doc, acc, blend):
     rows = models(doc, acc)
     anchor = doc['models'][ANCHOR]['scores']
     all_cases = cases(acc)
@@ -117,7 +135,7 @@ def calibrate(doc, acc):
     for d in DIFFICULTIES:
         best = None
         for k in AXIS_RATIOS:
-            band = {cr: [(max_share(sc, anchor, dm, k), old, m, c) for sc, dm, old, m, c in groups.get((d, cr), [])]
+            band = {cr: [(max_share(sc, anchor, dm, k, blend), old, m, c) for sc, dm, old, m, c in groups.get((d, cr), [])]
                     for cr in (False, True)}
             r, n = best_share([(t[0], old) for t, old, _, _ in band[False]], low)
             if r is None:               # no case at this difficulty: today's floor over the anchor's tier
@@ -137,7 +155,7 @@ def calibrate(doc, acc):
                 best = (rank, k, r, cr_share, band)
         if best is None:                # no axis ratio keeps the per-axis floor monotone: hold the easier band's
             k = axis[DIFFICULTIES[DIFFICULTIES.index(d) - 1]]
-            band = {cr: [(max_share(sc, anchor, dm, k), old, m, c) for sc, dm, old, m, c in groups.get((d, cr), [])]
+            band = {cr: [(max_share(sc, anchor, dm, k, blend), old, m, c) for sc, dm, old, m, c in groups.get((d, cr), [])]
                     for cr in (False, True)}
             r = best_share([(t[0], old) for t, old, _, _ in band[False]], low)[0] or low
             best = (None, k, r, best_share([(t[0], old) for t, old, _, _ in band[True]], r)[0] or r, band)
@@ -167,7 +185,7 @@ def calibrate(doc, acc):
         changes[key] = {m: v for m, v in sorted(per.items()) if v['enters'] or v['leaves']}
     tiers = [(float(acc['models'][m]['tier']), float(np.mean([r['scores'][a] for a in allocator.FIVE_AXES]))) for m, r in rows.items()]
     slope = float(np.polyfit([t for t, _ in tiers], [v for _, v in tiers], 1)[0]) if len(tiers) >= 5 else 0.2
-    return {'anchor': ANCHOR, 'ratio': ratio, 'critical_ratio': crit, 'axis_ratio': axis,
+    return {'anchor': ANCHOR, 'ratio': ratio, 'critical_ratio': crit, 'axis_ratio': axis, 'level_blend': blend,
             'axis_per_tier': round(slope, 4), 'agreement': report, 'changes': changes,
             'calibrated_on': {'cases': [str(CASES.relative_to(sources.REPO)), 'calibration/five_axis_tasks.py'],
                               'n_cases': len(all_cases), 'n_models': len(rows),

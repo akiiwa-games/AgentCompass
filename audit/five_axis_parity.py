@@ -1,4 +1,4 @@
-"""Sampled routing parity: today's router against the five-axis path (round 047, round 4). Read-only.
+"""Sampled routing parity: today's router against the five-axis path (round 047, round 5). Read-only.
 
     python -X utf8 audit/five_axis_parity.py [--json out.json] [--md out.md]
 
@@ -8,9 +8,10 @@ usage documents, so the input is what `roll` would feed the allocator). Three al
 
 - old: shipped behaviour (`scoring.five_axis` absent).
 - new: five-axis path as shipped in five-axis-scores.json: axis-demand gate, community capacity, usd on the community
-  token-mix basis (option B), tie-break cost then ability surplus, overqualification weight 0.05.
+  token-mix basis (option B), capacity ladder, gate level blend, tie-break opportunity cost then ability surplus
+  (round 5), overqualification weight 0.05.
 - new_benchmark_usd: the same with usd on the AA/OpenRouter benchmark basis (the round-3 scale), to isolate option B.
-- new_oq0: the new path with overqualification_weight 0 (ties still go to the cheaper candidate).
+- new_oq0: the new path with overqualification_weight 0.
 - new_no_eqbench: the new path with EQ-Bench Creative Writing distrusted.
 
 `none` decisions record their cause: the exclusion reasons of every candidate, grouped (digits stripped).
@@ -222,7 +223,7 @@ def markdown(rows):
     names = ('old',) + NEW
     share = {n: Counter(r[n] for r in rows) for n in names}
     n = len(rows)
-    lines = [f'# Five-axis sampled parity, round 4 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
+    lines = [f'# Five-axis sampled parity, round 5 ({n} decisions: {len(TASKS)} tasks x {len(STATES)} states x {len(FLEETS)} fleets)', '']
     lines += ['## Selection share (model@account)', '',
               '| model@account | old | new (usd option B) | new, benchmark usd | new, oq 0 | new without EQ-Bench |',
               '| :--- | ---: | ---: | ---: | ---: | ---: |']
