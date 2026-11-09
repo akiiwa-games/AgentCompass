@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-09T05:05:31+00:00",
+ "generated_at": "2026-11-09T05:39:45+00:00",
  "conversion": "capability value = min(1, 0.8 x s / s_anchor), anchor claude-opus-5-5; see calibration/measurements.py",
  "sources": {
   "lmarena.tier_fit": {
@@ -405,6 +405,72 @@
    "method": "AA cost per task x (OpenRouter output price / AA output price) x 3600 / AA time per task",
    "models_listed": 461,
    "kind": "vendor"
+  },
+  "community.wokey.claude": {
+   "file": "community-wokey-claude.html",
+   "url": "https://wokey.ai/claude-usage-limits",
+   "fetched_at": "2026-11-09T05:34:15+00:00",
+   "sha256": "351bcfdf7cc8a1a97e54f5280edc1de545fb4ac8efd731ec93d89e14aeda506b",
+   "as_of": "2026-11-02",
+   "as_of_kind": "data date",
+   "kind": "community",
+   "models_listed": null,
+   "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
+  },
+  "community.wokey.codex": {
+   "file": "community-wokey-codex.html",
+   "url": "https://wokey.ai/codex-usage-limits",
+   "fetched_at": "2026-11-09T05:34:15+00:00",
+   "sha256": "622aa92a793bab8102fcb3baed1cff21759ce8149f87bf619b5cb6394fe6959e",
+   "as_of": "2026-11-02",
+   "as_of_kind": "data date",
+   "kind": "community",
+   "models_listed": null,
+   "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
+  },
+  "community.finops.codex_plus": {
+   "file": "community-finops-codex-plus.html",
+   "url": "https://finopsllm.com/research/codex-usage-limits-chatgpt-pro",
+   "fetched_at": "2026-11-09T05:34:16+00:00",
+   "sha256": "66c9700ecc8a206cb1141d4a492571dc97db5f11fceb3990888f4404fa654f30",
+   "as_of": "2026-10-10",
+   "as_of_kind": "data date",
+   "kind": "community",
+   "models_listed": null,
+   "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
+  },
+  "community.finops.codex_pro100": {
+   "file": "community-finops-codex-pro100.html",
+   "url": "https://finopsllm.com/research/codex-pro-100-heavy-user-resets-log",
+   "fetched_at": "2026-11-09T05:34:16+00:00",
+   "sha256": "43e1542736b0f6cf9d15aca9867f79c3a421e1947ecd6beddc2b4d56f97d2157",
+   "as_of": "2026-10-09",
+   "as_of_kind": "data date",
+   "kind": "community",
+   "models_listed": null,
+   "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
+  },
+  "community.finops.claude_max20": {
+   "file": "community-finops-claude-max20.html",
+   "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+   "fetched_at": "2026-11-09T05:34:16+00:00",
+   "sha256": "fafa57360c934a2984d976c2520da568e23a37191ef5d2355c954922a767a83c",
+   "as_of": "2026-10-10",
+   "as_of_kind": "data date",
+   "kind": "community",
+   "models_listed": null,
+   "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
+  },
+  "community.inventive.codex": {
+   "file": "community-inventive-codex.html",
+   "url": "https://inventivehq.com/blog/codex-subscription-usage-measured",
+   "fetched_at": "2026-11-09T05:34:17+00:00",
+   "sha256": "24f0170f74a9804ae5db9a7fd114e25c3502020001e1119357403162ea81086f",
+   "as_of": "2026-10-04",
+   "as_of_kind": "data date",
+   "kind": "community",
+   "models_listed": null,
+   "method": "community real-usage measurement of subscription window capacity (calibration/community.py)"
   }
  },
  "missing_sources": {
@@ -435,6 +501,188 @@
    "gui",
    "tools"
   ]
+ },
+ "capacity": {
+  "unit": "usd of API-priced real usage per full window",
+  "observations": [
+   {
+    "family": "claude",
+    "plan": "pro",
+    "window": "seven_day",
+    "value": 155.0,
+    "source": "community.wokey.claude",
+    "kind": "community",
+    "url": "https://wokey.ai/claude-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00",
+    "method": "median measured account week at API rates (cache included)",
+    "quote": "Claude Pro ($20/mo) : ≈ $155 of API use a week"
+   },
+   {
+    "family": "claude",
+    "plan": "pro",
+    "window": "five_hour",
+    "value": 11.92,
+    "source": "community.wokey.claude",
+    "kind": "community",
+    "url": "https://wokey.ai/claude-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00",
+    "method": "weekly value / full five-hour windows per week (both from the page)",
+    "quote": "Claude Pro ($20/mo) : ≈ $155 of API use a week (≈ $673/month) · 24.2M uncached tokens · ≈ 13 full 5-hour windows"
+   },
+   {
+    "family": "claude",
+    "plan": "max20",
+    "window": "seven_day",
+    "value": 1549.0,
+    "source": "community.wokey.claude",
+    "kind": "community",
+    "url": "https://wokey.ai/claude-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00",
+    "method": "median measured account week at API rates (cache included)",
+    "quote": "Claude Max 20x ($200/mo) : ≈ $1,549 of API use a week"
+   },
+   {
+    "family": "claude",
+    "plan": "max20",
+    "window": "five_hour",
+    "value": 271.75,
+    "source": "community.wokey.claude",
+    "kind": "community",
+    "url": "https://wokey.ai/claude-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00",
+    "method": "weekly value / full five-hour windows per week (both from the page)",
+    "quote": "Claude Max 20x ($200/mo) : ≈ $1,549 of API use a week (≈ $6,711/month) · 180M uncached tokens · ≈ 5.7 full 5-hour windows"
+   },
+   {
+    "family": "codex",
+    "plan": "plus",
+    "window": "usage",
+    "value": 55.0,
+    "source": "community.wokey.codex",
+    "kind": "community",
+    "url": "https://wokey.ai/codex-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00",
+    "method": "median measured account week at API rates (cache included)",
+    "quote": "ChatGPT Plus (Codex) ($20/mo) : ≈ $55 of API use a week"
+   },
+   {
+    "family": "codex",
+    "plan": "plus",
+    "window": "five_hour",
+    "value": 10.0,
+    "source": "community.wokey.codex",
+    "kind": "community",
+    "url": "https://wokey.ai/codex-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00",
+    "method": "weekly value / full five-hour windows per week (both from the page)",
+    "quote": "ChatGPT Plus (Codex) ($20/mo) : ≈ $55 of API use a week (≈ $237/month) · 6.8M uncached tokens · ≈ 5.5 full 5-hour windows"
+   },
+   {
+    "family": "codex",
+    "plan": "pro",
+    "window": "usage",
+    "value": 581.0,
+    "source": "community.wokey.codex",
+    "kind": "community",
+    "url": "https://wokey.ai/codex-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00",
+    "method": "median measured account week at API rates (cache included)",
+    "quote": "ChatGPT Pro $200 (Codex) ($200/mo) : ≈ $581 of API use a week"
+   },
+   {
+    "family": "codex",
+    "plan": "plus",
+    "window": "usage",
+    "value": 67.0,
+    "source": "community.finops.codex_plus",
+    "kind": "community",
+    "url": "https://finopsllm.com/research/codex-usage-limits-chatgpt-pro",
+    "as_of": "2026-10-10",
+    "fetched_at": "2026-11-09T05:34:16+00:00",
+    "method": "median of measured full weekly windows at API prices",
+    "quote": "ChatGPT Plus has been worth a median $67 of API-priced usage"
+   },
+   {
+    "family": "codex",
+    "plan": "pro100",
+    "window": "usage",
+    "value": 175.0,
+    "source": "community.finops.codex_pro100",
+    "kind": "community",
+    "url": "https://finopsllm.com/research/codex-pro-100-heavy-user-resets-log",
+    "as_of": "2026-10-09",
+    "fetched_at": "2026-11-09T05:34:16+00:00",
+    "method": "median of a heavy user's logged full weekly windows at API prices",
+    "quote": "A full Pro $100 week priced at a median $175"
+   },
+   {
+    "family": "claude",
+    "plan": "max20",
+    "window": "seven_day",
+    "value": 1860.0,
+    "source": "community.finops.claude_max20",
+    "kind": "community",
+    "url": "https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit",
+    "as_of": "2026-10-10",
+    "fetched_at": "2026-11-09T05:34:16+00:00",
+    "method": "one heavy user's measured full week at API-equivalent prices",
+    "quote": "About $1.86k of API-equivalent usage at today"
+   },
+   {
+    "family": "codex",
+    "plan": "pro",
+    "window": "usage",
+    "value": 650.0,
+    "source": "community.inventive.codex",
+    "kind": "community",
+    "url": "https://inventivehq.com/blog/codex-subscription-usage-measured",
+    "as_of": "2026-10-04",
+    "fetched_at": "2026-11-09T05:34:17+00:00",
+    "method": "measured weekly window at API prices",
+    "quote": "Pro $200 (new 10× tier): about $650 of API-priced usage a week"
+   },
+   {
+    "family": "codex",
+    "plan": "pro100",
+    "window": "usage",
+    "value": 355.0,
+    "source": "community.inventive.codex",
+    "kind": "community",
+    "url": "https://inventivehq.com/blog/codex-subscription-usage-measured",
+    "as_of": "2026-10-04",
+    "fetched_at": "2026-11-09T05:34:17+00:00",
+    "method": "midpoint of the measured weekly range at API prices",
+    "quote": "Pro $100: about $330–380 a week"
+   }
+  ],
+  "rules": [
+   {
+    "family": "claude",
+    "window": "weekly_fable",
+    "of_window": "seven_day",
+    "ratio": 0.5,
+    "statement": "Fable 5.1 can use only half the weekly limit",
+    "original": "https://newsletter.semianalysis.com/p/anthropic-subscriptions-offer-5x (SemiAnalysis, 2026-10-05)",
+    "source": "community.wokey.claude",
+    "kind": "community",
+    "url": "https://wokey.ai/claude-usage-limits",
+    "as_of": "2026-11-02",
+    "fetched_at": "2026-11-09T05:34:15+00:00"
+   }
+  ],
+  "errors": [],
+  "not_found": {
+   "claude/max5": "wokey is still collecting Max 5x accounts (no figure); finops gives only a bound (a Max 20x week is at most about 1.5x a Max 5x week)",
+   "antigravity/*": "no community API-dollar measurement of Google AI Pro / Ultra Antigravity quota found",
+   "pi/*": "Pi spends a Codex account allowance; the plan behind it is not known"
+  }
  },
  "models": {
   "deepseek-v4.1-flash-free": {
