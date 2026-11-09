@@ -2206,8 +2206,8 @@ def record_constraint(args, task=None):
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
     if retrying:
-        warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a completed "
-                    "dispatch lifts the hold", *warnings]
+        warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
+                    "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
     if warnings:
         result['warnings'] = warnings
     if fast_requested:

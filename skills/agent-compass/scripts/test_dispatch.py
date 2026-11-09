@@ -3065,16 +3065,64 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertTrue(any('on this account' in e for e in excluded), excluded)
         with self.assertRaisesRegex(ValueError, 'provider failure hold'):
             self.launched('routed-task')   # routing's own pick is refused
-        # A model the user names is the probe: prepare lets it through, and its completion lifts the hold.
-        task = {**self.task, 'task_id': 'probe-task'}
-        row = self.prepare(self.issue(task=task, constraint='user_override'), task=task)
-        registry.claim(row['request'], now=self.now)
-        registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
-        self.assertTrue(provider_retry.active(now=self.now))   # a running worker is no success: a stuck one runs too
-        self.assertFalse(provider_retry.clear('claude-lab', 'claude-sonnet-5-5',   # launched before the hold: no proof
-                                              launched_at=(at - timedelta(seconds=1)).isoformat()))
-        registry.observe(row['dispatch_id'], self.snapshot(row, status='idle', attentionReason='finished'),
-                         now=self.now + timedelta(seconds=30))
+        self.assertFalse(provider_retry.clear('claude-lab', 'claude-sonnet-5-5', include_account=True,
+                                              launched_at=(at - timedelta(seconds=1)).isoformat()))   # launched before
+        # A model the user names is the probe: prepare lets it through. Review 2 R1: Paseo shows a probe the parent
+        # cancelled as idle/finished too, so only a turn the watcher saw end on the model's reply lifts the hold.
+        for task_id, terminal, lifted in (('probe-unseen', None, False),            # no watcher terminal at all
+                                          ('probe-cancelled', {'replied': False}, False),
+                                          ('probe-replied', {'replied': True}, True)):
+            with self.subTest(task_id=task_id):
+                task = {**self.task, 'task_id': task_id}
+                row = self.prepare(self.issue(task=task, constraint='user_override'), task=task)
+                registry.claim(row['request'], now=self.now)
+                registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+                self.assertTrue(provider_retry.active(now=self.now))   # running is no success: a stuck worker runs too
+                seen = self.now + timedelta(seconds=30)
+                done = registry.observe(row['dispatch_id'], self.snapshot(row, status='idle', attentionReason='finished'),
+                                        now=seen, terminal=terminal and {
+                                            'reason': 'finished', 'status': 'idle', 'attentionReason': 'finished',
+                                            'at': seen.isoformat(), **terminal})
+                self.assertEqual(done['state'], 'completed')
+                self.assertEqual(provider_retry.active(now=self.now) == {}, lifted)
+
+    def test_a_failed_turn_read_as_the_worker_or_the_task_input_is_the_worker_error_and_holds_nothing(self):
+        # Review 2 R3/R5: not the provider's doing, so neither a hold nor provider wording.
+        import provider_retry
+        message = 'prompt is too long: 251234 tokens > 200000 maximum'
+        for scope, code, expected in (('none', 'worker_turn_failed', flow.WORKER_TURN_FAILED_NEXT),
+                                      ('task_input', 'task_input_rejected', flow.TASK_INPUT_NEXT)):
+            with self.subTest(scope=scope):
+                self.scopes = [scope]
+                row = self.launched(f'task-{scope}')
+                registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+                at = self.now + timedelta(seconds=15)
+                terminal = {'reason': 'error', 'status': 'error', 'attentionReason': 'error', 'at': at.isoformat(),
+                            'failure_code': 'provider_turn_failed', 'provider_message': message}
+                done = registry.observe(row['dispatch_id'], self.snapshot(row, status='error'),
+                                        now=self.now + timedelta(seconds=20), terminal=terminal)
+                self.assertEqual((done['state'], done['failure_code']), ('failed', code))
+                self.assertEqual(provider_retry.dispatch_scope(row['dispatch_id']), scope)
+                next_action = flow.public(done)['next_action']
+                self.assertEqual(next_action, expected)
+                self.assertNotIn('Its provider ended the turn', next_action)
+                self.assertNotIn('Provider error', next_action)
+                self.assertEqual(provider_retry.active(now=at), {})
+        self.assertIn('task_input', provider_retry.SCOPE_SCHEMA['properties']['scope']['enum'])
+        self.assertIn('`task_input`', provider_retry.SCOPE_INSTRUCTIONS)
+
+    def test_clearing_one_model_keeps_the_account_hold(self):
+        # Review 2 R7: `hold --clear ACCOUNT/MODEL` is that model's hold only.
+        import provider_retry
+        self.scopes = ['account', 'model']
+        provider_retry.record(self.other, self.stuck(self.now), dispatch_id='d-account')
+        provider_retry.record(self.bundle, self.stuck(self.now), dispatch_id='d-model')
+        self.assertEqual(set(provider_retry.active(now=self.now)), {'claude-lab', 'claude-lab/claude-sonnet-5-5'})
+        self.assertTrue(provider_retry.clear_key('claude-lab/claude-sonnet-5-5'))
+        self.assertEqual(set(provider_retry.active(now=self.now)), {'claude-lab'})
+        self.assertFalse(provider_retry.clear_key('claude-lab/claude-opus-5-5'))   # the account hold is not that model's
+        self.assertEqual(set(provider_retry.active(now=self.now)), {'claude-lab'})
+        self.assertTrue(provider_retry.clear_key('claude-lab'))
         self.assertEqual(provider_retry.active(now=self.now), {})
 
     def test_the_clear_command_lifts_a_hold(self):
@@ -3091,9 +3139,14 @@ class ProviderRetryTests(unittest.TestCase):
         provider_retry.record(self.bundle, self.stuck(at), dispatch_id='d1')
         self.assertEqual(set(provider_retry.active(now=at)), {'claude-lab/claude-sonnet-5-5'})
         widened = provider_retry.record(self.other, self.stuck(at + timedelta(minutes=1)), dispatch_id='d2')
-        self.assertEqual((widened['model'], widened['scope_source'], widened['retry_at']), (None, 'widened', None))
+        self.assertEqual((widened['model'], widened['scope_source']), (None, 'widened'))
         self.assertEqual(widened['models'], ['claude-opus-5-5', 'claude-sonnet-5-5'])
-        self.assertIn('claude-lab', provider_retry.active(now=at + timedelta(days=1)))
+        # Review 2 R2: two guesses are still guesses: a widened account hold backs off like a model hold.
+        self.assertEqual(widened['retry_at'], (at + timedelta(minutes=1, seconds=120)).isoformat())
+        self.assertFalse(provider_retry.indefinite(widened))
+        self.assertIn('next retry at', provider_retry.retry_text(widened))
+        self.assertIn('claude-lab', provider_retry.active(now=at + timedelta(minutes=2)))
+        self.assertNotIn('claude-lab', provider_retry.active(now=at + timedelta(days=1)))
 
     def test_a_transient_or_model_hold_never_widens_a_later_unknown_one(self):
         # Review F1: offline, opencode retries `fetch failed`; the classifier reads A as transient, then cannot be reached

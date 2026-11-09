@@ -74,6 +74,10 @@ EN = {
     '{0}，已排除派发，下次重试 {1}': '{0}, excluded from dispatch, next retry {1}',
     '清除': 'Clear',
     '正在清除提供方失败标记…': 'Clearing the provider failure hold…',
+    '已清除提供方失败标记': 'Provider failure hold cleared',
+    '没有需要清除的提供方失败标记': 'No provider failure hold to clear',
+    '{0}，整个账号已排除派发：{1}（下次重试 {2}，或点卡片上的“清除”）':
+        '{0}, whole account excluded from dispatch: {1} (next retry {2}, or press Clear on the card)',
     '默认分': 'Default score',
     '估价': 'Estimated price',
     '未验证': 'Unverified',

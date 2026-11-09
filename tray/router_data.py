@@ -1409,7 +1409,11 @@ def retry_hold_text(holds: dict, account: str) -> str | None:
     for entry in sorted((v for v in holds.values() if v.get("account") == account),
                         key=lambda v: (v.get("model") is not None, v.get("model") or "")):
         message = entry.get("message") or _tr("无提供方消息")
-        if entry.get("model") is None:
+        if entry.get("model") is None and entry.get("retry_at"):
+            # Widened from guesses, not an `account` answer: it backs off like a model hold.
+            notes.append(_tr("{0}，整个账号已排除派发：{1}（下次重试 {2}，或点卡片上的“清除”）").format(
+                _retry_what(entry), message, read_time_text(entry.get("retry_at"))))
+        elif entry.get("model") is None:
             notes.append(_tr("{0}，整个账号已排除派发：{1}（点卡片上的“清除”或运行 agentcompass hold --clear {2} 后再派发）").format(
                 _retry_what(entry), message, account))
         else:

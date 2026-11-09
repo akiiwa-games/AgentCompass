@@ -9,19 +9,25 @@ Contract: the Paseo bridge's watcher records a terminal sighting carrying the pr
 None is special-cased here. This module records each such dispatch once in <state dir>/provider-retry.json:
   - Scope: the configured System-One classifier reads the provider's message and answers `model` (this model only),
     `account` (every model of the account, e.g. a free-usage quota all free models share), `transient`, `none` (not
-    the provider refusing or failing to serve, e.g. a tool or code error: nothing is held), or `unknown`.
+    the provider refusing or failing to serve, e.g. a tool or code error), `task_input` (this task's own input was
+    refused, e.g. a prompt too long for the model), or `unknown`. `none` and `task_input` hold nothing, and a failed
+    turn read that way is the worker's error, not the provider's (`outcome_code`).
     No code reads the message. `unknown`, or no classifier answer, holds the model and widens to the account once a
     second model of the same account is held the same way, i.e. a recent hold whose scope was also `unknown` (a
     `transient` or `model` hold never widens anything); `transient` and `model` hold only the model.
-  - A model hold backs off like a failing usage reading (usage_core.failure_retry_seconds): 2 minutes, doubling with
-    each consecutive hold of the same model, capped at the idle poll interval; a later `next` from the provider wins.
-    Past its retry time the next roll may pick the model again and so re-probes it.
-  - An account hold has no retry time: a quota that blocks the whole account (2026-11-09: opencode "Free usage
-    exceeded" on a free model never used before, after a long idle) does not lift by waiting.
-  - Lifting: the tray's clear button, `agentcompass hold --clear ACCOUNT[/MODEL]`, or a probe: routing never picks a
-    held bundle, but a model the user names explicitly (`roll --model`) is dispatched anyway, and a dispatch launched
-    after the hold that completes clears the account's hold and that model's (dispatch_registry.observe). A start does
-    not: a stuck worker is running.
+  - Every hold backs off like a failing usage reading (usage_core.failure_retry_seconds): 2 minutes, doubling with
+    each consecutive hold of the same key, capped at the idle poll interval; a later `next` from the provider wins.
+    Past its retry time the next roll may pick it again and so re-probes it. That includes an account hold widened
+    from two `unknown` answers: guesses never hold an account for good.
+  - Only an account hold the classifier itself scoped `account` has no retry time (`indefinite`): a quota that blocks
+    the whole account (2026-11-09: opencode "Free usage exceeded" on a free model never used before, after a long
+    idle) does not lift by waiting.
+  - Lifting: the tray's clear button, `agentcompass hold --clear ACCOUNT` (every hold of it) or `ACCOUNT/MODEL` (that
+    model's hold only); a probe: routing never picks a held bundle, but a model the user names explicitly
+    (`roll --model`) is dispatched anyway, and a dispatch launched after the hold whose turn ended on the model's reply
+    clears the account's hold and that model's (dispatch_registry.observe; a start, a stop or a cancel does not); or,
+    on an account with a usage reader, a good usage reading newer than the hold, or a different credential (re-login),
+    which lifts the account hold and its model holds (`lift_after_reading`, from provider_inventory.apply).
 The message is stored, capped, because the account list must show it; nothing here decides from it.
 """
 from datetime import datetime, timedelta, timezone
@@ -39,12 +45,16 @@ import override_store
 FAILURE_CODE = 'provider_retry_stuck'
 TURN_FAILED_CODE = 'provider_turn_failed'
 FAILURE_CODES = (FAILURE_CODE, TURN_FAILED_CODE)
+# A failed turn whose message the classifier reads as not the provider's doing.
+WORKER_TURN_FAILED_CODE = 'worker_turn_failed'
+TASK_INPUT_CODE = 'task_input_rejected'
 # Every exclusion `reason` returns starts with this, so prepare can let an explicitly named model through as a probe.
 EXCLUSION_PREFIX = 'provider failure hold'
 CLEAR_COMMAND = 'agentcompass hold --clear'
 FILE = 'provider-retry.json'
 MESSAGE_LIMIT = 2000
-SCOPES = ('model', 'account', 'transient', 'none', 'unknown')
+SCOPES = ('model', 'account', 'transient', 'none', 'task_input', 'unknown')
+NO_HOLD = ('none', 'task_input')
 # A hold whose retry time passed longer ago than this starts a new streak, and no longer widens a second model's hold.
 STREAK_HOURS = account_state.LATCH_RETRY_HOURS
 CLASSIFIER_TIMEOUT_SECONDS = 25
@@ -70,6 +80,9 @@ SCOPE_INSTRUCTIONS = (
     'network error, a server error, a timeout).\n'
     '- `none`: the message is not the provider refusing or failing to serve the model (for example a tool, file or '
     'code error inside the agent\'s own work, or the user stopping it).\n'
+    '- `task_input`: the provider refused this one request because of the task\'s own input, not because of the '
+    'provider, the model or the account: another task would go through (for example the prompt or context is too long '
+    'for the model, an attachment is too large or unsupported, or the request content is malformed or refused).\n'
     '- `unknown`: the message does not say which.\n'
     'Answer from the meaning of the message in any language, not from single words.'
 )
@@ -149,8 +162,35 @@ def _account_hold(entry):
     return isinstance(entry, dict) and entry.get('model') is None
 
 
+def indefinite(entry):
+    """Held until lifted, never by waiting: only an account hold the classifier itself scoped `account`."""
+    return _account_hold(entry) and entry.get('scope') == 'account'
+
+
+def outcome_code(code, scope):
+    """The dispatch's failure code once the classifier read its message: a failed turn that is not the provider's
+    doing is the worker's error."""
+    if code == TURN_FAILED_CODE and scope == 'task_input':
+        return TASK_INPUT_CODE
+    if code == TURN_FAILED_CODE and scope == 'none':
+        return WORKER_TURN_FAILED_CODE
+    return code
+
+
+def _receipt_time(value):
+    return _time(value.get('at') if isinstance(value, dict) else value)
+
+
+def dispatch_scope(dispatch_id, path=None):
+    """The scope this dispatch's failure was recorded with, or None when it was not (or before scopes were kept)."""
+    if not enabled():
+        return None
+    value = _read(path or store_path())['dispatches'].get(dispatch_id)
+    return value.get('scope') if isinstance(value, dict) else None
+
+
 def _recent(entry, now):
-    if _account_hold(entry):
+    if indefinite(entry):
         return True
     retry = _time((entry or {}).get('retry_at'))
     return retry is not None and retry > now - timedelta(hours=STREAK_HOURS)
@@ -180,8 +220,8 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None):
         doc = _read(path)
         if dispatch_id in doc['dispatches']:
             return None
-        doc['dispatches'][dispatch_id] = at.isoformat()
-        if scope == 'none':
+        doc['dispatches'][dispatch_id] = {'at': at.isoformat(), 'scope': scope}
+        if scope in NO_HOLD:
             # Read, and not the provider's doing: nothing to hold, and never read again.
             override_store.write(path, doc)
             return None
@@ -196,7 +236,8 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None):
         previous = entries.get(held) if isinstance(entries.get(held), dict) else {}
         streak = int(previous.get('streak') or 0) + 1 if _recent(previous, at) else 1
         retry = None
-        if held != key(account):
+        # Only the classifier's own `account` answer holds without a retry time; a widened guess backs off.
+        if not (held == key(account) and scope == 'account'):
             retry = at + timedelta(seconds=retry_seconds(streak))
             if nxt and nxt > retry:
                 retry = nxt
@@ -211,10 +252,14 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None):
                  'source': dispatch_id}
         if held == key(account):
             entry['models'] = sorted({*(previous.get('models') or ()), *others, model})
+            # The login the hold was taken under: a re-login with another credential lifts it (lift_after_reading).
+            credential = account_state._latch_context(account)[0]
+            if credential:
+                entry['credential_key'] = credential
         entries[held] = entry
         # Old dispatch receipts only guard against recording one twice; a week is longer than any watch.
         cutoff = at - timedelta(days=7)
-        doc['dispatches'] = {k: v for k, v in doc['dispatches'].items() if (_time(v) or at) >= cutoff}
+        doc['dispatches'] = {k: v for k, v in doc['dispatches'].items() if (_receipt_time(v) or at) >= cutoff}
         override_store.write(path, doc)
     return entry
 
@@ -232,7 +277,7 @@ def active(*, now=None, path=None):
     except PermissionError:
         return {}
     return {k: v for k, v in entries.items()
-            if isinstance(v, dict) and (_account_hold(v) or (_time(v.get('retry_at')) or now) > now)}
+            if isinstance(v, dict) and (indefinite(v) or (_time(v.get('retry_at')) or now) > now)}
 
 
 def entry_for(bundle, entries):
@@ -245,9 +290,10 @@ def entry_for(bundle, entries):
 
 
 def retry_text(entry):
-    """When the router tries the held key again; an account hold waits for a completed dispatch or a clear."""
-    if _account_hold(entry):
-        return 'held until cleared (tray clear button or `agentcompass hold --clear ACCOUNT`) or a model named on it completes'
+    """When the router tries the held key again; an indefinite hold waits for a lift."""
+    if indefinite(entry):
+        return ('held until cleared (tray clear button or `agentcompass hold --clear ACCOUNT`), a model named on it '
+                'completes, or (accounts with a usage reader) a good usage reading after it or a re-login')
     return f"next retry at {(entry or {}).get('retry_at') or 'unknown'}"
 
 
@@ -272,22 +318,58 @@ def warnings(entries, allowed=None):
             for k, v in sorted((entries or {}).items()) if allowed is None or allowed(v.get('account'))]
 
 
-def clear(account, model=None, *, launched_at=None, path=None):
-    """Drop the account's hold and `model`'s (every hold of the account when `model` is None). With `launched_at`, only
-    holds observed before that launch: a dispatch that began before the hold says nothing about it."""
+def clear(account, model=None, *, include_account=False, launched_at=None, path=None):
+    """Drop every hold of the account when `model` is None; else `model`'s hold only, and the account's own too with
+    `include_account` (a completed probe). With `launched_at`, only holds observed before that launch: a dispatch
+    that began before the hold says nothing about it."""
     path = path or store_path()
     if not enabled() or not isinstance(account, str) or not path.exists():
         return False
     launched = _time(launched_at) if launched_at is not None else None
+    wanted = (None, model) if include_account else (model,)
     with override_store.locked(path):
         doc = _read(path)
         keys = [k for k, v in doc['entries'].items() if isinstance(v, dict) and v.get('account') == account
-                and (model is None or v.get('model') in (None, model))
+                and (model is None or v.get('model') in wanted)
                 and (launched_at is None or (launched and (_time(v.get('observed_at')) or launched) < launched))]
         if not keys:
             return False
         for k in keys:
             doc['entries'].pop(k)
+        override_store.write(path, doc)
+    return True
+
+
+def _lifts(entry, last_good, credential_key):
+    if not _account_hold(entry):
+        return False
+    held_key = entry.get('credential_key')
+    if held_key and credential_key and held_key != credential_key:
+        return True
+    good, observed = _time(last_good), _time(entry.get('observed_at'))
+    return bool(good and observed and good > observed)
+
+
+def lift_after_reading(account, *, last_good=None, credential_key=None, path=None):
+    """Re-login recovery for an account with a usage reader (provider_inventory.apply): a good usage reading newer than
+    the account's hold, or a credential other than the one it was taken under, lifts the account hold and its model
+    holds. Compare-and-clear: a hold recorded after the read is kept. Returns whether anything was lifted."""
+    path = path or store_path()
+    if not enabled() or not isinstance(account, str) or not path.exists():
+        return False
+    try:
+        entry = _read(path)['entries'].get(key(account))
+    except PermissionError:
+        return False
+    if not _lifts(entry, last_good, credential_key):
+        return False
+    with override_store.locked(path):
+        doc = _read(path)
+        entry = doc['entries'].get(key(account))
+        if not _lifts(entry, last_good, credential_key):
+            return False
+        doc['entries'] = {k: v for k, v in doc['entries'].items()
+                          if not (isinstance(v, dict) and v.get('account') == account)}
         override_store.write(path, doc)
     return True
 
@@ -324,7 +406,7 @@ def ingest(*, classify=None, registry_path=None, notifications=None, path=None):
 
 
 def clear_key(value):
-    """Clear `ACCOUNT` (every hold of it) or `ACCOUNT/MODEL` (that model's hold and the account's) by hand."""
+    """Clear `ACCOUNT` (every hold of it) or `ACCOUNT/MODEL` (that model's hold only) by hand."""
     account_name, _, model_name = str(value or '').partition('/')
     return clear(account_name, model_name or None) if account_name else False
 

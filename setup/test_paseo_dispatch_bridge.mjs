@@ -8,7 +8,7 @@ import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationRecord, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
-  workedBeforeRetrying, RETRY_STUCK_CODE, TURN_FAILED_CODE} from './paseo_dispatch_bridge.mjs';
+  workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -824,7 +824,7 @@ test('the notifier keeps its first terminal sighting and the receipt reports it'
     assert.equal(await notificationStep(client, record, persist, 5_000), true);
     assert.equal(record.status, 'parent_unavailable');
     assert.deepEqual(record.terminal, {reason: 'finished', status: 'idle', attentionReason: 'finished',
-      at: new Date(5_000).toISOString()});
+      at: new Date(5_000).toISOString(), replied: false});   // no timeline read: not shown to have ended on a reply
     assert.deepEqual(notificationReceipt(file).terminal, record.terminal);
 
     // A live parent: the sighting is kept once, later lifecycle (closed after idle collection) does not replace it.
@@ -988,9 +988,49 @@ test("a worker whose turn failed carries the provider's error text into its term
   assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
   assert.equal(f.record.terminal.failure_code, TURN_FAILED_CODE);
   assert.equal(f.record.terminal.provider_message, message);
-  assert.match(f.calls[0][1], new RegExp(`Provider error: ${message.replace(/[.]/g, '\\.')}`));
+  assert.match(f.calls[0][1], new RegExp(`The worker's turn ended with this error: ${message.replace(/[.]/g, '\\.')}`));
+  // Review 2 R3: the bridge does not know yet whether this is the provider's doing, so it does not say so.
+  assert.doesNotMatch(f.calls[0][1], /Provider error/);
   const plain = watchFixture();
   plain.setAgent({id: 'child', status: 'error'});
   await notificationStep(plain.client, plain.record, plain.persist, 10);
   assert.equal(plain.record.terminal.failure_code, undefined);   // no provider text, nothing to classify
+});
+
+test('a finished turn records whether it ended on the model reply; a cancel mid-retry or mid-tool does not', async () => {
+  // Review 2 R1: Paseo's idle/finished reads the same after a cancel; only a turn ending on the reply may lift a hold.
+  const prompt = {timestamp: new Date(T0).toISOString(), item: {type: 'user_message', text: 'brief'}};
+  const tool = {timestamp: new Date(T0).toISOString(), item: {type: 'tool_call', name: 'shell'}};
+  assert.equal(endedOnReply([prompt, tool, progress(T0 + 1000)]), true);
+  assert.equal(endedOnReply([prompt, retryEntry(1, T0 + 1000)]), false);   // cancelled while retrying
+  assert.equal(endedOnReply([prompt, progress(T0), retryEntry(1, T0 + 1000), progress(T0 + 2000)]), false);
+  assert.equal(endedOnReply([prompt, progress(T0), tool]), false);           // cancelled in a tool call
+  assert.equal(endedOnReply([prompt]), false);                                // cancelled before any reply
+  assert.equal(endedOnReply([]), false);
+  for (const [entries, replied] of [[[prompt, progress(T0 + 1000)], true], [[prompt, retryEntry(1, T0 + 1000)], false]]) {
+    const f = watchFixture();
+    f.client.fetchAgentTimeline = async () => ({entries});
+    assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+    assert.equal(f.record.terminal.reason, 'finished');
+    assert.equal(f.record.terminal.replied, replied);
+  }
+});
+
+test("a resumed worker's error from its previous turn is not this dispatch's provider failure", async () => {
+  // Review 2 R4: Paseo clears lastError when a turn starts; before this turn started it is the previous turn's.
+  const message = 'Free usage limit reached.';
+  const record = {dispatch_id: 'd2', agent_id: 'child', created_at: 5000};
+  assert.deepEqual(turnFailure({lastError: message, lastUserMessageAt: new Date(4000).toISOString()}, record), {});
+  assert.equal(turnFailure({lastError: message, lastUserMessageAt: new Date(6000).toISOString()}, record).failure_code,
+    TURN_FAILED_CODE);
+  assert.equal(turnFailure({lastError: message}, {...record, started: true}).failure_code, TURN_FAILED_CODE);
+  assert.equal(turnFailure({lastError: message}, {dispatch_id: 'child', agent_id: 'child'}).failure_code, TURN_FAILED_CODE);
+  const f = watchFixture();
+  Object.assign(f.record, {dispatch_id: 'd2', agent_id: 'child', created_at: 5000, deadline: 60_000});
+  f.setAgent({id: 'child', status: 'error', lastError: message, labels: {'router.dispatch_id': 'd2'},
+    lastUserMessageAt: new Date(4000).toISOString()});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 6000), true);
+  assert.equal(f.record.terminal.reason, 'error');
+  assert.equal(f.record.terminal.failure_code, undefined);
+  assert.doesNotMatch(f.calls[0][1], /ended with this error/);
 });

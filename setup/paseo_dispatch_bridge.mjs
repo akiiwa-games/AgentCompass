@@ -153,9 +153,41 @@ export const RETRY_STUCK_CODE = 'provider_retry_stuck';
 // decides whether it blocks the model, the account, or nothing (provider_retry.py).
 export const TURN_FAILED_CODE = 'provider_turn_failed';
 
-export function turnFailure(agent) {
+// Paseo clears lastError when a turn starts, so it is this dispatch's unless this is a resumed worker whose turn has not
+// started yet: then the error is the previous turn's, and says nothing about this one.
+export function turnIsCurrent(agent, record) {
+  if (!record?.agent_id || record.agent_id === record.dispatch_id) return true;
+  const created = record.created_at ?? (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
+  return Boolean(record.started || (typeof agent?.lastUserMessageAt === 'string'
+    && Date.parse(agent.lastUserMessageAt) >= created));
+}
+
+export function turnFailure(agent, record) {
+  if (record && !turnIsCurrent(agent, record)) return {};
   const message = typeof agent?.lastError === 'string' ? agent.lastError.trim() : '';
   return message ? {failure_code: TURN_FAILED_CODE, provider_message: message.slice(0, RETRY_MESSAGE_LIMIT)} : {};
+}
+
+// Whether a finished turn ended on the model's own reply: its last item is an assistant message and nothing back to the
+// turn's prompt is an error (a provider retry is one). Paseo's idle/finished state is the same after a cancel and its
+// timeline marks no cancel, so this is the only sign the provider served the turn; only it lets the router lift a
+// provider hold. A turn longer than the page counts when the page holds no error.
+export function endedOnReply(entries) {
+  const list = entries ?? [];
+  if (list[list.length - 1]?.item?.type !== 'assistant_message') return false;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const type = list[i]?.item?.type;
+    if (type === 'user_message') return true;
+    if (type === 'error') return false;
+  }
+  return true;
+}
+
+async function turnReplied(client, agentId) {
+  try {
+    const page = await client.fetchAgentTimeline(agentId, {direction: 'tail', limit: RETRY_TIMELINE_LIMIT, projection: 'canonical'});
+    return endedOnReply(page?.entries);
+  } catch { return false; }
 }
 
 export function providerRetry(entry) {
@@ -272,7 +304,8 @@ export async function notificationStep(client, record, persist, now = Date.now()
     if (event?.key === 'terminal' && !record.terminal)
       record.terminal = {reason: event.reason, status: agent?.status ?? null,
         attentionReason: agent?.attentionReason ?? null, at: new Date(now).toISOString(),
-        ...(event.reason === 'error' ? turnFailure(agent) : {})};
+        ...(event.reason === 'error' ? turnFailure(agent, record) : {}),
+        ...(event.reason === 'finished' ? {replied: await turnReplied(client, targetId)} : {})};
   }
   const parent = (await client.fetchAgent(record.parent_id))?.agent;
   if (!parent || parent.archivedAt || parent.status === 'closed') {
@@ -292,8 +325,9 @@ export async function notificationStep(client, record, persist, now = Date.now()
           ? `This worker carries this dispatch's labels, but its turn has not landed within the lease. Check it with get_agent_status ` +
             `(agentId: ${targetId}). If it should not do this work any more, release this dispatch. A finish is still reported if the turn lands.`
           : (record.terminal?.failure_code === TURN_FAILED_CODE && event.key === 'terminal'
-            ? `Provider error: ${record.terminal.provider_message}\nAgentCompass holds that model (or its whole account) ` +
-              'out of dispatch when its classifier reads this as the provider refusing it. ' : '') +
+            ? `The worker's turn ended with this error: ${record.terminal.provider_message}\nAgentCompass's classifier ` +
+              'reads it: when it is the provider refusing the model or the account, that is held out of dispatch; an ' +
+              "error of the worker's own work or of this task's input holds nothing. " : '') +
             `Read the worker's final response and details with get_agent_activity ` +
             `(agentId: ${targetId}); use get_agent_status for pending permissions.`)};
     }

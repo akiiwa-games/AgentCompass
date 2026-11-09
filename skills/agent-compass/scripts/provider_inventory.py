@@ -22,6 +22,7 @@ import account_state
 import antigravity_plan
 import grok_bot_paths
 from model_resolution import resolve_canonical_model
+import provider_retry
 import public_data
 import usage_cache
 
@@ -1411,6 +1412,16 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
             if account_state.clear_latch(latch_name, state_dir=state_dir, expected_observed_at=latch.get('observed_at')):
                 latches.pop(latch_name, None)
                 latch = None
+        # Re-login recovery: an account held because its provider refused it (provider_retry) lifts the same way, on a
+        # good usage reading newer than the hold or another credential. Accounts without a usage reader keep a clear.
+        if reads:
+            try:
+                provider_retry.lift_after_reading(name, last_good=last_good if problem is None else None,
+                                                  credential_key=row.get('credential_key'),
+                                                  path=Path(state_dir) / provider_retry.FILE
+                                                  if state_dir and not os.environ.get('ROUTER_PROVIDER_RETRY') else None)
+            except OSError:
+                pass
         if row.get('status') != account_state.READY:
             continue
         inactive_peer = next(

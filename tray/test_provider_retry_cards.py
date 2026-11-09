@@ -60,6 +60,25 @@ class ProviderRetryCardTests(unittest.TestCase):
         self.assertIn('提供方报错，整个账号已排除派发', card['badge'])
         self.assertIn(message, card['badge'])
 
+    def test_an_account_hold_widened_from_guesses_shows_its_retry_time(self):
+        # Review 2 R2: only a classifier `account` answer is indefinite; a widened one backs off.
+        retry = datetime.now(timezone.utc) + timedelta(minutes=2)
+        card = self.card({'opencode': {'account': 'opencode', 'model': None, 'message': MESSAGE, 'scope': 'unknown',
+                                       'scope_source': 'widened', 'retry_at': retry.isoformat()}})
+        self.assertIn('整个账号已排除派发', card['badge'])
+        self.assertIn(retry.astimezone().strftime('%m-%d %H:%M'), card['badge'])
+
+    def test_the_clear_shows_a_sentence_in_the_status_bar_not_the_bare_result(self):
+        # Review 2 R6: the status bar showed "1" (True) after Clear.
+        panel = Mock()
+        for cleared in (True, False):
+            panel.data_module.return_value.clear_retry_holds.return_value = cleared
+            router_window.Panel.clear_retry_hold(panel, 'opencode')
+            work = panel.run.call_args.args[0]
+            text = work()
+            self.assertIsInstance(text, str)
+            self.assertEqual(text, router_window._tr('已清除提供方失败标记' if cleared else '没有需要清除的提供方失败标记'))
+
     def test_the_card_clear_button_shows_only_while_held_and_clears_the_account(self):
         clear = Mock()
         widgets = {'clear': clear, 'clear_layout': 'pack', 'windows': [], 'refreshable': False}

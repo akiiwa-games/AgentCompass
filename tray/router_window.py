@@ -1974,8 +1974,11 @@ class Panel:
         def done(_msg):
             self._cards_cache = None
             self.load_quota(True)
-        self.run(lambda: self.data_module().clear_retry_holds(account), self.say(lambda: done(None)),
-                 _tr("正在清除提供方失败标记…"))
+        def clear():
+            # The status bar shows what this returns: a sentence, never the bare True/False ("1").
+            cleared = self.data_module().clear_retry_holds(account)
+            return _tr("已清除提供方失败标记") if cleared else _tr("没有需要清除的提供方失败标记")
+        self.run(clear, self.say(lambda: done(None)), _tr("正在清除提供方失败标记…"))
 
     @staticmethod
     def fill_quota_card(widgets, card):

@@ -760,11 +760,48 @@ def provider_failed(terminal, launched_at):
         return False
 
 
+def provider_replied(terminal, launched_at):
+    """The bridge's notifier saw this launch's turn end on the model's own reply. Paseo's idle/finished state reads the
+    same after a cancel, so only this lifts a provider hold; a terminal without the flag says nothing."""
+    if not isinstance(terminal, dict) or terminal.get('reason') != 'finished' or terminal.get('replied') is not True:
+        return False
+    at = terminal.get('at')
+    try:
+        return isinstance(at, str) and isinstance(launched_at, str) and parse(at) >= parse(launched_at)
+    except ValueError:
+        return False
+
+
+def classify_provider_failure(dispatch_id, terminal, path=None):
+    """Record a provider failure the notifier saw (provider_retry asks the classifier, so outside the registry's
+    transaction) and return the scope it was recorded with, or None."""
+    import provider_retry
+    if not isinstance(terminal, dict) or terminal.get('failure_code') not in provider_retry.FAILURE_CODES:
+        return None
+    try:
+        row = inspect(dispatch_id, path)
+    except (ValueError, OSError):
+        return None
+    if row.get('state') in TERMINAL or not isinstance(row.get('launched_at'), str) \
+            or not provider_failed(terminal, row['launched_at']):
+        return None
+    try:
+        provider_retry.record(row['bundle'], terminal, dispatch_id=dispatch_id)
+    except OSError:
+        pass  # Best effort: provider_retry.ingest records it from the watcher's receipt on the next roll.
+    try:
+        return provider_retry.dispatch_scope(dispatch_id)
+    except OSError:
+        return None
+
+
 def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     """Accept only the bound host agent; start/terminal receipts are idempotent.
 
     `terminal` is the notifier's first terminal sighting of this dispatch, when it has one."""
     now = now or utcnow()
+    import provider_retry
+    scope = classify_provider_failure(dispatch_id, terminal, path)
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)
         labels = snapshot.get('labels') or {}
@@ -827,7 +864,8 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if stuck:
             # The provider failed this turn (or the bridge stopped it retrying): whatever the host says after, it failed.
             target = 'failed'
-            row['failure_code'] = terminal['failure_code']
+            # A failed turn the classifier read as the worker's own error (or this task's input) is not the provider's.
+            row['failure_code'] = provider_retry.outcome_code(terminal['failure_code'], scope)
             row['failure_detail'] = {k: terminal[k] for k in ('partial_work', 'cancelled') if k in terminal}
         elif finished_before(terminal, row['launched_at']) and status != 'running':
             target = 'completed'
@@ -861,17 +899,11 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         if row['state'] != target:
             event(row, target, now)
         save(connection, row)
-    if stuck:
-        import provider_retry
-        try:
-            provider_retry.record(row['bundle'], terminal, dispatch_id=dispatch_id)
-        except OSError:
-            pass  # Best effort: provider_retry.ingest records it from the watcher's receipt on the next roll.
-    if target == 'completed':
-        import provider_retry
+    # Only a turn positively seen ending on the model's reply lifts a hold: a cancelled probe reads as finished too.
+    if target == 'completed' and provider_replied(terminal, row.get('launched_at')):
         try:
             provider_retry.clear(row['bundle'].get('account'), provider_retry.launch_model(row['bundle']),
-                                 launched_at=row.get('launched_at') or row.get('created_at'))
+                                 include_account=True, launched_at=row.get('launched_at') or row.get('created_at'))
         except OSError:
             pass
     if target in ('started', 'completed'):
