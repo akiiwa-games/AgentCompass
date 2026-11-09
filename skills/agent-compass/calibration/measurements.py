@@ -8,21 +8,33 @@ does not read it.
 
 Fields
 - `tier`: the tier fits of `tiers.py` (LMArena WebDev/Agent through the six anchors; SWE-bench, Terminal-Bench 2.0 and
-  the AA index as secondary fits), plus the user's anchor and judgment tiers (source `user`).
-- `usd_per_hour`: Artificial Analysis cost per task x 3600 / time per task, one entry per listed effort (audit report
-  round 046, section 2.3, method A).
+  the AA index as secondary fits), plus the user's anchor and judgment tiers (source `user`). Kept for the old-to-new
+  comparison only: the router no longer gates on a scalar tier (round 047 round 2 folds the tier into the axes).
+- `usd_per_hour`, one entry per (source, effort), every entry with its `kind` (`benchmark` / `vendor` / `community`):
+  - `aa.cost_time` (benchmark): Artificial Analysis cost per task x 3600 / time per task (round 046, section 2.3, method A).
+  - `openrouter.cost_time` (vendor price on benchmark tokens): the AA figure repriced at the OpenRouter output price,
+    only where that price differs from AA's (an equal price adds no independent evidence).
+  - `packaged.accounts` (community): the shipped `usd_per_hour` where the row's basis states a measured $/h figure.
+  - `community.burn` (community): a model's measured quota burn (%/worker-hour) times the plan window's capacity.
 - `price`: input / output / cache-read USD per million tokens (OpenRouter, AA), for cross-checks only.
 - The four capability axes of the tray radar, one entry per (component, source):
   - `divergence`: creative (LMArena Creative Writing, EQ-Bench Creative Writing v3), exploration (LMArena Agent).
-  - `global_rigor`: long horizon (METR p50 time horizon, SWE-bench Verified 1-4 h bucket), long context (AA-LCR),
-    anti-hallucination (AA Omniscience Index).
+  - `global_rigor`: reasoning (LMArena Text overall), long horizon (METR p50 time horizon, SWE-bench Verified 1-4 h
+    bucket), long context (AA-LCR), anti-hallucination (AA Omniscience Index).
   - `module_precision`: coding (SWE-bench Verified <15 min bucket, LMArena WebDev), terminal (AA Terminal-Bench 4.0,
     vals.ai Terminal-Bench 2.0).
   - `vision_tools`: vision (LMArena Vision, AA MMMU-Pro), GUI (OSWorld-Verified, general models only), tools
-    (AA tau2-bench). A model the data marks text-only scores 0 on vision and GUI (source `accounts.visual`).
+    (AA tau2-bench, AA AutomationBench). A model the data marks text-only scores 0 on vision and GUI (source
+    `accounts.visual`) unless a public board lists it there: the public leaderboard wins (user, 2026-11-09).
 
-One conversion for every capability source (the floors.py rule): a model's success s on the source, divided by 90% of
-the best success any listed model reaches there, capped at 1. Reaching nine tenths of the best is full marks.
+Where the old tier came from: its primary fit is LMArena WebDev and Agent through the anchors, moved from the best
+listed variant to High by the AA effort gain (efforts.high_tier). WebDev is module_precision.coding, Agent is
+divergence.exploration, and LMArena Text overall joins global_rigor as `reasoning` (the general-reasoning signal the
+tier carried). The High correction now scales every LMArena component of the model by High tier / best-variant tier
+(LMArena lists each model at its best variant), so the axes are read at High as the tier was.
+
+One conversion for every capability source: a model's success s on the source divided by the best success any listed
+model reaches there (round 2: the 90%-of-best allowance is dropped; it saturated LCR, MMMU-Pro and SWE <15 min).
 - Percent and fraction boards: s is the success rate (per difficulty bucket where the board has buckets).
 - Elo boards: s is the expected win rate against the board's best model, 1 / (1 + 10^((best - rating) / 400)).
 - LMArena Agent reports a net difference in confirmed success that can be negative: s is the score above the board's
@@ -42,8 +54,9 @@ import efforts
 import sources
 import tiers
 
-X = 0.10             # floors.X: full marks at (1 - X) of the best success
+X = 0.0              # full marks only at the board's best (round 1 used floors.X = 0.10, which saturated boards)
 OUT = sources.REPO / 'references' / 'public-measurements.json'
+PLANS = sources.REPO / 'references' / 'plan-templates.json'
 SCHEMA = 'agent-compass.public-measurements/1'
 
 # Names the automatic matcher cannot derive (a dated or differently worded listing of the same model).
@@ -63,6 +76,7 @@ USER_TIERS = {**{k: 'anchor tier (calibration/README.md)' for k in tiers.ANCHORS
 USER_TIER_DATE = '2026-11-04'
 # Labels for the provenance `source` of each capability measurement: (axis, component, kind).
 CAPABILITY_SOURCES = {
+    'lmarena.text_overall': ('global_rigor', 'reasoning', 'elo'),
     'lmarena.creative_writing': ('divergence', 'creative', 'elo'),
     'eqbench.creative_writing_v3': ('divergence', 'creative', 'elo'),
     'lmarena.agent': ('divergence', 'exploration', 'shifted'),
@@ -78,19 +92,27 @@ CAPABILITY_SOURCES = {
     'aa.mmmu_pro': ('vision_tools', 'vision', 'fraction'),
     'osworld.verified': ('vision_tools', 'gui', 'fraction'),
     'aa.tau2_bench': ('vision_tools', 'tools', 'fraction'),
+    'aa.automationbench': ('vision_tools', 'tools', 'fraction'),
 }
+# The kind of each source (decision 2, 2026-11-09): vendor = the vendor's own statement or price list, benchmark = a
+# third-party measurement, community = a community or packaged estimate with a stated basis.
+SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark',
+               'secondary.tier_fit': 'benchmark', 'user': 'user', 'accounts.visual': 'vendor', 'aa.cost_time': 'benchmark',
+               'openrouter.cost_time': 'vendor', 'packaged.accounts': 'community', 'community.burn': 'community',
+               'aa.price': 'vendor', 'openrouter.price': 'vendor', 'aa.index': 'benchmark'}
 AXES = {'divergence': ('creative', 'exploration'),
-        'global_rigor': ('long_horizon', 'long_context', 'anti_hallucination'),
+        'global_rigor': ('reasoning', 'long_horizon', 'long_context', 'anti_hallucination'),
         'module_precision': ('coding', 'terminal'),
         'vision_tools': ('vision', 'gui', 'tools')}
 # The Omniscience Index (correct minus incorrect answers; abstaining scores 0) is the record's top-level `omniscience`. Its
 # non-hallucination rate alone is not used: it rewards abstaining (Haiku 5.5, Grok 4.7 and Argon lead it, Opus 5.5 sits
 # at 0.50).
 AA_SCORE = {'aa.lcr': 'artificial-analysis-long-context-reasoning', 'aa.omniscience_index': 'omniscience',
-            'aa.terminalbench_4': 'terminalbench-4-0', 'aa.mmmu_pro': 'mmmu-pro', 'aa.tau2_bench': 'tau2-bench'}
+            'aa.terminalbench_4': 'terminalbench-4-0', 'aa.mmmu_pro': 'mmmu-pro', 'aa.tau2_bench': 'tau2-bench',
+            'aa.automationbench': 'automationbench-aa'}
 FILE_OF = {'lmarena': None, 'eqbench': 'eqbench-creative-writing.js', 'metr': 'metr-benchmark-results.yaml',
            'osworld': 'osworld-verified.xlsx', 'aa': 'aa-models.html', 'openrouter': 'openrouter-models.json'}
-ARENA_FILE = {'lmarena.creative_writing': 'text_style_control.parquet', 'lmarena.agent': 'agent.parquet',
+ARENA_FILE = {'lmarena.text_overall': 'text_style_control.parquet', 'lmarena.creative_writing': 'text_style_control.parquet', 'lmarena.agent': 'agent.parquet',
               'lmarena.webdev': 'webdev.parquet', 'lmarena.vision': 'vision.parquet'}
 VALS_FILE = {'vals.swebench_1_4h': 'swebench.html', 'vals.swebench_lt15m': 'swebench.html', 'vals.terminal_bench_2': 'terminal-bench-2.html'}
 
@@ -162,12 +184,13 @@ class Builder:
         self.source_rows[source] = {'file': filename, 'url': row.get('url'), 'fetched_at': row.get('fetched_at'),
                                     'sha256': row.get('sha256'), 'as_of': as_of or (row.get('fetched_at') or '')[:10],
                                     'as_of_kind': 'data date' if as_of else 'fetch date (the source publishes no data date)',
-                                    'method': method, 'models_listed': count, **({'note': note} if note else {})}
+                                    'method': method, 'models_listed': count, 'kind': SOURCE_KIND.get(source, 'benchmark'),
+                                    **({'note': note} if note else {})}
 
     def add(self, model, field, source, value, method, **extra):
         meta = self.source_rows[source]
-        entry = {'source': source, 'value': value, 'as_of': meta['as_of'], 'fetched_at': meta['fetched_at'],
-                 'url': meta['url'], 'method': method, **extra}
+        entry = {'source': source, 'kind': meta.get('kind', SOURCE_KIND.get(source, 'benchmark')), 'value': value,
+                 'as_of': meta['as_of'], 'fetched_at': meta['fetched_at'], 'url': meta['url'], 'method': method, **extra}
         self.out[model].setdefault(field, []).append(entry)
 
     def miss(self, source, filename, reason):
@@ -178,7 +201,8 @@ class Builder:
     def boards(self):
         """{source: (board {name: raw}, as_of, method text, name-strip function)}"""
         t, out = self.target, {}
-        arena_specs = {'lmarena.creative_writing': ('text_style_control', 'creative_writing'), 'lmarena.agent': ('agent', 'overall'),
+        arena_specs = {'lmarena.text_overall': ('text_style_control', 'overall'),
+                       'lmarena.creative_writing': ('text_style_control', 'creative_writing'), 'lmarena.agent': ('agent', 'overall'),
                        'lmarena.webdev': ('webdev', 'overall'), 'lmarena.vision': ('vision', 'overall')}
         for src, (board, cat) in arena_specs.items():
             if not self.ok(ARENA_FILE[src]):
@@ -268,9 +292,16 @@ class Builder:
                 if name is None:
                     continue
                 value, s, best = normalise(kind, board[name], board)
+                extra = {}
+                ratio = self.high_ratio.get(model) if family == 'lmarena' else None
+                if ratio is not None and ratio != 1.0:
+                    # LMArena lists the best variant; read it at High as the tier fit does (efforts.high_tier).
+                    extra = {'best_variant_value': value, 'high_ratio': ratio}
+                    value = round(min(1.0, value * ratio), 4)
                 self.names[model][src] = name
-                self.add(model, axis, src, value, f'{method}; s/(0.9*best), capped at 1', component=comp,
-                         listed_as=listed.get(name, name), raw=round(board[name], 4), success=s, best_success=best)
+                self.add(model, axis, src, value, f'{method}; s / best s, capped at 1'
+                         + ('; x High/best-variant tier ratio' if extra else ''), component=comp,
+                         listed_as=listed.get(name, name), raw=round(board[name], 4), success=s, best_success=best, **extra)
         self.conflicts = []
         for model, info in self.models.items():
             if info.get('text_only') or not info.get('visual'):
@@ -278,7 +309,8 @@ class Builder:
                     listed = [e['source'] for e in self.out[model].get('vision_tools', []) if e.get('component') == comp]
                     if listed:      # a board measured image input on a row the data marks text-only
                         self.conflicts.append({'model': model, 'field': f'vision_tools.{comp}', 'reason': 'sources_disagree',
-                                               'detail': f'accounts row is text-only, but {", ".join(listed)} list the model'})
+                                               'detail': f'accounts row is text-only, but {", ".join(listed)} list the model',
+                                               'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
                         continue
                     self.out[model].setdefault('vision_tools', []).append(
                         {'source': 'accounts.visual', 'value': 0.0, 'component': comp, 'as_of': self.acc.get('reviewed_at'),
@@ -287,6 +319,7 @@ class Builder:
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
         ef = efforts.Efforts(self.target, self.acc)
+        self.high_ratio = {}
         fitter = ef.fitter
         webdev = self.manifest.get('webdev.parquet') or {}
         self.register('lmarena.tier_fit', 'webdev.parquet', next(iter(fitter.boards['webdev'].values()))[4],
@@ -318,6 +351,8 @@ class Builder:
                         tiers.NAMES[model] = saved
                 if e['method'] == 'primary':
                     high, corr = ef.high_tier(model, e['tier'])     # apply_rows.py: a best-variant (Max) fit moved to High
+                    if corr and e['tier']:
+                        self.high_ratio[model] = round(high / e['tier'], 4)
                     self.add(model, 'tier', 'lmarena.tier_fit', high,
                              'tiers.py primary fit' + (', moved to High by the AA effort gain (efforts.high_tier)' if corr else ''),
                              fits=e['fits'], best_variant_tier=e['tier'], high_correction=corr, listed_as=names.get('arena'))
@@ -367,19 +402,65 @@ class Builder:
         if self.ok('openrouter-models.json'):
             table = sources.openrouter(self.target)
             self.register('openrouter.price', 'openrouter-models.json', None, 'OpenRouter /api/v1/models pricing (USD per million tokens)', len(table))
+            self.register('openrouter.cost_time', 'openrouter-models.json', None,
+                          'AA cost per task x (OpenRouter output price / AA output price) x 3600 / AA time per task', len(table))
             match = Matcher(table, lambda n: n.split('/')[-1])
             for model in self.models:
                 name = match.find(model)
                 if name:
                     self.add(model, 'price', 'openrouter.price', {k: round(v, 4) for k, v in table[name].items()},
                              'USD per million tokens', listed_as=name)
+                    self.repriced(model, table[name], name)
         else:
             self.miss('openrouter.price', 'openrouter-models.json', 'not fetched')
 
-    def build(self):
+    def repriced(self, model, price, listed):
+        """`openrouter.cost_time`: each AA cost/time entry at the OpenRouter output price, where that price differs."""
+        aa_price = next((e['value'] for e in self.out[model].get('price', []) if e['source'] == 'aa.price'), None) or {}
+        ours, theirs = price.get('output'), aa_price.get('output')
+        if not ours or not theirs or abs(ours / theirs - 1) < 0.01:
+            return
+        for e in [e for e in self.out[model].get('usd_per_hour', []) if e['source'] == 'aa.cost_time']:
+            self.add(model, 'usd_per_hour', 'openrouter.cost_time', round(e['value'] * ours / theirs, 3),
+                     f'AA cost/time repriced at the OpenRouter output price {ours:g} (AA lists {theirs:g}) per million tokens',
+                     effort=e['effort'], listed_as=listed)
+
+    def packaged(self, plans):
+        """Community and packaged usd figures with a stated basis (decision 2, 2026-11-09)."""
+        when = self.acc.get('reviewed_at')
+        self.source_rows['packaged.accounts'] = {
+            'file': 'references/accounts.json', 'url': None, 'fetched_at': None, 'sha256': None, 'as_of': when,
+            'as_of_kind': 'accounts reviewed_at', 'kind': 'community', 'models_listed': None,
+            'method': 'shipped usd_per_hour of a row whose basis states a measured $/h figure (the basis is quoted)'}
+        self.source_rows['community.burn'] = {
+            'file': 'references/accounts.json + references/plan-templates.json', 'url': None, 'fetched_at': None, 'sha256': None,
+            'as_of': when, 'as_of_kind': 'accounts reviewed_at', 'kind': 'community', 'models_listed': None,
+            'method': "a model's burn_pct_per_worker_hour on a window x that window's plan capacity_usd / 100"}
+        for model, info in self.models.items():
+            basis = str(info.get('basis') or '')
+            stated = re.search(r'[^;.]*\$[\d.]+/h[^;]*', basis)
+            usd = info.get('usd_per_hour')
+            if stated and isinstance(usd, (int, float)) and usd > 0:
+                self.add(model, 'usd_per_hour', 'packaged.accounts', float(usd), 'shipped value; basis: ' + stated.group(0).strip(),
+                         effort='high')
+            # The burn was measured on the first plan that has the window (the plan the basis names: Ultra 20x).
+            burn = info.get('burn_pct_per_worker_hour') or {}
+            found = next(((fam, plan, spec, wid, pct) for fam, table in plans.items() if isinstance(table, dict)
+                          for plan, spec in table.items() if isinstance(spec, dict) and isinstance(spec.get('capacity_usd'), dict)
+                          for wid, pct in burn.items() if spec['capacity_usd'].get(wid)), None)
+            if found:
+                fam, plan, spec, wid, pct = found
+                cap = spec['capacity_usd'][wid]
+                self.add(model, 'usd_per_hour', 'community.burn', round(pct * cap / 100, 3),
+                         f'{pct}%/worker-hour of {fam} {plan} {wid} x capacity ${cap} '
+                         f'({spec.get("provenance")}: {str(spec.get("basis") or "")[:160]})', effort='high',
+                         plan=f'{fam}/{plan}', window=wid)
+
+    def build(self, plans=None):
         self.tier()
         self.capabilities()
         self.usd()
+        self.packaged(plans if plans is not None else json.loads(PLANS.read_text(encoding='utf-8')))
         missing_sources = {**self.missing}
         for name, row in self.manifest.items():
             if row.get('status') != 'ok':
