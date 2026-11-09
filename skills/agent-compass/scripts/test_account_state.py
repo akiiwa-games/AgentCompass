@@ -127,7 +127,10 @@ class AccountIdentityTests(Machine):
             variables = {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-2')} if rewritten else {}
             with patch.dict(os.environ, variables):
                 if not rewritten:
-                    os.environ.pop('CLAUDE_CONFIG_DIR', None)
+                    # Every variable that marks a rewritten process: a test run from a worker on another account
+                    # (CLAUDE_SECURESTORAGE_CONFIG_DIR, CODEX_HOME ...) must not count as one.
+                    for name, _ in inventory.ACCOUNT_DIR_VARIABLES:
+                        os.environ.pop(name, None)
                 returned = inventory.current()['accounts']
             published = json.loads(path.read_text(encoding='utf-8'))['accounts']
             seen.append((returned['claude']['plan'], published['claude']['plan'], published['claude-2']['plan'],

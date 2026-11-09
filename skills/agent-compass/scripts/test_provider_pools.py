@@ -182,6 +182,42 @@ def test_windows_scoped_only_by_the_usage_reading_split_pools_too():
     assert provider_retry.pool_of({'account': 'acme', 'model': 'alpha-1'}, fleet) is None   # no scope: one pool
 
 
+def test_an_account_hold_from_a_single_pool_account_narrows_to_its_pool_once_go_appears(store):
+    # Review 049 item 3: today's `opencode` hold (Zen only, one pool) must not keep blocking Go connected after it.
+    fleet = allocator.load_accounts(allocator.reference_fleet_path())
+    entry = hold(fleet, 'opencode/deepseek-v4.1-flash-free', 'account', 'd1')
+    assert ('pool' not in entry, set(provider_retry.active(now=NOW))) == (True, {'opencode'})
+    hold(fleet, 'claude-opus-5-5-high', 'model', 'd2', message=QUOTA)
+    # Nothing to narrow while the account still has one pool.
+    assert provider_retry.scope_account_holds(fleet) == []
+    catalog = {'providers': {'opencode': {'ok': True, 'type': 'paseo_provider', 'checked_at': 1,
+                                          'models': [{'id': m} for m in (*ZEN, *GO)]}}}
+    with_go = auto_bundles.merge_into(fleet, auto_bundles.derive(fleet, catalog, 2))
+    assert provider_retry.scope_account_holds(with_go) == ['opencode#opencode']
+    held = provider_retry.active(now=NOW + timedelta(days=30))
+    assert set(held) == {'opencode#opencode'}   # still indefinite; the model hold elsewhere has expired
+    scoped = held['opencode#opencode']
+    assert (scoped['scope'], scoped['retry_at'], scoped['source'], scoped['scoped_from']) == ('account', None, 'd1',
+                                                                                              'opencode')
+    assert all(held_out(with_go, m) for m in ZEN)
+    assert not any(held_out(with_go, m) for m in GO)
+    assert provider_retry.scope_account_holds(with_go) == []   # once
+    assert provider_retry.clear_key('opencode#opencode') is True
+
+
+def test_loading_the_accounts_narrows_a_legacy_account_hold(store, monkeypatch, tmp_path):
+    # A hold written before pools were kept (no `pool`) on Antigravity, which has two pools: loading narrows it.
+    monkeypatch.setenv('ROUTER_USAGE_CACHE', str(tmp_path / 'usage.json'))
+    store.write_text(json.dumps({'dispatches': {}, 'entries': {'antigravity': {
+        'account': 'antigravity', 'provider': 'antigravity-resilient', 'model': None, 'scope': 'account',
+        'failure_code': 'provider_turn_failed', 'message': QUOTA, 'observed_at': NOW.isoformat(), 'retry_at': None,
+        'models': ['claude-opus-5-5-high'], 'source': 'd-old'}}}), encoding='utf-8')
+    accounts = allocator.load_accounts(allocator.reference_fleet_path())
+    assert set(provider_retry.active(now=NOW)) == {f'antigravity#{THIRD_PARTY_POOL}'}
+    assert held_out(accounts, 'claude-sonnet-5-5-high')
+    assert held_out(accounts, 'gemini-4-argon-high') is None
+
+
 def test_unreadable_accounts_hold_the_whole_account(store):
     entry = provider_retry.record({'account': 'opencode', 'provider': 'opencode', 'model': 'x',
                                    'launch_model': 'opencode/x'},

@@ -556,6 +556,11 @@ def load_accounts(path=None):
             measured = {}
         apply_measured(accounts, measured if isinstance(measured, dict) else {}, datetime.now(timezone.utc))
     provider_inventory.apply_shared_quota(accounts)
+    try:
+        # An account hold from when the account had one pool now holds only its failed models' pools (provider_retry).
+        provider_retry.scope_account_holds(accounts)
+    except OSError:
+        pass
     if path is None:
         try:
             accounts['_host_policy_sync'] = host_policy.sync_discovered(accounts)

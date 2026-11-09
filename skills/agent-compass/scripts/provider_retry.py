@@ -22,7 +22,8 @@ None is special-cased here. This module records each such dispatch once in <stat
     readings' own `models`, a bundle's explicit `draws`; Antigravity's Gemini and third-party windows), and where one
     provider of the account launches models under several provider prefixes of its own (`opencode/...` Zen free models
     and `opencode-go/...` Go models: OpenCode's own provider ids), each prefix is its own pool. Widening never crosses
-    a pool: a guess about one quota says nothing about another.
+    a pool: a guess about one quota says nothing about another. An account hold taken while the account had one pool
+    becomes a hold of its failed models' pools once the account has several (`scope_account_holds`).
   - Every hold backs off like a failing usage reading (usage_core.failure_retry_seconds): 2 minutes, doubling with
     each consecutive hold of the same key, capped at the idle poll interval; a later `next` from the provider wins.
     Past its retry time the next roll may pick it again and so re-probes it. That includes an account hold widened
@@ -401,8 +402,65 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None, a
     return entry
 
 
+def _account_hold_pools(entry, accounts):
+    """{pool id: (pool, models)} for an account hold's recorded models once the account has several pools, else None
+    (the account still has one pool, or the hold names no model)."""
+    pools = {}
+    for model in entry.get('models') or ():
+        if not isinstance(model, str):
+            continue
+        pool = resolve_pool({'account': entry.get('account'), 'provider': entry.get('provider'), 'model': model,
+                             'launch_model': model}, accounts)
+        if pool is None:
+            return None
+        pools.setdefault(pool['id'], (pool, []))[1].append(model)
+    return pools or None
+
+
+def scope_account_holds(accounts, *, path=None):
+    """An account hold taken while its account had a single pool (or before pools were kept) holds only the pools of
+    the models it was recorded for once the account has several: a Zen free-usage hold on `opencode` must not keep
+    blocking OpenCode Go connected after it. Rewrites such holds into pool holds (allocator.load_accounts, which knows
+    the accounts), keeping their scope, retry time and login; returns the keys written. A pool hold already recorded
+    for the same pool is newer and is kept."""
+    if not enabled() or not isinstance(accounts, dict):
+        return []
+    path = path or store_path()
+    if not path.exists():
+        return []
+    try:
+        entries = _read(path)['entries']
+    except PermissionError:
+        return []
+    plans = {k: _account_hold_pools(v, accounts) for k, v in entries.items()
+             if _account_hold(v) and not hold_pool(v) and k == key(v.get('account'))}
+    plans = {k: pools for k, pools in plans.items() if pools}
+    if not plans:
+        return []
+    written = []
+    with override_store.locked(path):
+        doc = _read(path)
+        changed = False
+        for k, pools in plans.items():
+            entry = doc['entries'].get(k)
+            # Compare-and-swap: a hold rewritten or recorded again since the read is left for the next pass.
+            if not (isinstance(entry, dict) and not hold_pool(entry)
+                    and entry.get('observed_at') == entries[k].get('observed_at')):
+                continue
+            doc['entries'].pop(k)
+            changed = True
+            for pool_id, (pool, models) in sorted(pools.items()):
+                held = pool_key(entry['account'], pool_id)
+                if held not in doc['entries']:
+                    doc['entries'][held] = {**entry, 'pool': pool, 'models': sorted(models), 'scoped_from': k}
+                    written.append(held)
+        if changed:
+            override_store.write(path, doc)
+    return written
+
+
 def active(*, now=None, path=None):
-    """Holds still in effect, keyed `account` or `account/model`. Reading never writes."""
+    """Holds still in effect, keyed `account`, `account#pool` or `account/model`. Reading never writes."""
     if not enabled():
         return {}
     now = now or datetime.now(timezone.utc)
