@@ -25,9 +25,16 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
   automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced.
 - duration_multiplier is 1.0 when a time-based source (AA cost/time, OpenRouter repricing of it) is in the merge, since
   its hourly figure already prices the model's own pace; otherwise the shipped multiplier stays, cited as community.
-- Plan capacity stays the packaged plan-templates figure (list-price USD of usage, with its provenance and basis);
-  its hours of each window's reference model are that figure over the reference model's cited usd (review F2: not the
-  shipped local sample). The router reads the USD figure unchanged.
+- Plan capacity is the community real-usage measurement (round 4, user 2026-11-09: "都用社区真实使用量 且保持最新"):
+  per window of each plan in plan-templates.json, the median of the cited community observations (`measurements.py`
+  `capacity`, read by `community.py`), or a stated ratio of another window (Fable weekly = half the weekly limit). No
+  observation, no value: the window's capacity is unknown (a red data error) and the router prices its scarcity from
+  the live percentage only; the packaged template figure is not a fallback. A source older than STALE_DAYS (data date,
+  else fetch date) is a yellow note; a source not fetched, or whose sentence is gone, contributes nothing (red).
+- usd_per_hour has a pluggable basis (`--usd-basis`, `USD_BASES`): `benchmark` (the AA/OpenRouter merge above; the
+  default until the user picks a basis on the community scale) and `community` (measured community usd per worker-hour;
+  a model without one is `derived` from a measured model of the same provider times the benchmark usd ratio, both
+  citations kept; neither is mode B). Each window's reference-model hours are its capacity over that model's usd.
 - economy is priced by the router at run time; `economy_static` = 1 / (1 + usd / 15) is the tray's static view.
 """
 import argparse
@@ -246,40 +253,178 @@ class Scorer:
                 ax.pop('flag', None)
 
 
-def capacity(acc, plans, usd):
-    """Packaged window capacity with its hours of the window's reference model at the cited reference usd."""
-    factors, out = {}, {}
-    for fam, windows in REFERENCE_MODELS.items():
-        for wid, ref in windows.items():
-            factors.setdefault(fam, {})[wid] = {'reference_model': ref, 'cited_usd_per_hour': usd[ref]['value'], 'factor': 1.0,
-                                                'note': 'capacity_usd is list-price usage USD, the scale of the cited usd'}
+STALE_DAYS = 21         # a community value older than this (data date, else fetch date) is a yellow note
+
+
+def age_days(as_of, now):
+    try:
+        return (now.date() - datetime.fromisoformat(str(as_of)[:10]).date()).days
+    except ValueError:
+        return None
+
+
+def window_capacity(fam, plan, wid, obs, rules, usd, now):
+    """One window of one plan: the median of its community observations, else a stated ratio of another window."""
+    entries = []
+    for o in obs.get((fam, plan, wid), ()):
+        age = age_days(o.get('as_of'), now)
+        entries.append({k: o.get(k) for k in ('source', 'kind', 'value', 'url', 'as_of', 'fetched_at', 'method')} |
+                       {'age_days': age, 'stale': age is None or age > STALE_DAYS})
+    rule = rules.get((fam, wid))
+    if not entries and rule:
+        base = window_capacity(fam, plan, rule['of_window'], obs, {}, usd, now)
+        if base['capacity_usd'] is not None:
+            age = max(age_days(rule.get('as_of'), now) or 0, base['age_days'])   # the statement's and the base's newest
+            entries.append({'source': rule['source'], 'kind': 'derived', 'value': round(rule['ratio'] * base['capacity_usd'], 2),
+                            'url': rule['url'], 'as_of': rule['as_of'], 'fetched_at': rule.get('fetched_at'),
+                            'method': f"{rule['ratio']:g} x the merged {rule['of_window']} ({rule['statement']}; "
+                                      f"{rule['original']})",
+                            'derived_from': base['sources'], 'age_days': age, 'stale': age > STALE_DAYS})
+    ref = (REFERENCE_MODELS.get(fam) or {}).get(wid)
+    ref_usd = ((usd.get(ref) or {}).get('value')) if ref else None
+    if not entries:
+        return {'unit': 'usd', 'capacity_usd': None, 'status': 'missing', 'sources': [], 'reference_model': ref,
+                'ref_hours': None}
+    value = round(statistics.median(e['value'] for e in entries), 2)
+    newest = min(e['age_days'] if e['age_days'] is not None else 10 ** 6 for e in entries)
+    return {'unit': 'usd', 'capacity_usd': value, 'status': 'stale' if newest > STALE_DAYS else 'ok',
+            'age_days': newest, 'merge': f'median of {len(entries)} community value(s)', 'sources': entries,
+            'reference_model': ref, 'ref_hours': round(value / ref_usd, 1) if ref_usd else None}
+
+
+def resolve_plan(table, plan):
+    """(plan whose windows apply, alias or None) for a plan-templates entry that may be `{"alias": ...}`."""
+    target, alias = plan, None
+    for _ in range(3):
+        nxt = (table.get(target) or {}).get('alias')
+        if not isinstance(nxt, str):
+            break
+        target = alias = nxt
+    return target, alias
+
+
+def capacity(meas, plans, usd, now=None):
+    """({family: {plan: {window: capacity row}}}, data errors) from the community observations in `meas`."""
+    now = now or datetime.now(timezone.utc)
+    cap = meas.get('capacity') or {}
+    obs = {}
+    for o in cap.get('observations') or ():
+        obs.setdefault((o['family'], o['plan'], o['window']), []).append(o)
+    rules = {(r['family'], r['window']): r for r in cap.get('rules') or ()}
+    errors = [{'field': 'capacity', **e} for e in cap.get('errors') or ()]
+    out, stale = {}, {}
     for fam, table in plans.items():
         if not isinstance(table, dict):
             continue
         for plan, spec in table.items():
-            if not isinstance(spec, dict) or not isinstance(spec.get('capacity_usd'), dict):
+            if not isinstance(spec, dict):
                 continue
-            for wid, cap in spec['capacity_usd'].items():
-                f = (factors.get(fam) or {}).get(wid) or {}
-                ref_usd = f.get('cited_usd_per_hour')
-                out.setdefault(fam, {}).setdefault(plan, {})[wid] = {
-                    'unit': 'usd', 'capacity_usd': cap, 'reference_model': f.get('reference_model'),
-                    'ref_hours': round(cap / ref_usd, 1) if ref_usd else None,
-                    'status': 'ok' if ref_usd else 'reference usd missing (hours unknown; the USD capacity still applies)',
-                    'source': {'kind': 'community', 'provenance': spec.get('provenance'), 'basis': spec.get('basis'),
-                               'url': None, 'as_of': acc.get('reviewed_at')}}
-    return factors, out
+            target, alias = resolve_plan(table, plan)
+            for wid in (table.get(target) or {}).get('windows') or {}:
+                row = window_capacity(fam, target, wid, obs, rules, usd, now)
+                if alias:
+                    row['alias_of'] = alias
+                out.setdefault(fam, {}).setdefault(plan, {})[wid] = row
+                if alias:
+                    continue
+                if row['status'] == 'missing':
+                    errors.append({'field': 'capacity', 'family': fam, 'plan': plan, 'window': wid, 'level': 'red',
+                                   'reason': 'no_community_source',
+                                   'effect': 'capacity unknown: the router prices the window from its live percentage and '
+                                             'reset time only; the packaged template figure is not a fallback'})
+                for e in row['sources']:
+                    if e['stale'] and e['kind'] == 'community':
+                        stale.setdefault(e['source'], {'age_days': e['age_days'], 'as_of': e['as_of'], 'windows': []})
+                        stale[e['source']]['windows'].append(f'{fam}/{plan}/{wid}')
+    for src, row in sorted(stale.items()):
+        errors.append({'field': 'capacity', 'source': src, 'level': 'yellow', 'reason': 'stale_source',
+                       'age_days': row['age_days'], 'as_of': row['as_of'], 'threshold_days': STALE_DAYS,
+                       'windows': row['windows'], 'effect': 'still used in the median; refresh the source'})
+    return out, errors
+
+
+def source_ages(meas, now=None):
+    """{source: {kind, as_of, fetched_at, age_days, stale}} for every source the measurements cite."""
+    now = now or datetime.now(timezone.utc)
+    out = {}
+    for src, row in sorted((meas.get('sources') or {}).items()):
+        age = age_days(row.get('as_of'), now)
+        out[src] = {'kind': row.get('kind'), 'as_of': row.get('as_of'), 'as_of_kind': row.get('as_of_kind'),
+                    'fetched_at': row.get('fetched_at'), 'age_days': age, 'stale': age is None or age > STALE_DAYS}
+    for src, row in sorted((meas.get('missing_sources') or {}).items()):
+        out[src] = {'kind': None, 'missing': True, 'reason': row.get('reason'), 'url': row.get('url')}
+    return out
+
+
+# --- usd per worker-hour bases ------------------------------------------------------------------------------------
+PROVIDER_PREFIX = (('claude-', 'anthropic'), ('gpt-', 'openai'), ('gemini-', 'google'), ('grok-', 'xai'))
+
+
+def provider(model):
+    return next((p for prefix, p in PROVIDER_PREFIX if str(model).startswith(prefix)), None)
+
+
+def derive_usd(measured, bench):
+    """`derived` usd for models with no measured community value: the community usd of a measured model of the same
+    provider times the benchmark usd ratio of the two (round 4: benchmarks give relative prices only). The measured
+    model is the one whose benchmark usd is closest (least extrapolation). Both citations are kept."""
+    out = {}
+    for m, b in bench.items():
+        if m in measured or (b or {}).get('value') is None or provider(m) is None:
+            continue
+        bases = [k for k in measured if provider(k) == provider(m) and (bench.get(k) or {}).get('value')]
+        if not bases:
+            continue
+        base = min(bases, key=lambda k: (abs(float(np.log(b['value'] / bench[k]['value']))), k))
+        ratio = b['value'] / bench[base]['value']
+        out[m] = {'value': round(measured[base]['value'] * ratio, 3), 'status': 'ok', 'kind': 'derived',
+                  'merge': f'derived: community usd of {base} x benchmark usd ratio {m} / {base} = {ratio:.3f}',
+                  'used': [], 'max_over_min': None,
+                  'sources': {'community': {**measured[base], 'model': base},
+                              'ratio': {'value': round(ratio, 4),
+                                        'numerator': {'model': m, 'value': b['value'], 'used': b.get('used')},
+                                        'denominator': {'model': base, 'value': bench[base]['value'],
+                                                        'used': bench[base].get('used')}}}}
+    return out
+
+
+def usd_benchmark(scorer, rows, meas, priority):
+    return {m: pick_usd(scorer.trusted(r['fields'].get('usd_per_hour')), priority) for m, r in rows.items()}
+
+
+def usd_community(scorer, rows, meas, priority):
+    """Measured community usd per worker-hour (usd_per_hour entries of kind `community`), else `derived`, else missing."""
+    bench = {m: pick_usd([e for e in scorer.trusted(r['fields'].get('usd_per_hour')) if e.get('kind') != 'community'],
+                         priority) for m, r in rows.items()}       # the ratio is benchmark against benchmark only
+    measured = {}
+    for m, r in rows.items():
+        entries = [e for e in scorer.trusted(r['fields'].get('usd_per_hour')) if e.get('kind') == 'community']
+        if entries:
+            measured[m] = {**pick_usd(entries), 'kind': 'community'}
+    derived = derive_usd({m: {'value': v['value'], 'used': v['used'], 'sources': v['sources']} for m, v in measured.items()},
+                         bench)
+    return {m: measured.get(m) or derived.get(m) or {'value': None, 'status': 'missing', 'sources': {}, 'merge': None}
+            for m in rows}
+
+
+USD_BASES = {
+    'benchmark': {'fn': usd_benchmark, 'scale': 'AA benchmark tokens at list prices (AA cost/time; OpenRouter repricing)',
+                  'note': 'not the community real-usage scale of the capacities; default until the user picks a basis'},
+    'community': {'fn': usd_community, 'scale': 'community real-usage measurements per worker-hour, else derived',
+                  'note': 'option A: a model with no measured or derivable value is mode B'},
+}
 
 
 def legacy(info):
     return {k: info.get(k) for k in ('tier', 'usd_per_hour', 'duration_multiplier', 'subjective', 'capabilities', 'visual')}
 
 
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), floors=True):
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), floors=True, usd_basis='benchmark',
+          now=None):
     scorer = Scorer(meas, acc, distrust, overrides)
     rows, fits = scorer.score()
-    usd = {m: pick_usd(scorer.trusted(r['fields'].get('usd_per_hour')), priority) for m, r in rows.items()}
-    factors, caps = capacity(acc, plans, usd)
+    usd = USD_BASES[usd_basis]['fn'](scorer, rows, meas, priority)
+    caps, cap_errors = capacity(meas, plans, usd, now)
     models, errors = {}, []
     for m, r in rows.items():
         model_errors = []
@@ -310,7 +455,11 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
            'distrusted_sources': sorted(distrust), 'source_priority': list(priority or ()),
            'user_overrides': list(overrides),
            'method': __doc__.strip().splitlines()[0],
-           'backfill_fits': fits, 'capacity_conversion': factors, 'capacity': caps,
+           'backfill_fits': fits,
+           'usd_basis': {'name': usd_basis, 'scale': USD_BASES[usd_basis]['scale'], 'note': USD_BASES[usd_basis]['note']},
+           'capacity': caps, 'capacity_stale_days': STALE_DAYS,
+           'capacity_not_found': (meas.get('capacity') or {}).get('not_found') or {},
+           'capacity_errors': cap_errors, 'source_ages': source_ages(meas, now),
            'models': models, 'data_errors': errors}
     if floors:
         import five_axis_floors
@@ -324,13 +473,14 @@ def main():
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
     ap.add_argument('--source-priority', default='', help='comma-separated usd sources; the first with a value wins over the median')
     ap.add_argument('--user-overrides', help='JSON list of dated {model, axis, value, as_of, note} overrides (source `user`)')
+    ap.add_argument('--usd-basis', default='benchmark', choices=sorted(USD_BASES))
     ap.add_argument('--out', default=str(OUT))
     args = ap.parse_args()
     raw = Path(args.measurements).read_bytes()
     overrides = json.loads(Path(args.user_overrides).read_text(encoding='utf-8')) if args.user_overrides else []
     priority = [s.strip() for s in args.source_priority.split(',') if s.strip()]
     doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw,
-                priority, overrides)
+                priority, overrides, usd_basis=args.usd_basis)
     Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(doc["models"])} models -> {args.out}')
     print(f'{"model":28s} {"usd/h":>7}  ' + ' '.join(f'{a[:10]:>10}' for a in AXES))
@@ -341,6 +491,10 @@ def main():
                          for a in AXES)
         print(f"{m:28s} {u if u is not None else '-':>7}  {cells}")
     print('* backfilled  ^ inherited (vendor statement)  u user override  ! missing (0)')
+    for fam, plans in doc['capacity'].items():
+        for plan, wins in plans.items():
+            print(f'capacity {fam}/{plan}: ' + ', '.join(
+                f"{w}={r['capacity_usd'] if r['capacity_usd'] is not None else '-'}({r['status']})" for w, r in wins.items()))
     fl = doc.get('floors') or {}
     print('floors:', json.dumps({k: fl.get(k) for k in ('anchor', 'ratio', 'critical_ratio', 'axis_ratio', 'agreement')}))
 

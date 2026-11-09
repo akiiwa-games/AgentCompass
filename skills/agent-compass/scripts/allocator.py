@@ -2080,7 +2080,7 @@ FIVE_AXIS_DEFAULTS = {
     'weights': {'fit': 0.4, 'ability': 0.0, 'continuity': 0.25},
     'strong_level': 2,           # an axis demanded at this level or above has its own floor
     'demanded_level': 1,         # rule B: an axis demanded at this level or above must have data
-    'overqualification_weight': 0.08,
+    'overqualification_weight': 0.05,   # round 4: ties are broken explicitly, this only prices surplus
     'overqualification_price_cap': 3.0,
 }
 FIVE_AXIS_DEMAND_SCHEMA = {
@@ -2147,9 +2147,9 @@ def five_axis_overlay(accounts, data=None):
 
     Each model row gets `five_axis` {scores, missing, index, usd_status}; usd_per_hour and duration_multiplier become
     the merged cited values (an unsourced usd is removed, not defaulted). The scalar tier is left in place but the
-    five-axis path does not read it. Each windowed account's capacity is the packaged list-price USD figure, scaled by the
-    data's `capacity_conversion` factor (1.0 since review F2: the cited usd is on the same list-price scale); a window
-    left without capacity is marked unknown."""
+    five-axis path does not read it. Each windowed account's capacity is the data's community real-usage figure for
+    its plan and window (round 4), replacing the packaged figure and any dated change; a window without one is marked
+    unknown, with no template fallback."""
     cfg = five_axis_config(accounts.get('scoring'))
     if cfg is None:
         return accounts
@@ -2175,26 +2175,31 @@ def five_axis_overlay(accounts, data=None):
         duration = ((row or {}).get('duration_multiplier') or {}).get('value')
         if duration is not None:
             info['duration_multiplier'] = float(duration)
-    factors = data.get('capacity_conversion') or {}
+    community = data.get('capacity') or {}
     for name, spec in (out.get('accounts') or {}).items():
         if not isinstance(spec, dict) or not spec.get('windows') or spec.get('unmetered'):
             continue
-        family = provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_family(spec)
-        fam = factors.get(str(family or '').removesuffix('-resilient')) or {}
-        caps = dict(spec.get('capacity_usd') or {})
-        for wid in spec['windows']:
-            if wid not in caps:
-                template = template_capacity_usd(spec, wid)
-                if template:
-                    caps[wid] = template
-        scaled = {wid: round(cap * fam[wid]['factor'], 2) for wid, cap in caps.items() if (fam.get(wid) or {}).get('factor')}
-        spec['capacity_usd'] = {**caps, **scaled}
-        for wid, change in list((spec.get('capacity_change') or {}).items()):
-            factor = (fam.get(wid) or {}).get('factor')
-            if factor and isinstance(change, dict) and change.get('usd'):
-                spec['capacity_change'] = {**spec['capacity_change'], wid: {**change, 'usd': round(change['usd'] * factor, 2)}}
-        if any(wid not in spec['capacity_usd'] for wid in spec['windows']):
+        family = str(provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_family(spec) or '')
+        family = family.removesuffix('-resilient')
+        plan = provider_inventory.configured_plan(family, spec.get('plan'))
+        rows_ = (community.get(family) or {}).get(plan) or {}
+        caps = {wid: float(rows_[wid]['capacity_usd']) for wid in spec['windows']
+                if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
+        spec['capacity_usd'] = caps
+        spec.pop('capacity_change', None)       # the community measurement is the capacity in effect when measured
+        spec['capacity_source'] = {wid: {'status': (rows_.get(wid) or {}).get('status', 'missing'),
+                                         'age_days': (rows_.get(wid) or {}).get('age_days'), 'plan': plan or None}
+                                   for wid in spec['windows']}
+        unknown = [wid for wid in spec['windows'] if wid not in caps]
+        if unknown:
             spec['capacity_unknown'] = True
+            # Nor the local percent-per-hour priors: an unknown window is priced from its live percentage only.
+            burn = {w: r for w, r in (spec.get('burn_pct_per_worker_hour') or {}).items() if w not in unknown}
+            spec['burn_pct_per_worker_hour'] = burn
+            for info in (out.get('models') or {}).values():
+                if isinstance(info, dict) and isinstance(info.get('burn_pct_per_worker_hour'), dict):
+                    info['burn_pct_per_worker_hour'] = {w: r for w, r in info['burn_pct_per_worker_hour'].items()
+                                                        if w not in unknown}
     anchor = (data.get('floors') or {}).get('anchor')
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'floors': data.get('floors') or {},
                          'anchor_scores': ((rows.get(anchor) or {}).get('scores') or {}) if anchor else {},
@@ -2261,18 +2266,27 @@ def five_axis_level(scores, demand, ratio=1.0):
 
 def five_axis_gate(task, demand, overlay, cfg):
     """The task's floor on the axis scale: the calibrated share of the anchor model's level on this demand (critical work
-    has its own share), and a per-axis floor for every strongly demanded axis."""
+    has its own share), and a per-axis floor for every strongly demanded axis (the difficulty's axis ratio x share x the
+    anchor's score on it)."""
     floors = overlay.get('floors') or {}
     anchor = overlay.get('anchor_scores') or {}
     difficulty = task['difficulty']
     base = float((floors.get('ratio') or {}).get(difficulty, 0.0))
     share = float((floors.get('critical_ratio') or {}).get(difficulty, base)) if task['critical'] else base
     level, eff = five_axis_level(anchor, demand)
-    axis_ratio = float(floors.get('axis_ratio', 0.9))
+    axis_ratio = floors.get('axis_ratio', 0.9)     # one value per difficulty since round 4; a scalar before
+    axis_ratio = float(axis_ratio.get(difficulty, 0.9) if isinstance(axis_ratio, dict) else axis_ratio)
     strong = {a: round(axis_ratio * share * eff[a], 4) for a, w in demand.items() if w >= cfg['strong_level']}
     return {'floor': round(base * level, 4), 'gate': round(share * level, 4), 'anchor': floors.get('anchor'),
             'anchor_level': round(level, 4), 'share': share, 'axis_floors': strong,
             'axis_per_tier': float(floors.get('axis_per_tier') or 0.2)}
+
+
+def five_axis_order(candidate):
+    """Sort key on the five-axis path: score, then cost per worker-hour ascending, then ability above the floor."""
+    k = candidate['components']
+    return (-candidate['score'], (candidate.get('five_axis_price') or {}).get('usd_per_hour', 0.0),
+            -(k.get('five_axis_level', 0.0) - k.get('five_axis_gate', 0.0)))
 
 
 def five_axis_overqualification(eligible, task, cfg, policy):
@@ -3467,7 +3481,12 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
         if c['available_in_hours']:
             c['score'] = round(c['score'] - policy['deferred_start_penalty'], 4)
     apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
-    eligible.sort(key=lambda c: -c['score'])
+    if five:
+        # Equal scores (fit saturates on minimum-sufficient work) go to the cheaper candidate per worker-hour, then the
+        # one with more ability above the floor; list order no longer decides (round 047, round 4).
+        eligible.sort(key=five_axis_order)
+    else:
+        eligible.sort(key=lambda c: -c['score'])
     exchange = opportunity_exchange(policy)
     return candidates, eligible, {'weights': {k: round(v, 3) for k, v in weights.items()},
                                   'shortage_loss_per_usd': exchange['shortage_loss_per_usd'],

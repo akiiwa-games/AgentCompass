@@ -4,7 +4,7 @@ Called by `five_axis.py`; writes the `floors` block of `references/five-axis-sco
 
 A task's floor is `ratio[difficulty]` times the anchor model's demand-weighted axis level on the task's own demand
 (critical work: `critical_ratio[difficulty]`), and every axis the task demands at level 2 or more needs at least
-`axis_ratio x share x` the anchor's score on that axis. Floors relative to an anchor do not drift when a new
+`axis_ratio[difficulty] x share x` the anchor's score on that axis. Floors relative to an anchor do not drift when a new
 leaderboard top lowers every board-best-relative score: the anchor's level falls with the others.
 
 Calibration (the user's rule: in the ample state the qualifying set per difficulty stays close to today's):
@@ -14,9 +14,14 @@ Calibration (the user's rule: in the ample state the qualifying set per difficul
 - Models: every model row with a shipped tier and no missing axis, except the synthetic alignments (`SYNTHETIC`).
 - Today: the shipped tier at High (allocator.effort_ability) against the route's floor plus critical headroom.
 - New: the demanded-axis level against the floor, plus the per-axis floors.
-- For each `axis_ratio` on a grid, each difficulty's ratio maximises agreement over its non-critical (case, model)
-  pairs and the critical ratio over its critical pairs (a difficulty without critical cases keeps today's
-  floor-plus-headroom over floor); the `axis_ratio` with the most agreement overall wins. Ties take the middle ratio.
+- Per difficulty, from routine up (round 4: one `axis_ratio` per band; a single global value let the many routine and
+  hard pairs pick 1.0, which held coupled work to the anchor's own axis scores): for each `axis_ratio` on a grid, the
+  difficulty's ratio maximises agreement over its non-critical (case, model) pairs and the critical ratio over its
+  critical pairs (a difficulty without critical cases keeps today's floor-plus-headroom over floor); the `axis_ratio`
+  with the most agreement at that difficulty wins, ties to the one that drops fewest of today's qualifiers, then the
+  lower ratio. Ties in a share take the middle of the best run.
+- Monotone by construction: a harder difficulty never asks a lower share or a lower per-axis floor (axis_ratio x share)
+  than an easier one, and a critical task never less than its difficulty.
 - `axis_per_tier` is the slope of the equal-weight axis level on the shipped tier: it converts spans written in tier
   points (saturation, overqualification) to the axis scale.
 """
@@ -107,28 +112,38 @@ def calibrate(doc, acc):
         for m, r in rows.items():
             groups[(c['difficulty'], c['critical'])].append((r['scores'], c['demand'], r['old'] >= c['old_gate'] - 1e-9, m, c))
     policy = acc['scoring']
-    best = None
-    for k in AXIS_RATIOS:
-        tops = {g: [(max_share(sc, anchor, dm, k), old, m, c) for sc, dm, old, m, c in pairs] for g, pairs in groups.items()}
-        ratio, crit, agree, low = {}, {}, 0, 0.0
-        for d in DIFFICULTIES:
-            # Monotone by construction: a harder difficulty never asks less, a critical task never less than its
-            # difficulty (round 2 searched each group alone and could invert them on two or three cases).
-            ratio[d], n = best_share([(t[0], old) for t, old, _, _ in tops.get((d, False), [])], low)
-            agree += n
-            if ratio[d] is None:        # no case at this difficulty: today's floor over the anchor's tier
-                ratio[d] = max(low, round(float(policy['ability_floor'][d]) / float(acc['models'][ANCHOR]['tier']), 4))
-            low = ratio[d]
-            cpairs = [(t[0], old) for t, old, _, _ in tops.get((d, True), [])]
+    ratio, crit, axis, tops = {}, {}, {}, {}
+    low, low_axis = 0.0, 0.0            # the easier band's share and per-axis floor share (axis_ratio x share)
+    for d in DIFFICULTIES:
+        best = None
+        for k in AXIS_RATIOS:
+            band = {cr: [(max_share(sc, anchor, dm, k), old, m, c) for sc, dm, old, m, c in groups.get((d, cr), [])]
+                    for cr in (False, True)}
+            r, n = best_share([(t[0], old) for t, old, _, _ in band[False]], low)
+            if r is None:               # no case at this difficulty: today's floor over the anchor's tier
+                r = max(low, round(float(policy['ability_floor'][d]) / float(acc['models'][ANCHOR]['tier']), 4))
+            if k * r < low_axis - 1e-9:
+                continue
+            cpairs = [(t[0], old) for t, old, _, _ in band[True]]
             if cpairs:
-                crit[d], n = best_share(cpairs, ratio[d])
-                agree += n
+                cr_share, cn = best_share(cpairs, r)
             else:
                 floor = float(policy['ability_floor'][d])
-                crit[d] = round(ratio[d] * (floor + allocator.critical_headroom(policy, d)) / floor, 4)
-        if best is None or agree > best[0]:
-            best = (agree, k, ratio, crit, tops)
-    _, k, ratio, crit, tops = best
+                cr_share, cn = round(r * (floor + allocator.critical_headroom(policy, d)) / floor, 4), 0
+            share_of = {False: r, True: cr_share}
+            leaves = sum(old and t[0] < share_of[cr] - 1e-9 for cr in band for t, old, _, _ in band[cr])
+            rank = (n + cn, -leaves, -k)
+            if best is None or rank > best[0]:
+                best = (rank, k, r, cr_share, band)
+        if best is None:                # no axis ratio keeps the per-axis floor monotone: hold the easier band's
+            k = axis[DIFFICULTIES[DIFFICULTIES.index(d) - 1]]
+            band = {cr: [(max_share(sc, anchor, dm, k), old, m, c) for sc, dm, old, m, c in groups.get((d, cr), [])]
+                    for cr in (False, True)}
+            r = best_share([(t[0], old) for t, old, _, _ in band[False]], low)[0] or low
+            best = (None, k, r, best_share([(t[0], old) for t, old, _, _ in band[True]], r)[0] or r, band)
+        _, axis[d], ratio[d], crit[d], band = best
+        tops.update({(d, cr): v for cr, v in band.items() if v})
+        low, low_axis = ratio[d], axis[d] * ratio[d]
     report, changes = {}, {}
     for (d, critical), rows_ in sorted(tops.items()):
         share = crit[d] if critical else ratio[d]
@@ -144,12 +159,15 @@ def calibrate(doc, acc):
             elif old and not new:
                 per[m]['leaves'] += 1
                 per[m]['why_leaves'] = per[m]['why_leaves'] or f"{c['id']}: {why} (needs share {share:g}, reaches {top:.3f})"
-        report[key] = {'share': share, 'pairs': len(rows_), 'cases': len({c['id'] for _, _, _, c in rows_}),
-                       'agreement': round(n_agree / len(rows_), 3) if rows_ else None}
+        report[key] = {'share': share, 'axis_ratio': axis[d], 'pairs': len(rows_), 'cases': len({c['id'] for _, _, _, c in rows_}),
+                       'agreement': round(n_agree / len(rows_), 3) if rows_ else None,
+                       'qualify_today': sorted({m for _, old, m, _ in rows_ if old}),
+                       'qualify_new_all_cases': sorted({m for m in {m for _, _, m, _ in rows_}
+                                                        if all(t[0] >= share - 1e-9 for t, _, mm, _ in rows_ if mm == m)})}
         changes[key] = {m: v for m, v in sorted(per.items()) if v['enters'] or v['leaves']}
     tiers = [(float(acc['models'][m]['tier']), float(np.mean([r['scores'][a] for a in allocator.FIVE_AXES]))) for m, r in rows.items()]
     slope = float(np.polyfit([t for t, _ in tiers], [v for _, v in tiers], 1)[0]) if len(tiers) >= 5 else 0.2
-    return {'anchor': ANCHOR, 'ratio': ratio, 'critical_ratio': crit, 'axis_ratio': k,
+    return {'anchor': ANCHOR, 'ratio': ratio, 'critical_ratio': crit, 'axis_ratio': axis,
             'axis_per_tier': round(slope, 4), 'agreement': report, 'changes': changes,
             'calibrated_on': {'cases': [str(CASES.relative_to(sources.REPO)), 'calibration/five_axis_tasks.py'],
                               'n_cases': len(all_cases), 'n_models': len(rows),

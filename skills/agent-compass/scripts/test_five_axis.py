@@ -1,5 +1,6 @@
-"""The five-axis path (round 047, round 2): off by default; when on, the tier is folded into the axes, usd merges cited
-sources, capacity-unknown windows keep scarcity, and the classifier may answer the axis demand itself."""
+"""The five-axis path (round 047, rounds 2-4): off by default; when on, the tier is folded into the axes, usd merges cited
+sources, capacity is the community figure (unknown windows keep scarcity), ties go to the cheaper candidate, and the
+classifier may answer the axis demand itself."""
 import copy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,8 +45,16 @@ def document(models, **override):
     rows = {name: row() for name, info in models.items() if isinstance(info, dict)}
     rows['claude-opus-5-5'] = row(1.0, 15.0)
     rows.update(override)
-    return {'models': rows, 'floors': FLOORS,
-            'capacity_conversion': {'claude': {'seven_day': {'factor': 2.0}, 'five_hour': {'factor': 2.0}}}}
+    return {'models': rows, 'floors': FLOORS, 'capacity': CAPACITY}
+
+
+def window(usd, age=3):
+    return {'unit': 'usd', 'capacity_usd': usd, 'status': 'ok', 'age_days': age}
+
+
+# Community capacity per family / plan / window, as five_axis.capacity writes it (Max 20x weekly_fable left out).
+CAPACITY = {'claude': {'max20': {'seven_day': window(1700.0), 'five_hour': window(270.0)}},
+            'codex': {'pro': {'usage': window(615.0)}}}
 
 
 class FiveAxisTests(unittest.TestCase):
@@ -130,14 +139,48 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(allocator.canonical(chosen['bundle']['model'], acc), target)
         self.assertIn('its cost is not priced', ' '.join(chosen['notes']))
 
-    def test_capacity_is_scaled_by_the_data_conversion_factor(self):
+    def test_capacity_is_the_community_figure_of_the_account_plan(self):
         acc = copy.deepcopy(self.accounts)
         acc['scoring']['five_axis'] = {'enabled': True}
-        shipped = acc['accounts']['claude'].get('capacity_usd', {}).get('seven_day') \
-            or allocator.template_capacity_usd(acc['accounts']['claude'], 'seven_day')
+        acc['accounts']['claude']['capacity_change'] = {'seven_day': {'at': '2026-11-01T00:00:00Z', 'usd': 9999.0}}
         out = allocator.five_axis_overlay(acc, document(acc['models']))
-        self.assertAlmostEqual(out['accounts']['claude']['capacity_usd']['seven_day'], round(shipped * 2.0, 2))
-        self.assertFalse(out['accounts']['claude'].get('capacity_unknown'))
+        spec = out['accounts']['claude']
+        self.assertEqual(spec['capacity_usd'], {'seven_day': 1700.0, 'five_hour': 270.0})
+        self.assertNotIn('capacity_change', spec)
+        # Max 20x weekly_fable has no community value: unknown, with neither the template figure nor the burn prior.
+        self.assertTrue(spec['capacity_unknown'])
+        self.assertEqual(spec['capacity_source']['weekly_fable']['status'], 'missing')
+        self.assertIsNone(allocator.template_capacity_usd(spec, 'weekly_fable'))
+        self.assertIsNone(allocator.window_capacity_usd(spec, 'weekly_fable', NOW))
+        self.assertNotIn('weekly_fable', spec.get('burn_pct_per_worker_hour') or {})
+        self.assertEqual(out['accounts']['codex']['capacity_usd'], {'usage': 615.0})
+        self.assertFalse(out['accounts']['codex'].get('capacity_unknown'))
+        # Antigravity has no community source: every window unknown.
+        self.assertEqual(out['accounts']['antigravity']['capacity_usd'], {})
+        self.assertTrue(out['accounts']['antigravity']['capacity_unknown'])
+
+    def test_gate_reads_a_per_difficulty_axis_ratio(self):
+        cfg = allocator.five_axis_config({'five_axis': {'enabled': True}})
+        anchor = dict.fromkeys(allocator.FIVE_AXES, 0.8)
+        overlay = {'floors': {**FLOORS, 'axis_ratio': {'routine': 1.0, 'hard': 0.9, 'coupled': 0.7, 'frontier': 1.0}},
+                   'anchor_scores': anchor}
+        gates = {d: allocator.five_axis_gate({'difficulty': d, 'critical': False}, demand(0, 2, 2, 0), overlay, cfg)
+                 for d in ('hard', 'coupled')}
+        self.assertAlmostEqual(gates['coupled']['axis_floors']['global_rigor'], round(0.7 * 0.9 * 0.8, 4))
+        self.assertAlmostEqual(gates['hard']['axis_floors']['global_rigor'], round(0.9 * 0.8 * 0.8, 4))
+        scalar = allocator.five_axis_gate({'difficulty': 'coupled', 'critical': False}, demand(0, 2, 2, 0),
+                                          {'floors': FLOORS, 'anchor_scores': anchor}, cfg)
+        self.assertAlmostEqual(scalar['axis_floors']['global_rigor'], round(0.9 * 0.9 * 0.8, 4))
+
+    def test_equal_scores_go_to_the_cheaper_then_the_larger_surplus(self):
+        def cand(name, usd, level, score=0.5):
+            return {'id': name, 'score': score, 'five_axis_price': {'usd_per_hour': usd},
+                    'components': {'five_axis_level': level, 'five_axis_gate': 0.5}}
+        pool = [cand('dear', 20.0, 0.9), cand('cheap_low', 5.0, 0.6), cand('cheap_high', 5.0, 0.8), cand('free', 0.0, 0.55),
+                cand('best', 30.0, 0.9, score=0.6)]
+        self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
+                         ['best', 'free', 'cheap_high', 'cheap_low', 'dear'])
+        self.assertEqual(allocator.FIVE_AXIS_DEFAULTS['overqualification_weight'], 0.05)
 
     def test_capacity_unknown_window_still_prices_scarcity_from_live_percent_and_reset(self):
         acc = copy.deepcopy(self.accounts)
@@ -146,7 +189,7 @@ class FiveAxisTests(unittest.TestCase):
             spec.pop(key, None)
         spec['capacity_unknown'] = True
         doc = document(acc['models'])
-        doc['capacity_conversion'] = {}
+        doc['capacity'] = {}
 
         def codex_cost(state):
             d = self.plan(acc, doc, state=state, profile={'axis_demand': demand(0, 1, 2, 0)})
@@ -295,6 +338,154 @@ class SourceMergeTests(unittest.TestCase):
         untimed = self.fa.pick_duration(self.fa.pick_usd(self.entries()[3:]), {'duration_multiplier': 1.35})
         self.assertEqual(timed['value'], 1.0)
         self.assertEqual((untimed['value'], untimed['kind']), (1.35, 'community'))
+
+
+class CommunityCapacityTests(unittest.TestCase):
+    """Round 4: window capacity from cited community measurements, kept current: a stale source is a yellow note, a
+    source that is gone (not fetched, or its sentence no longer on the page) gives no value."""
+
+    @classmethod
+    def setUpClass(cls):
+        import community
+        import five_axis
+        import refresh
+        cls.cm, cls.fa, cls.rf = community, five_axis, refresh
+
+    WOKEY = ('<html><body><p>Data updated 2026-11-02</p><p>Claude Pro ($20/mo)</p><p>: ≈ $155 of API use a week '
+             '(IQR $146–173) · 24.2M uncached tokens · ≈ 13 full 5-hour windows</p>'
+             '<p>Claude Max 20x ($200/mo)</p><p>: ≈ $1,549 of API use a week (IQR) · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
+             '<p>Fable 5.1 can use only half the weekly limit.</p></body></html>')
+
+    def pages(self, folder, wokey=WOKEY):
+        import tempfile
+        target = Path(tempfile.mkdtemp(dir=folder))
+        files = {}
+        if wokey is not None:
+            (target / 'community-wokey-claude.html').write_text(wokey, encoding='utf-8')
+            files['community-wokey-claude.html'] = {'url': 'https://wokey.ai/claude-usage-limits', 'status': 'ok',
+                                                    'fetched_at': '2026-11-09T01:00:00+00:00'}
+        return target, files
+
+    def test_readings_carry_source_date_and_derivation(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            target, files = self.pages(folder)
+            rows, obs, rules, errors = self.cm.extract(target, files)
+        got = {(o['plan'], o['window']): o for o in obs if o['source'] == 'community.wokey.claude'}
+        self.assertEqual(got[('pro', 'seven_day')]['value'], 155.0)
+        self.assertEqual(got[('pro', 'five_hour')]['value'], round(155 / 13, 2))
+        self.assertEqual(got[('max20', 'seven_day')]['value'], 1549.0)
+        self.assertEqual({o['as_of'] for o in got.values()}, {'2026-11-02'})
+        self.assertEqual({o['kind'] for o in got.values()}, {'community'})
+        self.assertEqual(rules[0]['window'], 'weekly_fable')
+        self.assertEqual(rows['community.wokey.claude']['fetched_at'], '2026-11-09T01:00:00+00:00')
+        # The other pages were not fetched: red, and they give no value.
+        missing = {e['source'] for e in errors if e['reason'] == 'source_missing'}
+        self.assertEqual(missing, set(self.cm.SOURCES) - {'community.wokey.claude'})
+        self.assertTrue(all(e['level'] == 'red' for e in errors if e['reason'] == 'source_missing'))
+
+    def test_a_page_that_lost_its_sentence_gives_no_value(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            target, files = self.pages(folder, self.WOKEY.replace('Claude Max 20x', 'Claude Max 25x'))
+            _, obs, _, errors = self.cm.extract(target, files)
+        self.assertFalse([o for o in obs if o['plan'] == 'max20'])
+        lost = [e for e in errors if e['reason'] == 'reading_not_found']
+        self.assertEqual({(e['plan'], e['window']) for e in lost}, {('max20', 'seven_day'), ('max20', 'five_hour')})
+        self.assertTrue(all(e['level'] == 'red' for e in lost))
+
+    def meas(self, fresh_as_of='2026-11-02', old_as_of='2026-10-01'):
+        def ob(plan, wid, value, src, as_of):
+            return {'family': 'claude', 'plan': plan, 'window': wid, 'value': value, 'source': src, 'kind': 'community',
+                    'url': 'https://example.org/' + src, 'as_of': as_of, 'fetched_at': '2026-11-09T01:00:00+00:00',
+                    'method': 'm'}
+        return {'capacity': {
+            'observations': [ob('max20', 'seven_day', 1500.0, 'community.a', fresh_as_of),
+                             ob('max20', 'seven_day', 1900.0, 'community.b', old_as_of),
+                             ob('max20', 'five_hour', 270.0, 'community.a', fresh_as_of)],
+            'rules': [{'family': 'claude', 'window': 'weekly_fable', 'of_window': 'seven_day', 'ratio': 0.5,
+                       'statement': 'half', 'original': 'https://example.org/original', 'source': 'community.a',
+                       'kind': 'community', 'url': 'https://example.org/community.a', 'as_of': fresh_as_of}],
+            'errors': [], 'not_found': {}}}
+
+    PLANS = {'claude': {'max20': {'windows': {'five_hour': {}, 'seven_day': {}, 'weekly_fable': {}}},
+                        'max5': {'windows': {'five_hour': {}, 'seven_day': {}}},
+                        'max': {'alias': 'max5'}}}
+
+    def test_capacity_merges_flags_stale_and_derives_fable(self):
+        now = datetime(2026, 11, 9, tzinfo=timezone.utc)
+        caps, errors = self.fa.capacity(self.meas(), self.PLANS, {'claude-opus-5-5': {'value': 20.0}}, now)
+        week = caps['claude']['max20']['seven_day']
+        self.assertEqual(week['capacity_usd'], 1700.0)
+        self.assertEqual((week['status'], week['age_days']), ('ok', 7))
+        self.assertEqual(week['ref_hours'], 85.0)
+        self.assertEqual({e['source']: e['stale'] for e in week['sources']}, {'community.a': False, 'community.b': True})
+        fable = caps['claude']['max20']['weekly_fable']
+        self.assertEqual(fable['capacity_usd'], 850.0)
+        self.assertEqual(fable['sources'][0]['kind'], 'derived')
+        self.assertEqual(len(fable['sources'][0]['derived_from']), 2)
+        stale = [e for e in errors if e['reason'] == 'stale_source']
+        self.assertEqual([(e['source'], e['level'], e['age_days']) for e in stale], [('community.b', 'yellow', 39)])
+        # Max 5x has no observation: missing (red), and the `max` alias shows the same without a second error.
+        self.assertIsNone(caps['claude']['max5']['seven_day']['capacity_usd'])
+        self.assertEqual(caps['claude']['max']['seven_day']['alias_of'], 'max5')
+        red = {(e['plan'], e['window']) for e in errors if e['reason'] == 'no_community_source'}
+        self.assertEqual(red, {('max5', 'five_hour'), ('max5', 'seven_day')})
+
+    def test_all_sources_stale_turns_the_window_stale_and_refresh_exits_yellow_or_red(self):
+        now = datetime(2026, 12, 15, tzinfo=timezone.utc)
+        caps, errors = self.fa.capacity(self.meas(), self.PLANS, {}, now)
+        self.assertEqual(caps['claude']['max20']['seven_day']['status'], 'stale')
+        meas = self.meas()
+        meas['sources'] = {'community.a': {'kind': 'community', 'as_of': '2026-11-02'}}
+        doc = {'source_ages': self.fa.source_ages(meas, datetime(2026, 11, 9, tzinfo=timezone.utc)), 'capacity_errors': []}
+        self.assertEqual(self.rf.staleness(doc)[1], 'ok')
+        doc['source_ages'] = self.fa.source_ages(meas, now)
+        self.assertEqual(self.rf.staleness(doc)[1], 'stale')
+        doc['capacity_errors'] = errors
+        rows, worst = self.rf.staleness(doc)
+        self.assertEqual(worst, 'missing')
+        self.assertIn('claude/max5/seven_day', {r['what'] for r in rows})
+        meas['missing_sources'] = {'metr.time_horizon_p50': {'reason': 'not used: the anchor is not listed'}}
+        unused = self.rf.staleness({'source_ages': self.fa.source_ages(meas, datetime(2026, 11, 9, tzinfo=timezone.utc))})
+        self.assertEqual(unused[1], 'ok')
+
+
+class DerivedUsdTests(unittest.TestCase):
+    """Round 4: benchmarks give relative prices only; a model without a community usd is derived from a measured model
+    of the same provider, with both citations."""
+
+    @classmethod
+    def setUpClass(cls):
+        import five_axis
+        cls.fa = five_axis
+
+    def test_derived_usd_scales_a_measured_same_provider_model_by_the_benchmark_ratio(self):
+        measured = {'gpt-6.1-sol': {'value': 24.0, 'used': ['community.x'], 'sources': {'community.x': {'url': 'u'}}}}
+        bench = {'gpt-6.1-sol': {'value': 10.0, 'used': ['aa.cost_time']}, 'gpt-6-luna': {'value': 5.0, 'used': ['aa.cost_time']},
+                 'claude-opus-5-5': {'value': 20.0, 'used': ['aa.cost_time']}, 'kimi-k3': {'value': 2.0, 'used': []}}
+        out = self.fa.derive_usd(measured, bench)
+        self.assertEqual(set(out), {'gpt-6-luna'})           # no measured Anthropic model; kimi has no provider match
+        luna = out['gpt-6-luna']
+        self.assertEqual((luna['value'], luna['kind']), (12.0, 'derived'))
+        self.assertEqual(luna['sources']['community']['model'], 'gpt-6.1-sol')
+        self.assertEqual(luna['sources']['ratio']['value'], 0.5)
+        self.assertEqual(luna['sources']['ratio']['denominator']['used'], ['aa.cost_time'])
+
+    def test_community_basis_uses_measured_then_derived_else_missing(self):
+        def e(src, kind, value):
+            return {'source': src, 'kind': kind, 'effort': 'high', 'value': value}
+        meas = {'models': {'gpt-6.1-sol': {'usd_per_hour': [e('aa.cost_time', 'benchmark', 10.0), e('community.x', 'community', 24.0)]},
+                           'gpt-6-luna': {'usd_per_hour': [e('aa.cost_time', 'benchmark', 5.0)]},
+                           'claude-opus-5-5': {'usd_per_hour': [e('aa.cost_time', 'benchmark', 20.0)]}}}
+        scorer = self.fa.Scorer(meas, {'models': dict.fromkeys(meas['models'], {})})
+        rows = {m: {'fields': f} for m, f in meas['models'].items()}
+        usd = self.fa.USD_BASES['community']['fn'](scorer, rows, meas, None)
+        self.assertEqual((usd['gpt-6.1-sol']['value'], usd['gpt-6.1-sol']['kind']), (24.0, 'community'))
+        self.assertEqual((usd['gpt-6-luna']['value'], usd['gpt-6-luna']['kind']), (12.0, 'derived'))
+        self.assertEqual(usd['claude-opus-5-5']['status'], 'missing')
+        bench = self.fa.USD_BASES['benchmark']['fn'](scorer, rows, meas, None)
+        self.assertEqual(bench['claude-opus-5-5']['value'], 20.0)
 
 
 if __name__ == '__main__':

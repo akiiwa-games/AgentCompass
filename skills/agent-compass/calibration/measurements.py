@@ -48,6 +48,10 @@ sits at ANCHOR_VALUE (0.8) on every component it is measured on, so 1.0 is 1.25 
   A bridged board's reference moves only when a model listed both on it and on an anchored mate is added (it joins
   the median); a model new to the anchored boards alone moves nothing.
 
+`capacity`: community real-usage measurements of subscription window capacity (`community.py`, round 4): every
+observation with its source, url, data date and fetch time; stated ratios between windows (`rules`); `errors` (a page
+not fetched or no longer carrying its sentence gives no value); `not_found`.
+
 usd_per_hour comes only from public sources (review F2, 2026-11-09): AA cost per task over time per task, and the same
 repriced at the OpenRouter output price. The shipped accounts values (a local 14-day calibration sample) and the
 community burn figures (measured locally, no external citation) are not sources.
@@ -61,6 +65,7 @@ from pathlib import Path
 
 import numpy as np
 
+import community
 import efforts
 import sources
 import tiers
@@ -493,10 +498,18 @@ class Builder:
                      f'AA cost/time repriced at the OpenRouter output price {ours:g} (AA lists {theirs:g}) per million tokens',
                      effort=e['effort'], listed_as=listed)
 
+    # --- window capacity (community real usage) ---------------------------------------------------
+    def capacity(self):
+        rows, obs, rules, errors = community.extract(self.target, self.manifest)
+        self.source_rows.update(rows)
+        return {'unit': 'usd of API-priced real usage per full window', 'observations': obs, 'rules': rules,
+                'errors': errors, 'not_found': community.NOT_FOUND}
+
     def build(self):
         self.tier()
         self.capabilities()
         self.usd()
+        capacity = self.capacity()
         missing_sources = {**self.missing}
         for name, row in self.manifest.items():
             if row.get('status') != 'ok':
@@ -504,7 +517,7 @@ class Builder:
         return {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                 'conversion': f'capability value = min(1, {ANCHOR_VALUE:g} x s / s_anchor), anchor {ANCHOR}; see calibration/measurements.py',
                 'sources': self.source_rows, 'missing_sources': missing_sources, 'conflicts': self.conflicts,
-                'axes': {a: list(c) for a, c in AXES.items()},
+                'axes': {a: list(c) for a, c in AXES.items()}, 'capacity': capacity,
                 'models': {m: f for m, f in self.out.items()}}
 
 
@@ -520,6 +533,9 @@ def main():
     print(f"{n} models -> {args.out}")
     for f in fields:
         print(f'  {f:18s} {sum(1 for v in doc["models"].values() if v.get(f))}/{n} models with at least one source')
+    cap = doc['capacity']
+    print(f"  capacity           {len(cap['observations'])} community observations, {len(cap['rules'])} rules, "
+          f"{sum(e['level'] == 'red' for e in cap['errors'])} red errors")
     for s, row in doc['missing_sources'].items():
         print(f'  missing source {s}: {row.get("reason")}')
 

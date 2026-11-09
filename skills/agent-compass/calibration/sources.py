@@ -10,6 +10,8 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
   the page's embedded model records (cost and time per task, prices, sub-benchmarks).
 - OpenRouter `/api/v1/models` (prices), EQ-Bench Creative Writing v3, METR time horizons v1.1 and the OSWorld-Verified
   results sheet: the five-axis measurements (`measurements.py`).
+- Community real-usage measurements of subscription window capacity (wokey.ai, finopsllm.com, inventivehq.com):
+  `community.py`. `refresh.py` re-runs fetch, measurements and five_axis on a schedule and reports source age.
 
 `fetch` writes `fetch-manifest.json` beside the downloads: each file's url, fetched_at (UTC), sha256 and size, or the
 error when a source could not be fetched. A source that fails is recorded as missing, never replaced by an older copy.
@@ -36,6 +38,14 @@ PAGES = {'swebench.html': 'https://www.vals.ai/benchmarks/swebench',
          'eqbench-creative-writing.js': 'https://eqbench.com/creative_writing.js',
          'metr-benchmark-results.yaml': 'https://metr.org/assets/benchmark_results_1_1.yaml',
          'osworld-verified.xlsx': 'https://os-world.github.io/static/data/osworld_verified_results.xlsx'}
+# Community real-usage measurements of subscription window capacity, read by community.py (round 047, round 4).
+COMMUNITY_PAGES = {'community-wokey-claude.html': 'https://wokey.ai/claude-usage-limits',
+                   'community-wokey-codex.html': 'https://wokey.ai/codex-usage-limits',
+                   'community-finops-codex-plus.html': 'https://finopsllm.com/research/codex-usage-limits-chatgpt-pro',
+                   'community-finops-codex-pro100.html': 'https://finopsllm.com/research/codex-pro-100-heavy-user-resets-log',
+                   'community-finops-claude-max20.html': 'https://finopsllm.com/research/claude-max-20x-vs-5x-weekly-limit',
+                   'community-inventive-codex.html': 'https://inventivehq.com/blog/codex-subscription-usage-measured'}
+PAGES.update(COMMUNITY_PAGES)
 MANIFEST = 'fetch-manifest.json'
 REPO = Path(__file__).resolve().parents[1]
 ACCOUNTS = REPO / 'references' / 'accounts.json'
@@ -47,10 +57,14 @@ def data_dir(arg=None):
     return path
 
 
-def fetch(target):
+def fetch(target, only=None):
+    """Download every source (or the file names in `only`, keeping the other manifest rows as they are)."""
     agent = {'User-Agent': 'Mozilla/5.0 (agentcompass calibration)'}
     jobs = [(HF.format(b), target / f'{b}.parquet') for b in ARENA_BOARDS] + [(u, target / n) for n, u in PAGES.items()]
     files = {}
+    if only:
+        jobs = [(u, p) for u, p in jobs if p.name in set(only)]
+        files = dict(manifest(target)) if (target / MANIFEST).exists() else {}
     for url, path in jobs:
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
         try:
@@ -248,10 +262,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('command', choices=['fetch', 'list'])
     ap.add_argument('--data')
+    ap.add_argument('--only', action='append', help='fetch only this file name (repeatable); other manifest rows stay')
     args = ap.parse_args()
     target = data_dir(args.data)
     if args.command == 'fetch':
-        fetch(target)
+        fetch(target, args.only)
     else:
         for p in sorted(target.iterdir()):
             print(p.name, p.stat().st_size)
