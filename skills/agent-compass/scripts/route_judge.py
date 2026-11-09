@@ -95,12 +95,12 @@ SCORER_PROMPT = (
     'analysis—even on real-time/polling/game/dashboard/flash-sale features—and for one-off GUI clicks. Set `needs_gui` '
     'by whether the worker operates a GUI (`true`) vs pure CLI/API/WebSocket (`false`).\n'
     '6. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
-    'pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") without negation (e.g. '
-    '"do not use fast mode" -> `false`; runtime step adverbs like "click immediately" -> `false`; ordinary quota mentions '
-    'without requesting fast execution -> `false`).\n'
-    '7. `read_only_review`: `true` ONLY for read-only code/diff/branch/security/release reviews or audits (`code_complexity` 0) '
-    'that write no repo production/test code (even if saving a review report file to a specified output path); `false` '
-    'when implementing/fixing code (even from a prior review), running ops commands, or doing general exploration/research.\n'
+    'pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation (`do not use fast '
+    'mode` -> `false`; runtime step adverbs like `click immediately` or ordinary quota mentions -> `false`).\n'
+    '7. `read_only_review` & `access`: `read_only_review: true` ONLY for read-only code/diff/branch/security/release '
+    'reviews or audits (`code_complexity` 0, `access`=`read-only`, even if saving a report file); `false` when writing/'
+    'fixing code, running ops commands, or doing general exploration. Set `access` to `read-only` when the brief only '
+    'reads/inspects/analyzes without modifying workspace files/state (`code_complexity` 0), else `write`.\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 LEDGER_ENV = 'ROUTER_LEDGER'
@@ -1341,6 +1341,9 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
     questions['realtime_loop'] = {'type': 'noul', 'instructions': allocator.REALTIME_LOOP_QUESTION}
     questions['wants_fast'] = {'type': 'noul', 'instructions': allocator.WANTS_FAST_QUESTION}
     questions['read_only_review'] = {'type': 'noul', 'instructions': allocator.READ_ONLY_REVIEW_QUESTION}
+    questions['access'] = {'type': 'choice', 'instructions': allocator.ACCESS_QUESTION,
+                           'criteria': {'read-only': 'Only reads, inspects, reviews, or analyzes without modifying workspace files or state.',
+                                        'write': 'Writes, edits, creates, or deletes workspace files, or runs mutating commands.'}}
     questions['multi_task'] = {'type': 'noul', 'instructions': allocator.MULTI_TASK_QUESTION}
     questions['task_count'] = {'type': 'choice', 'instructions': allocator.TASK_COUNT_QUESTION,
                                'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
@@ -1395,6 +1398,10 @@ def parse_jev_response(response, allocator):
     count = count.get('choice') if isinstance(count, dict) else count
     if count is not None:
         profile['task_count'] = count
+    access_ans = answers.get('access')
+    access_choice = access_ans.get('choice') if isinstance(access_ans, dict) else access_ans
+    if access_choice is not None:
+        profile['access'] = access_choice
     # A missing or contradictory split answer fails here: the cascade moves on rather than guessing.
     return allocator.validate_profile(profile)
 
@@ -1539,7 +1546,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 10  # 10: semantic wants_fast and read_only_review classifier fields
+SCORE_CACHE_VERSION = 11  # 11: semantic access ('read-only' | 'write') classifier field
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 
@@ -2522,6 +2529,11 @@ def plan_stage(document, args):
         raise ValueError('Input requires task.')
     if getattr(args, 'hours', None) is not None and task.get('expected_hours') is None:
         task = {**task, 'expected_hours': args.hours}
+    if getattr(args, 'can_wait_hours', None) is not None and task.get('can_wait_hours') is None:
+        cwh = args.can_wait_hours
+        if not (isinstance(cwh, (int, float)) and not isinstance(cwh, bool) and math.isfinite(cwh) and cwh >= 0):
+            raise ValueError('--can-wait-hours must be a non-negative number of hours.')
+        task = {**task, 'can_wait_hours': float(cwh)}
     hours = task.get('expected_hours')
     if hours is None and task.get('hours_source') == 'classifier_difficulty':
         pass  # The allocator budgets default_hours[difficulty] from this same classification; roll reports it.
@@ -2720,9 +2732,10 @@ def main():
     parser.add_argument('--task', help='roll: the task as inline text, or - to read it from stdin (any length, kept whole); use instead of --brief. --hours is then optional.')
     parser.add_argument('--file', type=Path, action='append', default=[], help='roll: a file Dot needs (repeatable); ignored by local workers.')
     parser.add_argument('--apply-to', type=Path, help='roll: where returned Dot files land (default: cwd, only with --file).')
-    parser.add_argument('--local-only', metavar='REASON', help='roll: keep the work on this machine, with the concrete local dependency.')
+    parser.add_argument('--local-only', metavar='REASON', help='roll: keep the work on this machine when no --workspace is given, with the concrete local dependency.')
     parser.add_argument('--keep-whole', metavar='REASON', help='roll/plan: send a brief the classifier split into several lines of work to one worker anyway, with the concrete reason.')
     parser.add_argument('--hours', type=float, help='roll/plan: expected active worker-hours (positive number). Optional: when omitted, the classifier estimates it and says so under assumptions.')
+    parser.add_argument('--can-wait-hours', type=float, metavar='HOURS', help='roll/plan: Optional. Hours this non-urgent task may wait for a stronger model\'s quota window to reset (default 0: launch the best model available now).')
     parser.add_argument('--fast', action='store_true', help='roll/plan/record: prefer fast mode when quota is plentiful or during a pre-reset sprint.')
     parser.add_argument('--verbose', action='store_true', help='roll: print the full result instead of the short one (status, next_action, pointers). The full result is saved to disk either way.')
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
@@ -2730,9 +2743,7 @@ def main():
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
     parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session.')
     parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')
-    parser.add_argument('--access', choices=('read-only', 'write'), help='roll: what this brief does to its workspace (default write). Only a writer is held to one per --workspace.')
-    parser.add_argument('--allow-concurrent', metavar='REASON', help='roll: launch into a --workspace that already has a writer, with the concrete reason (kept in the ledger).')
-    parser.add_argument('--wait', type=float, default=0, help='roll: seconds to wait for the worker (default 0: launch and return).')
+    parser.add_argument('--access', choices=('read-only', 'write'), help='roll: explicit override for whether this brief only reads or writes its workspace (default: classified by System-One, else write). Only a writer is held to one per --workspace.')
     parser.add_argument('--score', action='store_true',
                         help='plan: profile the task first with the System-One scorer (default on plan when objective is present).')
     parser.add_argument('--no-score', action='store_true',
@@ -2837,12 +2848,12 @@ def main():
                                               or profile['error_cost'] >= 3}}
             print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
             return 0
+        if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):
+            raise ValueError('--can-wait-hours must be a non-negative number of hours.')
         if args.stage == 'roll':
             briefs = args.brief or []
             if bool(briefs) == (args.task is not None):
                 raise ValueError('roll requires exactly one of --task "<text>" (or --task - for stdin) or --brief <task.md>.')
-            if not 0 <= args.wait <= 7200:
-                raise ValueError('--wait must be 0..7200 seconds.')
             if len(briefs) > 1:
                 result, code = roll.run_batch(args, sys.modules[__name__])
             else:

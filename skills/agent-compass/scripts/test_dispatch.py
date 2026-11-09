@@ -842,7 +842,7 @@ class RollTests(unittest.TestCase):
         brief = self.root / 'task.md'
         brief.write_bytes(self.brief.encode('utf-8'))
         args = argparse.Namespace(brief=brief, file=[], apply_to=None, local_only=None, hours=0.5, title=None,
-            workspace=None, task_id='test-task', wait=0, parent_id=None, parent_host=None, parent_address=None, provider=None, model=None, effort=None,
+            workspace=None, task_id='test-task', parent_id=None, parent_host=None, parent_address=None, provider=None, model=None, effort=None,
             basis=None, usage_cache=None, dry_run=False, verbose='task' not in flags)    # tests of the full result ask for it; inline-task tests check the short one
         vars(args).update(flags)
         seen = {}
@@ -1026,7 +1026,7 @@ class RollTests(unittest.TestCase):
                                    'prefetch_scores': staticmethod(lambda tasks, timeout: prefetched.append(
                                        [t['objective'] for t in tasks]))})
         args = argparse.Namespace(brief=briefs, task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
-                                  hours=None, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                                  hours=None, title=None, workspace=None, task_id=None, parent_id=None,
                                   parent_host=None, parent_address=None, provider=None, account=None, model=None,
                                   effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
                                   score_timeout=30)
@@ -1112,22 +1112,29 @@ class RollTests(unittest.TestCase):
         def command(family, provider, judge):
             seen.append((family, provider))
             return [sys.executable, '-I', str(fake)]
-        for label, exit_code, expected in (('success', '0', 0), ('failed run keeps its reply and exit', '3', 1)):
-            with self.subTest(label), patch.dict(os.environ, {'FAKE_GROK_EXIT': exit_code}):
-                result, code = self.grok_roll(command, wait=30)
-            record = json.loads((self.root / 'grok-record.json').read_text(encoding='utf-8'))
-            prompt = self.assert_worker_prompt(result, parent='parent-a')
-            run_dir = Path(result['worker']['output']).parent
-            self.assertEqual((result['launched'], result['dispatch_mode'], code), (True, 'cli', expected))
-            self.assertEqual(result['caller_action'], 'already_launched_do_not_respawn')
-            self.assertEqual(seen[-1], ('grok', 'grok'))
-            self.assertEqual(record['argv'], ['--always-approve', '-m', 'grok-4.7', '--reasoning-effort', 'high',
-                                              '--cwd', str(Path.cwd()), '--prompt-file', str(run_dir / 'brief.md')])
-            self.assertEqual((record['cwd'], record['stdin'], record['prompt']), (str(Path.cwd()), '', prompt))
-            self.assertEqual(record['env']['GROK_FIXTURE_ACCOUNT'], 'bound')
-            self.assertEqual((record['env']['ROUTER_WORKER'], record['env']['ROUTER_PARENT_AGENT_ID']), ('1', 'parent-a'))
-            self.assertFalse({'CLAUDECODE', 'CODEX_HOME'} & set(record['env']))
-            self.assertEqual((result['worker']['exit'], result['worker']['reply'].strip()), (int(exit_code), 'grok reply'))
+        rec_file = self.root / 'grok-record.json'
+        rec_file.unlink(missing_ok=True)
+        with patch.dict(os.environ, {'FAKE_GROK_EXIT': '0'}):
+            result, code = self.grok_roll(command)
+        deadline = time.monotonic() + 5.0
+        while not (rec_file.is_file() and rec_file.stat().st_size > 0) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        record = json.loads(rec_file.read_text(encoding='utf-8'))
+        prompt = self.assert_worker_prompt(result, parent='parent-a')
+        run_dir = Path(result['worker']['output']).parent
+        self.assertEqual((result['launched'], result['dispatch_mode'], code), (True, 'cli', 0))
+        self.assertEqual(result['caller_action'], 'already_launched_do_not_respawn')
+        self.assertEqual(seen[-1], ('grok', 'grok'))
+        self.assertEqual(record['argv'], ['--always-approve', '-m', 'grok-4.7', '--reasoning-effort', 'high',
+                                          '--cwd', str(Path.cwd()), '--prompt-file', str(run_dir / 'brief.md')])
+        self.assertEqual((record['cwd'], record['stdin'], record['prompt']), (str(Path.cwd()), '', prompt))
+        self.assertEqual(record['env']['GROK_FIXTURE_ACCOUNT'], 'bound')
+        self.assertEqual((record['env']['ROUTER_WORKER'], record['env']['ROUTER_PARENT_AGENT_ID']), ('1', 'parent-a'))
+        self.assertFalse({'CLAUDECODE', 'CODEX_HOME'} & set(record['env']))
+        self.assertIsNone(result['worker']['exit'])
+        while not Path(result['worker']['output']).read_text(encoding='utf-8').strip() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(Path(result['worker']['output']).read_text(encoding='utf-8').strip(), 'grok reply')
 
     def test_grok_launch_failure_reports_native_handoff_without_a_second_start(self):
         import roll as roll_module
@@ -1141,7 +1148,7 @@ class RollTests(unittest.TestCase):
             raise RuntimeError('Subscription CLI is not installed.')
         for label, command in (('no installed CLI', not_installed), ('executable vanished', lambda *_: ['grok-missing'])):
             with self.subTest(label), patch.object(roll_module.subprocess, 'Popen', missing):
-                result, code = self.grok_roll(command, wait=30)
+                result, code = self.grok_roll(command)
             self.assertEqual((result['launched'], result['dispatch_mode'], code), (False, 'native', 1))
             self.assertIn('worker_prompt_file', result['next'])
         self.assertEqual(starts, [['grok-missing', '--always-approve', '-m', 'grok-4.7', '--reasoning-effort', 'high',
@@ -1253,16 +1260,16 @@ class RollTests(unittest.TestCase):
                 'CODEX_HOME': 'C:/host/.codex-work'}
         bundles = allocator.bundles(self.accounts)
         brief = ['--print']
-        cases = (('claude-lab via its Paseo definition', 'lab_sonnet55_high', 0,
+        cases = (('claude-lab via its Paseo definition', 'lab_sonnet55_high',
                   ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions', '--settings', '{"fastMode": false}'],
                   'C:/fixture/.claude-lab', self.brief),
-                 ('claude does not inherit the caller account', 'sonnet55_high', 5,
+                 ('claude does not inherit the caller account', 'sonnet55_high',
                   ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions', '--settings', '{"fastMode": false}'],
                   None, self.brief),
-                 ('agy takes the brief as its last argument', 'flash_high', 0,
+                 ('agy takes the brief as its last argument', 'flash_high',
                   ['agy', '--dangerously-skip-permissions', '--model', bundles['flash_high']['model'], '--add-dir',
                    str(Path.cwd())] + brief, None, None))
-        for label, choice, wait, argv, config_dir, stdin in cases:
+        for label, choice, argv, config_dir, stdin in cases:
             calls = []
 
             class Process:
@@ -1272,15 +1279,12 @@ class RollTests(unittest.TestCase):
                     calls.append({'argv': command, 'env': env,
                                   'stdin': stdin.read().decode() if hasattr(stdin, 'read') else None})
                     stdout.write(b'worker reply')
-
-                def wait(self, timeout=None):
-                    return 0
             bundle = dict(bundles[choice], bundle_id=choice)
             decision = dict(stage='plan', choice=choice, selected_bundle=bundle, decision={'action': 'start'})
             with self.subTest(label), patch.object(roll, 'CLI_RUNS_DIR', self.root / 'runs'), \
                     patch.object(roll.subprocess, 'Popen', Process), \
                     patch.object(flow, 'host_call', side_effect=AssertionError('no Paseo')):
-                (result, code), _ = self.roll(decision, parent='', parent_id='parent-a', parent_host='paseo', env=host, wait=wait)
+                (result, code), _ = self.roll(decision, parent='', parent_id='parent-a', parent_host='paseo', env=host)
                 self.assertEqual((result['launched'], code), (True, 0))
                 prompt = self.assert_worker_prompt(result, parent='parent-a')
                 self.assertEqual(calls[0]['env']['ROUTER_WORKER'], '1')
@@ -1289,8 +1293,8 @@ class RollTests(unittest.TestCase):
                 self.assertEqual(calls[0]['env'].get('CLAUDE_CONFIG_DIR'), config_dir)
                 self.assertFalse({'CLAUDECODE', 'CODEX_HOME'} & set(calls[0]['env']))
                 self.assertEqual(calls[0]['stdin'], prompt if stdin is not None else None)
-                self.assertEqual(result['worker'].get('reply'), 'worker reply' if wait else None)
-                self.assertEqual('4242' in result.get('next', ''), not wait)
+                self.assertIsNone(result['worker'].get('exit'))
+                self.assertIn('4242', result.get('next', ''))
 
     def test_no_daemon_and_no_cli_does_not_launch(self):
         import roll
@@ -1455,21 +1459,14 @@ class RollTests(unittest.TestCase):
         self.assertIn(receipt['task_id'], result['continuation_argv'])
 
     def test_consult_route_and_deferred_command_include_the_communication_contract(self):
-        import roll
         decision = dict(stage='plan', choice='gpt_pro', selected_bundle={
             'provider': 'chatgpt-web', 'account': 'codex', 'model': 'gpt-6-pro'}, decision={'action': 'start'})
-        for wait in (0, 5):
-            with self.subTest(wait=wait), patch.object(roll.subprocess, 'run', return_value=
-                    subprocess.CompletedProcess([], 0, '', '')) as run:
-                (result, code), _ = self.roll(decision, wait=wait)
-                self.assertEqual((code, result['launched']), (0, wait > 0))
-                command = run.call_args.args[0] if wait else result['next_argv']
-                if not wait:
-                    run.assert_not_called()
-                self.assertEqual(command[command.index('--prompt') + 1], result['worker_prompt_file'])
-                if not wait:
-                    self.assertEqual(command[4], 'chatgpt-web')
-                self.assert_worker_prompt(result, parent='parent-a')
+        (result, code), _ = self.roll(decision)
+        self.assertEqual((code, result['launched']), (0, False))
+        command = result['next_argv']
+        self.assertEqual(command[command.index('--prompt') + 1], result['worker_prompt_file'])
+        self.assertEqual(command[4], 'chatgpt-web')
+        self.assert_worker_prompt(result, parent='parent-a')
 
     def test_named_model_without_user_quote_is_refused(self):
         with self.assertRaisesRegex(ValueError, '--basis'):
@@ -2459,16 +2456,14 @@ class WorkspaceWriterTests(unittest.TestCase):
         with self.assertRaises(registry.WorkspaceBusy):
             self.prepare_in(task_id='second')
 
-    def test_allow_concurrent_is_recorded_on_the_dispatch(self):
-        self.prepare_in()
-        row = self.prepare_in(task_id='second', allow_concurrent='different directories')
-        self.assertEqual(row['allow_concurrent'], 'different directories')
-
-    def test_access_is_the_flag_then_read_only_review_then_write_and_never_the_text(self):
+    def test_access_is_the_flag_then_classifier_access_then_read_only_review_then_write_and_never_the_text(self):
         import roll
         cases = (
             (None, None, 'write'), (None, False, 'write'), (None, 'true', 'write'), (None, 1, 'write'),
             (None, True, 'read_only'), ('write', True, 'write'), ('read-only', False, 'read_only'), ('read-only', None, 'read_only'),
+            (None, {'access': 'read-only'}, 'read_only'), (None, {'access': 'write'}, 'write'),
+            (None, {'access': 'write', 'read_only_review': True}, 'write'),
+            ('write', {'access': 'read-only'}, 'write'), ('read-only', {'access': 'write'}, 'read_only'),
         )
         for flag, field, expected in cases:
             with self.subTest(flag=flag, field=field):
@@ -2498,7 +2493,7 @@ class WorkspaceWriterTests(unittest.TestCase):
         self.assertEqual(holders[0]['agent_id'], 'a2')
 
     def started_as(self, agent, task_id):
-        row = self.prepare_in(task_id=task_id, allow_concurrent='fixture')
+        row = self.prepare_in(task_id=task_id)
         with registry.transaction() as connection:
             stored = registry.get(connection, 'dispatches', row['dispatch_id'])
             stored.update(state='started', launched_at=registry.stamp(self.now), agent_id=agent,
@@ -2583,7 +2578,6 @@ class RollLifecycleTests(unittest.TestCase):
         flags.setdefault('fast', False)
         flags.setdefault('keep_whole', None)
         flags.setdefault('access', None)
-        flags.setdefault('allow_concurrent', None)
         flags.setdefault('account', None)
         flags.setdefault('verbose', True)
         with patch.object(flow, 'host_call', self.host), patch.object(flow, 'launch', wraps=flow.launch):
@@ -2600,15 +2594,17 @@ class RollLifecycleTests(unittest.TestCase):
                 self.assertEqual(result['status'], 'blocked')
                 self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
         self.assertEqual(len(self.creates), 1)
-        # Classifier read_only_review=True exempts the brief as read_only unless --access write overrides it.
-        with patch.object(self, 'decision', lambda: {
-                **RollLifecycleTests.decision(self), 'task_profile': {'interaction_style': 'engineering', 'read_only_review': True}}):
-            ro_result = self.go(workspace='W', new_worker=True)
-            self.assertEqual(ro_result['status'], 'pending')
-            self.assertEqual(ro_result['worker']['access'], 'read_only')
-            forced_write = self.go(workspace='W', new_worker=True, access='write')
-            self.assertEqual(forced_write['status'], 'blocked')
-        self.assertEqual(len(self.creates), 2)
+        # Classifier access='read-only' or read_only_review=True exempts the brief as read_only unless --access write overrides it.
+        for ro_profile in ({'interaction_style': 'exploration', 'access': 'read-only'},
+                           {'interaction_style': 'engineering', 'read_only_review': True}):
+            with self.subTest(profile=ro_profile), patch.object(self, 'decision', lambda: {
+                    **RollLifecycleTests.decision(self), 'task_profile': ro_profile}):
+                ro_result = self.go(workspace='W', new_worker=True)
+                self.assertEqual(ro_result['status'], 'pending')
+                self.assertEqual(ro_result['worker']['access'], 'read_only')
+                forced_write = self.go(workspace='W', new_worker=True, access='write')
+                self.assertEqual(forced_write['status'], 'blocked')
+        self.assertEqual(len(self.creates), 3)
 
     def in_cwd(self, cwd):
         return patch.dict(os.environ, {'PASEO_AGENT_CWD': cwd})
@@ -2705,11 +2701,6 @@ class RollLifecycleTests(unittest.TestCase):
         self.go(workspace='W')
         self.assertNotIn('warnings', self.go(workspace='X', new_worker=True))
 
-    def test_allow_concurrent_is_not_warned_again_about_the_writer_it_named(self):
-        self.directories = {'W': 'C:/work/checkout'}
-        self.go(workspace='W')
-        self.assertNotIn('warnings', self.roll_forced(lambda _: None))
-
     def test_an_unreadable_host_lets_the_roll_through_and_says_so(self):
         host = self.host
 
@@ -2736,8 +2727,9 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertEqual(result['status'], 'blocked')
         self.assertEqual(result['error'], 'workspace_has_active_writer')
         self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
-        for needle in (first['worker']['dispatch_id'], '--access read-only', '--allow-concurrent'):
+        for needle in (first['worker']['dispatch_id'], '--access read-only'):
             self.assertIn(needle, result['next'])
+        self.assertNotIn('--allow-concurrent', result['next'])
         self.assertEqual(len(self.creates), 1)
 
     def test_compact_blocked_names_the_holder_and_the_way_out(self):
@@ -2745,7 +2737,8 @@ class RollLifecycleTests(unittest.TestCase):
         compact = self.go(workspace='W', new_worker=True, verbose=False)
         self.assertEqual(compact['status'], 'blocked')
         self.assertEqual(compact['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
-        self.assertIn('--allow-concurrent', compact['next_action'])
+        self.assertIn('--access read-only', compact['next_action'])
+        self.assertNotIn('--allow-concurrent', compact['next_action'])
         self.assertEqual(compact['cause'], 'workspace_has_active_writer')
 
     def test_a_running_router_agent_blocks_a_workspace_with_no_open_dispatch(self):
@@ -2755,28 +2748,20 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertEqual(result['blocked_by'][0]['agent_id'], 'old-worker')
         self.assertEqual(self.creates, [])
 
-    def test_read_only_flag_and_allow_concurrent_get_through_and_the_reason_reaches_the_ledger(self):
+    def test_read_only_flag_gets_through_and_workspace_infers_local_only_reason(self):
+        import roll
         self.go(workspace='W')
         reader = self.go(workspace='W', new_worker=True, access='read-only')
         self.assertEqual(reader['status'], 'pending')
         self.assertEqual(reader['worker']['access'], 'read_only')
-        ledger = []
-        forced = self.roll_forced(ledger.append)
-        self.assertEqual(forced['status'], 'pending')
-        self.assertEqual(ledger[0]['stage'], 'allow_concurrent')
-        self.assertEqual(ledger[0]['reason'], 'separate directories')
-        self.assertEqual(ledger[0]['workspace'], 'W')
-
-    def roll_forced(self, append_ledger):
-        import roll
-        args = SimpleNamespace(title='fixture', workspace='W', wait=0, new_worker=True, access=None,
-                               allow_concurrent='separate directories')
-        task = dict(self.task, task_id='forced', expected_hours=0.001)
-        decision = dict(self.decision(), **registry.issue(self.decision(), task, self.now))
-        judge = SimpleNamespace(append_ledger=append_ledger)
-        with patch.object(flow, 'host_call', self.host):
-            result, code = roll.paseo(args, {}, decision, task, 'fixture', 'parent-a', self.usage, judge=judge)
-        return dict(result, status=roll.status_of(result, code))
+        args = SimpleNamespace(hours=0.5, task_id='t-ws', local_only=None, workspace='W', keep_whole=None,
+                               file=[], provider=None, account=None, model=None, effort=None, basis=None,
+                               fast=False, can_wait_hours=None)
+        task = roll.build_task(args, 'implement feature', 'parent-a')
+        self.assertEqual(task['needs'], {'local_only': True, 'local_only_reason': 'inferred from --workspace W'})
+        explicit = SimpleNamespace(**{**vars(args), 'local_only': 'needs local DB'})
+        self.assertEqual(roll.build_task(explicit, 'implement feature', 'parent-a')['needs'],
+                         {'local_only': True, 'local_only_reason': 'needs local DB'})
 
     def test_exit_status_of_a_settled_create_is_an_error_with_a_safe_next_step(self):
         import roll
@@ -2784,7 +2769,7 @@ class RollLifecycleTests(unittest.TestCase):
 
         def settled(request):
             return {'ok': True, 'agent': None, 'creation': {'phase': 'failed', 'failure_class': 'unknown'}}
-        args = SimpleNamespace(title='fixture', workspace=None, wait=0)
+        args = SimpleNamespace(title='fixture', workspace=None)
         decision = {'decision_id': 'unused', 'selected_bundle': self.bundle}
         with patch.object(flow, 'host_call', settled), \
                 patch.object(registry, 'prepare', return_value=registry.inspect(first['worker']['dispatch_id'])):
@@ -2824,10 +2809,10 @@ class ModelLatchTests(unittest.TestCase):
         brief = self.root / 'task.md'
         brief.write_bytes(self.brief.encode('utf-8'))
         args = argparse.Namespace(brief=brief, file=[], apply_to=None, local_only=None, hours=0.5, title=None,
-            workspace=None, task_id=f'test-task-{len(self.choices)}', wait=0, parent_id=None, parent_host=None,
+            workspace=None, task_id=f'test-task-{len(self.choices)}', parent_id=None, parent_host=None,
             parent_address=None, provider=None, model=None, effort=None, basis=None, usage_cache=None, dry_run=False,
             verbose=False, task=None, new_worker=True, resume=None, fast=False, keep_whole=None, access=None,
-            allow_concurrent=None, account=None)
+            account=None)
 
         def plan_stage(document, _):
             planned = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)

@@ -511,7 +511,7 @@ def writers_at(cwd, caller=None, other_than=None, now=None, path=None):
 
 
 def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
-            access='write', allow_concurrent=None, new_worker=False, cwd=None):
+            access='write', new_worker=False, cwd=None):
     require_parent_id(task.get('parent_agent_id'))
     import allocator
     now = now or utcnow()
@@ -535,7 +535,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         if parse(decision['valid_until']) <= now or not decision['dispatchable']:
             raise ValueError('Decision expired, deferred or requires a new route; run plan/select/record again')
         workspace = request.get('workspaceId')
-        if workspace and access != 'read_only' and not allow_concurrent:
+        if workspace and access != 'read_only':
             # Same transaction as the insert: of two concurrent rolls only the first becomes the writer.
             holders = writers_in(connection, workspace, now, task['parent_agent_id'])
             if holders:
@@ -620,7 +620,6 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
                'operation': 'resume' if resume_agent_id else 'create',
                'agent_id': resume_agent_id, 'access': access,
-               **({'allow_concurrent': allow_concurrent} if allow_concurrent else {}),
                **({'cwd': cwd} if cwd else {}),
                'fallback_prompt': fallback_prompt if resume_agent_id else None,
                'read_only_review': read_only_review,

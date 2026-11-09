@@ -97,7 +97,7 @@ class ScorerServer:
                            "reasoning_depth": 2, "code_complexity": 0 if is_rt else 1, "context_scale": 1 if is_rt else 2,
                            "divergence": 1, "hallucination_risk": 2, "error_cost": 2, "needs_visual": is_rt, "needs_gui": is_rt,
                            "local_only": is_rt, "realtime_loop": is_rt, "wants_fast": False, "read_only_review": False,
-                           "expected_hours": 0.5, "hours_confidence": "medium",
+                           "access": "read-only" if is_rt else "write", "expected_hours": 0.5, "hours_confidence": "medium",
                            "urgency": "normal", "interaction_style": "engineering",
                            "reason": "fixture classification of a small bounded edit"}
                 self._send(200, {"choices": [{"message": {"content": json.dumps(profile)}}]})
@@ -343,7 +343,7 @@ def step_no_account(z: Zero):
     run, box = z.ctx["run"], z.box
     op = run.operation("empty machine", "with no account at all, every entry explains what is missing instead of failing or launching")
     task = z.task(note="no-account")
-    result = z.call(op, "roll", "--task", task, "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "2")
+    result = z.call(op, "roll", "--task", task, "--parent-host", "paseo", "--parent-id", PARENT)
     doc = parse(result.stdout)
     shown = (result.stdout + result.stderr)
     op.check("roll exits without a traceback and without launching", "Traceback" not in result.stderr and not z.workers() and
@@ -489,7 +489,7 @@ def check_cli_worker(z: Zero, op, tag: str, result, scenario: str, expect_exit: 
 def step_cli_worker(z: Zero):
     run, box = z.ctx["run"], z.box
     z.set_parents()
-    base = ("--parent-host", "paseo", "--parent-id", PARENT, "--wait", "60")
+    base = ("--parent-host", "paseo", "--parent-id", PARENT)
 
     op = run.operation("roll to a real CLI worker (ok)", "task text -> real classifier request -> allocation -> ledger -> a real process -> output -> parent mailbox")
     before_requests = len(z.scorer.requests)
@@ -511,7 +511,7 @@ def step_cli_worker(z: Zero):
              bool(mail) and mail[-1]["to"] == PARENT and mail[-1]["text"].startswith("[Worker final report]"), mail)
     out = Path(worker.get("output", ""))
     op.check("worker_output holds what the process printed", out.is_file() and "WORKER-DONE" in out.read_text(encoding="utf-8", errors="replace"), str(out))
-    op.check("the roll answer's next_action says the worker finished and where to read it", "finished" in (parse(result.stdout) or {}).get("next_action", "").lower() or "read worker_output" in (parse(result.stdout) or {}).get("next_action", ""),
+    op.check("the roll answer's next_action says the worker is running and where to read it", "nothing calls back" in (parse(result.stdout) or {}).get("next_action", "") or "read worker_output" in (parse(result.stdout) or {}).get("next_action", ""),
              (parse(result.stdout) or {}).get("next_action"))
 
     op = run.operation("roll to a real CLI worker: failure modes", "error, quota text, crash and slow workers: the roll answer and the process agree")
@@ -520,21 +520,17 @@ def step_cli_worker(z: Zero):
         result = z.call(op, "roll", "--task", z.task(scenario), *base)
         full, worker, recorded = check_cli_worker(z, op, scenario, result, scenario, 0)
         got = (worker or {}).get("exit")
-        op.check(f"[{scenario}] roll reports a non-zero exit code" if scenario == "crash" else f"[{scenario}] roll reports the worker's exit code ({expect})",
-                 (got not in (0, None) if scenario == "crash" else got == expect or got is None and scenario == "slow"), {"exit": got})
+        op.check(f"[{scenario}] roll launches and returns before the process exits", got is None, {"exit": got})
         if scenario in ("error", "quota", "crash"):
-            op.check(f"[{scenario}] the next action tells the caller to read the output, not that it succeeded",
-                     "exited with code" in (parse(result.stdout) or {}).get("next_action", "") or "read worker_output" in (parse(result.stdout) or {}).get("next_action", ""),
-                     (parse(result.stdout) or {}).get("next_action"))
             op.check(f"[{scenario}] no final report was sent to the parent", not any(m["text"].startswith("[Worker final report]") and scenario in m["text"] for m in z.inbox(PARENT)), z.inbox(PARENT))
 
     op = run.operation("roll to a real CLI worker: hang then cancel", "a worker that never finishes is reported as running with a PID to stop; stopping it leaves nothing behind")
     z.ctx["mark"] = time.time() - 1
-    result = z.call(op, "roll", "--task", z.task("hang"), "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "3")
+    result = z.call(op, "roll", "--task", z.task("hang"), "--parent-host", "paseo", "--parent-id", PARENT)
     doc = parse(result.stdout) or {}
     full = details(doc)
     worker = full.get("worker") or {}
-    op.check("roll returns after its wait with the worker still running (exit not reported)", doc.get("status") == "launched" and worker.get("exit") is None and worker.get("pid"), json.dumps(doc)[:300])
+    op.check("roll returns with the worker running (exit not reported)", doc.get("status") == "launched" and worker.get("exit") is None and worker.get("pid"), json.dumps(doc)[:300])
     op.check("the answer says nothing will call back and gives the output files", "nothing calls back" in doc.get("next_action", "") and doc.get("worker_output"), doc.get("next_action"))
     pid = worker.get("pid")
     op.check("the process is alive", z.pid_alive(pid), pid)
@@ -554,7 +550,6 @@ def step_paseo_host(z: Zero):
         return
     z.set_parents(PARENT)
     env = z.paseo_env()
-    flags = ("--wait", "2")
 
     def dispatch_status(op, dispatch_id):
         result = z.call(op, "dispatch", "--dispatch-action", "status", "--dispatch-id", dispatch_id, **env)
@@ -563,7 +558,7 @@ def step_paseo_host(z: Zero):
     op = run.operation("Paseo host: roll creates one agent and it completes", "prepare -> create -> observe -> completed; the report reaches the parent; the registry is clean")
     task = z.task("ok", "paseo")
     z.ctx["mark"] = time.time() - 1
-    result = z.call(op, "roll", "--task", task, *flags, **env)
+    result = z.call(op, "roll", "--task", task, **env)
     doc = parse(result.stdout) or {}
     full = details(doc)
     worker = full.get("worker") or {}
@@ -583,9 +578,9 @@ def step_paseo_host(z: Zero):
 
     op = run.operation("Paseo host: duplicate delivery of the same task", "rolling the same brief while its dispatch is live returns the same dispatch; no second agent")
     task = z.task("slow", "dup")
-    result = z.call(op, "roll", "--task", task, "--wait", "0", **env)
+    result = z.call(op, "roll", "--task", task, **env)
     first = parse(result.stdout) or {}
-    again = z.call(op, "roll", "--task", task, "--wait", "0", **env)
+    again = z.call(op, "roll", "--task", task, **env)
     second = parse(again.stdout) or {}
     f_full, s_full = details(first), details(second)
     first_id = (f_full.get("worker") or {}).get("dispatch_id")
@@ -604,7 +599,7 @@ def step_paseo_host(z: Zero):
     op = run.operation("Paseo host: unknown delivery", "the host created the agent but the answer was lost: roll says pending, the continuation finds the agent by label and never creates twice")
     z.set_fault(create="uncertain", observe="unavailable")
     task = z.task("slow", "uncertain")
-    result = z.call(op, "roll", "--task", task, "--wait", "0", **env)
+    result = z.call(op, "roll", "--task", task, **env)
     doc = parse(result.stdout) or {}
     full = details(doc)
     z.evidence("A-uncertain-create-roll-stdout.json", doc)
@@ -629,19 +624,19 @@ def step_paseo_host(z: Zero):
 
     op = run.operation("Paseo host: definite creation failure releases the reservation", "the host rejects the create before anything exists: failed state, reservation released, a re-roll can launch")
     z.set_fault(create="reject")
-    result = z.call(op, "roll", "--task", z.task("ok", "reject"), "--wait", "0", **env)
+    result = z.call(op, "roll", "--task", z.task("ok", "reject"), **env)
     doc = parse(result.stdout) or {}
     op.check("roll reports an error with the cause, not launched", doc.get("status") in ("error", "blocked") and doc.get("cause"), json.dumps(doc)[:400])
     reservations = (parse(z.call(op, "dispatch", "--dispatch-action", "reconcile", **env).stdout) or {}).get("active_reservations", [])
     op.check("the failed attempt holds no reservation", not [r for r in reservations if r.get("state") in ("prepared", "launching")], reservations)
-    result = z.call(op, "roll", "--task", z.task("ok", "after-reject"), "--wait", "2", **env)
+    result = z.call(op, "roll", "--task", z.task("ok", "after-reject"), **env)
     doc = parse(result.stdout) or {}
     op.check("a new roll after the failure launches normally", doc.get("status") == "launched", json.dumps(doc)[:300])
 
     op = run.operation("Paseo host: worker errors, crashes and quota", "the host reports the failure; the registry ends failed; a quota text marks the account exhausted for the next plan")
     for scenario in ("error", "crash", "quota"):
         z.ctx["mark"] = time.time() - 1
-        result = z.call(op, "roll", "--task", z.task(scenario, "paseo"), "--wait", "0", **env)
+        result = z.call(op, "roll", "--task", z.task(scenario, "paseo"), **env)
         doc = parse(result.stdout) or {}
         did = (details(doc).get("worker") or {}).get("dispatch_id")
         row = settle(z, op, did, "failed", env) if did else {}
@@ -652,7 +647,7 @@ def step_paseo_host(z: Zero):
         op.check(f"[{scenario}] no success report was sent", not mail, mail)
 
     op = run.operation("Paseo host: hang, cancel and release", "a running dispatch cannot be released; once the agent is stopped on the host, observation ends it and frees the reservation")
-    result = z.call(op, "roll", "--task", z.task("hang", "paseo"), "--wait", "0", **env)
+    result = z.call(op, "roll", "--task", z.task("hang", "paseo"), **env)
     doc = parse(result.stdout) or {}
     did = (details(doc).get("worker") or {}).get("dispatch_id")
     state = dispatch_status(op, did).get("state") if did else None
@@ -673,7 +668,7 @@ def step_paseo_host(z: Zero):
 
     op = run.operation("Paseo host: the parent is not known to the host", "falls back to a CLI worker only when there is no Paseo session; with one, it reports the cause")
     z.set_parents()      # the host knows no parent
-    result = z.call(op, "roll", "--task", z.task("ok", "noparent"), "--wait", "2", **env)
+    result = z.call(op, "roll", "--task", z.task("ok", "noparent"), **env)
     doc = parse(result.stdout) or {}
     op.check("with PASEO_AGENT_ID set and an unknown parent the roll fails visibly (no silent CLI fallback)", doc.get("status") in ("error", "blocked", "pending") and "Traceback" not in result.stderr,
              json.dumps(doc)[:400] + result.stderr[-200:])
@@ -698,7 +693,7 @@ def step_quota_and_recovery(z: Zero):
     box.cache.write_text(json.dumps(cache), encoding="utf-8")
     z.call(op, "usage")
     before = len(z.workers())
-    result = z.call(op, "roll", "--task", z.task("ok", "exhausted"), "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "2")
+    result = z.call(op, "roll", "--task", z.task("ok", "exhausted"), "--parent-host", "paseo", "--parent-id", PARENT)
     doc = parse(result.stdout) or {}
     op.check("with both accounts exhausted nothing is launched and the answer is not a success", doc.get("status") != "launched" and len(z.workers()) == before and "Traceback" not in result.stderr,
              json.dumps(doc)[:500] + result.stderr[-200:])
@@ -710,7 +705,7 @@ def step_quota_and_recovery(z: Zero):
     box.cache.write_text(json.dumps(cache), encoding="utf-8")
     z.call(op, "usage")
     z.ctx["mark"] = time.time() - 1
-    result = z.call(op, "roll", "--task", z.task("ok", "recovered"), "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "60")
+    result = z.call(op, "roll", "--task", z.task("ok", "recovered"), "--parent-host", "paseo", "--parent-id", PARENT)
     doc = parse(result.stdout) or {}
     op.check("after the next collection the same roll launches a worker again", doc.get("status") == "launched", json.dumps(doc)[:400])
 
@@ -732,7 +727,7 @@ def step_quota_and_recovery(z: Zero):
 
     def attempt(label, note):
         workers, dirs, bridge = len(z.workers()), set(p.name for p in (box.state / "cli-workers").glob("*")) if (box.state / "cli-workers").is_dir() else set(), len(z.bridge_calls())
-        result = z.call(op, "roll", "--task", z.task("ok", note), "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "0", "--verbose")
+        result = z.call(op, "roll", "--task", z.task("ok", note), "--parent-host", "paseo", "--parent-id", PARENT, "--verbose")
         doc = parse(result.stdout) or {}
         z.evidence(f"B3-{label}-roll-verbose.json", doc)
         z.wait_for(lambda: len(z.workers()) > workers or doc.get("status") != "launched", 20, 0.5)
@@ -794,7 +789,7 @@ def step_quota_and_recovery(z: Zero):
     for marker in ("SCORER-FAIL", "SCORER-GARBAGE"):
         z.ctx["mark"] = time.time() - 1
         before_workers = len(z.workers())
-        result = z.call(op, "roll", "--task", z.task("ok", marker) + marker + "\n", "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "30")
+        result = z.call(op, "roll", "--task", z.task("ok", marker) + marker + "\n", "--parent-host", "paseo", "--parent-id", PARENT)
         doc = parse(result.stdout) or {}
         op.check(f"[{marker}] it refuses mechanical fallback (status blocked, reason scorer_unavailable) and launches no worker",
                  doc.get("status") == "blocked" and doc.get("reason") == "scorer_unavailable" and len(z.workers()) == before_workers and "parent" in (doc.get("next_action") or "").lower(),
@@ -807,14 +802,14 @@ def step_herdr(z: Zero):
     op = run.operation("Herdr: refusals", "no live parent, no hc, no parent id at all: nothing is launched and the reason is named")
     herdr_env = {"HC_SESSION": "ac-zero-refusals", "HC_TERMINAL_ID": None}
     count = len(z.workers())
-    result = z.call(op, "roll", "--task", z.task("ok", "herdr-gone"), "--wait", "0", **{**herdr_env, "HC_TERMINAL_ID": "t_does_not_exist"})
+    result = z.call(op, "roll", "--task", z.task("ok", "herdr-gone"), **{**herdr_env, "HC_TERMINAL_ID": "t_does_not_exist"})
     doc = parse(result.stdout) or {}
     op.check("a parent terminal that does not exist is refused, nothing launched", doc.get("status") != "launched" and len(z.workers()) == count and result.returncode != 0,
              json.dumps(doc)[:400] + result.stderr[-200:])
-    result = z.call(op, "roll", "--task", z.task("ok", "herdr-nohc"), "--wait", "0", **{**herdr_env, "PATH": z.path(), "HC_TERMINAL_ID": "t_1"})
+    result = z.call(op, "roll", "--task", z.task("ok", "herdr-nohc"), **{**herdr_env, "PATH": z.path(), "HC_TERMINAL_ID": "t_1"})
     blob = (result.stdout + result.stderr).lower()
     op.check("without hc on PATH the answer names hc and nothing is launched", result.returncode != 0 and "hc" in blob and len(z.workers()) == count, blob[:400])
-    result = z.call(op, "roll", "--task", z.task("ok", "herdr-noparent"), "--wait", "0", **herdr_env)
+    result = z.call(op, "roll", "--task", z.task("ok", "herdr-noparent"), **herdr_env)
     doc = parse(result.stdout) or {}
     op.check("without any parent id the roll does not launch", doc.get("status") != "launched" and len(z.workers()) == count, json.dumps(doc)[:400] + result.stderr[-200:])
     run.not_executed("Herdr worker flow on the host", "terminals of the real hc core on Windows get the machine's PATH and USERPROFILE, not the harness environment "
@@ -870,7 +865,7 @@ def step_hooks_and_crash(z: Zero):
                     "CLAUDE_CODE_SESSION_ID": "claude-zero-uuid", "PASEO_AGENT_ID": None}
         # Opus, so the unparented Sonnet record above cannot answer for this launch.
         z.call(op, "roll", "--task", z.task("ok", "orca-terminal"), "--provider", "claude", "--account", "claude",
-               "--model", "claude-opus-5-5", "--effort", "high", "--basis", "from-zero orca gate test", "--wait", "0", **orca_env)
+               "--model", "claude-opus-5-5", "--effort", "high", "--basis", "from-zero orca gate test", **orca_env)
         ledger = box.state / "router-ledger.jsonl"
         rows = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()] if ledger.is_file() else []
         routed = next((r for r in reversed(rows) if (r.get("bundle") or {}).get("model") == "claude-opus-5-5"), {})
@@ -889,26 +884,23 @@ def step_hooks_and_crash(z: Zero):
         verdict, out = orca_gate("claude-someone-else")
         op.check("an unrelated Claude session is still denied", verdict == "deny", out[:400])
 
-    op = run.operation("roll killed while it watches", "the dispatch outlives its roll process; the continuation finds the same agent and finishes it with no second create")
+    op = run.operation("roll killed while it creates", "the dispatch outlives its roll process; the continuation finds the same agent and finishes it with no second create")
     env = z.paseo_env()
     z.set_parents(PARENT)
-    # A slow host keeps the bridge inside its create for a while after it logs the request. The roll is "watching"
-    # only once the host has answered that create; killing the roll's tree earlier kills the bridge mid-create, so no
-    # agent ever exists (the v0.3.13 CI flake: the kill fired on the request log line, not on the answer).
+    # A slow host keeps the bridge inside its create for a while after it logs the request.
     z.set_fault(create_delay_ms=1500)
     calls, answers, inbox = len(z.bridge_calls()), len(z.bridge_answers()), len(z.inbox())
-    process = subprocess.Popen([str(box.agentcompass), "roll", "--task", z.task("slow", "crash-continue"), "--wait", "120"], cwd=str(z.work),
+    process = subprocess.Popen([str(box.agentcompass), "roll", "--task", z.task("slow", "crash-continue")], cwd=str(z.work),
                                env=box.env(**z.env(**env)), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     created = z.wait_for(lambda: [a for a in z.bridge_answers()[answers:] if a["operation"] == "create" and (a.get("answer") or {}).get("ok")], 60, 0.3)
-    op.check("the host answered the create while roll was still watching", bool(created) and process.poll() is None,
+    op.check("the host answered the create", bool(created),
              {"answers": z.bridge_answers()[answers:], "roll_exit": process.poll()})
     z.kill(process.pid)
     try:
         process.communicate(timeout=30)
     except subprocess.TimeoutExpired:
         process.kill()
-    op.record["commands"].append({"argv": [str(box.agentcompass), "roll", "--task", "<slow brief>", "--wait", "120"], "returncode": process.returncode, "log": "(killed mid-watch on purpose)"})
-    op.check("the roll process was killed before it could report", process.returncode not in (0, None), process.returncode)
+    op.record["commands"].append({"argv": [str(box.agentcompass), "roll", "--task", "<slow brief>"], "returncode": process.returncode, "log": "(killed mid-watch on purpose)"})
     did = created[0]["dispatch_id"] if created else None
     row = parse(z.call(op, "dispatch", "--dispatch-action", "status", "--dispatch-id", did or "none", **env).stdout) or {}
     op.check("the registry still holds the dispatch, not terminal, with its reservation", row.get("state") in ("launched", "started", "launching"), row)
@@ -929,7 +921,7 @@ def step_entries(z: Zero):
     op = run.operation("source-checkout entry", "python -X utf8 <checkout>/agentcompass roll ... from a non-repo directory reaches the same worker")
     entry = [box.python, "-X", "utf8", z.ctx["repo"] / "agentcompass"]
     z.ctx["mark"] = time.time() - 1
-    result = z.call(op, "roll", "--task", z.task("ok", "source-entry"), "--parent-host", "paseo", "--parent-id", PARENT, "--wait", "60", entry=entry)
+    result = z.call(op, "roll", "--task", z.task("ok", "source-entry"), "--parent-host", "paseo", "--parent-id", PARENT, entry=entry)
     doc = parse(result.stdout) or {}
     op.check("the source entry launched a CLI worker", doc.get("status") == "launched", json.dumps(doc)[:400] + result.stderr[-300:])
     op.check("the answer names no script path in next steps", not re.search(r"\.py\b", json.dumps({k: doc.get(k) for k in ("next_action", "next_argv")})), doc.get("next_action"))

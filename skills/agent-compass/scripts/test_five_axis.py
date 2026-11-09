@@ -410,9 +410,13 @@ class FiveAxisTests(unittest.TestCase):
         self.assertGreater(frontier['decision']['start_after_hours'], 0.0)
 
     def test_roll_launches_best_ready_now_without_can_wait_and_never_launches_a_defer(self):
-        """Round 9 F1: roll without can_wait_hours launches the best ready-now candidate when 5h is empty on the top
-        owner; when can_wait_hours allows a defer, roll returns start_after_hours and never launches into an empty window."""
-        import argparse
+        """Rounds 9-10 (F1 + --can-wait-hours CLI): roll without --can-wait-hours launches the best ready-now candidate
+        when 5h is empty on the top owner; when --can-wait-hours is passed on the CLI, plan and roll return
+        start_after_hours (caller_action='wait_for_reset') and roll never launches into an empty window."""
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
         import roll
         base = {name: row(0.55, usd=5.0) for name, info in self.accounts['models'].items() if isinstance(info, dict)}
         doc = document(self.accounts['models'],
@@ -421,14 +425,16 @@ class FiveAxisTests(unittest.TestCase):
                           'gpt-6.1-sol': row(demand(0.587, 0.788, 0.787, 0.732), usd=6.12)})
         launched_bundles = []
 
-        def run_roll(can_wait_hours=None):
+        def run_roll_cli(extra_argv=()):
             acc = copy.deepcopy(self.accounts)
             acc['scoring']['five_axis'] = {'enabled': True}
             usage = self.usage(acc, '5h-only scarce')
             profile = {**PROFILE, 'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0}
 
-            def fake_plan_stage(payload, _args):
+            def fake_plan_stage(payload, cli_args):
                 t = dict(payload['task'], profile=profile)
+                if getattr(cli_args, 'can_wait_hours', None) is not None and t.get('can_wait_hours') is None:
+                    t['can_wait_hours'] = cli_args.can_wait_hours
                 original = allocator.load_five_axis
                 allocator.load_five_axis = lambda path=None: doc
                 try:
@@ -438,38 +444,38 @@ class FiveAxisTests(unittest.TestCase):
                     allocator.load_five_axis = original
                 return d, 0
 
-            judge = types.SimpleNamespace(plan_stage=fake_plan_stage, usage_snapshot=lambda _c: usage)
-            args = argparse.Namespace(brief=None, task='frontier proof', task_id='t-f1', hours=2.0, local_only=None,
-                                      file=[], apply_to=None, fast=False, can_wait_hours=can_wait_hours, dry_run=False,
-                                      parent_id='parent-1', new_worker=True, resume=None, provider=None, account=None,
-                                      model=None, effort=None, basis=None, no_score=False, usage_cache=None, wait=0,
-                                      verbose=False)
-            orig_resolve, orig_pending, orig_reusable = roll.resolve_parent, roll.registry.pending, roll.registry.reusable_workers
-            orig_paseo, orig_cli = roll.can_launch_via_paseo, roll.cli
-            roll.resolve_parent = lambda _a: ('parent-1', 'cli', 'parent-1')
-            roll.registry.pending = lambda: []
-            roll.registry.reusable_workers = lambda _p: []
-            roll.can_launch_via_paseo = lambda _prov: False
-            roll.cli = lambda _a, out, b, _txt, _j: (launched_bundles.append((b['account'], b['model'])) or
-                                                     (dict(out, launched=True, dispatch_mode='cli',
-                                                           caller_action='already_launched_do_not_respawn',
-                                                           worker={'pid': 123, 'output': 'o', 'stderr': 'e'}), 0))
-            try:
-                return roll.run(args, judge)
-            finally:
-                roll.resolve_parent, roll.registry.pending, roll.registry.reusable_workers = orig_resolve, orig_pending, orig_reusable
-                roll.can_launch_via_paseo, roll.cli = orig_paseo, orig_cli
+            argv = ['route_judge.py', 'roll', '--task', 'frontier proof', '--task-id', 't-f1', '--hours', '2.0',
+                    '--parent-id', 'parent-1', '--new-worker', *extra_argv]
+            buf = io.StringIO()
+            with patch.object(sys, 'argv', argv), \
+                    patch.object(route_judge, 'plan_stage', side_effect=fake_plan_stage), \
+                    patch.object(route_judge, 'usage_snapshot', return_value=usage), \
+                    patch.object(route_judge.public_data, 'refresh_in_background'), \
+                    patch.object(route_judge.antigravity_plan, 'refresh_in_background'), \
+                    patch.object(roll, 'resolve_parent', return_value=('parent-1', 'cli', 'parent-1')), \
+                    patch.object(roll.registry, 'pending', return_value=[]), \
+                    patch.object(roll.registry, 'reusable_workers', return_value=[]), \
+                    patch.object(roll, 'can_launch_via_paseo', return_value=False), \
+                    patch.object(roll, 'cli', side_effect=lambda _a, out, b, _txt, _j: (
+                        launched_bundles.append((b['account'], b['model'])) or
+                        (dict(out, launched=True, dispatch_mode='cli',
+                              caller_action='already_launched_do_not_respawn',
+                              worker={'pid': 123, 'output': 'o', 'stderr': 'e'}), 0))), \
+                    contextlib.redirect_stdout(buf):
+                code = route_judge.main()
+            return json.loads(buf.getvalue()), code
 
-        res_now, code_now = run_roll(can_wait_hours=None)
+        res_now, code_now = run_roll_cli()
         self.assertEqual(code_now, 0)
         self.assertEqual(res_now['status'], 'launched')
         self.assertEqual(res_now['worker']['account'], 'codex')
         self.assertEqual(launched_bundles, [('codex', 'gpt-6.1-sol')])
 
         launched_bundles.clear()
-        res_defer, code_defer = run_roll(can_wait_hours=4.0)
+        res_defer, code_defer = run_roll_cli(['--can-wait-hours', '4'])
         self.assertEqual(code_defer, 2)
         self.assertEqual(res_defer['status'], 'blocked')
+        self.assertEqual(res_defer['caller_action'], 'wait_for_reset')
         self.assertEqual(res_defer['worker']['account'], 'claude')
         self.assertEqual(res_defer['start_after_hours'], 3.0)
         self.assertEqual(launched_bundles, [])

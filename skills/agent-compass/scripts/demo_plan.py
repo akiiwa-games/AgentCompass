@@ -16,9 +16,13 @@ SAMPLE_DOCUMENT = {'task': {
 }}
 
 
+NO_HOST_STATE_ENV = {'ROUTER_LAUNCH_FAILURES': 'off', 'ROUTER_PROVIDER_RETRY': 'off', 'ROUTER_MODEL_LATCH': 'off'}
+
+
 def reference_accounts(allocator):
     """Use an explicit offline fleet; never inspect this machine's saved account state."""
-    return allocator.load_accounts(allocator.reference_fleet_path())
+    with patch.dict(os.environ, NO_HOST_STATE_ENV):
+        return allocator.load_accounts(allocator.reference_fleet_path())
 
 
 def plan(document, allocator):
@@ -44,7 +48,7 @@ def plan(document, allocator):
                             'resets_at': (now + timedelta(hours=4 if short else reset_hours)).isoformat()})
         usage['accounts'][name] = {'status': 'fresh', 'available': True, 'stale': False,
                                    'fetched_at': now.isoformat(), 'windows': windows}
-    with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': 'off'}):  # this machine's cooldowns are host state
+    with patch.dict(os.environ, NO_HOST_STATE_ENV):  # this machine's cooldowns/holds/latches are host state
         result = allocator.plan(task, usage, now, records=[], accounts=accounts, overrides=[],
                                 host_policy_config={'allowed_accounts': list(snapshot)})
     result['demo'] = True
