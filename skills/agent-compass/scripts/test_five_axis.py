@@ -596,10 +596,14 @@ class FiveAxisTests(unittest.TestCase):
                           if isinstance(info, dict) and info.get('tier') is not None
                           and info.get('usd_per_hour') is None and name not in allocator.USD_PER_HOUR_DEFAULTS)
         self.assertEqual(unpriced, [])
-        fable = shipped['models']['claude-fable-5-2']
-        public = allocator.load_five_axis()['models']['claude-fable-5-2']['usd_per_hour']['value']
-        self.assertEqual(fable['usd_per_hour'], public)         # one source: the public data's labelled option-B value
-        self.assertIn('Option B', fable['usd_per_hour_basis'])
+        # Round 058 round 4: Fable 5.2's legacy usd_per_hour is Fable 5.1's times the same API list price ratio the
+        # five-axis value uses (series conversion), each on its own scale.
+        fable, est = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-2']['score_estimates']['usd_per_hour']
+        public = allocator.load_five_axis()['models']['claude-fable-5-2']['usd_per_hour']
+        self.assertEqual((est['base_model'], est['base_value']), ('claude-fable-5-1', shipped['models']['claude-fable-5-1']['usd_per_hour']))
+        self.assertEqual(est['ratio'], public['sources']['ratio'])
+        self.assertEqual(fable['usd_per_hour'], round(est['base_value'] * est['ratio'], 3))
+        self.assertIn('Series conversion from claude-fable-5-1', fable['usd_per_hour_basis'])
 
     def test_the_outside_option_is_only_what_long_windows_can_absorb_and_an_empty_outside_prices_the_whole_fit(self):
         """Quota economy v3 (round 14): a window's ladder takes its outside point only from candidates that draw a different
@@ -736,22 +740,39 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(price['source'], 'aa.price')
         self.assertIn('url', price)
 
-    def test_fable_5_2_on_five_axis_path_and_never_beats_opus_5_5_via_artifacts(self):
-        """Round 11 item 6: claude-fable-5-2 has public five-axis scores (partial axes count missing components as 0),
-        labelled option-B fallback usd_per_hour, Anthropic fast-mode pricing ($16/$80 = 2x, 2.5x speed), and never beats
-        Opus 5.5 via data artifacts."""
+    def test_fable_5_2_on_five_axis_path_is_converted_from_fable_5_1(self):
+        """Round 058 round 4 (user 2026-11-10: "后续同系列新出，缺少实测数据的情况下，先按照同系列的全分数进行折算，不要留下任何一个默认值
+        或者fallback"): every component claude-fable-5-2 does not measure comes from claude-fable-5-1 (its same-series
+        sibling) moved along the component's AA-index fit by the two index readings, and its usd_per_hour is 5.1's times the
+        API list price ratio over the community token mix. No backfill, no pessimistic 0, no option-B fallback. Fast-mode
+        pricing ($16/$80 = 2x, 2.5x speed) and the unknown image input (mode B for vision work) stay its own."""
         shipped = allocator.load_five_axis()
-        fable52 = shipped['models']['claude-fable-5-2']
-        opus55 = shipped['models']['claude-opus-5-5']
-        self.assertEqual(fable52['usd_per_hour']['kind'], 'derived')
-        self.assertTrue(fable52['usd_per_hour']['fallback'])
-        self.assertGreater(fable52['usd_per_hour']['value'], opus55['usd_per_hour']['value'])
+        fable52, fable51 = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-1']
+        usd = fable52['usd_per_hour']
+        self.assertEqual((usd['kind'], usd['fallback'], usd['sources']['base']['model']), ('converted', False, 'claude-fable-5-1'))
+        self.assertAlmostEqual(usd['value'], round(fable51['usd_per_hour']['value'] * usd['sources']['ratio'], 3), places=2)
+        self.assertAlmostEqual(usd['sources']['ratio'], 0.8, places=4)      # $8/$40/$0.20 against $10/$50/$0.25
         self.assertEqual(fable52['fast_mode']['status'], 'ok')
         self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
         self.assertEqual(fable52['image_input']['status'], 'unknown')
-        # Partial axes on Fable 5.2 count missing Arena components as 0, so its module_precision and vision_tools are <= Opus 5.5.
-        self.assertLessEqual(fable52['scores']['module_precision'], opus55['scores']['module_precision'])
-        self.assertLessEqual(fable52['scores']['vision_tools'], opus55['scores']['vision_tools'])
+        fits = shipped['backfill_fits']
+        x, xb = fable52['intelligence_index'], fable51['intelligence_index']
+        for axis, ax in fable52['axes'].items():
+            self.assertEqual(ax['missing_components'], [], axis)
+            for comp, row in ax['components'].items():
+                self.assertIn(row['status'], ('measured', 'converted'), (axis, comp))
+                if row['status'] == 'converted':
+                    conv, f = row['conversion'], fits[f'{axis}.{comp}~aa.index']
+                    base = fable51['axes'][axis]['components'][comp]
+                    self.assertEqual((conv['base_model'], conv['base_value'], base['status']),
+                                     ('claude-fable-5-1', base['value'], 'measured'))
+                    self.assertEqual((conv['x'], conv['x_base']), (x, xb))       # both real readings: not clamped
+                    expected = min(max(base['value'] + f['b'] * (x - xb), f['y_min']), f['y_max'])
+                    self.assertAlmostEqual(row['value'], expected, places=2)   # backfill_fits are rounded to 4 places
+        # Its own measurements are all Artificial Analysis: labelled, not counted as independent evidence (review F5).
+        self.assertTrue(fable52['evidence']['aa_only'])
+        self.assertIn('aa_only', {e['reason'] for e in fable52['data_errors']})
+        self.assertFalse(fable51['evidence']['aa_only'])
 
     def test_no_history_read_by_five_axis_economics(self):
         """Round 11 item 2: five-axis economics reads ONLY current-period window state (C, U, t0, T) + in-flight leases +
@@ -1028,6 +1049,86 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertEqual(ax['status'], 'partial')
         self.assertEqual(ax['missing_components'], ['terminal'])
         self.assertAlmostEqual(ax['value'], 0.724 / 2, places=4)
+
+    def calibration_set(self, extra):
+        """Ten models measured on both module_precision components plus the AA index, and the models in `extra`."""
+        models = {}
+        for i in range(10):
+            idx = 30 + 3 * i
+            models[f'm{i}'] = {
+                'intelligence_index': [{'source': 'aa.index', 'value': idx, 'as_of': '2026-11-09'}],
+                'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.4 + 0.01 * idx},
+                                     {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.2 + 0.012 * idx}]}
+        models[self.ms.ANCHOR] = models.pop('m9')
+        models.update(extra)
+        return {'models': models}
+
+    def test_missing_component_is_estimated_for_every_model_alike(self):
+        """Round 058 (user 2026-11-10: "分数如果没有就自己校准"): a model measured only on AA boards gets its missing Arena
+        component from the component's AA-index fit, exactly like a model with other boards; the estimate cites the fit.
+        Without the AA index nothing can estimate it, and the pessimistic 0 of round 8 stays."""
+        aa_only = {'intelligence_index': [{'source': 'aa.index', 'value': 50, 'as_of': '2026-11-09', 'listed_as': 'New (High)'}],
+                   'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
+        no_index = {'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
+        meas = self.calibration_set({'aa_only': aa_only, 'no_index': no_index})
+        rows, fits = self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}}).score()
+        ax = rows['aa_only']['axes']['module_precision']
+        comp = ax['components']['alignment']
+        fit = fits['module_precision.alignment~aa.index']
+        self.assertEqual(comp['status'], 'backfilled')
+        self.assertAlmostEqual(comp['value'], round(fit['a'] + fit['b'] * 50, 4), places=3)
+        self.assertEqual(comp['backfill'], {'predictor': 'aa.index', 'x': 50, 'fit': 'module_precision.alignment~aa.index',
+                                            'r': fit['r'], 'n': fit['n'], 'as_of': '2026-11-09', 'listed_as': 'New (High)'})
+        # Above the sampled readings the fit is read at the top sampled reading, not extrapolated.
+        self.assertEqual(self.fa.Scorer.predict(fit, fit['x_max'] + 40), self.fa.Scorer.predict(fit, fit['x_max']))
+        self.assertEqual(ax['missing_components'], [])
+        self.assertAlmostEqual(ax['value'], (0.8 + comp['value']) / 2, places=4)
+        pessimistic = rows['no_index']['axes']['module_precision']
+        self.assertEqual(pessimistic['missing_components'], ['alignment'])
+        self.assertAlmostEqual(pessimistic['value'], 0.4, places=4)
+
+    def test_a_same_series_sibling_converts_the_missing_component_instead_of_the_fit(self):
+        """Round 058 round 4: with a same-series sibling that measures the component (family resolution: claude-fable-5-1
+        for claude-fable-5-2), the component is the sibling's value moved along the fit by the index difference, kept in
+        the fit's measured range; a measurement replaces it on the next build."""
+        new = {'intelligence_index': [{'source': 'aa.index', 'value': 60, 'as_of': '2026-11-09'}],
+               'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
+        base = {'intelligence_index': [{'source': 'aa.index', 'value': 40, 'as_of': '2026-11-09'}],
+                'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.9},
+                                     {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.7}]}
+        meas = self.calibration_set({'claude-fable-5-2': new, 'claude-fable-5-1': base})
+        acc = {'models': {m: {'tier': 3.0} for m in meas['models']}}
+        rows, fits = self.fa.Scorer(meas, acc).score()
+        comp = rows['claude-fable-5-2']['axes']['module_precision']['components']['alignment']
+        f = fits['module_precision.alignment~aa.index']
+        self.assertEqual(comp['status'], 'converted')
+        self.assertEqual((comp['conversion']['base_model'], comp['conversion']['x'], comp['conversion']['x_base']),
+                         ('claude-fable-5-1', 60, 40))
+        self.assertAlmostEqual(comp['value'], min(max(0.9 + f['b'] * 20, f['y_min']), f['y_max']), places=4)
+        self.assertEqual(comp['value'], f['y_max'])                 # 0.9 + 20 b is above every measured value: kept
+        self.assertNotIn('backfill', comp)
+        meas['models']['claude-fable-5-2']['module_precision'].append(
+            {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.66})
+        after, _ = self.fa.Scorer(meas, acc).score()
+        comp = after['claude-fable-5-2']['axes']['module_precision']['components']['alignment']
+        self.assertEqual((comp['status'], comp['value']), ('measured', 0.66))
+
+    def test_a_later_measurement_replaces_the_estimate_on_refresh(self):
+        """The estimate is not stored anywhere the next build reads: once a board lists the component, the normal rebuild
+        uses the measurement and the backfill record is gone."""
+        new = {'intelligence_index': [{'source': 'aa.index', 'value': 50, 'as_of': '2026-11-09'}],
+               'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
+        meas = self.calibration_set({'new': new})
+        acc = {'models': {m: {} for m in meas['models']}}
+        before, _ = self.fa.Scorer(meas, acc).score()
+        self.assertEqual(before['new']['axes']['module_precision']['components']['alignment']['status'], 'backfilled')
+        meas['models']['new']['module_precision'].append(
+            {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.61})
+        after, _ = self.fa.Scorer(meas, acc).score()
+        comp = after['new']['axes']['module_precision']['components']['alignment']
+        self.assertEqual((comp['status'], comp['value']), ('measured', 0.61))
+        self.assertNotIn('backfill', comp)
+        self.assertEqual(after['new']['axes']['module_precision']['status'], 'measured')
 
 
 class SourceMergeTests(unittest.TestCase):

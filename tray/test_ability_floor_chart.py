@@ -42,7 +42,8 @@ def test_a_family_row_shows_the_ability_the_router_scores_it_at(isolated_state: 
     policy = accounts["scoring"]
     expected = allocator.effort_ability(policy, allocator.model_curves(accounts, family), allocator.model_spec(accounts, family), "high")
     assert rows["old"]["ability"] == round(expected, 2)
-    assert rows["old"]["ability"] < rows["top"]["ability"]
+    # Round 058 round 4: a family name takes its same-series row's scores (series conversion, no -0.3 shrink).
+    assert rows["old"]["ability"] == rows["top"]["ability"]
     assert rows["old"]["model"] == family
 
 

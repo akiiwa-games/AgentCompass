@@ -20,8 +20,8 @@ The capacity ladder (round 5, user 2026-11-09: capacity is never left unknown; e
 1. a direct community measurement (`readings`; window ratios a community source states, such as Fable weekly = half
    the weekly limit, count as rung 1 derived);
 2. a community time-to-exhaust report (`EXHAUST`: hours of a named model before a window ran out) times that model's
-   arena real-session usd per hour (`arena.agent_sessions`, or option B `derived.community_mix` as labelled fallback
-   when arena does not list the model);
+   usd per hour on the five-axis basis (`arena.agent_sessions`; else the series conversion from a same-series
+   sibling, else option B `derived.community_mix` as labelled fallback, see five_axis.py);
 3. a vendor-published plan multiplier (`multipliers`) applied to a measured sibling plan's window.
 Only when all three are empty is the window an error (`five_axis.capacity`, red and surfaced in routing notes).
 

@@ -94,8 +94,9 @@ class ModelResolverTests(RouterCase):
         found = allocator.resolve_model('qwen/Qwen3-Coder-Next:free', self.accounts)
         self.assertEqual((found['key'], found['effort']), ('qwen3-coder-next', None))
 
-    def test_family_names_score_below_the_flagship_at_the_default_speed(self):
-        """1.1: the flagship row and its speed curve answered for an unmeasured older model."""
+    def test_family_names_take_the_series_scores_at_the_default_speed(self):
+        """1.1: an unmeasured older model takes its same-series row's scores (round 058 round 4 series conversion),
+        never that row's speed curve."""
         for raw, target in (('gemini-2.5-pro', 'gemini-4-argon-high'), ('deepseek-r1', 'deepseek-v4-pro'),
                             ('claude-opus-4-20250514', 'claude-opus-5-5')):
             with self.subTest(raw=raw):
@@ -107,7 +108,7 @@ class ModelResolverTests(RouterCase):
                 self.assertEqual(row['bundle']['effort'], 'high')        # nothing measured to step down along
                 self.assertFalse(any('responsiveness' in r for r in row['excluded']), row['excluded'])
                 self.assertAlmostEqual(comps['ability_value'],
-                                       round(self.accounts['models'][target]['tier'] - 0.3
+                                       round(self.accounts['models'][target]['tier']
                                              + self.accounts['scoring']['effort_ability'].get('high', 0), 2), places=1)
 
     def test_a_date_spelling_keeps_the_measured_curve(self):

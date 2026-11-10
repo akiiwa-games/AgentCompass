@@ -49,8 +49,9 @@ Additional enabled Claude/Codex Paseo launchers inherit the existing family poli
 and permission mode. A saved profile without a launcher is visible as `saved`;
 it is not an independent concurrent worker account. Explicit launchers advertising
 models can be loaded without an account template. Model scores use exact calibrated
-rows first, then normalized names, family priors, and a conservative generic
-baseline. These defaults are provisional estimates, not benchmark measurements.
+rows first, then normalized names, the same-series row's scores (series conversion,
+no shrink), and a conservative generic baseline only for a name with no series. These
+are estimates, not benchmark measurements.
 Duplicate launchers share one subscription quota owner.
 
 Account IDs do not determine provider family, credential home or quota reserves.

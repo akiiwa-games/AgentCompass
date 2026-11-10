@@ -1307,16 +1307,36 @@ class AllocatorTests(unittest.TestCase):
             bundle = allocator.bundles(accounts)['fable52_high']
             self.assertEqual((bundle['model'], bundle['effort']), ('claude-fable-5-2', 'high'))
             new, old = accounts['models']['claude-fable-5-2'], accounts['models']['claude-fable-5-1']
-            # Measured on the Artificial Analysis board only: its own tier and effort curve, never Fable 5.1's numbers.
+            # Its tier and effort curve are its own Artificial Analysis measurements.
             self.assertNotEqual(new['tier'], old['tier'])
-            self.assertNotEqual(new['capabilities'], old['capabilities'])
-            self.assertEqual(new['capabilities'], accounts['unmeasured_models']['generic']['capabilities'])
             self.assertIn('Artificial Analysis', accounts['effort_curves']['claude-fable-5-2']['calibration_source'])
-            # No public derivation exists for these: they stay absent instead of guessed.
+            # Round 058 round 4: every score and usd_per_hour it has no direct measurement for is the series conversion
+            # from Fable 5.1 (no default, no fallback): the 5.1 value, moved along a fitted slope by a shared AA reading.
+            estimates = new['score_estimates']
+            generic = accounts['unmeasured_models']['generic']
+            for group in ('capabilities', 'subjective'):
+                for dim, value in new[group].items():
+                    est = estimates[f'{group}.{dim}']
+                    self.assertEqual((value, est['base_model'], est['base_value']), (est['value'], 'claude-fable-5-1', old[group][dim]))
+                    self.assertEqual(est['prior'], generic[group][dim])
+                    if est['predictor']:
+                        self.assertEqual(est['value'], round(min(max(est['base_value'] + est['fit']['b'] * (est['x'] - est['x_base']),
+                                                                     est['fit']['y_min']), est['fit']['y_max']), 2))
+            usd = estimates['usd_per_hour']
+            self.assertEqual((usd['base_model'], usd['base_value']), ('claude-fable-5-1', old['usd_per_hour']))
+            self.assertEqual(new['usd_per_hour'], round(old['usd_per_hour'] * usd['ratio'], 3))
             self.assertNotIn('cost', new)
-            self.assertNotIn('usd_per_hour', new)
             self.assertEqual(accounts['dispatch_efforts']['claude']['claude-fable-5-2'],
                              accounts['dispatch_efforts']['claude']['claude-fable-5-1'])
+
+    def test_routing_notes_label_estimated_scores_without_changing_the_score(self):
+        """Round 058 review F3: a candidate whose model has public-data estimates says which scores are estimated."""
+        task = {'work_kind': 'debug_review', 'difficulty': 'hard', 'profile': self.profile()}
+        rows = self.rows(self.plan(task))
+        estimated = [p.split('.', 1)[-1] for p in sorted(allocator.load_accounts()['models']['claude-fable-5-2']['score_estimates'])]
+        note = 'scores without a direct measurement (series conversion or public-data fit): ' + ', '.join(estimated)
+        self.assertIn(note, rows['fable52_high']['notes'])
+        self.assertFalse(any(n.startswith('scores without a direct measurement') for n in rows['fable51_high']['notes']))
 
     def test_existing_bundles_keep_tag_pools_and_draws_override(self):
         accounts = allocator.load_accounts()

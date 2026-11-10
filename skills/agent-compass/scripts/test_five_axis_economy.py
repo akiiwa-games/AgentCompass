@@ -267,7 +267,9 @@ class FleetEconomyTests(unittest.TestCase):
                 if c['bundle']['account'] == 'codex' and c['components']['fit'] > 0.55:
                     self.assertGreater(c['components']['opportunity_cost'], 0.0, c['id'])
             self.assertNotEqual(d['selected_bundle']['bundle_id'].split('_')[0], 'sol', used)
-            self.assertEqual(d['choice'], 'haiku55_high', used)
+            # Round 058 round 4: Haiku 5.5's unmeasured global_rigor component now comes from Haiku 4.5 (series
+            # conversion), which lowers its fit; the cheap Codex Luna (fit below the over-line threshold) wins.
+            self.assertEqual(d['choice'], 'luna_high', used)
         self.assertEqual(self.fleet.plan(0.6, 0.9, axes=FRONTIER, hours=6.0)['choice'], 'opus55_high')
 
     def test_a_substitute_only_helps_as_much_as_it_is_likely_to_have_room(self):
@@ -1079,7 +1081,12 @@ class WeeklyWindowTests(unittest.TestCase):
         cls.fleet = Fleet()
 
     def plan(self, *args, hours=2.0, **kwargs):
-        return self.fleet.plan(*args, hours=hours, expected_hours=hours, **kwargs)
+        # Keep an explicitly expensive synthetic candidate to exercise simultaneous short-window and weekly exclusions
+        # independently of public price changes (Fable 5.2's usd is a series conversion from Fable 5.1).
+        data = copy.deepcopy(allocator.load_five_axis())
+        data['models']['claude-fable-5-2']['usd_per_hour']['value'] = 100.0
+        with patch.object(allocator, 'load_five_axis', return_value=data):
+            return self.fleet.plan(*args, hours=hours, expected_hours=hours, **kwargs)
 
     def only_five_hour(self, acc):
         acc['accounts']['claude']['windows'] = {'five_hour': acc['accounts']['claude']['windows']['five_hour']}

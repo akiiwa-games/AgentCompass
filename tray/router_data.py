@@ -2606,6 +2606,9 @@ def ability_floor_chart_data(accounts: dict | None = None, floors_override: dict
                 "fixed_effort": (info or {}).get("fixed_effort") if is_fixed_effort else None,
                 "basis": basis,
                 "estimated": estimated,
+                # Round 058: scores of a row without a direct measurement (accounts.json score_estimates: series
+                # conversion or public-data estimate).
+                "estimated_scores": sorted(info.get("score_estimates") or ()),
                 "score_source": "estimated" if estimated else str(bspec.get("score_source") or "calibrated"),
                 "host_enabled": host_ok,
                 "efforts_map": {},

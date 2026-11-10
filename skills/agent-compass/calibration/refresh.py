@@ -7,7 +7,9 @@
   manifest (url, fetched_at, sha256 per file). A source that fails is recorded missing and its old copy deleted, so a
   value is never carried over silently from an earlier download.
 - Rebuild: `measurements.py` then `five_axis.py` on that directory; every value keeps its data date (`as_of`) and the
-  fetch time of its file (`fetched_at`).
+  fetch time of its file (`fetched_at`). Then `apply_rows.refresh_estimates` re-estimates, from the new AA readings, the
+  accounts.json scores that have no direct measurement (round 058): an estimate yields to any value it did not write,
+  and one that loses its out-of-sample skill reverts to its prior (`--no-estimates` skips this step).
 - Report: the community usd-per-hour check rows against the usd basis (community / option B), then per source its
   kind, data date, age in days and status: `ok`; `stale` (older than five_axis.STALE_DAYS, a
   yellow note: still used); `missing` (not fetched, or a community sentence no longer on the page: red, no value).
@@ -28,6 +30,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import apply_rows
 import five_axis
 import measurements
 import sources
@@ -91,11 +94,15 @@ def main():
     ap.add_argument('--no-fetch', action='store_true', help='rebuild from the downloads already in DIR')
     ap.add_argument('--usd-basis', default='community_mix', choices=sorted(five_axis.USD_BASES))
     ap.add_argument('--report', help='also write the source-age table (markdown) here')
+    ap.add_argument('--no-estimates', action='store_true', help='leave the accounts.json estimates as they are')
     args = ap.parse_args()
     target = sources.data_dir(args.data)
     if not args.no_fetch:
         sources.fetch(target)
-    _, doc = rebuild(target, args.usd_basis)
+    meas, doc = rebuild(target, args.usd_basis)
+    if not args.no_estimates:
+        _, _, touched = apply_rows.refresh_estimates(meas)
+        print(f'accounts.json estimates: {len(touched)} row(s) changed' + (f": {', '.join(sorted(touched))}" if touched else ''))
     rows, worst = staleness(doc)
     text = markdown(rows, datetime.now(timezone.utc).isoformat(timespec='seconds'), doc.get('usd_checks') or ())
     print(text)

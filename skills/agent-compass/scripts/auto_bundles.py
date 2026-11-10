@@ -6,12 +6,15 @@ references/accounts.json. Callers pass the merged accounts document, the model-c
 
 Default score ("姒涙顓婚崚?) resolution, most specific first:
   1. calibrated   - the canonical model has a row in accounts['models'] (exact id or alias).
-  2. family       - model_resolution's family prior matched; the target row is copied and shrunk
-                    (tier -0.3, capability/subjective x0.9) because version and size are not verified.
-                    A small-size name (flash/lite/mini/...) on a non-small target uses the small default.
-  3. generic      - public data's `unmeasured_models.generic` (the median measured tier, below the hard floor);
-                    model_resolution.GENERIC_MODEL_SPEC and SMALL_DEFAULT only when the data has none.
-These are routing priors, not benchmarks. The harness factor (allocator.harness_quality_factor,
+  2. series       - the same-series row `series_target` names (model_resolution's family resolution): its full
+                    score set, usd_per_hour included, as the series conversion with no shared public reading (a
+                    discovered name has none here; calibration/apply_rows.py converts along a cited reading when
+                    both rows have one). A small-size name (flash/lite/mini/...) is not in the series of a
+                    non-small target.
+  3. generic      - only for a name with no same-series row: public data's `unmeasured_models.generic` (or
+                    `.small` for a small-size name); model_resolution.GENERIC_MODEL_SPEC and SMALL_DEFAULT only
+                    when the data has none.
+The generic rows are routing priors, not benchmarks. The harness factor (allocator.harness_quality_factor,
 scoring.harness_factors) is applied by the allocator on top; this module never applies it twice.
 """
 import copy
@@ -26,8 +29,6 @@ EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 EFFORT_SUFFIX = re.compile(r'^(?P<base>.+?)-(?P<effort>' + '|'.join(EFFORTS) + r')$')
 NON_CHAT = re.compile(r'embed|image|imagen|dall-?e|tts|speech|audio|whisper|transcri|rerank|moderation|veo|video', re.I)
 SMALL_NAME = re.compile(r'(?:^|[-_.])(flash|lite|mini|nano|air|small|tiny|haiku|luna)(?:$|[-_.])', re.I)
-FAMILY_TIER_SHRINK = 0.3
-FAMILY_VECTOR_SHRINK = 0.9
 SMALL_DEFAULT = {
     'tier': 2.8, 'cost': 1, 'visual': False, 'usd_per_hour': 0.6,
     'capabilities': {'reasoning': 0.45, 'coding': 0.45, 'exploration': 0.45,
@@ -65,19 +66,31 @@ def is_chat_model(raw):
     return not NON_CHAT.search(str(raw or ''))
 
 
-def _shrink(spec):
+def _series_copy(spec):
+    """A same-series row's score set for another model: its speed, curve and provenance records are its own."""
     out = copy.deepcopy(spec)
-    for key in ('responsiveness', 'responsiveness_basis', 'responsiveness_status', 'speed_metrics'):
+    for key in ('responsiveness', 'responsiveness_basis', 'responsiveness_status', 'speed_metrics', 'score_estimates',
+                'basis', 'capabilities_basis', 'usd_per_hour_basis'):
         out.pop(key, None)
-    if isinstance(out.get('tier'), (int, float)):
-        out['tier'] = round(max(1.0, out['tier'] - FAMILY_TIER_SHRINK), 2)
-    for block in ('capabilities', 'subjective'):
-        if isinstance(out.get(block), dict):
-            out[block] = {k: round(v * FAMILY_VECTOR_SHRINK, 3) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
-                          for k, v in out[block].items()}
-    if out.get('visual') is not False and isinstance((out.get('capabilities') or {}).get('visual'), (int, float)):
-        out['visual'] = out['capabilities']['visual']  # keep the legacy field equal to the vector
     return out
+
+
+def series_compatible(name, target):
+    """False when one side is a small-size name and the other is not: not the same series."""
+    return bool(SMALL_NAME.search(str(name))) == bool(SMALL_NAME.search(str(target)))
+
+
+def series_target(raw_model, accounts):
+    """The same-series row model_resolution's family resolution gives this name (a name that is itself a row resolves
+    exactly and has none), or None."""
+    raw_models = (accounts.get('models') if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict)
+                  else (accounts if isinstance(accounts, dict) else {}))
+    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict) and ('tier' in v or 'capabilities' in v)}
+    aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
+    resolved = resolve_model(raw_model, known, aliases)
+    target = resolved['key'] if resolved['source'] == 'family' else None
+    base = _name_candidates(raw_model, accounts)[0]
+    return target if target and series_compatible(base, target) else None
 
 
 def _name_candidates(raw_model, accounts):
@@ -134,19 +147,23 @@ def default_profile(raw_model, accounts):
     if resolved['source'] in DIRECT_SOURCES:
         return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
                 'spec': copy.deepcopy(known[resolved['key']]), 'basis': 'Calibrated row in accounts.models.'}
-    target = resolved['key']
-    small = bool(SMALL_NAME.search(base))
-    small_default = small_model_spec(accounts)
-    if target and small and not SMALL_NAME.search(target):
-        return {'model': base, 'source': 'family', 'target': None, 'spec': small_default,
-                'basis': f'Small-size name; family prior {target} is not a small model. {small_default["basis"]}'}
+    target = series_target(raw_model, accounts)
     if target:
-        spec = _shrink(known[target])
-        spec['basis'] = (f'Family default from {target} (tier -{FAMILY_TIER_SHRINK}, vectors x{FAMILY_VECTOR_SHRINK}); '
-                         'version and size of the advertised id are not verified.')
+        spec = _series_copy(known[target])
+        spec['basis'] = (f'Series conversion from {target} (same series by family resolution): its scores and '
+                         'usd_per_hour, with no shared public reading to move them along.')
         return {'model': base, 'source': 'family', 'target': target, 'spec': spec, 'basis': spec['basis']}
-    spec = small_default if small else generic_model_spec(accounts)
+    spec = small_model_spec(accounts) if SMALL_NAME.search(base) else generic_model_spec(accounts)
     return {'model': base, 'source': 'generic', 'target': None, 'spec': spec, 'basis': spec['basis']}
+
+
+def _discovered_row(profile):
+    """The score row of a discovered name that is not a row: the series conversion (scores and usd_per_hour of the
+    same-series row), else the generic row at the conservative price."""
+    row = {**profile['spec'], 'score_estimated': True}
+    if profile['source'] != 'family' or not isinstance(row.get('usd_per_hour'), (int, float)):
+        row.update(usd_per_hour=ESTIMATED_USD_PER_HOUR, usd_estimated=True)
+    return row
 
 
 def harness_compatibility(harness, model, account_spec):
@@ -279,9 +296,9 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                     seen[bid] = now
                 model_name = profile['model'] if profile['source'] != 'calibrated' else key
                 if profile['source'] != 'calibrated':
-                    out['models'].setdefault(model_name, {**profile['spec'], 'usd_per_hour': ESTIMATED_USD_PER_HOUR,
-                                                          'usd_estimated': True, 'score_estimated': True})
-                price = (known.get(key) or {}).get('usd_per_hour') if isinstance(known.get(key), dict) else None
+                    out['models'].setdefault(model_name, _discovered_row(profile))
+                row = (known.get(key) if isinstance(known.get(key), dict) else None) or out['models'].get(model_name) or {}
+                price = None if row.get('usd_estimated') else row.get('usd_per_hour')
                 cost_estimated = metered and not isinstance(price, (int, float))
                 pref = ((prefs.get(account) or {}).get('bundles') or {}).get(bid) or {}
                 # The checkbox default is public data alone: checked unless superseded there. The user's

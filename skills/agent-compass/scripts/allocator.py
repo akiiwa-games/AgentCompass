@@ -926,12 +926,11 @@ def canonical(model, accounts):
 
 
 def model_spec(accounts, model):
-    """The score row for a name, by how it resolved: `exact`/`alias` read the row itself, `family` the target shrunk by
-    auto_bundles (tier -0.3) exactly as a discovered family model is, `unknown` the baseline."""
+    """The score row for a name, by how it resolved: `exact`/`alias` read the row itself, `family` the series
+    conversion from the same-series row exactly as a discovered model gets it (auto_bundles), `unknown` the baseline."""
     resolved = resolve_model(model, accounts)
     if resolved['source'] == 'family':
-        return {**auto_bundles.default_profile(model, accounts)['spec'], 'usd_per_hour': auto_bundles.ESTIMATED_USD_PER_HOUR,
-                'usd_estimated': True, 'score_estimated': True}
+        return auto_bundles._discovered_row(auto_bundles.default_profile(model, accounts))
     value = accounts.get('models', {}).get(resolved['key'])
     return value if isinstance(value, dict) else generic_model_spec(accounts)
 
@@ -3677,6 +3676,11 @@ def evaluate_bundle(bundle, task, ctx):
     available_at = None
     five_window_states = {}
     long_applicable = False         # the bundle draws at least one long reset-period window (read or not)
+    if not five and info.get('score_estimates'):
+        # Round 058: label the scores without a direct measurement (calibration/apply_rows.py: series conversion, else a
+        # public-data estimate); the scoring is unchanged.
+        result['notes'].append('scores without a direct measurement (series conversion or public-data fit): ' + ', '.join(
+            p.split('.', 1)[-1] for p in sorted(info['score_estimates'])))
     if spec.get('unlimited'):
         result['notes'].append('unlimited usage')
     # Free capacity is priced as zero opportunity cost below. The extra free-usage preference is declared per account

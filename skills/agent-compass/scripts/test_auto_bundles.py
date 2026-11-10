@@ -51,8 +51,9 @@ class DefaultProfile(unittest.TestCase):
                     self.assertEqual(profile['model'], canonical)
                 if tier is not None:
                     self.assertEqual(profile['spec']['tier'], tier)
-                if source == 'family':
-                    self.assertLess(profile['spec']['tier'], REAL['models']['qwen3.8-max']['tier'])
+                if source == 'family':          # round 058 round 4: the series conversion, no shrunk default
+                    for field in ('tier', 'capabilities', 'subjective', 'usd_per_hour'):
+                        self.assertEqual(profile['spec'][field], REAL['models']['qwen3.8-max'][field], field)
 
     def test_an_unmeasured_model_takes_routine_work_only(self):
         # The unmeasured default is data (unmeasured_models), placed between the routine and the hard floors.

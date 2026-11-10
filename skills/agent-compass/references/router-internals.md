@@ -151,7 +151,7 @@ The same rules hold in the other repositories that port this router; `audit/gen_
 |---|---|---|---|
 | `exact` | the calibrated id itself | its own row | its measured curve |
 | `alias` | another spelling of it: prefix, date, `-latest`, `-preview`, `[1m]`, letter case, a listed alias | its own row | its measured curve |
-| `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the family target minus 0.3 tier, abilities times 0.9, marked estimated | `0.52`, `source: default`; no local telemetry and no step-down |
+| `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the same-series target's scores and usd_per_hour (series conversion; a small-size name on a non-small target is not in its series and gets the small row), marked estimated | `0.52`, `source: default`; no local telemetry and no step-down |
 | `unknown` | no match | the generic text-only baseline | `0.52`, `source: default` |
 
 A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry or curve.

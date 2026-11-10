@@ -220,7 +220,6 @@ def build(allocator, auto_bundles, support, commit, root):
         'resolutions': {name: {k: allocator.resolve_model(name, document)[k] for k in ('key', 'source', 'effort')} for name in names},
         'row_keys': {name: allocator.row_key(name, document) for name in names},
         'interpretations': INTERPRETATIONS,
-        'family_shrink': {'tier': auto_bundles.FAMILY_TIER_SHRINK, 'vector': auto_bundles.FAMILY_VECTOR_SHRINK},
         'effort_curves': {k: v for k, v in document['effort_curves'].items() if isinstance(v, dict)},
         'dispatch_efforts': dispatch,
         'responsiveness': {name: {eff: list(allocator.bundle_responsiveness(

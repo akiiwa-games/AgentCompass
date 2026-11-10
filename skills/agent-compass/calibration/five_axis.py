@@ -10,7 +10,10 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
   demand continuously against targets of the anchor value x demand / 3, written here as `anchor`).
 - Each axis is the mean of its components, each component the mean of its trusted sources (`measurements.py` converts
   every source the same way, relative to the anchor model: 0.8 x s / s_anchor, so a new top model moves nothing). A
-  component no trusted source measures is backfilled from public data, a linear fit of the component on the AA
+  counted component a model does not measure comes from its nearest same-series sibling that does (series conversion,
+  calibration/series.py; round 058, user 2026-11-10): the sibling's value moved along the component's AA-index fit by
+  the two index readings, kept inside the fit's measured range, else the sibling's value. Only for a model with no
+  such sibling is the component backfilled from public data, a linear fit of the component on the AA
   Intelligence Index over the models that have it; a fit needs MIN_FIT_POINTS measured points and a positive slope
   (review F1: one public point is not a fit), and a backfilled value stays inside the range the measured points reach
   (round 6: a fit extrapolated past the best measured model gave Fable long_horizon 1.0). The public tier fit is no
@@ -40,7 +43,9 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
   2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 / Time/Task P50
   x 60, kind `community`) is the primary source; option B (`derived.community_mix`, AA's measured output speed per hour
   priced at the community token mix at list prices) is a labelled fallback (`fallback: True`) only when arena does not
-  give cost and time for the model; a model with neither is mode B. `benchmark` (the AA/OpenRouter merge above) and
+  give cost and time for the model and no same-series sibling has a direct value: with one, the value is that sibling's
+  times the ratio of the two cited API list prices over the full community token mix (series conversion, `converted`).
+  A model with none of these is mode B. `benchmark` (the AA/OpenRouter merge above) and
   `community` (measured community usd per worker-hour, else `derived` from a measured same-provider model x the benchmark
   ratio, both citations; option A) stay for comparison. Each window's reference-model hours are its capacity over that
   model's arena usd.
@@ -57,6 +62,7 @@ from pathlib import Path
 import numpy as np
 
 import measurements
+import series
 import sources
 
 OUT = sources.REPO / 'references' / 'five-axis-scores.json'
@@ -332,6 +338,30 @@ class Scorer:
                 return name, preds[name], fits[(*key, name)]
         return None, None, None
 
+    def provenance(self, target, name, x, f, row):
+        """Where an estimate comes from: the predictor and its reading, and the fit (id in `backfill_fits`, r, n)."""
+        entry = (self.trusted(row['fields'].get('intelligence_index')) or [{}])[0] if name == 'aa.index' else {}
+        out = {'predictor': name, 'x': x, 'fit': f'{target}~{name}', 'r': round(f['r'], 4), 'n': f['n'],
+               **{k: entry[k] for k in ('as_of', 'listed_as') if entry.get(k)}}
+        if not f['x_min'] <= x <= f['x_max']:      # predict() clamps the reading to the sampled range
+            out['x_clamped'] = f['x_min'] if x < f['x_min'] else f['x_max']
+        return out
+
+    def convert(self, m, base, a, c, rows, fits):
+        """Component `c` of axis `a` for model `m` from the same-series `base` (see `score`)."""
+        vb = rows[base]['comps'][a][c]['value']
+        x, xb = rows[m]['preds'].get('aa.index'), rows[base]['preds'].get('aa.index')
+        f = fits.get((a, c, 'aa.index'))
+        conv = {'base_model': base, 'base_value': vb, 'method': 'series conversion'}
+        value = vb
+        if f and x is not None and xb is not None:
+            raw = vb + f['b'] * (x - xb)
+            value = round(float(np.clip(raw, f['y_min'], f['y_max'])), 4)
+            conv.update(predictor='aa.index', x=x, x_base=xb, shift=round(f['b'] * (x - xb), 4), fit=f'{a}.{c}~aa.index')
+            if not f['y_min'] <= raw <= f['y_max']:
+                conv['y_clamped'] = f['y_min'] if raw < f['y_min'] else f['y_max']
+        return {'value': value, 'sources': {}, 'status': 'converted', 'conversion': conv}
+
     @staticmethod
     def fit(points):
         if len(points) < MIN_FIT_POINTS:
@@ -341,11 +371,14 @@ class Scorer:
         if b <= 0:      # ability falling with the index is not a usable predictor
             return None
         return {'a': float(a), 'b': float(b), 'r': float(np.corrcoef(x, y)[0, 1]), 'n': len(points),
-                'y_min': float(y.min()), 'y_max': float(y.max())}
+                'x_min': float(x.min()), 'x_max': float(x.max()), 'y_min': float(y.min()), 'y_max': float(y.max())}
 
     @staticmethod
     def predict(f, x):
-        """The fit at x, kept inside the range its measured points reach (round 6: no extrapolation past them)."""
+        """The fit at x, with x clamped to the range of the sampled predictor readings and the value kept inside the
+        range its measured points reach (round 6; round 058 review F2: a reading above the best sampled model is not
+        extrapolated, it gets the fit at that model's reading)."""
+        x = float(np.clip(x, f.get('x_min', x), f.get('x_max', x)))
         return round(float(np.clip(f['a'] + f['b'] * x, f['y_min'], f['y_max'])), 4)
 
     def score(self):
@@ -361,24 +394,44 @@ class Scorer:
                     pts = [(r['preds'][name], r['comps'][a][c]['value']) for r in rows.values()
                            if c in r['comps'][a] and r['comps'][a][c]['status'] == 'measured' and name in r['preds']]
                     fits[(a, c, name)] = self.fit(pts)
-        # Component backfill: every unmeasured component from the component's fit on the AA index (over every measured
-        # model that has it), except when a model has only AA capability measurements (Arena does not list it yet, e.g.
-        # claude-fable-5-2: round 11 item 6), so AA never backfills missing Arena components from itself.
+        # Series conversion (round 058, user 2026-11-10: "后续同系列新出，缺少实测数据的情况下，先按照同系列的全分数进行折算，
+        # 不要留下任何一个默认值或者fallback"): a component a model does not measure, that a same-series sibling does
+        # (calibration/series.py), is the nearest such sibling's value moved along the component's fit on the AA index
+        # by the two models' index difference (not clamped: both are readings), kept inside the fit's measured range;
+        # without a fit or a shared index reading it is the sibling's value. Only the components an axis counts for
+        # every model (`expected`: the anchor measures it or it has a fit) are filled, so a fully measured model's axes
+        # stay its own.
+        # Expected components of an axis: those the anchor model measures or that have a usable fit.
+        anchor_comps = (rows.get(measurements.ANCHOR) or {}).get('comps') or {}
+        expected = {a: [c for c in comps if ((anchor_comps.get(a) or {}).get(c) or {}).get('status') == 'measured'
+                        or any(fits.get((a, c, n)) for n in PREDICTORS)] or list(comps)
+                    for a, comps in AXES.items()}
+        sibs = series.groups(self.acc)
+        index = {m: r['preds'].get('aa.index') for m, r in rows.items()}
+        tier = {m: (self.models.get(m) or {}).get('tier') for m in rows}
+        board = series.boards(self.meas)
+        for m, r in rows.items():
+            for a, comps in AXES.items():
+                for c in expected[a]:
+                    if c in r['comps'][a]:
+                        continue
+                    bases = [b for b in series.nearest(m, sibs.get(m, ()), index, board, tier)
+                             if (rows[b]['comps'][a].get(c) or {}).get('status') == 'measured']
+                    if bases:
+                        r['comps'][a][c] = self.convert(m, bases[0], a, c, rows, fits)
+        # Component backfill, for a model no same-series sibling gives the component: the component's fit on the AA
+        # index over every model that measures it. A component stays missing only without a usable fit or without the
+        # model's predictor; the pessimistic zero below applies to exactly those.
         for r in rows.values():
-            if not any(not e['source'].startswith('aa.') for a in AXES for e in self.trusted(r['fields'].get(a))):
-                continue
             for a, comps in AXES.items():
                 for c in comps:
                     name, x, f = self.backfill(fits, (a, c), r['preds'])
                     if c not in r['comps'][a] and f:
                         r['comps'][a][c] = {'value': self.predict(f, x), 'sources': {},
-                                            'status': 'backfilled', 'backfill': {'predictor': name, 'x': x}}
+                                            'status': 'backfilled', 'backfill': self.provenance(f'{a}.{c}', name, x, f, r)}
         # Pessimistic unknowns for partial axes (round 8 & round 11, user): any expected component of the axis that
-        # remains unmeasured counts as 0, so a single board or AA alone (before Arena lists a model) cannot carry the axis.
-        anchor_comps = (rows.get(measurements.ANCHOR) or {}).get('comps') or {}
-        expected = {a: [c for c in comps if c in (anchor_comps.get(a) or {})
-                        or any(fits.get((a, c, n)) for n in PREDICTORS)] or list(comps)
-                    for a, comps in AXES.items()}
+        # remains neither measured nor estimated (no fit, or no AA index for the model) counts as 0, so a single board
+        # cannot carry the axis for a model nothing else can calibrate.
         for r in rows.values():
             r['axes'] = {}
             for a, comps in AXES.items():
@@ -386,8 +439,10 @@ class Scorer:
                 measured = [c for c in present if r['comps'][a][c]['status'] == 'measured']
                 denom = [c for c in comps if c in present or c in expected[a]]
                 missing = [c for c in denom if c not in present]
+                kinds = {r['comps'][a][c]['status'] for c in present}
                 status = ('missing' if not present else 'measured' if len(measured) == len(denom)
-                          else 'partial' if (measured or missing) else 'backfilled')
+                          else 'partial' if (measured or missing) else 'converted' if kinds == {'converted'}
+                          else 'backfilled')
                 vals = [r['comps'][a][c]['value'] if c in r['comps'][a] else 0.0 for c in denom] if present else []
                 r['axes'][a] = {'value': mean(vals), 'status': status,
                                 'components': r['comps'][a], 'missing_components': missing}
@@ -405,7 +460,7 @@ class Scorer:
                 name, x, f = self.backfill(fits, (a, None), r['preds'])
                 if f:
                     ax.update(value=self.predict(f, x), status='backfilled',
-                              backfill={'predictor': name, 'x': x, 'level': 'axis'})
+                              backfill={**self.provenance(a, name, x, f, r), 'level': 'axis'})
                 else:
                     ax.update(value=0.0, flag='missing', reason='no trusted source and no public predictor to backfill from')
         self.inherit(rows)
@@ -640,7 +695,7 @@ def usd_community_mix(scorer, rows, meas, priority):
     """Rounds 8-9 (user, 2026-11-09): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 ÷
     Time/Task P50 × 60, kind `community`) is the primary source; option B (`derived.community_mix`, AA throughput ×
     community token mix × list price) is a labelled fallback (`fallback: True`) for models arena does not list with cost
-    and time. When `--source-priority` is given, it falls through `[*priority, 'arena.agent_sessions', 'derived.community_mix']`
+    and time; `convert_usd` then replaces it for a model with a same-series sibling that has a direct value. When `--source-priority` is given, it falls through `[*priority, 'arena.agent_sessions', 'derived.community_mix']`
     and never takes a median across mixed scales (review F4)."""
     order = [*(priority or ()), 'arena.agent_sessions', 'derived.community_mix']
     out = {}
@@ -682,14 +737,65 @@ USD_BASES = {
 }
 
 
+def axis_evidence(axes):
+    """Round 058 review F5: per axis, the measured sources that are not Artificial Analysis (AA boards and every value
+    backfilled from the AA index are one source); `aa_only` when no axis has any, though some axis has a value."""
+    indep = {a: sorted({s for c in (ax.get('components') or {}).values() if c.get('status') == 'measured'
+                        for s in (c.get('sources') or {}) if not s.startswith('aa.')}) for a, ax in axes.items()}
+    valued = any(ax.get('status') in ('measured', 'partial', 'backfilled', 'converted') for ax in axes.values())
+    return {'independent_sources': indep, 'aa_only': valued and not any(indep.values())}
+
+
 def legacy(info):
     return {k: info.get(k) for k in ('tier', 'usd_per_hour', 'duration_multiplier', 'subjective', 'capabilities', 'visual')}
+
+
+def token_mix(meas):
+    """The community token mix shares (public-measurements.json `capacity.token_mix`), every numeric component."""
+    mix = (meas.get('capacity') or {}).get('token_mix') or {}
+    shares = {k: v for k, v in mix.items() if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0}
+    return shares if sum(shares.values()) > 0 else {}
+
+
+def list_price_ratio(price_t, price_b, mix):
+    """The ratio of two cited API list prices (pick_price) over the token mix, or None when either lacks a component."""
+    if not mix or price_t is None or price_b is None:
+        return None
+    if any(not isinstance(p['value'].get(c), (int, float)) for p in (price_t, price_b) for c in mix):
+        return None
+    cost_t, cost_b = (sum(p['value'][c] * share for c, share in mix.items()) for p in (price_t, price_b))
+    return cost_t / cost_b if cost_b > 0 else None
+
+
+def convert_usd(usd, rows, scorer, meas, acc):
+    """Series conversion of usd_per_hour: a model without a direct value (`derived` or missing) and with a same-series
+    sibling that has one takes the nearest such sibling's value times the ratio of the two cited API list prices over
+    the full community token mix."""
+    direct = {m for m, u in usd.items() if u.get('value') is not None and u.get('kind') not in ('derived', 'converted')}
+    sibs = series.groups(acc)
+    index = {m: r['preds'].get('aa.index') for m, r in rows.items()}
+    tier = {m: (scorer.models.get(m) or {}).get('tier') for m in rows}
+    mix = token_mix(meas)
+    for m in rows:
+        if m in direct:
+            continue
+        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], index, series.boards(meas), tier):
+            prices = {k: pick_price(scorer.trusted(rows[k]['fields'].get('price'))) for k in (m, b)}
+            ratio = list_price_ratio(prices[m], prices[b], mix)
+            if ratio is None:
+                continue
+            usd[m] = {'value': round(usd[b]['value'] * ratio, 3), 'status': 'ok', 'kind': 'converted', 'fallback': False,
+                      'merge': f'series conversion: usd of {b} x API list price ratio {ratio:.4f} over the community token mix',
+                      'used': [], 'max_over_min': None,
+                      'sources': {'base': {**usd[b], 'model': b}, 'ratio': round(ratio, 4), 'prices': prices, 'token_mix': mix}}
+            break
 
 
 def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), usd_basis='community_mix', now=None):
     scorer = Scorer(meas, acc, distrust, overrides)
     rows, fits = scorer.score()
     usd = USD_BASES[usd_basis]['fn'](scorer, rows, meas, priority)
+    convert_usd(usd, rows, scorer, meas, acc)
     caps, cap_errors = capacity(meas, plans, usd, now, usd_basis)
     anchor_tp = scorer.trusted(((rows.get(measurements.ANCHOR) or {}).get('fields') or {}).get('throughput'))
     models, errors = {}, []
@@ -721,6 +827,11 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
                 model_errors.append({'model': m, 'field': f"{a}.{','.join(ax['missing_components'])}",
                                      'reason': 'component_unmeasured_no_fit', 'level': 'yellow',
                                      'effect': 'missing components count as 0 in the axis mean (pessimistic partial axis)'})
+        evidence = axis_evidence(r['axes'])
+        if evidence['aa_only']:
+            model_errors.append({'model': m, 'field': 'axes', 'reason': 'aa_only', 'level': 'yellow',
+                                 'effect': 'every axis value comes from Artificial Analysis (the Intelligence Index and AA '
+                                           'boards collinear with it): one source, not independent evidence'})
         errors += model_errors
         idx = scorer.trusted(r['fields'].get('intelligence_index'))
         u = usd[m]['value']
@@ -732,7 +843,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
                      'intelligence_index': idx[0]['value'] if idx else None,
                      'economy_static': round(1 / (1 + u / 15), 3) if u is not None else None,
                      'legacy_public_tier': legacy_tier(scorer.trusted(r['fields'].get('tier'))),
-                     'data_errors': model_errors, 'legacy': legacy(acc['models'][m])}
+                     'evidence': evidence, 'data_errors': model_errors, 'legacy': legacy(acc['models'][m])}
     doc = {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
            'distrusted_sources': sorted(distrust), 'source_priority': list(priority or ()),
@@ -771,11 +882,11 @@ def main():
     print(f'{"model":28s} {"usd/h":>7}  ' + ' '.join(f'{a[:10]:>10}' for a in AXES))
     for m, r in doc['models'].items():
         u = r['usd_per_hour']['value']
-        mark = {'backfilled': '*', 'inherited': '^', 'user_override': 'u'}
+        mark = {'backfilled': '*', 'converted': '~', 'inherited': '^', 'user_override': 'u'}
         cells = ' '.join(f"{r['scores'][a]:>9.2f}{mark.get(r['axes'][a]['status'], '!' if r['axes'][a].get('flag') else ' ')}"
                          for a in AXES)
         print(f"{m:28s} {u if u is not None else '-':>7}  {cells}")
-    print('* backfilled  ^ inherited (vendor statement)  u user override  ! missing (0)')
+    print('* backfilled  ~ series conversion  ^ inherited (vendor statement)  u user override  ! missing (0)')
     for fam, plans in doc['capacity'].items():
         for plan, wins in plans.items():
             print(f'capacity {fam}/{plan}: ' + ', '.join(

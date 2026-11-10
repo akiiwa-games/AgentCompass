@@ -41,7 +41,8 @@ def markdown(accounts):
         if not isinstance(spec, dict):
             continue
         caps = spec.get('capabilities') or {}
-        vector = ' / '.join(f'{caps.get(k, 0):.2f}' for k in
+        est = spec.get('score_estimates') or {}
+        vector = ' / '.join(f'{caps.get(k, 0):.2f}' + ('~' if f'capabilities.{k}' in est else '') for k in
                             ('reasoning', 'coding', 'exploration', 'anti_hallucination', 'visual', 'gui'))
         resp = spec.get('responsiveness')
         if resp == 'not_applicable' or spec.get('responsiveness_status') == 'not_applicable':
@@ -51,7 +52,9 @@ def markdown(accounts):
         else:
             resp_str = 'default'
         rows.append(f'| `{name}` | {spec.get("tier", "unknown")} | {vector} | {resp_str} | {bool(spec.get("visual"))} |')
-    rows += ['', 'R/C/E/A/V/G = reasoning, coding, exploration, anti-hallucination, visual and GUI.',
+    rows += ['', 'R/C/E/A/V/G = reasoning, coding, exploration, anti-hallucination, visual and GUI. A value marked `~` has no direct '
+             'measurement: a series conversion from a same-series sibling, or a public-data estimate for a model with no '
+             'sibling (`score_estimates` in accounts.json names the base or fit and the value it replaced).',
              'Responsiveness (`0..1`, per-effort in `effort_curves.<model>.responsiveness`) measures per-turn '
              'live-loop speed (`T_turn = (ttft_s + 400 / output_tps) * harness_overhead`, where AA `ttft_s` is '
              '`headline.timeToFirstAnswerToken` including single-turn thinking time; mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` '

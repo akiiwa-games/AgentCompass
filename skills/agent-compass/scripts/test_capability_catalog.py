@@ -35,6 +35,23 @@ class CatalogueTests(unittest.TestCase):
         self.assertIn('custom-model', views['model-capabilities.md'])
         self.assertIn('3.8', views['model-capabilities.md'])
 
+    def test_shipped_views_match_the_shipped_accounts(self):
+        """Round 058 review F6: a merge can leave model-capabilities.json/.md behind accounts.json without a conflict;
+        the shipped views must be what capability_catalog.py generates from the shipped accounts.json now."""
+        import json
+        accounts = json.loads((capability_catalog.REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
+        for name, content in capability_catalog.generated(accounts).items():
+            shipped = (capability_catalog.REFERENCES / name).read_text(encoding='utf-8')
+            self.assertEqual(shipped, content, f'{name} is stale: run `python -X utf8 capability_catalog.py`')
+
+    def test_estimated_scores_are_marked_in_the_markdown_view(self):
+        self.accounts['models']['custom-model'] = {
+            'tier': 3.8, 'capabilities': {'reasoning': .7, 'coding': .8},
+            'score_estimates': {'capabilities.reasoning': {'value': .7, 'predictor': 'aa.index'}}}
+        md = capability_catalog.generated(self.accounts)['model-capabilities.md']
+        row = next(line for line in md.splitlines() if '`custom-model`' in line)
+        self.assertIn('0.70~ / 0.80 /', row)
+
     def test_only_explicit_state_restricts_route_models(self):
         route = {'preferred': ['another-model'], 'basis': 'Standing user order: old prose'}
         policy = {'routes': {'custom-route': route}}

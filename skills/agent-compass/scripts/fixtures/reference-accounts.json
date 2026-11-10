@@ -445,21 +445,297 @@
       "tier": 4.51,
       "visual": false,
       "capabilities": {
-        "reasoning": 0.55,
-        "coding": 0.55,
-        "exploration": 0.55,
-        "anti_hallucination": 0.5,
+        "reasoning": 0.98,
+        "coding": 0.83,
+        "exploration": 0.9,
+        "anti_hallucination": 0.92,
         "visual": 0.0,
         "gui": 0.0
       },
       "subjective": {
-        "divergence": 0.5,
-        "global_rigor": 0.5,
-        "module_precision": 0.5
+        "divergence": 0.96,
+        "global_rigor": 0.98,
+        "module_precision": 0.92
       },
-      "basis": "Secondary measurement, 2026-11-10: Artificial Analysis Intelligence Index 65 (vals.ai/AA board) -> tier 4.51 (r 0.95, n 33). tier 4.51 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py). Not on LMArena (WebDev, Agent, Vision and Text checked 2026-11-10; boards published 2026-11-08), so coding, the other capabilities and the subjective scores are the documented unmeasured default (accounts.json unmeasured_models.generic), not Fable 5.1 values; refit with calibration/tiers.py once LMArena lists it. Public-data gaps: `cost` and `usd_per_hour` are absent because no repo code derives them from a public price (both are hand-maintained on every row); the Anthropic list price ($8 input / $40 output / $10 and $16 cache write / $0.20 cache read per MTok, platform.claude.com/docs/en/about-claude/pricing, read 2026-11-10) is in tray/capacity_stats.py PRICES. `visual` false = the unmeasured default (not on the LMArena Vision board).",
+      "basis": "Secondary measurement, 2026-11-10: Artificial Analysis Intelligence Index 65 (vals.ai/AA board) -> tier 4.51 (r 0.95, n 33). tier 4.51 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py). Not on LMArena (WebDev, Agent, Vision and Text checked 2026-11-10; boards published 2026-11-08), so its capabilities, subjective scores and usd_per_hour are the series conversion from claude-fable-5-1 (calibration/apply_rows.py; base, shared AA reading and fit in `score_estimates`); refit with calibration/tiers.py once LMArena lists it. `cost` is absent (no repo code derives it from a public price); the Anthropic list price ($8 input / $40 output / $10 and $16 cache write / $0.20 cache read per MTok, platform.claude.com/docs/en/about-claude/pricing, read 2026-11-10) is in tray/capacity_stats.py PRICES. `visual` false, as for Fable 5.1 (not on the LMArena Vision board).",
       "responsiveness": 0.216,
-      "responsiveness_basis": "artificial_analysis (Claude Fable 5.2 (High, Default Fallback), 2026-11-10): T_turn=ttft_s+400/output_tps [low: 10.92s->0.831 (91.36 tok/s, ttft 6.54s); medium: 17.00s->0.683 (86.28 tok/s, ttft 12.36s); high: 36.14s->0.216 (92.38 tok/s, ttft 31.81s); xhigh: 79.76s->0.000 (102.76 tok/s, ttft 75.87s); max: 220.02s->0.000 (98.28 tok/s, ttft 215.95s)]; base@high=36.14s -> responsiveness=0.216"
+      "responsiveness_basis": "artificial_analysis (Claude Fable 5.2 (High, Default Fallback), 2026-11-10): T_turn=ttft_s+400/output_tps [low: 10.92s->0.831 (91.36 tok/s, ttft 6.54s); medium: 17.00s->0.683 (86.28 tok/s, ttft 12.36s); high: 36.14s->0.216 (92.38 tok/s, ttft 31.81s); xhigh: 79.76s->0.000 (102.76 tok/s, ttft 75.87s); max: 220.02s->0.000 (98.28 tok/s, ttft 215.95s)]; base@high=36.14s -> responsiveness=0.216",
+      "usd_per_hour": 14.96,
+      "usd_per_hour_basis": "Series conversion from claude-fable-5-1: 18.7 x API list price ratio 0.8 over the community token mix (score_estimates.usd_per_hour).",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.92,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.9,
+          "predictor": "aa.omniscience_index",
+          "x": 0.9218,
+          "x_base": 0.7863,
+          "input": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.2"
+          },
+          "input_base": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.1"
+          },
+          "shift": 0.0994,
+          "fit": {
+            "a": 0.2212,
+            "b": 0.7339,
+            "r": 0.7094,
+            "n": 25,
+            "x_min": 0.4737,
+            "x_max": 0.821,
+            "y_min": 0.45,
+            "y_max": 0.92
+          },
+          "y_clamped": 0.92
+        },
+        "capabilities.coding": {
+          "value": 0.83,
+          "prior": 0.55,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.78,
+          "predictor": "aa.terminalbench_4",
+          "x": 0.8429,
+          "x_base": 0.7357,
+          "input": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.2"
+          },
+          "input_base": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.1"
+          },
+          "shift": 0.0549,
+          "fit": {
+            "a": 0.3596,
+            "b": 0.5126,
+            "r": 0.7554,
+            "n": 29,
+            "x_min": 0.0,
+            "x_max": 0.95,
+            "y_min": 0.13,
+            "y_max": 0.91
+          }
+        },
+        "capabilities.exploration": {
+          "value": 0.9,
+          "prior": 0.55,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.9,
+          "predictor": "aa.lcr",
+          "x": 0.8065,
+          "x_base": 0.8097,
+          "input": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.2"
+          },
+          "input_base": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.1"
+          },
+          "shift": -0.0018,
+          "fit": {
+            "a": 0.2717,
+            "b": 0.5589,
+            "r": 0.3663,
+            "n": 23,
+            "x_min": 0.4548,
+            "x_max": 0.8355,
+            "y_min": 0.5,
+            "y_max": 0.9
+          }
+        },
+        "capabilities.gui": {
+          "value": 0.0,
+          "prior": 0.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.0,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.98,
+          "prior": 0.55,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.98,
+          "predictor": "aa.index",
+          "x": 61.82,
+          "x_base": 47.17,
+          "input": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.2 (High, Default Fallback)"
+          },
+          "input_base": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.1 (High, Default Fallback)"
+          },
+          "shift": 0.0919,
+          "fit": {
+            "a": 0.4799,
+            "b": 0.0063,
+            "r": 0.6139,
+            "n": 25,
+            "x_min": 5.53,
+            "x_max": 54.85,
+            "y_min": 0.48,
+            "y_max": 0.98
+          },
+          "y_clamped": 0.98
+        },
+        "capabilities.visual": {
+          "value": 0.0,
+          "prior": 0.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.0,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.96,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.92,
+          "predictor": "aa.index",
+          "x": 61.82,
+          "x_base": 47.17,
+          "input": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.2 (High, Default Fallback)"
+          },
+          "input_base": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.1 (High, Default Fallback)"
+          },
+          "shift": 0.0842,
+          "fit": {
+            "a": 0.3829,
+            "b": 0.0058,
+            "r": 0.4733,
+            "n": 25,
+            "x_min": 5.53,
+            "x_max": 54.85,
+            "y_min": 0.35,
+            "y_max": 0.96
+          },
+          "y_clamped": 0.96
+        },
+        "subjective.global_rigor": {
+          "value": 0.98,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.95,
+          "predictor": "aa.omniscience_index",
+          "x": 0.9218,
+          "x_base": 0.7863,
+          "input": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.2"
+          },
+          "input_base": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.1"
+          },
+          "shift": 0.0869,
+          "fit": {
+            "a": 0.2132,
+            "b": 0.6414,
+            "r": 0.3719,
+            "n": 25,
+            "x_min": 0.4737,
+            "x_max": 0.821,
+            "y_min": 0.25,
+            "y_max": 0.98
+          },
+          "y_clamped": 0.98
+        },
+        "subjective.module_precision": {
+          "value": 0.92,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 0.9,
+          "predictor": "aa.terminalbench_4",
+          "x": 0.8429,
+          "x_base": 0.7357,
+          "input": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.2"
+          },
+          "input_base": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Claude Fable 5.1"
+          },
+          "shift": 0.0225,
+          "fit": {
+            "a": 0.6626,
+            "b": 0.2097,
+            "r": 0.4956,
+            "n": 26,
+            "x_min": 0.0,
+            "x_max": 0.95,
+            "y_min": 0.55,
+            "y_max": 0.95
+          }
+        },
+        "usd_per_hour": {
+          "value": 14.96,
+          "prior": null,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-fable-5-1",
+          "base_value": 18.7,
+          "ratio": 0.8,
+          "token_mix": {
+            "cache_read": 0.92,
+            "input": 0.0756,
+            "output": 0.0044
+          },
+          "prices": {
+            "claude-fable-5-2": {
+              "value": {
+                "input": 8,
+                "output": 40,
+                "cache_read": 0.2
+              },
+              "source": "aa.price",
+              "as_of": "2026-11-09",
+              "url": "https://artificialanalysis.ai/leaderboards/models"
+            },
+            "claude-fable-5-1": {
+              "value": {
+                "input": 10,
+                "output": 50,
+                "cache_read": 0.25
+              },
+              "source": "aa.price",
+              "as_of": "2026-11-09",
+              "url": "https://artificialanalysis.ai/leaderboards/models"
+            }
+          }
+        }
+      }
     },
     "claude-opus-5-5": {
       "fast_capable": true,
@@ -1401,7 +1677,7 @@
       "usd_per_hour": 1.5,
       "capabilities": {
         "reasoning": 0.55,
-        "coding": 0.55,
+        "coding": 0.36,
         "exploration": 0.55,
         "anti_hallucination": 0.5,
         "visual": 0.0,
@@ -1410,123 +1686,515 @@
       "subjective": {
         "divergence": 0.5,
         "global_rigor": 0.5,
-        "module_precision": 0.5
+        "module_precision": 0.66
       },
       "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 gpt-oss-120b 1362 [1356,1367]; Text (style control) 2026-10-28 gpt-oss-120b 1352 [1347,1356]. Secondary measurement, 2026-11-04: SWE-bench Verified 33.6 (vals.ai/AA board) -> tier 1.0 (r 0.84, n 65); Terminal-Bench 2.0 19.1 (vals.ai/AA board) -> tier 1.0 (r 0.89, n 42). tier 1.0 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).",
       "responsiveness": 0.65,
-      "responsiveness_basis": "artificial_analysis (gpt-oss-120b (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 4.80s->0.981 (161.27 tok/s, ttft 2.32s); high: 18.33s->0.650 (151.27 tok/s, ttft 15.69s)]; base@high=18.33s -> responsiveness=0.650"
+      "responsiveness_basis": "artificial_analysis (gpt-oss-120b (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 4.80s->0.981 (161.27 tok/s, ttft 2.32s); high: 18.33s->0.650 (151.27 tok/s, ttft 15.69s)]; base@high=18.33s -> responsiveness=0.650",
+      "score_estimates": {
+        "capabilities.coding": {
+          "value": 0.36,
+          "prior": 0.55,
+          "predictor": "aa.terminalbench_4",
+          "x": 0.0,
+          "input": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "gpt-oss-120b"
+          },
+          "fit": {
+            "a": 0.3596,
+            "b": 0.5126,
+            "r": 0.7554,
+            "n": 29,
+            "x_min": 0.0,
+            "x_max": 0.95,
+            "y_min": 0.13,
+            "y_max": 0.91
+          },
+          "skill": {
+            "loo_rmse": 0.1432,
+            "mean_loo_rmse": 0.2056,
+            "prior_rmse": 0.2275,
+            "beats_mean": true,
+            "beats_prior": true,
+            "skill": true
+          },
+          "method": "calibration/apply_rows.py estimate"
+        },
+        "subjective.module_precision": {
+          "value": 0.66,
+          "prior": 0.5,
+          "predictor": "aa.terminalbench_4",
+          "x": 0.0,
+          "input": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "gpt-oss-120b"
+          },
+          "fit": {
+            "a": 0.6626,
+            "b": 0.2097,
+            "r": 0.4956,
+            "n": 26,
+            "x_min": 0.0,
+            "x_max": 0.95,
+            "y_min": 0.55,
+            "y_max": 0.95
+          },
+          "skill": {
+            "loo_rmse": 0.1079,
+            "mean_loo_rmse": 0.1198,
+            "prior_rmse": 0.2655,
+            "beats_mean": true,
+            "beats_prior": true,
+            "skill": true
+          },
+          "method": "calibration/apply_rows.py estimate"
+        }
+      }
     },
     "gemini-3.1-flash-lite": {
       "usd_per_hour": 0.5,
       "tier": 1.0,
       "cost": 1,
-      "visual": 0.27,
+      "visual": 0.3,
       "capabilities": {
-        "reasoning": 0.468,
+        "reasoning": 0.52,
         "coding": 0.0,
-        "exploration": 0.45,
-        "anti_hallucination": 0.648,
-        "visual": 0.27,
-        "gui": 0.378
+        "exploration": 0.5,
+        "anti_hallucination": 0.72,
+        "visual": 0.3,
+        "gui": 0.42
       },
       "subjective": {
-        "divergence": 0.315,
-        "global_rigor": 0.315,
-        "module_precision": 0.585
+        "divergence": 0.35,
+        "global_rigor": 0.35,
+        "module_precision": 0.65
       },
       "basis": "LMArena: WebDev 2026-10-28 Gemini 3.1 Flash-Lite Preview 1256 [1249,1263]; Vision 2026-10-19 Gemini 3.1 Flash-Lite Preview 1240 [1234,1246]; Text hard prompts (style control) 2026-10-28 Gemini 3.1 Flash-Lite Preview 1445 [1441,1450]; Text (style control) 2026-10-28 Gemini 3.1 Flash-Lite Preview 1433 [1429,1437]. tier 1.0 = mean of the per-board fits {'webdev': 1.0}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.721,
-      "responsiveness_basis": "artificial_analysis (Gemini 3.1 Flash-Lite, 2026-11-06): T_turn=ttft_s+400/output_tps [high: 15.43s->0.721 (336.04 tok/s, ttft 14.24s)]; base@high=15.43s -> responsiveness=0.721"
+      "responsiveness_basis": "artificial_analysis (Gemini 3.1 Flash-Lite, 2026-11-06): T_turn=ttft_s+400/output_tps [high: 15.43s->0.721 (336.04 tok/s, ttft 14.24s)]; base@high=15.43s -> responsiveness=0.721",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.72,
+          "prior": 0.72,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.72,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.5,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.5,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.42,
+          "prior": 0.42,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.42,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.52,
+          "prior": 0.52,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.52,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.3,
+          "prior": 0.3,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.3,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.35,
+          "prior": 0.35,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.35,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.35,
+          "prior": 0.35,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.35,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.65,
+          "prior": 0.65,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.65,
+          "predictor": null
+        }
+      }
     },
     "kimi-k2.7-code": {
       "tier": 2.22,
       "cost": 2,
-      "visual": 0.612,
+      "visual": 0.62,
       "usd_per_hour": 1.8,
       "capabilities": {
-        "reasoning": 0.711,
+        "reasoning": 0.74,
         "coding": 0.27,
-        "exploration": 0.747,
-        "anti_hallucination": 0.666,
-        "visual": 0.612,
+        "exploration": 0.8,
+        "anti_hallucination": 0.7,
+        "visual": 0.62,
         "gui": 0.45
       },
       "subjective": {
-        "divergence": 0.648,
-        "global_rigor": 0.684,
-        "module_precision": 0.729
+        "divergence": 0.7,
+        "global_rigor": 0.71,
+        "module_precision": 0.78
       },
       "basis": "LMArena: WebDev 2026-10-28 Kimi K2.7 Code 1474 [1464,1483]. tier 2.22 = mean of the per-board fits {'webdev': 2.22}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.0,
-      "responsiveness_basis": "artificial_analysis (Kimi K2.7 Code, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 58.12s->0.000 (45.14 tok/s, ttft 49.26s)]; base@default=58.12s -> responsiveness=0.000"
+      "responsiveness_basis": "artificial_analysis (Kimi K2.7 Code, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 58.12s->0.000 (45.14 tok/s, ttft 49.26s)]; base@default=58.12s -> responsiveness=0.000",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.7,
+          "prior": 0.74,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.7,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.8,
+          "prior": 0.83,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.8,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.45,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.45,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.74,
+          "prior": 0.79,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.74,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.62,
+          "prior": 0.68,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.62,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.7,
+          "prior": 0.72,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.7,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.71,
+          "prior": 0.76,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.71,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.78,
+          "prior": 0.81,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.78,
+          "predictor": null
+        }
+      }
     },
     "qwen3.6-plus": {
       "tier": 2.14,
       "cost": 2,
-      "visual": 0.585,
+      "visual": 0.65,
       "usd_per_hour": 1.5,
       "capabilities": {
-        "reasoning": 0.702,
+        "reasoning": 0.78,
         "coding": 0.25,
-        "exploration": 0.675,
-        "anti_hallucination": 0.666,
-        "visual": 0.585,
-        "gui": 0.432
+        "exploration": 0.75,
+        "anti_hallucination": 0.74,
+        "visual": 0.65,
+        "gui": 0.48
       },
       "subjective": {
-        "divergence": 0.603,
-        "global_rigor": 0.675,
-        "module_precision": 0.72
+        "divergence": 0.67,
+        "global_rigor": 0.75,
+        "module_precision": 0.8
       },
       "basis": "LMArena: WebDev 2026-10-28 Qwen3.6-Plus 1462 [1456,1467]; Text hard prompts (style control) 2026-10-28 Qwen3.6-Plus 1467 [1462,1472]; Text (style control) 2026-10-28 Qwen3.6-Plus 1443 [1439,1447]. tier 2.14 = mean of the per-board fits {'webdev': 2.14}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.0,
-      "responsiveness_basis": "artificial_analysis (Qwen3.6 Plus, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 82.43s->0.000 (51.37 tok/s, ttft 74.64s)]; base@default=82.43s -> responsiveness=0.000"
+      "responsiveness_basis": "artificial_analysis (Qwen3.6 Plus, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 82.43s->0.000 (51.37 tok/s, ttft 74.64s)]; base@default=82.43s -> responsiveness=0.000",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.74,
+          "prior": 0.74,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.74,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.48,
+          "prior": 0.48,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.48,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.78,
+          "prior": 0.78,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.78,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.65,
+          "prior": 0.65,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.65,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.67,
+          "prior": 0.67,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.67,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.8,
+          "prior": 0.8,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.8,
+          "predictor": null
+        }
+      }
     },
     "claude-opus-4-7": {
       "fast_capable": true,
       "tier": 2.82,
       "cost": 4,
-      "visual": 0.9,
+      "visual": 0.95,
       "usd_per_hour": 7.5,
       "capabilities": {
-        "reasoning": 0.801,
+        "reasoning": 0.85,
         "coding": 0.43,
-        "exploration": 0.792,
-        "anti_hallucination": 0.828,
-        "visual": 0.9,
-        "gui": 0.495
+        "exploration": 0.84,
+        "anti_hallucination": 0.88,
+        "visual": 0.95,
+        "gui": 0.52
       },
       "subjective": {
-        "divergence": 0.558,
-        "global_rigor": 0.882,
-        "module_precision": 0.828
+        "divergence": 0.6,
+        "global_rigor": 0.93,
+        "module_precision": 0.88
       },
       "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.7 (High) 1558 [1552,1563]; Vision 2026-10-19 Claude Opus 4.7 1317 [1310,1323]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.7 (High) 1525 [1521,1530]; Text (style control) 2026-10-28 Claude Opus 4.7 (High) 1501 [1497,1505]. tier 2.82 = mean of the per-board fits {'webdev': 2.82}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.0,
-      "responsiveness_basis": "artificial_analysis (Claude Opus 4.7 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 6.92s->0.929 (76.15 tok/s, ttft 1.67s); max: 49.58s->0.000 (80.43 tok/s, ttft 44.61s)]; base@max=49.58s -> responsiveness=0.000"
+      "responsiveness_basis": "artificial_analysis (Claude Opus 4.7 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 6.92s->0.929 (76.15 tok/s, ttft 1.67s); max: 49.58s->0.000 (80.43 tok/s, ttft 44.61s)]; base@max=49.58s -> responsiveness=0.000",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.88,
+          "prior": 0.92,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.88,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.84,
+          "prior": 0.88,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.84,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.52,
+          "prior": 0.55,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.52,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.85,
+          "prior": 0.89,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.85,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.95,
+          "prior": 1.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.95,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.6,
+          "prior": 0.62,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.6,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.93,
+          "prior": 0.98,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.93,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.88,
+          "prior": 0.92,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.88,
+          "predictor": null
+        }
+      }
     },
     "claude-opus-4-8": {
       "fast_capable": true,
       "tier": 2.81,
       "cost": 4,
-      "visual": 0.9,
+      "visual": 0.95,
       "usd_per_hour": 7.5,
       "capabilities": {
-        "reasoning": 0.801,
+        "reasoning": 0.85,
         "coding": 0.42,
-        "exploration": 0.792,
-        "anti_hallucination": 0.828,
-        "visual": 0.9,
-        "gui": 0.495
+        "exploration": 0.84,
+        "anti_hallucination": 0.88,
+        "visual": 0.95,
+        "gui": 0.52
       },
       "subjective": {
-        "divergence": 0.558,
-        "global_rigor": 0.882,
-        "module_precision": 0.828
+        "divergence": 0.6,
+        "global_rigor": 0.93,
+        "module_precision": 0.88
       },
       "basis": "LMArena: WebDev 2026-10-28 Claude Opus 4.8 (High) 1556 [1550,1562]; Vision 2026-10-19 Claude Opus 4.8 (High) 1294 [1288,1301]; Text hard prompts (style control) 2026-10-28 Claude Opus 4.8 (High) 1513 [1509,1518]; Text (style control) 2026-10-28 Claude Opus 4.8 (High) 1482 [1478,1486]. tier 2.81 = mean of the per-board fits {'webdev': 2.81}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.051,
-      "responsiveness_basis": "artificial_analysis (Claude Opus 4.8 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [max: 42.91s->0.051 (82.13 tok/s, ttft 38.04s)]; base@max=42.91s -> responsiveness=0.051"
+      "responsiveness_basis": "artificial_analysis (Claude Opus 4.8 (Max), 2026-11-06): T_turn=ttft_s+400/output_tps [max: 42.91s->0.051 (82.13 tok/s, ttft 38.04s)]; base@max=42.91s -> responsiveness=0.051",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.88,
+          "prior": 0.92,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.88,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.84,
+          "prior": 0.88,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.84,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.52,
+          "prior": 0.55,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.52,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.85,
+          "prior": 0.89,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.85,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.95,
+          "prior": 1.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.95,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.6,
+          "prior": 0.62,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.6,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.93,
+          "prior": 0.98,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.93,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.88,
+          "prior": 0.92,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "claude-opus-4-6",
+          "base_value": 0.88,
+          "predictor": null
+        }
+      }
     },
     "grok-4.5": {
       "usd_per_hour": 1.5,
@@ -1534,21 +2202,87 @@
       "cost": 2,
       "visual": false,
       "capabilities": {
-        "reasoning": 0.531,
+        "reasoning": 0.59,
         "coding": 0.42,
-        "exploration": 0.54,
-        "anti_hallucination": 0.558,
+        "exploration": 0.6,
+        "anti_hallucination": 0.62,
         "visual": 0.0,
         "gui": 0.0
       },
       "subjective": {
-        "divergence": 0.405,
-        "global_rigor": 0.36,
-        "module_precision": 0.522
+        "divergence": 0.45,
+        "global_rigor": 0.4,
+        "module_precision": 0.58
       },
       "basis": "LMArena: WebDev 2026-10-28 Grok 4.5 1553 [1546,1560]; Vision 2026-10-19 Grok 4.5 1287 [1280,1294]; Text hard prompts (style control) 2026-10-28 Grok 4.5 1488 [1483,1493]; Text (style control) 2026-10-28 Grok 4.5 1465 [1461,1470]. tier 2.79 = mean of the per-board fits {'webdev': 2.79}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.66,
-      "responsiveness_basis": "artificial_analysis (Grok 4.5 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [high: 17.96s->0.660 (70.58 tok/s, ttft 12.29s)]; base@high=17.96s -> responsiveness=0.660"
+      "responsiveness_basis": "artificial_analysis (Grok 4.5 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [high: 17.96s->0.660 (70.58 tok/s, ttft 12.29s)]; base@high=17.96s -> responsiveness=0.660",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.62,
+          "prior": 0.62,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.62,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.6,
+          "prior": 0.6,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.6,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.0,
+          "prior": 0.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.0,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.59,
+          "prior": 0.59,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.59,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.0,
+          "prior": 0.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.0,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.45,
+          "prior": 0.45,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.45,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.4,
+          "prior": 0.4,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.4,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.58,
+          "prior": 0.58,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.58,
+          "predictor": null
+        }
+      }
     },
     "grok-4.6": {
       "usd_per_hour": 1.5,
@@ -1556,136 +2290,609 @@
       "cost": 2,
       "visual": false,
       "capabilities": {
-        "reasoning": 0.531,
+        "reasoning": 0.59,
         "coding": 0.54,
-        "exploration": 0.54,
-        "anti_hallucination": 0.558,
+        "exploration": 0.6,
+        "anti_hallucination": 0.62,
         "visual": 0.0,
         "gui": 0.0
       },
       "subjective": {
-        "divergence": 0.405,
-        "global_rigor": 0.36,
-        "module_precision": 0.522
+        "divergence": 0.45,
+        "global_rigor": 0.4,
+        "module_precision": 0.58
       },
       "basis": "LMArena: WebDev 2026-10-28 Grok 4.6 (High) 1616 [1609,1623]; Agent 2026-11-02 Grok 4.6 (xHigh) score 0.003 [-0.008,0.015]; Vision 2026-10-19 Grok 4.6 (High) 1263 [1255,1271]; Text hard prompts (style control) 2026-10-28 Grok 4.6 (High) 1481 [1476,1486]; Text (style control) 2026-10-28 Grok 4.6 (High) 1455 [1451,1460]. tier 3.02 = mean of the per-board fits {'webdev': 3.24, 'agent': 2.8}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.129,
-      "responsiveness_basis": "artificial_analysis (Grok 4.6 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 17.31s->0.675 (64.93 tok/s, ttft 11.15s); medium: 30.71s->0.348 (75.46 tok/s, ttft 25.41s); high: 39.73s->0.129 (72.35 tok/s, ttft 34.2s); xhigh: 39.06s->0.145 (70.4 tok/s, ttft 33.38s)]; base@high=39.73s -> responsiveness=0.129"
+      "responsiveness_basis": "artificial_analysis (Grok 4.6 (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 17.31s->0.675 (64.93 tok/s, ttft 11.15s); medium: 30.71s->0.348 (75.46 tok/s, ttft 25.41s); high: 39.73s->0.129 (72.35 tok/s, ttft 34.2s); xhigh: 39.06s->0.145 (70.4 tok/s, ttft 33.38s)]; base@high=39.73s -> responsiveness=0.129",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.62,
+          "prior": 0.62,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.62,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.6,
+          "prior": 0.6,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.6,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.0,
+          "prior": 0.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.0,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.59,
+          "prior": 0.59,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.59,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.0,
+          "prior": 0.0,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.0,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.45,
+          "prior": 0.45,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.45,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.4,
+          "prior": 0.4,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.4,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.58,
+          "prior": 0.58,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "grok-4.7",
+          "base_value": 0.58,
+          "predictor": null
+        }
+      }
     },
     "gemini-3.1-pro-preview": {
       "usd_per_hour": 4.0,
       "duration_multiplier": 1.35,
       "tier": 2.18,
       "cost": 3,
-      "visual": 0.675,
+      "visual": 0.75,
       "burn_pct_per_worker_hour": {
         "gemini-weekly": 0.62,
         "gemini-5h": 2.13
       },
       "capabilities": {
-        "reasoning": 0.702,
+        "reasoning": 0.78,
         "coding": 0.22,
-        "exploration": 0.774,
-        "anti_hallucination": 0.729,
-        "visual": 0.675,
-        "gui": 0.558
+        "exploration": 0.87,
+        "anti_hallucination": 0.81,
+        "visual": 0.75,
+        "gui": 0.62
       },
       "subjective": {
-        "divergence": 0.864,
-        "global_rigor": 0.72,
-        "module_precision": 0.72
+        "divergence": 0.96,
+        "global_rigor": 0.81,
+        "module_precision": 0.64
       },
       "basis": "LMArena: WebDev 2026-10-28 Gemini 3.1 Pro Preview 1447 [1442,1452]; Agent 2026-11-02 Gemini 3.1 Pro Preview score -0.046 [-0.060,-0.032]; Vision 2026-10-19 Gemini 3.1 Pro Preview 1296 [1291,1301]; Text hard prompts (style control) 2026-10-28 Gemini 3.1 Pro Preview 1508 [1504,1511]; Text (style control) 2026-10-28 Gemini 3.1 Pro Preview 1487 [1484,1490]. tier 2.18 = mean of the per-board fits {'webdev': 2.03, 'agent': 2.34}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.573,
-      "responsiveness_basis": "artificial_analysis (Gemini 3.1 Pro Preview, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 21.51s->0.573 (121.56 tok/s, ttft 18.22s)]; base@default=21.51s -> responsiveness=0.573"
+      "responsiveness_basis": "artificial_analysis (Gemini 3.1 Pro Preview, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 21.51s->0.573 (121.56 tok/s, ttft 18.22s)]; base@default=21.51s -> responsiveness=0.573",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.81,
+          "prior": 0.81,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.81,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.87,
+          "prior": 0.86,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.86,
+          "predictor": "aa.lcr",
+          "x": 0.7935,
+          "x_base": 0.771,
+          "input": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 3.1 Pro Preview"
+          },
+          "input_base": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon"
+          },
+          "shift": 0.0126,
+          "fit": {
+            "a": 0.2717,
+            "b": 0.5589,
+            "r": 0.3663,
+            "n": 23,
+            "x_min": 0.4548,
+            "x_max": 0.8355,
+            "y_min": 0.5,
+            "y_max": 0.9
+          }
+        },
+        "capabilities.gui": {
+          "value": 0.62,
+          "prior": 0.62,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.62,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.78,
+          "prior": 0.78,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.78,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.96,
+          "prior": 0.96,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.96,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.81,
+          "prior": 0.8,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.8,
+          "predictor": "aa.lcr",
+          "x": 0.7935,
+          "x_base": 0.771,
+          "input": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 3.1 Pro Preview"
+          },
+          "input_base": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon"
+          },
+          "shift": 0.0102,
+          "fit": {
+            "a": 0.2867,
+            "b": 0.4518,
+            "r": 0.1971,
+            "n": 23,
+            "x_min": 0.4548,
+            "x_max": 0.8355,
+            "y_min": 0.25,
+            "y_max": 0.98
+          }
+        },
+        "subjective.module_precision": {
+          "value": 0.64,
+          "prior": 0.8,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.8,
+          "predictor": "aa.terminalbench_4",
+          "x": 0.0571,
+          "x_base": 0.8071,
+          "input": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 3.1 Pro Preview"
+          },
+          "input_base": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon"
+          },
+          "shift": -0.1572,
+          "fit": {
+            "a": 0.6626,
+            "b": 0.2097,
+            "r": 0.4956,
+            "n": 26,
+            "x_min": 0.0,
+            "x_max": 0.95,
+            "y_min": 0.55,
+            "y_max": 0.95
+          }
+        }
+      }
     },
     "gemini-3.7-flash": {
       "usd_per_hour": 0.5,
       "tier": 2.83,
       "cost": 1,
-      "visual": 0.27,
+      "visual": 0.3,
       "capabilities": {
-        "reasoning": 0.468,
+        "reasoning": 0.52,
         "coding": 0.49,
-        "exploration": 0.45,
-        "anti_hallucination": 0.648,
-        "visual": 0.27,
-        "gui": 0.378
+        "exploration": 0.5,
+        "anti_hallucination": 0.72,
+        "visual": 0.3,
+        "gui": 0.42
       },
       "subjective": {
-        "divergence": 0.315,
-        "global_rigor": 0.315,
-        "module_precision": 0.585
+        "divergence": 0.35,
+        "global_rigor": 0.35,
+        "module_precision": 0.65
       },
       "basis": "LMArena: WebDev 2026-10-28 Gemini 3.7 Flash (High) 1590 [1583,1596]; Agent 2026-11-02 Gemini 3.7 Flash (High) score -0.016 [-0.025,-0.008]; Vision 2026-10-19 Gemini 3.7 Flash (High) 1314 [1305,1323]; Text hard prompts (style control) 2026-10-28 Gemini 3.7 Flash (High) 1509 [1504,1515]; Text (style control) 2026-10-28 Gemini 3.7 Flash (High) 1490 [1485,1494]. tier 2.83 = mean of the per-board fits {'webdev': 3.05, 'agent': 2.62}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.935,
-      "responsiveness_basis": "openrouter (Google | google/gemini-3.7-flash-20260813 (google-vertex/global, n=55848), 2026-11-06): T_turn=ttft_s+400/output_tps [default: 6.68s->0.935 (90 tok/s, ttft 2.236s)]; base@default=6.68s -> responsiveness=0.935; openrouter fallback (AA has no speed entry; p50_latency is first-chunk prefill latency without thinking time)"
+      "responsiveness_basis": "openrouter (Google | google/gemini-3.7-flash-20260813 (google-vertex/global, n=55848), 2026-11-06): T_turn=ttft_s+400/output_tps [default: 6.68s->0.935 (90 tok/s, ttft 2.236s)]; base@default=6.68s -> responsiveness=0.935; openrouter fallback (AA has no speed entry; p50_latency is first-chunk prefill latency without thinking time)",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.72,
+          "prior": 0.72,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.72,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.5,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.5,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.42,
+          "prior": 0.42,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.42,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.52,
+          "prior": 0.52,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.52,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.3,
+          "prior": 0.3,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.3,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.35,
+          "prior": 0.35,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.35,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.35,
+          "prior": 0.35,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.35,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.65,
+          "prior": 0.65,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-3.8-flash-high",
+          "base_value": 0.65,
+          "predictor": null
+        }
+      }
     },
     "kimi-k2.6": {
       "tier": 2.48,
       "cost": 2,
-      "visual": 0.612,
+      "visual": 0.62,
       "usd_per_hour": 1.8,
       "capabilities": {
-        "reasoning": 0.711,
+        "reasoning": 0.74,
         "coding": 0.34,
-        "exploration": 0.747,
-        "anti_hallucination": 0.666,
-        "visual": 0.612,
+        "exploration": 0.8,
+        "anti_hallucination": 0.7,
+        "visual": 0.62,
         "gui": 0.45
       },
       "subjective": {
-        "divergence": 0.648,
-        "global_rigor": 0.684,
-        "module_precision": 0.729
+        "divergence": 0.7,
+        "global_rigor": 0.71,
+        "module_precision": 0.78
       },
       "basis": "LMArena: WebDev 2026-10-28 Kimi K2.6 1509 [1502,1516]; Vision 2026-10-19 Kimi K2.6 1282 [1275,1289]; Text hard prompts (style control) 2026-10-28 Kimi K2.6 1486 [1480,1491]; Text (style control) 2026-10-28 Kimi K2.6 1461 [1457,1465]. tier 2.48 = mean of the per-board fits {'webdev': 2.48}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.0,
-      "responsiveness_basis": "artificial_analysis (Kimi K2.6 (Reasoning), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 17.04s->0.682 (39.81 tok/s, ttft 6.99s); default: 83.11s->0.000 (41.93 tok/s, ttft 73.57s)]; base@default=83.11s -> responsiveness=0.000"
+      "responsiveness_basis": "artificial_analysis (Kimi K2.6 (Reasoning), 2026-11-06): T_turn=ttft_s+400/output_tps [none: 17.04s->0.682 (39.81 tok/s, ttft 6.99s); default: 83.11s->0.000 (41.93 tok/s, ttft 73.57s)]; base@default=83.11s -> responsiveness=0.000",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.7,
+          "prior": 0.74,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.7,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.8,
+          "prior": 0.83,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.8,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.45,
+          "prior": 0.5,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.45,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.74,
+          "prior": 0.79,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.74,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.62,
+          "prior": 0.68,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.62,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.7,
+          "prior": 0.72,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.7,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.71,
+          "prior": 0.76,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.71,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.78,
+          "prior": 0.81,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "kimi-k3",
+          "base_value": 0.78,
+          "predictor": null
+        }
+      }
     },
     "qwen3-max": {
       "tier": 1.15,
       "cost": 2,
-      "visual": 0.585,
+      "visual": 0.65,
       "usd_per_hour": 1.5,
       "capabilities": {
-        "reasoning": 0.702,
-        "coding": 0.585,
-        "exploration": 0.675,
-        "anti_hallucination": 0.666,
-        "visual": 0.585,
-        "gui": 0.432
+        "reasoning": 0.78,
+        "coding": 0.25,
+        "exploration": 0.75,
+        "anti_hallucination": 0.74,
+        "visual": 0.65,
+        "gui": 0.48
       },
       "subjective": {
-        "divergence": 0.603,
-        "global_rigor": 0.675,
-        "module_precision": 0.72
+        "divergence": 0.67,
+        "global_rigor": 0.75,
+        "module_precision": 0.8
       },
       "basis": "LMArena (not on WebDev/Agent): Text hard prompts (style control) 2026-10-28 Qwen3-Max (2025-09-23) 1446 [1438,1455]; Text (style control) 2026-10-28 Qwen3-Max (2025-09-23) 1423 [1417,1430]. Secondary measurement, 2026-11-04: Terminal-Bench 2.0 24.72 (vals.ai/AA board) -> tier 1.15 (r 0.89, n 42). tier 1.15 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).",
       "responsiveness_status": "missing",
-      "responsiveness_basis": "missing (2026-11-06): no public speed measurement in Artificial Analysis or OpenRouter; routes with conservative default (0.52). Checked Artificial Analysis (slug 'qwen3-max' and 'qwen3-max-thinking' exist in the 726-model catalog with releaseDate 2025-09-23, but headline.outputSpeed, timeToFirstToken, and timeToFirstAnswerToken are all null), OpenRouter (/api/v1/models only lists qwen/qwen3.7-max and qwen/qwen3.8-max-0902), LMArena, and vals.ai. No public tok/s or TTFT measurement available."
+      "responsiveness_basis": "missing (2026-11-06): no public speed measurement in Artificial Analysis or OpenRouter; routes with conservative default (0.52). Checked Artificial Analysis (slug 'qwen3-max' and 'qwen3-max-thinking' exist in the 726-model catalog with releaseDate 2025-09-23, but headline.outputSpeed, timeToFirstToken, and timeToFirstAnswerToken are all null), OpenRouter (/api/v1/models only lists qwen/qwen3.7-max and qwen/qwen3.8-max-0902), LMArena, and vals.ai. No public tok/s or TTFT measurement available.",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.74,
+          "prior": 0.74,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.74,
+          "predictor": null
+        },
+        "capabilities.coding": {
+          "value": 0.25,
+          "prior": 0.65,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.6-plus",
+          "base_value": 0.25,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.48,
+          "prior": 0.48,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.48,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.78,
+          "prior": 0.78,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.78,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.65,
+          "prior": 0.65,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.65,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.67,
+          "prior": 0.67,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.67,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.8,
+          "prior": 0.8,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.8,
+          "predictor": null
+        }
+      }
     },
     "qwen3.7-max": {
       "tier": 2.33,
       "cost": 2,
-      "visual": 0.585,
+      "visual": 0.65,
       "usd_per_hour": 1.5,
       "capabilities": {
-        "reasoning": 0.702,
+        "reasoning": 0.78,
         "coding": 0.35,
-        "exploration": 0.675,
-        "anti_hallucination": 0.666,
-        "visual": 0.585,
-        "gui": 0.432
+        "exploration": 0.75,
+        "anti_hallucination": 0.74,
+        "visual": 0.65,
+        "gui": 0.48
       },
       "subjective": {
-        "divergence": 0.603,
-        "global_rigor": 0.675,
-        "module_precision": 0.72
+        "divergence": 0.67,
+        "global_rigor": 0.75,
+        "module_precision": 0.8
       },
       "basis": "LMArena: WebDev 2026-10-28 Qwen3.7-Max (20260517) 1515 [1508,1523]; Agent 2026-11-02 Qwen3.7-Max score -0.067 [-0.079,-0.055]. tier 2.33 = mean of the per-board fits {'webdev': 2.52, 'agent': 2.15}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.673,
-      "responsiveness_basis": "artificial_analysis (Qwen3.7 Max, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 17.41s->0.673 (164.6 tok/s, ttft 14.98s)]; base@default=17.41s -> responsiveness=0.673"
+      "responsiveness_basis": "artificial_analysis (Qwen3.7 Max, 2026-11-06): T_turn=ttft_s+400/output_tps [default: 17.41s->0.673 (164.6 tok/s, ttft 14.98s)]; base@default=17.41s -> responsiveness=0.673",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.74,
+          "prior": 0.74,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.74,
+          "predictor": null
+        },
+        "capabilities.exploration": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "capabilities.gui": {
+          "value": 0.48,
+          "prior": 0.48,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.48,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.78,
+          "prior": 0.78,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.78,
+          "predictor": null
+        },
+        "capabilities.visual": {
+          "value": 0.65,
+          "prior": 0.65,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.65,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.67,
+          "prior": 0.67,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.67,
+          "predictor": null
+        },
+        "subjective.global_rigor": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "subjective.module_precision": {
+          "value": 0.8,
+          "prior": 0.8,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "qwen3.8-max",
+          "base_value": 0.8,
+          "predictor": null
+        }
+      }
     },
     "qwen3-flash-2025-07-28": {
       "tier": 2.8,
@@ -1716,27 +2923,232 @@
       "duration_multiplier": 1.35,
       "tier": 4.35,
       "cost": 3,
-      "visual": 0.675,
+      "visual": 0.75,
       "burn_pct_per_worker_hour": {
         "gemini-weekly": 0.62,
         "gemini-5h": 2.13
       },
       "capabilities": {
-        "reasoning": 0.702,
+        "reasoning": 0.84,
         "coding": 0.83,
-        "exploration": 0.774,
-        "anti_hallucination": 0.729,
-        "visual": 0.675,
-        "gui": 0.558
+        "exploration": 0.86,
+        "anti_hallucination": 0.84,
+        "visual": 0.75,
+        "gui": 0.62
       },
       "subjective": {
-        "divergence": 0.864,
-        "global_rigor": 0.72,
-        "module_precision": 0.72
+        "divergence": 0.96,
+        "global_rigor": 0.83,
+        "module_precision": 0.82
       },
       "basis": "LMArena: WebDev 2026-10-28 Gemini 4 Carbon (High) 1768 [1753,1783]; Agent 2026-11-02 Gemini 4 Carbon (High) score 0.166 [0.158,0.174]; Text hard prompts (style control) 2026-10-28 Gemini 4 Carbon (High) 1548 [1536,1560]; Text (style control) 2026-10-28 Gemini 4 Carbon (High) 1528 [1518,1537]. tier 4.06 = mean of the per-board fits {'webdev': 3.88, 'agent': 4.25}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 4.35 = 4.06 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': -0.24, 'agent': -0.35}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.0,
-      "responsiveness_basis": "artificial_analysis (Gemini 4 Carbon (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 18.62s->0.643 (39.16 tok/s, ttft 8.41s); medium: 37.07s->0.193 (72.04 tok/s, ttft 31.52s); high: 75.20s->0.000 (67.92 tok/s, ttft 69.31s)]; base@high=75.20s -> responsiveness=0.000"
+      "responsiveness_basis": "artificial_analysis (Gemini 4 Carbon (High), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 18.62s->0.643 (39.16 tok/s, ttft 8.41s); medium: 37.07s->0.193 (72.04 tok/s, ttft 31.52s); high: 75.20s->0.000 (67.92 tok/s, ttft 69.31s)]; base@high=75.20s -> responsiveness=0.000",
+      "score_estimates": {
+        "capabilities.anti_hallucination": {
+          "value": 0.84,
+          "prior": 0.81,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.81,
+          "predictor": "aa.omniscience_index",
+          "x": 0.8626,
+          "x_base": 0.821,
+          "input": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Carbon"
+          },
+          "input_base": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon"
+          },
+          "shift": 0.0305,
+          "fit": {
+            "a": 0.2212,
+            "b": 0.7339,
+            "r": 0.7094,
+            "n": 25,
+            "x_min": 0.4737,
+            "x_max": 0.821,
+            "y_min": 0.45,
+            "y_max": 0.92
+          }
+        },
+        "capabilities.exploration": {
+          "value": 0.86,
+          "prior": 0.86,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.86,
+          "predictor": "aa.lcr",
+          "x": 0.7677,
+          "x_base": 0.771,
+          "input": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Carbon"
+          },
+          "input_base": {
+            "source": "aa.lcr",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon"
+          },
+          "shift": -0.0018,
+          "fit": {
+            "a": 0.2717,
+            "b": 0.5589,
+            "r": 0.3663,
+            "n": 23,
+            "x_min": 0.4548,
+            "x_max": 0.8355,
+            "y_min": 0.5,
+            "y_max": 0.9
+          }
+        },
+        "capabilities.gui": {
+          "value": 0.62,
+          "prior": 0.62,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.62,
+          "predictor": null
+        },
+        "capabilities.reasoning": {
+          "value": 0.84,
+          "prior": 0.78,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.78,
+          "predictor": "aa.index",
+          "x": 60.03,
+          "x_base": 50.41,
+          "input": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Carbon (High)"
+          },
+          "input_base": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon (High)"
+          },
+          "shift": 0.0604,
+          "fit": {
+            "a": 0.4799,
+            "b": 0.0063,
+            "r": 0.6139,
+            "n": 25,
+            "x_min": 5.53,
+            "x_max": 54.85,
+            "y_min": 0.48,
+            "y_max": 0.98
+          }
+        },
+        "capabilities.visual": {
+          "value": 0.75,
+          "prior": 0.75,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.75,
+          "predictor": null
+        },
+        "subjective.divergence": {
+          "value": 0.96,
+          "prior": 0.96,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.96,
+          "predictor": "aa.index",
+          "x": 60.03,
+          "x_base": 50.41,
+          "input": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Carbon (High)"
+          },
+          "input_base": {
+            "source": "aa.index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon (High)"
+          },
+          "shift": 0.0553,
+          "fit": {
+            "a": 0.3829,
+            "b": 0.0058,
+            "r": 0.4733,
+            "n": 25,
+            "x_min": 5.53,
+            "x_max": 54.85,
+            "y_min": 0.35,
+            "y_max": 0.96
+          },
+          "y_clamped": 0.96
+        },
+        "subjective.global_rigor": {
+          "value": 0.83,
+          "prior": 0.8,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.8,
+          "predictor": "aa.omniscience_index",
+          "x": 0.8626,
+          "x_base": 0.821,
+          "input": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Carbon"
+          },
+          "input_base": {
+            "source": "aa.omniscience_index",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon"
+          },
+          "shift": 0.0267,
+          "fit": {
+            "a": 0.2132,
+            "b": 0.6414,
+            "r": 0.3719,
+            "n": 25,
+            "x_min": 0.4737,
+            "x_max": 0.821,
+            "y_min": 0.25,
+            "y_max": 0.98
+          }
+        },
+        "subjective.module_precision": {
+          "value": 0.82,
+          "prior": 0.8,
+          "method": "calibration/apply_rows.py series conversion",
+          "base_model": "gemini-4-argon-high",
+          "base_value": 0.8,
+          "predictor": "aa.terminalbench_4",
+          "x": 0.9214,
+          "x_base": 0.8071,
+          "input": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Carbon"
+          },
+          "input_base": {
+            "source": "aa.terminalbench_4",
+            "as_of": "2026-11-09",
+            "listed_as": "Gemini 4 Argon"
+          },
+          "shift": 0.024,
+          "fit": {
+            "a": 0.6626,
+            "b": 0.2097,
+            "r": 0.4956,
+            "n": 26,
+            "x_min": 0.0,
+            "x_max": 0.95,
+            "y_min": 0.55,
+            "y_max": 0.95
+          }
+        }
+      }
     }
   },
   "dispatch_efforts": {

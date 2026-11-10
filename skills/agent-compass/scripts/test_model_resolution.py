@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import auto_bundles
 from model_resolution import resolve_canonical_model
 
 from router_test_support import isolated_router_state
@@ -80,8 +81,19 @@ class ModelResolutionTests(unittest.TestCase):
                 row = self.accounts['models'][expected]
                 spec = allocator.model_spec(self.accounts, raw)
                 if resolved['source'] == 'family':
+                    # Round 058 round 4: a family name takes the series conversion of its same-series row (its scores
+                    # and usd_per_hour), marked estimated; a small-size name on a non-small row is not in its series.
                     self.assertTrue(spec['score_estimated'])
-                    self.assertLess(spec['tier'], row['tier'])     # a family guess never scores as the flagship itself
+                    if auto_bundles.series_target(raw, self.accounts):
+                        for field in ('tier', 'capabilities', 'subjective'):
+                            self.assertEqual(spec.get(field), row.get(field), field)
+                        if isinstance(row.get('usd_per_hour'), (int, float)):
+                            self.assertEqual(spec['usd_per_hour'], row['usd_per_hour'])
+                            self.assertNotIn('usd_estimated', spec)
+                        else:                   # the series has no price either (gpt-6-pro is a web bridge)
+                            self.assertTrue(spec['usd_estimated'])
+                    else:
+                        self.assertEqual(spec['capabilities'], auto_bundles.small_model_spec(self.accounts)['capabilities'])
                 else:
                     self.assertEqual(spec, row)
 
