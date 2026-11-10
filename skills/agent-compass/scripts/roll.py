@@ -15,6 +15,7 @@ import sys
 import time
 import uuid
 
+import dispatch_fallback
 import dispatch_flow
 import entry
 import dispatch_registry as registry
@@ -105,6 +106,13 @@ def build_task(args, text, parent):
         task.setdefault('needs', {})['file_transfer'] = True
     if getattr(args, 'fast', False):
         task.setdefault('needs', {})['fast'] = True
+    can_wait = getattr(args, 'can_wait_hours', None)
+    if can_wait is not None:
+        if not (isinstance(can_wait, (int, float)) and not isinstance(can_wait, bool) and 0 <= can_wait < float('inf')):
+            raise ValueError('--can-wait-hours must be zero or a positive number of hours.')
+        # The allocator's limit on a later start, and how long a transient provider failure may be waited out
+        # before AgentCompass relaunches the brief on the next candidate (dispatch_fallback).
+        task['can_wait_hours'] = float(can_wait)
     return task
 
 
@@ -456,7 +464,23 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                                cwd=landing)
     except registry.WorkspaceBusy as busy:
         return workspace_blocked(out, busy.workspace, busy.holders)
+    except registry.CapacityChanged as refused:
+        if not dispatch_fallback.enabled() or judge is None:
+            raise
+        # The routed bundle could no longer start (e.g. its live model list dropped it): the next candidate does.
+        fresh = dict(launch, initialPrompt=text)
+        if args.workspace:
+            fresh['workspaceId'] = args.workspace
+        outcome = dispatch_fallback.after_refusal(decision['decision_id'], fresh, refused, access=access,
+                                                  allow_concurrent=allow_concurrent or None, cwd=landing, judge=judge)
+        return fallback_result(out, outcome, decision, parent, args)
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=args.wait)
+    if (receipt.get('state') == 'create_failed' or (receipt.get('state') == 'failed' and receipt.get('agent_id'))) \
+            and dispatch_fallback.enabled() and judge is not None:
+        # Paseo confirms no worker runs this brief any more (none was created, or it ended in error while roll watched):
+        # AgentCompass retries or relaunches it on the next candidate instead of asking the parent. The bridge's watcher
+        # may see the same failure; whichever claims it first relaunches and the other reads that outcome.
+        return fallback_result(out, dispatch_fallback.handle(row['dispatch_id'], judge=judge), decision, parent, args)
     if (
         receipt.get('state') == 'failed'
         and receipt.get('error') == 'parent_agent_not_found'
@@ -507,6 +531,63 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                        if receipt.get('error') == 'notification_start_failed' else receipt.get('next_action') or notice)),
                 worker=dict(receipt, provider=decision['selected_bundle']['provider'])), \
         1 if failed else 0
+
+
+def fallback_result(out, outcome, decision, parent, args):
+    """roll's answer once dispatch_fallback has relaunched the brief or found nothing left to start it on."""
+    attempts = outcome.get('lines') or []
+    if outcome.get('action') == 'relaunched':
+        dispatch_id = outcome['dispatch_id']
+        receipt = dispatch_flow.public_chain(registry.inspect(dispatch_id))
+        receipt.update({k: v for k, v in (outcome.get('receipt') or {}).items()
+                        if k in ('completion_notification', 'error', 'cause', 'observe_error')})
+        bundle = registry.inspect(dispatch_id)['bundle']
+        route = dict(out.get('route') or {}, bundle={k: bundle[k] for k in (
+            'provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast') if bundle.get(k)})
+        out = dict(out, route=route, attempts=attempts)
+        worker = dict(receipt, provider=bundle['provider'], attempts=attempts)
+        if receipt.get('state') in ('launching', 'expired') and not receipt.get('agent_id'):
+            worker.setdefault('continuation_argv', entry.argv(
+                'launch', '--dispatch-id', dispatch_id, '--parent-id', parent, '--watch-seconds', '120'))
+            return dict(out, launched=None, dispatch_mode='paseo', caller_action='check_delivery_do_not_resend',
+                        next=receipt.get('next_action') or 'Paseo delivery of the relaunch is unconfirmed. Run '
+                             'worker.continuation_argv to observe it; do not roll again.', worker=worker), 0
+        notification = receipt.get('completion_notification') or {}
+        return dict(out, launched=True, dispatch_mode='paseo', caller_action='already_launched_do_not_respawn',
+                    next=('The routed model failed to start, so AgentCompass relaunched the brief on the next candidate '
+                          f'({bundle.get("model")} on {bundle.get("account")}). Do NOT call create_agent, Agent, '
+                          'spawn_agent, or invoke_subagent again. ' +
+                          ('A completion notification will be sent to the parent.' if notification.get('status') == 'watching'
+                           else 'No completion notification is confirmed: run worker.continuation_argv to collect the result.')),
+                    worker=worker), 0
+    if outcome.get('action') == 'final' and outcome.get('result') in ('blocked', 'owner_named'):
+        return dict(out, launched=False, dispatch_mode='paseo', caller_action='tell_user', error='no_candidate_left'
+                    if outcome['result'] == 'blocked' else 'owner_named_model_failed', attempts=attempts,
+                    next=outcome.get('text'),
+                    worker={'provider': (decision.get('selected_bundle') or {}).get('provider'),
+                            'dispatch_id': outcome.get('root_dispatch_id'), 'attempts': attempts,
+                            'next_action': outcome.get('text')}), 2
+    if outcome.get('action') in ('pending', 'scheduled'):
+        # pending: the bridge's watcher claimed this failure first and is relaunching the brief. scheduled: a transient
+        # failure whose same-model retry starts at retry_at, from the watcher or the next observation.
+        root = outcome.get('root_dispatch_id')
+        scheduled = outcome['action'] == 'scheduled'
+        text = (dispatch_flow.FALLBACK_SCHEDULED_NEXT.format(retry_at=outcome.get('retry_at')) if scheduled
+                else dispatch_flow.FALLBACK_RUNNING_NEXT.format(where='its watcher is starting the next attempt'))
+        return dict(out, launched=None, dispatch_mode='paseo', caller_action='check_delivery_do_not_resend',
+                    attempts=attempts, **({'retry_at': outcome.get('retry_at')} if scheduled else {}), next=text,
+                    worker={'dispatch_id': root, 'attempts': attempts, 'next_action': text,
+                            **({'retry_at': outcome.get('retry_at')} if scheduled else {}),
+                            'continuation_argv': entry.argv(
+                                'launch', '--dispatch-id', root, '--parent-id', parent, '--watch-seconds', '120')}), 0
+    # Declined (not a failure AgentCompass relaunches) or unsettled: the last attempt's own receipt says what to do.
+    last = next((a.get('dispatch_id') for a in reversed(outcome.get('attempts') or []) if a.get('dispatch_id')), None)
+    receipt = dispatch_flow.public_chain(registry.inspect(last)) if last else {}
+    return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error', attempts=attempts,
+                error=receipt.get('state') or outcome.get('action'),
+                next=receipt.get('next_action') or outcome.get('text') or 'The relaunch could not be prepared; tell the user.',
+                worker=dict(receipt, provider=(decision.get('selected_bundle') or {}).get('provider'),
+                            attempts=attempts)), 1
 
 
 def _router_override_proxy_spec(provider):
@@ -775,8 +856,12 @@ def compact(result, status, detail_path):
         out['route_bundle'], out['worker_prompt_file'] = bundle, result.get('worker_prompt_file')
     if status == 'split':
         out['task_count'] = result.get('task_count')
+    if result.get('retry_at'):
+        out['retry_at'] = result['retry_at']
     if result.get('blocked_by'):
         out['blocked_by'] = result['blocked_by']
+    if result.get('attempts'):
+        out['attempts'] = result['attempts']
     if result.get('assumptions'):
         out['assumptions'] = result['assumptions']
     if result.get('warnings'):
@@ -790,7 +875,7 @@ def compact(result, status, detail_path):
 
 # Flags that describe one brief; a batch takes only the shared ones and each brief is rolled as written.
 BATCH_ONLY_ALONE = ('task_id', 'title', 'hours', 'local_only', 'keep_whole', 'file', 'apply_to', 'provider', 'account',
-                    'model', 'effort', 'basis', 'wait', 'resume', 'allow_concurrent')
+                    'model', 'effort', 'basis', 'wait', 'resume', 'allow_concurrent', 'can_wait_hours')
 
 
 def run_batch(args, judge):
@@ -879,7 +964,7 @@ def _run(args, judge):
             if not getattr(args, 'new_worker', False) and (row['parent_id'], row['task_id']) == (parent, task['task_id']):
                 argv = entry.argv('launch', '--dispatch-id', row['dispatch_id'], '--parent-id', parent, '--watch-seconds', '120')
                 return dict(stage='roll', parent_id=parent, launched=None, dispatch_mode='paseo',
-                            caller_action='run_next_argv', worker=dict(dispatch_flow.public(row), continuation_argv=argv),
+                            caller_action='run_next_argv', worker=dict(dispatch_flow.public_chain(row), continuation_argv=argv),
                             next='This task already has a dispatch (state ' + row['state'] + '): run next_argv to observe it; '
                                  'it will not create a second worker.'), 0
         matched_worker = match_reusable_worker(args, task, text, parent)
