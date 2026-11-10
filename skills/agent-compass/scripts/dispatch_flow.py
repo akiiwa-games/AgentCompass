@@ -10,6 +10,7 @@ import time
 
 from datetime import timedelta
 
+import dispatch_fallback
 import dispatch_registry as registry
 import entry
 from worker_context import require_parent_id
@@ -47,13 +48,15 @@ CREATING_NEXT = ('Paseo is still creating this worker. Until it exists get_agent
                  'that is not a failure. Do not roll again: run next_argv to observe this same dispatch.')
 STALLED_NEXT = ('Paseo still reports this create as running past its deadline and has no cancel, so the worker can still '
                 'appear. Keep observing with next_argv; restarting the Paseo daemon settles it. Do not roll again.')
-CREATE_FAILED_NEXT = ('Paseo confirms it created no worker for this dispatch and none can appear later. '
-                      'It is safe to roll this brief again.')
+# The covered failures (dispatch_fallback): AgentCompass retries or relaunches the brief itself, so these say so.
+CREATE_FAILED_NEXT = ('Paseo confirms it created no worker for this attempt and none can appear later. AgentCompass '
+                      'relaunches this brief on the next candidate by itself and notifies the parent once the dispatch '
+                      'reaches a final state: do not roll it again.')
 MODEL_LATCHED_NEXT = (' The provider reported that model {model} does not exist on {account} ({code}), so routing excludes it '
-                      'until {retry}: rolling again picks another model. Tell the user it is unavailable.')
-WORKER_FAILED_NEXT = ('Paseo created this worker and it ended in error, so nothing is running this brief. Read its error '
-                      '(get_agent_activity on agent_id) and tell the user before rolling again: the router does not read '
-                      'error text, so it may choose the same model again.')
+                      'until {retry} and the relaunch picks another model. Tell the user it is unavailable.')
+WORKER_FAILED_NEXT = ('Paseo created this worker and it ended in error, so it no longer runs this brief. AgentCompass '
+                      'relaunches the brief on the next candidate (this model is left out for the rest of the dispatch) '
+                      'and notifies the parent of the final outcome: do not roll it again.')
 RETRY_STUCK_NEXT = ('Its provider kept retrying one request without progress, so AgentCompass stopped the turn and holds '
                     'that model (with backoff) or its whole account (until cleared with the tray clear button or '
                     '`agentcompass hold --clear`) out of dispatch; plan/roll warnings and the tray account list show the '
@@ -61,8 +64,8 @@ RETRY_STUCK_NEXT = ('Its provider kept retrying one request without progress, so
 TURN_FAILED_NEXT = ('Its provider ended the turn with an error. AgentCompass had its classifier read the provider message: '
                     'when it means the provider refuses this model or account, that model or account is held out of '
                     'dispatch (plan/roll warnings and the tray account list show it; clear with the tray clear button or '
-                    '`agentcompass hold --clear`). Read its error (get_agent_activity on agent_id) and check whether it '
-                    'did part of the work before rolling this brief again.')
+                    '`agentcompass hold --clear`). AgentCompass retries a transient error or relaunches the brief on the '
+                    'next candidate by itself and notifies the parent of the final outcome: do not roll it again.')
 WORKER_TURN_FAILED_NEXT = ('Paseo created this worker and its turn ended in error. AgentCompass\'s classifier read the '
                            'error as coming from the worker\'s own work, not from its provider, so nothing is held. Read '
                            'its error (get_agent_activity on agent_id) and check whether it did part of the work before '
@@ -71,9 +74,33 @@ TASK_INPUT_NEXT = ('Paseo created this worker and its turn ended in error. Agent
                    'caused by this task\'s own input (for example a prompt too long for the model), not by the provider '
                    'or the model, so nothing is held and another model may refuse it too. Read its error '
                    '(get_agent_activity on agent_id) and change the brief before rolling it again.')
-RETRY_STUCK_CLEAN = 'The worker did no work before it got stuck: roll this brief again and the router picks another model.'
-RETRY_STUCK_PARTIAL = ('The worker had already done part of the work (it is stopped, not removed): check its activity '
-                       '(get_agent_activity on agent_id) and its worktree before rolling this brief again.')
+RETRY_STUCK_CLEAN = ('The worker did no work before it got stuck; AgentCompass relaunches the brief on another model by '
+                     'itself: do not roll it again.')
+RETRY_STUCK_PARTIAL = ('The worker had already done part of the work (it is stopped, not removed); AgentCompass relaunches '
+                       'the brief on another model and tells the new worker to check the workspace first: do not roll it '
+                       'again.')
+# The same failures with automatic relaunch turned off (AGENTCOMPASS_ROLL_FALLBACK=off): the parent rolls again itself.
+MANUAL_NEXT = {
+    'create_failed': ('Paseo confirms it created no worker for this dispatch and none can appear later. '
+                      'It is safe to roll this brief again.'),
+    'model_latched': (' The provider reported that model {model} does not exist on {account} ({code}), so routing excludes '
+                      'it until {retry}: rolling again picks another model. Tell the user it is unavailable.'),
+    'worker_failed': ('Paseo created this worker and it ended in error, so nothing is running this brief. Read its error '
+                      '(get_agent_activity on agent_id) and tell the user before rolling again: the router does not read '
+                      'error text, so it may choose the same model again.'),
+    'turn_failed': ('Its provider ended the turn with an error. AgentCompass had its classifier read the provider message: '
+                    'when it means the provider refuses this model or account, that model or account is held out of '
+                    'dispatch (plan/roll warnings and the tray account list show it; clear with the tray clear button or '
+                    '`agentcompass hold --clear`). Read its error (get_agent_activity on agent_id) and check whether it '
+                    'did part of the work before rolling this brief again.'),
+    'retry_stuck_clean': 'The worker did no work before it got stuck: roll this brief again and the router picks another model.',
+    'retry_stuck_partial': ('The worker had already done part of the work (it is stopped, not removed): check its activity '
+                            '(get_agent_activity on agent_id) and its worktree before rolling this brief again.'),
+}
+FALLBACK_RUNNING_NEXT = ('AgentCompass is relaunching this brief itself ({where}); do not roll it again. Run next_argv to '
+                         'observe the current attempt; the parent is notified once the dispatch reaches a final state.')
+FALLBACK_RELAUNCHED_NEXT = ('This attempt failed and AgentCompass relaunched the brief as dispatch {current}, which next_argv '
+                            'observes. Do not roll it again.')
 RETRY_STUCK_RUNNING = ('Stopping the worker failed, so it may still be running and resume once the provider recovers: stop '
                        'it with cancel_agent on agent_id and check what it did before rolling this brief again.')
 REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispatch observed it. The dispatch is over and '
@@ -90,7 +117,8 @@ def host_call(payload):
         with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout:
             stdin.write(json.dumps(payload).encode('utf-8'))
             stdin.seek(0)
-            process = subprocess.Popen(['node', str(bridge)], stdin=stdin, stdout=stdout, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(['node', str(bridge)], stdin=stdin, stdout=stdout, stderr=subprocess.DEVNULL,
+                                       env=bridge_env())
             try:
                 process.wait(timeout)
             except subprocess.TimeoutExpired:
@@ -110,25 +138,38 @@ def host_call(payload):
         return {'ok': False, 'sent': payload['operation'] in ('create', 'resume'), 'error': 'invalid_host_response'}
 
 
+def bridge_env():
+    """The bridge's environment. Its watcher (a detached child) hands a failed attempt to `agentcompass dispatch
+    --dispatch-action fallback` before it tells the parent anything (paseo_dispatch_bridge.mjs runFallback)."""
+    env = dict(os.environ)
+    if dispatch_fallback.enabled():
+        env['AGENTCOMPASS_FALLBACK_ARGV'] = json.dumps(entry.argv('dispatch', '--dispatch-action', 'fallback'))
+    else:
+        env.pop('AGENTCOMPASS_FALLBACK_ARGV', None)
+    return env
+
+
 def public(row, now=None):
     keys = ('dispatch_id', 'decision_id', 'task_id', 'parent_id', 'agent_id', 'state', 'expected_usd',
             'created_at', 'launched_at', 'started_at', 'observed_at', 'lease_until', 'hard_until', 'released_at', 'access')
     out = {k: row[k] for k in keys if k in row}
+    auto = dispatch_fallback.enabled()
     if row.get('operation') == 'resume':
         out['resumed'] = True
     if row['state'] == 'create_failed':
-        out['next_action'] = CREATE_FAILED_NEXT
+        out['next_action'] = CREATE_FAILED_NEXT if auto else MANUAL_NEXT['create_failed']
         import model_latch
         if model_latch.means_unavailable(row.get('failure_code')):
-            out['next_action'] += MODEL_LATCHED_NEXT.format(
+            out['next_action'] += (MODEL_LATCHED_NEXT if auto else MANUAL_NEXT['model_latched']).format(
                 model=model_latch.launch_model(row['bundle']), account=row['bundle'].get('account'),
                 code=row['failure_code'], retry=model_latch.retry_text({'observed_at': row.get('updated_at')}))
     elif row['state'] == 'failed' and row.get('agent_id'):
         out['next_action'] = (retry_stuck_next(row) if row.get('failure_code') == 'provider_retry_stuck'
-                              else TURN_FAILED_NEXT if row.get('failure_code') == 'provider_turn_failed'
+                              else (TURN_FAILED_NEXT if auto else MANUAL_NEXT['turn_failed'])
+                              if row.get('failure_code') == 'provider_turn_failed'
                               else WORKER_TURN_FAILED_NEXT if row.get('failure_code') == 'worker_turn_failed'
                               else TASK_INPUT_NEXT if row.get('failure_code') == 'task_input_rejected'
-                              else WORKER_FAILED_NEXT)
+                              else WORKER_FAILED_NEXT if auto else MANUAL_NEXT['worker_failed'])
     elif row['state'] == 'canceled' and (row.get('creation') or {}).get('removed'):
         out['next_action'] = REMOVED_NEXT
     elif creating(row):
@@ -137,6 +178,38 @@ def public(row, now=None):
                    create_deadline=registry.stamp(registry.create_deadline(row)))
         late = bool((row.get('creation') or {}).get('in_flight')) and (now or registry.utcnow()) >= registry.create_deadline(row)
         out['next_action'] = STALLED_NEXT if late else CREATING_NEXT
+    if row.get('attempt_of'):
+        out.update(root_dispatch_id=row['attempt_of'], attempt=row.get('attempt'))
+    fallback = row.get('fallback') or {}
+    if fallback:
+        out = with_fallback(out, row, fallback, now)
+    return out
+
+
+def with_fallback(out, row, fallback, now=None):
+    """What the first dispatch's attempt record says about this brief, over what this one row says."""
+    out = dict(out, attempts=fallback.get('lines') or [], current_attempt=fallback.get('current'))
+    outcome = fallback.get('outcome') or {}
+    if fallback.get('state') == 'final' and outcome.get('result') != 'declined' and outcome.get('next_action'):
+        out['next_action'] = outcome['next_action']
+    elif registry.fallback_guard({'fallback': fallback}, now or registry.utcnow()):
+        out['next_action'] = FALLBACK_RUNNING_NEXT.format(where=(fallback.get('lines') or ['attempt 1'])[-1])
+    elif fallback.get('state') == 'relaunched' and fallback.get('current') not in (None, row['dispatch_id']) \
+            and row['state'] in registry.TERMINAL:
+        out['next_action'] = FALLBACK_RELAUNCHED_NEXT.format(current=fallback['current'])
+    return out
+
+
+def public_chain(row, path=None, now=None):
+    """public(row) with its brief's attempt record, for an attempt that is not the first dispatch."""
+    out = public(row, now)
+    if row.get('attempt_of') and not row.get('fallback'):
+        try:
+            root = registry.inspect(row['attempt_of'], path)
+        except ValueError:
+            return out
+        if root.get('fallback'):
+            out = with_fallback(out, row, root['fallback'], now)
     return out
 
 
@@ -144,8 +217,11 @@ def retry_stuck_next(row):
     detail = row.get('failure_detail') or {}
     if detail.get('cancelled') is False:
         return RETRY_STUCK_NEXT + RETRY_STUCK_RUNNING
+    auto = dispatch_fallback.enabled()
     # An old receipt without the flag may have worked: say so rather than invite a blind re-roll.
-    return RETRY_STUCK_NEXT + (RETRY_STUCK_CLEAN if detail.get('partial_work') is False else RETRY_STUCK_PARTIAL)
+    if detail.get('partial_work') is False:
+        return RETRY_STUCK_NEXT + (RETRY_STUCK_CLEAN if auto else MANUAL_NEXT['retry_stuck_clean'])
+    return RETRY_STUCK_NEXT + (RETRY_STUCK_PARTIAL if auto else MANUAL_NEXT['retry_stuck_partial'])
 
 
 def creating(row):
@@ -272,6 +348,10 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
 
     if row['parent_id'] != parent_id:
         raise ValueError('Dispatch belongs to another parent')
+    if row['state'] in registry.TERMINAL and row['state'] != 'expired':
+        current = registry.current_attempt(dispatch_id, path)
+        if current != dispatch_id:
+            dispatch_id, row = current, registry.inspect(current, path)
     if row['state'] == 'prepared':
         row = registry.claim(row['request'], parent_id, now=registry.utcnow(), path=path)
 
@@ -325,7 +405,7 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
             break
         # Wake with at least the floor left, so the next observation is cut at what remains rather than given more.
         time.sleep(min(poll_seconds, remaining - OBSERVE_FLOOR))
-    result = public(row)
+    result = public_chain(row, path)
     if launch_error:
         result['error'] = launch_error
     elif row['state'] == 'create_failed':
@@ -373,6 +453,10 @@ def cli(args):
             raise ValueError('watch-seconds must be 0..86400 and poll-seconds 1..60')
         return launch(args.dispatch_id, args.parent_id, watch_seconds=args.watch_seconds, poll_seconds=args.poll_seconds)
     action = args.dispatch_action
+    if action == 'fallback':
+        if not args.dispatch_id:
+            raise ValueError('fallback requires --dispatch-id')
+        return dispatch_fallback.handle(args.dispatch_id)
     if action == 'prepare':
         if not args.input:
             raise ValueError('dispatch prepare requires --input {decision_id, task, launch}')

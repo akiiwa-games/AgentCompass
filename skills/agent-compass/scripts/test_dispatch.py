@@ -1842,7 +1842,7 @@ class CreateLifecycleTests(unittest.TestCase):
             result = flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
             self.assertEqual(result['state'], 'create_failed')
             self.assertEqual(result['error'], 'create_failed')
-            self.assertIn('safe to roll', result['next_action'])
+            self.assertEqual(result['next_action'], flow.CREATE_FAILED_NEXT)   # AgentCompass relaunches it
             self.assertNotIn('continuation_argv', result)
             self.assertEqual(registry.reservations(), [])
             self.assertEqual(registry.release(row['dispatch_id'], 'parent-a', 'give up')['state'], 'create_failed')
@@ -1922,7 +1922,9 @@ class CreateLifecycleTests(unittest.TestCase):
         creation = {'phase': 'failed', 'outcome_unknown': True, 'agent_id': row['dispatch_id'], 'agent_created': False, 'failure_class': 'unknown'}
         settled = flow.reconcile(row['dispatch_id'], self.observe_only(creation), now=self.now)
         self.assertEqual(settled[0]['state'], 'create_failed')
-        self.assertIn('safe to roll', settled[0]['next_action'])
+        self.assertEqual(settled[0]['next_action'], flow.CREATE_FAILED_NEXT)
+        with patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}):
+            self.assertIn('safe to roll', flow.public(registry.inspect(row['dispatch_id']))['next_action'])
 
     def test_roll_reports_a_removed_worker_as_over_not_as_an_unconfirmed_delivery(self):
         import roll
@@ -2786,12 +2788,24 @@ class RollLifecycleTests(unittest.TestCase):
             return {'ok': True, 'agent': None, 'creation': {'phase': 'failed', 'failure_class': 'unknown'}}
         args = SimpleNamespace(title='fixture', workspace=None, wait=0)
         decision = {'decision_id': 'unused', 'selected_bundle': self.bundle}
-        with patch.object(flow, 'host_call', settled), \
+        # With automatic relaunch off the parent is told to roll again; with it on, roll relaunches (FallbackTests).
+        with patch.object(flow, 'host_call', settled), patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}), \
                 patch.object(registry, 'prepare', return_value=registry.inspect(first['worker']['dispatch_id'])):
             result, code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
         self.assertEqual((roll.status_of(result, code), code), ('error', 1))
         self.assertEqual(result['caller_action'], 'roll_again_safe')
-        self.assertIn('safe to roll', roll.compact(result, 'error', 'x')['next_action'])
+        self.assertIn('safe to roll', result['next'])
+
+
+def started(row_or_request, status='running', **changes):
+    """The host snapshot of the worker a create request (or a prepared row) asked for, as the bridge projects it."""
+    request = row_or_request.get('request') if isinstance(row_or_request.get('request'), dict) else row_or_request
+    dispatch_id = request['labels']['router.dispatch_id'] if 'labels' in request else row_or_request['dispatch_id']
+    provider, _, model = request['provider'].partition('/')
+    settings = request.get('settings') or {}
+    return {'id': dispatch_id, 'provider': provider, 'model': model, 'status': status,
+            'currentModeId': settings.get('modeId'), 'thinkingOptionId': settings.get('thinkingOptionId'),
+            'updatedAt': registry.stamp(registry.utcnow() + timedelta(seconds=5)), 'labels': request['labels'], **changes}
 
 
 class ModelLatchTests(unittest.TestCase):
@@ -2845,18 +2859,29 @@ class ModelLatchTests(unittest.TestCase):
                 patch.object(allocator, 'load_accounts', return_value=self.accounts):
             return roll.run(args, judge)
 
+    def refuse_sonnet(self, request):
+        """Paseo refuses the Sonnet create with INVALID_MODEL and starts anything else."""
+        if request['operation'] == 'create':
+            self.creates.append(request['request']['provider'])
+            if request['request']['provider'] == 'claude-lab/claude-sonnet-5-5':
+                return dict(self.refusal)
+            return {'ok': True, 'sent': True, 'agent': started(request), 'completion_notification': {'status': 'watching'}}
+        return {'ok': True, 'agent': None, 'creation': None}
+
     def test_a_refused_model_is_not_chosen_by_the_next_roll_and_the_roll_says_why(self):
         import model_latch
-        first, code = self.roll()
-        self.assertEqual((first['status'], code), ('error', 1))
+        # The same roll relaunches on the next candidate (2026-11-10: the parent no longer rolls again).
+        first, code = self.roll(self.refuse_sonnet)
+        self.assertEqual((first['status'], code), ('launched', 0))
         self.assertEqual(self.choices[0], 'lab_sonnet55_high')
         self.assertEqual(self.creates[0], 'claude-lab/claude-sonnet-5-5')
-        self.assertIn('INVALID_MODEL', first['cause'])
-        self.assertIn('excludes it', first['next_action'])
-        self.assertEqual(set(model_latch.active()), {'claude-lab/claude-sonnet-5-5'})
-        second, _ = self.roll()
         self.assertNotIn(self.choices[1], ('lab_sonnet55_high', 'lab_sonnet55_medium'))   # every effort of that model
-        self.assertEqual(len(self.creates), 2)
+        self.assertIn('INVALID_MODEL', first['attempts'][0])
+        self.assertIn('switched to', first['attempts'][0])
+        self.assertEqual(set(model_latch.active()), {'claude-lab/claude-sonnet-5-5'})
+        second, _ = self.roll(self.refuse_sonnet)
+        self.assertNotIn(self.choices[2], ('lab_sonnet55_high', 'lab_sonnet55_medium'))
+        self.assertEqual(len(self.creates), 3)
         self.assertNotIn('claude-lab/claude-sonnet-5-5', self.creates[1:])
         self.assertTrue(any(w.startswith('claude-lab/claude-sonnet-5-5: model launch failed: unavailable')
                             for w in second['warnings']), second)
@@ -2874,21 +2899,22 @@ class ModelLatchTests(unittest.TestCase):
         self.roll()
         self.assertEqual(model_latch.active(), {})
 
-    def test_a_worker_that_errors_after_create_gets_a_cause_and_a_next_action(self):
-        # The incident path: Paseo created the agent, it ran for a moment, then stopped in error with only text.
+    def test_a_worker_that_errors_after_create_is_relaunched_on_the_next_candidate(self):
+        # The incident path: Paseo created the agent, it ran for a moment, then stopped in error with only text. Every
+        # created worker errors here, so AgentCompass relaunches until no candidate is left and then says so.
         def host(request):
             if request['operation'] == 'create':
                 self.creates.append(request['request']['provider'])
                 return {'ok': True, 'sent': True, 'agent': None}
             row = registry.inspect(request['dispatch_id'])
-            return {'ok': True, 'agent': self.snapshot(row, 'error', id=request['dispatch_id'],
-                                                         updatedAt=registry.stamp(registry.utcnow() + timedelta(seconds=5)),
-                                                         lastError='invalid model selection')}
+            return {'ok': True, 'agent': started(row, 'error', lastError='invalid model selection')}
         result, code = self.roll(host)
-        self.assertEqual((result['status'], code), ('error', 1))
-        self.assertEqual(result['cause'], 'worker_failed')
-        self.assertIn('get_agent_activity', result['next_action'])
-        self.assertNotIn('completion notification will be sent', result['next_action'])
+        self.assertEqual((result['status'], code), ('blocked', 2))
+        self.assertEqual(result['cause'], 'no_candidate_left')
+        self.assertIn('every startable candidate', result['next_action'])
+        self.assertEqual(len(result['attempts']), len(self.creates))
+        self.assertTrue(all('worker_error' in line for line in result['attempts']), result['attempts'])
+        self.assertEqual(len(set(self.creates)), len(self.creates))   # each bundle once
         detail = json.loads(Path(result['details']).read_text(encoding='utf-8'))
         self.assertEqual((detail['cause'], detail['next_action']), (result['cause'], result['next_action']))
         import model_latch
@@ -3471,15 +3497,22 @@ class LiveModelCheckTests(unittest.TestCase):
 
         with patch.object(live_models, 'fetch_from_paseo', return_value={'ok': False, 'error': 'host_connection_failed'}):
             first, code1 = self.roll(host=reject_argon)
-            self.assertEqual((first['status'], code1), ('error', 1))
+            # The same roll goes on to the next candidate (2026-11-10).
+            self.assertEqual((first['status'], code1), ('launched', 0))
+            self.assertEqual(self.creates[0], 'antigravity-resilient/gemini-4-argon-high')
+            self.assertEqual(len(self.creates), 2)
+            self.assertNotEqual(self.choices[1], 'argon_high')
+            self.assertIn('INVALID_MODEL', first['attempts'][0])
             self.assertEqual(set(model_latch.active(now=self.now)), {'antigravity/gemini-4-argon-high'})
             self.assertEqual(provider_retry.active(now=self.now), {})
-            self.assertNotIn('antigravity-resilient', json.loads(self.live_store.read_text(encoding='utf-8'))['providers'])
+            # The refusal invalidated the cached list, so the relaunch's plan read it again.
+            reread = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']['antigravity-resilient']
+            self.assertEqual(reread['error'], 'host_connection_failed')
         # The refused model is now also missing from the live list: still one warning line for it.
         with patch.object(live_models, 'fetch_from_paseo', side_effect=self.fetch_live):
             second, code2 = self.roll(host=reject_argon)
             self.assertEqual((second['status'], code2), ('launched', 0))
-            self.assertNotEqual(self.choices[1], 'argon_high')
+            self.assertNotEqual(self.choices[2], 'argon_high')
             plan = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
             lines = [w for w in plan['decision'].get('warnings') or () if 'gemini-4-argon-high' in w]
             self.assertEqual(len(lines), 1, lines)

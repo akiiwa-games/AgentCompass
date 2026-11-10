@@ -11,7 +11,8 @@ import { setTimeout as pause } from 'node:timers/promises';
 const WATCH_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 const CREATE_LIMIT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
-const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed']);
+// `relaunched`: AgentCompass relaunched the brief after this attempt failed; the new attempt's watcher reports.
+const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched']);
 const CREATE_FAILED = 'creation failed';
 const WORKER_REMOVED = 'worker removed before it was observed';
 const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
@@ -32,6 +33,57 @@ const RETRY_STUCK_MS = (Number(process.env.AGENTCOMPASS_RETRY_STUCK_SECONDS) || 
 const RETRY_TIMELINE_LIMIT = 40;
 const RETRY_MESSAGE_LIMIT = 2000;
 const RETRY_STUCK = 'provider retry stuck';
+// Terminal sightings AgentCompass may retry or relaunch by itself (dispatch_fallback.py decides, from the registry and the
+// classifier's scope; this list only says which sightings to hand over before telling the parent anything).
+const FALLBACK_REASONS = new Set(['error', RETRY_STUCK, CREATE_FAILED]);
+const FALLBACK_TEXT_LIMIT = 6000;
+
+// The command dispatch_flow.bridge_env hands down: `agentcompass dispatch --dispatch-action fallback`. Absent, nothing
+// is relaunched and the parent is told as before.
+export function fallbackArgv(env = process.env) {
+  try {
+    const argv = JSON.parse(env.AGENTCOMPASS_FALLBACK_ARGV ?? '');
+    return Array.isArray(argv) && argv.length && argv.every(a => typeof a === 'string' && a) ? argv : null;
+  } catch { return null; }
+}
+
+// Run the fallback step for one failed attempt and read its JSON answer; null when it cannot be run or read.
+export function runFallback(dispatchId, argv = fallbackArgv()) {
+  if (!argv) return Promise.resolve(null);
+  return new Promise(resolve => {
+    let out = '';
+    let child;
+    try {
+      child = spawn(argv[0], [...argv.slice(1), '--dispatch-id', dispatchId],
+        {windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: process.env});
+    } catch { resolve(null); return; }
+    child.stdout.on('data', chunk => { out += chunk; });
+    child.once('error', () => resolve(null));
+    child.once('close', () => {
+      try { const value = JSON.parse(out); resolve(value && typeof value === 'object' ? value : null); }
+      catch { resolve(null); }
+    });
+  });
+}
+
+const defaultFallback = record => runFallback(record.dispatch_id);
+
+// What dispatch_fallback.write_attempts_file left for a relaunched attempt: the parent's dispatch id and the attempts.
+export function attemptsNote(file) {
+  try {
+    const note = JSON.parse(fs.readFileSync(`${file}.attempts`, 'utf8'));
+    return note && typeof note === 'object' ? note : null;
+  } catch { return null; }
+}
+
+function fallbackRecord(outcome) {
+  const keep = {action: typeof outcome?.action === 'string' ? outcome.action : 'unavailable'};
+  for (const key of ['dispatch_id', 'root_dispatch_id', 'result'])
+    if (typeof outcome?.[key] === 'string') keep[key] = outcome[key];
+  if (typeof outcome?.text === 'string') keep.text = outcome.text.slice(0, FALLBACK_TEXT_LIMIT);
+  if (Array.isArray(outcome?.lines)) keep.lines = outcome.lines.filter(l => typeof l === 'string').slice(0, 64);
+  return keep;
+}
 
 export function notificationFile(dispatchId) {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
@@ -266,7 +318,8 @@ export function retryStuckText(terminal, targetId) {
 
 // This small step is also used by tests with an SDK fake. Persist the pending
 // message before sending: a lost acknowledgment retries the same messageId.
-export async function notificationStep(client, record, persist, now = Date.now()) {
+export async function notificationStep(client, record, persist, now = Date.now(),
+  fallback = fallbackArgv() ? defaultFallback : null) {
   if (DONE.has(record.status)) return true;
   let event;
   const targetId = record.agent_id ?? record.dispatch_id;
@@ -306,6 +359,22 @@ export async function notificationStep(client, record, persist, now = Date.now()
         attentionReason: agent?.attentionReason ?? null, at: new Date(now).toISOString(),
         ...(event.reason === 'error' ? turnFailure(agent, record) : {}),
         ...(event.reason === 'finished' ? {replied: await turnReplied(client, targetId)} : {})};
+    // A failed attempt goes to AgentCompass first: it retries or relaunches the brief, and only a final state reaches
+    // the parent. The terminal is saved first, because the step reads it through the registry's observation.
+    if (event?.key === 'terminal' && FALLBACK_REASONS.has(event.reason) && fallback
+        && record.fallback?.status !== 'done') {
+      record.fallback = {status: 'running', at: new Date(now).toISOString()};
+      persist();
+      const outcome = await Promise.resolve(fallback(record)).catch(() => null);
+      if (outcome?.action === 'pending') {   // another observer is relaunching it: look again next poll
+        record.fallback = {status: 'waiting', at: new Date(now).toISOString()};
+        persist();
+        return false;
+      }
+      record.fallback = {status: 'done', ...fallbackRecord(outcome)};
+      if (outcome?.action === 'relaunched') {record.status = 'relaunched'; persist(); return true;}
+      persist();
+    }
   }
   const parent = (await client.fetchAgent(record.parent_id))?.agent;
   if (!parent || parent.archivedAt || parent.status === 'closed') {
@@ -313,10 +382,18 @@ export async function notificationStep(client, record, persist, now = Date.now()
   }
   if (!record.pending) {
     if (event) {
+      const note = attemptsNote(notificationFile(record.dispatch_id));
+      const root = record.fallback?.root_dispatch_id ?? note?.root_dispatch_id;
+      const attempts = record.fallback?.lines ?? note?.lines;
+      const final = event.key === 'terminal' && ['blocked', 'owner_named'].includes(record.fallback?.result)
+        && record.fallback?.text;
       record.pending = {...event, messageId: createHash('sha256')
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
-      text: `[AgentCompass worker notification]\nDispatch: ${record.dispatch_id}\n` +
-        `Worker: ${targetId}\nState: ${event.reason}\n` + (event.reason === CREATE_FAILED
+      text: `[AgentCompass worker notification]\nDispatch: ${root ?? record.dispatch_id}\n` +
+        (root && root !== record.dispatch_id ? `Attempt dispatch: ${record.dispatch_id}\n` : '') +
+        `Worker: ${targetId}\nState: ${final ? record.fallback.result : event.reason}\n` + (final ? record.fallback.text
+          : (Array.isArray(attempts) && attempts.length > 1 && event.key === 'terminal'
+            ? `Attempts:\n${attempts.map(l => `- ${l}`).join('\n')}\n` : '') + (event.reason === CREATE_FAILED
           ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'
           : event.reason === WORKER_REMOVED
           ? 'Paseo created this worker and it was removed before this dispatch observed it. It may have done part of the work: check that before rolling this brief again.'
@@ -329,7 +406,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
               'reads it: when it is the provider refusing the model or the account, that is held out of dispatch; an ' +
               "error of the worker's own work or of this task's input holds nothing. " : '') +
             `Read the worker's final response and details with get_agent_activity ` +
-            `(agentId: ${targetId}); use get_agent_status for pending permissions.`)};
+            `(agentId: ${targetId}); use get_agent_status for pending permissions.`))};
     }
     persist();
   }
