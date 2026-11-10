@@ -1,62 +1,123 @@
 """Synthetic, illustrative decision snapshots shared by the README image tools.
 
 Values are made up to show the UI: not benchmark claims, not live allocation inputs, no account data.
-Score = mean(four capabilities) - opportunity cost + reset bonus - effort penalty.
+
+The headline decision follows the quota-line economy: N = F − β·X/h, where F is the fit capped at what the
+task needs (demand-weighted mean of min(score, target) per axis), X the spend that lands over the window's
+recovery line ℓ(t) = C·(t − t0)/L, h the task hours and β the window's exchange rate. Ties on N go to the
+earliest-expiring under-line quota, then the faster completion, then the fewer USD.
 """
 from __future__ import annotations
 
-AXES = ("divergence", "global_rigor", "module_precision", "capability")
+AXES = ("divergence", "global_rigor", "module_precision", "vision_tools")
 HEADLINE = "Refactor payment retries with integration tests"
+HEADLINE_KIND = "complex_build_plan"
+HOURS = 2.0
+ANCHOR = 0.8                                    # the score a demand of 3 asks for
+DEMAND = dict(zip(AXES, (1, 3, 3, 1)))          # classifier levels 0..3 per axis
+WEEK = 168.0
+FAST_PRICE, FAST_SPEED = 2.0, 1.5               # fast mode: twice the spend, 1.5x the speed
 
-# (bundle id, model, effort, four abilities, opportunity cost, reset bonus, effort penalty)
+# window key -> label, capacity C (USD), used U (USD), hours until reset, β (fit per over-line USD)
+WINDOWS = {
+    "claude-a": ("Claude A", 400.0, 240.0, 2.0, 0.0075),      # resets in 2 h with 40% left: under its line
+    "claude-b": ("Claude B", 400.0, 8.0, 144.0, 0.0075),      # resets in 6 days, slightly under its line
+    "codex": ("Codex", 120.0, 48.0, 120.0, 0.0080),           # ahead of its line: every dollar is over
+    "gemini": ("Gemini", 250.0, 150.0, 72.0, 0.0080),
+}
+# The same accounts 118 hours earlier, for the same task: Claude A is ahead of its line, so it is spared and the
+# task runs on Claude B. Sparing A is what leaves it under its line when the headline decision is made.
+EARLIER = {
+    "claude-a": ("Claude A", 400.0, 180.0, 120.0, 0.0075),     # 5 days to its reset, already 45% used
+    "claude-b": ("Claude B", 400.0, 120.0, 94.0, 0.0075),      # under its line
+    "codex": ("Codex", 120.0, 80.0, 70.0, 0.0080),
+    "gemini": ("Gemini", 250.0, 60.0, 22.0, 0.0080),
+}
+EARLIER_AT, EARLIER_WINNER = "2026-10-25T11:40:00+00:00", "opus55_high_b"
+
+# (bundle id, model, effort, account = its weekly window, fast, four axis scores, USD per hour)
 # The winner is rigor/precision-heavy and the runner-up divergence/vision-heavy, so the radar polygons differ.
 HEADLINE_SPECS = (
-    ("opus55_high", "claude-opus-5-5", "high", (.74, .96, .97, .70), .025, .04, .02),
-    ("sol_high", "gpt-6.1-sol", "high", (.96, .66, .70, .93), .045, .02, .02),
-    ("argon_high", "gemini-4-argon-high", "high", (.90, .58, .64, .97), .075, .01, .03),
-    ("sonnet55_medium", "claude-sonnet-5-5", "medium", (.72, .78, .84, .72), .035, .02, .01),
-    ("flash_high", "gemini-3.8-flash-high", "medium", (.65, .64, .68, .70), .020, .01, .01),
+    ("opus55_high_fast", "claude-opus-5-5", "high", "claude-a", True, (.74, .86, .88, .70), 22.86),
+    ("opus55_high", "claude-opus-5-5", "high", "claude-a", False, (.74, .86, .88, .70), 22.86),
+    ("opus55_high_b", "claude-opus-5-5", "high", "claude-b", False, (.74, .86, .88, .70), 22.86),
+    ("sol_high", "gpt-6.1-sol", "high", "codex", False, (.92, .76, .80, .93), 4.5),
+    ("sonnet55_high", "claude-sonnet-5-5", "high", "claude-a", False, (.70, .68, .74, .72), 6.4),
+    ("argon_high", "gemini-4-argon-high", "high", "gemini", False, (.90, .66, .70, .95), 9.0),
+    ("flash_high", "gemini-3.8-flash-high", "medium", "gemini", False, (.62, .52, .58, .66), 1.5),
 )
-
-HEADLINE_KIND = "complex_build_plan"
 
 # Older rows for the "Recent decisions" list: (objective, kind, hours, winning bundle id)
 HISTORY = (
     ("Fix a race condition in the upload queue", "debug_review", 1, "sol_high"),
     ("Summarize last week's release notes", "text_in_text_out", 0.5, "flash_high"),
     ("Compare three caching strategies for the API", "research_packet", 2, "argon_high"),
-    ("Run the nightly lint and type checks", "tool_execution", 1, "sonnet55_medium"),
+    ("Run the nightly lint and type checks", "tool_execution", 1, "sonnet55_high"),
     ("Migrate the report exporter to the new schema", "complex_build_plan", 3, "opus55_high"),
 )
 
 
-def ranking(specs=HEADLINE_SPECS, winner=None):
-    """Allocator-shaped ranking; `winner` (a bundle id) is moved to the top by a small bonus when given."""
+def capped_fit(scores, demand=DEMAND):
+    """(F, {axis: {demand, score, target}}): ability counts only up to the task's target on each axis."""
+    targets = {axis: round(ANCHOR * level / 3, 4) for axis, level in demand.items()}
+    rows = {axis: {"demand": demand[axis], "score": score, "target": targets[axis]} for axis, score in zip(AXES, scores)}
+    total = sum(demand.values())
+    return sum(demand[a] * min(r["score"], r["target"]) for a, r in rows.items()) / total, rows
+
+
+def over_line(window, spend, hours):
+    """X: the part of `spend` above the recovery line when the task ends (tasks here end by the reset)."""
+    _, capacity, used, reset_in, _ = window
+    line_at_end = capacity * (WEEK - reset_in + hours) / WEEK
+    return max(0.0, spend - max(0.0, line_at_end - used))
+
+
+def quota_line_block(windows=WINDOWS):
+    return {"windows": {key: {"label": label, "capacity_usd": capacity, "used_usd": used,
+                              "elapsed_hours": WEEK - reset_in, "reset_in_hours": reset_in, "beta": beta}
+                        for key, (label, capacity, used, reset_in, beta) in windows.items()}}
+
+
+def ranking(specs=HEADLINE_SPECS, winner=None, hours=HOURS, windows=WINDOWS):
+    """Allocator-shaped ranking in the router's order; a `winner` other than the natural one is listed first."""
     rows = []
-    for index, (bundle_id, model, effort, abilities, cost, bonus, penalty) in enumerate(specs):
-        excluded = ["below task ability floor"] if bundle_id == "flash_high" and winner != "flash_high" else []
-        boost = .12 if bundle_id == winner and winner != specs[0][0] else 0.0
-        components = dict(zip(AXES, abilities))
-        components.update(opportunity_cost=cost, reset_bonus=bonus + boost, effort_penalty=penalty)
+    for bundle_id, model, effort, window, fast, scores, usd_per_hour in specs:
+        fit, axis_rows = capped_fit(scores)
+        task_hours = hours / FAST_SPEED if fast else hours
+        spend = usd_per_hour * hours * (FAST_PRICE if fast else 1.0)   # fast costs FAST_PRICE x the normal run
+        _, capacity, used, reset_in, beta = windows[window]
+        over = over_line(windows[window], spend, task_hours)
+        cost = beta * over / hours
+        components = dict(zip(("divergence", "global_rigor", "module_precision", "capability"), scores))
+        components.update(fit=round(fit, 4), opportunity_cost=round(cost, 4))
         rows.append({
-            "id": bundle_id,
-            "bundle": {"model": model, "effort": effort},
-            "score": None if excluded else round(sum(abilities) / 4 - cost + bonus + boost - penalty, 4),
-            "components": components,
-            "excluded": excluded,
-            "capacity": {"remaining": 72 - index * 7},
-            "expected_pct": 6,
+            "id": bundle_id, "bundle": {"model": model, "effort": effort, "account": window, **({"fast": True} if fast else {})},
+            "score": round(fit - cost, 4), "components": components, "excluded": [], "five_axis_fit": axis_rows,
+            "quota_line": {"window": window, "hours": round(task_hours, 2), "spend_usd": round(spend, 2),
+                           "over_line_usd": round(over, 2)},
+            "capacity": {"remaining": round(100 * (1 - used / capacity), 1)},
+            "expected_pct": round(100 * spend / capacity, 1),
+            "_order": (-round(fit - cost, 4), reset_in if over < spend else float("inf"), task_hours, spend),
         })
+    rows.sort(key=lambda row: (row["id"] != winner, row["_order"]))
+    keys = ("N", "earliest_expiry", "faster", "cheaper")
+    for index, row in enumerate(rows):
+        previous = rows[index - 1]["_order"] if index else None
+        # The first sort key that differs from the row above is the one that decided this row's place.
+        row["quota_line"]["decided_by"] = next(
+            (key for key, a, b in zip(keys, previous, row["_order"]) if a != b), "N") if previous else "N"
+    for row in rows:
+        del row["_order"]
     return rows
 
 
-def decision_row(objective, kind, hours, winner, at, specs=HEADLINE_SPECS, difficulty="hard"):
+def decision_row(objective, kind, hours, winner, at, specs=HEADLINE_SPECS, difficulty="hard", windows=WINDOWS):
     """A ledger `plan` row carrying an immutable decision snapshot, as the router writes it."""
-    rows = ranking(specs, winner)
+    rows = ranking(specs, winner, windows=windows)
     return {
         "stage": "plan", "choice": winner, "kind": kind, "objective": objective, "at": at, "margin": 0.08,
         "decision_snapshot": {
             "task": {"objective": objective, "work_kind": kind, "difficulty": difficulty, "hours": hours},
-            "ranking": rows, "choice": winner,
+            "ranking": rows, "choice": winner, "quota_line": quota_line_block(windows),
         },
     }

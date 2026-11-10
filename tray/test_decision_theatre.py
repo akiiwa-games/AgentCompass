@@ -32,6 +32,17 @@ def result():
                          candidate('a','alpha',.9),candidate('a2','alpha',.8)])
 
 
+def test_film_drives_its_companion_view_and_settles_it_when_stopped():
+    seen=[]
+    theatre=dt.DecisionTheatre.__new__(dt.DecisionTheatre)
+    assert theatre.on_frame is None
+    theatre.on_frame=seen.append
+    theatre.after_id=None
+    theatre.timer=SimpleNamespace(end=lambda:None)
+    theatre.stop()
+    assert seen==[dt.DURATION]
+
+
 @pytest.mark.parametrize('diagnostics', ['off', 'on', 'unwritable'])
 def test_optional_trace_preserves_render_skip_errors_and_close(tmp_path, monkeypatch, diagnostics):
     from tk_test_support import shared_tk_root, reset_tk_root
@@ -138,7 +149,7 @@ def test_camera_is_one_c2_curve_that_creeps_and_never_stops_mid_film():
     hold=v[round(1.0/step)]
     assert .02*cruise < hold < .08*cruise
     assert x[-1]==pytest.approx(630*dt.CAMERA_SPAN)
-    assert dt.PAN_END <= dt.WINDOWS['fold'][0]
+    assert dt.PAN_END <= dt.WINDOWS['settle'][0]
 
 
 def test_master_tempo_is_smooth_slow_when_read_and_preserves_total_time():
@@ -228,7 +239,7 @@ def test_motion_is_continuous_from_routes_to_the_settled_name():
     assert scales[-1]==pytest.approx(1)
 
 
-def test_effort_arrives_with_the_folded_name():
+def test_effort_arrives_with_the_settled_name():
     source=result()
     for item in source['ranking']:
         item['bundle']['effort']='high'
@@ -236,10 +247,11 @@ def test_effort_arrives_with_the_folded_name():
     calls=[]
     renderer.blit=lambda image,value,*a,**k: calls.append((value,k.get('alpha',1)))
     renderer.frame(dt.DURATION)
-    assert [v for v,a in calls if a>0]==['alpha','· 高']
-    calls.clear(); renderer.frame(dt.WINDOWS['fold'][0])
+    shown=[v for v,a in calls if a>0]
+    assert shown[:2]==['alpha','beta'] and shown[-1]=='· 高'
+    calls.clear(); renderer.frame(dt.WINDOWS['settle'][0])
     assert '· 高' not in [v for v,a in calls if a>0]
-    assert dt.WINDOWS['fold'][0] < dt.WINDOWS['effort'][0] < dt.WINDOWS['fold'][1]
+    assert dt.WINDOWS['settle'][0] < dt.WINDOWS['effort'][0] < dt.WINDOWS['settle'][1]
     import i18n
     original=i18n.translate
     i18n.translate=lambda text: {'高':'High'}.get(text,text)
@@ -248,15 +260,58 @@ def test_effort_arrives_with_the_folded_name():
     finally:
         i18n.translate=original
     assert dt.effort_label('')==''
+    # A fast-mode bundle says so beside its effort.
+    source['ranking'][2]['bundle']['fast']=True
+    scene=dt.scene_from_result(source)
+    assert scene.winner.fast and not scene.pair[1].fast
+    assert dt.effort_label('', True)=='· '+dt._tr('快速')
+    assert dt.TheatreRenderer(scene,630,600,1.5).final['effort'].endswith(dt._tr('快速'))
 
 
-def test_scroll_climax_is_only_the_chosen_name_and_keeps_true_title_phrase():
+def test_final_frame_keeps_the_radar_with_its_axis_names_under_the_winner():
     assert dt.short_title('执行任务：落地「真正的任务」与其它细节')=='真正的任务'
     renderer=dt.TheatreRenderer(dt.scene_from_result(result()),630,600,1.5)
     calls=[]
-    renderer.blit=lambda image,value,*a,**k: calls.append(value) if k.get('alpha',1)>0 else None
-    renderer.frame(dt.DURATION)
-    assert calls==['alpha']
+    real=renderer.blit
+    def blit(image,value,*a,**k):
+        if k.get('alpha',1)>0:
+            calls.append((value,a[:2],k.get('scale',1)))
+        return real(image,value,*a,**k)
+    renderer.blit=blit
+    frame=renderer.frame(dt.DURATION)
+    axes=[label for _,label,_ in dt.radar.SCORE_AXES]
+    # Who won, against whom, and on which five axes: nothing else is written on the last frame.
+    assert [v for v,*_ in calls]==['alpha','beta',*axes]
+    shown={v:(xy,scale) for v,xy,scale in calls}
+    assert shown['alpha'][1]==pytest.approx(1) and shown['beta'][1]==pytest.approx(dt.LEGEND/dt.NAME)
+    lowest=renderer.center[1]+renderer.radius*math.cos(math.pi/5)
+    assert lowest < shown['alpha'][0][1] < shown['beta'][0][1] < renderer.h-18*renderer.s
+    # The radar is still drawn: the winner's filled polygon covers the centre, and the grid reaches the rim.
+    cam=dt.camera_position(dt.DURATION,renderer.w)
+    paper=renderer.blank.reduce(renderer.k).getpixel((0,0))
+    assert frame.getpixel((round(renderer.center[0]-cam),round(renderer.center[1])))!=paper
+    assert frame.getpixel((round(renderer.center[0]-cam),round(renderer.center[1]-renderer.radius*.9)))!=paper
+
+
+@pytest.mark.parametrize('size',[(300,300,1),(330,310,1),(474,488,1.15),(630,600,1.5),(900,700,2)])
+@pytest.mark.parametrize('names',[None,('Divergence','Global Rigor','Module Precision','Vision & Tools','Quota Economy')])
+def test_axis_names_stay_inside_the_stage_and_clear_of_each_other(size,names,monkeypatch):
+    if names:
+        monkeypatch.setattr(dt.radar,'SCORE_AXES',tuple((str(i),name,'') for i,name in enumerate(names)))
+    renderer=dt.TheatreRenderer(dt.scene_from_result(result()),*size)
+    cam=dt.camera_position(dt.DURATION,renderer.w)
+    boxes=[]
+    for label,x,y,room in renderer.axis_labels:
+        half=min(room,renderer.measure(label,dt.AXIS_LABEL,False,room))/2
+        boxes.append((x-cam-half,y-7*renderer.s,x-cam+half,y+7*renderer.s))
+    assert len(boxes)==5
+    for left,top,right,bottom in boxes:
+        assert 0<=left and right<=renderer.w and 0<=top and bottom<renderer.final['card'][1]
+    for i,a in enumerate(boxes):
+        for b in boxes[i+1:]:
+            assert a[2]<=b[0] or b[2]<=a[0] or a[3]<=b[1] or b[3]<=a[1]
+    # Every name is shown in full: a narrow stage draws a smaller radar instead of shortening a name.
+    assert all(renderer.measure(label,dt.AXIS_LABEL,False)<=room+.5 for label,_,_,room in renderer.axis_labels)
 
 
 def test_paths_have_exact_endpoints_and_even_particle_velocity():

@@ -214,6 +214,35 @@ class DecisionBindingTests(unittest.TestCase):
             self.assertTrue(panel.radar.canvas.pack_info())
             self.assertEqual(panel.theatre.canvas.winfo_manager(), "")
 
+    def test_quota_line_tab_shows_the_loaded_decision_and_follows_the_film(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        window = {"label": "Claude", "capacity_usd": 400, "used_usd": 240, "elapsed_hours": 166, "reset_in_hours": 2}
+        ranking = [{**row, "quota_line": {"window": "claude", "hours": 2, "spend_usd": 40, "over_line_usd": 0}}
+                   for row in PLAN["ranking"][:3]]
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'),                 mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+            panel.plan_loaded(PLAN)
+            # A decision recorded without quota-line fields shows the empty state, never invented numbers.
+            self.assertIsNone(panel.quota_line.data)
+            self.assertEqual(panel.theatre.on_frame, panel.quota_line.follow)
+            panel.show_list("quota")
+            self.assertTrue(panel.quota_frame.pack_info())
+            self.assertEqual(panel.ledger_frame.winfo_manager(), "")
+            self.assertEqual(panel.list_switch.value, "quota")
+            panel.plan_loaded({**PLAN, "ranking": ranking, "quota_line": {"windows": {"claude": window}}})
+            self.assertEqual([row["id"] for row in panel.quota_line.data["rows"]], ["opus", "opus_x", "sol"])
+            # The film's clock reaches the view on every frame it draws, and stopping the film settles it.
+            panel.theatre.elapsed = 3.0
+            panel.theatre.draw()
+            self.assertEqual(panel.quota_line.story, decision_theatre.story_time(3.0))
+            panel.render_radar()
+            self.assertEqual(panel.quota_line.story, decision_theatre.DURATION)
+            panel.show_list("ledger")
+            self.assertEqual(panel.quota_frame.winfo_manager(), "")
+
     def test_opening_decision_skips_a_newest_row_that_replays_to_none(self):
         import router_window
         import tk_test_support

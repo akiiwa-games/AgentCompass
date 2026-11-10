@@ -56,13 +56,14 @@ def effort_text(effort):
 
 
 def candidate_label(row):
-    """Opus 5.5 · High for a candidate row or bundle dict; the raw id when no model is recorded."""
+    """Opus 5.5 · High for a candidate row or bundle dict (· fast for a fast-mode bundle); the raw id when no
+    model is recorded."""
     row = row or {}
     model = row.get("model")
     if not model:
         return str(row.get("id") or row.get("bundle_id") or "—")
     effort = effort_text(row.get("effort"))
-    return model_label(str(model)) + (" · " + effort if effort else "")
+    return model_label(str(model)) + (" · " + effort if effort else "") + (" · " + _tr("快速") if row.get("fast") else "")
 
 
 def choice_label(row):

@@ -1,6 +1,6 @@
 """Render the real AgentCompass Decision Compass page off-screen with synthetic data (Windows).
 
-    python docs/tools/render_ui_screenshots.py <output.png> [--scale 1.5]
+    python docs/tools/render_ui_screenshots.py <output.png> [--scale 1.5] [--view radar|theatre] [--list quota]
 
 The window lives on a private, never-displayed Win32 desktop (CreateDesktop) owned by a worker
 thread, is captured with PrintWindow, then destroyed. It never takes focus and never appears on
@@ -45,11 +45,15 @@ def isolate(state: Path) -> None:
 def write_ledger(path: Path) -> None:
     import synthetic_decisions as demo
 
-    rows = [demo.decision_row(demo.HEADLINE, demo.HEADLINE_KIND, 2, "opus55_high", "2026-10-30T09:40:00+00:00")]
+    rows = [demo.decision_row(demo.HEADLINE, demo.HEADLINE_KIND, demo.HOURS, demo.HEADLINE_SPECS[0][0],
+                              "2026-10-30T09:40:00+00:00")]
     stamps = ("2026-10-30T08:55:00+00:00", "2026-10-30T07:35:00+00:00", "2026-10-30T06:20:00+00:00",
               "2026-10-29T16:05:00+00:00", "2026-10-29T10:30:00+00:00")
     for (objective, kind, hours, winner), at in zip(demo.HISTORY, stamps):
         rows.append(demo.decision_row(objective, kind, hours, winner, at))
+    # Oldest row: the same task while Claude A was ahead of its line (the quota-line film replays it first).
+    rows.append(demo.decision_row(demo.HEADLINE, demo.HEADLINE_KIND, demo.HOURS, demo.EARLIER_WINNER, demo.EARLIER_AT,
+                                  windows=demo.EARLIER))
     path.write_text("\n".join(json.dumps(row) for row in reversed(rows)) + "\n", encoding="utf-8")
 
 
@@ -96,6 +100,8 @@ def open_page(args, state: Path, view: str = "radar"):
     root.tk.call("tk", "scaling", 96 * args.scale / 72)
     panel = router_window.Panel(root, "scoring")
     panel.theatre_enabled.set(False)
+    if getattr(args, "size", None):
+        root.geometry("x".join(str(ui_theme.px(int(v))) for v in args.size.split("x")))
     root.deiconify()
     deadline = time.time() + 30
     while time.time() < deadline and not (panel.plan_result and panel.ledger_rows):
@@ -113,6 +119,7 @@ def open_page(args, state: Path, view: str = "radar"):
         panel.ledger_table.column(column, width=ui_theme.px(width))
     panel._suppress_next_select = True
     panel.ledger_table.selection_set("0")
+    panel.show_list(getattr(args, "list", "ledger"))
     pump(root, 20)
     return root, panel, ctypes.windll.user32.GetParent(root.winfo_id())
 
@@ -181,6 +188,8 @@ def main() -> None:
     parser.add_argument("--scale", type=float, default=1.5, help="display scale, 1.5 = 150%% DPI")
     parser.add_argument("--view", choices=("radar", "theatre"), default="radar")
     parser.add_argument("--moment", type=float, default=7.75, help="theatre story time (s) to freeze")
+    parser.add_argument("--list", choices=("ledger", "breakdown", "quota"), default="ledger", help="tab of the list card")
+    parser.add_argument("--size", help="window size at 96 dpi, e.g. 1120x720 (default: the app's own)")
     args = parser.parse_args()
     import ui_theme
     ui_theme.dpi_aware()

@@ -29,6 +29,7 @@ import ability_floor_chart
 import page_stack
 import decision_theatre
 import decision_summary
+import quota_line
 import display_names
 import ui_theme as theme
 import i18n
@@ -1240,9 +1241,9 @@ class Panel:
         lists = theme.card(right, padding=12, fill="both", expand=True, pady=(12, 0))
         top = ttk.Frame(lists, style="Card.TFrame")
         top.pack(fill="x", pady=(0, 8))
-        self.list_switch = theme.Segmented(top, (("ledger", _tr("最近决策")), ("breakdown", _tr("候选明细"))), self.show_list)
+        self.list_switch = theme.Segmented(top, (("ledger", _tr("最近决策")), ("breakdown", _tr("候选明细")),
+                                                 ("quota", _tr("额度恢复线"))), self.show_list)
         self.list_switch.frame.pack(side="left")
-        ttk.Button(top, text=_tr("刷新"), style="Tiny.TButton", command=self.load_ledger).pack(side="right")
         stack = ttk.Frame(lists, style="Card.TFrame")
         self.list_stack = stack
         stack.pack_propagate(False)
@@ -1256,6 +1257,15 @@ class Panel:
             ("opp", _tr("机会"), 50, "e"), ("net", _tr("加减"), 50, "e"), ("note", _tr("状态"), 44, "w")), 8)
         self.breakdown.bind("<<TreeviewSelect>>", lambda e: self.pick_from_breakdown())
         self.attach_row_tooltip(self.breakdown, self.breakdown_row_tip)
+        # The quota-line view of the same decision; it fills in on the film's clock while the film plays.
+        self.quota_frame = ttk.Frame(stack, style="Card.TFrame")
+        self.quota_line = quota_line.QuotaLineCanvas(self.quota_frame)
+        self.quota_line.canvas.pack(fill="both", expand=True)
+        self.quota_line.canvas._tooltip_text = _tr(
+            "N = F − β·X/h。F：封顶契合，各轴能力只算到任务需要的高度；X：这次花费中越过窗口恢复线的 USD；"
+            "β：该窗口每越线 1 USD 折算的契合分；h：预计工时。线下的花费本来就会在重置时作废，不计成本。")
+        self.attach_tooltip(self.quota_line.canvas)
+        self.theatre.on_frame = self.quota_line.follow
         self.show_list("ledger")
         self.set_mode("score")
         self.prefill(lambda: self.data_module().model_table(), self.models_loaded)
@@ -1266,7 +1276,8 @@ class Panel:
     def show_list(self, which):
         self.list_switch.set(which)
         with freeze_redraw(getattr(self, "list_stack", None)):
-            for name, frame in (("ledger", self.ledger_frame), ("breakdown", self.breakdown_frame)):
+            for name, frame in (("ledger", self.ledger_frame), ("breakdown", self.breakdown_frame),
+                                ("quota", self.quota_frame)):
                 if name == which:
                     frame.pack(fill="both", expand=True)
                 else:
@@ -1507,6 +1518,7 @@ class Panel:
     def plan_loaded(self, result):
         self.simulate_button.configure(state="normal", text=_tr("模拟评分"))
         self.plan_result = result or {}
+        self.quota_line.show(self.plan_result)
         data = self.data_module()
         rows = data.candidate_rows(self.plan_result)
         if self.plan_result.get("theatre_source") == "unreplayable":

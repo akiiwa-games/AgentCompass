@@ -1,7 +1,9 @@
 """A small, deterministic decision film. PIL renders off-screen; Tk only owns its clock.
 
-The scene deliberately contains no score/cost/caption text: order, light and geometry
-carry the comparison. Full evidence remains in the panel's candidate table.
+The scene carries no score or cost text: order, light and geometry carry the comparison,
+and the only words are the task, its kind, the model names and the five axis names.
+It ends on the answer and its reason together: the winner's name under the radar of the
+top two candidates. Full evidence remains in the panel's candidate table.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import time
 
 from PIL import Image, ImageDraw, ImageFont, ImageColor, ImageTk
 
+from i18n import translate as _tr
 import page_stack
 import radar_chart as radar
 import ui_theme as theme
@@ -32,7 +35,10 @@ BEATS = (("task", 0., TITLE_HOLD), ("kind", TITLE_HOLD, 2.85), ("open", 2.85, 4.
 WINDOWS = {"appear": (0., TITLE_IN), "underline": (.1, .55), "classify": (TITLE_HOLD, 2.3),
            "gather": (2.85, 3.6), "routes": (3.35, 4.8), "rank": (4.4, 5.4),
            "dissolve": (5.3, 6.0), "pen": (5.4, 7.3), "glide": (5.5, 7.2), "grid": (6.1, 7.3),
-           "fill": (7.05, 7.5), "fold": (7.8, 9.1), "effort": (8.35, 9.25)}
+           "fill": (7.05, 7.5), "settle": (7.8, 9.1), "effort": (8.35, 9.25)}
+NAME = 22               # px of the pair's name tile: the legend shows it at LEGEND/NAME, the winner at 1
+LEGEND = 13
+AXIS_LABEL = 12
 HEAD_TRAVEL = .55       # seconds a leading speck flies from its glyph into the node
 ROUTE_SPAN = 1.2        # seconds a route head takes from the node to its model
 # Camera: a slow creep for the whole film (never a dead stop) plus one rightward pan
@@ -147,11 +153,11 @@ def next_delay_ms(started, now, frame_index):
     return max(1, math.ceil((started + frame_index * FRAME - now) * 1000))
 
 
-def effort_label(effort):
-    if not effort:
-        return ""
+def effort_label(effort, fast=False):
+    """· High, or · High · fast for a fast-mode bundle."""
     from display_names import effort_text
-    return "· " + effort_text(effort)
+    parts = ([effort_text(effort)] if effort else []) + ([_tr("快速")] if fast else [])
+    return "· " + " · ".join(parts) if parts else ""
 
 
 class TimerResolution:
@@ -254,6 +260,7 @@ class Candidate:
     values: tuple
     excluded: tuple
     effort: str = ""
+    fast: bool = False
 
 
 @dataclass(frozen=True)
@@ -291,7 +298,7 @@ def scene_from_result(result):
                               router_data.model_label(str(bundle.get("model") or item.get("id") or "")),
                               score if finite(score) else None, values,
                               tuple(str(x) for x in item.get("excluded") or []),
-                              str(bundle.get("effort") or item.get("effort") or "")))
+                              str(bundle.get("effort") or item.get("effort") or ""), bool(bundle.get("fast"))))
     rows.sort(key=lambda c: (bool(c.excluded), c.score is None, -(c.score or 0)))
     choice = result.get("choice") or (result.get("selected_bundle") or {}).get("bundle_id")
     winner = next((c for c in rows if c.id == choice), None)
@@ -425,16 +432,25 @@ class TheatreRenderer:
         self.kind_at = (w*.5, self.origin[1] + 19*s)
         self.end_x = w*.92
         self.radius = min(w*.245, h*.25)
-        # The radar (and the winner's name) sit where the settled camera centres them.
-        self.center = (w*(CAMERA_SPAN+.5), h*.44)
-        self.final_y = h*.5
-        self.legend_y = [self.center[1]+self.radius+(20+23*i)*s for i in range(2)]
+        if scene.pair:
+            # A narrow stage draws a smaller radar rather than shortening the axis names beside it.
+            # Width as tile() cuts it: the ink box plus two supersampled pixels each side.
+            boxes = [font(round(AXIS_LABEL*s*self.k)).getbbox(radar.SCORE_AXES[i][1] or " ", anchor="lm") for i in (1, 4)]
+            side = max(box[2] - box[0] + 4 for box in boxes) / self.k
+            self.radius = max(w*.12, min(self.radius, (w/2 - 11.5*s - side) / math.sin(math.radians(72))))
+        # The radar sits where the settled camera centres it, high enough to leave room
+        # for its axis names, the winner's name and the runner-up below.
+        self.center = (w*(CAMERA_SPAN+.5), h*.40)
+        self.legend_y = [self.center[1]+self.radius+(22+23*i)*s for i in range(2)]
+        self.final_y = self.center[1]+self.radius+31*s
+        self.runner_y = self.final_y+31*s
         self.targets = self.row_positions()
         self.starts = [y+(12 if i % 2 else -12)*s for i, y in enumerate(self.targets)]
         # Cached modern paper: less than 1% warm-neutral tint, no decorative pattern.
         self.blank = Image.new("RGB", (w*self.k, h*self.k), "#FEFEFD")
         self.text_cache = {}
         self.tiles = {}
+        self.stamps = {}
         self.pair_index = {c.name: i for i, c in enumerate(scene.pair)}
         self.vertices = {c.id: radar.polygon(list(c.values), *self.center, self.radius) for c in scene.pair}
         self.pens = {}
@@ -450,6 +466,7 @@ class TheatreRenderer:
             path = list(lift) + list(sampled_polygon(candidate.values, *self.center, self.radius, 81)[1:])
             self.pens[candidate.id] = (tuple(path), arc_lengths(path), arc_lengths(lift)[-1])
         self.final = self.final_layout()
+        self.axis_labels = self.axis_layout()
         self.seeds = self.speck_seeds()
         self.ink, self.heads = self.ink_specks()
         self.probe = {}
@@ -513,10 +530,29 @@ class TheatreRenderer:
         return self.tile(value, size, theme.INK, bold, max_width).width / self.k
 
     def blit(self, image, value, x, y, size=13, color=theme.INK, bold=False, scale=1., alpha=1.,
-             anchor="mm", max_width=None, cam=0.):
-        """Place text at a float screen position and fractional scale about its anchor."""
+             anchor="mm", max_width=None, cam=0., steady=False):
+        """Place text at a float screen position and fractional scale about its anchor.
+
+        `steady` is for text whose scale is not changing: it is resampled once and pasted on the
+        2x grid (half a screen pixel), which costs a small fraction of the per-frame transform.
+        """
         alpha = radar.clamp(alpha)
         if alpha <= .004 or scale <= .02:
+            return
+        if steady:
+            key = (value, size, color, bold, None if max_width is None else round(max_width), round(scale, 4))
+            tile = self.stamps.get(key)
+            if tile is None:
+                tile = self.tile(value, size, color, bold, max_width)
+                if key[-1] != 1:
+                    tile = tile.resize((max(1, round(tile.width*scale)), max(1, round(tile.height*scale))),
+                                       Image.Resampling.LANCZOS)
+                self.stamps[key] = tile
+            left = (x - cam)*self.k - (tile.width/2 if anchor == "mm" else 0)
+            if alpha < 1:
+                tile = tile.copy()
+                tile.putalpha(tile.getchannel("A").point(lambda a: round(a*alpha)))
+            image.paste(tile, (round(left), round(y*self.k - tile.height/2)), tile)
             return
         half = scale < .7
         tile = self.tile(value, size, color, bold, max_width, half)
@@ -565,24 +601,44 @@ class TheatreRenderer:
         winner = self.scene.winner
         if not winner:
             return None
-        effort = effort_label(winner.effort)
-        name_w = self.measure(winner.name, 25, True, self.w*.62)
-        effort_w = self.measure(effort, 25, False) * .76 if effort else 0.
+        effort = effort_label(winner.effort, winner.fast)
+        name_w = self.measure(winner.name, NAME, True, self.w*.62)
+        effort_w = self.measure(effort, NAME, False) * .76 if effort else 0.
         gap = 7*self.s if effort else 0.
         left = self.center[0] - (name_w + gap + effort_w)/2
         name_center = (left + name_w/2, self.final_y)
         effort_center = (left + name_w + gap + effort_w/2, self.final_y)
-        targets = [(left + name_w*f, self.final_y) for f in (.12, .38, .62, .88)]
-        targets.append(effort_center if effort else (left + name_w*.97, self.final_y))
-        mapping = {}
-        if winner.id in self.vertices:
-            # Vertices travel into the letters left to right, so no two paths cross.
-            order = sorted(range(5), key=lambda i: self.vertices[winner.id][i][0])
-            mapping = {vertex: targets[rank] for rank, vertex in enumerate(order)}
-        return dict(effort=effort, name_center=name_center, effort_center=effort_center, targets=mapping)
+        pad = 14*self.s
+        card = (left - pad, self.final_y - 17*self.s, left + name_w + gap + effort_w + pad, self.final_y + 17*self.s)
+        return dict(effort=effort, name_center=name_center, effort_center=effort_center, card=card)
+
+    def axis_layout(self):
+        """(label, x, y, max width) per axis name, each just outside its vertex and inside the stage."""
+        if not self.scene.pair:
+            return ()
+        s, (cx, cy), radius = self.s, self.center, self.radius
+        left, right = cx - self.w/2 + 4*s, cx + self.w/2 - 4*s
+        out = []
+        for index, (_, label, _) in enumerate(radar.SCORE_AXES):
+            vx, vy = radar.point(cx, cy, radius, index, 5)
+            side = (vx > cx + 1) - (vx < cx - 1)
+            if index == 0:
+                x, y, room = vx, vy - 10*s, self.w*.6
+            elif vy < cy:
+                # The upper pair reads outward from its vertex.
+                room = (right - vx if side > 0 else vx - left) - 7*s
+                x, y = vx + side*(7*s + min(room, self.measure(label, AXIS_LABEL, False, room))/2), vy
+            else:
+                # The lower pair sits under its vertex; a long name moves outward so the two never meet.
+                half = self.measure(label, AXIS_LABEL, False, self.w/2 - 8*s) / 2
+                x = max((vx - cx)*side + 6*s, 4*s + half)
+                room = 2*min(half, self.w/2 - 4*s - x)
+                x, y = cx + side*x, vy + 12*s
+            out.append((label, x, y, max(20*s, room)))
+        return tuple(out)
 
     def speck_seeds(self):
-        """Deterministic ink specks: losing labels and the runner dissolve into them."""
+        """Deterministic ink specks: the labels outside the comparison dissolve into them."""
         seeds, s, n = [], self.s, 0
         start = WINDOWS["dissolve"][0]
         for i, row in enumerate(self.rows):
@@ -592,17 +648,6 @@ class TheatreRenderer:
             for j in range(4):
                 seeds.append((start + i*.04 + j*.06, self.end_x + 6*s + width*(j+.5)/4,
                               self.targets[i] + (hash01(n)-.5)*6*s, theme.FAINT, n))
-                n += 1
-        if len(self.scene.pair) > 1 and self.scene.pair[1].id in self.vertices:
-            runner = self.scene.pair[1]
-            fold = WINDOWS["fold"][0]
-            width = self.measure(runner.name, 13, True)
-            for j in range(5):
-                seeds.append((fold + j*.05, self.center[0] + width*((j+.5)/5-.5),
-                              self.legend_y[1] + (hash01(n)-.5)*6*s, theme.CYAN, n))
-                n += 1
-            for j, vertex in enumerate(self.vertices[runner.id]):
-                seeds.append((fold + .12 + j*.04, *vertex, theme.CYAN, n))
                 n += 1
         return tuple(seeds[:24])
 
@@ -747,7 +792,7 @@ class TheatreRenderer:
                 self.probe["head"] = (point[0]-cam, point[1])
 
     def grid(self, draw, t, cam):
-        shown = ease(window(t, "grid")) * (1 - ease(window(t, "fold")/.55))
+        shown = ease(window(t, "grid"))
         if shown <= 0 or not self.scene.pair:
             return
         cx, cy = self.center
@@ -817,8 +862,14 @@ class TheatreRenderer:
 
     def polygons(self, draw, t, cam):
         fill = ease(window(t, "fill"))
-        u = window(t, "fold")
+        settled = ease(window(t, "settle"))
         winner = self.scene.winner
+        if self.final and settled > 0:
+            # The winner's card rises under the radar; the radar itself stays to show why.
+            x0, y0, x1, y1 = self.final["card"]
+            draw.rounded_rectangle(((x0-cam)*self.k, y0*self.k, (x1-cam)*self.k, y1*self.k), radius=9*self.s*self.k,
+                                   fill=(*ImageColor.getrgb(theme.ACCENT_SOFT), round(255*settled)),
+                                   outline=(199, 210, 254, round(255*settled)), width=max(1, round(self.s*self.k*.8)))
         for index, candidate in enumerate(self.scene.pair):
             if candidate.id not in self.pens:
                 continue
@@ -834,35 +885,18 @@ class TheatreRenderer:
             if travelled <= lift:
                 continue
             vertices = self.vertices[candidate.id]
-            dashed = index == 1
-            if u <= 0:
-                # Drop the lift (bezier2 samples 40 points); keep the traced perimeter.
-                traced = partial(path, lengths, travelled)[39:]
-                if travelled >= lengths[-1] - 1e-6 and fill > 0:
-                    draw.polygon(self.screen(vertices, cam), fill=(*rgb, round((40 if index == 0 else 22)*fill)))
-                self.line(draw, traced, cam, (*rgb, 235), 1.6, dashed)
-                perimeter = lengths[-1] - lift
-                for k, vertex in enumerate(vertices):
-                    if travelled - lift >= perimeter*k/5 - 1e-6:
-                        self.vertex(draw, vertex, cam, rgb, index, 1.)
-                continue
-            if winner and candidate.id == winner.id and self.final:
-                moved = []
-                for k, vertex in enumerate(vertices):
-                    m = ease((u - k*.04) / .84)
-                    moved.append(lerp2(vertex, self.final["targets"].get(k, vertex), m))
-                ink = 1 - ease((u - .45) / .4)
-                draw.polygon(self.screen(moved, cam), fill=(*rgb, round(40*(1-ease(u/.7)))))
-                self.line(draw, moved + moved[:1], cam, (*rgb, round(235*ink)), 1.6)
-                for vertex in moved:
-                    self.vertex(draw, vertex, cam, rgb, index, ink)
-                self.probe["fold_vertices"] = [(x-cam, y) for x, y in moved]
-            else:
-                # The runner contracts toward its name and dissolves into specks.
-                q = ease(u / .5)
-                anchor = (self.center[0], self.legend_y[min(index, 1)])
-                moved = [lerp2(v, anchor, .55*q) for v in path[39:]]
-                self.line(draw, moved, cam, (*rgb, round(235*(1-q))), 1.6, dashed)
+            won = bool(winner) and candidate.id == winner.id
+            # Drop the lift (bezier2 samples 40 points); keep the traced perimeter.
+            traced = partial(path, lengths, travelled)[39:]
+            if travelled >= lengths[-1] - 1e-6 and fill > 0:
+                # Settling deepens the winner's area and lets the other polygon recede a little.
+                depth = (40 if index == 0 else 22) + (26 if won else -8)*settled
+                draw.polygon(self.screen(vertices, cam), fill=(*rgb, round(depth*fill)))
+            self.line(draw, traced, cam, (*rgb, round(235 - (0 if won else 70)*settled)), 1.6, index == 1)
+            perimeter = lengths[-1] - lift
+            for k, vertex in enumerate(vertices):
+                if travelled - lift >= perimeter*k/5 - 1e-6:
+                    self.vertex(draw, vertex, cam, rgb, index, 1.)
 
     def vertex(self, draw, point, cam, rgb, index, alpha):
         if alpha <= 0:
@@ -875,7 +909,7 @@ class TheatreRenderer:
     def labels(self, image, t, cam, states):
         s, rank = self.s, ease(window(t, "rank"))
         gone, glide = ease(window(t, "dissolve")), ease(window(t, "glide"))
-        u = window(t, "fold")
+        u = window(t, "settle")
         winner = self.scene.winner
         for i, (row, (y, end, reveal)) in enumerate(zip(self.rows, states)):
             arrive = ease((reveal - .75) / .25)
@@ -887,33 +921,37 @@ class TheatreRenderer:
                 continue
             candidate = self.scene.pair[pair]
             color = theme.ACCENT if pair == 0 else theme.CYAN
-            # One 25 px tile scaled continuously: route label → legend → the final name.
-            width = self.measure(row.name, 25, True, self.w*.62) * 13/25
+            # One tile scaled continuously: route label → legend → the settled name.
+            width = self.measure(row.name, NAME, True, self.w*.62) * LEGEND/NAME
             start = (self.end_x + 6*s + width/2, y)
             # Labels follow their lifting route ends rightward, then settle under the radar.
             legend = (self.center[0], self.legend_y[pair])
             position = lerp2(lerp2(start, (legend[0], start[1]), glide), lerp2((legend[0], start[1]), legend, glide), glide)
-            scale, alpha = 13/25, arrive
+            scale, alpha, m = LEGEND/NAME, arrive, 0.
             if winner and candidate.id == winner.id and self.final:
                 m = ease((u - .1) / .75)
                 position = lerp2(position, self.final["name_center"], m)
-                scale = lerp(13/25, 1, m)
+                scale = lerp(LEGEND/NAME, 1, m)
                 self.probe["winner_label"] = (position[0]-cam, position[1], scale)
-            else:
-                alpha *= 1 - ease(u / .4)
-            self.blit(image, row.name, *position, 25, color, True, scale=scale, alpha=alpha,
-                      max_width=self.w*.62, cam=cam)
+            elif self.final:
+                # The other candidate steps down to make room and stays as the comparison's legend.
+                position = lerp2(position, (self.center[0], self.runner_y), ease(u / .8))
+            self.blit(image, row.name, *position, NAME, color, True, scale=scale, alpha=alpha,
+                      max_width=self.w*.62, cam=cam, steady=m in (0., 1.))
+        shown = ease(window(t, "grid"))
+        for label, x, y, room in self.axis_labels:
+            self.blit(image, label, x, y, AXIS_LABEL, theme.MUTED, alpha=shown, max_width=room, cam=cam, steady=True)
         if not self.final:
             return
         if winner.id not in self.pens:
             # A selected bundle outside the comparison still lands as the final name.
-            self.blit(image, winner.name, *self.final["name_center"], 25, theme.ACCENT, True,
+            self.blit(image, winner.name, *self.final["name_center"], NAME, theme.ACCENT, True,
                       alpha=ease((u - .3) / .5), max_width=self.w*.62, cam=cam)
         if self.final["effort"]:
-            # The effort condenses where the last vertex lands, as part of the fold.
+            # The effort condenses beside the name as it settles.
             e = ease(window(t, "effort"))
-            self.blit(image, self.final["effort"], *self.final["effort_center"], 25, theme.ACCENT,
-                      scale=.76*(.7 + .3*e), alpha=.7*e, cam=cam)
+            self.blit(image, self.final["effort"], *self.final["effort_center"], NAME, theme.ACCENT,
+                      scale=.76*(.7 + .3*e), alpha=.7*e, cam=cam, steady=e >= 1)
 
     def specks(self, draw, t, cam):
         life = .9
@@ -944,7 +982,10 @@ class DecisionTheatre:
 
     Frames are scheduled toward fixed deadlines on a monotonic clock; each frame shows
     the content of the latest deadline, so timer granularity never alters motion.
+    `on_frame(story_time)` lets one companion view follow the same clock.
     """
+
+    on_frame = None
 
     def __init__(self, parent):
         import tkinter as tk
@@ -980,6 +1021,8 @@ class DecisionTheatre:
         self.timer.end()
         self.pending = self.running = False
         self.elapsed = DURATION
+        if self.on_frame:
+            self.on_frame(DURATION)
 
     def destroy(self,event):
         if event.widget is self.canvas:
@@ -1036,7 +1079,10 @@ class DecisionTheatre:
             self.renderer = TheatreRenderer(self.scene,max(1,self.canvas.winfo_width()),
                                              max(1,self.canvas.winfo_height()),theme.FACTOR)
         # The driver clock is wall time; every beat is placed on the warped story time.
-        frame = self.renderer.frame(story_time(self.elapsed))
+        story = story_time(self.elapsed)
+        if self.on_frame:
+            self.on_frame(story)
+        frame = self.renderer.frame(story)
         if self.photo is None or self.photo.width()!=frame.width or self.photo.height()!=frame.height:
             self.photo = ImageTk.PhotoImage(frame,master=self.canvas)
             self.canvas.itemconfigure(self.item,image=self.photo)

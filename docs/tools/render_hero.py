@@ -21,8 +21,8 @@ import render_ui_screenshots as shots
 OUTPUT = shots.ROOT / "docs" / "hero.gif"
 HOLD_MS = 2000
 # GitHub shows only the first frame when animated images do not autoplay, so the GIF opens on
-# the top-two radar comparison (story time near the end of the "compare" beat) before replaying.
-POSTER_STORY = 7.7
+# the settled frame (the winner under the radar of the top two candidates) before replaying.
+POSTER_STORY = 9.9
 POSTER_MS = 1500
 # Flat page and key ink colours kept exact so the paper tone never bands.
 RESERVED = [(254, 254, 253), (255, 255, 255), (79, 70, 229), (6, 182, 212),
@@ -61,12 +61,15 @@ def frames_from_window(args, state):
         return frame
 
     checks = {}
-    for wall in (2.2, 6.0, theatre.DURATION):  # kind under the title, radar being drawn, settled
+    for wall in (2.2, 6.0, 8.4, theatre.DURATION):  # kind under the title, radar being drawn, winner settling, settled
         film.elapsed = wall
         film.draw()
-        shots.pump(root, 10)
-        real = shots.shoot(top, args.scale)
-        checks[wall] = differs(real, composite(wall), client)
+        for _ in range(4):  # a busy machine may capture before the canvas has painted: look again
+            shots.pump(root, 10)
+            real = shots.shoot(top, args.scale)
+            checks[wall] = differs(real, composite(wall), client)
+            if not checks[wall]:
+                break
         if args.check_dir:
             args.check_dir.mkdir(parents=True, exist_ok=True)
             real.save(args.check_dir / f"real-{wall:.1f}.png")

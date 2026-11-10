@@ -358,7 +358,7 @@ def candidate_rows(result: dict) -> list[dict]:
         bundle = c.get("bundle") or {}
         rows.append({
             "id": c.get("id"), "model": bundle.get("model"), "account": bundle.get("account"),
-            "effort": bundle.get("effort"), "score": c.get("score"), "fit": comp.get("fit"),
+            "effort": bundle.get("effort"), "fast": bool(bundle.get("fast")), "score": c.get("score"), "fit": comp.get("fit"),
             "ability": comp.get("ability"), "opportunity_cost": comp.get("opportunity_cost"),
             "bonus": round((comp.get("reset_bonus") or 0) + (comp.get("boost") or 0) + (comp.get("free_usage") or 0), 4),
             "penalty": round((comp.get("overqualification") or 0) + (comp.get("effort_penalty") or 0), 4),
