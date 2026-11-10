@@ -1101,13 +1101,32 @@ test('provider_models reads live models per provider with structural ids and ali
     error: 'model_list_unavailable',
     models: [],
   });
+  // A provider Paseo's snapshot does not list (e.g. a LiteLLM proxy account) is not Paseo's: no models call at all.
   assert.deepEqual(res.providers['missing-provider'], {
     ok: false,
-    status: 'unavailable',
-    error: 'model_list_unavailable',
+    status: 'unknown_provider',
+    error: 'unknown_provider',
     models: [],
   });
   assert(!JSON.stringify(res).includes('canary'));
   assert.deepEqual(normalizeProviderModels([{id: ' m1 ', aliases: [' a1 ', '', null], label: ' L1 '}, null, {}]),
     [{id: 'm1', aliases: ['a1'], label: 'L1'}]);
+});
+
+test('provider_models cannot tell a Paseo provider apart without the snapshot, so an unread snapshot reports unavailable', async () => {
+  const asked = [];
+  const fake = {
+    getProvidersSnapshot: async () => { throw new Error('secret-snapshot-canary'); },
+    listProviderModels: async provider => {
+      asked.push(provider);
+      if (provider === 'claude') return {models: [{id: 'claude-opus-5-5'}]};
+      throw new Error('secret-throw-canary');
+    },
+  };
+  const res = await execute(fake, {operation: 'provider_models', providers: ['claude', 'llmproxy']});
+  assert.deepEqual(asked.sort(), ['claude', 'llmproxy']);
+  assert.deepEqual(res.providers.claude, {ok: true, status: 'ready', models: [{id: 'claude-opus-5-5'}]});
+  assert.deepEqual(res.providers.llmproxy,
+    {ok: false, status: 'unavailable', error: 'model_list_unavailable', models: []});
+  assert(!JSON.stringify(res).includes('canary'));
 });

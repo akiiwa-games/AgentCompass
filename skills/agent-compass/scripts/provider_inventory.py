@@ -1866,10 +1866,6 @@ def apply(accounts, inventory=None):
             specs[name]['bundles'] = {}
             specs[name]['quota_account'] = owner
     apply_shared_quota(accounts)
-    if live:
-        import live_models
-        if live_models.enabled():
-            accounts['_live_models'] = live_models.load_or_refresh(accounts=accounts)
     return accounts
 
 

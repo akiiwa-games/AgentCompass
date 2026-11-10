@@ -72,6 +72,15 @@ class AntigravityPlanTests(unittest.TestCase):
             encoding='utf-8')
         self.assertEqual(plan.cached_plan(self.state), 'Free')
 
+    def test_a_free_tier_reported_as_the_paid_tier_still_reads_as_free(self):
+        # 2026-11-10: loadCodeAssist returned `paidTier: {id: free-tier, name: Antigravity Starter Quota}`.
+        now = datetime(2026, 11, 10, tzinfo=timezone.utc)
+        for tier_id in ('free-tier', 'standard-tier'):
+            response = {'paidTier': {'id': tier_id, 'name': 'Antigravity Starter Quota'}}
+            plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_: response, now=now)
+            self.assertEqual(plan.read_cache(self.state)['source'], 'paidTier')
+            self.assertEqual(plan.cached_plan(self.state, now), 'Free')
+
     def test_background_refresh_needs_agy_and_honours_the_switch(self):
         self.assertIsNone(plan.refresh_in_background(self.state, {'PATH': ''}))
         self.assertIsNone(plan.refresh_in_background(self.state, {'AGENTCOMPASS_ANTIGRAVITY_PLAN': 'off'}))

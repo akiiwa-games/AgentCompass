@@ -3245,32 +3245,6 @@ class ProviderRetryTests(unittest.TestCase):
             self.assertEqual(self.real_classify('opencode', 'opencode', 'm', self.MESSAGE)[0], 'unknown')
         self.assertEqual(self.real_classify('opencode', 'opencode', 'm', None)[0], 'unknown')
 
-    def test_invalid_model_launch_error_becomes_a_model_scoped_hold_without_classifier(self):
-        import provider_retry
-        argon = dict(allocator.bundles(self.accounts)['argon_high'], bundle_id='argon_high')
-        entry = provider_retry.record(
-            argon,
-            {'failure_code': 'INVALID_MODEL', 'at': self.now.isoformat()},
-            dispatch_id='d-invalid-model',
-        )
-        self.assertEqual(self.asked, [])
-        self.assertEqual((entry['account'], entry['model'], entry['scope'], entry['scope_source']),
-                         ('antigravity', 'gemini-4-argon-high', 'model', 'failure_code'))
-        self.assertEqual(set(provider_retry.active(now=self.now)), {'antigravity/gemini-4-argon-high'})
-        plan, excluded = self.excluded('argon_high')
-        self.assertTrue(any('provider no longer offers gemini-4-argon-high' in e for e in excluded), excluded)
-        _, flash_excluded = self.excluded('flash_high')
-        self.assertFalse(any(e.startswith(provider_retry.EXCLUSION_PREFIX) for e in flash_excluded), flash_excluded)
-        # A second model failing with INVALID_MODEL stays model-scoped and never widens to the account.
-        other_entry = provider_retry.record(
-            dict(allocator.bundles(self.accounts)['agy_opus55_high'], bundle_id='agy_opus55_high'),
-            {'failure_code': 'INVALID_MODEL', 'at': (self.now + timedelta(seconds=10)).isoformat()},
-            dispatch_id='d-invalid-model-2',
-        )
-        self.assertEqual((other_entry['model'], other_entry['scope']), ('claude-opus-5-5-high', 'model'))
-        self.assertEqual(set(provider_retry.active(now=self.now + timedelta(seconds=10))),
-                         {'antigravity/gemini-4-argon-high', 'antigravity/claude-opus-5-5-high'})
-
 
 class LiveModelCheckTests(unittest.TestCase):
     """2026-11-10: `roll` picked `argon_high` (`antigravity-resilient/gemini-4-argon-high`) when Antigravity offered only
@@ -3453,8 +3427,9 @@ class LiveModelCheckTests(unittest.TestCase):
                            self.now + timedelta(seconds=live_models.TTL_SECONDS + 1), accounts=self.accounts)
             self.assertEqual(len(self.fetched_providers), 2)
 
-    def test_an_unreadable_live_list_does_not_exclude_and_surfaces_model_list_unavailable_plus_invalid_model_hold(self):
+    def test_an_unreadable_live_list_does_not_exclude_and_surfaces_model_list_unavailable_plus_invalid_model_latch(self):
         import live_models
+        import model_latch
         import provider_retry
         # 1. Paseo down / unreachable when reading models: do not exclude argon_high; surface "model list unavailable".
         with patch.object(live_models, 'fetch_from_paseo', return_value={'ok': False, 'error': 'host_connection_failed'}):
@@ -3485,8 +3460,8 @@ class LiveModelCheckTests(unittest.TestCase):
             )
         live_models.invalidate()
 
-        # 3. Fallback when live list was unreadable and launch fails with INVALID_MODEL: records a model-scoped hold in
-        # provider_retry.py and excludes only that model on the next roll.
+        # 3. Fallback when the live list was unreadable and launch fails with INVALID_MODEL: one mechanism, the
+        # existing model latch, holds only that model (no provider_retry hold) and gives one warning on the next roll.
         def reject_argon(request):
             if request['operation'] == 'create' and request['request']['provider'] == 'antigravity-resilient/gemini-4-argon-high':
                 self.creates.append(request['request']['provider'])
@@ -3497,13 +3472,51 @@ class LiveModelCheckTests(unittest.TestCase):
         with patch.object(live_models, 'fetch_from_paseo', return_value={'ok': False, 'error': 'host_connection_failed'}):
             first, code1 = self.roll(host=reject_argon)
             self.assertEqual((first['status'], code1), ('error', 1))
-            held = provider_retry.active(now=self.now)
-            self.assertIn('antigravity/gemini-4-argon-high', held)
-            self.assertEqual(held['antigravity/gemini-4-argon-high']['scope'], 'model')
-            self.assertEqual(held['antigravity/gemini-4-argon-high']['failure_code'], 'INVALID_MODEL')
+            self.assertEqual(set(model_latch.active(now=self.now)), {'antigravity/gemini-4-argon-high'})
+            self.assertEqual(provider_retry.active(now=self.now), {})
+            self.assertNotIn('antigravity-resilient', json.loads(self.live_store.read_text(encoding='utf-8'))['providers'])
+        # The refused model is now also missing from the live list: still one warning line for it.
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=self.fetch_live):
             second, code2 = self.roll(host=reject_argon)
             self.assertEqual((second['status'], code2), ('launched', 0))
             self.assertNotEqual(self.choices[1], 'argon_high')
+            plan = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+            lines = [w for w in plan['decision'].get('warnings') or () if 'gemini-4-argon-high' in w]
+            self.assertEqual(len(lines), 1, lines)
+
+    def test_a_provider_paseo_does_not_know_gives_no_warning_and_no_exclusion(self):
+        """llmproxy (LiteLLM, harness codex) is not a Paseo provider: the bridge answers `unknown_provider`."""
+        import live_models
+        providers = copy.deepcopy(self.live_providers)
+        providers['antigravity-resilient'] = {'ok': False, 'status': 'unknown_provider', 'error': 'unknown_provider',
+                                              'models': []}
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=lambda provs, **kw: {
+                'ok': True, 'providers': {p: providers[p] for p in provs if p in providers}}):
+            plan = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+        self.assertEqual(plan['choice'], 'argon_high')
+        self.assertFalse([w for w in plan['decision'].get('warnings') or () if 'model list' in w or 'no longer' in w])
+        self.assertIsNone(live_models.unavailable_detail(providers['antigravity-resilient']))
+
+    def test_cache_writes_merge_under_the_lock_and_respect_a_later_invalidation(self):
+        """Review 2026-11-10: a refresh wrote its whole read-time snapshot back, losing a concurrent refresh of another
+        provider and an invalidation made during its fetch."""
+        import live_models
+        entry = lambda mid: {'ok': True, 'models': [{'id': mid}]}
+        live_models.load_or_refresh(['x'], fetch=lambda provs: {'ok': True, 'providers': {'x': entry('x1')}})
+
+        def slow_a(provs):
+            # While A fetches: B refreshes another provider, and x is invalidated.
+            live_models.load_or_refresh(['b'], fetch=lambda p: {'ok': True, 'providers': {'b': entry('b1')}})
+            live_models.invalidate('x')
+            return {'ok': True, 'providers': {'a': entry('a1'), 'x': entry('x2')}}
+
+        answer = live_models.load_or_refresh(['a', 'x'], force=True, fetch=slow_a)
+        self.assertEqual(set(answer['providers']), {'a', 'x'})  # this call still answers with what it read
+        stored = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']
+        self.assertEqual(set(stored), {'a', 'b'})  # b survives; x stays evicted until the next refresh
+        live_models.load_or_refresh(['x'], fetch=lambda provs: {'ok': True, 'providers': {'x': entry('x3')}})
+        stored = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']
+        self.assertEqual(stored['x']['models'], [{'id': 'x3'}])
 
     def test_structural_model_id_and_paseo_alias_matching(self):
         import live_models

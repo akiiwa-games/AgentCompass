@@ -177,23 +177,13 @@ def settle_create(row, creation, now, path):
             model_latch.record(settled['bundle'], settled.get('failure_code'), source=settled['dispatch_id'])
         except OSError:
             pass
-        try:
+        if model_latch.means_unavailable(settled.get('failure_code')):
+            # The provider just refused this model: drop its cached live list so the next roll reads it afresh.
             import live_models
-            import provider_retry
-            if provider_retry.is_model_failure_code(settled.get('failure_code')):
-                provider_retry.record(
-                    settled['bundle'],
-                    {
-                        'failure_code': settled.get('failure_code'),
-                        'provider_message': f"provider no longer offers {provider_retry.launch_model(settled['bundle'])}",
-                        'at': settled.get('updated_at'),
-                    },
-                    dispatch_id=settled['dispatch_id'],
-                    at=now,
-                )
+            try:
                 live_models.invalidate(live_models.bundle_provider(settled.get('bundle')))
-        except OSError:
-            pass
+            except OSError:
+                pass
     return settled
 
 

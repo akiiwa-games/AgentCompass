@@ -12,7 +12,13 @@ Contract:
   `"provider no longer offers <model>"` and surfaced in `plan`/`roll` warnings and tray account cards.
 - When a provider's live list cannot be read (`ok: False`, e.g. Paseo down or provider disabled), no bundle is excluded
   on that basis; `"model list unavailable"` is surfaced in warnings and tray account cards, falling back to existing
-  routing and `provider_retry` holds.
+  routing and the `model_latch` / `provider_retry` holds.
+- Which providers are Paseo's is Paseo's own provider snapshot, not a name list here: every candidate bundle's provider
+  is asked, and one the snapshot does not list comes back `status: unknown_provider` (e.g. a LiteLLM proxy account),
+  which gives neither a warning nor an exclusion.
+- Only `roll`/`plan` (ranking) refresh the cache. The tray only reads it and refreshes it off the Tk thread.
+- A refresh merges into the file under its lock; `invalidate()` stamps the provider so a refresh whose fetch began
+  before the invalidation does not write the evicted list back.
 """
 from __future__ import annotations
 
@@ -27,12 +33,10 @@ FILE = 'paseo-live-models.json'
 # 60s TTL: covers `plan` -> `prepare` -> `claim` and batch rolls without adding bridge latency per step, while
 # refreshing within a minute when a provider's live catalog changes.
 TTL_SECONDS = 60
-PASEO_HARNESSES = frozenset((
-    'claude', 'codex', 'pi', 'omp', 'opencode',
-    'antigravity', 'antigravity-resilient', 'grok',
-    'dsh', 'copilot', 'muse',
-))
-NON_PASEO_HARNESSES = frozenset(('dot', 'chatgpt-web', 'grok-bot'))
+# A bridge round trip takes ~0.5 s here; a hung Paseo must not hold a roll long, and an unread list never excludes.
+FETCH_TIMEOUT_SECONDS = 3
+# The bridge's status for a provider Paseo's snapshot does not list (not a Paseo provider): no warning, no exclusion.
+UNKNOWN_PROVIDER = 'unknown_provider'
 
 _MEM_CACHE: dict[str, dict] = {}
 
@@ -84,19 +88,12 @@ def bundle_provider(bundle: dict | None, account: str | None = None) -> str:
 
 
 def is_paseo_bundle(bundle: dict | None, account: str | None = None, spec: dict | None = None) -> bool:
-    if not isinstance(bundle, dict):
-        return False
-    if isinstance(spec, dict) and (
-        spec.get('backend_kind') in ('litellm', 'proxy')
-        or spec.get('route_via') in ('litellm', 'proxy')
-    ):
-        return False
-    prov = bundle_provider(bundle, account)
-    harness = str(bundle.get('harness') or prov).strip()
-    if prov in NON_PASEO_HARNESSES or harness in NON_PASEO_HARNESSES:
-        return False
-    family = prov.split('-', 1)[0] if prov else ''
-    return bool(prov in PASEO_HARNESSES or harness in PASEO_HARNESSES or family in PASEO_HARNESSES)
+    """A bundle whose provider is asked. Whether Paseo knows that provider is the bridge's answer, not decided here."""
+    return isinstance(bundle, dict) and bool(bundle_provider(bundle, account))
+
+
+def is_unknown_provider(entry: dict | None) -> bool:
+    return isinstance(entry, dict) and entry.get('status') == UNKNOWN_PROVIDER
 
 
 def candidate_providers(accounts: dict | None, allowed=None) -> list[str]:
@@ -174,7 +171,7 @@ def offers_model(provider: str, model_id: str, provider_entry: dict | None) -> b
     return bool(candidates & offered_model_ids(provider, provider_entry))
 
 
-def _default_fetch_from_paseo(providers: list[str], cwd: str | None = None, timeout: int = 10) -> dict:
+def _default_fetch_from_paseo(providers: list[str], cwd: str | None = None, timeout: int = FETCH_TIMEOUT_SECONDS) -> dict:
     import dispatch_flow
     payload: dict = {'operation': 'provider_models', 'providers': list(providers), 'timeout_seconds': timeout}
     if cwd:
@@ -218,9 +215,9 @@ def _read_store(path: Path) -> dict:
 
 
 def _write_store(path: Path, doc: dict) -> None:
+    """Atomic replacement; the caller holds `override_store.locked(path)` across its read-modify-write."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with override_store.locked(path):
-        override_store.write(path, doc)
+    override_store.write(path, doc)
     try:
         stat = path.stat()
         _MEM_CACHE[str(path)] = {'_mtime_ns': stat.st_mtime_ns, 'doc': copy.deepcopy(doc)}
@@ -303,8 +300,6 @@ def load_or_refresh(
     fetch=None,
 ) -> dict:
     """Return live model lists for `providers` (or candidate providers in `accounts`), refreshing stale entries."""
-    if isinstance(accounts, dict) and isinstance(accounts.get('_live_models'), dict) and not force:
-        return accounts['_live_models']
     if not enabled() and fetch is None:
         return {'providers': {}}
     now = now or datetime.now(timezone.utc)
@@ -329,26 +324,43 @@ def load_or_refresh(
         }
     fetcher = fetch or fetch_from_paseo
     ts = now.isoformat()
+    started = datetime.now(timezone.utc)  # wall clock, as invalidate() stamps it
     try:
         reply = fetcher(missing)
     except Exception:
         reply = {'ok': False, 'error': 'host_connection_failed'}
-    merged = dict(stored_providers)
+    fetched: dict[str, dict] = {}
     if isinstance(reply, dict) and reply.get('ok') is True and isinstance(reply.get('providers'), dict):
         raw_map = reply['providers']
         for prov in missing:
             raw_entry = raw_map.get(prov)
             if isinstance(raw_entry, dict):
                 raw_entry = {**raw_entry, 'fetched_at': ts}
-            merged[prov] = _normalize_entry(raw_entry, ts)
+            fetched[prov] = _normalize_entry(raw_entry, ts)
     else:
         err_code = str((reply or {}).get('error') or 'model_list_unavailable') if isinstance(reply, dict) else 'model_list_unavailable'
         for prov in missing:
-            merged[prov] = _normalize_entry(None, ts, fallback_error=err_code)
-    out_doc = {'updated_at': ts, 'ttl_seconds': ttl, 'providers': merged}
+            fetched[prov] = _normalize_entry(None, ts, fallback_error=err_code)
+    # The fetch ran outside the lock (it can take seconds). Re-read under the lock and merge only what this call read,
+    # so a concurrent refresh of other providers survives, and leave out a provider invalidated after this fetch began.
+    merged = {**stored_providers, **fetched}
     try:
-        _write_store(path, out_doc)
-    except OSError:
+        with override_store.locked(path):
+            _MEM_CACHE.pop(str(path), None)
+            current = _read_store(path)
+            on_disk = dict(current['providers'])
+            invalidated = current.get('invalidated') if isinstance(current.get('invalidated'), dict) else {}
+            for prov, entry in fetched.items():
+                evicted = _parse_time(invalidated.get(prov))
+                if evicted is None or evicted <= started:
+                    on_disk[prov] = entry
+            out_doc = {'updated_at': ts, 'ttl_seconds': ttl, 'providers': on_disk}
+            if invalidated:
+                out_doc['invalidated'] = invalidated
+            _write_store(path, out_doc)
+        # This call still answers with what it read; the file keeps the newer state.
+        merged = {**on_disk, **fetched}
+    except (OSError, TimeoutError):
         pass
     return {
         'updated_at': ts,
@@ -364,16 +376,18 @@ def invalidate(provider: str | None = None, *, base_dir: Path | None = None) -> 
     if not path.exists():
         return
     try:
-        doc = _read_store(path)
-        providers = doc.get('providers')
-        if not isinstance(providers, dict):
-            return
-        if provider is None:
-            doc['providers'] = {}
-        else:
-            providers.pop(provider, None)
-        _write_store(path, doc)
-    except OSError:
+        with override_store.locked(path):
+            _MEM_CACHE.pop(str(path), None)
+            doc = _read_store(path)
+            providers = doc['providers']
+            invalidated = doc.get('invalidated') if isinstance(doc.get('invalidated'), dict) else {}
+            stamp = datetime.now(timezone.utc).isoformat()
+            for prov in (list(providers) if provider is None else [provider]):
+                providers.pop(prov, None)
+                invalidated[prov] = stamp
+            doc['invalidated'] = invalidated
+            _write_store(path, doc)
+    except (OSError, TimeoutError):
         pass
 
 
@@ -399,7 +413,7 @@ def reason(bundle: dict | None, live_doc: dict | None, account: str | None = Non
 
 def unavailable_detail(entry: dict | None) -> str | None:
     """Human-readable unavailability text when a provider's live model list could not be read."""
-    if not isinstance(entry, dict) or entry.get('ok') is not False:
+    if not isinstance(entry, dict) or entry.get('ok') is not False or is_unknown_provider(entry):
         return None
     err_code = str(entry.get('error') or entry.get('status') or 'unavailable').strip()
     if err_code and err_code not in ('model_list_unavailable', 'unavailable'):
@@ -407,8 +421,11 @@ def unavailable_detail(entry: dict | None) -> str | None:
     return 'model list unavailable'
 
 
-def warnings(live_doc: dict | None, accounts: dict | None = None, allowed=None) -> list[str]:
-    """Warnings for `plan`/`roll` output: excluded unoffered models and unreadable live model lists."""
+def warnings(live_doc: dict | None, accounts: dict | None = None, allowed=None, covered=()) -> list[str]:
+    """Warnings for `plan`/`roll` output: excluded unoffered models and unreadable live model lists.
+
+    `covered` holds `account/model` keys another warning already names (a `model_latch` latch from the same refusal),
+    so one incident gives one line."""
     if not isinstance(live_doc, dict):
         return []
     providers = live_doc.get('providers')
@@ -449,12 +466,14 @@ def warnings(live_doc: dict | None, accounts: dict | None = None, allowed=None) 
                 if not isinstance(entry, dict):
                     continue
                 if entry.get('ok') is False:
-                    detail = unavailable_detail(entry) or 'model list unavailable'
-                    label = f'{acct} ({prov})' if prov != acct else acct
-                    add(f'{label}: {detail}')
+                    detail = unavailable_detail(entry)
+                    if detail:
+                        label = f'{acct} ({prov})' if prov != acct else acct
+                        add(f'{label}: {detail}')
                 elif entry.get('ok') is True:
                     mod = launch_model(bundle)
-                    if mod and not offers_model(prov, mod, entry) and mod not in unoffered_mods:
+                    if (mod and not offers_model(prov, mod, entry) and mod not in unoffered_mods
+                            and f'{acct}/{mod}' not in covered):
                         unoffered_mods.append(mod)
             if len(unoffered_mods) == 1:
                 mod = unoffered_mods[0]
@@ -465,7 +484,7 @@ def warnings(live_doc: dict | None, accounts: dict | None = None, allowed=None) 
         return out
 
     for prov, entry in sorted(providers.items()):
-        if isinstance(entry, dict) and entry.get('ok') is False:
-            detail = unavailable_detail(entry) or 'model list unavailable'
+        detail = unavailable_detail(entry)
+        if detail:
             add(f'{prov}: {detail}')
     return out

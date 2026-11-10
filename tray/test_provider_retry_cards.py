@@ -275,18 +275,70 @@ def test_account_cards_and_model_rows_surface_live_model_exclusions_and_unreadab
     assert codex_row['kind'] == 'warn'
     assert 'model list unavailable' in codex_row['badge']
 
-    # 2. INVALID_MODEL recorded in provider_retry surfaces as a model-scoped hold on the card and model row.
-    live_store.unlink()
+    # 2. A provider Paseo does not know (a LiteLLM proxy account) is neither warned about nor excluded.
+    live_store.write_text(json.dumps({'providers': {
+        'antigravity-resilient': {'ok': True, 'status': 'ready', 'fetched_at': now.isoformat(),
+                                  'models': [{'id': 'gemini-3.8-flash-high'}, {'id': 'gemini-4-argon-high'}]},
+        'codex': {'ok': False, 'status': 'unknown_provider', 'error': 'unknown_provider',
+                  'fetched_at': now.isoformat(), 'models': []},
+    }}), encoding='utf-8')
     live_models._MEM_CACHE.clear()
-    provider_retry.record(
-        {'account': 'antigravity', 'provider': 'antigravity-resilient', 'model': 'gemini-4-argon-high'},
-        {'failure_code': 'INVALID_MODEL', 'at': now.isoformat()},
-        dispatch_id='d-invalid-tray',
-    )
-    cards2 = {c['account']: c for c in router_data.account_cards()}
-    assert cards2['antigravity']['kind'] == 'warn'
-    assert 'provider no longer offers gemini-4-argon-high' in cards2['antigravity']['badge']
+    cards = {c['account']: c for c in router_data.account_cards()}
+    assert (cards['antigravity']['kind'], cards['codex']['kind']) == ('ok', 'ok'), cards
+    rows = {(r['account'], r['harness']): r for r in router_data.harness_model_rows()}
+    assert rows[('codex', 'codex')]['kind'] == 'ok'
+    assert not any(m.get('launch_unavailable') for r in rows.values() for m in r['models'])
 
+    # 3. INVALID_MODEL is one mechanism: the model latch. Its note is the model row's only note.
+    latch_store = target.parent / 'model-unavailable.json'
+    monkeypatch.setenv('ROUTER_MODEL_LATCH', str(latch_store))
+    alloc.model_latch.record({'account': 'antigravity', 'provider': 'antigravity-resilient',
+                              'model': 'gemini-4-argon-high'}, 'INVALID_MODEL', source='d-invalid-tray')
+    alloc.live_models.invalidate('antigravity-resilient')
+    assert provider_retry.active() == {}
+    with patch.object(live_models, 'fetch_from_paseo', return_value={'ok': True, 'providers': {
+            'antigravity-resilient': {'ok': True, 'models': [{'id': 'gemini-3.8-flash-high'}]}}}):
+        rows = {(r['account'], r['harness']): r for r in router_data.harness_model_rows()}
+        argon_group = next(m for m in rows[('antigravity', 'antigravity-resilient')]['models'] if 'argon' in m['model'])
+        latch_note = router_data.launch_unavailable_text(alloc, alloc.model_latch.active(), 'antigravity',
+                                                         [('antigravity', 'argon_high', {'model': 'gemini-4-argon-high'})])
+        assert latch_note and argon_group['launch_unavailable'] == latch_note
+        thread = router_data._LIVE_REFRESH['thread']
+        if thread is not None:
+            thread.join(5)
+
+
+def test_the_tray_never_calls_the_bridge_on_its_own_thread(tmp_path, monkeypatch):
+    """A hung Paseo held harness_model_rows for ~10 s on the Tk thread (review, 2026-11-10). The tray reads the cache
+    and refreshes it on a background thread."""
+    import threading
+    import time
+    from test_model_catalog import settings
+    import live_models
+    target = settings(tmp_path, monkeypatch)
+    live_store = target.parent / live_models.FILE
+    monkeypatch.setenv('ROUTER_LIVE_MODELS', str(live_store))
+    alloc, _ = router_data.modules()
+    accounts = {'accounts': {'antigravity': {'verified': True, 'bundles': {
+        'argon_high': {'provider': 'antigravity-resilient', 'model': 'gemini-4-argon-high'}}}}}
+    release, callers = threading.Event(), []
+
+    def hung_bridge(providers, **_):
+        callers.append(threading.current_thread())
+        release.wait(10)
+        return {'ok': True, 'providers': {'antigravity-resilient': {'ok': True, 'models': [{'id': 'gemini-3.8-flash-high'}]}}}
+
+    with patch.object(live_models, 'fetch_from_paseo', hung_bridge):
+        started = time.monotonic()
+        assert router_data.live_model_state(alloc, accounts) == {'providers': {}}
+        assert router_data.live_model_state(alloc, accounts) == {'providers': {}}  # one refresh at a time
+        assert time.monotonic() - started < 1.0
+        release.set()
+        router_data._LIVE_REFRESH['thread'].join(5)
+    assert len(callers) == 1 and callers[0] is not threading.current_thread()
+    live_models._MEM_CACHE.clear()
+    doc = router_data.live_model_state(alloc, accounts)
+    assert doc['providers']['antigravity-resilient']['models'] == [{'id': 'gemini-3.8-flash-high'}]
 
 
 if __name__ == '__main__':

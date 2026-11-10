@@ -157,7 +157,6 @@ def _accounts_fingerprint(allocator) -> tuple | None:
         STATE_DIR / "quota-exhaustion.json",
         STATE_DIR / "plan-inactive.json",
         STATE_DIR / "venice-usage.json",
-        Path(os.environ.get("ROUTER_LIVE_MODELS") or (STATE_DIR / "paseo-live-models.json")),
         Path.home() / ".usage-float" / "usage-cache.json",
         paseo_home / "config.json",
     )
@@ -168,7 +167,7 @@ def _accounts_fingerprint(allocator) -> tuple | None:
             stamps.append((str(path), st.st_mtime_ns, st.st_size))
         except OSError:
             stamps.append((str(path), None, None))
-    return (str(STATE_DIR), os.environ.get("ROUTER_HOST_POLICY"), os.environ.get("ROUTER_LIVE_MODELS"), *stamps)
+    return (str(STATE_DIR), os.environ.get("ROUTER_HOST_POLICY"), *stamps)
 
 
 def _cached_accounts(allocator=None) -> dict:
@@ -1416,20 +1415,44 @@ def provider_retry_holds(allocator) -> dict:
     return found if isinstance(found, dict) else {}
 
 
+_LIVE_REFRESH_LOCK = threading.Lock()
+_LIVE_REFRESH: dict = {"thread": None}
+
+
 def live_model_state(allocator, accounts: dict | None = None) -> dict:
-    """Live Paseo provider model lists from accounts or the state directory cache."""
-    if isinstance(accounts, dict) and isinstance(accounts.get("_live_models"), dict):
-        return accounts["_live_models"]
+    """Live Paseo provider model lists as roll/plan cached them. Never calls the bridge: this runs on the Tk thread
+    (model page prefill) and a hung Paseo would freeze the window. A stale or missing reading starts one background
+    refresh; its answer shows on the next redraw."""
     live_mod = getattr(allocator, "live_models", None)
-    if live_mod is None or not isinstance(getattr(live_mod, "FILE", None), str):
+    if live_mod is None or not isinstance(getattr(live_mod, "FILE", None), str) or not live_mod.enabled():
         return {"providers": {}}
     cached = live_mod.read_cached(base_dir=STATE_DIR, allow_stale=True)
     if not isinstance(cached, dict):
         return {"providers": {}}
-    if (cached.get("providers") or {}) or not live_mod.enabled():
-        return cached
-    refreshed = live_mod.load_or_refresh(accounts=accounts, base_dir=STATE_DIR)
-    return refreshed if isinstance(refreshed, dict) else {"providers": {}}
+    if isinstance(accounts, dict):
+        fresh = live_mod.read_cached(base_dir=STATE_DIR).get("providers") or {}
+        if any(p not in fresh for p in live_mod.candidate_providers(accounts)):
+            _refresh_live_models_in_background(live_mod, accounts)
+    return cached
+
+
+def _refresh_live_models_in_background(live_mod, accounts: dict) -> threading.Thread | None:
+    """At most one refresh at a time, on a daemon thread; a failed read is cached too, so this runs once per TTL."""
+    with _LIVE_REFRESH_LOCK:
+        running = _LIVE_REFRESH["thread"]
+        if running is not None and running.is_alive():
+            return None
+
+        def work():
+            try:
+                live_mod.load_or_refresh(accounts=accounts, base_dir=STATE_DIR)
+            except Exception:
+                pass
+
+        thread = threading.Thread(target=work, name="live-model-refresh", daemon=True)
+        _LIVE_REFRESH["thread"] = thread
+        thread.start()
+        return thread
 
 
 def _resolve_live_models_module(allocator):
@@ -1467,8 +1490,8 @@ def live_model_hold_text(allocator, live_doc: dict, account: str, spec: dict) ->
         if not isinstance(entry, dict):
             continue
         if entry.get("ok") is False:
-            detail = live_mod.unavailable_detail(entry) or "model list unavailable"
-            if detail not in unavail_details:
+            detail = live_mod.unavailable_detail(entry)  # None for a provider Paseo does not know
+            if detail and detail not in unavail_details:
                 unavail_details.append(detail)
         elif entry.get("ok") is True:
             mod = live_mod.launch_model(bspec)
@@ -1497,9 +1520,6 @@ def live_model_group_text(allocator, live_doc: dict, account: str, spec: dict, b
 
 
 def _retry_what(entry: dict) -> str:
-    code = str(entry.get("failure_code") or "").strip().lower()
-    if code in ("invalid_model", "model_not_found", "unknown_model", "unsupported_model"):
-        return _tr("提供方不再提供该模型")
     return _tr("提供方报错") if entry.get("failure_code") == "provider_turn_failed" else _tr("提供方持续重试")
 
 

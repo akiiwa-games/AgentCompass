@@ -3437,13 +3437,14 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         allowed=lambda name: host_policy.account_allowed(state_policy, name),
         now=now,
     )
+    latches = model_latch.active(now=now)
     latch_warnings = live_models.warnings(
         live_doc,
         accounts,
         lambda name: host_policy.account_allowed(state_policy, name),
+        covered=set(latches),
     )
-    latch_warnings += model_latch.warnings(model_latch.active(now=now),
-                                           lambda name: host_policy.account_allowed(state_policy, name))
+    latch_warnings += model_latch.warnings(latches, lambda name: host_policy.account_allowed(state_policy, name))
     latch_warnings += provider_retry.warnings(provider_retry.active(now=now),
                                               lambda name: host_policy.account_allowed(state_policy, name))
     if latch_warnings:

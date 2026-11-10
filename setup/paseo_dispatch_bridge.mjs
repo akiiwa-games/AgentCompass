@@ -659,12 +659,19 @@ export async function execute(client, input, notify = ensureNotification) {
   if (input.operation === 'provider_models') {
     const cwd = typeof input.cwd === 'string' && input.cwd.trim() ? input.cwd.trim() : undefined;
     const opts = cwd ? {cwd} : {};
+    // Paseo's own provider snapshot decides which providers are Paseo's: one it does not list is `unknown_provider`
+    // (not a Paseo provider, e.g. a LiteLLM proxy account), which callers neither warn about nor exclude on.
     const snapByProvider = new Map();
+    let snapshotRead = false;
     if (typeof client.getProvidersSnapshot === 'function') {
       try {
         const snap = await client.getProvidersSnapshot(opts);
-        for (const p of snap?.entries ?? snap?.providers ?? []) {
-          if (p && typeof p.provider === 'string' && p.provider.trim()) snapByProvider.set(p.provider.trim(), p);
+        const list = snap?.entries ?? snap?.providers;
+        if (Array.isArray(list)) {
+          snapshotRead = true;
+          for (const p of list) {
+            if (p && typeof p.provider === 'string' && p.provider.trim()) snapByProvider.set(p.provider.trim(), p);
+          }
         }
       } catch {}
     }
@@ -673,6 +680,8 @@ export async function execute(client, input, notify = ensureNotification) {
       : [...snapByProvider.keys()];
     const entries = await Promise.all(requested.map(async provider => {
       const snap = snapByProvider.get(provider);
+      if (snapshotRead && !snap)
+        return [provider, {ok: false, status: 'unknown_provider', error: 'unknown_provider', models: []}];
       if (snap && snap.enabled === false)
         return [provider, {ok: false, status: 'disabled', error: 'provider_disabled', models: []}];
       try {
