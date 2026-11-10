@@ -73,6 +73,8 @@ USAGE_CACHE = Path(os.environ["ROUTER_USAGE_CACHE"]) if os.environ.get("ROUTER_U
 # follow these prices: an Opus 5.5 token costs twice a Sonnet 5.5 token, an Astra token five times a Sol token. Without
 # them one shared per-token rate made a model that moves fewer tokens look cheaper whatever its price.
 PRICES = {
+    # Fable 5.2: platform.claude.com/docs/en/about-claude/pricing, read 2026-11-10.
+    "claude-fable-5-2": (8.0, 10.0, 16.0, 0.20, 40.0),
     "claude-fable-5-1": (10.0, 12.5, 20.0, 0.25, 50.0),
     "claude-opus-5-5": (4.0, 5.0, 8.0, 0.20, 20.0),
     "claude-sonnet-5-5": (2.0, 2.5, 4.0, 0.10, 10.0),
@@ -82,7 +84,7 @@ PRICES = {
     "gpt-6-sol": (2.0, 2.5, 2.5, 0.20, 10.0),
     "gpt-6-luna": (0.10, 0.125, 0.125, 0.01, 0.50),
 }
-PRICE_VERSION = 2      # a state scanned under another price/model table is read from the logs again
+PRICE_VERSION = 3      # a state scanned under another price/model table is read from the logs again
 
 
 # ------------------------------------------------------------------ small helpers

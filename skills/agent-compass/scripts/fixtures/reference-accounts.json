@@ -246,7 +246,8 @@
     "claude-haiku-4-5@20251001": "claude-haiku-4-5",
     "claude-opus-5": "claude-opus-5-5",
     "claude-sonnet-5": "claude-sonnet-5-5",
-    "claude-fable-5": "claude-fable-5-1",
+    "claude-fable-5": "claude-fable-5-2",
+    "fable": "claude-fable-5-2",
     "gemini-3.8-flash": "gemini-3.8-flash-high",
     "gemini-4-argon": "gemini-4-argon-high",
     "gemini-4-pro": "gemini-4-argon-high",
@@ -439,6 +440,26 @@
       "basis": "LMArena: WebDev 2026-10-28 Claude Fable 5.1 (Max) 1746 [1737,1754]; Agent 2026-11-02 Claude Fable 5.1 (Max) score 0.131 [0.113,0.150]; Vision 2026-10-19 Claude Fable 5.1 (Max) 1319 [1310,1329]; Text hard prompts (style control) 2026-10-28 Claude Fable 5.1 (Max) 1524 [1517,1531]; Text (style control) 2026-10-28 Claude Fable 5.1 (Max) 1504 [1499,1510]. tier 3.73 = mean of the per-board fits {'webdev': 3.59, 'agent': 3.88}; each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed variant (calibration/tiers.py). At High: 4.0 = 3.73 minus the Artificial Analysis effort gain of the listed variant over High beyond that of the anchors at the same tier ({'webdev': -0.21, 'agent': -0.32}; calibration/efforts.py), so the effort curve is not counted twice. coding = anchor regression on WebDev (r=0.98).",
       "responsiveness": 0.588,
       "responsiveness_basis": "artificial_analysis (Claude Fable 5.1 (High, Default Fallback), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 13.62s->0.765 (86.1 tok/s, ttft 8.97s); medium: 14.89s->0.734 (85.62 tok/s, ttft 10.22s); high: 20.89s->0.588 (86.57 tok/s, ttft 16.27s); xhigh: 69.61s->0.000 (86.24 tok/s, ttft 64.97s); max: 188.31s->0.000 (87.59 tok/s, ttft 183.74s)]; base@high=20.89s -> responsiveness=0.588"
+    },
+    "claude-fable-5-2": {
+      "tier": 4.51,
+      "visual": false,
+      "capabilities": {
+        "reasoning": 0.55,
+        "coding": 0.55,
+        "exploration": 0.55,
+        "anti_hallucination": 0.5,
+        "visual": 0.0,
+        "gui": 0.0
+      },
+      "subjective": {
+        "divergence": 0.5,
+        "global_rigor": 0.5,
+        "module_precision": 0.5
+      },
+      "basis": "Secondary measurement, 2026-11-10: Artificial Analysis Intelligence Index 65 (vals.ai/AA board) -> tier 4.51 (r 0.95, n 33). tier 4.51 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py). Not on LMArena (WebDev, Agent, Vision and Text checked 2026-11-10; boards published 2026-11-08), so coding, the other capabilities and the subjective scores are the documented unmeasured default (accounts.json unmeasured_models.generic), not Fable 5.1 values; refit with calibration/tiers.py once LMArena lists it. Public-data gaps: `cost` and `usd_per_hour` are absent because no repo code derives them from a public price (both are hand-maintained on every row); the Anthropic list price ($8 input / $40 output / $10 and $16 cache write / $0.20 cache read per MTok, platform.claude.com/docs/en/about-claude/pricing, read 2026-11-10) is in tray/capacity_stats.py PRICES. `visual` false = the unmeasured default (not on the LMArena Vision board).",
+      "responsiveness": 0.216,
+      "responsiveness_basis": "artificial_analysis (Claude Fable 5.2 (High, Default Fallback), 2026-11-10): T_turn=ttft_s+400/output_tps [low: 10.92s->0.831 (91.36 tok/s, ttft 6.54s); medium: 17.00s->0.683 (86.28 tok/s, ttft 12.36s); high: 36.14s->0.216 (92.38 tok/s, ttft 31.81s); xhigh: 79.76s->0.000 (102.76 tok/s, ttft 75.87s); max: 220.02s->0.000 (98.28 tok/s, ttft 215.95s)]; base@high=36.14s -> responsiveness=0.216"
     },
     "claude-opus-5-5": {
       "fast_capable": true,
@@ -1760,6 +1781,13 @@
         "xhigh",
         "max"
       ],
+      "claude-fable-5-2": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
       "claude-haiku-5-5": [
         "high"
       ]
@@ -1780,6 +1808,13 @@
         "max"
       ],
       "claude-fable-5-1": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-fable-5-2": [
         "low",
         "medium",
         "high",
@@ -2567,6 +2602,30 @@
         "max": 0.0
       }
     },
+    "claude-fable-5-2": {
+      "ability": {
+        "low": -0.4,
+        "medium": -0.3,
+        "high": 0.0,
+        "xhigh": 0.0,
+        "max": 0.15
+      },
+      "burn": {
+        "low": 0.24,
+        "medium": 0.29,
+        "high": 0.7,
+        "xhigh": 1.14,
+        "max": 2.05
+      },
+      "calibration_source": "Artificial Analysis Intelligence Index and cost per task by effort, models leaderboard read 2026-11-10 (Claude Fable 5.2 Low/Medium/High/Xhigh/Max, Default Fallback); ability = 0.0496 tier per index point x (index - index at High), the AA-to-tier slope over the models with an LMArena tier (calibration/efforts.py); burn = 0.7 x cost per task / cost at High",
+      "responsiveness": {
+        "low": 0.831,
+        "medium": 0.683,
+        "high": 0.216,
+        "xhigh": 0.0,
+        "max": 0.0
+      }
+    },
     "gemini-4-carbon": {
       "ability": {
         "low": -0.3,
@@ -2714,6 +2773,11 @@
           "effort": "high",
           "disabled": true
         },
+        "fable52_high": {
+          "model": "claude-fable-5-2",
+          "effort": "high",
+          "disabled": true
+        },
         "opus55_xhigh": {
           "model": "claude-opus-5-5",
           "effort": "xhigh"
@@ -2776,6 +2840,11 @@
       "bundles": {
         "lab_fable51_high": {
           "model": "claude-fable-5-1",
+          "effort": "high",
+          "disabled": true
+        },
+        "lab_fable52_high": {
+          "model": "claude-fable-5-2",
           "effort": "high",
           "disabled": true
         },

@@ -10,6 +10,7 @@ Route order, scoring weights and plan capacity ship as calibrated public default
 | :--- | ---: | :--- | :--- | :--- |
 | `beam-free` | 2.15 | 0.53 / 0.20 / 0.53 / 0.50 / 0.00 / 0.00 | 0.85 | False |
 | `claude-fable-5-1` | 4.0 | 0.98 / 0.78 / 0.90 / 0.90 / 0.00 / 0.00 | 0.59 | False |
+| `claude-fable-5-2` | 4.51 | 0.55 / 0.55 / 0.55 / 0.50 / 0.00 / 0.00 | 0.22 | False |
 | `claude-haiku-4-5` | 1.21 | 0.55 / 0.00 / 0.59 / 0.57 / 0.45 / 0.32 | 0.00 | True |
 | `claude-haiku-5-5` | 2.94 | 0.58 / 0.49 / 0.62 / 0.62 / 0.48 / 0.35 | 0.44 | True |
 | `claude-opus-4-6` | 2.74 | 0.85 / 0.41 / 0.84 / 0.88 / 0.95 / 0.52 | 0.00 | True |
@@ -68,7 +69,7 @@ Route order, scoring weights and plan capacity ship as calibrated public default
 | `qwen3.8-max` | 3.14 | 0.78 / 0.65 / 0.75 / 0.74 / 0.65 / 0.48 | 0.00 | True |
 
 R/C/E/A/V/G = reasoning, coding, exploration, anti-hallucination, visual and GUI.
-Responsiveness (`0..1`, per-effort in `effort_curves.<model>.responsiveness`) measures per-turn live-loop speed (`T_turn = (ttft_s + 400 / output_tps) * harness_overhead`, where AA `ttft_s` is `headline.timeToFirstAnswerToken` including single-turn thinking time; mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` by `scoring.responsiveness` and refreshed offline via `scripts/refresh_speed_data.py`). It is active only when the task profile marks `realtime_loop: true` (`floor = 0.50`, evaluated per `(model, effort)` with automatic step-down to a faster effort when the configured effort is below floor, within the range in [Model names, efforts and pins](router-internals.md#model-names-efforts-and-pins)); models without community speed data use the conservative policy `default` (`0.52`, `responsiveness: default`), and packet/web channels (`dot`, `grok-bot`) are `n/a` (`not_applicable`).
+Responsiveness (`0..1`, per-effort in `effort_curves.<model>.responsiveness`) measures per-turn live-loop speed (`T_turn = (ttft_s + 400 / output_tps) * harness_overhead`, where AA `ttft_s` is `headline.timeToFirstAnswerToken` including single-turn thinking time; mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` by `scoring.responsiveness` and refreshed offline via `scripts/refresh_speed_data.py`). It is active only when the task profile marks `realtime_loop: true` (`floor = 0.50`, evaluated per `(model, effort)` with automatic step-down to a faster supported effort when the configured effort is below floor); models without community speed data use the conservative policy `default` (`0.52`, `responsiveness: default`), and packet/web channels (`dot`, `grok-bot`) are `n/a` (`not_applicable`).
 
 ## Effective policy
 

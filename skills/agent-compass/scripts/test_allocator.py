@@ -1302,6 +1302,22 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(gui_rows['argon_high']['components'].get('duration_multiplier'), 1.35)
         self.assertEqual(gui_rows['sol_high']['components'].get('duration_multiplier'), 1.35)
 
+    def test_fable_5_2_ships_its_own_public_rows(self):
+        for accounts in (allocator.load_accounts(), allocator.load_accounts(allocator.reference_fleet_path())):
+            bundle = allocator.bundles(accounts)['fable52_high']
+            self.assertEqual((bundle['model'], bundle['effort']), ('claude-fable-5-2', 'high'))
+            new, old = accounts['models']['claude-fable-5-2'], accounts['models']['claude-fable-5-1']
+            # Measured on the Artificial Analysis board only: its own tier and effort curve, never Fable 5.1's numbers.
+            self.assertNotEqual(new['tier'], old['tier'])
+            self.assertNotEqual(new['capabilities'], old['capabilities'])
+            self.assertEqual(new['capabilities'], accounts['unmeasured_models']['generic']['capabilities'])
+            self.assertIn('Artificial Analysis', accounts['effort_curves']['claude-fable-5-2']['calibration_source'])
+            # No public derivation exists for these: they stay absent instead of guessed.
+            self.assertNotIn('cost', new)
+            self.assertNotIn('usd_per_hour', new)
+            self.assertEqual(accounts['dispatch_efforts']['claude']['claude-fable-5-2'],
+                             accounts['dispatch_efforts']['claude']['claude-fable-5-1'])
+
     def test_existing_bundles_keep_tag_pools_and_draws_override(self):
         accounts = allocator.load_accounts()
         flat = allocator.bundles(accounts)
@@ -1310,6 +1326,7 @@ class AllocatorTests(unittest.TestCase):
             ('opus55_high', ['five_hour', 'seven_day']),
             ('sonnet55_high', ['five_hour', 'seven_day']),
             ('fable51_high', ['five_hour', 'seven_day', 'weekly_fable']),
+            ('fable52_high', ['five_hour', 'seven_day', 'weekly_fable']),
             ('sol_high', ['usage']),
             ('pi_sol_high', ['usage']),
             ('flash_high', ['gemini-5h', 'gemini-weekly']),

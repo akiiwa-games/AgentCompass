@@ -87,7 +87,7 @@ def resolve_model(raw_model_name, known_models, aliases=None):
     families = (
         (r'^claude-opus', 'claude-opus-5-5'),
         (r'^claude-sonnet', 'claude-sonnet-5-5'),
-        (r'^claude-fable', 'claude-fable-5-1'),
+        (r'^claude-fable', 'claude-fable-5-2'),
         (r'^claude-haiku', 'claude-haiku-5-5'),
         (r'^gpt-6.*terra', 'gpt-6.1-terra'),
         (r'^gpt-6.*sol', 'gpt-6.1-sol'), (r'^gpt-6.*luna', 'gpt-6-luna'),

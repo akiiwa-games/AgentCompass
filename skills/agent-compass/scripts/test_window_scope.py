@@ -24,6 +24,9 @@ class WindowScopeTests(unittest.TestCase):
     def test_tags_match_whole_tokens_only(self):
         self.assertTrue(window_scope.binds('claude-fable-5-1', {'models': ['fable']}))
         self.assertTrue(window_scope.binds('claude-fable-5-1', {'models': ['Claude Fable 5.1']}))
+        # Claude's usage API scopes the weekly limit to the family ("Fable"), so it binds every Fable release.
+        self.assertTrue(window_scope.binds('claude-fable-5-2', {'models': ['Fable']}))
+        self.assertFalse(window_scope.binds('claude-fable-5-2', {'models': ['Claude Fable 5.1']}))
         self.assertFalse(window_scope.binds('claude-opus-5-5', {'models': ['fable']}))
         self.assertFalse(window_scope.binds('gemini-4-argon-high', {'models': ['gem']}))
         self.assertTrue(window_scope.binds('claude-opus-5-5-low', {'models_except': ['gemini']}))

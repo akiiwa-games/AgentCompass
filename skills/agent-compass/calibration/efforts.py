@@ -25,7 +25,7 @@ AA_NAMES = {'claude-opus-5-5': 'Claude Opus 5.5', 'gpt-6-astra': 'GPT-6 Astra', 
             'claude-sonnet-5-5': 'Claude Sonnet 5.5', 'grok-4.7': 'Grok 4.7', 'gemini-3.8-flash-high': 'Gemini 3.8 Flash',
             'claude-haiku-5-5': 'Claude Haiku 5.5', 'gpt-6-luna': 'GPT-6 Luna', 'gpt-6.1-terra': 'GPT-6.1 Terra',
             'deepseek-v4.1-flash-free': 'DeepSeek V4.1 Flash 1017', 'claude-fable-5-1': 'Claude Fable 5.1',
-            'gemini-4-carbon': 'Gemini 4 Carbon'}
+            'claude-fable-5-2': 'Claude Fable 5.2', 'gemini-4-carbon': 'Gemini 4 Carbon'}
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 VARIANT_EFFORT = {'max': 'max', 'xhigh': 'xhigh', 'high': 'high', 'medium': 'medium', 'low': 'low'}
 
