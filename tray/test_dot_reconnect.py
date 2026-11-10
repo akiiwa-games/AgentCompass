@@ -75,6 +75,26 @@ class ReconnectTests(unittest.TestCase):
         self.assertEqual([c[0] for c in self.calls], ["register", "wake"])
         self.assertEqual(dr.load_state()["host"], dr.HOST)
 
+    def test_a_scratch_folder_that_cannot_be_removed_does_not_abort_the_reconnect(self):
+        import os
+        real_rmdir = os.rmdir
+        refused = []
+
+        def rmdir(path, *args, **kwargs):
+            if Path(path).name.startswith("agentcompass-dot-") or Path(path).parent == Path(tempfile.gettempdir()):
+                refused.append(path)
+                raise OSError(145, "The directory is not empty", str(path))
+            return real_rmdir(path, *args, **kwargs)
+
+        try:
+            with self.node({"register": {"ok": True}, "wake": {"ok": True}}), mock.patch("os.rmdir", side_effect=rmdir):
+                self.assertIn("已自动更新", dr.reconnect(NOW))
+        finally:
+            for folder in refused:
+                real_rmdir(folder)
+        self.assertEqual(len(refused), 2)
+        self.assertFalse(dr.load_state()["wake_pending"])
+
     def test_nothing_runs_while_a_prerequisite_is_missing(self):
         dr.save_state({"url": "https://old", "name": "old"})
         for target, value in (("turn_active", True), ("bridge_endpoint", None)):

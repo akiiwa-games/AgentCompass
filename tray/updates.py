@@ -600,6 +600,43 @@ def _read_version_from_json(path: Path) -> str:
     return ""
 
 
+ROLLBACK_SEEN_NAME = "app-rollback-seen.json"
+
+
+def rollback_notice(install_root: Path | None = None, state_dir: Path | None = None) -> str | None:
+    """One message per rollback the installer's loader recorded in ``app\\state.json`` since the last update; None otherwise.
+
+    An update rewrites state.json without the rollback fields, so only a rollback after the newest update is reported.
+    Only the frozen install has that file; a checkout returns None.
+    """
+    if install_root is None:
+        if not component_launch.frozen():
+            return None
+        install_root = Path(sys.executable).resolve().parent
+    try:
+        state = json.loads((Path(install_root) / "app" / "state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(state, dict) or not state.get("rolled_back_at"):
+        return None
+    stamp = str(state["rolled_back_at"])
+    seen_file = (Path(state_dir) if state_dir is not None else services.STATE_DIR) / ROLLBACK_SEEN_NAME
+    try:
+        if json.loads(seen_file.read_text(encoding="utf-8")).get("rolled_back_at") == stamp:
+            return None
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        seen_file.parent.mkdir(parents=True, exist_ok=True)
+        seen_file.write_bytes(json.dumps({"rolled_back_at": stamp}).encode("utf-8"))
+    except OSError:
+        pass
+    current = str(state.get("current_version") or state.get("active_version") or "?")
+    failed = str(state.get("rolled_back_from") or "?")
+    reason = str(state.get("rollback_reason") or "?")
+    return _tr("AgentCompass 已回退到代码包 {0}（原为 {1}）：{2}。详情见 ~/.agent-compass/tray-errors.log").format(current, failed, reason)
+
+
 def local_version(root: Path | None = None) -> str:
     if root is None and component_launch.frozen():
         exe_dir = Path(sys.executable).resolve().parent

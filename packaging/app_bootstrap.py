@@ -8,6 +8,11 @@ updated in place from ``app-<version>.zip`` whenever the runtime fingerprint is 
 If ``<app>\\app\\current`` is missing, corrupt, or fails to import at startup, this loader
 automatically rolls back to ``<app>\\app\\previous`` (or re-extracts the last valid code package
 from ``<app>\\app\\packages``) before running the entry point.
+
+Only the main tray's own start decides that a package is bad. A ``--run-component`` child of a
+running tray, or a tray that already came up, never rolls back: their failures say nothing
+about the package, and rewriting ``app\\current`` under a running tray mixes two versions.
+Every failure is appended with its traceback to ``~/.agent-compass/tray-errors.log``.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 import types
 import uuid
 import zipfile
@@ -46,6 +52,14 @@ CORE_HASH_CHECK_FILES = (
     "tray/component_launch.py",
     "tray/updates.py",
 )
+
+# ``AgentCompass.exe --run-component <name>`` (tray/component_launch.py FLAG).
+COMPONENT_FLAG = "--run-component"
+# tray/app.pyw sets this on ``sys`` once its icon is up. A crash after that is not a bad package.
+TRAY_STARTED_ATTR = "_agentcompass_tray_started"
+ERROR_LOG_MAX_BYTES = 1_000_000
+# tray/app.pyw single_instance(): held by the tray that owns the package for as long as it runs.
+TRAY_MUTEX_NAME = "Local\\AgentCompassTray"
 
 CORE_TRAY_SYNTAX_FILES = (
     "tray/app.pyw",
@@ -596,15 +610,104 @@ def _run_tray_once(active_dir: Path, args: list[str], component_launch) -> int:
     return 0
 
 
+def error_log_path() -> Path:
+    return Path.home() / ".agent-compass" / "tray-errors.log"
+
+
+def log_exception(context: str, args: list[str]) -> None:
+    """Append the exception being handled, with its traceback, to ``~/.agent-compass/tray-errors.log``."""
+    text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] pid={os.getpid()} {context} argv={args[1:]!r}\n{traceback.format_exc()}\n"
+    try:
+        path = error_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if path.stat().st_size > ERROR_LOG_MAX_BYTES:
+                os.replace(path, path.with_name(path.name + ".1"))
+        except OSError:
+            pass
+        with path.open("a", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
+    except Exception:
+        pass
+
+
+def is_component_request(args: list[str]) -> bool:
+    return len(args) >= 3 and args[1] == COMPONENT_FLAG
+
+
+def tray_running_elsewhere() -> bool:
+    """True while another process holds the tray's single-instance mutex (tray/app.pyw ``single_instance``).
+
+    Call it after this process released its own handle (``_release_tray_mutex``): a named mutex exists only
+    while some handle to it is open.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenMutexW.restype = ctypes.c_void_p
+        handle = kernel.OpenMutexW(0x00100000, False, TRAY_MUTEX_NAME)  # SYNCHRONIZE
+        if not handle:
+            return False
+        kernel.CloseHandle(ctypes.c_void_p(handle))
+        return True
+    except Exception:
+        return False
+
+
+def run_component(root: Path, args: list[str]) -> int:
+    """Run one tray child (``--run-component <name>``) from ``app\\current`` as it is.
+
+    A component never repairs, rolls back or rewrites the installed app. It is started by a tray
+    that already loaded a package, so its failure (a bug, a locked file, an update swapping files
+    under it) says nothing about whether the package is bad, and replacing ``app\\current`` would
+    leave the running tray on one version and the disk on another. The tray's next start judges
+    the package. The failure is logged with its traceback and the component exits 1.
+    """
+    return _run_as_found(root, args, f"component {args[2]}")
+
+
+def _run_as_found(root: Path, args: list[str], context: str) -> int:
+    """Run a component, or a tray launched beside a running one, from ``app\\current`` without repairing it."""
+    try:
+        current = root / "app" / "current"
+        ok, reason = validate_app_dir(current, install_root=root)
+        if not ok:
+            raise RuntimeError(f"{current} is not loadable ({reason}); the tray checks it again on its next start")
+        component_launch = _verify_tray_imports(current, root)
+        if is_component_request(args):
+            return int(component_launch.dispatch(args) or 0)
+        return _run_tray_once(current, args, component_launch)
+    except Exception:
+        log_exception(f"{context} failed", args)
+        if sys.stderr is not None:
+            try:
+                traceback.print_exc(file=sys.stderr)
+                sys.stderr.flush()
+            except Exception:
+                pass
+        return 1
+
+
 def run_tray(install_root: Path | None = None, argv: list[str] | None = None) -> int:
     root = Path(install_root).resolve() if install_root is not None else install_root_from_executable()
     args = list(sys.argv if argv is None else argv)
+    if is_component_request(args):
+        return run_component(root, args)
+    # Read once and drop it: a tray restarted later inherits this environment and must judge its own package.
+    rolled_back = os.environ.pop("AGENTCOMPASS_ROLLBACK_RETRY", None) == "1"
+    if tray_running_elsewhere():
+        # A second launch (Start menu, shortcut) only opens the running tray's window. That tray owns the
+        # package; this process must not repair or replace app\current under it.
+        return _run_as_found(root, args, "second tray launch")
     active_dir = activate_app_dir(root)
-    rolled_back = os.environ.get("AGENTCOMPASS_ROLLBACK_RETRY") == "1"
     try:
         component_launch = _verify_tray_imports(active_dir, root)
     except Exception as exc:
-        if rolled_back:
+        log_exception("tray import failed", args)
+        if rolled_back or tray_running_elsewhere():
             raise
         restored = rollback_to_previous(root, reason=f"tray import failed: {exc}")
         if restored is None:
@@ -614,15 +717,19 @@ def run_tray(install_root: Path | None = None, argv: list[str] | None = None) ->
         rolled_back = True
         component_launch = _verify_tray_imports(active_dir, root)
 
+    setattr(sys, TRAY_STARTED_ATTR, False)
     try:
         return _run_tray_once(active_dir, args, component_launch)
     except Exception as exc:
+        started = bool(getattr(sys, TRAY_STARTED_ATTR, False))
+        log_exception("tray failed after it started" if started else "tray startup failed", args)
         _release_tray_mutex()
-        if not rolled_back:
+        # Once the icon is up the package has loaded and run; a later crash is a runtime fault that the
+        # previous package would not cure, so it is reported, not rolled back.
+        if not rolled_back and not started and not tray_running_elsewhere():
             restored = rollback_to_previous(root, reason=f"tray startup failed: {exc}")
             if restored is not None:
-                is_component = len(args) >= 3 and args[1] == getattr(component_launch, "FLAG", "--run-component")
-                if getattr(sys, "frozen", False) and not is_component and Path(sys.executable).is_file():
+                if getattr(sys, "frozen", False) and Path(sys.executable).is_file():
                     for stream in (sys.stdout, sys.stderr):
                         try:
                             if stream is not None:

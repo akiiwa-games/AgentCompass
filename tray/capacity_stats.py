@@ -456,7 +456,8 @@ def scan_antigravity(path: Path, entry: dict) -> None:
         return
     if stamp == entry["offset"]:
         return
-    with tempfile.TemporaryDirectory() as scratch:
+    # The copy is scratch: a file an indexer or antivirus still holds must not fail the scan when the folder is removed.
+    with tempfile.TemporaryDirectory(prefix="agentcompass-capacity-", ignore_cleanup_errors=True) as scratch:
         copy = Path(scratch) / path.name
         try:
             for suffix in ("", "-wal", "-shm"):

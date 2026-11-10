@@ -564,14 +564,20 @@ class PackagingTests(unittest.TestCase):
             self.assertFalse((install_root / "app" / "previous").exists())
             saved_path = list(sys.path)
             saved_modules = dict(sys.modules)
+            error_log = base / "tray-errors.log"
             try:
-                rc = app_bootstrap.run_tray(install_root, argv=["AgentCompass.exe"])
+                with mock.patch.object(app_bootstrap, "error_log_path", return_value=error_log), \
+                        mock.patch.object(app_bootstrap, "TRAY_MUTEX_NAME", f"Local\\AgentCompassTrayTest_{uuid.uuid4().hex}"):
+                    rc = app_bootstrap.run_tray(install_root, argv=["AgentCompass.exe"])
             finally:
                 sys.path[:] = saved_path
                 sys.modules.clear()
                 sys.modules.update(saved_modules)
             self.assertEqual(rc, 0)
             self.assertEqual(marker_file.read_text(encoding="utf-8"), "0.3.18")
+            log_text = error_log.read_text(encoding="utf-8")
+            self.assertIn("tray startup failed", log_text)
+            self.assertIn("simulated 0.4.0 startup crash after mutex", log_text)
             # Verify the named mutex acquired by 0.4.0 was closed by _release_tray_mutex()
             test_handle = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
             last_err = ctypes.windll.kernel32.GetLastError()
@@ -611,6 +617,221 @@ class PackagingTests(unittest.TestCase):
             gate_mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(gate_mod)
             self.assertEqual(gate_mod.router_command(), "agentcompass")
+
+    def _stage_previous_and_current(self, base: Path, current_files: dict[str, str]):
+        """Install 0.4.0 as app/previous and 0.4.1 (with ``current_files`` overridden) as app/current."""
+        import shutil
+
+        app_bundle = self._load_packaging_module("app_bundle")
+        repo_v1 = self._make_mini_repo(base, version="0.4.0")
+        repo_v2 = self._make_mini_repo(base, version="0.4.1")
+        for rel, content in current_files.items():
+            (repo_v2 / rel).write_bytes(content.encode("utf-8"))
+        dist_dir = base / "dist"
+        install_root = dist_dir / "AgentCompass"
+        install_root.mkdir(parents=True)
+        app_bundle.stage_installed_app(repo_v1, install_root, dist_dir=dist_dir, version="0.4.0")
+        prev_copy = base / "prev-0.4.0"
+        shutil.copytree(install_root / "app" / "current", prev_copy)
+        app_bundle.stage_installed_app(repo_v2, install_root, dist_dir=dist_dir, version="0.4.1")
+        shutil.copytree(prev_copy, install_root / "app" / "previous")
+        return install_root
+
+    @staticmethod
+    def _app_snapshot(install_root: Path):
+        app = install_root / "app"
+        current = sorted(
+            (str(path.relative_to(app / "current")), path.read_bytes())
+            for path in (app / "current").rglob("*")
+            if path.is_file() and "__pycache__" not in path.parts
+        )
+        return (app / "state.json").read_bytes(), current, sorted(path.name for path in app.iterdir())
+
+    def _run_tray_isolated(self, app_bootstrap, install_root: Path, argv: list[str], error_log: Path,
+                           mutex_name: str | None = None, retry_env: str | None = None, after=None):
+        import os
+        import sys
+        import uuid
+
+        saved_path = list(sys.path)
+        saved_modules = dict(sys.modules)
+        sys.modules.pop("component_launch", None)
+        # A unique mutex name: the real tray on this machine holds Local\AgentCompassTray.
+        mutex_name = mutex_name or f"Local\\AgentCompassTrayTest_{uuid.uuid4().hex}"
+        try:
+            with mock.patch.dict(os.environ, {}, clear=False), \
+                    mock.patch.object(app_bootstrap, "error_log_path", return_value=error_log), \
+                    mock.patch.object(app_bootstrap, "TRAY_MUTEX_NAME", mutex_name):
+                os.environ.pop("AGENTCOMPASS_ROLLBACK_RETRY", None)
+                if retry_env is not None:
+                    os.environ["AGENTCOMPASS_ROLLBACK_RETRY"] = retry_env
+                result = app_bootstrap.run_tray(install_root, argv=argv)
+                if after is not None:
+                    after()
+                return result
+        finally:
+            sys.path[:] = saved_path
+            sys.modules.clear()
+            sys.modules.update(saved_modules)
+            if hasattr(sys, app_bootstrap.TRAY_STARTED_ATTR):
+                delattr(sys, app_bootstrap.TRAY_STARTED_ATTR)
+
+    def test_a_failing_component_never_rolls_back_or_rewrites_the_installed_app(self):
+        from tempfile import TemporaryDirectory
+
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        failing_component = (
+            "FLAG = '--run-component'\n"
+            "def dispatch(argv=None):\n"
+            "    if argv and len(argv) >= 3 and argv[1] == FLAG:\n"
+            "        raise OSError(145, 'The directory is not empty', 'C:/Temp/tmp2jlt612p')\n"
+            "    return None\n"
+        )
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            install_root = self._stage_previous_and_current(base, {"tray/component_launch.py": failing_component})
+            before = self._app_snapshot(install_root)
+            error_log = base / "tray-errors.log"
+
+            rc = self._run_tray_isolated(
+                app_bootstrap, install_root,
+                ["AgentCompass.exe", "--run-component", "capacity_stats", "--once", "--quiet"], error_log,
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(self._app_snapshot(install_root), before)
+            log_text = error_log.read_text(encoding="utf-8")
+            self.assertIn("component capacity_stats failed", log_text)
+            self.assertIn("Traceback (most recent call last)", log_text)
+            self.assertIn("The directory is not empty", log_text)
+
+            # A component that finds app/current unloadable (an update mid-swap) fails alone too; the tray's next start judges it.
+            (install_root / "app" / "current" / "tray" / "app.pyw").write_bytes(b"# half-written by an update\n")
+            before = self._app_snapshot(install_root)
+            rc = self._run_tray_isolated(
+                app_bootstrap, install_root, ["AgentCompass.exe", "--run-component", "usage_collect"], error_log,
+            )
+            self.assertEqual(rc, 1)
+            self.assertEqual(self._app_snapshot(install_root), before)
+            self.assertIn("component usage_collect failed", error_log.read_text(encoding="utf-8"))
+
+    def test_a_tray_crash_after_the_icon_is_up_is_logged_but_not_rolled_back(self):
+        from tempfile import TemporaryDirectory
+
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        crashing_after_start = (
+            "import sys\n"
+            "sys._agentcompass_tray_started = True\n"
+            "raise RuntimeError('runtime fault long after start')\n"
+        )
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            install_root = self._stage_previous_and_current(base, {"tray/app.pyw": crashing_after_start})
+            before = self._app_snapshot(install_root)
+            error_log = base / "tray-errors.log"
+
+            with self.assertRaisesRegex(RuntimeError, "runtime fault long after start"):
+                self._run_tray_isolated(app_bootstrap, install_root, ["AgentCompass.exe"], error_log)
+
+            self.assertEqual(self._app_snapshot(install_root), before)
+            log_text = error_log.read_text(encoding="utf-8")
+            self.assertIn("tray failed after it started", log_text)
+            self.assertIn("runtime fault long after start", log_text)
+
+    def test_a_tray_startup_crash_still_rolls_back_to_previous(self):
+        import json
+        from tempfile import TemporaryDirectory
+
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            install_root = self._stage_previous_and_current(
+                base, {"tray/app.pyw": "raise RuntimeError('bad package at startup')\n"},
+            )
+            error_log = base / "tray-errors.log"
+
+            rc = self._run_tray_isolated(app_bootstrap, install_root, ["AgentCompass.exe"], error_log)
+
+            self.assertEqual(rc, 0)
+            state = json.loads((install_root / "app" / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["current_version"], "0.4.0")
+            self.assertEqual(state["rolled_back_from"], "0.4.1")
+            self.assertIn("bad package at startup", state["rollback_reason"])
+            self.assertIn("tray startup failed", error_log.read_text(encoding="utf-8"))
+
+    def test_a_second_launch_beside_a_running_tray_never_rolls_back(self):
+        import ctypes
+        import uuid
+        from tempfile import TemporaryDirectory
+
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        # Same shape as app.pyw main() when single_instance() fails: open the running tray's window, which raises.
+        second_launch = "raise OSError(32, 'open_window failed beside the running tray')\n"
+        mutex_name = f"Local\\AgentCompassTrayTest_{uuid.uuid4().hex}"
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateMutexW.restype = ctypes.c_void_p
+        running_tray = kernel.CreateMutexW(None, False, mutex_name)  # the first tray, still running
+        self.addCleanup(kernel.CloseHandle, ctypes.c_void_p(running_tray))
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            install_root = self._stage_previous_and_current(base, {"tray/app.pyw": second_launch})
+            before = self._app_snapshot(install_root)
+            error_log = base / "tray-errors.log"
+
+            rc = self._run_tray_isolated(app_bootstrap, install_root, ["AgentCompass.exe"], error_log, mutex_name=mutex_name)
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(self._app_snapshot(install_root), before)
+            self.assertIn("second tray launch failed", error_log.read_text(encoding="utf-8"))
+
+            # Nor does a second launch that finds app\current mid-swap repair it under the running tray.
+            (install_root / "app" / "current" / "tray" / "updates.py").write_bytes(b"# half-written by an update\n")
+            before = self._app_snapshot(install_root)
+            rc = self._run_tray_isolated(app_bootstrap, install_root, ["AgentCompass.exe"], error_log, mutex_name=mutex_name)
+            self.assertEqual(rc, 1)
+            self.assertEqual(self._app_snapshot(install_root), before)
+
+    def test_the_rollback_retry_flag_is_consumed_so_a_later_restart_judges_its_own_package(self):
+        import json
+        import os
+        from tempfile import TemporaryDirectory
+
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            install_root = self._stage_previous_and_current(base, {"tray/app.pyw": "# a healthy restored tray\n"})
+            error_log = base / "tray-errors.log"
+            seen = {}
+
+            rc = self._run_tray_isolated(
+                app_bootstrap, install_root, ["AgentCompass.exe"], error_log, retry_env="1",
+                after=lambda: seen.update(flag=os.environ.get("AGENTCOMPASS_ROLLBACK_RETRY")),
+            )
+            self.assertEqual(rc, 0)
+            self.assertIsNone(seen["flag"])  # children and later restarts of this tray do not inherit it
+
+            # The flag still stops a second rollback in the process that got it.
+            bad = self._stage_previous_and_current(base / "bad", {"tray/app.pyw": "raise RuntimeError('restored package is bad too')\n"})
+            with self.assertRaisesRegex(RuntimeError, "restored package is bad too"):
+                self._run_tray_isolated(app_bootstrap, bad, ["AgentCompass.exe"], error_log, retry_env="1")
+            state = json.loads((bad / "app" / "state.json").read_text(encoding="utf-8"))
+            self.assertNotIn("rolled_back_from", state)
+
+    def test_the_error_log_rotates_instead_of_growing_without_bound(self):
+        from tempfile import TemporaryDirectory
+
+        app_bootstrap = self._load_packaging_module("app_bootstrap")
+        with TemporaryDirectory() as tmp:
+            error_log = Path(tmp) / "tray-errors.log"
+            error_log.write_bytes(b"x" * (app_bootstrap.ERROR_LOG_MAX_BYTES + 1))
+            with mock.patch.object(app_bootstrap, "error_log_path", return_value=error_log):
+                try:
+                    raise ValueError("logged")
+                except ValueError:
+                    app_bootstrap.log_exception("component demo failed", ["AgentCompass.exe", "--run-component", "demo"])
+            self.assertTrue(error_log.with_name("tray-errors.log.1").is_file())
+            self.assertIn("ValueError: logged", error_log.read_text(encoding="utf-8"))
+            self.assertLess(error_log.stat().st_size, 10_000)
 
 
 if __name__ == "__main__":

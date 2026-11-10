@@ -378,6 +378,19 @@ def notify_if_restarted(icon: pystray.Icon) -> bool:
     return True
 
 
+def notify_if_rolled_back(icon: pystray.Icon) -> bool:
+    """Say once that the installer's loader put an older code package back, so an update cannot look done when it was undone."""
+    message = updates.rollback_notice()
+    if not message:
+        return False
+    try:
+        notify(icon, message)
+        log_info(message)
+    except Exception as exc:
+        log_error(exc)
+    return True
+
+
 PLUGIN_ACTIONS = {
     "usage-float": lambda: services.component_action("usage-float", "show"),
     "chatgpt-web": lambda: services.start_chatgpt_web(True),
@@ -501,6 +514,8 @@ def main() -> None:
 
     def setup(icon: pystray.Icon) -> None:
         icon.visible = True
+        # The package loaded and the icon is up: the installer's loader no longer treats a crash as a bad package.
+        sys._agentcompass_tray_started = True
         log_info("tray icon visible")
         try:
             st = update_status.reconcile_status()
@@ -519,6 +534,7 @@ def main() -> None:
         except Exception as exc:
             log_error(exc)
         notify_if_restarted(icon)
+        notify_if_rolled_back(icon)
         # Login starts services; an explicit UI-only maintenance reload must not
         # start a service that the user intentionally left stopped.
         if "--attach-only" not in sys.argv:
