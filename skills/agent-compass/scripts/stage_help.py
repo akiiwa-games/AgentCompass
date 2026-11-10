@@ -32,7 +32,7 @@ STAGES = {
     'record': ('Record a route the user or a hard constraint forced, so the spawn gate accepts it.',
                'record --constraint user_override --provider P --account A --model M --effort E --basis "<user quote>"',
                ('constraint', 'provider', 'account', 'model', 'effort', 'basis'),
-               ('reason_category', 'specialty', 'hours', 'fast', 'dry_run', 'usage_cache')),
+               ('trigger', 'reason_category', 'specialty', 'hours', 'fast', 'dry_run', 'usage_cache')),
     'override': ('Add, list or clear a temporary routing boost (reset or subscription end coming soon).',
                  'override --list   |   override --provider P --account A --basis "<user quote>" [--resets-in H | --expires-in H]',
                  ('list', 'clear', 'provider', 'account', 'model', 'basis'),

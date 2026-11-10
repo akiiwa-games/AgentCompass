@@ -14,6 +14,19 @@ HOST_SESSION_ID_VARS = (
     'OPENCODE_SESSION_ID',
 )
 
+# The session this process runs in, never its parent: ROUTER_PARENT_AGENT_ID is the parent link roll gives a worker.
+OWN_SESSION_ID_VARS = tuple(var for var in HOST_SESSION_ID_VARS if var != 'ROUTER_PARENT_AGENT_ID')
+
+
+def own_session_ids():
+    """IDs naming the calling session itself: its host session ID(s) and, under Paseo, its own agent ID.
+
+    Real IDs from the environment only (no transcript or ppid guess), so a ledger row written here can authorize
+    this session and no other. roll strips the parent's copies from a worker's environment (roll.HOST_SESSION_ENV).
+    """
+    ids = [os.environ.get(var, '').strip() for var in (*OWN_SESSION_ID_VARS, 'PASEO_AGENT_ID')]
+    return list(dict.fromkeys(value for value in ids if value))
+
 
 def _claude_project_dir_candidates(projects_root: Path) -> list[Path]:
     try:

@@ -157,6 +157,29 @@ class FindingTests(unittest.TestCase):
             path.write_text("[1]", encoding="utf-8")
             self.assertIsNone(audit.load_capacity(path))
 
+    def test_remote_trigger_routine_launches_are_counted_not_gated(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        def call(minutes, action, call_id):
+            return json.dumps({"timestamp": (T0 + dt.timedelta(minutes=minutes)).isoformat(), "message": {"content": [
+                {"type": "tool_use", "id": call_id, "name": "RemoteTrigger", "input": {"action": action}}]}})
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "s.jsonl"
+            path.write_text("\n".join([
+                call(-60, "run", "old"),          # before the window
+                call(1, "create", "a"), call(1, "create", "a"),   # the same call logged twice
+                call(2, "run", "b"), call(3, "list", "c"), call(4, "get_run_log", "d"),
+                "not json RemoteTrigger"]), encoding="utf-8")
+            found = audit.scan_remote_triggers([str(path), str(Path(directory) / "missing.jsonl")], T0)
+        self.assertEqual([r["action"] for r in found], ["create", "run"])
+        finding = {f["key"]: f for f in audit.build_findings(context([], remote_triggers=found))}["remote_trigger"]
+        self.assertEqual(finding["level"], "info")
+        self.assertIn("create 1, run 1", finding["evidence"])
+        self.assertNotIn("remote_trigger", self.keys(context([])))
+
     def test_pro_burst_and_bloated_long_session_are_reported(self):
         pro = {"provider": "chatgpt-web", "model": "gpt-6-pro"}
         rows = [row(i * 30, bundle=pro) for i in range(6)]

@@ -20,6 +20,7 @@ import dispatch_flow
 import entry
 import dispatch_registry as registry
 import provider_inventory
+import worker_context
 from worker_context import NATIVE_HOSTS, harness_session, require_parent_id, resolve_parent
 
 # Launcher families a configured Paseo provider may use: the dispatch adapter's own table, so a ready Grok/ACP
@@ -58,7 +59,8 @@ CLI_RUNS = {
 PROMPT_ARGUMENT = ('antigravity-resilient', 'opencode')
 PROMPT_FILE = ('grok',)
 # The caller's own session and subscription; a CLI worker gets its provider's, never these.
-HOST_SESSION_ENV = ('CLAUDE', 'CODEX_', 'PASEO_AGENT')
+# The parent's session identity never reaches a CLI worker: the worker's own host sets its own.
+HOST_SESSION_ENV = ('CLAUDE', 'CODEX_', 'PASEO_AGENT', *worker_context.OWN_SESSION_ID_VARS)
 
 
 def title_of(text):

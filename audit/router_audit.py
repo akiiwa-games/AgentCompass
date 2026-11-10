@@ -325,6 +325,44 @@ def scan_claude(files, since_day: str):
     return rows
 
 
+REMOTE_TRIGGER_LAUNCHES = ("create", "run")
+
+
+def scan_remote_triggers(files, since_dt: dt.datetime) -> list[dict]:
+    """Claude `RemoteTrigger` calls that create or run a claude.ai routine (each run is a cloud agent session).
+
+    The spawn gate leaves them alone (a cloud routine draws no local window and the router cannot route it), so the
+    audit only counts them. Reads tool names and the `action` argument, nothing else.
+    """
+    seen, found = set(), []
+    for path in files:
+        try:
+            stream = open(path, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with stream:
+            for line in stream:
+                if '"RemoteTrigger"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                at = parse_ts(obj.get("timestamp"))
+                content = (obj.get("message") or {}).get("content") if isinstance(obj.get("message"), dict) else None
+                if not at or at < since_dt or not isinstance(content, list):
+                    continue
+                for block in content:
+                    if not (isinstance(block, dict) and block.get("type") == "tool_use"
+                            and block.get("name") == "RemoteTrigger" and block.get("id") not in seen):
+                        continue
+                    seen.add(block.get("id"))
+                    action = (block.get("input") or {}).get("action")
+                    if action in REMOTE_TRIGGER_LAUNCHES:
+                        found.append({"at": at, "action": action})
+    return found
+
+
 def dot_summary():
     if not DOT_DB.is_file():
         return None
@@ -682,6 +720,13 @@ def build_findings(ctx: dict) -> list[dict]:
         add("warn", "unrouted", f"检测到 {len(unrouted)} 次未过 router 的子 agent 启动",
             f"启动前 15 分钟内无 plan/select/record 账本记录。最近样本:{samples}。",
             "检查对应宿主是否已挂载 PreToolUse router_gate_hook.py 与全局 AGENTS.md/CLAUDE.md/GEMINI.md。")
+    remote = ctx.get("remote_triggers") or []
+    if remote:
+        counts = collections.Counter(r["action"] for r in remote)
+        add("info", "remote_trigger", f"RemoteTrigger 启动云端 routine {len(remote)} 次(不经派工门禁)",
+            ", ".join(f"{action} {counts[action]}" for action in REMOTE_TRIGGER_LAUNCHES if counts[action])
+            + f";最近一次 {local(max(r['at'] for r in remote)):%m-%d %H:%M}。",
+            "云端 routine 不占本机额度窗口、router 也无法选路,按用户决定不纳入门禁;仅在此计数,数量异常时与用户核对。")
     if not ctx["ledger_rows"]:
         add("info", "ledger", "账本今日起才开始记录", "历史分配由会话回溯得到,可能漏计无法解析的输出。", "之后每次路由自动写账本。")
     order = {"crit": 0, "warn": 1, "info": 2}
@@ -858,7 +903,8 @@ def main() -> int:
            "pinned": count_pinned(codex_files + claude_files),
            "codex_days": {d: v for d, v in codex_days.items() if d >= since_day}, "claude_days": scan_claude(claude_files, since_day),
            "peaks": peak_used(rows), "heavy_by_day": heavy_by_day, "heavy_detail": {d: ", ".join(v[:6]) for d, v in heavy_detail.items()}, "dot": dot_summary(),
-           "capacity": load_capacity(), "agent_days": load_agent_days()}
+           "capacity": load_capacity(), "agent_days": load_agent_days(),
+           "remote_triggers": scan_remote_triggers(claude_files, since_dt)}
     ctx["findings"] = build_findings(ctx)
     commentary = args.commentary.read_text(encoding="utf-8") if args.commentary else ""
     report = render(ctx, args.days, args.detail_days, commentary)
