@@ -440,6 +440,8 @@
     "claude-fable-5-2": {
       "tier": 4.51,
       "visual": false,
+      "usd_per_hour": 72.92,
+      "usd_per_hour_basis": "Option B (labelled fallback; arena.ai Agent / Overall does not list the model): Artificial Analysis output speed x community token mix at the Anthropic list price ($8 input / $40 output per MTok), the same value references/five-axis-scores.json carries as models.claude-fable-5-2.usd_per_hour.value (derived.community_mix, High listing, as_of 2026-11-02; test_five_axis checks the two agree). Not on the 14-day-sample scale of the other rows, so it is conservative here.",
       "capabilities": {
         "reasoning": 0.55,
         "coding": 0.55,
@@ -2931,7 +2933,8 @@
       },
       "capacity_status": "unknown",
       "unmetered": true,
-      "unlimited": true
+      "unlimited": true,
+      "free_allowance": true
     },
     "pi": {
       "plan": "Pi",

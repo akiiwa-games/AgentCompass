@@ -1051,6 +1051,78 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
                 self.assertTrue(violations, f'Mutant {name} escaped static scanner!')
 
 
+# Round 12 (S1, S7): the router never decides about a model or an account from its name. A routing module may not test a
+# string against a literal prefix or suffix (`name.endswith('-free')`, `account.startswith('opencode')`) unless the
+# statement is structural (a harness suffix the launcher itself adds, a path, an error-text prefix) and is listed here
+# with its reason; free-pool status, capacity and price come from account and model fields.
+NAME_RULE_SCAN_FILES = (
+    'skills/agent-compass/scripts/allocator.py',
+    'skills/agent-compass/scripts/account_state.py',
+)
+NAME_RULE_METHODS = frozenset({'startswith', 'endswith', 'removeprefix', 'removesuffix'})
+ALLOWED_NAME_RULE_STATEMENTS = {
+    ('skills/agent-compass/scripts/allocator.py', 'account_family', "return family.strip().removesuffix('-resilient')"):
+        'the resilient launcher variant is a declared suffix of the same provider family, not a model or account rule',
+    ('skills/agent-compass/scripts/allocator.py', 'account_family', "return raw.strip().removesuffix('-resilient')"):
+        'the resilient launcher variant is a declared suffix of the same provider family, not a model or account rule',
+    ('skills/agent-compass/scripts/allocator.py', 'five_axis_overlay', "family = family.removesuffix('-resilient')"):
+        'the resilient launcher variant is a declared suffix of the same provider family, not a model or account rule',
+    ('skills/agent-compass/scripts/allocator.py', 'bundle_harness',
+     "if bid.startswith('pi_') or '__pi_' in bid or launch_m.startswith('openai-codex/'):"):
+        'launcher model ids carry their provider prefix (provider/model); this reads the launch command, not a model name',
+    ('skills/agent-compass/scripts/allocator.py', 'bundle_harness', "if launch_m.startswith('opencode/'):"):
+        'launcher model ids carry their provider prefix (provider/model); this reads the launch command, not a model name',
+    ('skills/agent-compass/scripts/allocator.py', 'account_cwd_allowed',
+     r"if cand.is_absolute() or ':' in item or item.startswith(('/', '\\')):"):
+        'path syntax',
+    ('skills/agent-compass/scripts/allocator.py', 'plan', "if str(note).startswith('data error:'):"):
+        'our own note prefix',
+    ('skills/agent-compass/scripts/allocator.py', 'evaluate_bundle',
+     "unpriced = ' (its cost is not priced)' if error.startswith('usd_per_hour') else ''"):
+        'our own error text prefix',
+}
+
+
+def scan_name_rules(rel, src):
+    """[(function, source line, lineno)] of every literal prefix/suffix test in `src`."""
+    tree = ast.parse(src)
+    lines = src.splitlines()
+    found = []
+
+    def visit(node, function):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            function = node.name
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in NAME_RULE_METHODS
+                and node.args and isinstance(node.args[0], (ast.Constant, ast.Tuple))):
+            found.append((function, lines[node.lineno - 1].strip(), node.lineno))
+        for child in ast.iter_child_nodes(node):
+            visit(child, function)
+
+    visit(tree, '<module>')
+    return found
+
+
+class NoNameRuleTests(unittest.TestCase):
+    def test_the_scanner_catches_name_rules(self):
+        for snippet in ("def f(name):\n    return name.endswith('-free')\n",
+                        "def f(name):\n    return str(name).startswith('opencode')\n",
+                        "def f(m):\n    return m.removesuffix('-free')\n"):
+            self.assertEqual(len(scan_name_rules('x.py', snippet)), 1, snippet)
+        self.assertEqual(scan_name_rules('x.py', "def f(name):\n    return name in FREE\n"), [])
+
+    def test_routing_code_has_no_unlisted_name_rule(self):
+        seen, unlisted = set(), []
+        for rel in NAME_RULE_SCAN_FILES:
+            for function, line, lineno in scan_name_rules(rel, (REPO_ROOT / rel).read_text(encoding='utf-8-sig')):
+                key = (rel, function, line)
+                if key in ALLOWED_NAME_RULE_STATEMENTS:
+                    seen.add(key)
+                else:
+                    unlisted.append(f'{rel}:{lineno}: {function}: {line}')
+        self.assertEqual(unlisted, [], 'a model or account decided by its name; read a field instead')
+        self.assertEqual(set(ALLOWED_NAME_RULE_STATEMENTS) - seen, set(), 'stale allowlist entry')
+
+
 class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
     """Rule 7: Changing task text wording must never alter routing across allocator.plan, plan_stage, or roll.run."""
 

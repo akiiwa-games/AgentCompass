@@ -178,6 +178,10 @@ def _free_pool_warning(name, spec):
         spend_note = f" (local opencode.db lower-bound spend U ~${float(local):.2f})"
     else:
         spend_note = ''
+    gap = spec.get('local_spend_gap')
+    if gap:
+        shown = ', '.join(str(m) for m in gap[:5]) + (f' and {len(gap) - 5} more' if len(gap) > 5 else '')
+        spend_note += f"; no public list price for {shown}, so their local spend is not counted"
     return f"{name}: capacity_unknown — quota unknown, spend unpriced{spend_note}; out of automatic routing (use --model to run)"
 
 

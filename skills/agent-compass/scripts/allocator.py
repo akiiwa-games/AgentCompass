@@ -681,7 +681,7 @@ def unit_rate(spec, wid, model, effort, policy, curves=None, info=None, now=None
         capacity = template_capacity_usd(spec, wid)
     if capacity and usd:
         return 100 * usd / capacity * scale
-    if five_axis_usd_missing(info):
+    if usd_unpriced(model, info):
         return 0.0      # no cited usd: unpriced, not the burn prior (rule B notes it on a named dispatch)
     model_rates = (info or {}).get('burn_pct_per_worker_hour') or {}
     rate = model_rates.get(wid, spec.get('burn_pct_per_worker_hour', {}).get(wid))
@@ -750,7 +750,11 @@ def bundle_task_usd(spec, model, effort, hours, policy, curves=None, info=None, 
     return hours * model_usd_per_hour(model, info) * scale * context_scale * fast_scale
 
 
-USD_PER_HOUR_DEFAULTS = {'gemini-4-argon-high': 4.0, 'gemini-3.8-flash-high': 0.5, 'grok-4.7': 1.5}
+# Hand priors for models that predate round 12 and carry no sourced `usd_per_hour`. This table is frozen: a model that is
+# not in it and has no `usd_per_hour` is unpriced (0.0, and out of automatic routing on a metered account by rule B,
+# `usd_unpriced`), never a silent $4/h. A new model needs a cited usd_per_hour in accounts.json (round 12, B1).
+USD_PER_HOUR_DEFAULTS = {'gemini-4-argon-high': 4.0, 'gemini-3.8-flash-high': 0.5, 'grok-4.7': 1.5,
+                         'grok-bot': 4.0, 'dot': 4.0, 'gpt-6-pro': 4.0}
 DURATION_MULTIPLIER_DEFAULTS = {'gemini-4-argon-high': 1.35, 'gpt-6.1-sol': 1.35}
 
 
@@ -766,14 +770,22 @@ def five_axis_usd_missing(info):
     return (info or {}).get('usd_per_hour') is None and ((info or {}).get('five_axis') or {}).get('usd_status') == 'missing'
 
 
+def usd_unpriced(model, info=None):
+    """True when the model has no sourced list price: no `usd_per_hour` and, on the legacy path, no entry in the frozen
+    `USD_PER_HOUR_DEFAULTS` table. Such a model prices at 0.0 and leaves automatic routing on a metered account."""
+    if (info or {}).get('usd_per_hour') is not None:
+        return False
+    return five_axis_usd_missing(info) or model not in USD_PER_HOUR_DEFAULTS
+
+
 def model_usd_per_hour(model, info=None):
-    """List-price dollars of one active worker-hour at High (accounts `usd_per_hour`, else a prior). On the five-axis
-    path a model without a cited usd prices at 0 instead of the prior: rule B keeps it out of automatic routing on a
-    metered account, and a named dispatch carries a note that its cost is not priced (review F4)."""
+    """List-price dollars of one active worker-hour at High (accounts `usd_per_hour`, else the frozen legacy prior). A
+    model with neither prices at 0 instead of a silent default: rule B keeps it out of automatic routing on a metered
+    account, and a named dispatch carries a note that its cost is not priced (review F4, round 12 B1)."""
     usd = (info or {}).get('usd_per_hour')
-    if usd is None and five_axis_usd_missing(info):
-        return 0.0
-    return float(usd if usd is not None else USD_PER_HOUR_DEFAULTS.get(model, 4.0))
+    if usd is None:
+        return 0.0 if usd_unpriced(model, info) else float(USD_PER_HOUR_DEFAULTS[model])
+    return float(usd)
 
 
 def inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records, accounts, policy, now):
@@ -2164,83 +2176,85 @@ def validate_axis_demand(raw):
     return out
 
 
-def opencode_local_spend_usd(models_table, discovery=None):
-    """Convert local `opencode.db` token counts into a lower-bound USD spend per model using public list prices."""
-    import sqlite3
+def opencode_list_prices(models_table):
+    """{name or alias: (table name, cited list price row)} for models whose public data carries an input and output list
+    price in USD per million tokens (`five_axis.list_price`, from the data's `price`: AA first, OpenRouter second)."""
     prices = {}
-    for m_name, m_info in (models_table or {}).items():
-        if not isinstance(m_info, dict):
-            continue
-        p = ((m_info.get('five_axis') or {}).get('list_price_per_m')) or {}
-        if isinstance(p.get('input'), (int, float)) and isinstance(p.get('output'), (int, float)):
-            prices[m_name] = (float(p['input']), float(p['output']))
-            for alias in m_info.get('aliases') or ():
-                prices[str(alias)] = (float(p['input']), float(p['output']))
-    if not prices:
-        return {}
-    spend = {}
+    for name, info in (models_table or {}).items():
+        price = ((info or {}).get('five_axis') or {}).get('list_price') if isinstance(info, dict) else None
+        value = (price or {}).get('value') if isinstance(price, dict) else None
+        if isinstance(value, dict) and all(isinstance(value.get(k), (int, float)) and not isinstance(value.get(k), bool)
+                                           for k in ('input', 'output')):
+            for key in (name, *(info.get('aliases') or ())):
+                prices[str(key)] = (name, price)
+    return prices
+
+
+def opencode_token_usd(price, tok_in, tok_out, tok_cache_read, tok_cache_write):
+    """List-price dollars of one model's tokens: input and cache writes at the input price, cache reads at the cited
+    cache-read price (0 when the data has none: a lower bound), output (with reasoning) at the output price."""
+    value = price['value']
+    return (float(tok_in or 0) * value['input'] + float(tok_cache_write or 0) * value['input']
+            + float(tok_cache_read or 0) * float(value.get('cache_read') or 0.0)
+            + float(tok_out or 0) * value['output']) / 1e6
+
+
+def opencode_local_spend(models_table, discovery=None):
+    """(spend, unpriced): lower-bound USD per model from local `opencode.db` token counts at the model's public list
+    price, and the sorted ids of models with tokens but no list price in the data (round 12 S6). A model id matches a
+    table name or alias exactly; there is no prefix guessing and no invented price, so a model without a cited price is
+    a surfaced gap (mode B), never a $0 or a borrowed rate."""
+    import sqlite3
+    prices = opencode_list_prices(models_table)
+    readings = []       # (source, model id, input, output + reasoning, cache read, cache write)
     disc_models = (((discovery or {}).get('accounts') or {}).get('opencode') or {}).get('usage', {}).get('models') or {}
     for model_id, m_row in disc_models.items():
-        if not isinstance(m_row, dict):
-            continue
-        key = str(model_id).strip()
-        rate = prices.get(key)
-        if rate is None:
-            for cand_name, cand_rate in prices.items():
-                if key == cand_name or key.endswith('/' + cand_name) or cand_name.startswith(key):
-                    rate = cand_rate
-                    key = cand_name
-                    break
-        if rate is None:
-            continue
-        p_in, p_out = rate
-        in_total = float(m_row.get('input') or 0) + 0.1 * float(m_row.get('cache_read') or 0) + float(m_row.get('cache_write') or 0)
-        out_total = float(m_row.get('output') or 0) + float(m_row.get('reasoning') or 0)
-        usd = (in_total * p_in + out_total * p_out) / 1e6
-        if usd > 0:
-            spend[key] = round(max(spend.get(key, 0.0), usd), 4)
+        if isinstance(m_row, dict):
+            readings.append(('discovery', model_id, m_row.get('input'),
+                             float(m_row.get('output') or 0) + float(m_row.get('reasoning') or 0),
+                             m_row.get('cache_read'), m_row.get('cache_write')))
     db_path = Path(os.environ.get('OPENCODE_DB_PATH')
                    or (Path.home() / '.local' / 'share' / 'opencode' / 'opencode.db'))
-    if not db_path.exists():
-        return spend
-    try:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=1.0)
+    if db_path.exists():
         try:
-            rows = conn.execute(
-                "SELECT json_extract(data, '$.modelID'), "
-                "SUM(COALESCE(json_extract(data, '$.tokens.input'), 0)), "
-                "SUM(COALESCE(json_extract(data, '$.tokens.output'), 0) + COALESCE(json_extract(data, '$.tokens.reasoning'), 0)), "
-                "SUM(COALESCE(json_extract(data, '$.tokens.cache.read'), 0)), "
-                "SUM(COALESCE(json_extract(data, '$.tokens.cache.write'), 0)) "
-                "FROM message WHERE json_extract(data, '$.role') = 'assistant' "
-                "GROUP BY json_extract(data, '$.modelID')"
-            ).fetchall()
-        finally:
-            conn.close()
-    except Exception:
-        return spend
-    db_spend = {}
-    for model_id, tok_in, tok_out, tok_cread, tok_cwrite in rows:
-        if not model_id:
+            conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=1.0)
+            try:
+                rows = conn.execute(
+                    "SELECT json_extract(data, '$.modelID'), "
+                    "SUM(COALESCE(json_extract(data, '$.tokens.input'), 0)), "
+                    "SUM(COALESCE(json_extract(data, '$.tokens.output'), 0) + COALESCE(json_extract(data, '$.tokens.reasoning'), 0)), "
+                    "SUM(COALESCE(json_extract(data, '$.tokens.cache.read'), 0)), "
+                    "SUM(COALESCE(json_extract(data, '$.tokens.cache.write'), 0)) "
+                    "FROM message WHERE json_extract(data, '$.role') = 'assistant' "
+                    "GROUP BY json_extract(data, '$.modelID')"
+                ).fetchall()
+            finally:
+                conn.close()
+        except Exception:
+            rows = []
+        readings += [('db', *row) for row in rows if row[0]]
+    by_source = {'discovery': {}, 'db': {}}
+    unpriced = set()
+    for source, model_id, tok_in, tok_out, tok_cr, tok_cw in readings:
+        if float(tok_in or 0) + float(tok_out or 0) + float(tok_cr or 0) + float(tok_cw or 0) <= 0:
             continue
-        key = str(model_id).strip()
-        rate = prices.get(key)
-        if rate is None:
-            for cand_name, cand_rate in prices.items():
-                if key == cand_name or key.endswith('/' + cand_name) or cand_name.startswith(key):
-                    rate = cand_rate
-                    key = cand_name
-                    break
-        if rate is None:
+        hit = prices.get(str(model_id))
+        if hit is None:
+            unpriced.add(str(model_id))
             continue
-        p_in, p_out = rate
-        in_total = float(tok_in or 0) + 0.1 * float(tok_cread or 0) + float(tok_cwrite or 0)
-        out_total = float(tok_out or 0)
-        usd = (in_total * p_in + out_total * p_out) / 1e6
-        db_spend[key] = round(db_spend.get(key, 0.0) + usd, 4)
-    for k, v in db_spend.items():
-        spend[k] = max(spend.get(k, 0.0), v)
-    return spend
+        name, price = hit
+        by_source[source][name] = by_source[source].get(name, 0.0) + opencode_token_usd(price, tok_in, tok_out, tok_cr, tok_cw)
+    spend = {}
+    for name in set(by_source['discovery']) | set(by_source['db']):     # the two reads can overlap: keep the larger
+        usd = max(by_source['discovery'].get(name, 0.0), by_source['db'].get(name, 0.0))
+        if usd > 0:
+            spend[name] = round(usd, 4)
+    return spend, sorted(unpriced)
+
+
+def opencode_local_spend_usd(models_table, discovery=None):
+    """Lower-bound USD per model from local `opencode.db` token counts at public list prices (see opencode_local_spend)."""
+    return opencode_local_spend(models_table, discovery)[0]
 
 
 def five_axis_overlay(accounts, data=None):
@@ -2270,7 +2284,7 @@ def five_axis_overlay(accounts, data=None):
         img = (row or {}).get('image_input') or {'status': 'missing'}
         fast = (row or {}).get('fast_mode') or {'status': 'not_offered'}
         dur_row = (row or {}).get('duration_multiplier') or {}
-        price_m = ((row or {}).get('usd_per_hour') or {}).get('list_price_per_m')
+        price = (row or {}).get('price')       # public list price, USD per million tokens (aa.price, else openrouter.price)
         info['five_axis'] = {'scores': {a: float(((row or {}).get('scores') or {}).get(a) or 0.0) for a in FIVE_AXES},
                              'missing': list(FIVE_AXES) if row is None else list(row.get('missing_axes') or ()),
                              'index': (row or {}).get('intelligence_index') or median_index,
@@ -2279,7 +2293,7 @@ def five_axis_overlay(accounts, data=None):
                              'fast_mode': fast,
                              'duration_by_effort': dict(dur_row.get('by_effort') or {}),
                              'duration_status': dur_row.get('status', 'missing'),
-                             **({'list_price_per_m': price_m} if price_m else {})}
+                             **({'list_price': price} if isinstance(price, dict) and price.get('value') else {})}
         if usd is not None:
             info['usd_per_hour'] = usd
         else:
@@ -2289,15 +2303,19 @@ def five_axis_overlay(accounts, data=None):
             info['duration_multiplier'] = float(duration)
         else:
             info.pop('duration_multiplier', None)
-    local_spend = opencode_local_spend_usd(out.get('models') or {}, out.get('_discovery'))
+    local_spend, local_unpriced = opencode_local_spend(out.get('models') or {}, out.get('_discovery'))
     community = data.get('capacity') or {}
     for name, spec in (out.get('accounts') or {}).items():
         if not isinstance(spec, dict):
             continue
         spec.pop('observed', None)          # never feed 3h/24h historical rates into five-axis economics
         spec.pop('free_usage_bonus', None)  # free pools are ordinary quota pools, never given an unlimited bonus
-        is_free_pool = bool(spec.get('unlimited') or spec.get('unmetered') or str(spec.get('plan') or '') == 'free'
-                            or str(name).startswith('opencode'))
+        # A free pool is OpenCode's free starter allowance, declared by the account's own `free_allowance` field (or a
+        # free plan), never by its name. `unmetered` alone does not make one: Dot and ChatGPT Web are purpose-limited
+        # channels that usually cannot be used up, and stay in automatic routing (owner, 2026-11-10).
+        is_free_pool = bool(spec.get('free_allowance') or str(spec.get('plan') or '') == 'free')
+        family = str(provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_family(spec) or '')
+        family = family.removesuffix('-resilient')
         if is_free_pool and spec.get('billing') != 'metered':
             # Round 11 (user 2026-11-10): "free" models are an ordinary quota pool (same C/U/t0/T; a starter allowance
             # has T = inf so recovery line is 0 and X = S). Remove unmetered / unlimited / $0 spend on the five-axis path.
@@ -2318,15 +2336,16 @@ def five_axis_overlay(accounts, data=None):
                 if m_key in local_spend and m_key not in seen_models:
                     seen_models.add(m_key)
                     acct_spend += local_spend[m_key]
-            if acct_spend == 0.0 and str(name).startswith('opencode'):
+            if acct_spend == 0.0 and family == 'opencode':      # opencode.db is this family's own usage record
                 acct_spend = sum(local_spend.values())
             if acct_spend > 0:
                 spec['local_spend_usd'] = round(acct_spend, 4)
                 spec['local_spend_source'] = 'opencode.db token counts x public list price (lower bound)'
+            if family == 'opencode' and local_unpriced:
+                # no cited list price for these models: their spend is a surfaced gap, not $0 and not a borrowed rate
+                spec['local_spend_gap'] = list(local_unpriced)
         if not spec.get('windows') or spec.get('unmetered'):
             continue
-        family = str(provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_family(spec) or '')
-        family = family.removesuffix('-resilient')
         plan = provider_inventory.configured_plan(family, spec.get('plan'))
         if family == 'pi':      # Pi signs in with ChatGPT and spends the Codex account's allowance: its plan's windows
             family, plan = 'codex', next((provider_inventory.configured_plan('codex', s.get('plan'))
@@ -2337,7 +2356,9 @@ def five_axis_overlay(accounts, data=None):
         explicit_caps = spec.get('capacity_usd') if isinstance(spec.get('capacity_usd'), dict) else {}
         caps = {wid: float(rows_[wid]['capacity_usd']) for wid in spec['windows']
                 if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
-        if not caps and is_free_pool and explicit_caps:
+        # A free allowance or a metered account (a prepaid $200 proxy) states its own capacity: community data measures
+        # subscription plans only. A subscription's packaged figure is not a declaration and stays unknown (round 11).
+        if not caps and explicit_caps and (is_free_pool or spec.get('billing') == 'metered'):
             caps = {wid: float(v) for wid, v in explicit_caps.items()
                     if wid in spec['windows'] and isinstance(v, (int, float)) and v > 0}
         spec['capacity_usd'] = caps
@@ -2548,15 +2569,25 @@ FIVE_AXIS_DEMAND_GRID = tuple(
 )
 
 
-def five_axis_beta(eligible, accounts, policy, anchor_value=FIVE_AXIS_ANCHOR_VALUE, needs_image=False):
+def five_axis_beta_fallback(win_models, wkey, all_models):
+    """The models that could do window `wkey`'s work if its quota were spent elsewhere: the distinct canonical models of
+    candidates that can start now, are not in mode B and do not draw this window. Owner decision S2 (the substitute
+    pool's own over-line state) changes only this function."""
+    return all_models - win_models[wkey]
+
+
+def five_axis_beta(eligible, accounts, policy, anchor_value=FIVE_AXIS_ANCHOR_VALUE):
     """Per-window shadow exchange rate beta_w (fit per USD) from public ability + burn over the 63-point demand grid (§3).
 
     For each window w = (quota_source, wid), M_w is the distinct canonical models of startable candidates drawing w, and
-    M_out(w) is the distinct canonical models of startable candidates outside w and not in M_w plus the baseline free
-    models (filtered by image-input support when the task demands image input). Over all 63 non-zero thinking demand
-    vectors d, beta_w = sum_d gap_w(d) / min_usd_in_w."""
+    M_out(w) (`five_axis_beta_fallback`) is the distinct canonical models of eligible candidates that can start now and
+    do not draw w. `eligible` already holds only candidates that passed mode B (no data error, capacity known) and the
+    image-input requirement, so a free pool whose capacity is unreadable is never a fallback. Over all 63 non-zero
+    thinking demand vectors d, beta_w = sum_d gap_w(d) / sum_d burn(i*(d)), with gap_w(d) = max(0, F_i*(d) - max_{j in
+    M_out} F_j(d)) and i*(d) the best capped fit in w (ties: lowest usd). An empty M_out is the design's max over no
+    candidate = 0 (nothing else can do the work, so displacing it loses all of F_i*(d)): gap = F_i*(d)."""
     startable = [c for c in eligible if not (c.get('available_in_hours') or 0)]
-    if not startable:
+    if not startable:       # everything waits for a reset: the deferred candidates are then each other's fallback
         startable = list(eligible)
     win_models = {}
     all_models = set()
@@ -2566,20 +2597,14 @@ def five_axis_beta(eligible, accounts, policy, anchor_value=FIVE_AXIS_ANCHOR_VAL
         qsrc = provider_inventory.quota_source(acct, accounts)
         m = canonical(b['model'], accounts)
         info = model_spec(accounts, m)
-        if five_axis_usd_missing(info):
+        if usd_unpriced(m, info):
             continue
         all_models.add(m)
         for wid in c.get('_five_axis_windows') or ():
             win_models.setdefault((qsrc, wid), set()).add(m)
-    fallback_free = {
-        canonical(name, accounts) for name, minfo in (accounts.get('models') or {}).items()
-        if isinstance(minfo, dict) and str(name).endswith('-free')
-        and ((minfo.get('five_axis') or {}).get('scores'))
-        and (not needs_image or ((minfo.get('five_axis') or {}).get('image_input') or {}).get('status') == 'yes')
-    }
     model_high_fit = {}
     model_usd = {}
-    for m in all_models | fallback_free:
+    for m in all_models:
         info = model_spec(accounts, m)
         model_usd[m] = model_usd_per_hour(m, info)
         scores = ((info.get('five_axis') or {}).get('scores')) or {}
@@ -2592,18 +2617,17 @@ def five_axis_beta(eligible, accounts, policy, anchor_value=FIVE_AXIS_ANCHOR_VAL
         model_high_fit[m] = fits
     betas = {}
     for wkey, m_in in win_models.items():
-        m_in_valid = [m for m in m_in if m in model_high_fit and model_usd.get(m, 0.0) > 0]
-        m_out = (all_models - m_in) | (fallback_free - m_in)
-        if not m_in_valid or not m_out:
-            betas[wkey] = 0.0
+        m_in_valid = [m for m in m_in if model_usd.get(m, 0.0) > 0]
+        if not m_in_valid:
+            betas[wkey] = 0.0       # nothing priced draws this window: there is no burn to exchange against
             continue
+        m_out = five_axis_beta_fallback(win_models, wkey, all_models)
         total_gain = 0.0
         total_burn = 0.0
-        n_grid = len(FIVE_AXIS_DEMAND_GRID)
-        for idx in range(n_grid):
+        for idx in range(len(FIVE_AXIS_DEMAND_GRID)):
             i_star = max(m_in_valid, key=lambda m: (round(model_high_fit[m][idx], 6), -model_usd[m]))
             best_in = model_high_fit[i_star][idx]
-            best_out = max((model_high_fit[m][idx] for m in m_out if m in model_high_fit), default=0.0)
+            best_out = max((model_high_fit[m][idx] for m in m_out), default=0.0)
             total_gain += max(0.0, best_in - best_out)
             total_burn += model_usd[i_star]
         betas[wkey] = round(total_gain / total_burn, 6) if total_burn > 0 else 0.0
@@ -2611,13 +2635,17 @@ def five_axis_beta(eligible, accounts, policy, anchor_value=FIVE_AXIS_ANCHOR_VAL
 
 
 def five_axis_order(candidate):
-    """Lexicographic order on the five-axis path (advisor report v2 §5):
+    """Lexicographic order on the five-axis path (advisor report v2 §5), in the order of the returned tuple:
     1. Net score N = F - beta_w * X / h descending (rounded to 4 places so tied under-line models enter the tie-breaks)
-    2. Earliest-expiring under-line quota ascending (use quota that is behind its recovery line and resets soonest first;
-       if a candidate has no under-line quota, +inf, then smallest own over-line spend before substitute absorption)
-    3. Faster completion time (wait_hours + expected_hours) ascending
-    4. Fewer list-price USD spent ascending
-    5. Demand-weighted axis level descending, then sibling harness place ascending."""
+    2. Wait before the start ascending (round 10: a candidate that waits for a reset trails one that starts now; the
+       design has no such key, it keeps `--can-wait-hours` candidates behind immediate ones at equal N)
+    3. Earliest-expiring under-line quota ascending (use quota that is behind its recovery line and resets soonest
+       first; a candidate with none sorts last)
+    4. Own over-line spend before substitute absorption ascending (between the design's keys 2 and 3: at an equal
+       reset time the candidate that leans less on the line goes first)
+    5. Faster completion time (wait_hours + expected_hours) ascending: the model's public per-task time (owner, S4)
+    6. Fewer list-price USD spent ascending
+    7. Demand-weighted axis level descending, then sibling harness place ascending."""
     k = candidate['components']
     earliest_reset = k.get('earliest_under_line_reset_hours')
     reset_key = float('inf') if earliest_reset is None else round(float(earliest_reset), 4)
@@ -3166,6 +3194,16 @@ def evaluate_bundle(bundle, task, ctx):
                 result.setdefault('data_errors', []).append(error)
             else:
                 exclude(f'data error: {error} (out of automatic routing; name the model to dispatch it)')
+    elif usd_unpriced(model, info) and not (spec.get('unmetered') or spec.get('unlimited')):
+        # Round 12 B1, the legacy path's rule B: no sourced usd_per_hour (and not a frozen legacy prior) on a metered
+        # account keeps the model out of automatic routing; a named dispatch still runs, its cost unpriced.
+        if model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']:
+            result['notes'].append('data error: usd_per_hour has no cited source on a metered account; '
+                                   'dispatched because it was named (its cost is not priced)')
+            result.setdefault('data_errors', []).append('usd_per_hour has no cited source on a metered account')
+        else:
+            exclude('data error: usd_per_hour has no cited source on a metered account '
+                    '(out of automatic routing; name the model to dispatch it)')
     demand = task['demand']
     target = demand['required_ability']
     floor = demand['floor']
@@ -3259,14 +3297,14 @@ def evaluate_bundle(bundle, task, ctx):
         dur_mult = five_axis_duration_multiplier(model, eff, five_info, policy, five_curves)
         hours = base_hours * dur_mult
         chain_hours = base_chain_hours * dur_mult
-        econ_hours = base_hours
-        econ_chain_hours = base_chain_hours
-    else:
-        econ_hours = hours
-        econ_chain_hours = chain_hours
+    # One basis for spend and time (round 12 S3). On the five-axis path the duration already carries the model's own
+    # speed and the effort factor, `usd_per_hour` is the model's dollars per hour of its own work, so the spend is
+    # usd/h x the duration this candidate takes and the quota rate takes no second effort scale (`spend_effort` High).
+    econ_hours, econ_chain_hours = hours, chain_hours
+    spend_effort = 'high' if five else eff
     step_pct = chain_pct = None
-    step_usd = bundle_task_usd(spec, model, eff, econ_hours, policy, curves, info, context_scale)
-    chain_usd = bundle_task_usd(spec, model, eff, econ_chain_hours, policy, curves, info, context_scale)
+    step_usd = bundle_task_usd(spec, model, spend_effort, econ_hours, policy, curves, info, context_scale)
+    chain_usd = bundle_task_usd(spec, model, spend_effort, econ_chain_hours, policy, curves, info, context_scale)
     binding = None
     opportunity = 0.0
     unknown = False
@@ -3303,7 +3341,7 @@ def evaluate_bundle(bundle, task, ctx):
             expected = window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                  account_stale=acct_stale, expected_reset_at=expected)
-            unit = unit_rate(spec, wid, model, eff, policy, curves, info, now)
+            unit = unit_rate(spec, wid, model, spend_effort, policy, curves, info, now)
             if five:
                 cap_usd_w = capacity_usd(spec, wid, now)
                 if cap_usd_w is None:
@@ -3499,7 +3537,7 @@ def evaluate_bundle(bundle, task, ctx):
                 if unit is None:
                     fast_ok = False
                     break
-                f_unit = unit * f_price * context_scale
+                f_unit = unit * f_price * f_speed * context_scale     # per fast hour; x f_econ_h is price x the normal spend
                 w_len = wspec.get('hours')
                 tau = st.get('reset_hours')
                 if st['short']:
@@ -3558,7 +3596,7 @@ def evaluate_bundle(bundle, task, ctx):
                                   account_stale=acct_stale, expected_reset_at=expected)
                 if not st['known']:
                     continue
-                unit = unit_rate(spec, wid, model, eff, policy, curves, info, now)
+                unit = unit_rate(spec, wid, model, spend_effort, policy, curves, info, now)
                 win_cap_usd = window_capacity_usd(spec, wid, now)
                 res_usd = inflight_reserved_usd(bundle['account'], spec, wid, wspec, st, win_cap_usd,
                                                 ctx.get('records'), accounts, policy, now)
@@ -3668,10 +3706,9 @@ def evaluate_bundle(bundle, task, ctx):
         result['five_axis_demand'] = task['five_axis_demand']
         result['five_axis_fit'] = axis_rows
         ability_score = 0.0
-        effort_scale = burn_scale(policy, curves, eff)
         sprint_sunk = (binding or {}).get('reset_sunk_weight', 0.0)
         usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or spec.get('billing') == 'unknown' else \
-            model_usd_per_hour(model, info) * max(effort_scale, 0.0)
+            model_usd_per_hour(model, info)       # dollars per hour of this candidate's own work; effort is in its duration
         result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4), 'sprint_sunk': sprint_sunk}
     else:
         fit = fit_score(kind, model, capabilities, accounts)
@@ -3915,8 +3952,7 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
     across resets, nested and multi-window max X, desync-aware same-model substitute-pool absorption, beta_w from public
     ability and burn over the 63-point demand grid, and automatic fast mode when its whole spend stays under the line."""
     anchor_val = (accounts.get('_five_axis') or {}).get('anchor_value', FIVE_AXIS_ANCHOR_VALUE)
-    needs_img = task['five_axis_demand'].get('vision_tools', 0) >= 2
-    betas = five_axis_beta(eligible, accounts, policy, anchor_val, needs_image=needs_img)
+    betas = five_axis_beta(eligible, accounts, policy, anchor_val)
     base_hours = max(1e-6, float(task['hours'] or 0.0))
 
     sub_pools = {}
@@ -3988,12 +4024,13 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
             })
         if not rows:
             return None, 0.0, 0.0, 0.0, 0.0, None
-        own_over = max(r['over_line_usd'] for r in rows)
-        beta_val = max(r['beta'] for r in rows)
+        # The binding window is the one whose over-line spend is the candidate's X; its beta prices that spend (N2).
+        binding = max(rows, key=lambda r: (r['over_line_usd'], not r['short'], r['beta'], -r['after']))
+        own_over = binding['over_line_usd']
+        beta_val = binding['beta']
         sub_abs = 0.0 if c.get('available_in_hours') else substitute_allowance(model, own_qsrc, econ_h)
         net_over = max(0.0, own_over - sub_abs)
         opp_cost = round(beta_val * net_over / base_hours, 4)
-        binding = max(rows, key=lambda r: (r['over_line_usd'], not r['short'], r['beta'], -r['after']))
         binding = {
             **binding,
             'over_line_usd': round(own_over, 2),
@@ -4032,8 +4069,9 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
                 c['expected_hours'] = round(fast_cand['hours'], 2)
                 c['expected_usd'] = round(fast_cand['step_usd'], 2)
                 c['chain_usd'] = round(fast_cand['chain_usd'], 2)
-                c['notes'].append(f"fast mode enabled ({f_reason}: {fast_cand['price_multiplier']:g}x burn, "
-                                  f"{fast_cand['speed_multiplier']:g}x speed)")
+                c['notes'].append(f"fast mode enabled ({f_reason}: {fast_cand['price_multiplier']:g}x burn, up to "
+                                  f"{fast_cand['speed_multiplier']:g}x output speed: the vendor's upper bound, applied to the "
+                                  f"whole duration)")
         if binding is not None:
             c['capacity'] = binding
             c['expected_pct'] = round(binding['step_pct'], 2)
@@ -4115,13 +4153,15 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     else:
         apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
         eligible.sort(key=lambda c: -c['score'])
-    exchange = opportunity_exchange(policy)
-    return candidates, eligible, {'weights': {k: round(v, 3) for k, v in weights.items()},
-                                  'shortage_loss_per_usd': exchange['shortage_loss_per_usd'],
-                                  'shortage_loss_per_worker_hour': exchange['shortage_loss_per_worker_hour'],
-                                  'opportunity_exchange': exchange,
-                                  'harness_factors': harness_factor_report(policy),
-                                  '_live_models': ctx['live_models']}
+    system = {'weights': {k: round(v, 3) for k, v in weights.items()},
+              'harness_factors': harness_factor_report(policy),
+              '_live_models': ctx['live_models']}
+    if not five:        # the five-axis economy prices by beta_w; the old exchange rates are not part of its decision
+        exchange = opportunity_exchange(policy)
+        system.update(shortage_loss_per_usd=exchange['shortage_loss_per_usd'],
+                      shortage_loss_per_worker_hour=exchange['shortage_loss_per_worker_hour'],
+                      opportunity_exchange=exchange)
+    return candidates, eligible, system
 
 
 def sibling_key(candidate):

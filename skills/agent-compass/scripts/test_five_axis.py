@@ -6,10 +6,13 @@ charges burn x a pacing shadow price, ties go to the lower opportunity cost then
 answer the axis demand itself."""
 import copy
 from datetime import datetime, timezone
+import json
+import os
 from pathlib import Path
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 import allocator
 import route_judge
@@ -36,15 +39,18 @@ def demand(div, rigor, code, vision):
     return {'divergence': div, 'global_rigor': rigor, 'module_precision': code, 'vision_tools': vision}
 
 
-def row(scores=0.8, usd=5.0, missing=(), image_input='yes', dur=1.0, fast=None):
+def row(scores=0.8, usd=5.0, missing=(), image_input='yes', dur=1.0, fast=None, price=True):
     scores = scores if isinstance(scores, dict) else dict.fromkeys(allocator.FIVE_AXES, scores)
     img_val = True if image_input == 'yes' else False if image_input == 'no' else None
     out = {'scores': scores, 'missing_axes': list(missing),
-           'usd_per_hour': {'value': usd, 'list_price_per_m': {'input': 0.1, 'output': 0.4}},
+           'usd_per_hour': {'value': usd},
            'duration_multiplier': {'value': dur, 'status': 'ok', 'source': 'arena.agent_sessions'},
            'intelligence_index': 50.0,
            'image_input': {'value': img_val, 'status': image_input,
                            'source': 'aa.modality' if image_input in ('yes', 'no') else None}}
+    if price:       # the data's `price` row: public USD per million tokens with its source (aa.price, openrouter.price)
+        out['price'] = {'value': {'input': 0.1, 'output': 0.4, 'cache_read': 0.01}, 'source': 'aa.price', 'kind': 'vendor',
+                        'as_of': '2026-11-09', 'url': 'https://artificialanalysis.ai/leaderboards/models'}
     if fast is not None:
         out['fast_mode'] = fast
     return out
@@ -536,6 +542,153 @@ class FiveAxisTests(unittest.TestCase):
         ws = account_state.warnings(overlaid.get('_discovery'), overlaid['accounts'])
         self.assertTrue(any('opencode:' in w and 'quota unknown, spend unpriced' in w for w in ws), ws)
         self.assertTrue(overlaid['accounts']['opencode'].get('five_axis_free_pool'))
+
+    # ---- round 12 -------------------------------------------------------------------------------------------------
+
+    def test_flag_off_new_model_without_a_sourced_price_never_wins_through_a_default(self):
+        """B1: the legacy path priced any model without `usd_per_hour` at a silent $4/h, which made a new, unpriced
+        model the cheapest frontier option. Now only the frozen legacy table prices by prior; anything else is
+        unpriced and leaves automatic routing on a metered account."""
+        acc = copy.deepcopy(self.accounts)
+        acc['models']['newcomer-9'] = copy.deepcopy(acc['models']['claude-opus-5-5'])
+        acc['models']['newcomer-9'].pop('usd_per_hour', None)
+        acc['accounts']['claude']['bundles']['newcomer_high'] = {'model': 'newcomer-9', 'effort': 'high'}
+        self.assertTrue(allocator.usd_unpriced('newcomer-9', acc['models']['newcomer-9']))
+        self.assertEqual(allocator.model_usd_per_hour('newcomer-9', acc['models']['newcomer-9']), 0.0)
+        for state in ('ample', 'claude scarce'):
+            decision = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'reasoning_depth': 3, 'error_cost': 3}},
+                                      self.usage(acc, state), NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
+                                      host_policy_config=self.policy)
+            rows = [c for c in decision['ranking'] if c['bundle']['model'] == 'newcomer-9']
+            self.assertTrue(rows)
+            self.assertTrue(all(any('usd_per_hour has no cited source' in e for e in c['excluded']) for c in rows))
+            self.assertNotEqual(decision['choice'], rows[0]['id'])
+
+    def test_every_shipped_model_carries_a_sourced_price_or_is_a_frozen_legacy_prior(self):
+        shipped = json.loads((Path(__file__).resolve().parents[1] / 'references' / 'accounts.json').read_text(encoding='utf-8'))
+        unpriced = sorted(name for name, info in shipped['models'].items()
+                          if isinstance(info, dict) and info.get('tier') is not None
+                          and info.get('usd_per_hour') is None and name not in allocator.USD_PER_HOUR_DEFAULTS)
+        self.assertEqual(unpriced, [])
+        fable = shipped['models']['claude-fable-5-2']
+        public = allocator.load_five_axis()['models']['claude-fable-5-2']['usd_per_hour']['value']
+        self.assertEqual(fable['usd_per_hour'], public)         # one source: the public data's labelled option-B value
+        self.assertIn('Option B', fable['usd_per_hour_basis'])
+
+    def test_beta_fallback_is_only_what_can_start_now_and_an_empty_fallback_prices_the_whole_fit(self):
+        acc = copy.deepcopy(self.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        acc = allocator.five_axis_overlay(acc, document(acc['models']))
+
+        def cand(account, model, wid, wait=0):
+            return {'bundle': {'account': account, 'model': model}, '_five_axis_windows': [wid], 'available_in_hours': wait}
+        key = (allocator.provider_inventory.quota_source('claude', acc), 'seven_day')
+        only_claude = [cand('claude', 'claude-opus-5-5', 'seven_day')]
+        beta_alone = allocator.five_axis_beta(only_claude, acc, acc['scoring'])[key]
+        # No other candidate can do the work: the gap is the whole fit, so beta is the highest it can be here.
+        self.assertGreater(beta_alone, 0.0)
+        beta_with = allocator.five_axis_beta(only_claude + [cand('codex', 'gpt-6.1-sol', 'usage')], acc, acc['scoring'])[key]
+        self.assertLess(beta_with, beta_alone)
+        # A fallback that cannot start now (it waits for a reset) is not a fallback.
+        waiting = only_claude + [cand('codex', 'gpt-6.1-sol', 'usage', wait=5)]
+        self.assertEqual(allocator.five_axis_beta(waiting, acc, acc['scoring'])[key], beta_alone)
+
+    def test_spend_is_usd_per_hour_times_the_duration_the_candidate_takes(self):
+        """S3: one basis for spend and time, for a model faster than the anchor and for a higher effort."""
+        doc = document(self.accounts['models'], **{'claude-sonnet-5-5': row(0.7, usd=4.0, dur=0.5)})
+        decision = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 1, 1, 0)})
+        checked = 0
+        for c in decision['ranking']:
+            if c['excluded'] or c.get('expected_usd') is None or c['bundle'].get('fast'):
+                continue
+            usd_h = doc['models'][allocator.canonical(c['bundle']['model'], self.accounts)]['usd_per_hour']['value']
+            self.assertAlmostEqual(c['expected_usd'], usd_h * c['expected_hours'], delta=0.02 + 0.01 * c['expected_usd'],
+                                   msg=c['id'])
+            checked += 1
+        self.assertGreater(checked, 3)
+        fast_model = next(c for c in decision['ranking'] if c['bundle']['model'] == 'claude-sonnet-5-5'
+                          and c['bundle']['effort'] == 'high' and not c['excluded'])
+        self.assertAlmostEqual(fast_model['expected_hours'], 0.5 * PROFILE['expected_hours'], places=2)
+        self.assertAlmostEqual(fast_model['expected_usd'], 4.0 * fast_model['expected_hours'], places=2)
+
+    def test_metered_account_with_declared_capacity_is_a_capacity_and_a_subscription_package_is_not(self):
+        acc = copy.deepcopy(self.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        acc['accounts']['llmproxy'] = {'plan': '$200 prepaid proxy', 'billing': 'metered', 'family': 'codex', 'verified': True,
+                                       'windows': {'spend': {'hours': 168}}, 'capacity_usd': {'spend': 200}, 'bundles': {}}
+        out = allocator.five_axis_overlay(acc, document(acc['models']))
+        proxy = out['accounts']['llmproxy']
+        self.assertEqual(proxy['capacity_usd'], {'spend': 200.0})
+        self.assertFalse(proxy.get('capacity_unknown'))
+        self.assertEqual(proxy['capacity_source']['spend']['status'], 'explicit')
+        # Antigravity's packaged capacity is not a declaration: still unknown.
+        self.assertTrue(out['accounts']['antigravity']['capacity_unknown'])
+
+    def test_free_pool_comes_from_the_account_field_not_from_its_name_or_unmetered(self):
+        acc = copy.deepcopy(self.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        lookalike = copy.deepcopy(acc['accounts']['opencode'])
+        lookalike.pop('free_allowance', None)
+        lookalike['plan'] = 'OpenCode'
+        acc['accounts']['opencode-lab'] = lookalike         # the name says opencode; its fields do not say free allowance
+        out = allocator.five_axis_overlay(acc, document(acc['models']))
+        self.assertTrue(out['accounts']['opencode'].get('five_axis_free_pool'))
+        self.assertFalse(out['accounts']['opencode-lab'].get('five_axis_free_pool'))
+        self.assertTrue(out['accounts']['opencode-lab'].get('unmetered'))
+
+    def test_dot_and_chatgpt_web_stay_in_automatic_routing_with_the_flag_on(self):
+        """Owner 2026-11-10: only OpenCode's free starter allowance is a capacity-unknown pool; Dot and ChatGPT Web are
+        purpose-limited channels whose missing quota reading is temporary."""
+        acc = copy.deepcopy(self.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        out = allocator.five_axis_overlay(acc, document(acc['models']))
+        for name in ('dot', 'chatgpt-web'):
+            spec = out['accounts'][name]
+            self.assertTrue(spec.get('unmetered'), name)
+            self.assertFalse(spec.get('capacity_unknown'), name)
+            self.assertFalse(spec.get('five_axis_free_pool'), name)
+        decision = self.plan(self.accounts, document(self.accounts['models']), profile={'axis_demand': demand(1, 2, 2, 0)})
+        for model in ('dot', 'gpt-6-pro'):
+            rows = self.rows_for(decision, model)
+            self.assertTrue(rows, model)
+            self.assertFalse([e for c in rows for e in c['excluded'] if 'capacity_unknown' in e or 'usd_per_hour' in e], model)
+        self.assertFalse([w for w in decision['decision'].get('warnings', ()) if w.startswith(('dot:', 'chatgpt-web:'))])
+
+    def test_opencode_local_spend_uses_the_cited_public_price_and_names_the_gap(self):
+        import sqlite3
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / 'opencode.db'
+            conn = sqlite3.connect(db)
+            conn.execute('create table message (data text)')
+            for model, tin, tout in (('priced-free', 2_000_000, 1_000_000), ('unpriced-free', 500_000, 100_000)):
+                conn.execute('insert into message values (?)', (json.dumps(
+                    {'role': 'assistant', 'modelID': model,
+                     'tokens': {'input': tin, 'output': tout, 'reasoning': 0, 'cache': {'read': 0, 'write': 0}}}),))
+            conn.commit()
+            conn.close()
+            models = {'priced-free': {'five_axis': {'list_price': {'value': {'input': 0.3, 'output': 1.2}, 'source': 'aa.price'}}},
+                      'unpriced-free': {'five_axis': {}}}
+            with patch.dict(os.environ, {'OPENCODE_DB_PATH': str(db)}):
+                spend, gap = allocator.opencode_local_spend(models, None)
+        self.assertEqual(spend, {'priced-free': round(2 * 0.3 + 1 * 1.2, 4)})
+        self.assertEqual(gap, ['unpriced-free'])
+
+    def test_free_pool_warning_names_models_without_a_public_price(self):
+        import account_state
+        spec = {'capacity_unknown': True, 'five_axis_free_pool': True, 'local_spend_usd': 1.0,
+                'local_spend_gap': ['big-pickle']}
+        text = account_state._free_pool_warning('opencode', spec)
+        self.assertIn('no public list price for big-pickle', text)
+        self.assertIn('quota unknown, spend unpriced', text)
+
+    def test_overlay_carries_the_public_list_price_from_the_data_price_row(self):
+        acc = copy.deepcopy(self.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        out = allocator.five_axis_overlay(acc, document(acc['models']))
+        price = out['models']['claude-opus-5-5']['five_axis']['list_price']
+        self.assertEqual(price['source'], 'aa.price')
+        self.assertIn('url', price)
 
     def test_fable_5_2_on_five_axis_path_and_never_beats_opus_5_5_via_artifacts(self):
         """Round 11 item 6: claude-fable-5-2 has public five-axis scores (partial axes count missing components as 0),
