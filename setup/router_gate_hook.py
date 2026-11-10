@@ -90,9 +90,8 @@ SHELL_TOOLS = frozenset({
 })
 
 # `mcp__<server>__`, repeated when a proxy re-exports another server's tools. Server names are the host's
-# normalized identifiers (letters, digits, `_`, `-`); the lazy match ends each one at its first `__`.
+# normalized identifiers (letters, digits, `_`, `-`), so one may itself hold `__` or end in `_`.
 MCP_PREFIX = r"mcp__[A-Za-z0-9_-]+?__"
-MCP_PREFIX_RE = re.compile(MCP_PREFIX + r"(?=.)", re.S)
 CODEMODE_TURN_AGENT_RE = re.compile(r"\b(?:mcp__\w+?__)*(?:run_turn|send_message|send_agent_prompt)\s*\(")
 WRAPPED_AGENT_CALL_RE = re.compile(
     r"\b((?:mcp__\w+?__)*(?:create_agent|spawn_agent|run_turn|send_message|send_agent_prompt))\s*\("
@@ -134,27 +133,32 @@ READ_ONLY_CMD_PREFIX_RE = re.compile(
 )
 
 
-def base_tool_name(name: str) -> str:
-    """The tool a call names once the host's MCP server prefixes are removed: `mcp__magpie__Agent` is `Agent`."""
-    name = str(name or "")
-    while match := MCP_PREFIX_RE.match(name):
-        name = name[match.end():]
-    return name
-
-
 # What the installed hook matchers must route here: every base name evaluate_payload acts on.
 HOOKED_TOOLS = DIRECT_SUBAGENT_TOOLS | SCHEDULE_RETARGET_TOOLS | PASEO_TURN_TOOLS | CODEMODE_TOOLS | SHELL_TOOLS
 
+# One pattern classifies a name here and, anchored, is the installed matcher (and the Pi extension's test), so the
+# hook and the gate cannot disagree: a whole name is a hooked base tool behind any number of MCP server prefixes,
+# with the regex backtracking over where each server name ends (`mcp__paseo___create_agent`, `mcp__my__srv__Agent`).
+# The syntax is the subset Python and JavaScript share (no named groups, no lookbehind).
+TOOL_NAME_PATTERN = (f"(?:{MCP_PREFIX})*("
+                     + "|".join(sorted(HOOKED_TOOLS, key=lambda n: (n.lower(), n))) + ")")
+TOOL_NAME_RE = re.compile(TOOL_NAME_PATTERN)
+
+
+def base_tool_name(name: str) -> str:
+    """The hooked tool a call names, prefixes removed (`mcp__magpie__Agent` is `Agent`); any other name unchanged."""
+    name = str(name or "")
+    match = TOOL_NAME_RE.fullmatch(name)
+    return match.group(1) if match else name
+
 
 def hook_matcher() -> str:
-    """The PreToolUse matcher for HOOKED_TOOLS: a JavaScript regex, which Claude Code and Gemini test unanchored.
+    """The PreToolUse matcher: TOOL_NAME_PATTERN anchored, as Claude Code and Gemini test a matcher unanchored.
 
-    Anchored here to a whole name behind any number of `mcp__<server>__` prefixes, so `mcp__magpie__Agent` reaches
-    the hook and `ListAgents` does not. Worker question tools keep their substring reach (`x.ask_user_question`).
+    `ListAgents` does not reach the hook. Worker question tools keep their substring reach (`x.ask_user_question`).
     """
-    names = "|".join(sorted(HOOKED_TOOLS, key=lambda n: (n.lower(), n)))
     questions = "|".join(sorted(WORKER_QUESTION_TOOLS, key=lambda n: (-len(n), n)))
-    return f"^(?:{MCP_PREFIX})*(?:{names})$|{questions}"
+    return f"^{TOOL_NAME_PATTERN}$|{questions}"
 
 
 def parse_ts(value: object) -> dt.datetime | None:
@@ -295,8 +299,33 @@ def normalize_launch(spec: dict) -> dict[str, str]:
     }.items() if value}
 
 
+# `paseo schedule create|update` options that name the launch, as the MCP tools' argument keys normalize_launch reads.
+PASEO_SCHEDULE_OPTIONS = {"--provider": "provider", "--model": "model", "--thinking": "thinkingOptionId", "--mode": "mode"}
+
+
+UNKNOWN_CLI_VALUE = "<not a literal>"
+
+
+def paseo_cli_options(words: list) -> dict[str, str]:
+    """The launch options of a parsed `paseo schedule` argv (`--opt value` or `--opt=value`); other words are ignored.
+
+    A value that is not a literal (None from the Python reader) stays present as UNKNOWN_CLI_VALUE, which no route
+    matches, so a dynamic `--provider` is still a launch and is never taken for a routed one.
+    """
+    options = {}
+    for i, word in enumerate(words):
+        if not isinstance(word, str):
+            continue
+        flag, sep, value = word.partition("=")
+        if flag in PASEO_SCHEDULE_OPTIONS:
+            if not sep:
+                value = words[i + 1] if i + 1 < len(words) else None
+            options[PASEO_SCHEDULE_OPTIONS[flag]] = value if isinstance(value, str) and value else UNKNOWN_CLI_VALUE
+    return options
+
+
 def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
-    """Normalize static Paseo CLI sends; never execute shell or Python code.
+    """Normalize static Paseo CLI sends and schedule launches; never execute shell or Python code.
 
     Only command positions and subprocess arguments count, not quoted prompt
     text. Unknown/dynamic expressions retain the existing fail-open behavior.
@@ -311,10 +340,17 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
         exe = words[0].replace('\\', '/').rsplit('/', 1)[-1].lower()
         if exe in ('paseo', 'paseo.cmd', 'paseo.exe'):
             args = words[1:]
+            if '--help' in args or '-h' in args:
+                return
+            if args[:2] in (['schedule', 'create'], ['schedule', 'update']):
+                # Same launch as MCP create_schedule / update_schedule: the provider settings become its arguments.
+                targets.append(({'create': 'create_schedule', 'update': 'update_schedule'}[args[1]],
+                                paseo_cli_options(args[2:])))
+                return
             if args[:1] == ['agent']:
                 args = args[1:]
             if (len(args) >= 2 and args[0] == 'send' and isinstance(args[1], str)
-                    and UUID_RE.fullmatch(args[1]) and '--help' not in args and '-h' not in args):
+                    and UUID_RE.fullmatch(args[1])):
                 targets.append(('run_turn', {'agentId': args[1]}))
         elif exe in ('python', 'python.exe', 'python3', 'py', 'py.exe') and '-c' in words:
             index = words.index('-c') + 1
@@ -899,6 +935,67 @@ def build_deny_reason(trigger: str, window_seconds: int) -> str:
     )
 
 
+WORKFLOW_TRIGGER = "tool:Workflow"
+SCHEDULE_TRIGGERS = frozenset({"tool:create_schedule", "tool:update_schedule"})
+
+
+def workflow_deny_reason(cause: str) -> str:
+    return (
+        f"[Router Gate] 拦截未授权的 Workflow 启动 (tool:Workflow)：{cause}。"
+        "Workflow 的脚本会在运行时内部启动多个子 agent，roll 不适用（roll 会立即启动一个普通 worker，替换掉 workflow）。"
+        "只有用户在本次请求中明确要求用 workflow 时才可调用：在本会话中先运行\n"
+        f"  {ROUTER_CMD} record --constraint user_override --trigger workflow --provider <p> --account <a> "
+        "--model <本会话模型> --effort <e> --basis \"<用户要求 workflow 的原话>\"\n"
+        "再重试（15 分钟内有效，只授权本会话的 Workflow）。用户没有要求 workflow 时不要调用：自己做，或用 roll 派发单个 worker。"
+    )
+
+
+def schedule_deny_reason(trigger: str, cause: str) -> str:
+    return (
+        f"[Router Gate] 拦截未路由的定时 agent 启动 ({trigger})：{cause}。"
+        "schedule 每次触发都会启动新 agent；roll 不适用（roll 会立即启动 worker，不会建 schedule）。"
+        "先把任务写进 <task.json>（objective 写定时要做的事）并运行\n"
+        f"  {ROUTER_CMD} plan --input <task.json>\n"
+        "再用返回 bundle 的 provider 与 model 创建：create_schedule 传 provider=\"<provider>/<model>\"，"
+        "或 `paseo schedule create --provider <provider>/<model> ...`（update_schedule 同时给出 provider 与 model）。"
+        "gate 只接受最近 15 分钟内 provider/model 一致的 plan 记录。"
+    )
+
+
+def caller_identities(payload: dict, caller_id: str | None) -> set[str]:
+    """IDs that name the calling session: the host's session ID and, under Paseo, the calling agent."""
+    return {str(v) for v in (payload.get("session_id"), payload.get("sessionId"), payload.get("parent_agent_id"),
+                             payload.get("callerAgentId"), caller_id) if v}
+
+
+def check_workflow_record(rows: list[dict], identities: set[str]) -> str | None:
+    """A Workflow passes only on this session's `record --constraint user_override --trigger workflow`."""
+    if not identities:
+        return workflow_deny_reason("hook 输入里没有会话 ID，无法确认授权记录属于本会话")
+    for row in rows:
+        task = row.get("task") if isinstance(row.get("task"), dict) else {}
+        owners = {str(v) for v in (row.get("parent_id"), row.get("host_session_id"), task.get("parent_agent_id"),
+                                   task.get("host_session_id")) if v}
+        if (row.get("stage") == "record" and row.get("constraint") == "user_override"
+                and row.get("trigger") == "workflow" and owners & identities):
+            return None
+    return workflow_deny_reason("最近 15 分钟内本会话没有 `--trigger workflow` 的 user_override 记录")
+
+
+def check_schedule_plan(rows: list[dict], args: dict, context: dict, trigger: str,
+                        accounts: dict | None) -> str | None:
+    """A schedule passes only when its provider and model are those of a recent plan (records do not count)."""
+    requested = normalize_launch(args)
+    missing = [key for key in ("provider", "model") if not requested.get(key)]
+    if missing:
+        return schedule_deny_reason(trigger, f"未指定 {'/'.join(missing)}，无法与路由比对")
+    plans = [row for row in rows if row.get("stage") in ("plan", "select")]
+    if not plans:
+        return schedule_deny_reason(trigger, "最近 15 分钟内没有 plan 记录")
+    row, diagnostic = match_route(plans, requested, context, trigger, accounts=accounts)
+    return None if row else schedule_deny_reason(trigger, f"与最近的 plan 不一致：{diagnostic}")
+
+
 def format_response(allowed: bool, harness_kind: str, reason: str = "") -> dict:
     if harness_kind == "antigravity":
         return {"decision": "allow"} if allowed else {"decision": "deny", "reason": reason}
@@ -1022,6 +1119,16 @@ def evaluate_payload(
                 dispatch_registry.claim(args, parent_id=caller_id, call_id=call_id, now=now)
             except (ValueError, OSError, ImportError, sqlite3.Error) as exc:
                 return format_response(False, harness_kind, '[Router Gate] Bound dispatch rejected: ' + str(exc))
+            continue
+        # Workflow and schedules are not worker launches roll can make: each has its own authorization.
+        if trigger == WORKFLOW_TRIGGER or trigger in SCHEDULE_TRIGGERS:
+            if rows is None:
+                rows = recent_routes(ledger, now=now, window_seconds=win)
+            reason = (check_workflow_record(rows, caller_identities(payload, caller_id))
+                      if trigger == WORKFLOW_TRIGGER else
+                      check_schedule_plan(rows, args, correlation_fields(payload, tool_input, args), trigger, accounts))
+            if reason:
+                return format_response(False, harness_kind, reason)
             continue
         if (name == 'create_agent' or trigger == 'shell:paseo agent create') and os.environ.get('ROUTER_PASEO_LEGACY_NO_LABELS') != '1':
             return format_response(False, harness_kind,

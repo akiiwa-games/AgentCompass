@@ -300,6 +300,16 @@ class RoutingTests(unittest.TestCase):
             with patch.object(router, 'usage_snapshot', return_value={'read_ok': True, 'accounts': {}}):
                 rec = router.record_constraint(args)
             self.assertEqual(rec['source'], 'constraint_record')
+            self.assertNotIn('trigger', rec)
+            # A record that authorizes a Workflow says so in the ledger row the spawn gate reads.
+            args.trigger = 'workflow'
+            with patch.object(router, 'usage_snapshot', return_value={'read_ok': True, 'accounts': {}}):
+                rec = router.record_constraint(args)
+            self.assertEqual(rec['trigger'], 'workflow')
+            router.finalize(rec, {'stage': 'record'}, None, time.monotonic(), {'parent_agent_id': 'session-1'}, [])
+            row = json.loads((Path(directory) / 'ledger.jsonl').read_text(encoding='utf-8').splitlines()[-1])
+            self.assertEqual((row['stage'], row['trigger'], row['constraint']), ('record', 'workflow', 'user_override'))
+            del args.trigger
             args.account = 'claude-lab'
             args.provider = 'claude-lab'
             args.model = 'claude-opus-5-5'

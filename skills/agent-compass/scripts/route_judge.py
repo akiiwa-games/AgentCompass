@@ -712,6 +712,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **{k: result[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound') if k in result},
         **({'host_session_id': task['host_session_id']} if task.get('host_session_id') else {}),
         'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
+        **({'trigger': result['trigger']} if result.get('trigger') else {}),
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),
         **({'host_policy_violation': result['host_policy_violation']} if 'host_policy_violation' in result else {}),
         'judge': (judge or {}).get('model'), 'judge_pinned': requested != 'auto' if judge else None,
@@ -2203,6 +2204,7 @@ def record_constraint(args, task=None):
         bundle['fast_billing'] = allocator.fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
+              **({'trigger': args.trigger} if getattr(args, 'trigger', None) else {}),
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
     if retrying:
@@ -2766,6 +2768,10 @@ def main():
     parser.add_argument('--model')
     parser.add_argument('--effort')
     parser.add_argument('--specialty')
+    parser.add_argument('--trigger', choices=('workflow',),
+                        help='record: the launch this record authorizes when it is not a worker roll starts; '
+                             'workflow = a Claude Code Workflow the user asked for in this session (the spawn gate '
+                             'accepts it only with --constraint user_override, from the same session).')
     parser.add_argument('--intent', help='override: stable intent key for idempotent updates (default: normalized user basis).')
     parser.add_argument('--window', help='override: window targeted by the reset expectation (default: weekly windows).')
     parser.add_argument('--resets-in', type=float, help='override: expected hours until reset; does not replace observed capacity.')

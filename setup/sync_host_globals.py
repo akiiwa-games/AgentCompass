@@ -73,17 +73,15 @@ ROUTER_GATE_MATCHER = router_gate_hook.hook_matcher()
 PI_ROUTER_GATE_TS = """import { spawnSync } from "node:child_process";
 
 const HOOK_ARGV = __HOOK_ARGV__;
-const SUBAGENT_TOOLS = new Set(__HOOKED_TOOLS__);
 const WORKER_QUESTION_TOOLS = new Set(__WORKER_QUESTION_TOOLS__);
-// MCP tools arrive as mcp__<server>__<tool>, nested when a proxy re-exports another server's tools.
-const MCP_PREFIX = /^(?:mcp__[A-Za-z0-9_-]+?__)+(?=.)/;
+// The gate's own classifier (router_gate_hook.TOOL_NAME_PATTERN): a hooked tool behind any MCP server prefixes.
+const HOOKED_TOOL = new RegExp(__TOOL_NAME_PATTERN__);
 
 export default function (pi: any) {
   pi.on("tool_call", async (event: any) => {
     const toolName = String(event?.toolName || "");
-    const baseName = toolName.replace(MCP_PREFIX, "");
     const lastName = toolName.split(/__|\\./).pop() || "";
-    if (!SUBAGENT_TOOLS.has(baseName) && !WORKER_QUESTION_TOOLS.has(lastName)) {
+    if (!HOOKED_TOOL.test(toolName) && !WORKER_QUESTION_TOOLS.has(lastName)) {
       return undefined;
     }
     try {
@@ -111,7 +109,7 @@ export default function (pi: any) {
   });
 }
 """.replace("__HOOK_ARGV__", json.dumps(ROUTER_HOOK_ARGV)).replace(
-    "__HOOKED_TOOLS__", json.dumps(sorted(router_gate_hook.HOOKED_TOOLS))).replace(
+    "__TOOL_NAME_PATTERN__", json.dumps(f"^{router_gate_hook.TOOL_NAME_PATTERN}$")).replace(
     "__WORKER_QUESTION_TOOLS__", json.dumps(sorted(router_gate_hook.WORKER_QUESTION_TOOLS)))
 
 # Per-family table of global instruction files, rule kinds, skills layout and router-gate hook locations.
