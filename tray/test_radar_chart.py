@@ -121,3 +121,16 @@ def test_light_falls_from_the_upper_left_and_specks_ride_the_shape():
     wide = radar.glints(radar.polygon([.9] * 5, 100, 100, 160), (100, 100))
     for (x, y, size, light), (x2, y2, size2, light2) in zip(specks, wide):
         assert (x2 - 100, y2 - 100) == pytest.approx((2 * (x - 100), 2 * (y - 100))) and (size, light) == (size2, light2)
+
+
+def test_the_technical_reference_names_the_radar_s_real_axes_and_pair():
+    # F7 of the redesign-4 review: the reference described axes and a pairing the page does not have.
+    import i18n_catalog
+    text = (Path(__file__).resolve().parents[1] / "docs" / "technical-reference.md").read_text(encoding="utf-8")
+    line = next(row for row in text.splitlines() if row.lstrip().startswith("- **Radar Comparison**")).lower()
+    for axes in (radar.SCORE_AXES, radar.DNA_AXES):
+        for _, label, _ in axes:
+            assert i18n_catalog.EN.get(label, label).lower() in line, label
+    assert "best-ranked other model" in line
+    for stale in ("runner-up", "subjective fit", "capability fit", "route fit", "net ability", "anti-hallucination", "visual/gui"):
+        assert stale not in line, stale

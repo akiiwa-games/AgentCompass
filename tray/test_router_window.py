@@ -215,6 +215,36 @@ class DecisionBindingTests(unittest.TestCase):
             self.assertTrue(panel.radar.canvas.pack_info())
             self.assertEqual(panel.theatre.canvas.winfo_manager(), "")
 
+    def test_a_quota_record_the_view_cannot_read_does_not_stop_the_decision_from_loading(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        window = {"label": "Claude", "capacity_usd": "n/a", "used_usd": "?", "elapsed_hours": 166, "reset_in_hours": 2}
+        ranking = [{**row, "quota_line": {"window": "claude", "hours": "two", "spend_usd": "?"}} for row in PLAN["ranking"][:3]]
+        loaded = lambda panel: (panel.theatre.scene.winner.id, bool(panel.breakdown_rows), 'Opus 5.5' in panel.verdict.get())
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
+                mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+            # Fields of another type are read one by one: the window is left out and nothing is raised.
+            with mock.patch.object(router_window, "log_error") as logged:
+                panel.plan_loaded({**PLAN, "ranking": ranking, "quota_line": {"windows": {"claude": window}}})
+            logged.assert_not_called()
+            self.assertEqual((panel.quota_line.data["windows"], panel.quota_line.data["dropped"]), ([], ["claude"]))
+            self.assertEqual(loaded(panel), ('opus', True, True))
+            # Whatever else goes wrong inside the quota view stays there: it is logged, and the film, the
+            # candidates and the verdict of the decision load as usual.
+            panel.breakdown_rows = []
+            with mock.patch.object(router_window.quota_line, "model", side_effect=ValueError("boom")), \
+                    mock.patch.object(router_window, "log_error") as logged:
+                panel.plan_loaded({**PLAN, "quota_line": {"windows": {"claude": {**window, "used_usd": 240}}}})
+            logged.assert_called_once()
+            self.assertIsInstance(panel.quota_line.error, ValueError)
+            self.assertIsNone(panel.quota_line.data)
+            self.assertEqual(loaded(panel), ('opus', True, True))
+            panel.plan_loaded(PLAN)
+            self.assertIsNone(panel.quota_line.error)
+
     def test_quota_line_tab_shows_the_loaded_decision_and_follows_the_film(self):
         import router_window
         import tk_test_support

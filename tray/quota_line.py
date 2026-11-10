@@ -6,9 +6,12 @@ recovery line ℓ(t) = C·(t − t0)/L, straight from corner to corner. The usag
 consumed; the view draws it rising from the period's start to now. While it runs under the quota line it is
 green and the window is "used first": quota that has recovered and is unspent costs nothing and is lost at
 the reset. Where it runs over the quota line it is red and the window is "held back": spending more there
-costs. The window the chosen candidate draws from is lit and the task's own spend is added to its line.
-Last, a dotted line runs from each line's end to the corner where the two lines meet at the reset: the pace
-that uses up what is left.
+costs. A window's state is the one the decision saw, before this task; the colour of the line, the colour
+of its end, the word above the chart and the hover text all come from one comparison. The window the chosen
+candidate draws from is lit and the task's own spend is added to its line in the accent colour; a task that
+runs past the reset spends only the share of its hours before it here, and a mark on the reset edge says the
+rest belongs to the next period. Last, a dotted line runs from each line's end to the corner where the two
+lines meet at the reset: the pace that uses up what is left.
 
 Everything shown is read from the decision snapshot; the page never re-plans or re-prices a candidate.
 It needs (names follow the quota-economy design, round 047):
@@ -22,6 +25,12 @@ and, for the usage line only, any of these optional window fields:
     samples = [[hours since the period's start, used USD], …]   readings recorded inside this period
     account, window_id                                          where the page may look such readings up itself
                                                                 (the usage collector's account key and window id)
+
+A snapshot is read field by field and never trusted. A window whose usage or clock is recorded as something
+that is not a number is left out and counted in a note under the charts; a capacity that is missing, zero or
+not a number is an unknown capacity: the usage line is drawn plain, with no quota line, no state and no ratio.
+At most WINDOWS charts are shown: the chosen candidate's window always, then the other windows of its account,
+then the rest in their recorded order, and the note says how many are not shown.
 
 Readings are for display only. The router's economics use the current period's consumption U and nothing
 else, and must not read them. With fewer than two readings the usage line is fitted from the period's start
@@ -59,7 +68,8 @@ REACH = 14.               # px around a line's end that its dot, its specks and 
 DOT_PITCH = 4.4           # px between the dots of a dotted line
 PIECE = 8.                # px: a growing straight line is drawn through fixed points this far apart
 TILE_MARGIN = 6           # screen px a tile is painted beyond its box
-BAND = .012               # share of the capacity across which the state turns from "used first" to "held back"
+NOTE = 14.                # px under the charts for the note that says what is not shown
+HEADROOM = 1.25           # a chart without a known capacity is this much taller than its usage
 STEPS = 8                 # steps in which a state word and the lit card fade
 SPECKS, SPECK_EVERY, SPECK_TRAIL = 4, 9., 11.   # specks shed by the rising end: how many, px of travel per speck, px they fall behind
 TINT = .13                # opacity of the area between the two lines
@@ -108,14 +118,48 @@ def reset_text(hours):
     return _tr("{0} 天后重置").format(f"{hours / 24:.2g}")
 
 
+BAD = object()            # a recorded field that is there but is not a finite number
+
+
+def number(value, missing=None):
+    """A recorded number as a float: `missing` when it is absent, BAD when it is there but is not a finite number."""
+    if value is None:
+        return missing
+    if isinstance(value, bool) or not finite(value):
+        return BAD
+    return float(value)
+
+
 def window_geometry(window):
     """(now as a fraction of the period, recovery line ℓ(now) in USD) for one window on its own clock."""
-    elapsed, left = float(window.get("elapsed_hours") or 0.), window.get("reset_in_hours")
-    if not finite(left):
+    elapsed, left, capacity = (number(window.get(name), default) for name, default in
+                               (("elapsed_hours", 0.), ("reset_in_hours", None), ("capacity_usd", 0.)))
+    if left is None or elapsed is BAD or left is BAD:
         return 0., 0.       # never resets: nothing recovers, the line stays at 0
-    period = elapsed + max(0., left)
-    at = clamp(elapsed / period) if period > 0 else 0.
-    return at, float(window.get("capacity_usd") or 0.) * at
+    period = max(0., elapsed) + max(0., left)
+    at = clamp(max(0., elapsed) / period) if period > 0 else 0.
+    return at, (0. if capacity is BAD else max(0., capacity)) * at
+
+
+def read_window(key, window):
+    """One recorded window as the view shows it, or None when its usage or its clock is not a number."""
+    if not isinstance(window, dict):
+        return None
+    used, elapsed, reset = (number(window.get(name), default) for name, default in
+                            (("used_usd", 0.), ("elapsed_hours", 0.), ("reset_in_hours", None)))
+    if used is BAD or elapsed is BAD or reset is BAD:
+        return None
+    capacity = number(window.get("capacity_usd"))
+    capacity = None if capacity is None or capacity is BAD or capacity <= 0 else capacity       # None: unknown
+    used, elapsed, reset = max(0., used), max(0., elapsed), None if reset is None else max(0., reset)
+    period = elapsed + reset if reset is not None else None
+    at = clamp(elapsed / period) if period else 0.
+    lined = bool(period) and capacity is not None        # a quota line needs a reset and a capacity
+    path, fitted, readings = usage_path(window, at, used, period)
+    account = window.get("account")
+    return dict(key=key, label=str(window.get("label") or key), account=account if isinstance(account, str) and account else None,
+                at=at, line=capacity * at if lined else 0., capacity=capacity, lined=lined, used=used, reset=reset,
+                period=period, path=path, fitted=fitted, readings=readings)
 
 
 def usage_path(window, at, used, period):
@@ -124,7 +168,8 @@ def usage_path(window, at, used, period):
     Recorded readings are joined as they are and closed by the decision's own reading (now, U). Before the first
     reading, and when fewer than two are recorded, the line is fitted from the period's start.
     """
-    elapsed, points = float(window.get("elapsed_hours") or 0.), []
+    elapsed, points = number(window.get("elapsed_hours"), 0.), []
+    elapsed = 0. if elapsed is BAD else elapsed
     samples = window.get("samples")
     if isinstance(samples, (list, tuple)) and period:
         for item in samples:
@@ -161,37 +206,52 @@ def period_samples(series, reset_at, decided_at, elapsed_hours, capacity_usd, sl
 
 
 def model(result):
-    """Display model of a snapshot, or None when it carries no quota-line record (older decisions)."""
-    block = (result or {}).get("quota_line")
+    """Display model of a snapshot, or None when it carries no quota-line record (older decisions).
+
+    dict(windows, winner, hidden, dropped): the charts to show, the chosen candidate's spend (None when its
+    window is not known), the labels of readable windows that are not shown, and the keys of unreadable ones.
+    """
+    block = result.get("quota_line") if isinstance(result, dict) else None
     recorded = block.get("windows") if isinstance(block, dict) else None
     if not isinstance(recorded, dict) or not recorded:
         return None
-    # Windows keep their recorded order, so replaying another decision does not shuffle the charts.
-    keys = list(recorded)[:WINDOWS]
-    shown = []
-    for key in keys:
-        window = recorded[key] if isinstance(recorded[key], dict) else {}
-        at, line = window_geometry(window)
-        capacity = float(window.get("capacity_usd") or 0.)
-        reset = float(window["reset_in_hours"]) if finite(window.get("reset_in_hours")) else None
-        used = float(window.get("used_usd") or 0.)
-        period = float(window.get("elapsed_hours") or 0.) + reset if reset is not None else None
-        path, fitted, readings = usage_path(window, at, used, period)
-        shown.append(dict(key=key, label=str(window.get("label") or key), at=at, line=line, capacity=capacity,
-                          used=used, reset=reset, period=period, path=path, fitted=fitted, readings=readings))
+    read = {key: read_window(key, window) for key, window in recorded.items()}
+    good = {key: window for key, window in read.items() if window is not None}
     # The task's own spend, on the window the chosen candidate draws from.
-    chosen = None
-    for item in result.get("ranking") or []:
-        line, bundle = item.get("quota_line"), item.get("bundle") or {}
-        if item.get("id") != result.get("choice") or item.get("excluded") or not isinstance(line, dict) or line.get("window") not in keys:
+    chosen, ranking = None, result.get("ranking")
+    for item in ranking if isinstance(ranking, (list, tuple)) else []:
+        if not isinstance(item, dict) or item.get("id") != result.get("choice") or item.get("excluded"):
             continue
-        window = shown[keys.index(line["window"])]
-        hours = float(line["hours"]) if finite(line.get("hours")) and line["hours"] > 0 else 0.
-        chosen = dict(window=line["window"], label=display_names.candidate_label({"id": item.get("id"), **bundle}),
-                      spend=max(0., float(line.get("spend_usd") or 0.)), hours=hours,
+        line, bundle = item.get("quota_line"), item.get("bundle")
+        key = line.get("window") if isinstance(line, dict) else None
+        if not isinstance(key, str) or key not in good:
+            continue
+        window = good[key]
+        hours, spend = number(line.get("hours"), 0.), number(line.get("spend_usd"))
+        hours = 0. if hours is BAD or hours <= 0 else hours
+        try:
+            label = display_names.candidate_label({"id": item.get("id"), **(bundle if isinstance(bundle, dict) else {})})
+        except Exception:       # a bundle recorded with fields of another type still names its candidate
+            label = str(item.get("id"))
+        # A task that runs past the reset spends only the share of its hours before it in this period.
+        inside = clamp(window["reset"] / hours) if window["reset"] is not None and hours > window["reset"] else 1.
+        chosen = dict(window=key, label=label, hours=hours, inside=inside,
+                      spend=None if spend is None or spend is BAD else max(0., spend),       # None: unknown
                       share=clamp(hours / window["period"]) if window["period"] else 0.)
         break
-    return dict(windows=shown, winner=chosen)
+    # Windows keep their recorded order, so replaying another decision does not shuffle the charts. When there
+    # are more than fit, the chosen one stays, then its account's other windows, then the rest.
+    order, hidden = list(good), []
+    if len(order) > WINDOWS:
+        first = [chosen["window"]] if chosen else []
+        account = good[first[0]]["account"] if first else None
+        kin = [key for key in order if key not in first and account and good[key]["account"] == account]
+        rest = [key for key in order if key not in first and key not in kin]
+        keep = set((first + kin + rest)[:WINDOWS])
+        hidden = [good[key]["label"] for key in order if key not in keep]
+        order = [key for key in order if key in keep]
+    return dict(windows=[good[key] for key in order], winner=chosen, hidden=hidden,
+                dropped=[str(key) for key, window in read.items() if window is None])
 
 
 def smooth(path, fitted, width):
@@ -230,23 +290,34 @@ def smooth(path, fitted, width):
     return out, max(0, len(lead) - 1)
 
 
+def over_line(moment, amount, capacity):
+    """The one comparison of usage with the quota line: over it, or not (on it or under it).
+
+    The colour of a stretch of the usage line, the colour of its end, the state word and the hover text all
+    come from here.
+    """
+    return amount - capacity * moment > 1e-9
+
+
 def runs_by_state(curve, lead, capacity, has_line):
     """Cut a usage curve where it crosses the quota line: [{over, fitted, pts}], each a stretch on one side of it.
 
-    over: True above the line, False under it, None when the window has no line (it never resets).
+    over: True above the line, False under it, None when the window has no line (it never resets, or its
+    capacity is unknown).
     """
-    side = lambda p: None if not has_line else p[1] > capacity * p[0] + 1e-9
+    gap = lambda p: p[1] - capacity * p[0]
     out = []
     for index, (a, b) in enumerate(zip(curve, curve[1:])):
         fitted = index < lead
-        pieces = [(a, b)]
-        ga, gb = a[1] - capacity * a[0], b[1] - capacity * b[0]
+        ga, gb = gap(a), gap(b)
+        # Each piece is judged at its end away from the line: a crossing itself lies on neither side.
+        pieces = [(a, b, a if abs(ga) >= abs(gb) else b)]
         if has_line and ga * gb < 0:
             u = ga / (ga - gb)
             cross = (a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u)
-            pieces = [(a, cross), (cross, b)]
-        for start, end in pieces:
-            over = side(((start[0] + end[0]) / 2, (start[1] + end[1]) / 2))
+            pieces = [(a, cross, a), (cross, b, b)]
+        for start, end, away in pieces:
+            over = over_line(*away, capacity) if has_line else None
             if out and out[-1]["over"] == over and out[-1]["fitted"] == fitted:
                 out[-1]["pts"].append(end)
             else:
@@ -264,7 +335,7 @@ class QuotaLineRenderer:
     lines' ends are passing through. Everything that never moves is drawn once into a base layer.
     """
 
-    def __init__(self, data, width, height, scale=1.):
+    def __init__(self, data, width, height, scale=1., unreadable=False):
         self.data = data
         self.w, self.h = max(1, int(width)), max(1, int(height))
         self.s = min(scale, self.w / NOMINAL[0], self.h / MIN_HEIGHT)
@@ -273,8 +344,13 @@ class QuotaLineRenderer:
         self.ox = self.oy = 0
         self.tiles, self.drawn, self.repaints = {}, {}, 0
         self.cells = []
-        if data is None:
-            self.base = self.empty()
+        # What is not shown is said under the charts.
+        notes = [text.format(len(items)) for text, items in (
+            (_tr("另有 {0} 个窗口未显示"), (data or {}).get("hidden")), (_tr("{0} 个窗口的记录无法读取"), (data or {}).get("dropped"))) if items]
+        self.note = _tr("；").join(notes)
+        self.foot = NOTE if self.note else 0.
+        if data is None or not data["windows"]:
+            self.base = self.empty(unreadable or bool(self.note))
         else:
             self.layout()
             self.base = self.static()
@@ -287,19 +363,27 @@ class QuotaLineRenderer:
         columns = 1 if count == 1 or (count == 2 and self.right < self.bottom * 1.2) else 2
         lines = math.ceil(count / columns)
         width = (self.right - 2 * MARGIN - GUTTER * (columns - 1)) / columns
-        height = (self.bottom - 2 * MARGIN - GUTTER * (lines - 1)) / lines
+        height = (self.bottom - self.foot - 2 * MARGIN - GUTTER * (lines - 1)) / lines
         s = self.s
         for index, window in enumerate(windows):
             x0, y0 = MARGIN + (width + GUTTER) * (index % columns), MARGIN + (height + GUTTER) * (index // columns)
             cell = dict(window=window, index=index, x0=x0, y0=y0, x1=x0 + width, y1=y0 + height,
                         px0=x0 + 13, px1=x0 + width - 15, py0=y0 + HEAD + 12, py1=y0 + height - 11)
             curve, lead = smooth(window["path"], window["fitted"], cell["px1"] - cell["px0"])
-            cell["runs"] = runs_by_state(curve, lead, window["capacity"], bool(window["period"]))
+            cell["runs"] = runs_by_state(curve, lead, window["capacity"] or 0., window["lined"])
+            # The window's state as the decision saw it, before this task: where its usage stood against its line.
+            cell["over"] = over_line(window["at"], window["used"], window["capacity"]) if window["lined"] else None
             cell["task"] = winner if winner and winner["window"] == window["key"] else None
             # Where the usage line stands once the task has run, and whether a pace to the reset is left to draw.
+            # Only the spend before the reset belongs to this period; the rest starts the next one.
             task = cell["task"]
-            cell["end"] = (min(1., window["at"] + task["share"]), window["used"] + task["spend"]) if task else (window["at"], window["used"])
-            cell["closes"] = bool(window["period"]) and cell["end"][0] < 1 and cell["end"][1] < window["capacity"]
+            spend = (task["spend"] or 0.) if task else 0.
+            cell["after"] = spend * (1 - task["inside"]) if task else 0.
+            cell["end"] = (min(1., window["at"] + task["share"]), window["used"] + spend - cell["after"]) if task else (window["at"], window["used"])
+            # Bottom to top is the period's capacity; usage beyond it, or a capacity nobody knows, sets its own height.
+            top = max([cell["end"][1]] + [amount for _, amount in window["path"]])
+            cell["scale"] = max(window["capacity"], top) if window["capacity"] else top * HEADROOM or 1.
+            cell["closes"] = window["lined"] and cell["end"][0] < 1 and cell["end"][1] < window["capacity"]
             self.cells.append(cell)
             # Tile boxes in screen pixels: the head above, then columns of the chart.
             sx0, sx1 = max(0, math.floor(x0 * s)), min(self.w, math.ceil((x0 + width) * s))
@@ -317,9 +401,8 @@ class QuotaLineRenderer:
 
     def at(self, cell, moment, amount):
         """Where a moment of a window's period and an amount of its quota lie: left to right, bottom to top."""
-        capacity = cell["window"]["capacity"] or 1.
         return (cell["px0"] + (cell["px1"] - cell["px0"]) * clamp(moment),
-                cell["py1"] - (cell["py1"] - cell["py0"]) * clamp(amount / capacity))
+                cell["py1"] - (cell["py1"] - cell["py0"]) * clamp(amount / cell["scale"]))
 
     def grown(self, start, end, share, cell):
         """The first `share` of a straight line on a chart, through fixed points along it.
@@ -396,10 +479,10 @@ class QuotaLineRenderer:
         return image
 
     # --- base layer ------------------------------------------------------------------------------
-    def empty(self):
+    def empty(self, unreadable=False):
         image = self.canvas()
-        self.text(_tr("此决策没有额度恢复线记录"), self.right / 2, self.bottom / 2, BODY, theme.FAINT, anchor="mm",
-                  limit=self.right - 16)
+        self.text(_tr("额度恢复线记录无法读取") if unreadable else _tr("此决策没有额度恢复线记录"), self.right / 2, self.bottom / 2,
+                  BODY, theme.FAINT, anchor="mm", limit=self.right - 16)
         return image
 
     def static(self):
@@ -410,6 +493,8 @@ class QuotaLineRenderer:
             self.draw.line((self.P(floor), self.P(edge)), fill=self.ink(AXIS), width=max(1, round(self.p(1.))))
             if cell["window"]["period"]:
                 self.draw.line((self.P(edge), self.P((edge[0], cell["py0"]))), fill=self.ink(AXIS), width=max(1, round(self.p(1.))))
+        if self.note:
+            self.text(self.note, self.right / 2, self.bottom - self.foot / 2 - 2, CHIP, theme.FAINT, anchor="mm", limit=self.right - 16)
         return image
 
     # --- state at a story time --------------------------------------------------------------------
@@ -425,11 +510,14 @@ class QuotaLineRenderer:
             spent = ease(lin(story, "spend")) if cell["task"] else 0.
             closed = ease(staggered(lin(story, "close"), index, count, .12)) if cell["closes"] else 0.
             if pace >= 1:
+                # The line has reached now. The task's spend moves its end on, but not the window's state: that
+                # is the one the decision saw, and the reason this window was or was not chosen.
                 head = (window["at"] + (cell["end"][0] - window["at"]) * spent, window["used"] + (cell["end"][1] - window["used"]) * spent)
+                over = cell["over"]
             else:
+                # While the line rises, its state is where its end stands against the quota line.
                 head = (reach, self.usage(cell, reach))
-            # How far over the quota line the head stands: 0 under it, 1 over it, soft across a thin band.
-            over = clamp(.5 + (head[1] - window["capacity"] * head[0]) / (2 * BAND * (window["capacity"] or 1.))) if window["period"] else None
+                over = over_line(*head, window["capacity"]) if window["lined"] else None
             out["cells"].append(dict(drawn=drawn, pace=pace, reach=reach, spent=spent, closed=closed, head=head, over=over,
                                      lit=round(ease(lin(story, "spend") * 2.5) * STEPS) / STEPS if cell["task"] else 0.))
         return out
@@ -448,7 +536,7 @@ class QuotaLineRenderer:
         cell, live = self.cells[name[0]], state["cells"][name[0]]
         if name[1] == "head":
             shown = round(clamp(live["pace"] * 6) * STEPS)
-            return (live["lit"], shown, None if live["over"] is None or not shown else round(live["over"] * STEPS))
+            return (live["lit"], shown, live["over"] if shown else None)
         low, high = cell["columns"][name[1]]
         inside = lambda moment: min(max(moment, low), high)
         head = live["head"][0]
@@ -511,8 +599,8 @@ class QuotaLineRenderer:
         window, y = cell["window"], cell["y0"] + HEAD / 2 + 2
         # In the steps of the tile's key: the tile is the same picture whenever it is painted.
         shown = round(clamp(live["pace"] * 6) * STEPS) / STEPS
-        over = None if live["over"] is None else round(live["over"] * STEPS) / STEPS
-        word = "" if over is None else _tr("降权") if over > .5 else _tr("优先使用")
+        over = live["over"]
+        word = "" if over is None else _tr("降权") if over else _tr("优先使用")
         f = font(round(CHIP * self.s * self.k), True)
         width = f.getlength(word) / (self.s * self.k) + 14 if word else 0.
         self.text(window["label"], cell["x0"] + 13, y, SMALL, mix(theme.TEXT, theme.ACCENT, live["lit"]), True,
@@ -521,12 +609,12 @@ class QuotaLineRenderer:
             return
         x1 = cell["x1"] - 11
         (ax, ay), (bx, by) = self.P((x1 - width, y - 8)), self.P((x1, y + 8))
-        self.draw.rounded_rectangle((ax, ay, bx, by), radius=(by - ay) // 2, fill=self.ink(mix(UNDER_SOFT, OVER_SOFT, over), shown))
-        self.text(word, x1 - width / 2, y, CHIP, mix(UNDER_DEEP, OVER_DEEP, over), True, anchor="mm", alpha=shown)
+        self.draw.rounded_rectangle((ax, ay, bx, by), radius=(by - ay) // 2, fill=self.ink(OVER_SOFT if over else UNDER_SOFT, shown))
+        self.text(word, x1 - width / 2, y, CHIP, OVER_DEEP if over else UNDER_DEEP, True, anchor="mm", alpha=shown)
 
     def chart(self, cell, live, low, high):
         """The part of a window's chart between two moments of its period."""
-        window, capacity = cell["window"], cell["window"]["capacity"]
+        window, capacity = cell["window"], cell["window"]["capacity"] or 0.
         at = lambda moment, amount: self.at(cell, moment, amount)
         reach = window["at"] if live["pace"] >= 1 else live["reach"]
         strokes = []
@@ -548,7 +636,7 @@ class QuotaLineRenderer:
                 area = [at(*point) for point in points] + [at(moment, capacity * moment) for moment, _ in reversed(points)]
                 self.draw.polygon([self.P(point) for point in area], fill=self.ink(color, TINT))
             strokes.append((run, points, color))
-        if window["period"] and live["drawn"] > 0:
+        if window["lined"] and live["drawn"] > 0:
             # The quota line: quota recovers evenly, from nothing at the period's start to all of it at the reset.
             self.stroke(self.grown((0., 0.), (1., capacity), live["drawn"], cell), QUOTA, 1.5)
         for run, points, color in strokes:
@@ -564,10 +652,14 @@ class QuotaLineRenderer:
             # This task's own spend, on top of the usage so far.
             self.stroke(self.grown((window["at"], window["used"]), cell["end"], live["spent"], cell), theme.ACCENT, 3.)
             self.ring(at(*head), 4 + 5 * live["spent"], theme.ACCENT, 1.4, .6 * (1 - live["spent"]))
+            if cell["after"] > 0:
+                # The task runs on past the reset: what it spends after it belongs to the next period, not to this chart.
+                x, y = at(*cell["end"])
+                self.stroke([(x + 7, y - 3.5), (x + 10.5, y), (x + 7, y + 3.5)], theme.ACCENT, 1.6, clamp((live["spent"] - .7) / .3))
         if cell["closes"] and live["closed"] > 0:
             # The pace that uses up what is left by the reset: the two lines close there.
             self.dotted(at(*cell["end"]), at(1., capacity), PACE, 1.6, share=live["closed"])
-        if window["period"] and live["drawn"] >= 1:
+        if window["lined"] and live["drawn"] >= 1:
             done = live["closed"] >= 1
             ripple = clamp((live["closed"] - .8) / .2) if cell["closes"] else 0.
             if 0 < ripple < 1:
@@ -577,7 +669,9 @@ class QuotaLineRenderer:
             self.ring(at(1., capacity), 3.8, theme.ACCENT if done else QUOTA, 1.4)
         if live["pace"] <= 0:
             return
-        color = PLAIN if live["over"] is None else mix(UNDER, OVER, live["over"])
+        color = PLAIN if live["over"] is None else OVER if live["over"] else UNDER
+        if task and live["spent"] > 0:
+            color = mix(color, theme.ACCENT, live["spent"] * 3)         # the end now belongs to the task's spend
         if 0 < live["pace"] < 1:
             # Specks are shed by the rising end: each leaves it, drifts off the line and fades, as the line moves on.
             span = (cell["px1"] - cell["px0"]) or 1.
@@ -599,19 +693,31 @@ class QuotaLineRenderer:
         for cell in self.cells:
             if not (cell["x0"] <= x <= cell["x1"] and cell["y0"] <= y <= cell["y1"]):
                 continue
-            window = cell["window"]
-            gap = window["line"] - window["used"]
-            state = (_tr("恢复线下还有 {0} 未用").format(usd(gap)) if gap >= 0
-                     else _tr("比恢复线多用了 {0}").format(usd(-gap)))
-            if window["period"]:
-                state += _tr("；") + (_tr("这个窗口被优先使用") if gap >= 0 else _tr("这个窗口被降权"))
-            source = (_tr("实际用量线来自 {0} 个读数").format(window["readings"]) if window["readings"]
-                      else _tr("本期没有读数，实际用量线按期初到当前拟合"))
-            text = _tr("{0}：本期已用 {1} / {2}，{3}；{4}").format(
-                window["label"], usd(window["used"]), usd(window["capacity"]), reset_text(window["reset"]), state) + _tr("；") + source
-            if cell["task"]:
-                text += _tr("；") + _tr("本次任务用这个窗口：{0}，花费 {1}").format(cell["task"]["label"], usd(cell["task"]["spend"]))
+            window, over, task = cell["window"], cell["over"], cell["task"]
+            if window["capacity"] is None:
+                text = _tr("{0}：本期已用 {1}，容量未知，{2}").format(window["label"], usd(window["used"]), reset_text(window["reset"]))
+            else:
+                gap = window["line"] - window["used"]
+                if window["lined"]:
+                    # The same comparison as the line's colour and the word above the chart.
+                    state = ((_tr("比恢复线多用了 {0}") if over else _tr("恢复线下还有 {0} 未用")).format(usd(abs(gap)))
+                             + _tr("；") + (_tr("这个窗口被降权") if over else _tr("这个窗口被优先使用")))
+                else:
+                    state = (_tr("恢复线下还有 {0} 未用").format(usd(gap)) if gap >= 0
+                             else _tr("比恢复线多用了 {0}").format(usd(-gap)))
+                text = _tr("{0}：本期已用 {1} / {2}，{3}；{4}").format(
+                    window["label"], usd(window["used"]), usd(window["capacity"]), reset_text(window["reset"]), state)
+            text += _tr("；") + (_tr("实际用量线来自 {0} 个读数").format(window["readings"]) if window["readings"]
+                                else _tr("本期没有读数，实际用量线按期初到当前拟合"))
+            if task:
+                text += _tr("；") + (_tr("本次任务用这个窗口：{0}，花费未知").format(task["label"]) if task["spend"] is None
+                                    else _tr("本次任务用这个窗口：{0}，花费 {1}").format(task["label"], usd(task["spend"])))
+                if cell["after"] > 0:
+                    text += _tr("；") + _tr("其中 {0} 在重置之后，计入下一周期").format(usd(cell["after"]))
             return text
+        if self.note and y >= self.bottom - self.foot - 2:
+            hidden = self.data.get("hidden")
+            return self.note + (_tr("；") + _tr("未显示的窗口：{0}").format(", ".join(hidden)) if hidden else "")
         return ""
 
 
@@ -623,7 +729,7 @@ class QuotaLineCanvas:
     def __init__(self, parent):
         import tkinter as tk
         self.canvas = tk.Canvas(parent, bg=theme.CARD, highlightthickness=0, bd=0)
-        self.data = self.renderer = self.photo = self.shown = None
+        self.data = self.renderer = self.photo = self.shown = self.error = None
         self.story = DURATION
         self.item = self.canvas.create_image(0, 0, anchor="nw")
         self.strips = {}    # tile name -> (photo, canvas item): a moving tile is pasted alone, over the full image
@@ -631,7 +737,13 @@ class QuotaLineCanvas:
         self.canvas.bind("<Map>", lambda event: self.draw())
 
     def show(self, result, story=DURATION):
-        self.data, self.renderer, self.shown = model(result), None, None
+        """Show a decision. A record this view cannot read never stops the page from loading the rest of the
+        decision: the view shows that it is unreadable and keeps the exception in `self.error`."""
+        self.renderer = self.shown = self.error = None
+        try:
+            self.data = model(result)
+        except Exception as exc:
+            self.data, self.error = None, exc
         self.story = story
         self.draw()
 
@@ -648,6 +760,15 @@ class QuotaLineCanvas:
         return self.renderer.tip_at(x, y) if self.renderer is not None else ""
 
     def draw(self):
+        try:
+            self.paint()
+        except Exception as exc:
+            if self.error is not None:
+                return      # the unreadable state itself failed to paint: leave the canvas as it is
+            self.data, self.renderer, self.shown, self.error = None, None, None, exc
+            self.draw()
+
+    def paint(self):
         if not self.canvas.winfo_ismapped():
             return
         width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
@@ -660,7 +781,7 @@ class QuotaLineCanvas:
             return
         fresh = self.renderer is None
         if fresh:
-            self.renderer = QuotaLineRenderer(self.data, width, height, theme.FACTOR)
+            self.renderer = QuotaLineRenderer(self.data, width, height, theme.FACTOR, unreadable=self.error is not None)
         self.shown = step
         changed = self.renderer.advance(self.story)
         live = self.renderer.live

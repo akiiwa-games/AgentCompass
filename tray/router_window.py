@@ -1515,7 +1515,10 @@ class Panel:
     def plan_loaded(self, result):
         self.simulate_button.configure(state="normal", text=_tr("模拟评分"))
         self.plan_result = result or {}
+        # The quota view keeps a record it cannot read to itself: the rest of the decision always loads.
         self.quota_line.show(self.plan_result)
+        if self.quota_line.error is not None:
+            log_error(self.quota_line.error)
         data = self.data_module()
         rows = data.candidate_rows(self.plan_result)
         if self.plan_result.get("theatre_source") == "unreplayable":

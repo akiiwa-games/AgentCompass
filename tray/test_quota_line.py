@@ -1,5 +1,6 @@
 """Quota-line view: snapshot → display model → frames, and the synthetic decisions the README films replay."""
 import copy
+import math
 from pathlib import Path
 import sys
 
@@ -507,3 +508,308 @@ def test_canvas_follows_the_film_clock_only_while_visible(monkeypatch):
     finally:
         view.canvas.destroy()
         reset_tk_root(root)
+
+
+# --- review of redesign 4: one test per finding -------------------------------------------------------------
+def plain(windows, row=None):
+    """A minimal snapshot: recorded windows and, with `row`, the chosen candidate's quota-line record."""
+    ranking = [dict(id="pick", bundle=dict(model="opus-5.5", effort="high"), quota_line=row)] if row is not None else []
+    return dict(choice="pick", ranking=ranking, quota_line=dict(windows=windows))
+
+
+def half(used, capacity=100, **more):
+    """A weekly window halfway through its period: its quota line stands at half its capacity."""
+    return {**dict(label="Claude A", capacity_usd=capacity, used_usd=used, elapsed_hours=84, reset_in_hours=84), **more}
+
+
+def tip_of(renderer, cell):
+    return renderer.tip_at((cell["px0"] + 20) * renderer.s, (cell["py0"] + 20) * renderer.s)
+
+
+def words_of(monkeypatch, data, size=(486, 425, 1.15), **options):
+    """Every text the view draws for a model, settled."""
+    words = []
+    real = quota_line.QuotaLineRenderer.text
+    monkeypatch.setattr(quota_line.QuotaLineRenderer, "text",
+                        lambda self, value, *args, **kwargs: words.append(str(value)) or real(self, value, *args, **kwargs))
+    renderer = quota_line.QuotaLineRenderer(data, *size, **options)
+    renderer.frame(decision_theatre.DURATION)
+    monkeypatch.setattr(quota_line.QuotaLineRenderer, "text", real)
+    return renderer, set(words)
+
+
+@pytest.mark.parametrize("used, spend, over", [(49, 10, False), (60, 5, True)])
+def test_the_state_is_the_one_the_decision_saw_and_the_task_s_own_spend_does_not_turn_it(used, spend, over):
+    # F1. Under its line by $1 when the decision was taken, and this task's $10 takes it over the line: the
+    # router chose the window because it was "used first", and that is what it keeps saying.
+    data = quota_line.model(plain({"a": half(used)}, dict(window="a", hours=2, spend_usd=spend)))
+    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
+    cell = renderer.cells[0]
+    window = cell["window"]
+    assert cell["over"] is over and cell["end"][1] == used + spend > 100 * cell["end"][0]
+    tone = reddish if over else greenish
+    start, end = quota_line.PHASES["spend"]
+    for story in (start, (start + end) / 2, end, decision_theatre.DURATION):
+        assert renderer.state(story)["cells"][0]["over"] is over, story
+        assert tone(state_pixel(renderer, renderer.frame(story), cell)), story
+    image = renderer.frame(decision_theatre.DURATION)
+    # The hover text agrees with the word above the chart.
+    tip = tip_of(renderer, cell)
+    assert (quota_line._tr("这个窗口被降权") in tip) is over and (quota_line._tr("这个窗口被优先使用") in tip) is not over
+    # The spend itself is the accent segment, and the line's end belongs to it once the task has run.
+    assert accent(spot(renderer, image, cell, (window["at"] + cell["end"][0]) / 2, (window["used"] + cell["end"][1]) / 2))
+    x, y = renderer.at(cell, *cell["end"])
+    assert accent(pixel(renderer, image, x + 3.2, y))
+    # Before the task the end wears the window's state.
+    x, y = renderer.at(cell, window["at"], window["used"])
+    assert tone(pixel(renderer, renderer.frame(start), x + 3.2, y))
+
+
+GARBAGE = ("n/a", "", float("nan"), float("inf"), [], {}, True)
+
+
+def is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def test_a_malformed_snapshot_is_read_field_by_field_and_never_raises(monkeypatch):
+    # F2. One field of one window is recorded as something else; the other window is always shown.
+    row = dict(window="a", hours=2, spend_usd=10)
+    for field in ("capacity_usd", "used_usd", "elapsed_hours", "reset_in_hours", "label", "samples", "account", "window_id"):
+        for value in GARBAGE + (None, -5, "100"):
+            data = quota_line.model(plain({"a": {**half(40), field: value}, "b": half(60, label="B")}, row))
+            bad = field in ("used_usd", "elapsed_hours", "reset_in_hours") and value is not None and not is_number(value)
+            # A window whose usage or clock is not a number is left out, and the view says so.
+            assert [window["key"] for window in data["windows"]] == (["b"] if bad else ["a", "b"]), (field, value)
+            assert data["dropped"] == (["a"] if bad else []) and (data["winner"] is None) is bad
+            renderer = quota_line.QuotaLineRenderer(data, 400, 300, 1.)
+            assert renderer.frame(decision_theatre.DURATION).size == (400, 300)
+            assert all(tip_of(renderer, cell) for cell in renderer.cells)
+            assert (quota_line._tr("{0} 个窗口的记录无法读取").format(1) in renderer.note) is bad
+            if field == "capacity_usd" and not (is_number(value) and value > 0):
+                assert data["windows"][0]["capacity"] is None           # unknown, not zero
+    # The chosen candidate's record: an unknown spend still lights its window, an unknown window lights none.
+    for field in ("window", "hours", "spend_usd"):
+        for value in GARBAGE + (None, -5):
+            data = quota_line.model(plain({"a": half(40)}, {**row, field: value}))
+            if field == "window":
+                assert data["winner"] is None
+                continue
+            winner = data["winner"]
+            assert winner["window"] == "a" and winner["hours"] == (2 if field == "spend_usd" else 0)
+            if field == "spend_usd":
+                assert winner["spend"] == (0 if value == -5 else None)
+            renderer = quota_line.QuotaLineRenderer(data, 400, 300, 1.)
+            renderer.frame(decision_theatre.DURATION)
+            assert renderer.state(decision_theatre.DURATION)["cells"][0]["lit"] == 1
+            if field == "spend_usd" and value != -5:
+                assert quota_line._tr("本次任务用这个窗口：{0}，花费未知").format(winner["label"]) in tip_of(renderer, renderer.cells[0])
+    # Rows and containers of another type.
+    source = plain({"a": half(40)}, row)
+    for ranking in ("abc", None, 7, {}, ["x", None, 5, [], {"id": "pick", "bundle": [], "quota_line": row}],
+                    [{"id": "pick", "bundle": {"model": 5, "effort": []}, "quota_line": "x"}]):
+        data = quota_line.model({**source, "ranking": ranking})
+        assert [window["key"] for window in data["windows"]] == ["a"]
+        assert (data["winner"] is not None) is (isinstance(ranking, list) and len(ranking) == 5)
+    for broken in ([], "x", 5, {"quota_line": "x"}, {"quota_line": {"windows": []}}, {"quota_line": {"windows": "x"}}):
+        assert quota_line.model(broken) is None
+    # Nothing readable at all: the view says the record cannot be read, which is not the same as having none.
+    data = quota_line.model(plain({"a": "x", "b": {**half(40), "used_usd": "?"}}, row))
+    assert data["windows"] == [] and data["dropped"] == ["a", "b"] and data["winner"] is None
+    renderer, words = words_of(monkeypatch, data)
+    assert words == {quota_line._tr("额度恢复线记录无法读取")} and not renderer.cells and renderer.tip_at(200, 200) == ""
+    assert words_of(monkeypatch, None)[1] == {quota_line._tr("此决策没有额度恢复线记录")}
+    assert words_of(monkeypatch, None, unreadable=True)[1] == {quota_line._tr("额度恢复线记录无法读取")}
+
+
+def test_a_record_the_view_cannot_read_never_raises_into_the_page(monkeypatch):
+    # F2. The page shows a decision by calling show(); follow() and a resize draw it again.
+    from tk_test_support import shared_tk_root, reset_tk_root
+    root = shared_tk_root()
+    view = quota_line.QuotaLineCanvas(root)
+    try:
+        monkeypatch.setattr(view.canvas, "winfo_ismapped", lambda: True)
+        monkeypatch.setattr(view.canvas, "winfo_width", lambda: 420)
+        monkeypatch.setattr(view.canvas, "winfo_height", lambda: 390)
+        unreadable = quota_line.QuotaLineRenderer(None, 420, 390, quota_line.theme.FACTOR, unreadable=True).frame()
+        real = quota_line.model
+        monkeypatch.setattr(quota_line, "model", lambda result: 1 / 0)
+        view.show(earlier())
+        assert isinstance(view.error, ZeroDivisionError) and view.data is None
+        assert same(view.renderer.live, unreadable) and view.tip_at(100, 100) == ""
+        monkeypatch.setattr(quota_line, "model", real)
+        # The model is read but cannot be drawn: the same unreadable state, and the film's clock is still followed.
+        layout = quota_line.QuotaLineRenderer.layout
+        monkeypatch.setattr(quota_line.QuotaLineRenderer, "layout", lambda self: [][0])
+        view.show(earlier())
+        assert isinstance(view.error, IndexError) and view.data is None and same(view.renderer.live, unreadable)
+        view.follow(5.)
+        view.configure(None)
+        assert same(view.renderer.live, unreadable)
+        # The next readable decision is shown as usual.
+        monkeypatch.setattr(quota_line.QuotaLineRenderer, "layout", layout)
+        view.show(earlier())
+        assert view.error is None and len(view.renderer.cells) == 4
+    finally:
+        view.canvas.destroy()
+        reset_tk_root(root)
+
+
+def six_windows():
+    return {f"acct{n}-{span}": dict(label=f"Account {n} {span}", account=f"acct{n}", capacity_usd=100, used_usd=10 + 10 * n,
+                                    elapsed_hours=hours, reset_in_hours=hours)
+            for n in range(3) for span, hours in (("5h", 2.5), ("7d", 84))}
+
+
+def test_the_chosen_window_is_always_shown_and_the_view_says_how_many_are_not(monkeypatch):
+    # F3. Three accounts with a 5-hour and a 7-day window each; the task runs on the last one recorded.
+    row = dict(window="acct2-7d", hours=2, spend_usd=10)
+    data = quota_line.model(plain(six_windows(), row))
+    # The chosen window, its account's other window, then the others; shown in their recorded order.
+    assert [window["key"] for window in data["windows"]] == ["acct0-5h", "acct0-7d", "acct2-5h", "acct2-7d"]
+    assert data["winner"]["window"] == "acct2-7d" and data["hidden"] == ["Account 1 5h", "Account 1 7d"]
+    renderer, words = words_of(monkeypatch, data)
+    assert renderer.cells[3]["task"] is data["winner"] and renderer.state(decision_theatre.DURATION)["cells"][3]["lit"] == 1
+    note = quota_line._tr("另有 {0} 个窗口未显示").format(2)
+    assert renderer.note == note and note in words
+    # The note has its own room under the charts, and names what is hidden when pointed at.
+    bottom = renderer.h / renderer.s
+    assert all(cell["y1"] <= bottom - quota_line.NOTE + 1e-6 for cell in renderer.cells)
+    assert renderer.tip_at(renderer.w / 2, renderer.h - 3) == note + quota_line._tr("；") + quota_line._tr("未显示的窗口：{0}").format(
+        "Account 1 5h, Account 1 7d")
+    # Without account names the chosen window still comes first; without a chosen candidate, the first four.
+    bare = {key: {k: v for k, v in window.items() if k != "account"} for key, window in six_windows().items()}
+    assert [window["key"] for window in quota_line.model(plain(bare, row))["windows"]] == ["acct0-5h", "acct0-7d", "acct1-5h", "acct2-7d"]
+    assert [window["key"] for window in quota_line.model(plain(six_windows()))["windows"]] == list(six_windows())[:4]
+    # An unreadable window is counted apart, and does not take a chart's place.
+    source = six_windows()
+    source["acct0-5h"]["used_usd"] = "?"
+    data = quota_line.model(plain(source, row))
+    assert [window["key"] for window in data["windows"]] == ["acct0-7d", "acct1-5h", "acct2-5h", "acct2-7d"]
+    assert data["hidden"] == ["Account 1 7d"] and data["dropped"] == ["acct0-5h"]
+    renderer = quota_line.QuotaLineRenderer(data, 297, 196, 1.)
+    assert renderer.note == quota_line._tr("；").join((quota_line._tr("另有 {0} 个窗口未显示").format(1),
+                                                       quota_line._tr("{0} 个窗口的记录无法读取").format(1)))
+    for cell in renderer.cells:                                         # the smallest view still has room for every chart
+        assert cell["py1"] - cell["py0"] >= 30 and cell["y1"] <= renderer.h / renderer.s - quota_line.NOTE + 1e-6
+    # Four windows or fewer: no note, no room taken.
+    assert quota_line.QuotaLineRenderer(quota_line.model(snapshot()), 486, 425, 1.15).note == ""
+
+
+MISSING = object()
+
+
+@pytest.mark.parametrize("capacity", [0, MISSING, None, "n/a", -3, float("nan")])
+def test_a_window_without_a_known_capacity_has_no_state_and_no_ratio(monkeypatch, capacity):
+    # F4.
+    window = dict(label="W", used_usd=5, elapsed_hours=10, reset_in_hours=10)
+    if capacity is not MISSING:
+        window["capacity_usd"] = capacity
+    data = quota_line.model(plain({"w": window}, dict(window="w", hours=1, spend_usd=1)))
+    assert data["windows"][0]["capacity"] is None and not data["windows"][0]["lined"]
+    renderer, words = words_of(monkeypatch, data)
+    cell = renderer.cells[0]
+    # No quota line to compare with: no state word, a plain usage line, no pace to close.
+    assert words == {"W"}
+    assert cell["over"] is None and all(run["over"] is None for run in cell["runs"]) and not cell["closes"]
+    assert all(live["over"] is None for story in (2., 5., 9.9) for live in renderer.state(story)["cells"])
+    image = renderer.frame(decision_theatre.DURATION)
+    middle = spot(renderer, image, cell, .25, 2.5)
+    assert not greenish(middle) and not reddish(middle) and middle != ImageColor.getrgb(quota_line.theme.CARD)
+    # The usage sets the chart's height itself and does not stand at the top as if the window were full.
+    assert renderer.at(cell, *cell["end"])[1] > cell["py0"] + 10
+    tip = tip_of(renderer, cell)
+    assert tip.startswith(quota_line._tr("{0}：本期已用 {1}，容量未知，{2}").format("W", quota_line.usd(5), quota_line.reset_text(10)))
+    assert quota_line.usd(0) not in tip and " / " not in tip
+    assert quota_line._tr("这个窗口被降权") not in tip and quota_line._tr("这个窗口被优先使用") not in tip
+    assert data["winner"]["label"] in tip
+
+
+@pytest.mark.parametrize("used, over", [(50.1, True), (50.0001, True), (50., False), (49.9999, False), (49.9, False)])
+def test_the_line_s_colour_the_state_word_and_the_hover_text_are_one_comparison(used, over):
+    # F5. Just over the line is over it, everywhere; on the line is not.
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(plain({"a": half(used)})), 647, 623, 1.5)
+    cell = renderer.cells[0]
+    window = cell["window"]
+    image = renderer.frame(decision_theatre.DURATION)
+    assert cell["runs"][-1]["over"] is over and cell["over"] is over
+    assert renderer.state(decision_theatre.DURATION)["cells"][0]["over"] is over
+    tone = reddish if over else greenish
+    x, y = renderer.at(cell, window["at"], window["used"])
+    assert tone(state_pixel(renderer, image, cell)) and tone(pixel(renderer, image, x + 3.2, y))
+    assert tone(spot(renderer, image, cell, .25, used / 2))                     # the fitted line itself
+    tip = tip_of(renderer, cell)
+    assert (quota_line._tr("这个窗口被降权") in tip) is over and (quota_line._tr("这个窗口被优先使用") in tip) is not over
+    gap = quota_line.usd(abs(50 - used))
+    assert (quota_line._tr("比恢复线多用了 {0}").format(gap) in tip) is over
+    assert (quota_line._tr("恢复线下还有 {0} 未用").format(gap) in tip) is not over
+
+
+def test_with_readings_the_three_still_agree_wherever_the_line_ends():
+    # F5. Readings that end on, just over and just under the quota line, and lines that cross it on the way.
+    import random
+    rng = random.Random(52)
+    for _ in range(300):
+        capacity, at = rng.choice((20, 100, 400)), rng.choice((.1, .5, .9))
+        used = capacity * at + rng.choice((0, 1e-12, -1e-12, 1e-6, -1e-6, .001, -.001, 3, -3)) * rng.choice((1, capacity / 100))
+        used = max(0., used)
+        moments = sorted(rng.uniform(0, at) for _ in range(rng.randint(0, 5)))
+        amounts = sorted(rng.uniform(0, used) for _ in moments)
+        window = dict(label="W", capacity_usd=capacity, used_usd=used, elapsed_hours=100 * at, reset_in_hours=100 * (1 - at),
+                      samples=[[100 * moment, amount] for moment, amount in zip(moments, amounts)])
+        renderer = quota_line.QuotaLineRenderer(quota_line.model(plain({"w": window})), 300, 215, 1.)
+        cell = renderer.cells[0]
+        over = cell["over"]
+        assert over is quota_line.over_line(cell["window"]["at"], used, capacity), (capacity, at, used)
+        assert renderer.state(decision_theatre.DURATION)["cells"][0]["over"] is over
+        assert (quota_line._tr("这个窗口被降权") in tip_of(renderer, cell)) is over
+        stretch = lambda moment: next(run for run in cell["runs"] if moment <= run["ts"][-1])["over"]
+        clear = lambda moment, amount: abs(amount - capacity * moment) > 1e-6 * capacity
+        # The stretch the line ends on wears that state's colour, unless it ends on the quota line itself.
+        if clear(cell["window"]["at"], used):
+            assert cell["runs"][-1]["over"] is over
+        # While it rises, the word and the colour of the stretch its end is on agree, away from a crossing.
+        for step in range(1, 12):
+            live = renderer.state(quota_line.PHASES["sweep"][0] + step * .4)["cells"][0]
+            if live["pace"] < 1 and clear(*live["head"]):
+                assert live["over"] is stretch(live["head"][0]), (capacity, at, used, live["head"])
+
+
+def test_a_task_that_runs_past_the_reset_spends_only_its_share_before_it_in_this_period():
+    # F6. A 5-hour window one hour from its reset; the task runs for five hours and spends $12.
+    window = dict(label="5h", capacity_usd=20, used_usd=15, elapsed_hours=4, reset_in_hours=1)
+    data = quota_line.model(plain({"w": window}, dict(window="w", hours=5, spend_usd=12)))
+    assert data["winner"]["inside"] == pytest.approx(.2) and data["winner"]["spend"] == 12
+    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
+    cell = renderer.cells[0]
+    # One hour of the five is spent here: $2.40 up to the reset. It is not pushed into the corner.
+    assert cell["end"] == pytest.approx((1., 17.4)) and cell["after"] == pytest.approx(9.6) and not cell["closes"]
+    x, y = renderer.at(cell, *cell["end"])
+    assert y > renderer.at(cell, 1., 20.)[1] + 10
+    before, after = renderer.frame(quota_line.PHASES["spend"][0]), renderer.frame(decision_theatre.DURATION)
+    assert accent(spot(renderer, after, cell, .9, 16.2))
+    # A mark beyond the reset edge says the task runs on into the next period.
+    mark = [(x + dx, y + dy) for dx in (9.5, 10., 10.5) for dy in (-.5, 0., .5)]
+    assert any(accent(pixel(renderer, after, *point)) for point in mark)
+    assert not any(accent(pixel(renderer, before, *point)) for point in mark)
+    tip = tip_of(renderer, cell)
+    assert quota_line.usd(12) in tip and quota_line._tr("其中 {0} 在重置之后，计入下一周期").format(quota_line.usd(9.6)) in tip
+    # A task that ends before the reset spends all of it here: no mark, and a pace is left to draw.
+    data = quota_line.model(plain({"w": window}, dict(window="w", hours=.5, spend_usd=1.2)))
+    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
+    cell = renderer.cells[0]
+    assert data["winner"]["inside"] == 1 and cell["after"] == 0 and cell["closes"]
+    assert cell["end"] == pytest.approx((.9, 16.2))
+    x, y = renderer.at(cell, *cell["end"])
+    after = renderer.frame(decision_theatre.DURATION)
+    assert not any(accent(pixel(renderer, after, x + dx, y - 6)) for dx in (9.5, 10., 10.5))
+    assert quota_line._tr("其中 {0} 在重置之后，计入下一周期").format(quota_line.usd(0)).split("{")[0] not in tip_of(renderer, cell)
+    # Spend that takes the usage past the capacity makes the chart taller; it is not cut off at the top.
+    data = quota_line.model(plain({"w": {**window, "used_usd": 19}}, dict(window="w", hours=.5, spend_usd=5)))
+    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
+    cell = renderer.cells[0]
+    assert cell["scale"] == 24 and cell["end"] == pytest.approx((.9, 24.))
+    assert renderer.at(cell, 1., 20.)[1] > renderer.at(cell, *cell["end"])[1] + 10
+    # A window that never resets has no reset to run past.
+    data = quota_line.model(plain({"w": {**window, "reset_in_hours": None}}, dict(window="w", hours=5, spend_usd=12)))
+    assert data["winner"]["inside"] == 1 and quota_line.QuotaLineRenderer(data, 400, 300, 1.).cells[0]["after"] == 0
