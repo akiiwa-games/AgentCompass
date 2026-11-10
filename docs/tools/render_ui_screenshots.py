@@ -1,6 +1,7 @@
 """Render the real AgentCompass Decision Compass page off-screen with synthetic data (Windows).
 
     python docs/tools/render_ui_screenshots.py <output.png> [--scale 1.5] [--view radar|theatre] [--list quota]
+                                                               [--size 880x560] [--lang zh]
 
 The window lives on a private, never-displayed Win32 desktop (CreateDesktop) owned by a worker
 thread, is captured with PrintWindow, then destroyed. It never takes focus and never appears on
@@ -83,7 +84,7 @@ def capture(top: int, width: int, height: int):
 def open_page(args, state: Path, view: str = "radar"):
     """Open the real Decision Compass page with the synthetic ledger; returns (root, panel, top-level hwnd)."""
     import i18n
-    i18n.get_language = lambda: "en"
+    i18n.get_language = lambda: getattr(args, "lang", "en")
     import allocator
     import route_judge
     import router_data
@@ -190,6 +191,7 @@ def main() -> None:
     parser.add_argument("--moment", type=float, default=7.75, help="theatre story time (s) to freeze")
     parser.add_argument("--list", choices=("ledger", "breakdown", "quota"), default="ledger", help="tab of the list card")
     parser.add_argument("--size", help="window size at 96 dpi, e.g. 1120x720 (default: the app's own)")
+    parser.add_argument("--lang", choices=("en", "zh"), default="en", help="interface language")
     args = parser.parse_args()
     import ui_theme
     ui_theme.dpi_aware()

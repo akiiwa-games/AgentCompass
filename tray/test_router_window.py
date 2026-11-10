@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
@@ -240,8 +241,42 @@ class DecisionBindingTests(unittest.TestCase):
             self.assertEqual(panel.quota_line.story, decision_theatre.story_time(3.0))
             panel.render_radar()
             self.assertEqual(panel.quota_line.story, decision_theatre.DURATION)
+            # Hover: the mark under the pointer in words, else how to read the picture. A click replays.
+            for sequence in ("<Motion>", "<Leave>", "<Button-1>"):
+                self.assertTrue(panel.quota_line.canvas.bind(sequence))
+            bound, tips = {}, iter(["", "Claude: $240", "Claude: $240", ""])
+            view = SimpleNamespace(canvas=SimpleNamespace(bind=lambda sequence, handler, add=None: bound.update({sequence: handler})),
+                                   tip_at=lambda x, y: next(tips))
+            shown = []
+            with mock.patch.object(panel, "attach_tooltip", return_value=(lambda event: shown.append(view.canvas._tooltip_text),
+                                                                          lambda: shown.append(None))):
+                panel.attach_quota_tooltip(view, "legend")
+            for _ in range(4):
+                bound["<Motion>"](SimpleNamespace(x=5, y=5, x_root=5, y_root=5))
+            # Shown again only when the text under the pointer changes.
+            self.assertEqual([text for text in shown if text], ["legend", "Claude: $240", "legend"])
+            with mock.patch.object(panel, "replay_theatre") as replay:
+                bound["<Button-1>"](None)
+                replay.assert_called_once_with()
             panel.show_list("ledger")
             self.assertEqual(panel.quota_frame.winfo_manager(), "")
+
+    def test_static_radar_gets_the_task_s_need_from_the_first_of_the_pair(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        fit = {"divergence": {"demand": 1, "score": .7, "target": .3}, "global_rigor": {"demand": 3, "score": .8, "target": .8}}
+        ranking = [{**row, "five_axis_fit": fit} if row["id"] == "opus" else row for row in PLAN["ranking"]]
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
+                mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+            panel.plan_loaded(PLAN)
+            panel.render_radar()
+            self.assertIsNone(panel.radar.need)                     # nothing recorded: nothing drawn
+            panel.plan_loaded({**PLAN, "ranking": ranking})
+            panel.render_radar()
+            self.assertEqual(panel.radar.need, [.3, .8, None, None, None])
 
     def test_opening_decision_skips_a_newest_row_that_replays_to_none(self):
         import router_window

@@ -41,6 +41,44 @@ class RasterTests(unittest.TestCase):
     def test_zero_length_dashed_edges_render(self):
         renderer = radar.RadarRenderer(60, 5, 1, "#FFFFFF")
         self.assertEqual(renderer.render([[0] * 5, [0] * 5]).size, (renderer.size,) * 2)
+        self.assertEqual(renderer.render([[0] * 5, [0] * 5], [0, 0, 0, 0, None]).size, (renderer.size,) * 2)
+
+    def test_there_is_no_fixed_backdrop_only_spokes(self):
+        renderer = radar.RadarRenderer(90, 5, 1, "#FFFFFF")
+        image = renderer.render([[.3] * 5])
+        at = lambda axis, level: radar.point(renderer.center, renderer.center, renderer.radius * level, axis, 5)
+        # Between two spokes, outside the shape, the card shows through: no filled pentagon, no rings.
+        for level in (.5, .75, .97):
+            (x0, y0), (x1, y1) = at(0, level), at(1, level)
+            self.assertEqual(image.getpixel((round((x0 + x1) / 2), round((y0 + y1) / 2)))[:3], (255, 255, 255))
+        # A spoke still runs from the centre to full scale on every axis.
+        for axis in range(5):
+            x, y = at(axis, .8)
+            box = image.crop((round(x) - 2, round(y) - 2, round(x) + 3, round(y) + 3)).convert("RGB")
+            self.assertLess(min(sum(p) for _, p in box.getcolors(64)), 3 * 250)
+
+    def test_need_values_reads_only_recorded_targets(self):
+        fit = {"divergence": {"demand": 1, "score": .7, "target": .2667}, "global_rigor": {"target": .8},
+               "module_precision": {"target": 1.4}, "vision_tools": {"target": None}, "economy": {"target": .5}}
+        self.assertEqual(radar.need_values(fit), {"divergence": .2667, "global_rigor": .8, "module_precision": 1.0})
+        for missing in (None, {}, "fit", {"divergence": .3}, {"divergence": {"target": float("nan")}},
+                        {"divergence": {"target": True}}):
+            self.assertEqual(radar.need_values(missing), {})
+
+    def test_ability_beyond_the_need_is_paler_than_ability_within_it(self):
+        renderer = radar.RadarRenderer(90, 5, 1.5, "#FFFFFF")
+        values = [[.9, .9, .9, .9, .9]]
+        need = [.3, .8, .8, .3, None]
+        capped, whole = renderer.render(values, need), renderer.render(values)
+        at = lambda axis, level: tuple(round(v) + 4 for v in radar.point(renderer.center, renderer.center,
+                                                                        renderer.radius * level, axis, 5))
+        ink = lambda image, xy: sum(image.getpixel(xy)[:3])
+        self.assertLess(ink(capped, at(0, .15)), ink(capped, at(0, .6)) - 20)       # within the need: deeper
+        self.assertLess(ink(capped, at(0, .6)), 3 * 255 - 12)                      # beyond it: pale, not gone
+        self.assertLess(abs(ink(whole, at(0, .15)) - ink(whole, at(0, .6))), 8)    # no need recorded: one depth
+        # A need on no axis, or of the wrong length, is the same as none.
+        for ignored in ([None] * 5, [.3, .8], None):
+            self.assertEqual(renderer.render(values, ignored).tobytes(), whole.tobytes())
 
 
 class AnimationTests(unittest.TestCase):
@@ -142,3 +180,18 @@ class AnimationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_only_the_corner_beyond_the_need_is_cut_and_an_axis_without_a_need_keeps_its_vertex():
+    values, need = [.74, .86, .88, .70, 1.], [.35, .9, .9, .35, None]
+    points = radar.polygon(values, 0, 0, 100)
+    capped = radar.polygon([v if t is None else min(v, t) for v, t in zip(values, need)], 0, 0, 100)
+    shape = radar.counted_shape(points, capped)
+    # Divergence and vision exceed the need: each loses its tip between the midpoints of its two edges.
+    assert len(shape) == 3 + 1 + 1 + 3 + 1
+    middle = lambda a, b: ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    assert shape[:3] == [middle(points[4], points[0]), capped[0], middle(points[0], points[1])]
+    # Rigor and precision are within the need, and quota economy has none: their vertices stay where they are,
+    # so no spike reaches for the economy axis between two cut neighbours.
+    assert shape[3:5] == points[1:3] and shape[-1] == points[4]
+    assert radar.counted_shape(points, points) == points

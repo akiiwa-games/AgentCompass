@@ -11,7 +11,7 @@
 ![Tray](https://img.shields.io/badge/tray-Windows%2011-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-<img src="docs/hero.gif" width="880" alt="The Decision Compass replaying one synthetic decision: task, kind, candidate routes, the winner and the best-ranked other model on five axes, and the winner under that radar">
+<img src="docs/hero.gif" width="880" alt="The Decision Compass replaying one synthetic decision: task, kind, candidate routes, then the winner and the best-ranked other model opening on five axes against the task's need, and the winner under that radar">
 
 </div>
 
@@ -56,8 +56,10 @@ Treat a window's quota as recovering evenly over its period. A window with capac
 - **Usage over the line.** The window is being drained faster than it recovers. Each further dollar is borrowed from the rest of the period and is charged at `β`.
 
 <div align="center">
-<img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice: first a window ahead of its recovery line is spared, then two hours before its reset the remaining quota is spent in fast mode">
+<img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice, each quota window drawn as a clock whose hand is its recovery line: first a window that has spent past its hand is spared, then two hours before its reset the remaining quota is spent in fast mode">
 </div>
+
+The picture has no captions; this is how to read it. Each dial is one quota window. One turn is one period, twelve o'clock is the reset, and the hand is the recovery line. The grey arc is what the period has spent so far. Green beads between the arc and the hand are quota that has recovered and is still unspent; an arc that runs past the hand turns pink. Each bar below a dial is a candidate that would run on that window. The pale cap on a bar is ability beyond what the task needs, which is not counted. A candidate lays its spend around its dial: behind the hand it stays green and the bar keeps its height, past the hand it turns red and takes the bar down with it. When the task runs, the hands move by its duration, bars that tied fill at their own speed, and beads on a window that resets before the task ends go grey.
 
 The animation replays one 2-hour refactor at two moments. The task needs global rigor and module precision; Opus 5.5 meets the need, so its `F` is 0.667.
 
@@ -150,8 +152,10 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 - **用量在线上。** 这个窗口的消耗快于恢复。再花的每一美元都是向本期后面借的，按 `β` 计价。
 
 <div align="center">
-<img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次：先是超前于恢复线的窗口被留着不用，然后在重置前两小时用快速模式花掉剩余额度">
+<img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次，每个额度窗口画成一个表盘，指针就是恢复线：先是用量已经越过指针的窗口被留着不用，然后在重置前两小时用快速模式花掉剩余额度">
 </div>
+
+画面里没有说明文字，读法如下。每个表盘是一个额度窗口：转一圈是一个周期，12 点是重置，指针是恢复线。灰色的弧是本期已经花掉的额度。弧和指针之间的绿点是已经恢复、还没花的额度；弧越过指针的部分变成粉色。表盘下面的每根柱子是一个会用到这个窗口的候选。柱子顶上的浅色部分是超出任务需要的能力，不计分。候选把自己的花费铺在表盘外圈：在指针后面是绿色，柱子高度不变；越过指针变成红色，柱子同时被削短。任务开始执行后，指针按任务时长往前走，平分的柱子按各自的速度填满，任务结束前就要重置的窗口上，剩下的绿点变灰。
 
 动画把同一个 2 小时的重构任务放在两个时刻各重放一次。任务需要全局严密和模块精准；Opus 5.5 满足需求，`F` 为 0.667。
 

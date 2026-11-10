@@ -11,7 +11,7 @@ from i18n import is_en
 import math
 import time
 
-from PIL import Image, ImageColor, ImageDraw, ImageTk
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageTk
 
 import page_stack
 
@@ -51,6 +51,22 @@ def axis_title(mode: str = "score") -> str:
 
 
 ABILITY_AXES = ("divergence", "global_rigor", "module_precision", "capability")
+# Radar axis key -> its key in a ranking row's `five_axis_fit` (the task's demand, score and target per axis).
+FIT_AXES = {"capability": "vision_tools"}
+
+
+def need_values(fit) -> dict:
+    """{radar axis key: the task's target on it} from a ranking row's `five_axis_fit`; {} when none is recorded.
+
+    Quota economy has no target: every point of it counts.
+    """
+    out = {}
+    for key in ABILITY_AXES:
+        axis = fit.get(FIT_AXES.get(key, key)) if isinstance(fit, dict) else None
+        target = axis.get("target") if isinstance(axis, dict) else None
+        if isinstance(target, (int, float)) and not isinstance(target, bool) and math.isfinite(target):
+            out[key] = clamp(target)
+    return out
 
 
 def _score_ability_raw(c, key):
@@ -131,10 +147,33 @@ def polygon(values: list[float], cx: float, cy: float, radius: float) -> list[tu
     return [point(cx, cy, radius * clamp(v), i, count) for i, v in enumerate(values)]
 
 
+def counted_shape(points, capped):
+    """A shape without its tips beyond the task's need.
+
+    `points` are the shape's vertices, `capped` the same vertices pulled back to the need (equal where
+    nothing exceeds it). A tip is cut from the midpoints of the two edges that meet at its vertex, so each
+    cut stays at its own corner whatever the neighbouring axes do: the pale cap of that one axis.
+    """
+    count, out = len(points), []
+    for index, (here, cut) in enumerate(zip(points, capped)):
+        if math.hypot(here[0] - cut[0], here[1] - cut[1]) < 1e-9:
+            out.append(here)
+            continue
+        before, after = points[index - 1], points[(index + 1) % count]
+        out += [((before[0] + here[0]) / 2, (before[1] + here[1]) / 2), cut,
+                ((here[0] + after[0]) / 2, (here[1] + after[1]) / 2)]
+    return out
+
+
+# The winner (or first pick) and the model it is compared with: one hue each, validated as a pair for
+# colour-vision separation and 3:1 contrast on the card. Weight and marker repeat the distinction:
+# a heavier line with solid markers against a lighter line with hollow ones.
 SERIES_STYLES = (
-    {"color": "#4F46E5", "dash": ()},
-    {"color": "#06B6D4", "dash": (5, 3.5)},
+    {"color": "#4F46E5", "dash": (), "weight": 2.1, "fill": 44, "counted": 60, "spare": 30},
+    {"color": "#0891B2", "dash": (), "weight": 1.5, "fill": 26, "counted": 30, "spare": 22},
 )
+NEED_INK = "#334155"
+FEATHER, FILL_REDUCE = 5., 4      # px of soft edge on the counted fill; its mask is built this many times smaller
 
 
 def ease_out(progress: float) -> float:
@@ -151,7 +190,12 @@ def interpolate_values(start, target, progress):
 
 
 class RadarRenderer:
-    """Cache the static grid at 3x physical resolution; rasterize only the plot, never text."""
+    """Cache the static scaffold at 3x physical resolution; rasterize only the plot, never text.
+
+    There is no fixed backdrop: five hairline spokes with a dot at full and at half scale are all that
+    stays put, so the data shapes dominate. When the task's need is known it is a quiet dashed outline,
+    and each shape is filled in two depths: full inside the need, pale beyond it (ability that does not count).
+    """
 
     supersample = 3
 
@@ -162,15 +206,13 @@ class RadarRenderer:
         self.size = math.ceil(self.center * 2)
         self.grid = Image.new("RGB", (self.size * self.supersample,) * 2, bg)
         draw = ImageDraw.Draw(self.grid)
-        outer = self.points([1] * count)
-        draw.polygon(outer, fill="#F8FAFC")
-        for level in (.25, .5, .75, 1):
-            points = self.points([level] * count)
-            draw.line(points + points[:1], fill="#E2E8F0" if level < 1 else "#CBD5E1",
-                      width=self.width(.75 if level < 1 else 1), joint="curve")
         center = (self.center * self.supersample,) * 2
-        for vertex in outer:
-            draw.line([center, vertex], fill="#E2E8F0", width=self.width(.75))
+        for vertex in self.points([1] * count):
+            draw.line([center, vertex], fill="#DDE3EC", width=self.width(.7))
+        for level, size, ink in ((1, 1.5, "#94A3B8"), (.5, 1., "#CBD5E1")):
+            r = size * scale * self.supersample
+            for x, y in self.points([level] * count):
+                draw.ellipse((x - r, y - r, x + r, y + r), fill=ink)
 
     def width(self, logical):
         # Preserve fractional DIP widths until rasterization, instead of rounding at screen resolution.
@@ -180,10 +222,10 @@ class RadarRenderer:
         return [(x * self.supersample, y * self.supersample)
                 for x, y in polygon(values, self.center, self.center, self.radius)]
 
-    def dashed_line(self, draw, points, color, width):
-        dash, gap = 5 * self.scale * self.supersample, 3.5 * self.scale * self.supersample
+    def dashed_line(self, draw, points, color, width, closed=True, dash=(5, 3.5)):
+        dash, gap = (v * self.scale * self.supersample for v in dash)
         phase = 0.0
-        for start, end in zip(points, points[1:] + points[:1]):
+        for start, end in zip(points, points[1:] + points[:1] if closed else points[1:]):
             length = math.dist(start, end)
             position = 0.0
             while position < length:
@@ -197,31 +239,91 @@ class RadarRenderer:
                 position += step
                 phase = (phase + step) % (dash + gap)
 
-    def render(self, values):
+    def render(self, values, need=None):
+        """values: one list per series, primary first. need: the task's target per axis (None where it has none)."""
         image = self.grid.copy()
         # Blend alpha directly into the opaque backing. RGB downsampling is much cheaper than RGBA.
         draw = ImageDraw.Draw(image, "RGBA")
+        need = list(need) if need and len(need) == self.count and any(v is not None for v in need) else None
+        unit = self.scale * self.supersample
+        if need:
+            for order in range(len(values) - 1, -1, -1):
+                draw.polygon(self.points(values[order]), fill=(*ImageColor.getrgb(SERIES_STYLES[order]["color"]),
+                                                               SERIES_STYLES[order]["spare"]))
+            self.counted_fill(image, values, need)
         for order in range(len(values) - 1, -1, -1):
-            color = ImageColor.getrgb(SERIES_STYLES[order]["color"])
+            style = SERIES_STYLES[order]
+            color = ImageColor.getrgb(style["color"])
             points = self.points(values[order])
-            draw.polygon(points, fill=(*color, 28 if order == 0 else 12))
-            if order == 0:
-                draw.line(points + points[:1], fill=color, width=self.width(2.2), joint="curve")
-            else:
-                self.dashed_line(draw, points, color, self.width(1.7))
+            if not need:
+                draw.polygon(points, fill=(*color, style["fill"]))
+            closed = points + points[:2]      # past the seam, so the first corner is joined like the others
+            weight = style["weight"] * unit
+            for extra, alpha in ((4.6, 13), (2.2, 26)) if order == 0 else ((2.4, 16),):
+                draw.line(closed, fill=(*color, alpha), width=max(1, round(weight + extra * unit)), joint="curve")
+            draw.line(closed, fill=color, width=max(1, round(weight)), joint="curve")
             for x, y in points:
-                r = (3.5 if order == 0 else 3) * self.scale * self.supersample
                 if order == 0:
-                    halo = 6 * self.scale * self.supersample
-                    draw.ellipse((x - halo, y - halo, x + halo, y + halo), fill=(*color, 22))
-                draw.ellipse((x - r, y - r, x + r, y + r),
-                             fill=color if order == 0 else "#FFFFFF", outline=color,
-                             width=self.width(1.5))
+                    for radius, fill in ((4.3, "#FFFFFF"), (2.9, color)):
+                        r = radius * unit
+                        draw.ellipse((x - r, y - r, x + r, y + r), fill=fill)
+                else:
+                    r = 3.1 * unit
+                    draw.ellipse((x - r, y - r, x + r, y + r), fill="#FFFFFF", outline=color, width=self.width(1.35))
+        if need:
+            self.need_outline(draw, need)
         return image.resize((self.size, self.size), Image.Resampling.LANCZOS).convert("RGBA")
+
+    def counted_fill(self, image, values, need):
+        """The part of each shape inside the need, with a feathered edge: a glow, not a second outline.
+
+        Both series go into one small layer (the feather hides its size) that is enlarged and blended once.
+        """
+        unit = self.scale * self.supersample
+        shapes = [[(x / FILL_REDUCE, y / FILL_REDUCE) for x, y in counted_shape(
+                       self.points(series), self.points([v if t is None else min(v, t) for v, t in zip(series, need)]))]
+                  for series in values]
+        pad = FEATHER * unit / FILL_REDUCE + 1
+        xs, ys = [x for shape in shapes for x, _ in shape], [y for shape in shapes for _, y in shape]
+        left, top = max(0, math.floor(min(xs) - pad)), max(0, math.floor(min(ys) - pad))
+        right = min(image.width // FILL_REDUCE, math.ceil(max(xs) + pad))
+        bottom = min(image.height // FILL_REDUCE, math.ceil(max(ys) + pad))
+        if right <= left or bottom <= top:
+            return
+        layer = None
+        for order in range(len(values) - 1, -1, -1):
+            mask = Image.new("L", (right - left, bottom - top), 0)
+            ImageDraw.Draw(mask).polygon([(x - left, y - top) for x, y in shapes[order]], fill=SERIES_STYLES[order]["counted"])
+            tint = Image.new("RGBA", mask.size, ImageColor.getrgb(SERIES_STYLES[order]["color"]) + (0,))
+            tint.putalpha(mask.filter(ImageFilter.BoxBlur(FEATHER * unit / FILL_REDUCE)))
+            layer = tint if layer is None else Image.alpha_composite(layer, tint)
+        layer = layer.resize((layer.width * FILL_REDUCE, layer.height * FILL_REDUCE), Image.Resampling.BILINEAR)
+        image.paste(layer, (left * FILL_REDUCE, top * FILL_REDUCE), layer)
+
+    def need_outline(self, draw, need):
+        """The need on the axes that have one, as runs of neighbouring axes (the outline skips an axis without one)."""
+        vertices = self.points([0 if v is None else v for v in need])
+        runs, run = [], []
+        for vertex, target in zip(vertices, need):
+            if target is None:
+                runs.append(run)
+                run = []
+            else:
+                run.append(vertex)
+        runs.append(run)
+        if need[0] is not None and need[-1] is not None and len(runs) > 1:
+            runs[0] = runs.pop() + runs[0]
+        ink = (*ImageColor.getrgb(NEED_INK), 215)
+        r = 1.7 * self.scale * self.supersample
+        for run in runs:
+            if len(run) > 1:
+                self.dashed_line(draw, run, ink, self.width(1.15), closed=len(runs) == 1, dash=(3.2, 2.8))
+            for x, y in run:
+                draw.ellipse((x - r, y - r, x + r, y + r), fill="#FFFFFF", outline=ink, width=self.width(.8))
 
 
 class RadarChartCanvas:
-    """A five-axis radar on a tk.Canvas: four grid rings, spokes, axis labels with value pills, up to two series."""
+    """A five-axis radar on a tk.Canvas: hairline spokes, axis labels with value pills, up to two series."""
 
     def __init__(self, parent, size: int = 420, bg: str = "#FFFFFF"):
         import tkinter as tk
@@ -234,6 +336,7 @@ class RadarChartCanvas:
         self.axes = ()
         self.series = []
         self.raw = []
+        self.need = None
         self.hover = None
         self._last_size = None
         self._animation_id = None
@@ -265,14 +368,15 @@ class RadarChartCanvas:
     def grid(self, **kw):
         self.canvas.grid(**kw)
 
-    def show(self, axes, series: list[dict], raw: list[dict] | None = None) -> None:
-        """series: [{'label', 'values': {axis key: 0..1}}], primary first."""
+    def show(self, axes, series: list[dict], raw: list[dict] | None = None, need: dict | None = None) -> None:
+        """series: [{'label', 'values': {axis key: 0..1}}], primary first. need: {axis key: the task's target}."""
         previous_axes = [axis[0] for axis in self.axes]
         previous = self._display_values
         self.cancel_animation()
         self.axes = tuple(axes)
         self.series = [{**s, "values": dict(s["values"])} for s in series[:2]]
         self.raw = list(raw or [])[:2]
+        self.need = [need.get(key) for key, _, _ in self.axes] if need else None
         target = self.target_values()
         start = [previous[i] if previous_axes == [axis[0] for axis in self.axes] and i < len(previous)
                  else [0] * len(self.axes) for i in range(len(target))]
@@ -359,16 +463,12 @@ class RadarChartCanvas:
             for index in range(count):
                 c.create_oval(0, 0, 0, 0, fill="", outline="", tags=(f"vertex-{order}-{index}",))
         self.draw_series()
-        for level in ((.25, .5, .75) if radius >= theme.px(70) else ()):
-            x, y = point(cx, cy, radius * level, 0, count)
-            c.create_text(x + theme.px(8), y, text=f"{int(level * 100)}", anchor="w",
-                          fill=theme.FAINT, font=(theme.FONT, 7))
         self.draw_labels(cx, cy, radius)
         self.draw_legend()
 
     def draw_series(self) -> None:
         c = self.canvas
-        self._photo = ImageTk.PhotoImage(self._renderer.render(self._display_values), master=c)
+        self._photo = ImageTk.PhotoImage(self._renderer.render(self._display_values, self.need), master=c)
         c.itemconfigure(self._image_item, image=self._photo)
         cx, cy, radius = self.geometry()
         for order, values in enumerate(self._display_values):
@@ -400,7 +500,7 @@ class RadarChartCanvas:
                 x, y, text=label,
                 anchor=text_anchor, justify="center" if is_en() else ("right" if anchor == "e" else "left"),
                 width=px(108) if is_en() else 0,
-                fill=theme.INK, font=(theme.FONT, 9, "bold"))
+                fill=theme.INK, font=(theme.FONT, 9, "bold"), tags=("axis-label",))
             box = c.bbox(text_item)
             if box:
                 if box[0] < px(4):
@@ -422,7 +522,7 @@ class RadarChartCanvas:
                 c.create_text(left + width / 2, y + px(11), text=text, fill="#FFFFFF", font=(theme.FONT, 8, "bold"))
                 offset += width + px(4)
 
-    def draw_legend(self) -> None:
+    def draw_legend(self, compact: bool = False) -> None:
         theme = self.theme
         c = self.canvas
         px = theme.px
@@ -432,13 +532,14 @@ class RadarChartCanvas:
         x, y = px(4), px(12)
         for order, series in enumerate(self.series):
             style = SERIES_STYLES[order]
-            if order > 0 and x + px(80) > max_x:
-                x, y = px(4), y + px(18)
+            if order > 0 and (compact or x + px(80) > max_x):
+                x, y = px(4), y + px(16 if compact else 18)
             c.create_line(x, y, x + px(16), y, fill=style["color"], width=px(2.2 if order == 0 else 1.7),
-                          dash=tuple(max(1, px(d)) for d in style["dash"]))
-            wrap = max(px(80), int(max_x - x - px(20))) if top_label_y < px(32) else 0
-            text = c.create_text(x + px(20), y, text=series["label"], anchor="w", width=wrap,
-                                 fill=theme.TEXT, font=(theme.FONT, 8))
+                          dash=tuple(max(1, px(d)) for d in style["dash"]), tags=("legend",))
+            wrap = max(px(80), int(max_x - x - px(20))) if top_label_y < px(32) and not compact else 0
+            label = self.shortened(series["label"], max_x - x - px(20)) if compact else series["label"]
+            text = c.create_text(x + px(20), y, text=label, anchor="w", width=wrap,
+                                 fill=theme.TEXT, font=(theme.FONT, 8), tags=("legend",))
             box = c.bbox(text)
             if box and box[3] - box[1] > px(20):
                 c.move(text, 0, (box[3] - box[1]) / 2 - px(8))
@@ -446,6 +547,31 @@ class RadarChartCanvas:
             x = (box[2] if box else x + px(100)) + px(14)
             if top_label_y < px(32) and box:
                 y = max(y, box[3] - px(8))
+        if not compact and self.legend_collides():
+            # A wrapped legend would run into an axis name on a small canvas: one shortened line per series instead.
+            c.delete("legend")
+            self.draw_legend(compact=True)
+
+    def legend_collides(self) -> bool:
+        c = self.canvas
+        legend = c.bbox("legend")
+        if not legend:
+            return False
+        for item in c.find_withtag("axis-label"):
+            box = c.bbox(item)
+            if box and box[0] < legend[2] and legend[0] < box[2] and box[1] < legend[3] and legend[1] < box[3]:
+                return True
+        return False
+
+    def shortened(self, text: str, room: float) -> str:
+        """`text` cut to fit `room` pixels of the legend's font, with an ellipsis."""
+        import tkinter.font as tkfont
+        font = tkfont.Font(root=self.canvas, font=(self.theme.FONT, 8))
+        if font.measure(text) <= room:
+            return text
+        while text and font.measure(text.rstrip(" ·") + "…") > room:
+            text = text[:-1]
+        return text.rstrip(" ·") + "…"
 
     def nearest_axis(self, x: float, y: float):
         if not self.axes:

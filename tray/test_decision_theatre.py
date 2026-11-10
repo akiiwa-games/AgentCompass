@@ -286,11 +286,15 @@ def test_final_frame_keeps_the_radar_with_its_axis_names_under_the_winner():
     assert shown['alpha'][1]==pytest.approx(1) and shown['beta'][1]==pytest.approx(dt.LEGEND/dt.NAME)
     lowest=renderer.center[1]+renderer.radius*math.cos(math.pi/5)
     assert lowest < shown['alpha'][0][1] < shown['beta'][0][1] < renderer.h-18*renderer.s
-    # The radar is still drawn: the winner's filled polygon covers the centre, and the grid reaches the rim.
+    # The radar is still drawn: the winner's filled shape covers the centre, and a spoke reaches the rim.
     cam=dt.camera_position(dt.DURATION,renderer.w)
     paper=renderer.blank.reduce(renderer.k).getpixel((0,0))
     assert frame.getpixel((round(renderer.center[0]-cam),round(renderer.center[1])))!=paper
     assert frame.getpixel((round(renderer.center[0]-cam),round(renderer.center[1]-renderer.radius*.9)))!=paper
+    # There is no fixed backdrop: between two spokes, outside both shapes, the stage is bare paper.
+    x,y=dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius*.97,0,5)
+    x2,y2=dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius*.97,1,5)
+    assert frame.getpixel((round((x+x2)/2),round((y+y2)/2)))==paper
 
 
 @pytest.mark.parametrize('size',[(300,300,1),(330,310,1),(474,488,1.15),(630,600,1.5),(900,700,2)])
@@ -492,3 +496,85 @@ def test_two_line_title_grows_upward_and_everything_follows_the_block():
     # Ink specks are seeded from both lines.
     seeds=[seed for seed,*_ in two.ink]
     assert min(y for _,y in seeds)<two.title_at[1]<max(y for _,y in seeds)
+
+
+def fitted(source, targets=(.3, .8, .8, .3)):
+    """The same decision with the task's need recorded, and two models that differ on every axis."""
+    source = copy.deepcopy(source)
+    scores = {'alpha': (.7, .85, .9, .6), 'beta': (.95, .7, .75, .9), 'blocked': (.5, .5, .5, .5)}
+    keys = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
+    for item in source['ranking']:
+        values = scores[item['bundle']['model']]
+        item['components'].update(dict(zip(('divergence', 'global_rigor', 'module_precision', 'capability'), values)))
+        item['five_axis_fit'] = {key: dict(demand=1, score=value, target=target)
+                                 for key, value, target in zip(keys, values, targets)}
+    return source
+
+
+def test_the_task_s_need_comes_from_the_snapshot_and_is_never_invented():
+    assert dt.scene_from_result(result()).need == ()
+    scene = dt.scene_from_result(fitted(result()))
+    # One target per radar axis, in the radar's order; quota economy has none.
+    assert scene.need == (.3, .8, .8, .3, None)
+    broken = fitted(result())
+    for item in broken['ranking']:
+        item['five_axis_fit']['vision_tools'] = 'n/a'
+        item['five_axis_fit']['divergence']['target'] = float('nan')
+    assert dt.scene_from_result(broken).need == (None, .8, .8, None, None)
+    # A renderer without a recorded need draws the shapes whole and no outline.
+    plain = dt.TheatreRenderer(dt.scene_from_result(result()), 630, 600, 1.5)
+    assert plain.need == () and plain.frame(dt.DURATION).size == (630, 600)
+
+
+def test_shapes_bloom_from_the_centre_without_overshoot_and_the_winner_lands_last():
+    renderer = dt.TheatreRenderer(dt.scene_from_result(fitted(result())), 630, 600, 1.5)
+    times = [i / 120 for i in range(round(dt.DURATION * 120) + 1)]
+    winner, other = ([renderer.bloom(index, t) for t in times] for index in (0, 1))
+    for growth in (winner, other):
+        assert growth[0] == (0,) * 5 and growth[-1] == (1,) * 5
+        for axis in range(5):
+            steps = [g[axis] for g in growth]
+            # Each axis eases out to exactly its value: never beyond it, never back.
+            assert steps == sorted(steps) and max(steps) == 1
+            assert max(b - a for a, b in zip(steps, steps[1:])) < .06
+        # The shape opens clockwise from the top axis.
+        started = [next(i for i, g in enumerate(growth) if g[axis] > 0) for axis in range(5)]
+        assert started == sorted(started) and len(set(started)) == 5
+    landed = lambda growth: next(t for t, g in zip(times, growth) if g == (1,) * 5)
+    opened = lambda growth: next(t for t, g in zip(times, growth) if g[0] > 0)
+    assert opened(other) < opened(winner) and landed(other) < landed(winner) < dt.WINDOWS['settle'][0]
+    # Both route ends have landed on the centre before the first shape opens there.
+    assert dt.WINDOWS['lift'][1] <= opened(other)
+    for candidate in renderer.scene.pair:
+        path, lengths = renderer.pens[candidate.id]
+        assert path[-1] == pytest.approx(renderer.center)
+
+
+def test_ability_beyond_the_need_is_drawn_pale_and_the_need_is_a_quiet_outline():
+    from PIL import ImageChops
+    source = fitted(result())
+    renderer = dt.TheatreRenderer(dt.scene_from_result(source), 630, 600, 1.5)
+    whole = dt.TheatreRenderer(dt.scene_from_result(result() | {'ranking': [
+        {k: v for k, v in item.items() if k != 'five_axis_fit'} for item in source['ranking']]}), 630, 600, 1.5)
+    frame, flat = renderer.frame(dt.DURATION), whole.frame(dt.DURATION)
+    cam = dt.camera_position(dt.DURATION, renderer.w)
+    cx, cy, radius = renderer.center[0] - cam, renderer.center[1], renderer.radius
+    at = lambda axis, level: tuple(round(v) for v in dt.radar.point(cx, cy, radius * level, axis, 5))
+    ink = lambda image, xy: sum(image.getpixel(xy))        # lower is more ink
+    # On the divergence axis the need is .3 and both models go far beyond it: inside the need the fill is
+    # deeper than beyond it, and beyond it the shape is still tinted (the ability is real, it just does not count).
+    paper = sum(renderer.blank.reduce(renderer.k).getpixel((0, 0)))
+    inside, beyond = at(0, .2), at(0, .55)
+    inside, beyond = (inside[0] + 4, inside[1]), (beyond[0] + 4, beyond[1])   # beside the spoke, not on it
+    assert ink(frame, inside) < ink(frame, beyond) - 25 and ink(frame, beyond) < paper - 12
+    # Without a recorded need the same two spots are filled alike.
+    assert abs(ink(flat, inside) - ink(flat, beyond)) < 25
+    # The need's outline is drawn along the axes that have a target, and only when one is recorded.
+    middle = tuple(round((a + b) / 2) for a, b in zip(at(1, .8), at(2, .8)))
+    box = (middle[0] - 3, middle[1] - 3, middle[0] + 4, middle[1] + 4)
+    darkest = lambda image: min(sum(p) for _, p in image.crop(box).getcolors(64))
+    assert darkest(frame) < darkest(flat) - 60
+    # The counted fill of a settled shape is rasterized once, however long the film holds.
+    masks = {key: value for key, value in renderer.masks.items() if not isinstance(key, tuple)}
+    renderer.frame(dt.DURATION - .2); renderer.frame(dt.DURATION)
+    assert set(masks) == {0, 1} and all(renderer.masks[key] is value for key, value in masks.items())

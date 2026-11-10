@@ -3,7 +3,9 @@
 The scene carries no score or cost text: order, light and geometry carry the comparison,
 and the only words are the task, its kind, the model names and the five axis names.
 It ends on the answer and its reason together: the winner's name under the radar of the
-top two candidates. Full evidence remains in the panel's candidate table.
+winner and the best-ranked other model. The radar has no fixed backdrop: the task's need is a
+quiet outline, each model's shape blooms from the centre (the winner last), and ability beyond
+the need is drawn pale because it does not count. Full evidence remains in the candidate table.
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ import math
 import re
 import time
 
-from PIL import Image, ImageDraw, ImageFont, ImageColor, ImageTk
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageColor, ImageTk
 
 from i18n import translate as _tr
 import page_stack
@@ -34,8 +36,14 @@ BEATS = (("task", 0., TITLE_HOLD), ("kind", TITLE_HOLD, 2.85), ("open", 2.85, 4.
 # until the gather; "routes" opens when the first ink speck leaves the node.
 WINDOWS = {"appear": (0., TITLE_IN), "underline": (.1, .55), "classify": (TITLE_HOLD, 2.3),
            "gather": (2.85, 3.6), "routes": (3.35, 4.8), "rank": (4.4, 5.4),
-           "dissolve": (5.3, 6.0), "pen": (5.4, 7.3), "glide": (5.5, 7.2), "grid": (6.1, 7.3),
-           "fill": (7.05, 7.5), "settle": (7.8, 9.1), "effort": (8.35, 9.25)}
+           "dissolve": (5.3, 6.0), "lift": (5.4, 6.45), "glide": (5.5, 6.65), "grid": (5.95, 6.9),
+           "need": (6.2, 7.0), "settle": (7.8, 9.1), "effort": (8.35, 9.25)}
+# A shape blooms from the radar's centre one axis after another (clockwise from the top), each
+# easing out without overshoot. The other model goes first; the winner's shape lands last.
+BLOOM = (6.9, 6.45)     # story time the pair's shapes start growing: (winner, other model)
+BLOOM_SPAN, BLOOM_STAGGER = .62, .045
+FEATHER = 5.            # px of soft edge on the counted fill
+FILL_REDUCE = 4         # the counted fill's mask is built this many times smaller than the supersampled frame
 NAME = 22               # px of the pair's name tile: the legend shows it at LEGEND/NAME, the winner at 1
 LEGEND = 13
 AXIS_LABEL = 12
@@ -221,17 +229,6 @@ def wrap_title(title, measure, limit):
     return first[-1] if first else (title,)
 
 
-def sampled_polygon(values,cx,cy,radius,count=65):
-    vertices=radar.polygon(list(values),cx,cy,radius)
-    points=[]
-    for i in range(count):
-        pos=i/(count-1)*len(vertices)
-        segment=min(len(vertices)-1,int(pos)); t=pos-segment
-        a,b=vertices[segment],vertices[(segment+1)%len(vertices)]
-        points.append((a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t))
-    return tuple(points)
-
-
 def finite(value):
     return isinstance(value, (int, float)) and math.isfinite(value)
 
@@ -271,6 +268,7 @@ class Scene:
     pair: tuple
     winner: Candidate | None
     recomputed: bool
+    need: tuple = ()        # the task's target on each radar axis (None where it has none), or () when unrecorded
 
 
 def scene_from_result(result):
@@ -308,7 +306,16 @@ def scene_from_result(result):
     first = winner if winner in eligible else next(iter(eligible), None)
     second = next((c for c in eligible if first and c.name != first.name), None)
     pair = tuple(c for c in (first, second) if c and c.values)
-    return Scene(title, kind, tuple(rows), pair, winner, result.get("theatre_source") == "recomputed")
+    return Scene(title, kind, tuple(rows), pair, winner, result.get("theatre_source") == "recomputed",
+                 task_need(result, first))
+
+
+def task_need(result, candidate):
+    """The task's target per radar axis as the snapshot recorded it for `candidate`; () when it did not."""
+    row = next((item for item in result.get("ranking") or []
+                if isinstance(item, dict) and candidate and str(item.get("id") or "") == candidate.id), None)
+    need = radar.need_values((row or {}).get("five_axis_fit"))
+    return tuple(need.get(key) for key, _, _ in radar.SCORE_AXES) if need else ()
 
 
 def route_points(start, end, count=65):
@@ -452,19 +459,24 @@ class TheatreRenderer:
         self.tiles = {}
         self.stamps = {}
         self.pair_index = {c.name: i for i, c in enumerate(scene.pair)}
-        self.vertices = {c.id: radar.polygon(list(c.values), *self.center, self.radius) for c in scene.pair}
         self.pens = {}
         for candidate in scene.pair:
             index = next((i for i, c in enumerate(self.rows) if c.name == candidate.name), None)
             if index is None:
                 continue
             end = (self.end_x, self.targets[index])
-            top = self.vertices[candidate.id][0]
-            control = (lerp(end[0], top[0], .55), min(end[1], top[1]) - h*.08)
-            lift = bezier2(end, control, top)
-            # One pen path: the route end lifts to the first vertex and traces the polygon.
-            path = list(lift) + list(sampled_polygon(candidate.values, *self.center, self.radius, 81)[1:])
-            self.pens[candidate.id] = (tuple(path), arc_lengths(path), arc_lengths(lift)[-1])
+            control = (lerp(end[0], self.center[0], .55), min(end[1], self.center[1]) - h*.10)
+            # The route's end lifts off its row and lands on the radar's centre, where its shape blooms.
+            path = bezier2(end, control, self.center)
+            self.pens[candidate.id] = (path, arc_lengths(path))
+        need = scene.need if len(scene.need) == len(radar.SCORE_AXES) else ()
+        self.need = tuple(need)
+        # Radial falloff for the counted fills: lighter at the centre, full at the rim.
+        small = math.ceil(self.radius*self.k/FILL_REDUCE) + 2
+        self.fill_half = small*FILL_REDUCE
+        ramp = Image.radial_gradient("L").resize((2*small, 2*small), Image.Resampling.BILINEAR)
+        self.falloff = ramp.point([round(255*(.58 + .42*min(1., v/181)**1.5)) for v in range(256)])
+        self.masks = {}
         self.final = self.final_layout()
         self.axis_labels = self.axis_layout()
         self.seeds = self.speck_seeds()
@@ -662,7 +674,8 @@ class TheatreRenderer:
         self.intro(image, draw, t, cam)
         self.grid(draw, t, cam)
         states = self.flow(draw, t, cam)
-        self.polygons(draw, t, cam)
+        self.polygons(image, draw, t, cam)
+        self.need_outline(draw, t, cam)
         self.labels(image, t, cam, states)
         self.specks(draw, t, cam)
         image = image.reduce(self.k)
@@ -736,7 +749,7 @@ class TheatreRenderer:
         pair = self.pair_index.get(row.name)
         if pair is None or self.scene.pair[pair].id not in self.pens:
             return theme.FAINT
-        return theme.ACCENT if pair == 0 else theme.CYAN
+        return radar.SERIES_STYLES[pair]["color"]
 
     def intro(self, image, draw, t, cam):
         s, w = self.s, self.w
@@ -792,25 +805,69 @@ class TheatreRenderer:
                 self.probe["head"] = (point[0]-cam, point[1])
 
     def grid(self, draw, t, cam):
+        """Five hairline spokes that draw out from the centre and recede once the shapes have landed."""
         shown = ease(window(t, "grid"))
         if shown <= 0 or not self.scene.pair:
             return
+        quiet = 1 - .45*ease(window(t, "settle"))
         cx, cy = self.center
-        radius = self.radius * (.88 + .12*ease(window(t, "grid")))
-        outer = self.screen(radar.polygon([1]*5, cx, cy, radius), cam)
-        draw.polygon(outer, fill=(248, 250, 252, round(255*shown)))
-        for level in (.25, .5, .75, 1):
-            ring = self.screen(radar.polygon([level]*5, cx, cy, radius), cam)
-            color = ImageColor.getrgb("#E2E8F0" if level < 1 else "#CBD5E1")
-            draw.line(ring + ring[:1], fill=(*color, round(255*shown)),
-                      width=max(1, round((.75 if level < 1 else 1)*self.s*self.k)), joint="curve")
+        k, s = self.k, self.s
         centre = self.screen(((cx, cy),), cam)[0]
-        for vertex in outer:
-            draw.line((centre, vertex), fill=(226, 232, 240, round(255*shown)), width=max(1, round(.75*self.s*self.k)))
+        hair = max(1, round(.7*s*k))
+        for index in range(5):
+            reach = ease(window(t, "grid")*1.25 - index*.06)
+            if reach <= 0:
+                continue
+            tip = self.screen((radar.point(cx, cy, self.radius*reach, index, 5),), cam)[0]
+            draw.line((centre, tip), fill=(203, 213, 225, round(205*shown*quiet)), width=hair)
+            if reach >= 1:
+                # A dot marks full scale and a smaller one half scale: the only fixed marks on the radar.
+                for level, size, ink in ((1., 1.5, (148, 163, 184)), (.5, 1., (203, 213, 225))):
+                    self.dot(draw, radar.point(cx, cy, self.radius*level, index, 5), cam, size,
+                             (*ink, round(255*shown*quiet)))
+
+    def need_outline(self, draw, t, cam):
+        """The task's need on the axes that have one: a quiet dashed outline, drawn once and kept."""
+        drawn = ease(window(t, "need"))
+        if drawn <= 0 or not self.need:
+            return
+        cx, cy = self.center
+        ink = (*ImageColor.getrgb(radar.NEED_INK), round(215*drawn))
+        size = max(1, round(1.15*self.s*self.k))
+        runs, run = [], []
+        for index, target in enumerate(self.need):
+            if target is None:
+                runs.append(run)
+                run = []
+            else:
+                run.append(radar.point(cx, cy, self.radius*target, index, 5))
+        runs.append(run)
+        if self.need[0] is not None and self.need[-1] is not None and len(runs) > 1:
+            runs[0] = runs.pop() + runs[0]      # the outline continues through the top axis
+        on, off = 3.2*self.s*self.k, 2.8*self.s*self.k
+        for run in runs:
+            for point in run:
+                self.dot(draw, point, cam, 1.7, (255, 255, 255, round(255*drawn)), ink)
+            points = self.screen(run, cam)
+            phase = 0.
+            for a, b in zip(points, points[1:]):
+                length = math.dist(a, b)
+                at = -phase
+                while at < length*drawn:
+                    lo, hi = max(0., at)/length, min(length*drawn, at + on)/length
+                    if hi > lo:
+                        draw.line((lerp2(a, b, lo), lerp2(a, b, hi)), fill=ink, width=size)
+                    at += on + off
+                phase = (length + phase) % (on + off)
 
     def pen(self, candidate, t):
-        path, lengths, lift = self.pens[candidate.id]
-        return path, lengths, lift, ease(window(t, "pen")) * lengths[-1]
+        path, lengths = self.pens[candidate.id]
+        return path, lengths, ease(window(t, "lift")) * lengths[-1]
+
+    def bloom(self, index, t):
+        """Growth 0..1 of each axis of a pair member's shape at story time t."""
+        start = BLOOM[min(index, len(BLOOM) - 1)]
+        return tuple(1 - (1 - radar.clamp((t - start - axis*BLOOM_STAGGER) / BLOOM_SPAN))**4 for axis in range(5))
 
     def flow(self, draw, t, cam):
         rank, gone = ease(window(t, "rank")), ease(window(t, "dissolve"))
@@ -828,11 +885,11 @@ class TheatreRenderer:
             reveal = self.reveal(i, t)
             end = (self.end_x, y)
             if leader:
-                path, lengths, lift, travelled = self.pen(self.scene.pair[pair], t)
+                path, lengths, travelled = self.pen(self.scene.pair[pair], t)
                 if travelled > 0:
-                    end = partial(path, lengths, min(travelled, lift))[-1]
+                    end = partial(path, lengths, travelled)[-1]
                 opacity, width = 1 - detach, 1 + 1.2*rank
-                color = theme.ACCENT if pair == 0 else theme.CYAN
+                color = radar.SERIES_STYLES[pair]["color"]
             else:
                 opacity = (.24 if row.excluded else 1 - .6*rank) * (1 - gone)
                 width, color = 1, theme.FAINT
@@ -851,7 +908,7 @@ class TheatreRenderer:
                     self.probe["head"] = (shown[-1][0]-cam, shown[-1][1])
             elif not row.excluded:
                 count = 3 if leader else 1
-                fade = opacity * (1 - ease(window(t, "pen")) if leader else opacity)
+                fade = opacity * (1 - ease(window(t, "lift")) if leader else opacity)
                 for j in range(count):
                     p = ((t - WINDOWS["routes"][0])*.40 + j/count) % 1
                     self.dot(draw, fraction_prefix(route, p)[-1], cam, 2.3 if leader else 1.4,
@@ -860,8 +917,42 @@ class TheatreRenderer:
                 self.probe["leader"] = (end[0]-cam, end[1])
         return states
 
-    def polygons(self, draw, t, cam):
-        fill = ease(window(t, "fill"))
+    def soft_fill(self, image, points, rgb, alpha, cam, key=None):
+        """Fill a polygon with the radial falloff at `alpha` (0..255 at the rim) and a feathered edge.
+
+        The mask is built around the radar's own centre at a quarter of the supersampled size (the
+        feather hides the difference) and enlarged once. A shape that has stopped moving passes a
+        `key`, so its mask is rasterized once however the camera drifts afterwards.
+        """
+        alpha = round(alpha)
+        if alpha <= 0:
+            return
+        size, half = self.falloff.size, self.fill_half
+        held = self.masks.get(key) if key is not None else None
+        if held is None:
+            cx, cy = self.center
+            unit = self.k / FILL_REDUCE
+            mask = Image.new("L", size, 0)
+            ImageDraw.Draw(mask).polygon([((x - cx)*unit + size[0]/2, (y - cy)*unit + size[1]/2) for x, y in points],
+                                         fill=255)
+            mask = ImageChops.multiply(mask.filter(ImageFilter.BoxBlur(FEATHER*self.s*unit)), self.falloff)
+            # Only the mask's own box is enlarged and pasted: a shape is much smaller than the radar's square.
+            box = mask.getbbox()
+            if box is None:
+                return
+            full = mask.crop(box).resize(((box[2] - box[0])*FILL_REDUCE, (box[3] - box[1])*FILL_REDUCE),
+                                         Image.Resampling.BILINEAR)
+            held = [full, (box[0]*FILL_REDUCE, box[1]*FILL_REDUCE), None, None]
+            if key is not None:
+                self.masks[key] = held
+        full, (left, top), tinted, ready = held
+        if tinted != alpha:
+            # A settled shape only changes its depth: one table lookup, no new raster.
+            ready = full.point([v*alpha//255 for v in range(256)])
+            held[2:] = alpha, ready
+        image.paste(rgb, (round((self.center[0] - cam)*self.k) - half + left, round(self.center[1]*self.k) - half + top), ready)
+
+    def polygons(self, image, draw, t, cam):
         settled = ease(window(t, "settle"))
         winner = self.scene.winner
         if self.final and settled > 0:
@@ -870,41 +961,66 @@ class TheatreRenderer:
             draw.rounded_rectangle(((x0-cam)*self.k, y0*self.k, (x1-cam)*self.k, y1*self.k), radius=9*self.s*self.k,
                                    fill=(*ImageColor.getrgb(theme.ACCENT_SOFT), round(255*settled)),
                                    outline=(199, 210, 254, round(255*settled)), width=max(1, round(self.s*self.k*.8)))
-        for index, candidate in enumerate(self.scene.pair):
+        cx, cy = self.center
+        # The other model first, the winner on top.
+        for index in reversed(range(len(self.scene.pair))):
+            candidate = self.scene.pair[index]
             if candidate.id not in self.pens:
                 continue
-            path, lengths, lift, travelled = self.pen(candidate, t)
+            path, lengths, travelled = self.pen(candidate, t)
             if travelled <= 0:
                 continue
-            rgb = ImageColor.getrgb(theme.ACCENT if index == 0 else theme.CYAN)
-            head = partial(path, lengths, travelled)[-1]
+            rgb = ImageColor.getrgb(radar.SERIES_STYLES[min(index, 1)]["color"])
+            grown = self.bloom(index, t)
             if index == 0:
-                self.probe["leader"] = (head[0]-cam, head[1])
-            if 0 < window(t, "pen") < 1:
-                self.dot(draw, head, cam, 2.4, (*rgb, 240))
-            if travelled <= lift:
+                head = partial(path, lengths, travelled)[-1]
+                # The probe follows one object: the lifting route end, then the top vertex it grows into.
+                self.probe["leader"] = ((head[0] if grown[0] <= 0 else cx) - cam,
+                                        head[1] if grown[0] <= 0 else cy - self.radius*candidate.values[0]*grown[0])
+            if grown[-1] < 1:
+                # The seed: the route's end in flight, then waiting on the centre until its shape has opened.
+                seed = partial(path, lengths, travelled)[-1]
+                self.dot(draw, seed, cam, 2.4, (*rgb, round(240*(1 - grown[-1]))))
+            if grown[0] <= 0:
                 continue
-            vertices = self.vertices[candidate.id]
             won = bool(winner) and candidate.id == winner.id
-            # Drop the lift (bezier2 samples 40 points); keep the traced perimeter.
-            traced = partial(path, lengths, travelled)[39:]
-            if travelled >= lengths[-1] - 1e-6 and fill > 0:
-                # Settling deepens the winner's area and lets the other polygon recede a little.
-                depth = (40 if index == 0 else 22) + (26 if won else -8)*settled
-                draw.polygon(self.screen(vertices, cam), fill=(*rgb, round(depth*fill)))
-            self.line(draw, traced, cam, (*rgb, round(235 - (0 if won else 70)*settled)), 1.6, index == 1)
-            perimeter = lengths[-1] - lift
-            for k, vertex in enumerate(vertices):
-                if travelled - lift >= perimeter*k/5 - 1e-6:
-                    self.vertex(draw, vertex, cam, rgb, index, 1.)
+            values = [value*g for value, g in zip(candidate.values, grown)]
+            points = radar.polygon(values, cx, cy, self.radius)
+            opened = min(1., sum(grown)/2.5)
+            if self.need:
+                # Ability beyond the task's need is real, so it is drawn, but pale: it does not count.
+                counted = radar.counted_shape(points, radar.polygon(
+                    [value if target is None else min(value, target*g) for value, target, g in zip(values, self.need, grown)],
+                    cx, cy, self.radius))
+                draw.polygon(self.screen(points, cam), fill=(*rgb, round((30 if index == 0 else 22)*opened)))
+            else:
+                counted = points
+            depth = (52 if index == 0 else 34) + (20 if won else -8)*settled
+            self.soft_fill(image, counted, rgb, depth*opened, cam, index if grown[-1] >= 1 else None)
+            outline = self.screen(points + points[:2], cam)
+            weight = (2.1 if index == 0 else 1.5)*self.s*self.k
+            strength = 1 - (0 if won else .28)*settled
+            for extra, alpha in ((4.6, 13), (2.2, 26)) if index == 0 else ((2.4, 16),):
+                draw.line(outline, fill=(*rgb, round(alpha*opened*strength)), width=max(1, round(weight + extra*self.s*self.k)),
+                          joint="curve")
+            draw.line(outline, fill=(*rgb, round(255*opened*strength)), width=max(1, round(weight)), joint="curve")
+            for point, g in zip(points, grown):
+                self.vertex(draw, point, cam, rgb, index, g*strength)
 
     def vertex(self, draw, point, cam, rgb, index, alpha):
+        """Winner: a solid dot in a surface ring. Other model: a hollow one. Both ride their vertex."""
         if alpha <= 0:
             return
+        x, y = (point[0]-cam)*self.k, point[1]*self.k
+        unit = self.s*self.k
         if index == 0:
-            self.dot(draw, point, cam, 2.3, (*rgb, round(255*alpha)))
+            for radius, fill in ((4.3, (255, 255, 255, round(255*alpha))), (2.9, (*rgb, round(255*alpha)))):
+                r = radius*unit
+                draw.ellipse((x-r, y-r, x+r, y+r), fill=fill)
         else:
-            self.dot(draw, point, cam, 2.1, (255, 255, 255, round(255*alpha)), (*rgb, round(255*alpha)))
+            r = 3.1*unit
+            draw.ellipse((x-r, y-r, x+r, y+r), fill=(255, 255, 255, round(255*alpha)), outline=(*rgb, round(255*alpha)),
+                         width=max(1, round(1.35*unit)))
 
     def labels(self, image, t, cam, states):
         s, rank = self.s, ease(window(t, "rank"))
@@ -920,7 +1036,7 @@ class TheatreRenderer:
                           max_width=self.w*.47, alpha=alpha, cam=cam)
                 continue
             candidate = self.scene.pair[pair]
-            color = theme.ACCENT if pair == 0 else theme.CYAN
+            color = radar.SERIES_STYLES[pair]["color"]
             # One tile scaled continuously: route label → legend → the settled name.
             width = self.measure(row.name, NAME, True, self.w*.62) * LEGEND/NAME
             start = (self.end_x + 6*s + width/2, y)

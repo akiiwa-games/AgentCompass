@@ -1,12 +1,14 @@
 """Render docs/quota-line.gif off-screen: the Decision Compass "Quota line" tab replaying two synthetic decisions.
 
-    python docs/tools/render_quota_line.py [--scale 1.5] [--fps 20] [--speed 1.3] [--check-dir DIR]
+    python docs/tools/render_quota_line.py [--scale 1.5] [--fps 20] [--speed 1.0] [--check-dir DIR]
 
 The same task is routed twice. First while Claude A is ahead of its recovery line: that window is spared and
 the task runs on the account that is under its line. Then two hours before Claude A resets with 40% left:
-the quota that would expire is spent first, in fast mode. The real page is opened on a private desktop by
-render_ui_screenshots.py; each frame pastes the view's own renderer output into its canvas rectangle and is
-cropped to the list card. Composites are checked against real PrintWindow captures before the GIF is written.
+the quota that would expire is spent first, in fast mode. The picture explains itself by motion (clock hands,
+arcs, beads, bars); its only words are the window names and the winner. The real page is opened on a private
+desktop by render_ui_screenshots.py; each frame pastes the view's own renderer output into its canvas rectangle
+and is cropped to the list card. Composites are checked against real PrintWindow captures before the GIF is
+written. The GIF opens on the settled second decision, so a viewer without autoplay still sees a whole picture.
 """
 from __future__ import annotations
 
@@ -19,7 +21,8 @@ import render_hero as hero
 import render_ui_screenshots as shots
 
 OUTPUT = shots.ROOT / "docs" / "quota-line.gif"
-LEAD_MS, HOLD_MS = 700, 2600      # the empty view before each replay, and its settled result
+POSTER_MS, LEAD_MS, HOLD_MS = 1300, 500, 2600      # the opening still, the bare view before a replay, its settled result
+CHECKS = (0., 1.4, 3.5, 5.2, 7.6, 9.9)             # story times compared against the real window
 
 
 def frames_from_window(args, state):
@@ -44,7 +47,7 @@ def frames_from_window(args, state):
     start = quota_line.FIRST - .1
     count = round((quota_line.LAST - start) * args.fps / args.speed)
     stories = [min(quota_line.LAST, start + i * args.speed / args.fps) for i in range(count + 1)]
-    args.frames, args.durations, checks = [], [], {}
+    args.frames, args.durations, checks, poster = [], [], {}, None
     # Ledger rows are newest first: the earlier decision (window spared) is the last row, the headline the first.
     for index in (len(panel.ledger_rows) - 1, 0):
         panel.plan_loaded(router_data.replay(panel.ledger_rows[index]))
@@ -59,7 +62,7 @@ def frames_from_window(args, state):
             frame.paste(film.frame(story), (x, y))
             return frame.crop(card)
 
-        for story in (quota_line.FIRST, 5.0, 7.3, quota_line.LAST):
+        for story in CHECKS:
             view.follow(story)
             for _ in range(4):  # a busy machine may capture before the canvas has painted: look again
                 shots.pump(root, 10)
@@ -73,6 +76,9 @@ def frames_from_window(args, state):
                 composite(story).save(args.check_dir / f"quota-composite-{index}-{story:.1f}.png")
         args.frames += [composite(story) for story in stories]
         args.durations += [LEAD_MS] + [round(1000 / args.fps)] * (len(stories) - 2) + [HOLD_MS]
+        poster = args.frames[-1]
+    args.frames.insert(0, poster)
+    args.durations.insert(0, POSTER_MS)
     size = args.frames[0].size
     args.stage = (x - card[0], y - card[1], min(size[0], x - card[0] + view.renderer.w), min(size[1], y - card[1] + view.renderer.h))
     print(f"card {size[0]}x{size[1]}, view {view.renderer.w}x{view.renderer.h}; "
@@ -90,7 +96,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--scale", type=float, default=1.5, help="display scale; 1.5 gives a ~630 px wide card")
     parser.add_argument("--fps", type=int, default=20)
-    parser.add_argument("--speed", type=float, default=1.3, help="story seconds per second of film")
+    parser.add_argument("--speed", type=float, default=1.0, help="story seconds per second of film")
     parser.add_argument("--check-dir", type=Path, help="also save the real/composite check captures here")
     args = parser.parse_args()
     import ui_theme

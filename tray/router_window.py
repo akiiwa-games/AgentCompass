@@ -1261,10 +1261,10 @@ class Panel:
         self.quota_frame = ttk.Frame(stack, style="Card.TFrame")
         self.quota_line = quota_line.QuotaLineCanvas(self.quota_frame)
         self.quota_line.canvas.pack(fill="both", expand=True)
-        self.quota_line.canvas._tooltip_text = _tr(
-            "N = F − β·X/h。F：封顶契合，各轴能力只算到任务需要的高度；X：这次花费中越过窗口恢复线的 USD；"
-            "β：该窗口每越线 1 USD 折算的契合分；h：预计工时。线下的花费本来就会在重置时作废，不计成本。")
-        self.attach_tooltip(self.quota_line.canvas)
+        self.attach_quota_tooltip(self.quota_line, _tr(
+            "每个表盘是一个额度窗口：指针是恢复线，转一圈是一个周期，到 12 点重置。弧是本期已花的额度，绿点是已恢复、还没花的额度。"
+            "花在指针后面不计成本；越过指针的部分（红色）按 N = F − β·X/h 从该候选的柱子里扣掉。"
+            "柱子上方的浅色部分是超出任务需要的能力，不计分。点击画面重播。"))
         self.theatre.on_frame = self.quota_line.follow
         self.show_list("ledger")
         self.set_mode("score")
@@ -1375,7 +1375,10 @@ class Panel:
             return
         pair = data.decision_pair(self.plan_result, self.picked(self.pick_a), self.picked(self.pick_b))
         series, raw = data.decision_series(pair)
-        self.radar.show(radar_chart.SCORE_AXES, series, raw)
+        # The task's need, as recorded for the first of the pair: ability beyond it is drawn pale.
+        fit = next((row.get("five_axis_fit") for row in self.plan_result.get("ranking") or []
+                    if pair and row.get("id") == pair[0]["id"]), None)
+        self.radar.show(radar_chart.SCORE_AXES, series, raw, radar_chart.need_values(fit))
         self.show_verdict(*verdict_summary(self.plan_result, pair))
 
     def verdict_text(self):
@@ -2322,6 +2325,30 @@ class Panel:
             return ""
         row = rows[int(iid)]
         return " · ".join(str(v) for v in (row["id"], row.get("account")) if v)
+
+    def attach_quota_tooltip(self, view, legend):
+        """Hover text for the quota-line view: the mark under the pointer in words, else how to read the picture."""
+        canvas, current = view.canvas, {"text": None}
+        show, hide = self.attach_tooltip(canvas, bind=False)
+
+        def move(event):
+            text = view.tip_at(event.x, event.y) or legend
+            if text == current["text"]:
+                return
+            hide()
+            current["text"] = canvas._tooltip_text = text
+            show(event)
+
+        def leave(_event=None):
+            current["text"] = None
+            hide()
+
+        def replay(_event=None):
+            leave()
+            self.replay_theatre()
+        canvas.bind("<Motion>", move, add="+")
+        canvas.bind("<Leave>", leave, add="+")
+        canvas.bind("<Button-1>", replay, add="+")
 
     def attach_tooltip(self, widget, bind=True):
         def hide(_event=None):

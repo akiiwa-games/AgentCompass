@@ -21,11 +21,11 @@ import render_ui_screenshots as shots
 OUTPUT = shots.ROOT / "docs" / "hero.gif"
 HOLD_MS = 2000
 # GitHub shows only the first frame when animated images do not autoplay, so the GIF opens on
-# the settled frame (the winner under the radar of the top two candidates) before replaying.
+# the settled frame (the winner under the radar of it and the best-ranked other model) before replaying.
 POSTER_STORY = 9.9
 POSTER_MS = 1500
 # Flat page and key ink colours kept exact so the paper tone never bands.
-RESERVED = [(254, 254, 253), (255, 255, 255), (79, 70, 229), (6, 182, 212),
+RESERVED = [(254, 254, 253), (255, 255, 255), (79, 70, 229), (8, 145, 178),
             (15, 23, 42), (100, 116, 139), (148, 163, 184), (226, 232, 240)]
 
 
@@ -61,7 +61,7 @@ def frames_from_window(args, state):
         return frame
 
     checks = {}
-    for wall in (2.2, 6.0, 8.4, theatre.DURATION):  # kind under the title, radar being drawn, winner settling, settled
+    for wall in (2.2, 6.0, 7.1, 8.4, theatre.DURATION):  # kind under the title, routes lifting, shapes blooming, winner settling, settled
         film.elapsed = wall
         film.draw()
         for _ in range(4):  # a busy machine may capture before the canvas has painted: look again
