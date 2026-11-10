@@ -827,6 +827,29 @@ if(p.operation==='create') {
         self.assertEqual(registry.reservations(), [])
 
 
+def wait_for_exit(pid, seconds):
+    """True once the process `pid` has exited (or never existed), waiting at most `seconds`."""
+    if os.name == 'nt':
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x00100000, False, int(pid))      # SYNCHRONIZE
+        if not handle:
+            return True
+        try:
+            return kernel32.WaitForSingleObject(handle, int(seconds * 1000)) == 0
+        finally:
+            kernel32.CloseHandle(handle)
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            if os.waitpid(int(pid), os.WNOHANG)[0]:
+                return True
+        except ChildProcessError:
+            return True
+        time.sleep(0.02)
+    return False
+
+
 def roll_module_for_tests():
     import roll
     return roll
@@ -1135,6 +1158,8 @@ class RollTests(unittest.TestCase):
         while not Path(result['worker']['output']).read_text(encoding='utf-8').strip() and time.monotonic() < deadline:
             time.sleep(0.02)
         self.assertEqual(Path(result['worker']['output']).read_text(encoding='utf-8').strip(), 'grok reply')
+        # The worker still holds its output file until it exits; tearing the temp root down first raced it (WinError 32).
+        self.assertTrue(wait_for_exit(result['worker']['pid'], 10.0), result['worker']['pid'])
 
     def test_grok_launch_failure_reports_native_handoff_without_a_second_start(self):
         import roll as roll_module

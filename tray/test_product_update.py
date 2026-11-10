@@ -1409,5 +1409,68 @@ class RollbackNoticeTests(unittest.TestCase):
                 self.assertIsNone(updates.rollback_notice(state_dir=state_dir))
 
 
+class _FakeKey:
+    def __init__(self, values=None, children=None):
+        self.values = dict(values or {})
+        self.children = dict(children or {})
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _FakeRegistry:
+    """The winreg calls _sync_uninstall_display_version makes, over an in-memory tree."""
+    HKEY_CURRENT_USER = "HKCU"
+    KEY_READ, KEY_SET_VALUE, REG_SZ = 1, 2, 1
+
+    def __init__(self, entries):
+        self.root = _FakeKey(children={updates.UNINSTALL_KEY: _FakeKey(children=entries)})
+
+    def OpenKey(self, parent, name, *args):
+        node = self.root if parent == self.HKEY_CURRENT_USER else parent
+        if name not in node.children:
+            raise OSError(name)
+        return node.children[name]
+
+    def EnumKey(self, key, index):
+        names = list(key.children)
+        if index >= len(names):
+            raise OSError(index)
+        return names[index]
+
+    def QueryValueEx(self, key, name):
+        if name not in key.values:
+            raise OSError(name)
+        return key.values[name], self.REG_SZ
+
+    def SetValueEx(self, key, name, _reserved, _kind, value):
+        key.values[name] = value
+
+    def CloseKey(self, key):
+        pass
+
+
+class UninstallDisplayVersionTests(unittest.TestCase):
+    def test_code_package_version_reaches_the_uninstall_entry_of_this_install_only(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "AgentCompass"
+            ours = _FakeKey({"InstallLocation": str(root) + "\\", "DisplayVersion": "0.4.5"})
+            other = _FakeKey({"InstallLocation": str(Path(tmp) / "Other"), "DisplayVersion": "1.0"})
+            no_location = _FakeKey({"DisplayVersion": "2.0"})
+            reg = _FakeRegistry({"{A}_is1": ours, "{B}": other, "{C}": no_location})
+            self.assertTrue(updates._sync_uninstall_display_version(root, "0.4.6", registry=reg))
+            self.assertEqual(ours.values["DisplayVersion"], "0.4.6")
+            self.assertEqual(other.values["DisplayVersion"], "1.0")
+            self.assertEqual(no_location.values["DisplayVersion"], "2.0")
+
+    def test_no_entry_or_no_version_changes_nothing(self):
+        reg = _FakeRegistry({})
+        self.assertFalse(updates._sync_uninstall_display_version(Path("C:/x"), "0.4.6", registry=reg))
+        self.assertFalse(updates._sync_uninstall_display_version(Path("C:/x"), "", registry=reg))
+
+
 if __name__ == "__main__":
     unittest.main()

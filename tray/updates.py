@@ -1677,6 +1677,49 @@ def rollback_code_package(root: Path, reason: str = "") -> Path | None:
     return current_dir
 
 
+UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+
+
+def _sync_uninstall_display_version(root: Path, version: str, registry=None) -> bool:
+    """Set DisplayVersion on the per-user uninstall entry Inno Setup wrote for this install.
+
+    A code package update does not run the installer, so "Apps & features" kept the installer's version. The entry is
+    found by its InstallLocation, so the installer's AppId is not repeated here. Returns True when an entry was updated.
+    """
+    if not version:
+        return False
+    if registry is None:
+        if os.name != "nt":
+            return False
+        import winreg as registry
+    want = os.path.normcase(os.path.normpath(str(root)))
+    try:
+        parent = registry.OpenKey(registry.HKEY_CURRENT_USER, UNINSTALL_KEY)
+    except OSError:
+        return False
+    updated = False
+    try:
+        index = 0
+        while True:
+            try:
+                name = registry.EnumKey(parent, index)
+            except OSError:
+                break
+            index += 1
+            try:
+                with registry.OpenKey(parent, name, 0, registry.KEY_READ | registry.KEY_SET_VALUE) as entry:
+                    location, _ = registry.QueryValueEx(entry, "InstallLocation")
+                    if os.path.normcase(os.path.normpath(str(location))) != want:
+                        continue
+                    registry.SetValueEx(entry, "DisplayVersion", 0, registry.REG_SZ, str(version))
+                    updated = True
+            except OSError:
+                continue
+    finally:
+        registry.CloseKey(parent)
+    return updated
+
+
 def _apply_code_package(
     root: Path,
     zip_path: Path,
@@ -2053,6 +2096,7 @@ def update_agentcompass(
                         else app_zip.name
                     )
                     msg = _tr("已完成代码包增量更新（{0}）").format(pkg_label)
+                    _sync_uninstall_display_version(inst_root, str(applied_manifest.get("version") or ""))
                     steps.append(msg)
                     report("result", msg, status="updated")
                     updated_any = True
