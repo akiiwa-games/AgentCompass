@@ -548,6 +548,13 @@ def node_path() -> Path:
 
 
 def usage_float_label() -> str:
+    try:
+        directory = Path(os.environ.get("ROUTER_STATE_DIR") or STATE_DIR)
+        status = json.loads((directory / "mpv-provision-status.json").read_text(encoding="utf-8"))
+        if status.get("status") in ("warning", "interrupted"):
+            return status["message"]
+    except (OSError, ValueError, KeyError):
+        pass
     if local_controls.read_snapshot("usage-float"):
         return _tr("运行中")
     child = _component_children.get("usage-float")

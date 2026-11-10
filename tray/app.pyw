@@ -393,6 +393,8 @@ def build_menu() -> Menu:
         log_info("tray quit requested from menu")
         services.stop_usage_collect()
         services.stop_capacity()
+        updates.abandon_usage_float_mpv()
+        release_single_instance()
         icon.stop()
 
     def priority_menu():
@@ -530,6 +532,8 @@ def main() -> None:
     try:
         icon.run(setup)
     finally:
+        updates.abandon_usage_float_mpv()
+        release_single_instance()
         log_info("tray event loop ended")
 
 

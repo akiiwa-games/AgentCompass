@@ -104,7 +104,7 @@ class MpvProvisionTests(unittest.TestCase):
                 self.assertFalse(updates.LOCK.locked())
                 self.worker(lambda: updates.provision_usage_float_mpv(self.root))
                 self.assertEqual(fake.ensure_mpv.call_count, 1)
-                self.assertFalse(updates._mpv_thread.daemon)
+                self.assertTrue(updates._mpv_thread.daemon)
             finally:
                 release.set()
                 updates.wait_usage_float_mpv()
@@ -124,3 +124,78 @@ class MpvProvisionTests(unittest.TestCase):
             update_status.record({'kind': 'start'}, directory=self.root / 'state')
             update_status.record({'kind': 'result', 'component': 'Usage Float mpv', 'message': 'opaque localized text', 'status': 'warning'}, directory=self.root / 'state')
             self.assertEqual(update_status._state['statuses']['Usage Float mpv'], 'warning')
+    def test_failure_producers_have_explicit_status_in_both_languages(self):
+        import i18n
+        import cli_updates
+        from types import SimpleNamespace
+        from contextlib import nullcontext
+        for lang in ('zh', 'en'):
+            with self.subTest(lang=lang), mock.patch.object(i18n, 'get_language', return_value=lang):
+                events = []
+                with mock.patch.object(updates, 'ensure_plugin', side_effect=RuntimeError('offline')), mock.patch.object(updates.plugins, 'plugin_root', return_value=self.root):
+                    with self.assertRaises(RuntimeError):
+                        updates.deploy_gateway('muse2api', False, progress=events.append)
+                self.assertEqual([e['status'] for e in events if e['kind'] == 'result'], ['failed'])
+                events.clear()
+                with mock.patch.object(updates, 'inspect_installs', side_effect=RuntimeError('offline')):
+                    with self.assertRaises(RuntimeError):
+                        updates.update_agentcompass(progress=events.append)
+                self.assertEqual([e['status'] for e in events if e['kind'] == 'result'], ['failed'])
+                target = SimpleNamespace(id='codex', name='Codex')
+                modules = [SimpleNamespace(override_store=SimpleNamespace(locked=lambda *a, **k: nullcontext()))]
+                with mock.patch('router_priority.modules', return_value=modules), mock.patch.object(cli_updates, 'targets', return_value=[target]), mock.patch.object(cli_updates, 'unsupported', return_value=False), mock.patch.object(cli_updates, 'target_running', return_value=True), mock.patch.object(cli_updates, 'state_dir', return_value=self.root), mock.patch.object(cli_updates, '_change_state'), mock.patch.object(cli_updates, 'log'), mock.patch.object(cli_updates, '_record_status', side_effect=events.append):
+                    events.clear()
+                    cli_updates.update_all(home=self.root)
+                self.assertEqual([e['status'] for e in events if e['kind'] == 'result'], ['deferred'])
+
+    def test_missing_result_status_never_means_success(self):
+        import update_status
+        with mock.patch.object(update_status, '_state', {}):
+            update_status.record({'kind': 'start'}, directory=self.root)
+            update_status.record({'kind': 'result', 'message': 'opaque'}, directory=self.root)
+            self.assertEqual(update_status._state['statuses']['AgentCompass'], 'warning')
+
+    def test_abandon_logs_interruption_and_does_not_wait(self):
+        import time
+        release = threading.Event()
+        started = threading.Event()
+        fake = mock.Mock()
+        fake.ensure_mpv.side_effect = lambda: (started.set(), release.wait(5))
+        self.script('')
+        with mock.patch.object(updates.importlib.util, 'module_from_spec', return_value=fake), mock.patch.object(updates.importlib.util, 'spec_from_file_location'):
+            updates.provision_usage_float_mpv(self.root)
+            try:
+                self.assertTrue(started.wait(2))
+                before = time.monotonic()
+                updates.abandon_usage_float_mpv()
+                updates.wait_usage_float_mpv()
+                self.assertLess(time.monotonic() - before, .5)
+                self.assertIn('interrupted', (self.root / 'state/mpv-provision.log').read_text(encoding='utf-8'))
+                with mock.patch.object(services.local_controls, 'read_snapshot', return_value=None):
+                    self.assertIn('mpv', services.usage_float_label())
+            finally:
+                release.set()
+                updates._mpv_thread.join(2)
+                updates._mpv_abandoned.clear()
+    def test_quit_releases_mutex_before_stopping_icon(self):
+        from test_app import app
+        calls = []
+        with mock.patch.object(app, 'log_info'), mock.patch.object(app.updates, 'abandon_usage_float_mpv', side_effect=lambda: calls.append('abandon')), mock.patch.object(app, 'release_single_instance', side_effect=lambda: calls.append('release')), mock.patch.object(app.services, 'stop_usage_collect'), mock.patch.object(app.services, 'stop_capacity'):
+            item = app.build_menu().items[-1]
+            icon = mock.Mock()
+            icon.stop.side_effect = lambda: calls.append('stop')
+            item(icon)
+        self.assertEqual(calls, ['abandon', 'release', 'stop'])
+    def test_panel_waits_for_long_jobs_before_logging_interruption(self):
+        import router_window
+        from types import SimpleNamespace
+        panel = SimpleNamespace(closing=True, long_jobs=[mock.Mock()], root=mock.Mock(), _release_show_event=mock.Mock(), poll=mock.Mock())
+        panel.long_jobs[0].is_alive.return_value = True
+        with mock.patch.object(router_window.os, '_exit') as exit_process, mock.patch.object(updates, 'abandon_usage_float_mpv') as abandon:
+            router_window.Panel.poll(panel)
+            exit_process.assert_not_called()
+            abandon.assert_not_called()
+            panel.long_jobs[0].is_alive.return_value = False
+            router_window.Panel.poll(panel)
+            abandon.assert_called_once()
+            exit_process.assert_called_once_with(0)

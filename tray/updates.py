@@ -13,6 +13,7 @@ from __future__ import annotations
 from i18n import translate as _tr
 
 import argparse
+import atexit
 import hashlib
 import importlib.util
 import json
@@ -133,10 +134,38 @@ def prepare_gateway(plugin_id: str) -> None:
 
 _mpv_lock = threading.Lock()
 _mpv_thread: threading.Thread | None = None
+_mpv_abandoned = threading.Event()
+
+
+def _mpv_record(status: str, message: str) -> None:
+    directory = Path(os.environ.get("ROUTER_STATE_DIR") or services.STATE_DIR)
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / "mpv-provision.log").open("a", encoding="utf-8") as stream:
+        stream.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {status}: {message}\n")
+    # Also available to tray/panel refreshes when no progress callback exists.
+    target = directory / "mpv-provision-status.json"
+    temporary = target.with_suffix(f".{os.getpid()}.tmp")
+    temporary.write_text(json.dumps({"status": status, "message": message}, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(target)
+
+
+def abandon_usage_float_mpv() -> None:
+    """Host shutdown: record interruption and let the daemon stop with the host.
+
+    The plugin has no cancellation API. Its file lock is released by process exit;
+    its next ensure_mpv cleans stale staging directories before retrying.
+    """
+    with _mpv_lock:
+        _mpv_abandoned.set()
+        if _mpv_thread is not None and _mpv_thread.is_alive():
+            _mpv_record("interrupted", _tr('mpv 检查已中断，Usage Float 将在需要时重试'))
+
 
 
 def wait_usage_float_mpv() -> None:
     """CLI exit barrier; GUI install/update operations never wait here."""
+    if _mpv_abandoned.is_set():
+        return
     with _mpv_lock:
         thread = _mpv_thread
     if thread is not None and thread.is_alive():
@@ -145,7 +174,7 @@ def wait_usage_float_mpv() -> None:
 
 
 def provision_usage_float_mpv(root: Path) -> str:
-    """Start one non-daemon provisioner, independent of the update transaction."""
+    """Start one provisioner; CLI waits, GUI shutdown explicitly abandons it."""
     global _mpv_thread
     script = root / "mpv_provision.py"
     if not script.is_file():
@@ -173,19 +202,22 @@ def provision_usage_float_mpv(root: Path) -> str:
             status = "warning"
             message = _tr('mpv 未能下载（Usage Float 需要时会重试）：{0}').format(str(exc))
         try:
-            directory = Path(os.environ.get("ROUTER_STATE_DIR") or services.STATE_DIR)
-            directory.mkdir(parents=True, exist_ok=True)
-            with (directory / "mpv-provision.log").open("a", encoding="utf-8") as stream:
-                stream.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {status}: {message}\n")
-            report("result", message, "Usage Float mpv", status=status)
+            with _mpv_lock:
+                if not _mpv_abandoned.is_set():
+                    _mpv_record(status, message)
+                    report("result", message, "Usage Float mpv", status=status)
         finally:
             _progress.callback = None
 
     with _mpv_lock:
         if _mpv_thread is None or not _mpv_thread.is_alive():
-            _mpv_thread = threading.Thread(target=background, name="usage-float-mpv", daemon=False)
+            _mpv_abandoned.clear()
+            _mpv_thread = threading.Thread(target=background, name="usage-float-mpv", daemon=True)
             _mpv_thread.start()
     return _tr('正在后台检查 Usage Float 的 mpv 播放组件')
+
+
+atexit.register(wait_usage_float_mpv)
 
 
 def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
@@ -328,11 +360,11 @@ def deploy_gateway(plugin_id: str, start: bool, progress=None) -> str:
         if start:
             messages.append(services.plugin_start(plugin_id))
         result = "；".join(messages) or _tr('{0} 已部署').format(f'{name}')
-        report("result", result)
+        report("result", result, status="updated")
         report("finish", _tr('{0} 部署结束').format(f'{name}'), "")
         return result
     except Exception as error:
-        report("result", _tr('{0} 部署失败：{1}').format(f'{name}', f'{error}'))
+        report("result", _tr('{0} 部署失败：{1}').format(f'{name}', f'{error}'), status="failed")
         report("finish", _tr('{0} 部署结束').format(f'{name}'), "")
         raise
     finally:
@@ -518,7 +550,7 @@ def update_all(progress=None) -> UpdateAllResult:
                 result = _tr('{0} 插件未启用，已跳过').format(f'{label}')
                 results.append(result)
                 components[label] = {"status": "skipped", "message": result}
-                report("result", result)
+                report("result", result, status="skipped")
                 continue
             report("component", _tr("检查上游版本"))
             try:
@@ -538,7 +570,7 @@ def update_all(progress=None) -> UpdateAllResult:
         )
         if notice:
             results.append(notice)
-            report("result", notice, "AgentCompass")
+            report("result", notice, "AgentCompass", status=product_status)
         report("finish", _tr("本轮更新检查结束"), "")
         return UpdateAllResult(
             "；".join(results),
@@ -1983,7 +2015,7 @@ def update_agentcompass(
                     )
                     msg = _tr("已完成代码包增量更新（{0}）").format(pkg_label)
                     steps.append(msg)
-                    report("result", msg)
+                    report("result", msg, status="updated")
                     updated_any = True
                     used_code_pkg = True
                 except _IncompatibleCodePackageRuntime as exc:
@@ -2033,7 +2065,7 @@ def update_agentcompass(
                         report("component", _tr("更新独立 Router wheel"))
                         w_msg = _upgrade_wheel_install(wheel_info, release_info or {}, exec_run=exec_run, opener=opener)
                         steps.append(w_msg)
-                        report("result", w_msg)
+                        report("result", w_msg, status="updated")
                     target_ver = str(
                         (release_info or {}).get("version")
                         or (release_info or {}).get("tag_name")
@@ -2099,10 +2131,10 @@ def update_agentcompass(
                     report("component", _tr("刷新公共路由数据"))
                     refresh_msg = _refresh_public_data_step(installs, exec_run=exec_run)
                     steps.append(refresh_msg)
-                    report("result", refresh_msg)
+                    report("result", refresh_msg, status="updated")
                     msg = _tr("已完成安装包静默更新（{0}）").format(tag_label)
                     steps.append(msg)
-                    report("result", msg)
+                    report("result", msg, status="updated")
                     summary = "；".join(steps)
                     report("finish", _tr("AgentCompass 更新结束"), "", pending_installer=None)
                     return summary
@@ -2110,25 +2142,25 @@ def update_agentcompass(
                 exec_run([str(installer_exe), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], installer_exe.parent)
                 msg = _tr("已完成安装包静默更新（{0}）").format((release_info or {}).get("tag_name") or installer_exe.name)
                 steps.append(msg)
-                report("result", msg)
+                report("result", msg, status="updated")
                 updated_any = True
             for wheel_info in installs["wheel_installs"]:
                 report("component", _tr("更新独立 Router wheel"))
                 w_msg = _upgrade_wheel_install(wheel_info, release_info or {}, exec_run=exec_run, opener=opener)
                 steps.append(w_msg)
-                report("result", w_msg)
+                report("result", w_msg, status="updated")
         elif shape == "git":
             report("component", _tr("检查 Git 仓库工作区与分支"))
             git_msg, git_updated = _update_git_checkout(Path(tray["root"]), exec_run=exec_run)
             steps.append(git_msg)
-            report("result", git_msg)
+            report("result", git_msg, status="updated")
             if git_updated:
                 updated_any = True
             for wheel_info in installs["wheel_installs"]:
                 report("component", _tr("更新独立 Router wheel"))
                 w_msg = _upgrade_wheel_install(wheel_info, release_info or {}, exec_run=exec_run, opener=opener)
                 steps.append(w_msg)
-                report("result", w_msg)
+                report("result", w_msg, status="updated")
                 updated_any = True
         else:
             report("component", _tr("更新 Router wheel"))
@@ -2136,27 +2168,27 @@ def update_agentcompass(
             for wheel_info in targets:
                 w_msg = _upgrade_wheel_install(wheel_info, release_info or {}, exec_run=exec_run, opener=opener)
                 steps.append(w_msg)
-                report("result", w_msg)
+                report("result", w_msg, status="updated")
                 updated_any = True
 
         if updated_any:
             report("component", _tr("刷新公共路由数据"))
             refresh_msg = _refresh_public_data_step(installs, exec_run=exec_run)
             steps.append(refresh_msg)
-            report("result", refresh_msg)
+            report("result", refresh_msg, status="updated")
 
             report("component", _tr("重启托盘"))
             restart_msg = restart_fn() if restart_fn is not None else _restart_tray_step(state_dir=state_dir)
             if restart_msg:
                 steps.append(restart_msg)
-                report("result", restart_msg)
+                report("result", restart_msg, status="updated")
 
         summary = "；".join(steps)
         report("finish", _tr("AgentCompass 更新结束"), "")
         return summary
     except Exception as error:
         err_msg = _tr("AgentCompass 更新失败：{0}").format(error)
-        report("result", err_msg)
+        report("result", err_msg, status="failed")
         report("finish", _tr("AgentCompass 更新结束"), "", pending_installer=None)
         raise
     finally:

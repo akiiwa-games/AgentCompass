@@ -1,6 +1,7 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
+    'mpv 检查已中断，Usage Float 将在需要时重试': 'mpv check interrupted; Usage Float will retry when needed',
     '等待 Usage Float 的 mpv 播放组件检查完成': 'Waiting for the Usage Float mpv playback component check to finish',
     'Usage Float 的 mpv 播放组件已就绪': 'The Usage Float mpv playback component is ready',
     '正在后台检查 Usage Float 的 mpv 播放组件': 'Checking the Usage Float mpv playback component in the background',

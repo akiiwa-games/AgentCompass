@@ -63,7 +63,7 @@ def record(event: dict | str, *, directory: Path | None = None) -> None:
             _state["component"] = component
         if event["kind"] == "result":
             _state["results"][component or "AgentCompass"] = message
-            _state.setdefault("statuses", {})[component or "AgentCompass"] = event.get("status", "current")
+            _state.setdefault("statuses", {})[component or "AgentCompass"] = event.get("status") or "warning"
         if event["kind"] == "finish":
             _state["running"] = False
             _state["finished"] = time.time()
@@ -391,7 +391,7 @@ def main() -> None:
             current = state.get("component") or state.get("title") or _tr("组件")
             heading.set(_tr("正在更新 {0} · {1}分{2}秒").format(current, f"{elapsed // 60}", f"{elapsed % 60:02d}"))
         elif state:
-            failed = any(status in ("failed", "warning", "deferred")
+            failed = any(status in ("failed", "warning", "deferred", "interrupted")
                          for status in state.get("statuses", {}).values())
             heading.set(_tr("更新结束，部分项目需要处理") if failed else _tr("更新检查已完成"))
         if running != spinning:
