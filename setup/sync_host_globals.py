@@ -41,6 +41,7 @@ for _scripts_dir in (
 
 import host_rules  # noqa: E402
 import provider_inventory  # noqa: E402
+import router_gate_hook  # noqa: E402
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
@@ -66,51 +67,23 @@ ROUTER_HOOK_ARGV = (ac_install.gate_hook_argv(ROUTER_HOOK_SCRIPT) if ac_install 
                     else [Path(sys.executable).resolve().as_posix(), "-X", "utf8", ROUTER_HOOK_SCRIPT])
 ROUTER_HOOK_CMD = shlex.join(ROUTER_HOOK_ARGV)
 
-ROUTER_GATE_MATCHER = (
-    ".*request_user_input_async|.*request_user_input|.*AskUserQuestion|.*ask_user_question|"
-    "Agent|Task|dispatch_agent|spawn_agent|invoke_subagent|create_agent|mcp__paseo__create_agent|"
-    "send_agent_prompt|mcp__paseo__send_agent_prompt|run_turn|mcp__paseo__run_turn|send_message|mcp__paseo__send_message|"
-    "codemode|execute_code|mcp__paseo__execute_code|Bash|bash|PowerShell|powershell|exec|exec_command|run_command|shell"
-)
+# The gate's own tool list decides what reaches it: any `mcp__<server>__` prefix of those names, nothing else.
+ROUTER_GATE_MATCHER = router_gate_hook.hook_matcher()
 
 PI_ROUTER_GATE_TS = """import { spawnSync } from "node:child_process";
 
 const HOOK_ARGV = __HOOK_ARGV__;
-const SUBAGENT_TOOLS = new Set([
-  "request_user_input_async",
-  "request_user_input",
-  "AskUserQuestion",
-  "ask_user_question",
-  "Agent",
-  "Task",
-  "dispatch_agent",
-  "spawn_agent",
-  "invoke_subagent",
-  "create_agent",
-  "mcp__paseo__create_agent",
-  "send_agent_prompt",
-  "mcp__paseo__send_agent_prompt",
-  "run_turn",
-  "mcp__paseo__run_turn",
-  "send_message",
-  "mcp__paseo__send_message",
-  "codemode",
-  "execute_code",
-  "mcp__paseo__execute_code",
-  "Bash",
-  "bash",
-  "PowerShell",
-  "powershell",
-  "exec",
-  "exec_command",
-  "run_command",
-  "shell",
-]);
+const SUBAGENT_TOOLS = new Set(__HOOKED_TOOLS__);
+const WORKER_QUESTION_TOOLS = new Set(__WORKER_QUESTION_TOOLS__);
+// MCP tools arrive as mcp__<server>__<tool>, nested when a proxy re-exports another server's tools.
+const MCP_PREFIX = /^(?:mcp__[A-Za-z0-9_-]+?__)+(?=.)/;
 
 export default function (pi: any) {
   pi.on("tool_call", async (event: any) => {
     const toolName = String(event?.toolName || "");
-    if (!SUBAGENT_TOOLS.has(toolName) && !/request_user_input|AskUserQuestion|ask_user_question/i.test(toolName)) {
+    const baseName = toolName.replace(MCP_PREFIX, "");
+    const lastName = toolName.split(/__|\\./).pop() || "";
+    if (!SUBAGENT_TOOLS.has(baseName) && !WORKER_QUESTION_TOOLS.has(lastName)) {
       return undefined;
     }
     try {
@@ -137,7 +110,9 @@ export default function (pi: any) {
     return undefined;
   });
 }
-""".replace("__HOOK_ARGV__", json.dumps(ROUTER_HOOK_ARGV))
+""".replace("__HOOK_ARGV__", json.dumps(ROUTER_HOOK_ARGV)).replace(
+    "__HOOKED_TOOLS__", json.dumps(sorted(router_gate_hook.HOOKED_TOOLS))).replace(
+    "__WORKER_QUESTION_TOOLS__", json.dumps(sorted(router_gate_hook.WORKER_QUESTION_TOOLS)))
 
 # Per-family table of global instruction files, rule kinds, skills layout and router-gate hook locations.
 # Checked against each harness's own documentation and source:

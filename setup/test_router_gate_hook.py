@@ -1174,6 +1174,169 @@ class RouterGateHookTests(unittest.TestCase):
             {},
         )
 
+    # --- MCP-prefixed names (a proxy such as Magpie re-exports tools as mcp__<server>__<tool>) ---
+
+    def test_base_tool_name_strips_only_mcp_server_prefixes(self):
+        for name, base in (
+                ("Agent", "Agent"),
+                ("mcp__magpie__Agent", "Agent"),
+                ("mcp__magpie__mcp__paseo__send_agent_prompt", "send_agent_prompt"),
+                ("mcp__t3-code__delegate_task", "delegate_task"),
+                ("mcp__claude_ai_Claude_Docs__batch", "batch"),
+                ("mcp__paseo__", "mcp__paseo__"),       # no tool behind the prefix: left as is
+                ("xmcp__paseo__create_agent", "xmcp__paseo__create_agent"),
+                ("ListAgents", "ListAgents")):
+            with self.subTest(name=name):
+                self.assertEqual(gate.base_tool_name(name), base)
+
+    def test_every_sub_agent_launch_name_blocks_without_a_route_prefixed_or_not(self):
+        """Each launcher, bare and behind one or two MCP prefixes, is blocked for want of a router record."""
+        missing = self.state / "missing.jsonl"
+        launches = {
+            "Agent": {"subagent_type": "Explore", "prompt": "look"},
+            "Task": {"prompt": "look"},
+            "spawn_agent": {"message": "work"},
+            "invoke_subagent": {"Subagents": []},
+            "create_agent": {"provider": "codex/gpt-6-astra", "prompt": "work"},
+            "delegate_task": {"task": "work"},
+            # Workflow: its script's agent() calls start sub-agents inside the runtime, out of any hook's sight.
+            "Workflow": {"script": "export const meta = {name: 'x', description: 'y'}\nawait agent('go')"},
+            # create_schedule: Paseo "starts a new agent on a cron cadence".
+            "create_schedule": {"prompt": "work", "cron": "7 * * * *", "provider": "codex/gpt-6-astra"},
+            # update_schedule that re-targets the schedule's new-agent launch.
+            "update_schedule": {"id": "s1", "provider": "codex", "model": "gpt-6-astra"},
+        }
+        for base, args in launches.items():
+            for name in (base, f"mcp__magpie__{base}", f"mcp__magpie__mcp__paseo__{base}"):
+                with self.subTest(name=name):
+                    result = gate.evaluate_payload({"tool_name": name, "tool_input": args}, ledger_path=missing, now=T0)
+                    self.assertEqual(result.get("decision"), "block")
+                    self.assertIn(f"tool:{base}", result["reason"])
+        # Antigravity and Pi payload shapes go through the same names.
+        agy = gate.evaluate_payload({"toolCall": {"name": "mcp__magpie__invoke_subagent", "args": {}}},
+                                    ledger_path=missing, now=T0)
+        self.assertEqual(agy["decision"], "deny")
+        pi = gate.evaluate_payload({"toolName": "mcp__magpie__Workflow", "input": {"script": "x"}},
+                                   ledger_path=missing, now=T0)
+        self.assertTrue(pi["block"])
+
+    def test_prefixed_wrappers_and_shell_tools_are_inspected_like_bare_ones(self):
+        missing = self.state / "missing.jsonl"
+        for payload in (
+                {"tool_name": "mcp__magpie__Bash", "tool_input": {"command": "codex exec -m gpt-6-astra 'task'"}},
+                {"tool_name": "mcp__magpie__mcp__paseo__execute_code",
+                 "tool_input": {"code": "await tools.mcp__magpie__mcp__paseo__create_agent({provider: 'codex'})"}},
+                {"tool_name": "mcp__paseo__execute_code", "tool_input": {"code": "await create_agent({provider: 'codex'})"}}):
+            with self.subTest(payload=payload):
+                self.assertEqual(gate.evaluate_payload(payload, ledger_path=missing, now=T0).get("decision"), "block")
+        self.assertEqual(gate.evaluate_payload(
+            {"tool_name": "mcp__magpie__Bash", "tool_input": {"command": "git status"}}, ledger_path=missing, now=T0), {})
+
+    def test_tools_that_do_not_start_an_agent_stay_allowed_without_a_route(self):
+        """Names that merely contain "agent"/"schedule", and tools that only reach an existing session."""
+        missing = self.state / "missing.jsonl"
+        for name, args in (
+                ("mcp__paseo__get_agent_status", {"agentId": "a"}),
+                ("mcp__paseo__list_agents", {}),
+                ("mcp__magpie__mcp__paseo__list_agents", {}),
+                ("mcp__paseo__get_agent_activity", {"agentId": "a"}),
+                ("mcp__paseo__archive_agent", {"agentId": "a"}),
+                ("mcp__paseo__cancel_agent", {"agentId": "a"}),
+                ("ListAgents", {}),
+                ("TaskStop", {"task_id": "t"}),
+                ("mcp__magpie__TaskStop", {"task_id": "t"}),
+                ("SubagentHandback", {}),
+                # SendMessage resumes an existing agent or reaches another session (incl. a worker's parent);
+                # it cannot create an agent, so it is not a launch.
+                ("SendMessage", {"to": "main", "message": "done"}),
+                ("mcp__magpie__SendMessage", {"to": "worker", "message": "status?"}),
+                # A heartbeat prompts the caller itself; run_schedule_once fires a schedule gated at creation.
+                ("mcp__paseo__create_heartbeat", {"prompt": "check", "cron": "7 * * * *"}),
+                ("mcp__paseo__run_schedule_once", {"id": "s1"}),
+                ("mcp__paseo__update_schedule", {"id": "s1", "cron": "9 * * * *"}),
+                ("mcp__paseo__list_schedules", {}),
+                ("CronCreate", {"cron": "7 * * * *", "prompt": "check"}),
+                ("mcp__someserver__agent_notes", {}),
+                ("mcp__someserver__Agent_list", {})):
+            with self.subTest(name=name):
+                self.assertEqual(gate.evaluate_payload({"tool_name": name, "tool_input": args},
+                                                       ledger_path=missing, now=T0), {})
+
+    def test_prefixed_launch_passes_with_the_same_route_as_a_bare_one(self):
+        ledger = self.write_ledger(str(self.state), [self.route("claude", "claude-sonnet-5-5", "high")])
+        args = {"subagent_type": "general-purpose", "prompt": "do it", "model": "sonnet", "effort": "high"}
+        for name in ("Agent", "mcp__magpie__Agent"):
+            with self.subTest(name=name):
+                self.assertEqual(gate.evaluate_payload({"tool_name": name, "tool_input": args},
+                                                       ledger_path=ledger, now=T0), {})
+        mismatch = gate.evaluate_payload({"tool_name": "mcp__magpie__Agent", "tool_input": dict(args, model="opus")},
+                                         ledger_path=ledger, now=T0)
+        self.assertIn("model: requested='opus'", mismatch["reason"])
+        workflow = gate.evaluate_payload({"tool_name": "mcp__magpie__Workflow", "tool_input": {"script": "x"}},
+                                         ledger_path=ledger, now=T0)
+        self.assertEqual(workflow, {})
+
+    def test_recorded_project_review_sub_agent_stays_exempt_under_a_prefix(self):
+        """`agentcompass record` for a project review sub-agent authorizes its native Agent launch."""
+        record = {"at": (T0 - dt.timedelta(minutes=2)).isoformat(), "stage": "record", "choice": "constraint",
+                  "source": "constraint_record", "constraint": "user_override",
+                  "selected_bundle": {"provider": "claude", "account": "claude", "model": "claude-opus-5-5",
+                                      "effort": "high"}}
+        ledger = self.write_ledger(str(self.state), [record])
+        args = {"subagent_type": "code-reviewer", "prompt": "review", "model": "opus"}
+        for name in ("Agent", "mcp__magpie__Agent"):
+            with self.subTest(name=name):
+                self.assertEqual(gate.evaluate_payload({"tool_name": name, "tool_input": args},
+                                                       ledger_path=ledger, now=T0), {})
+
+    def test_prefixed_send_agent_prompt_keeps_worker_checks_and_parent_exemptions(self):
+        wid = self.existing_agent()
+        agent_file = self.state / "agents" / "project" / (wid + ".json")
+        self.write_settings(allowed=[])
+        prefixed = "mcp__magpie__mcp__paseo__send_agent_prompt"
+        cases = (
+            # (labels, status, caller, blocked): the parent's own running worker is controlled; others are turns.
+            ({"router.parent_id": "parent"}, "running", "parent", False),
+            ({"router.parent_id": "parent"}, "idle", "parent", True),
+            ({"router.parent_id": "parent"}, "running", "peer", True),   # a worker this caller does not own
+        )
+        for labels, status, caller, blocked in cases:
+            agent_file.write_text(json.dumps({
+                "provider": "claude-lab/claude-sonnet-5-5", "lastStatus": status,
+                "labels": {**labels, "router.account": "claude-lab", "router.bundle_id": "lab_sonnet55_high"}}),
+                encoding="utf-8")
+            for name in ("mcp__paseo__send_agent_prompt", prefixed):
+                with self.subTest(name=name, status=status, caller=caller), \
+                        mock.patch.dict(os.environ, {"PASEO_AGENT_ID": caller}):
+                    result = gate.evaluate_payload({"tool_name": name, "tool_input": {
+                        "agentId": wid, "prompt": "wrap up", "notifyOnFinish": True}}, now=T0)
+                    self.assertEqual("reason" in result, blocked)
+        # A parent turning off its own worker's completion notification is refused under the prefix too.
+        agent_file.write_text(json.dumps({"provider": "claude-lab/claude-sonnet-5-5", "lastStatus": "running",
+                                          "labels": {"router.parent_id": "parent"}}), encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PASEO_AGENT_ID": "parent"}):
+            result = gate.evaluate_payload({"tool_name": prefixed, "tool_input": {
+                "agentId": wid, "prompt": "x", "notifyOnFinish": False}}, now=T0)
+        self.assertIn("notifyOnFinish", result["reason"])
+
+    def test_hook_matcher_routes_exactly_the_gated_names(self):
+        """Claude Code tests a non-plain matcher with `new RegExp(matcher).test(name)`; Python's search is the same."""
+        import re
+        matcher = re.compile(gate.hook_matcher())
+        for name in ("Agent", "mcp__magpie__Agent", "Workflow", "mcp__magpie__Workflow", "Task",
+                     "mcp__paseo__create_agent", "mcp__magpie__mcp__paseo__send_agent_prompt",
+                     "mcp__paseo__create_schedule", "mcp__paseo__update_schedule", "mcp__t3-code__delegate_task",
+                     "mcp__magpie__Bash", "Bash", "PowerShell", "exec_command", "mcp__paseo__execute_code",
+                     "spawn_agent", "invoke_subagent", "AskUserQuestion", "mcp__x__request_user_input_async",
+                     "functions.request_user_input"):
+            with self.subTest(name=name):
+                self.assertIsNotNone(matcher.search(name))
+        for name in ("ListAgents", "TaskStop", "mcp__magpie__TaskStop", "SendMessage", "Read",
+                     "mcp__paseo__get_agent_status", "mcp__paseo__list_agents", "mcp__paseo__create_heartbeat",
+                     "mcp__paseo__run_schedule_once", "SubagentHandback", "AgentX", "xAgent", "executor"):
+            with self.subTest(name=name):
+                self.assertIsNone(matcher.search(name))
+
 
 class BoundDispatchGateTests(unittest.TestCase):
     def setUp(self):

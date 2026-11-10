@@ -42,6 +42,9 @@ ROUTER_CMD = router_command()
 DEFAULT_PASEO_AGENTS = HOME / ".paseo" / "agents"
 DEFAULT_WINDOW_SECONDS = 900  # 15 minutes
 
+# Every tool set below holds base names. A host exposes an MCP tool as `mcp__<server>__<tool>`, and a proxy that
+# re-exports another host's tools nests the prefix (`mcp__magpie__mcp__paseo__send_agent_prompt`); base_tool_name
+# strips exactly that structure before any comparison, so a prefix never changes what a call is.
 DIRECT_SUBAGENT_TOOLS = frozenset({
     "Agent",
     "Task",
@@ -49,24 +52,26 @@ DIRECT_SUBAGENT_TOOLS = frozenset({
     "spawn_agent",
     "invoke_subagent",
     "create_agent",
-    "mcp__paseo__create_agent",
     "delegate_task",  # T3 Code's orchestrator MCP server (`t3-code`)
-    "mcp__t3-code__delegate_task",
+    # Claude Code's Workflow runs a script whose agent() calls start sub-agents inside the runtime; those launches
+    # never pass through a PreToolUse hook, so the Workflow call itself is the launch.
+    "Workflow",
+    "create_schedule",  # Paseo: "Create a recurring schedule that starts a new agent on a cron cadence."
 })
+
+# Paseo update_schedule re-targets an existing schedule's new-agent launch when it names a provider or model.
+SCHEDULE_RETARGET_TOOLS = frozenset({"update_schedule"})
+SCHEDULE_TARGET_FIELDS = ("provider", "model")
 
 PASEO_TURN_TOOLS = frozenset({
     "send_agent_prompt",
-    "mcp__paseo__send_agent_prompt",
     "run_turn",
-    "mcp__paseo__run_turn",
     "send_message",
-    "mcp__paseo__send_message",
 })
 
 CODEMODE_TOOLS = frozenset({
     "codemode",
     "execute_code",
-    "mcp__paseo__execute_code",
 })
 
 WORKER_QUESTION_TOOLS = frozenset({
@@ -84,9 +89,13 @@ SHELL_TOOLS = frozenset({
     "shell",
 })
 
-CODEMODE_TURN_AGENT_RE = re.compile(r"\b(?:mcp__paseo__)?(?:run_turn|send_message|send_agent_prompt)\s*\(")
+# `mcp__<server>__`, repeated when a proxy re-exports another server's tools. Server names are the host's
+# normalized identifiers (letters, digits, `_`, `-`); the lazy match ends each one at its first `__`.
+MCP_PREFIX = r"mcp__[A-Za-z0-9_-]+?__"
+MCP_PREFIX_RE = re.compile(MCP_PREFIX + r"(?=.)", re.S)
+CODEMODE_TURN_AGENT_RE = re.compile(r"\b(?:mcp__\w+?__)*(?:run_turn|send_message|send_agent_prompt)\s*\(")
 WRAPPED_AGENT_CALL_RE = re.compile(
-    r"\b((?:mcp__paseo__)?(?:create_agent|spawn_agent|run_turn|send_message|send_agent_prompt))\s*\("
+    r"\b((?:mcp__\w+?__)*(?:create_agent|spawn_agent|run_turn|send_message|send_agent_prompt))\s*\("
 )
 # Literal-only extraction: never evaluate wrapper code. Dynamic JS remains a
 # legacy presence check; it cannot supply a trustworthy structured launch spec.
@@ -123,6 +132,29 @@ READ_ONLY_CMD_PREFIX_RE = re.compile(
     r"^\s*(?:git\s+(?:commit|log|diff|show|status|grep)|rg|grep|Select-String|Get-Content|cat|head|tail|sed|awk|echo|printf|Write-Output|python(?:\.exe)?\s+(?:-\S+\s+)*-m\s+unittest)\b",
     re.I,
 )
+
+
+def base_tool_name(name: str) -> str:
+    """The tool a call names once the host's MCP server prefixes are removed: `mcp__magpie__Agent` is `Agent`."""
+    name = str(name or "")
+    while match := MCP_PREFIX_RE.match(name):
+        name = name[match.end():]
+    return name
+
+
+# What the installed hook matchers must route here: every base name evaluate_payload acts on.
+HOOKED_TOOLS = DIRECT_SUBAGENT_TOOLS | SCHEDULE_RETARGET_TOOLS | PASEO_TURN_TOOLS | CODEMODE_TOOLS | SHELL_TOOLS
+
+
+def hook_matcher() -> str:
+    """The PreToolUse matcher for HOOKED_TOOLS: a JavaScript regex, which Claude Code and Gemini test unanchored.
+
+    Anchored here to a whole name behind any number of `mcp__<server>__` prefixes, so `mcp__magpie__Agent` reaches
+    the hook and `ListAgents` does not. Worker question tools keep their substring reach (`x.ask_user_question`).
+    """
+    names = "|".join(sorted(HOOKED_TOOLS, key=lambda n: (n.lower(), n)))
+    questions = "|".join(sorted(WORKER_QUESTION_TOOLS, key=lambda n: (-len(n), n)))
+    return f"^(?:{MCP_PREFIX})*(?:{names})$|{questions}"
 
 
 def parse_ts(value: object) -> dt.datetime | None:
@@ -236,7 +268,7 @@ def wrapped_agent_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dic
     code = str(tool_input.get("code") or tool_input.get("script") or tool_input.get("_raw") or "")
     tokens = [token for token in JS_TOKEN_RE.findall(code) if not token.startswith(("//", "/*"))]
     return [
-        (token, literal_call_args(tokens, i + 2))
+        (base_tool_name(token), literal_call_args(tokens, i + 2))
         for i, token in enumerate(tokens[:-1])
         if (WRAPPED_AGENT_CALL_RE.fullmatch(token + "(") or
             re.split(r'__|\.', token)[-1] in WORKER_QUESTION_TOOLS) and tokens[i + 1] == "("
@@ -344,10 +376,13 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
 
 def detect_subagent_launch(tool_name: str, tool_input: dict) -> str | None:
     """Return a short description of the subagent launch if this tool call spawns one, else None."""
+    tool_name = base_tool_name(tool_name)
     if not tool_name:
         return None
     if tool_name in DIRECT_SUBAGENT_TOOLS:
         return f"tool:{tool_name}"
+    if tool_name in SCHEDULE_RETARGET_TOOLS:
+        return f"tool:{tool_name}" if any(tool_input.get(k) for k in SCHEDULE_TARGET_FIELDS) else None
     if tool_name in CODEMODE_TOOLS:
         if any(name in DIRECT_SUBAGENT_TOOLS for name, _ in wrapped_agent_calls(tool_name, tool_input)):
             return f"{tool_name}:create_agent"
@@ -427,6 +462,7 @@ def is_delegated_worker(
 
 def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
     """Extract target Paseo agent ID(s) from a turn tool or codemode/shell wrapper."""
+    tool_name = base_tool_name(tool_name)
     if tool_name in PASEO_TURN_TOOLS:
         direct = str(tool_input.get("agentId") or tool_input.get("agent_id") or tool_input.get("id") or tool_input.get("target") or "").strip()
         return [direct] if direct and re.fullmatch(r"[\w-]+", direct) else []
@@ -890,6 +926,7 @@ def evaluate_payload(
     paseo_agents_dir: Path | None = None,
 ) -> dict:
     tool_name, tool_input, harness_kind = extract_tool_call(payload)
+    tool_name = base_tool_name(tool_name)
     if os.environ.get("ROUTER_GATE_BYPASS") == "1":
         return format_response(True, harness_kind)
 
@@ -914,7 +951,7 @@ def evaluate_payload(
             calls.extend(("exec_command", {"cmd": command}) for command in extract_shell_commands(tool_input))
     executing = []
     for name, args in calls:
-        if (name in ("send_agent_prompt", "mcp__paseo__send_agent_prompt")
+        if (name == "send_agent_prompt"
                 and caller_id and args.get("notifyOnFinish") is False):
             for agent_id in detect_target_agent_ids(name, args):
                 # Only persisted ownership proves direction; absent/conflicting
@@ -986,7 +1023,7 @@ def evaluate_payload(
             except (ValueError, OSError, ImportError, sqlite3.Error) as exc:
                 return format_response(False, harness_kind, '[Router Gate] Bound dispatch rejected: ' + str(exc))
             continue
-        if (name in ('create_agent', 'mcp__paseo__create_agent') or trigger == 'shell:paseo agent create') and os.environ.get('ROUTER_PASEO_LEGACY_NO_LABELS') != '1':
+        if (name == 'create_agent' or trigger == 'shell:paseo agent create') and os.environ.get('ROUTER_PASEO_LEGACY_NO_LABELS') != '1':
             return format_response(False, harness_kind,
                 '[Router Gate] This Paseo host supports labels. Write the task brief to <task.md> and run '
                 + ROUTER_CMD + ' roll --brief <task.md>; it routes and launches in one step. Or pass the returned '
