@@ -6,6 +6,8 @@ rules, dated notes) drops Markdown files into ``~/.agent-compass/host-rules/`` a
     shared.md          ~/.claude/CLAUDE.md, ~/.pi, ~/.gemini and opencode global instructions
     codex.md           ~/.codex/AGENTS.md (and secondary Codex homes)
     daemon-append.md   the Paseo daemon ``appendSystemPrompt``
+    dispatch.md        not written anywhere: the user's own dispatch workflow (worktrees, review habits). The default
+                       rules name it when it exists; an overlay names it with @@PERSONAL_DISPATCH@@
 
 An overlay is used verbatim except for placeholders that depend on where this checkout and the user's home are:
 
@@ -15,6 +17,9 @@ An overlay is used verbatim except for placeholders that depend on where this ch
     @@ROUTER_HOOK_SCRIPT@@  what the gate hook runs: `<app>/cli/agentcompass.exe gate-hook` for the Windows installer,
                             otherwise the absolute path of setup/router_gate_hook.py
     @@HOME_POSIX@@          the user's home directory with forward slashes
+    @@DISPATCH_RULES@@      absolute path of this install's skills/agent-compass/references/dispatch-rules.md
+    @@SKILL_DIR@@           absolute path of this install's skills/agent-compass
+    @@PERSONAL_DISPATCH@@   absolute path of ~/.agent-compass/host-rules/dispatch.md
     @@SHARED@@              codex.md / daemon-append.md only: the whole shared rule text (overlay, else the default),
                             so the common rules live in one file and the others hold only what differs
 """
@@ -64,6 +69,13 @@ EXECUTION_POLICY = (REPO / "skills/agent-compass/SKILL.md").read_text(encoding="
 LARGE_DATA_POLICY = """For large CSV, JSON, tables or logs, filter columns/rows and compute summaries in the tool invocation before returning output to this conversation. Keep complete research artifacts on disk and report their paths; do not silently truncate or discard source data or persisted user research.
 """
 
+SKILL_DIR = (REPO / "skills" / "agent-compass").as_posix()
+DISPATCH_RULES = f"{SKILL_DIR}/references/dispatch-rules.md"
+# Optional personal dispatch workflow; never copied into a host file, only named by the rules that point to it.
+PERSONAL_DISPATCH_FILE = "dispatch.md"
+
+# The installed block is a pointer: the dispatch procedure lives in the skill's docs, read only when dispatching. The
+# docs path names this install's own copy of the skill, so the pointer and the docs it names always ship together.
 DEFAULT_SHARED = """# Agent routing rules (AgentCompass)
 
 Cross-project rules for agents that can delegate work through the AgentCompass router. Project facts, strategy and business rules belong in each repository's own AGENTS.md / CLAUDE.md.
@@ -73,39 +85,46 @@ Cross-project rules for agents that can delegate work through the AgentCompass r
 1. A tool or command timing out only means *you* got the output back; a child process may still be running. Once you have enough output, clean up.
 2. Before ending a turn, every long task you started is in exactly one state: finished, killed by you, or named in your report (PID and purpose) and handed to the user. Never leave an unclaimed background process behind.
 
-## 2. Do it yourself, or delegate through the router
+## 2. Delegation goes through AgentCompass
 
-@@EXECUTION_POLICY@@
+1. Do serial work yourself. Delegate only independent work that gains from parallelism, an isolated large context, a specialist capability or quota offloading. A delegated worker (`ROUTER_WORKER=1` or a `Parent session agent ID:` contract) does its assignment without delegating again.
+2. Dispatch only with `@@AGENTCOMPASS@@ roll --task "<assignment>"` (or `--brief <file>`, one brief per independent task). Never call `create_agent`, `Agent`/`Task`, `spawn_agent` or `invoke_subagent` directly.
+3. Read the result's `status` and do exactly `next_action`.
+4. Never pick a model or effort yourself; the router does.
+5. Before dispatching, load the `agent-compass` skill and read its dispatch rules (`@@DISPATCH_RULES@@`): named models, re-rolls, worker continuation, permission modes, the gate, parent messaging.
+6. A worker asks its parent and reports through a real message, never a UI question tool; the contract at the end of its brief says how.
+@@PERSONAL_DISPATCH_LINE@@
 
-1. To delegate, run exactly one command per task with that task's whole assignment (never call Paseo `create_agent`, a host's `Agent`/`Task`, `spawn_agent` or similar directly): `@@AGENTCOMPASS@@ roll --task "<what the worker should do>"`. Long text goes in with `--task -` on stdin or `--brief <task.md>`; the worker gets it unchanged. Several one-line briefs: `--brief a.md --brief b.md` in one call. `--hours` is optional.
-2. Read `status` and do exactly `next_action`: `launched` = the worker runs, start nothing else, and collect the result the way `next_action` says (notification, `next_argv`, or watching `worker_output`); `pending` = run `next_argv`, never roll again; `split` = the brief bundles several separate tasks (`task_count`): split it yourself, roll one brief per independent task and do the coupled ones yourself, or roll again with `--keep-whole "<reason>"` only when it truly is one assignment; `self` = do it yourself; `native` = start the host's own sub-agent with `route_bundle` and the full text of `worker_prompt_file`; `blocked`/`error` = follow `next_action` (onboarding: `@@AGENTCOMPASS@@ setup`). The full result is at `details`.
-3. Do not raise the effort yourself; use what the router returned. Name a model or effort only when the user named it in this request, and then pass `--provider/--account/--model/--effort` together with `--basis "<the user's words>"`.
-4. If an account becomes unavailable (expired, removed, out of quota), run the router again rather than substituting a similar-looking model.
-5. Reuse an existing worker for a follow-up only while its accumulated uncompressed context is small (under about 2M tokens, counting every earlier compaction, not just the current window). Beyond that, write a handoff brief and `roll` a fresh worker.
-6. Launch every worker with an explicit permission mode; never rely on a provider default (a worker waiting on a permission prompt looks "running" but does nothing). Use `selected_bundle.modeId` from the router; if absent: Codex `full-access`, Claude `bypassPermissions`, Antigravity `full-access`, OpenCode `build`. Narrow it for read-only roles. After launch, read the agent status once to confirm the mode took effect.
-7. If the optional router gate hook is installed, it blocks sub-agent launches (including a host's built-in Explore) that have no router record from the last 15 minutes. Run `roll` first, or remove the hook with `@@AGENTCOMPASS@@ uninstall`.
+## 3. Large files, tables and logs
 
-## 3. Parent address and messaging
-
-1. A delegated brief must carry the real parent session ID, host and message address; without them, do not launch. Never substitute `top-level`, a task ID or the worker's own ID. `roll` fills these in and appends the communication contract.
-2. A worker that needs a clarification or decision must send a real message to its parent (in Paseo: `send_agent_prompt` to the actual parent ID with `background: true, notifyOnFinish: false`), then end the turn. Do not wait synchronously and do not use UI-only question tools (`AskUserQuestion`, `ask_user_question`, `request_user_input`, `request_user_input_async`); the parent never sees those.
-3. When a parent adds work to, releases or resumes its own worker with `send_agent_prompt`, it must keep `notifyOnFinish` true (or omit it): the completion notification is the result channel for workers that cannot message.
-4. If no messaging channel or parent address is available, or sending fails, finish with `BLOCKED / needs_input`, the exact question and the delivery problem, through the normal result channel.
-5. This does not stop a main session from asking the real user a question, and it does not replace platform approvals.
-
-## 4. Large files, tables and logs
-
-""".replace("@@EXECUTION_POLICY@@", EXECUTION_POLICY) + LARGE_DATA_POLICY
+""" + LARGE_DATA_POLICY
 
 DEFAULT_CODEX = DEFAULT_SHARED
 
 DEFAULT_DAEMON_APPEND = (
-    "Router discipline: " + EXECUTION_POLICY + " When delegating, run only "
-    "`@@AGENTCOMPASS@@ roll --task \"<assignment>\"` instead of calling create_agent / Agent / spawn_agent / invoke_subagent directly. "
-    "Read the result's status and do exactly next_action: launched = the worker is running, start nothing else and collect the result as next_action says; pending = run next_argv, never roll again; split = the brief bundles separate tasks, split it yourself and roll one brief per task; native = start a native sub-agent; self = do the work yourself. "
-    "A worker that needs a decision must message its real parent (Paseo: send_agent_prompt with background=true, notifyOnFinish=false) and end its turn, never use AskUserQuestion-style tools; "
-    "a parent that continues its own worker must keep notifyOnFinish true."
+    "AgentCompass: do serial work yourself; a delegated worker (ROUTER_WORKER=1 or a Parent session agent ID contract) does not delegate again. "
+    "Dispatch only with `@@AGENTCOMPASS@@ roll --task \"<assignment>\"`, never create_agent / Agent / spawn_agent / invoke_subagent directly; "
+    "read the result's status and do exactly next_action; never pick a model or effort yourself. "
+    "Before dispatching, load the agent-compass skill and read @@DISPATCH_RULES@@.@@PERSONAL_DISPATCH_SENTENCE@@ "
+    "A worker asks its parent and reports through a real message, never a UI question tool."
 )
+
+
+def personal_dispatch_path(home: Path) -> Path:
+    return overlay_dir(home) / PERSONAL_DISPATCH_FILE
+
+
+def _personal_dispatch_lines(home: Path) -> tuple[str, str]:
+    """(numbered list line, sentence) naming the user's dispatch workflow file, or empty strings when there is none."""
+    path = personal_dispatch_path(home)
+    try:
+        present = path.is_file() and bool(path.read_bytes().strip())
+    except OSError:
+        present = False
+    if not present:
+        return "", ""
+    return (f"7. Before dispatching, also read `{path.as_posix()}` (your own dispatch workflow).\n",
+            f" Also read {path.as_posix()} before dispatching.")
 
 
 def overlay_dir(home: Path) -> Path:
@@ -123,6 +142,7 @@ def is_legacy_generated(text: str) -> bool:
         "Router discipline: if you are already a delegated worker (",
         "Router discipline: " + EXECUTION_POLICY,
         "Router discipline: The main session executes serial work directly by default",
+        "AgentCompass: do serial work yourself;",
     ))
 
 
@@ -134,6 +154,9 @@ def render(text: str, home: Path) -> str:
         .replace("@@ROUTER_HOOK_SCRIPT@@", ROUTER_HOOK_SCRIPT)
         .replace("@@HOME_POSIX@@", home.as_posix())
         .replace("@@REPO@@", REPO.as_posix())
+        .replace("@@DISPATCH_RULES@@", DISPATCH_RULES)
+        .replace("@@SKILL_DIR@@", SKILL_DIR)
+        .replace("@@PERSONAL_DISPATCH@@", personal_dispatch_path(home).as_posix())
     )
 
 
@@ -150,4 +173,6 @@ def load(kind: str, home: Path) -> tuple[str, str]:
             raw = raw.replace("@@SHARED@@", shared.strip("\n"))
         return render(raw, home), "overlay"
     default = {"shared": DEFAULT_SHARED, "codex": DEFAULT_CODEX, "daemon-append": DEFAULT_DAEMON_APPEND}[kind]
+    line, sentence = _personal_dispatch_lines(home)
+    default = default.replace("@@PERSONAL_DISPATCH_LINE@@\n", line).replace("@@PERSONAL_DISPATCH_SENTENCE@@", sentence)
     return render(default, home), "default"

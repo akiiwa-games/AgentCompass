@@ -247,6 +247,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 
 ## 4. Reference Files (Internal Router Specs — Parent Agents Need Not Read)
 
+- [`dispatch-rules.md`](dispatch-rules.md) — The rules a dispatching session follows (the global pointer sends sessions here).
 - [`accounts.json`](accounts.json) — Public model catalogue, conservative priors, route scopes, account slots and bundle definitions.
 - [`classifier-cases.json`](classifier-cases.json) — System-One classifier route definitions and calibration cases (loaded automatically by the router).
 - [`model-capabilities.md`](model-capabilities.md) — Generated catalogue view and prior limitations.
