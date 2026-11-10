@@ -47,6 +47,11 @@ class NotBound(ValueError):
     """Paseo answered, and this worker does not carry this dispatch's labels."""
 
 
+class CapacityChanged(ValueError):
+    """The decision's bundle can no longer start (an exclusion, a launch floor, a disabled account or model, a live
+    model list that dropped it): the attempt failed before anything was sent, so the brief may go to the next candidate."""
+
+
 class WorkspaceBusy(ValueError):
     """The workspace already has a writer; `holders` names each one."""
 
@@ -467,9 +472,49 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
     return candidates
 
 
-def unresolved(row, now):
-    """A launch whose worker may be alive or may still appear; an expired lease stays open until a later observation."""
-    return row['state'] in ACTIVE or (row['state'] == 'expired' and bool(row.get('launched_at')) and parse(row['hard_until']) > now)
+def chain_root(row):
+    """The dispatch the parent was given for this brief: an automatic relaunch is an attempt of its first dispatch."""
+    return row.get('attempt_of') or row['dispatch_id']
+
+
+RETRY_CANCELED_NEXT = ('The parent released this brief while AgentCompass waited to retry it, so the scheduled retry is '
+                       'canceled and nothing runs this brief.')
+
+
+def retire_scheduled(fallback, now, result, next_action, root_id=None):
+    """End a scheduled same-bundle retry in the caller's transaction: the first dispatch's attempt record becomes final
+    and the failed attempt's claim terminal, so a due-retry path that runs later (the watcher, an observation,
+    dispatch_fallback.resume_due) finds it handled and starts nothing. Returns the failed attempt's id, or None when no
+    retry was scheduled."""
+    retry_of = fallback.get('retry_of')
+    if fallback.get('state') != 'retrying' or not retry_of:
+        return None
+    outcome = {'action': 'final', 'result': result, 'root_dispatch_id': root_id,
+               'lines': fallback.get('lines') or [], 'text': next_action, 'at': stamp(now)}
+    fallback['handled'] = {**(fallback.get('handled') or {}), retry_of: outcome}
+    fallback.update(state='final', outcome={'result': result, 'next_action': next_action}, updated_at=stamp(now))
+    for key in ('until', 'retry_at', 'retry_of'):
+        fallback.pop(key, None)
+    return retry_of
+
+
+def fallback_guard(row, now):
+    """AgentCompass is between two attempts of this brief (waiting out a transient backoff or relaunching): no worker
+    runs, but one is about to, so the brief counts as dispatched until the guard lapses."""
+    guard = row.get('fallback') or {}
+    if guard.get('state') not in ('retrying', 'relaunching') or not isinstance(guard.get('until'), str):
+        return False
+    try:
+        return parse(guard['until']) > now
+    except ValueError:
+        return False
+
+
+def unresolved(row, now, exempt_chain=None):
+    """A launch whose worker may be alive or may still appear; an expired lease stays open until a later observation.
+    A brief AgentCompass is relaunching is open too, except to that relaunch itself (`exempt_chain`, its first dispatch)."""
+    return row['state'] in ACTIVE or (row['state'] == 'expired' and bool(row.get('launched_at')) and parse(row['hard_until']) > now) \
+        or (fallback_guard(row, now) and chain_root(row) != exempt_chain)
 
 
 def holder(row):
@@ -477,14 +522,15 @@ def holder(row):
             'task_id': row.get('task_id'), 'title': (row.get('request') or {}).get('title')}
 
 
-def is_writer(row, now, caller):
+def is_writer(row, now, caller, exempt_chain=None):
     # A row from before dispatches recorded their access counts as a writer. The caller is not its own conflict.
-    return row.get('access') != 'read_only' and not (caller and row.get('agent_id') == caller) and unresolved(row, now)
+    return row.get('access') != 'read_only' and not (caller and row.get('agent_id') == caller) \
+        and unresolved(row, now, exempt_chain)
 
 
-def writers_in(connection, workspace, now, caller=None):
+def writers_in(connection, workspace, now, caller=None, exempt_chain=None):
     return [holder(r) for r in rows(connection, 'dispatches')
-            if (r.get('request') or {}).get('workspaceId') == workspace and is_writer(r, now, caller)]
+            if (r.get('request') or {}).get('workspaceId') == workspace and is_writer(r, now, caller, exempt_chain)]
 
 
 def workspace_writers(workspace, caller=None, now=None, path=None):
@@ -511,8 +557,11 @@ def writers_at(cwd, caller=None, other_than=None, now=None, path=None):
 
 
 def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
-            access='write', new_worker=False, cwd=None):
+            access='write', new_worker=False, cwd=None, attempt=None):
+    """`attempt` ({attempt_of, attempt, previous_attempt}) prepares an automatic relaunch of a brief whose earlier
+    attempt failed (dispatch_fallback): that chain's own rows do not block it, its own live rows still do."""
     require_parent_id(task.get('parent_agent_id'))
+    exempt = (attempt or {}).get('attempt_of')
     import allocator
     now = now or utcnow()
     accounts = accounts or allocator.load_accounts()
@@ -537,19 +586,22 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         workspace = request.get('workspaceId')
         if workspace and access != 'read_only':
             # Same transaction as the insert: of two concurrent rolls only the first becomes the writer.
-            holders = writers_in(connection, workspace, now, task['parent_agent_id'])
+            holders = writers_in(connection, workspace, now, task['parent_agent_id'], exempt)
             if holders:
                 raise WorkspaceBusy(workspace, holders)
         busy_agents = set()
         for old in rows(connection, 'dispatches'):
-            if not unresolved(old, now):
+            if not unresolved(old, now, exempt):
                 continue
             if not new_worker and (old['parent_id'], old['task_id']) == (decision['parent_id'], decision['task_id']):
                 raise ValueError('This parent/task already has an active dispatch; reconcile it first')
             if old.get('agent_id'):
                 busy_agents.add(old['agent_id'])
         bundle = decision['bundle']
-        check_launch_quota(bundle, accounts, usage, now)
+        try:
+            check_launch_quota(bundle, accounts, usage, now)
+        except ValueError as exc:
+            raise CapacityChanged(str(exc)) from exc
         if decision.get('effort_override'):
             resolved = resolve_bundle(bundle, accounts, decision.get('constraint') == 'user_override')
             if resolved is None or any(resolved.get(k) != bundle.get(k)
@@ -583,7 +635,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts)
         candidate = next((c for c in plan['ranking'] if c['id'] == bundle['bundle_id']), None)
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
-            raise ValueError('Decision bundle no longer matches installed account configuration')
+            raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
         if decision.get('constraint') == 'user_override':
             import provider_retry
@@ -594,7 +646,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
         if exclusions or candidate.get('available_in_hours'):
-            raise ValueError('Capacity/availability changed; replan: ' + '; '.join(exclusions or ['reset not yet observed']))
+            raise CapacityChanged('Capacity/availability changed; replan: ' + '; '.join(exclusions or ['reset not yet observed']))
         if resume_agent_id is None and candidate.get('action') == 'resume':
             chain_worker = ((alloc_task.get('chain') or {}).get('worker')
                             if isinstance(alloc_task.get('chain'), dict) else None) or {}
@@ -625,7 +677,9 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                'read_only_review': read_only_review,
                **({'profile': profile} if isinstance(profile, dict) else {}),
                **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
-               **({'chain_id': chain_id} if chain_id else {})}
+               **({'chain_id': chain_id} if chain_id else {}),
+               **({k: attempt[k] for k in ('attempt_of', 'attempt', 'previous_attempt') if attempt.get(k) is not None}
+                  if attempt else {})}
         event(row, 'prepared', now)
         save(connection, row)
         return row
@@ -648,6 +702,31 @@ def fallback_to_create(dispatch_id, now=None, path=None):
 def inspect(dispatch_id, path=None):
     with transaction(path) as connection:
         return get(connection, 'dispatches', dispatch_id)
+
+
+def decision_record(decision_id, path=None):
+    with transaction(path) as connection:
+        return get(connection, 'decisions', decision_id)
+
+
+def current_attempt(dispatch_id, path=None):
+    """The attempt now carrying this brief: the dispatch the parent was given, or the relaunch that replaced it."""
+    row = inspect(dispatch_id, path)
+    root = row if chain_root(row) == dispatch_id else inspect(chain_root(row), path)
+    return (root.get('fallback') or {}).get('current') or root['dispatch_id']
+
+
+def update_fallback(root_id, change, now=None, path=None):
+    """Apply change(fallback dict) to the first dispatch's attempt record in one transaction; returns the row."""
+    now = now or utcnow()
+    with transaction(path) as connection:
+        row = get(connection, 'dispatches', root_id)
+        fallback = dict(row.get('fallback') or {})
+        change(fallback)
+        fallback['updated_at'] = stamp(now)
+        row['fallback'] = fallback
+        save(connection, row)
+        return row
 
 
 def create_deadline(row):
@@ -727,7 +806,10 @@ def claim(request, parent_id=None, call_id=None, now=None, path=None):
             raise ValueError('Dispatch already claimed, terminal or expired; reconcile instead of replaying create_agent')
         import allocator
         import route_judge
-        check_launch_quota(row['bundle'], allocator.load_accounts(), route_judge.usage_snapshot(now=now), now)
+        try:
+            check_launch_quota(row['bundle'], allocator.load_accounts(), route_judge.usage_snapshot(now=now), now)
+        except ValueError as exc:
+            raise CapacityChanged(str(exc)) from exc
         row.update(claim_id=call_id or str(uuid.uuid4()), launched_at=stamp(now),
                    lease_until=stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until']))))
         event(row, 'launching', now)
@@ -927,7 +1009,9 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
 
 
 def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):
-    """Explicit cancellation/known pre-send failure, not an invented terminal host receipt."""
+    """Explicit cancellation/known pre-send failure, not an invented terminal host receipt. The parent's cancellation
+    (not `failed`) of a brief AgentCompass is waiting to retry also cancels that retry, in the same transaction
+    (retire_scheduled); the returned row then carries `canceled_retry`, the failed attempt whose watcher to stop."""
     now = now or utcnow()
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)
@@ -937,10 +1021,23 @@ def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):
             raise ValueError('Observe terminal status before releasing a launched dispatch; release does not cancel an agent')
         if row['state'] == 'expired' and (row.get('creation') or {}).get('in_flight') and not failed:
             raise ValueError('Paseo is still creating this worker and cannot cancel a create; release does not stop it')
+        canceled = None
+        if not failed:
+            root = row if chain_root(row) == dispatch_id else get(connection, 'dispatches', chain_root(row))
+            fallback = dict(root.get('fallback') or {})
+            canceled = retire_scheduled(fallback, now, 'canceled', RETRY_CANCELED_NEXT, root['dispatch_id'])
+            if canceled:
+                # The failed row stays as it ended; only its attempt record and history change.
+                root['fallback'] = fallback
+                root.setdefault('events', []).append({'state': root['state'], 'at': stamp(now),
+                                                      'reason': 'scheduled retry canceled: ' + reason[:200]})
+                save(connection, root)
+                if root['dispatch_id'] == dispatch_id:
+                    row = root
         if row['state'] not in TERMINAL or row['state'] == 'expired':
             event(row, 'failed' if failed else 'canceled', now, reason)
             save(connection, row)
-        return row
+        return dict(row, canceled_retry=canceled) if canceled else row
 
 
 def pending(path=None):

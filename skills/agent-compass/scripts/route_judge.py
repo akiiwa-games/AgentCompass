@@ -28,6 +28,7 @@ import roll
 import stage_help
 import usage_cache
 import window_scope
+from worker_context import own_session_ids
 import sqlite3
 import hashlib
 import platform
@@ -712,7 +713,11 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **({'request_hash': task.get('request_hash') or _task_request_hash(task)} if isinstance(task, dict) else {}),
         **{k: result[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound') if k in result},
         **({'host_session_id': task['host_session_id']} if task.get('host_session_id') else {}),
+        # Who wrote the row (parent_id is only the parent link): the spawn gate binds Workflow and schedule
+        # authorization to these, so a plan or record made in one session never authorizes another.
+        **({'session_ids': ids} if (ids := own_session_ids()) else {}),
         'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
+        **({'trigger': result['trigger']} if result.get('trigger') else {}),
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),
         **({'host_policy_violation': result['host_policy_violation']} if 'host_policy_violation' in result else {}),
         'judge': (judge or {}).get('model'), 'judge_pinned': requested != 'auto' if judge else None,
@@ -2218,6 +2223,7 @@ def record_constraint(args, task=None):
         bundle['fast_billing'] = allocator.fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
+              **({'trigger': args.trigger} if getattr(args, 'trigger', None) else {}),
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
     overlaid_accounts = allocator.five_axis_overlay(accounts)
@@ -2753,7 +2759,7 @@ def main():
     parser.add_argument('--local-only', metavar='REASON', help='roll: keep the work on this machine when no --workspace is given, with the concrete local dependency.')
     parser.add_argument('--keep-whole', metavar='REASON', help='roll/plan: send a brief the classifier split into several lines of work to one worker anyway, with the concrete reason.')
     parser.add_argument('--hours', type=float, help='roll/plan: expected active worker-hours (positive number). Optional: when omitted, the classifier estimates it and says so under assumptions.')
-    parser.add_argument('--can-wait-hours', type=float, metavar='HOURS', help='roll/plan: Optional. Hours this non-urgent task may wait for a stronger model\'s quota window to reset (default 0: launch the best model available now).')
+    parser.add_argument('--can-wait-hours', type=float, metavar='HOURS', help='roll/plan: Optional. Hours this non-urgent task may wait for a stronger model\'s quota window to reset and, on roll, for a transient provider failure to clear before AgentCompass relaunches the brief on the next candidate (default 0: launch the best model available now).')
     parser.add_argument('--fast', action='store_true', help='roll/plan/record: prefer fast mode when quota is plentiful or during a pre-reset sprint.')
     parser.add_argument('--verbose', action='store_true', help='roll: print the full result instead of the short one (status, next_action, pointers). The full result is saved to disk either way.')
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
@@ -2777,7 +2783,7 @@ def main():
     parser.add_argument('--fallback-to-agy', choices=('on', 'off'), help='scorer set: fall back to agy when the chosen scorer fails.')
     parser.add_argument('--objective', help='scorer test: the sample task to classify.')
     parser.add_argument('--input', type=Path)
-    parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release'), default='prepare')
+    parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release', 'fallback'), default='prepare')
     parser.add_argument('--dispatch-id')
     parser.add_argument('--parent-id')
     parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3', 'herdr'), help='roll: host owning the parent session (default: auto-detected from environment)')
@@ -2801,6 +2807,10 @@ def main():
     parser.add_argument('--model')
     parser.add_argument('--effort')
     parser.add_argument('--specialty')
+    parser.add_argument('--trigger', choices=('workflow',),
+                        help='record: the launch this record authorizes when it is not a worker roll starts; '
+                             'workflow = a Claude Code Workflow the user asked for in this session (the spawn gate '
+                             'accepts it only with --constraint user_override, from the same session).')
     parser.add_argument('--intent', help='override: stable intent key for idempotent updates (default: normalized user basis).')
     parser.add_argument('--window', help='override: window targeted by the reset expectation (default: weekly windows).')
     parser.add_argument('--resets-in', type=float, help='override: expected hours until reset; does not replace observed capacity.')

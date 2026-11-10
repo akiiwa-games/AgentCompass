@@ -8,7 +8,8 @@ import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationRecord, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
-  workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE} from './paseo_dispatch_bridge.mjs';
+  workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE, fallbackArgv, runFallback,
+  attemptsNote, notificationFile} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -1129,4 +1130,147 @@ test('provider_models cannot tell a Paseo provider apart without the snapshot, s
   assert.deepEqual(res.providers.llmproxy,
     {ok: false, status: 'unavailable', error: 'model_list_unavailable', models: []});
   assert(!JSON.stringify(res).includes('canary'));
+});
+
+// Owner requirement 2026-11-10: a failed attempt goes to AgentCompass's fallback step first; the parent hears only the
+// final outcome, once, with the attempts listed.
+test('a failed attempt that AgentCompass relaunched tells the parent nothing and ends this watcher', async () => {
+  for (const agent of [{status: 'error'}, {status: 'running', providerUnavailable: true}]) {
+    const f = watchFixture();
+    f.setAgent(agent);
+    const asked = [];
+    const done = await notificationStep(f.client, f.record, f.persist, 10, async record => {
+      asked.push(structuredClone(record));
+      return {action: 'relaunched', dispatch_id: 'child-2', root_dispatch_id: 'child', lines: ['attempt 1: a', 'attempt 2: b']};
+    });
+    assert.equal(done, true);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.record.status, 'relaunched');
+    // The terminal was saved before the step ran, so the registry's observation reads it.
+    assert.equal(asked[0].terminal.reason, 'error');
+    assert.equal(f.saved.find(s => s.fallback?.status === 'running').terminal.reason, 'error');
+    assert.equal(await notificationStep(f.client, f.record, f.persist, 20, async () => assert.fail('ran twice')), true);
+    assert.equal(f.calls.length, 0);
+  }
+});
+
+test('a dispatch with no candidate left sends one notification listing every attempt', async () => {
+  const f = watchFixture();
+  f.setAgent({status: 'error'});
+  const text = 'AgentCompass retried or relaunched this brief on every startable candidate and none is left:\n' +
+    'attempt 1: m1 on a1 failed: worker_error; switched to m2 on a2\nattempt 2: m2 on a2 failed: worker_error';
+  const outcome = {action: 'final', result: 'blocked', root_dispatch_id: 'root', text,
+    lines: ['attempt 1: m1 on a1 failed: worker_error; switched to m2 on a2', 'attempt 2: m2 on a2 failed: worker_error']};
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10, async () => outcome), true);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /^\[AgentCompass worker notification\]\nDispatch: root\nAttempt dispatch: child\n/);
+  assert.match(f.calls[0][1], /State: blocked\n/);
+  assert.match(f.calls[0][1], /switched to m2 on a2/);
+  assert(!/roll this brief again/.test(f.calls[0][1]));
+  await notificationStep(f.client, f.record, f.persist, 20, async () => assert.fail('ran twice'));
+  assert.equal(f.calls.length, 1);
+});
+
+test('a failure the fallback step declines or cannot read is reported as before', async () => {
+  for (const outcome of [null, {action: 'disabled'}, {action: 'final', result: 'declined', lines: ['attempt 1: x']}]) {
+    const f = watchFixture();
+    f.setAgent({status: 'error'});
+    assert.equal(await notificationStep(f.client, f.record, f.persist, 10, async () => outcome), true);
+    assert.equal(f.calls.length, 1);
+    assert.match(f.calls[0][1], /State: error\n/);
+    assert.match(f.calls[0][1], /get_agent_activity/);
+  }
+  // A finish never goes to the fallback step.
+  const f = watchFixture();
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10, async () => assert.fail('finish')), true);
+  assert.equal(f.calls.length, 1);
+});
+
+test('another observer relaunching the attempt makes this watcher look again later', async () => {
+  const f = watchFixture();
+  f.setAgent({status: 'error'});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10, async () => ({action: 'pending'})), false);
+  assert.equal(f.calls.length, 0);
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 20,
+    async () => ({action: 'relaunched', dispatch_id: 'child-2'})), true);
+  assert.equal(f.calls.length, 0);
+});
+
+test('a scheduled same-model retry runs the fallback step again only once it is due, and tells the parent nothing', async () => {
+  const f = watchFixture();
+  f.setAgent({status: 'error'});
+  const retryAt = new Date(100000).toISOString();
+  f.record.deadline = 50;   // a retry past the watch keeps the watcher until the retry has been seen
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10,
+    async () => ({action: 'scheduled', retry_at: retryAt, root_dispatch_id: 'child'})), false);
+  assert.deepEqual([f.record.fallback.status, f.record.fallback.retry_at], ['scheduled', retryAt]);
+  assert(f.record.deadline >= 100000 + 30 * 60 * 1000);
+  assert.equal(f.saved.at(-1).fallback.status, 'scheduled');   // persisted: a restarted watcher waits too
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 99999, async () => assert.fail('ran early')), false);
+  const asked = [];
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 100001, async record => {
+    asked.push(record.dispatch_id);
+    return {action: 'relaunched', dispatch_id: 'child-2', root_dispatch_id: 'child'};
+  }), true);
+  assert.deepEqual(asked, ['child']);
+  assert.equal(f.record.status, 'relaunched');
+  assert.equal(f.calls.length, 0);
+});
+
+test('a scheduled retry the parent canceled ends this watcher silently; one retired past its wait is reported once', async () => {
+  const retryAt = new Date(100000).toISOString();
+  const canceled = watchFixture();
+  canceled.setAgent({status: 'error'});
+  await notificationStep(canceled.client, canceled.record, canceled.persist, 10, async () => ({action: 'scheduled', retry_at: retryAt}));
+  assert.equal(await notificationStep(canceled.client, canceled.record, canceled.persist, 100001,
+    async () => ({action: 'final', result: 'canceled', root_dispatch_id: 'child', text: 'canceled'})), true);
+  assert.equal(canceled.record.status, 'canceled');
+  assert.equal(canceled.calls.length, 0);
+  const expired = watchFixture();
+  expired.setAgent({status: 'error'});
+  await notificationStep(expired.client, expired.record, expired.persist, 10, async () => ({action: 'scheduled', retry_at: retryAt}));
+  const text = 'AgentCompass scheduled a retry of this brief on the same model after a transient provider failure, but ' +
+    'nothing started it before the wait the task allows (can_wait_hours) ran out, so the retry is retired.';
+  assert.equal(await notificationStep(expired.client, expired.record, expired.persist, 100001,
+    async () => ({action: 'final', result: 'retry_expired', root_dispatch_id: 'child', text})), true);
+  assert.equal(expired.calls.length, 1);
+  assert.match(expired.calls[0][1], /State: retry_expired\n/);
+  assert(expired.calls[0][1].includes('can_wait_hours'));
+});
+
+test('the relaunched attempt reports its finish under the parent dispatch with the attempts', async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-attempts-'));
+  const previous = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = state;
+  try {
+    const file = notificationFile('child');
+    fs.mkdirSync(path.dirname(file), {recursive: true});
+    fs.writeFileSync(`${file}.attempts`, JSON.stringify({root_dispatch_id: 'root',
+      lines: ['attempt 1: m1 on a1 failed: create_failed:unknown:INVALID_MODEL; switched to m2 on a2', 'attempt 2: m2 on a2 (running)']}));
+    assert.equal(attemptsNote(file).root_dispatch_id, 'root');
+    const f = watchFixture();
+    assert.equal(await notificationStep(f.client, f.record, f.persist, 10, null), true);
+    assert.match(f.calls[0][1], /Dispatch: root\nAttempt dispatch: child\nWorker: child\nState: finished\nAttempts:\n- attempt 1: m1 on a1 failed: create_failed:unknown:INVALID_MODEL; switched to m2 on a2\n/);
+  } finally {
+    if (previous === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = previous;
+    fs.rmSync(state, {recursive: true, force: true});
+  }
+});
+
+test('the fallback command comes only from AGENTCOMPASS_FALLBACK_ARGV and its JSON answer is read', async () => {
+  assert.equal(fallbackArgv({}), null);
+  assert.equal(fallbackArgv({AGENTCOMPASS_FALLBACK_ARGV: 'not json'}), null);
+  assert.equal(fallbackArgv({AGENTCOMPASS_FALLBACK_ARGV: '[]'}), null);
+  assert.deepEqual(fallbackArgv({AGENTCOMPASS_FALLBACK_ARGV: '["agentcompass","dispatch"]'}), ['agentcompass', 'dispatch']);
+  assert.equal(await runFallback('d1', null), null);
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-fallback-'));
+  try {
+    const answer = path.join(folder, 'answer.mjs'), silent = path.join(folder, 'silent.mjs');
+    fs.writeFileSync(answer, 'const i = process.argv.indexOf("--dispatch-id"); ' +
+      'console.log(JSON.stringify({action: "relaunched", dispatch_id: process.argv[i + 1] + "-2"}, null, 2));');
+    fs.writeFileSync(silent, 'console.log("no json");');
+    assert.deepEqual(await runFallback('d1', [process.execPath, answer]), {action: 'relaunched', dispatch_id: 'd1-2'});
+    assert.equal(await runFallback('d1', [process.execPath, silent]), null);
+  } finally { fs.rmSync(folder, {recursive: true, force: true}); }
+  assert.equal(await runFallback('d1', [path.join(os.tmpdir(), 'no-such-agentcompass-binary')]), null);
 });

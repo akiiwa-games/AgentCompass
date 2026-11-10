@@ -113,9 +113,14 @@ class RuleSourceTests(HomeCase):
         self.assertNotIn("@@", text)
         self.assertNotRegex(text, r"[\u4e00-\u9fff]")
         self.assertNotRegex(text, r"20\d\d-\d\d-\d\d")
-        for needle in ("roll --task", "launched", "status", "next_action", "bypassPermissions", "Parent session agent ID",
-                       "notifyOnFinish", "background process"):
+        for needle in ("roll --task", "status", "next_action", "Parent session agent ID", "background process",
+                       "agent-compass", host_rules.DISPATCH_RULES):
             self.assertIn(needle.lower(), text.lower())
+        # The procedure itself lives in the skill's docs, which ship with the install the pointer names.
+        rules = Path(host_rules.DISPATCH_RULES).read_text(encoding="utf-8")
+        for needle in ("launched", "bypassPermissions", "full-access", "notifyOnFinish", "[Worker final report]",
+                       "record --constraint", "gate-hook", "2M", "--basis"):
+            self.assertIn(needle, rules)
         self.assertIn(host_rules.agentcompass_command() + " roll --task", text)
         self.assertNotIn("route_judge", text)
 
