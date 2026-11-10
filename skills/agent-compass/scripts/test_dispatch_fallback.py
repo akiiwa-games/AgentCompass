@@ -4,6 +4,7 @@ from datetime import timedelta
 import json
 import os
 from pathlib import Path
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +16,9 @@ import provider_retry
 
 from router_test_support import isolated_router_state
 import test_dispatch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'audit'))
+import router_audit  # noqa: E402
 
 
 def setUpModule():
@@ -93,7 +97,7 @@ class FallbackTests(unittest.TestCase):
         classifier.start()
         self.addCleanup(classifier.stop)
         self.host = Host(self)
-        self.ledger, self.plans, self.slept = [], [], []
+        self.ledger, self.plans = [], []
         test = self
 
         class Judge:
@@ -130,7 +134,22 @@ class FallbackTests(unittest.TestCase):
 
     def handle(self, dispatch_id):
         """What the bridge's watcher runs when it sees the attempt fail."""
-        return fallback.handle(dispatch_id, judge=self.judge, host=self.host, sleep=self.slept.append)
+        return fallback.handle(dispatch_id, judge=self.judge, host=self.host)
+
+    def at(self, **delta):
+        """Run the block as if this much time had passed."""
+        real = registry.utcnow
+        return patch.object(registry, 'utcnow', side_effect=lambda: real() + timedelta(**delta))
+
+    def transient_root(self, task=None, decision=None, minutes=None):
+        """A first dispatch whose turn the provider failed transiently; `minutes`: the provider's own retry time."""
+        self.scopes = ['transient']
+        root = self.first(task=task, decision=decision)
+        terminal = {'reason': 'error', 'failure_code': 'provider_turn_failed', 'provider_message': '429 retry later'}
+        if minutes:
+            terminal['next'] = registry.stamp(registry.utcnow() + timedelta(minutes=minutes))
+        self.host.end(root['dispatch_id'], 'error', terminal=terminal)
+        return root
 
     def fallback_lines(self):
         return [e for e in self.ledger if e.get('stage') == 'fallback']
@@ -175,7 +194,7 @@ class FallbackTests(unittest.TestCase):
             with self.assertRaises(registry.CapacityChanged):
                 registry.prepare(decision['decision_id'], self.task, self.launch, self.usage, accounts=self.accounts)
             out = fallback.after_refusal(decision['decision_id'], self.launch, 'Capacity/availability changed',
-                                         judge=self.judge, host=self.host, sleep=self.slept.append)
+                                         judge=self.judge, host=self.host)
         self.assertEqual(out['action'], 'relaunched')
         row = registry.inspect(out['dispatch_id'])
         self.assertNotEqual(row['bundle']['bundle_id'], dropped['bundle_id'])
@@ -236,31 +255,106 @@ class FallbackTests(unittest.TestCase):
     # Transient, task input, the owner's model, nothing left.
 
     def test_transient_retries_the_same_bundle_after_its_backoff_when_the_task_can_wait(self):
-        self.scopes = ['transient']
-        root = self.first(task=dict(self.task, can_wait_hours=1))
-        self.host.end(root['dispatch_id'], 'error', terminal={
-            'reason': 'error', 'failure_code': 'provider_turn_failed', 'provider_message': '502 bad gateway'})
-        real_utcnow = registry.utcnow
-        # The backoff passes while the step sleeps (provider_retry: 2 minutes for the first hold).
-        with patch.object(registry, 'utcnow', side_effect=lambda: real_utcnow() + timedelta(minutes=3) if self.slept else real_utcnow()):
+        root = self.transient_root(task=dict(self.task, can_wait_hours=1))
+        out = self.handle(root['dispatch_id'])
+        # Nothing waits in the step: it records the retry time and returns (provider_retry: 2 minutes for a first hold).
+        self.assertEqual(out['action'], 'scheduled')
+        wait = (registry.parse(out['retry_at']) - registry.utcnow()).total_seconds()
+        self.assertTrue(100 <= wait <= 125, wait)
+        self.assertEqual(len(self.host.creates), 1)
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['retry_of'], fb['retry_at']), ('retrying', root['dispatch_id'], out['retry_at']))
+        with self.at(minutes=3):
             out = self.handle(root['dispatch_id'])
         self.assertEqual(out['action'], 'relaunched')
-        self.assertEqual(len(self.slept), 1)
-        self.assertTrue(100 <= self.slept[0] <= 125, self.slept)   # its hold: 2 minutes from the failure
         new = registry.inspect(out['dispatch_id'])
         self.assertEqual(new['bundle']['bundle_id'], root['bundle']['bundle_id'])
         self.assertIn('retried the same model after its backoff', out['lines'][0])
         self.assertEqual(self.plans, [])   # no re-allocation for a retry
-        self.assertEqual(self.fallback_lines()[0]['action'], 'retry_same')
+        self.assertEqual([e['action'] for e in self.fallback_lines()], ['scheduled', 'retry_same'])
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['current']), ('relaunched', new['dispatch_id']))
+        self.assertNotIn('retry_at', fb)
+        self.assert_one_worker()
 
     def test_transient_without_a_wait_starts_the_next_candidate_now(self):
-        self.scopes = ['transient']
-        root = self.first()
-        self.host.end(root['dispatch_id'], 'error', terminal={
-            'reason': 'error', 'failure_code': 'provider_turn_failed', 'provider_message': '502 bad gateway'})
+        root = self.transient_root()
         out = self.handle(root['dispatch_id'])
-        self.assertEqual(self.slept, [])
+        self.assertEqual(out['action'], 'relaunched')
         self.assertNotEqual(registry.inspect(out['dispatch_id'])['bundle']['bundle_id'], root['bundle']['bundle_id'])
+
+    def test_a_backoff_longer_than_the_run_lease_keeps_its_claim_until_the_retry(self):
+        """Review F1: a second observer while the backoff runs past RUN_LEASE must not relaunch the brief, and the
+        first one must not then rewrite the chain to final/declined."""
+        root = self.transient_root(task=dict(self.task, can_wait_hours=1), minutes=16)
+        first = self.handle(root['dispatch_id'])
+        self.assertEqual(first['action'], 'scheduled')
+        self.assertGreater((registry.parse(first['retry_at']) - registry.utcnow()).total_seconds(), registry.RUN_LEASE)
+        # Past RUN_LEASE, before the retry time: the watcher looks again, the parent observes, the parent rolls again.
+        with self.at(seconds=registry.RUN_LEASE + 60):
+            again = self.handle(root['dispatch_id'])
+            seen = flow.launch(root['dispatch_id'], 'parent-a', host=self.host, watch_seconds=0)
+            self.assertEqual([r['dispatch_id'] for r in registry.pending()], [root['dispatch_id']])
+        self.assertEqual((again['action'], again['retry_at']), ('scheduled', first['retry_at']))
+        self.assertEqual(seen['retry_at'], first['retry_at'])
+        self.assertIn('retries the same model by itself', seen['next_action'])
+        self.assertEqual(len(self.host.creates), 1)
+        # Due: one observer starts the retry; the other reads what it did.
+        with self.at(minutes=17):
+            started = self.handle(root['dispatch_id'])
+            late = self.handle(root['dispatch_id'])
+        self.assertEqual(started['action'], 'relaunched')
+        self.assertEqual((late['action'], late['dispatch_id']), ('relaunched', started['dispatch_id']))
+        self.assertEqual(len(self.host.creates), 2)
+        self.assert_one_worker()
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['current']), ('relaunched', started['dispatch_id']))
+        self.assertEqual(registry.current_attempt(root['dispatch_id']), started['dispatch_id'])
+
+    def test_an_observation_starts_a_due_retry_without_the_watcher(self):
+        root = self.transient_root(task=dict(self.task, can_wait_hours=1))
+        self.assertEqual(self.handle(root['dispatch_id'])['action'], 'scheduled')
+        real_handle = fallback.handle
+        with self.at(minutes=3), patch.object(fallback, 'handle', side_effect=lambda dispatch_id, **kw: real_handle(
+                dispatch_id, **dict(kw, judge=self.judge))):
+            seen = flow.launch(root['dispatch_id'], 'parent-a', host=self.host, watch_seconds=0)
+        self.assertEqual(len(self.host.creates), 2)
+        self.assertEqual((seen['root_dispatch_id'], seen['attempt'], seen['state']), (root['dispatch_id'], 2, 'started'))
+        self.assertEqual(seen['dispatch_id'], registry.current_attempt(root['dispatch_id']))
+
+    def test_a_stale_step_on_a_live_chain_never_rewrites_it_to_final(self):
+        """A step whose prepare is refused because another attempt of the brief is live leaves the chain as it is."""
+        root = self.first()
+        self.host.end(root['dispatch_id'], 'error', terminal={'reason': 'error'})
+        out = self.handle(root['dispatch_id'])
+        chain = fallback.Chain.of(registry.inspect(root['dispatch_id']), judge=self.judge, host=self.host)
+        failed = registry.inspect(root['dispatch_id'])
+        stale = chain.run(fallback.failure_of(failed), failed)
+        self.assertEqual((stale['action'], stale['dispatch_id']), ('relaunched', out['dispatch_id']))
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['current']), ('relaunched', out['dispatch_id']))
+        self.assert_one_worker()
+
+    def test_the_same_bundle_retry_is_a_routed_start_for_the_audit(self):
+        """Review F3: the retry writes a plan line with its choice, so router_audit.find_unrouted_spawns accepts it."""
+        root = self.transient_root(task=dict(self.task, can_wait_hours=1), minutes=16)
+        self.handle(root['dispatch_id'])
+        with self.at(minutes=17):
+            out = self.handle(root['dispatch_id'])
+            spawned = registry.utcnow()
+        self.assertEqual(out['action'], 'relaunched')
+        routed = [e for e in self.ledger if e.get('stage') in ('plan', 'select', 'record')]
+        self.assertEqual(len(routed), 1)
+        self.assertEqual((routed[0]['choice'], routed[0]['decision_id'], routed[0]['root_dispatch_id']),
+                         (root['bundle']['bundle_id'], registry.inspect(out['dispatch_id'])['decision_id'],
+                          root['dispatch_id']))
+        # Through the audit's own ledger reader.
+        ledger = self.root / 'audit-ledger.jsonl'
+        ledger.write_bytes(''.join(json.dumps(e) + '\n' for e in self.ledger).encode('utf-8'))
+        rows = router_audit.from_ledger(ledger)
+        spawns = [{'at': spawned, 'label': 'same-bundle retry'}]
+        self.assertEqual(router_audit.find_unrouted_spawns(spawns, rows), [])
+        self.assertEqual(len(router_audit.find_unrouted_spawns(spawns, [r for r in rows if r['stage'] == 'fallback'])), 1)
 
     def test_a_task_input_failure_is_not_relaunched(self):
         self.scopes = ['task_input']
@@ -272,11 +366,11 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(len(self.host.creates), 1)
         self.assertEqual(flow.public(registry.inspect(root['dispatch_id']))['next_action'], flow.TASK_INPUT_NEXT)
 
-    def owner_named(self):
+    def owner_named(self, task=None):
         decision_bundle = dict(self.bundle)
         result = {'stage': 'record', 'choice': 'constraint', 'constraint': 'user_override', 'basis': 'use sonnet',
                   'selected_bundle': decision_bundle, 'decision': {'action': 'start'}}
-        return dict(result, **registry.issue(result, self.task, self.now))
+        return dict(result, **registry.issue(result, task or self.task, self.now))
 
     def test_an_owner_named_model_is_never_switched(self):
         self.scopes = ['model']
@@ -289,16 +383,31 @@ class FallbackTests(unittest.TestCase):
         self.assertIn('roll it without --model', out['text'])
         self.assertEqual(flow.public(registry.inspect(root['dispatch_id']))['next_action'], out['text'])
 
-    def test_an_owner_named_model_is_retried_after_a_transient_failure(self):
-        self.scopes = ['transient']
-        root = self.first(decision=self.owner_named())
-        self.host.end(root['dispatch_id'], 'error', terminal={
-            'reason': 'error', 'failure_code': 'provider_turn_failed', 'provider_message': 'timeout'})
-        real_utcnow = registry.utcnow
-        with patch.object(registry, 'utcnow', side_effect=lambda: real_utcnow() + timedelta(minutes=3) if self.slept else real_utcnow()):
+    def test_an_owner_named_model_is_retried_after_a_transient_failure_when_the_task_can_wait(self):
+        task = dict(self.task, can_wait_hours=1)
+        root = self.transient_root(task=task, decision=self.owner_named(task))
+        self.assertEqual(self.handle(root['dispatch_id'])['action'], 'scheduled')
+        with self.at(minutes=3):
             out = self.handle(root['dispatch_id'])
         self.assertEqual(out['action'], 'relaunched')
         self.assertEqual(self.host.creates, ['claude-lab/claude-sonnet-5-5'] * 2)
+        routed = [e for e in self.ledger if e.get('stage') in ('plan', 'select', 'record')]
+        self.assertEqual([(e['stage'], e['constraint']) for e in routed], [('record', 'user_override')])
+
+    def test_an_owner_named_model_waits_only_what_the_task_allows(self):
+        """Review F2: the owner's model follows can_wait_hours too; a backoff past it reports to the parent."""
+        for name, task, minutes in (('no wait given', dict(self.task, task_id='owner-a'), None),
+                                    ('backoff past the wait', dict(self.task, task_id='owner-b', can_wait_hours=1), 120)):
+            with self.subTest(name):
+                creates = len(self.host.creates)
+                root = self.transient_root(task=task, decision=self.owner_named(task), minutes=minutes)
+                out = self.handle(root['dispatch_id'])
+                self.assertEqual((out['action'], out['result']), ('final', 'owner_named'))
+                self.assertEqual(len(self.host.creates), creates + 1)
+                fb = registry.inspect(root['dispatch_id'])['fallback']
+                self.assertEqual(fb['state'], 'final')
+                self.assertNotIn('until', fb)
+                self.assertIn('roll it without --model', out['text'])
 
     def test_when_every_candidate_is_held_the_dispatch_ends_blocked_with_each_attempt(self):
         refusal = {'failure_class': 'unknown', 'failure_code': 'INVALID_MODEL'}
@@ -328,28 +437,19 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(len(self.host.creates), 2)
 
     def test_while_waiting_out_a_backoff_the_brief_counts_as_dispatched(self):
-        self.scopes = ['transient']
-        root = self.first(task=dict(self.task, can_wait_hours=1))
-        self.host.end(root['dispatch_id'], 'error', terminal={
-            'reason': 'error', 'failure_code': 'provider_turn_failed', 'provider_message': '503'})
-        seen = {}
-
-        def sleep(seconds):
-            # Mid-wait, the parent rolls the same brief again: it gets this dispatch back and cannot prepare another.
-            seen['pending'] = [r['dispatch_id'] for r in registry.pending()]
-            seen['public'] = flow.public(registry.inspect(root['dispatch_id']))
-            planned = allocator.plan(dict(self.task, can_wait_hours=1), self.usage, registry.utcnow(), accounts=self.accounts)
-            decision = registry.issue(planned, dict(self.task, can_wait_hours=1))
-            with self.assertRaisesRegex(ValueError, 'already has an active dispatch'):
-                registry.prepare(decision['decision_id'], dict(self.task, can_wait_hours=1), self.launch, self.usage,
-                                 accounts=self.accounts)
-            self.slept.append(seconds)
-        real_utcnow = registry.utcnow
-        with patch.object(registry, 'utcnow', side_effect=lambda: real_utcnow() + timedelta(minutes=3) if self.slept else real_utcnow()):
-            out = fallback.handle(root['dispatch_id'], judge=self.judge, host=self.host, sleep=sleep)
-        self.assertEqual(seen['pending'], [root['dispatch_id']])
-        self.assertIn('relaunching this brief itself', seen['public']['next_action'])
-        self.assertEqual(out['action'], 'relaunched')
+        task = dict(self.task, can_wait_hours=1)
+        root = self.transient_root(task=task)
+        self.assertEqual(self.handle(root['dispatch_id'])['action'], 'scheduled')
+        # Mid-wait, the parent rolls the same brief again: it gets this dispatch back and cannot prepare another.
+        self.assertEqual([r['dispatch_id'] for r in registry.pending()], [root['dispatch_id']])
+        public = flow.public(registry.inspect(root['dispatch_id']))
+        self.assertIn('retries the same model by itself', public['next_action'])
+        planned = allocator.plan(dict(task), self.usage, registry.utcnow(), accounts=self.accounts)
+        decision = registry.issue(planned, task)
+        with self.assertRaisesRegex(ValueError, 'already has an active dispatch'):
+            registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts)
+        with self.at(minutes=3):
+            self.assertEqual(self.handle(root['dispatch_id'])['action'], 'relaunched')
 
     def test_observing_the_parents_dispatch_follows_the_current_attempt(self):
         root = self.first()
@@ -435,6 +535,18 @@ class RollFallbackTests(unittest.TestCase):
         self.assertEqual(len(self.host.alive()), 1)
         detail = json.loads(Path(result['details']).read_text(encoding='utf-8'))
         self.assertEqual(detail['worker']['root_dispatch_id'], registry.inspect(detail['worker']['dispatch_id'])['attempt_of'])
+
+    def test_roll_answers_a_scheduled_retry_as_pending_with_its_time(self):
+        import roll
+        retry_at = registry.stamp(registry.utcnow() + timedelta(minutes=2))
+        out, code = roll.fallback_result({}, {'action': 'scheduled', 'retry_at': retry_at, 'root_dispatch_id': 'root-1',
+                                              'lines': ['attempt 1: m on a failed: provider_turn_failed']},
+                                         {}, 'parent-a', None)
+        self.assertEqual((roll.status_of(out, code), code), ('pending', 0))
+        answer = roll.compact(out, 'pending', None)
+        self.assertEqual(answer['retry_at'], retry_at)
+        self.assertIn(retry_at, answer['next_action'])
+        self.assertIn('root-1', answer['next_argv'])
 
 
 if __name__ == '__main__':

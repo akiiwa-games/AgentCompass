@@ -567,13 +567,19 @@ def fallback_result(out, outcome, decision, parent, args):
                     worker={'provider': (decision.get('selected_bundle') or {}).get('provider'),
                             'dispatch_id': outcome.get('root_dispatch_id'), 'attempts': attempts,
                             'next_action': outcome.get('text')}), 2
-    if outcome.get('action') == 'pending':
-        # The bridge's watcher claimed this failure first and is relaunching the brief.
+    if outcome.get('action') in ('pending', 'scheduled'):
+        # pending: the bridge's watcher claimed this failure first and is relaunching the brief. scheduled: a transient
+        # failure whose same-model retry starts at retry_at, from the watcher or the next observation.
         root = outcome.get('root_dispatch_id')
+        scheduled = outcome['action'] == 'scheduled'
+        text = (dispatch_flow.FALLBACK_SCHEDULED_NEXT.format(retry_at=outcome.get('retry_at')) if scheduled
+                else dispatch_flow.FALLBACK_RUNNING_NEXT.format(where='its watcher is starting the next attempt'))
         return dict(out, launched=None, dispatch_mode='paseo', caller_action='check_delivery_do_not_resend',
-                    next=dispatch_flow.FALLBACK_RUNNING_NEXT.format(where='its watcher is starting the next attempt'),
-                    worker={'dispatch_id': root, 'continuation_argv': entry.argv(
-                        'launch', '--dispatch-id', root, '--parent-id', parent, '--watch-seconds', '120')}), 0
+                    attempts=attempts, **({'retry_at': outcome.get('retry_at')} if scheduled else {}), next=text,
+                    worker={'dispatch_id': root, 'attempts': attempts, 'next_action': text,
+                            **({'retry_at': outcome.get('retry_at')} if scheduled else {}),
+                            'continuation_argv': entry.argv(
+                                'launch', '--dispatch-id', root, '--parent-id', parent, '--watch-seconds', '120')}), 0
     # Declined (not a failure AgentCompass relaunches) or unsettled: the last attempt's own receipt says what to do.
     last = next((a.get('dispatch_id') for a in reversed(outcome.get('attempts') or []) if a.get('dispatch_id')), None)
     receipt = dispatch_flow.public_chain(registry.inspect(last)) if last else {}
@@ -850,6 +856,8 @@ def compact(result, status, detail_path):
         out['route_bundle'], out['worker_prompt_file'] = bundle, result.get('worker_prompt_file')
     if status == 'split':
         out['task_count'] = result.get('task_count')
+    if result.get('retry_at'):
+        out['retry_at'] = result['retry_at']
     if result.get('blocked_by'):
         out['blocked_by'] = result['blocked_by']
     if result.get('attempts'):

@@ -99,6 +99,10 @@ MANUAL_NEXT = {
 }
 FALLBACK_RUNNING_NEXT = ('AgentCompass is relaunching this brief itself ({where}); do not roll it again. Run next_argv to '
                          'observe the current attempt; the parent is notified once the dispatch reaches a final state.')
+FALLBACK_SCHEDULED_NEXT = ('The last attempt hit a transient provider failure; AgentCompass retries the same model by itself '
+                           'at {retry_at} (its backoff) and nothing runs this brief until then. Do not roll it again. Run '
+                           'next_argv after that time to observe the retry; the parent is notified once the dispatch '
+                           'reaches a final state.')
 FALLBACK_RELAUNCHED_NEXT = ('This attempt failed and AgentCompass relaunched the brief as dispatch {current}, which next_argv '
                             'observes. Do not roll it again.')
 RETRY_STUCK_RUNNING = ('Stopping the worker failed, so it may still be running and resume once the provider recovers: stop '
@@ -192,6 +196,10 @@ def with_fallback(out, row, fallback, now=None):
     outcome = fallback.get('outcome') or {}
     if fallback.get('state') == 'final' and outcome.get('result') != 'declined' and outcome.get('next_action'):
         out['next_action'] = outcome['next_action']
+    elif fallback.get('state') == 'retrying' and fallback.get('retry_at') \
+            and registry.fallback_guard({'fallback': fallback}, now or registry.utcnow()):
+        out.update(retry_at=fallback['retry_at'],
+                   next_action=FALLBACK_SCHEDULED_NEXT.format(retry_at=fallback['retry_at']))
     elif registry.fallback_guard({'fallback': fallback}, now or registry.utcnow()):
         out['next_action'] = FALLBACK_RUNNING_NEXT.format(where=(fallback.get('lines') or ['attempt 1'])[-1])
     elif fallback.get('state') == 'relaunched' and fallback.get('current') not in (None, row['dispatch_id']) \
@@ -349,6 +357,9 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     if row['parent_id'] != parent_id:
         raise ValueError('Dispatch belongs to another parent')
     if row['state'] in registry.TERMINAL and row['state'] != 'expired':
+        if path is None:
+            # A transient failure's same-bundle retry that fell due starts here too, not only from its watcher.
+            dispatch_fallback.resume_due(dispatch_id, host=host)
         current = registry.current_attempt(dispatch_id, path)
         if current != dispatch_id:
             dispatch_id, row = current, registry.inspect(current, path)

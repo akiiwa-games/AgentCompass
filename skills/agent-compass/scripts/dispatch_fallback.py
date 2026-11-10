@@ -14,8 +14,12 @@ Contract:
   error), a stop that did not take (the worker may still be running), a removed or finished worker, a launch the host
   refused before creating anything for reasons of its own (parent, notifier), and every non-Paseo surface.
 - Transient: the same bundle once more after its provider_retry backoff, when that wait fits the task's `can_wait_hours`
-  (none given: nothing waits and the next candidate starts now). A model the owner named (`roll --model`, a
-  `user_override` decision) is only ever retried this way, never switched.
+  (none given: nothing waits and the next candidate starts now). Nothing sleeps through the wait: the step records the
+  retry time (`scheduled`) and returns; the failed attempt's watcher, or any later launch/observe of the brief
+  (`resume_due`), runs `handle` again once it is due. The failed attempt's claim and the first dispatch's guard both
+  last until then, so no other observer relaunches it meanwhile. A model the owner named (`roll --model`, a
+  `user_override` decision) follows the same can_wait_hours rule and is never switched: when its backoff does not fit,
+  the parent is told (`owner_named`).
 - Otherwise: allocation runs again on the original decision's allocation task (its classifier profile, needs such as
   local_only, fast) with every bundle that failed in this dispatch marked unavailable; the classifier is not asked
   again. The winner is launched with the first dispatch's title, workspace, cwd, access, parent and the original prompt,
@@ -36,7 +40,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import time
 from datetime import timedelta
 
 import dispatch_registry as registry
@@ -139,6 +142,21 @@ def write_attempts_file(dispatch_id, root_id, attempt_lines):
         pass  # the notification then names only this attempt; the registry still has the whole chain
 
 
+def later_than(stamp, now):
+    """True when the stamp is after now; a missing or unreadable stamp has passed."""
+    try:
+        return isinstance(stamp, str) and registry.parse(stamp) > now
+    except ValueError:
+        return False
+
+
+def lease_end(stamp):
+    try:
+        return registry.stamp(registry.parse(stamp) + timedelta(seconds=registry.RUN_LEASE)) if stamp else None
+    except ValueError:
+        return None
+
+
 class AlreadyHandled(Exception):
     def __init__(self, outcome):
         super().__init__('already handled')
@@ -149,10 +167,10 @@ class Chain:
     """The attempts of one brief, from its first dispatch (`root`) or, before any row exists, from its decision."""
 
     def __init__(self, decision, launch, *, root=None, access='write', allow_concurrent=None, cwd=None,
-                 judge=None, host=None, sleep=time.sleep):
+                 judge=None, host=None):
         if judge is None:
             import route_judge as judge
-        self.judge, self.host, self.sleep = judge, host, sleep
+        self.judge, self.host = judge, host
         self.decision = decision
         self.owner_named = decision.get('constraint') == 'user_override'
         task = dict(decision.get('allocation_task') or decision['task'])
@@ -208,7 +226,8 @@ class Chain:
         return sum(1 for a in self.attempts if a.get('bundle_id') == bundle_id and a.get('kind') == TRANSIENT)
 
     def can_retry(self, attempt):
-        return self.owner_named or self.backoff(attempt) <= float(self.task.get('can_wait_hours') or 0) * 3600
+        """The same rule for every model, the owner's included: the backoff must fit the task's can_wait_hours."""
+        return self.backoff(attempt) <= float(self.task.get('can_wait_hours') or 0) * 3600
 
     def backoff(self, attempt):
         """Seconds until provider_retry lets this model be tried again; its own first backoff when nothing is held."""
@@ -242,28 +261,43 @@ class Chain:
             fallback.update(state=state, attempts=attempts, lines=lines(attempts), **fields)
             if state not in ('retrying', 'relaunching'):
                 fallback.pop('until', None)
+            if state != 'retrying':
+                fallback.pop('retry_at', None)
+                fallback.pop('retry_of', None)
         self.root = registry.update_fallback(self.root['dispatch_id'], change)
         return self.root
 
     def claim(self, failed_id):
-        """Only one observer handles a failed attempt; a second gets the first one's outcome."""
+        """Only one observer handles a failed attempt; a second gets the first one's outcome. Returns True when the
+        claim is the scheduled same-bundle retry falling due (run it with resume=True), False for a fresh failure.
+
+        A claim stays valid until its own `until`: a step in progress holds it for RUN_LEASE, a scheduled retry until
+        its retry time (no observer may take a failure over while its backoff is still being waited out). Only a claim
+        whose holder died (a pending one past its `until`) or a scheduled retry that is due may be taken."""
         claimed = {}
 
         def change(fallback):
+            now = registry.utcnow()
             handled = dict(fallback.get('handled') or {})
-            claimed['before'] = handled.get(failed_id)
-            if not claimed['before']:
-                handled[failed_id] = {'action': 'pending', 'at': registry.stamp(registry.utcnow())}
+            before = claimed['before'] = handled.get(failed_id)
+            action = (before or {}).get('action')
+            due = action == 'scheduled' and not later_than(before.get('retry_at'), now)
+            stale = action == 'pending' and not later_than(before.get('until') or lease_end(before.get('at')), now)
+            claimed['take'] = before is None or due or stale
+            if claimed['take']:
+                resume = due or (stale and bool(before.get('resume')))
+                handled[failed_id] = {'action': 'pending', 'at': registry.stamp(now), 'until': registry.stamp(
+                    now + timedelta(seconds=registry.RUN_LEASE)), **({'resume': True} if resume else {})}
+                claimed['resume'] = resume
                 fallback['handled'] = handled
         self.root = registry.update_fallback(self.root['dispatch_id'], change)
         before = claimed['before']
-        if before and before.get('action') != 'pending':
-            raise AlreadyHandled(before)
-        if before:
-            pending_at = before.get('at')
-            if pending_at and registry.utcnow() - registry.parse(pending_at) < timedelta(seconds=registry.RUN_LEASE):
-                raise AlreadyHandled({'action': 'pending', 'root_dispatch_id': self.root_id,
-                                      'detail': 'another observer is relaunching this attempt'})
+        if claimed['take']:
+            return claimed['resume']
+        if before.get('action') == 'pending':
+            raise AlreadyHandled({'action': 'pending', 'root_dispatch_id': self.root_id,
+                                  'detail': 'another observer is relaunching this attempt'})
+        raise AlreadyHandled(before)
 
     def outcome(self, failed_id, outcome):
         if not self.root or not failed_id:
@@ -276,28 +310,34 @@ class Chain:
 
     # The loop.
 
-    def run(self, failure, row=None, bundle=None):
-        """From one failed attempt to the next live worker or a final state. `row` is the failed attempt's row (None
-        when its bundle was refused before a row existed); `bundle` the refused bundle then."""
+    def run(self, failure, row=None, bundle=None, resume=False):
+        """From one failed attempt to the next live worker, a scheduled retry or a final state. `row` is the failed
+        attempt's row (None when its bundle was refused before a row existed); `bundle` the refused bundle then.
+        `resume`: the scheduled same-bundle retry of `row` is due (claim said so); it starts without deciding again."""
         failed_id = row['dispatch_id'] if row else None
         while True:
             attempt = next((a for a in self.attempts if row and a.get('dispatch_id') == row['dispatch_id']), None)
             if attempt is None:
                 attempt = self.entry(bundle or row['bundle'], row)
                 self.attempts.append(attempt)
-            self.failed(attempt, failure, row)
-            if not failure['covered']:
-                self.ledger('declined', attempt)
-                return self.finish('declined', failure, failed_id)
-            choice = self.next_choice(attempt)
+            if resume:
+                resume = False
+                choice = (self.same_bundle(attempt), 'retry_same', 0)
+            else:
+                self.failed(attempt, failure, row)
+                if not failure['covered']:
+                    self.ledger('declined', attempt)
+                    return self.finish('declined', failure, failed_id)
+                choice = self.next_choice(attempt)
             if choice is None:
                 kind = 'owner_named' if self.owner_named else 'blocked'
                 self.ledger(kind, attempt, excluded=sorted(self.excluded()))
                 return self.finish(kind, failure, failed_id)
             decision, how, wait = choice
+            if how == 'scheduled':
+                return self.schedule(attempt, wait, failed_id)
             new_bundle = decision['selected_bundle']
-            self.ledger(how, attempt, wait_seconds=round(wait) if wait else None,
-                        next={'decision_id': decision['decision_id'], **bundle_view(new_bundle)})
+            self.ledger(how, attempt, next={'decision_id': decision['decision_id'], **bundle_view(new_bundle)})
             try:
                 new = registry.prepare(decision['decision_id'], self.task, dict(
                     self.launch, initialPrompt=relaunch_prompt(self.launch['initialPrompt'], self.attempts)),
@@ -308,6 +348,14 @@ class Chain:
                 row, bundle, failure = None, new_bundle, refused(exc)
                 continue
             except ValueError as exc:   # a writer appeared in the workspace, or the decision cannot dispatch
+                live = self.live_attempt(failed_id)
+                if live:
+                    # Another attempt of this brief already runs (its own watcher reports): this failure is settled by
+                    # it, and the chain's record must keep pointing at it.
+                    return self.outcome(failed_id, {'action': 'relaunched', 'dispatch_id': live,
+                                                    'root_dispatch_id': self.root_id, 'attempts': self.attempts,
+                                                    'lines': lines(self.attempts),
+                                                    'detail': 'another attempt of this brief is live'})
                 attempt_next = self.entry(new_bundle)
                 self.attempts.append(attempt_next)
                 self.failed(attempt_next, {'covered': False, 'kind': None, 'scope': None,
@@ -342,29 +390,69 @@ class Chain:
             return self.outcome(failed_id, outcome)
 
     def next_choice(self, attempt):
-        """(decision, 'retry_same' | 'switch', seconds waited) for the next attempt, or None when nothing may start."""
+        """(decision, 'retry_same' | 'switch', 0) for the next attempt now, (None, 'scheduled', seconds) for a same-bundle
+        retry after its backoff, or None when nothing may start."""
         if attempt.get('kind') == TRANSIENT and self.transient_tries(attempt['bundle_id']) == 1 and self.can_retry(attempt):
             wait = self.backoff(attempt)
             if wait > 0:
-                self.save('retrying', current=attempt.get('dispatch_id'),
-                          until=registry.stamp(registry.utcnow() + timedelta(seconds=wait + registry.RUN_LEASE)))
-                self.sleep(wait)
-            return self.same_bundle(attempt), 'retry_same', wait
+                return None, 'scheduled', wait
+            return self.same_bundle(attempt), 'retry_same', 0
         if self.owner_named:
             return None
         decision = self.replan()
         return (decision, 'switch', 0) if decision else None
 
+    def schedule(self, attempt, wait, failed_id):
+        """Nothing blocks for the backoff: the retry time is recorded and the step returns. The failed attempt's watcher
+        (paseo_dispatch_bridge.mjs, outcome `scheduled`) or any later observation (`resume_due`, from dispatch launch or
+        observe) runs `handle` again once it is due; the claim and the guard hold until then, so no one starts the brief
+        in between and the observer that resumes is the only one."""
+        now = registry.utcnow()
+        retry_at = registry.stamp(now + timedelta(seconds=wait))
+        until = registry.stamp(now + timedelta(seconds=wait + registry.RUN_LEASE))
+        self.ledger('scheduled', attempt, wait_seconds=round(wait), retry_at=retry_at)
+        self.save('retrying', current=attempt.get('dispatch_id'), retry_of=failed_id, retry_at=retry_at, until=until)
+        return self.outcome(failed_id, {'action': 'scheduled', 'root_dispatch_id': self.root_id, 'retry_at': retry_at,
+                                        'attempts': self.attempts, 'lines': lines(self.attempts)})
+
     def same_bundle(self, attempt):
+        """The decision for a transient failure's retry on its own bundle. It is issued and written to the ledger like
+        every routed start (a plan line, or a record line for the owner's model), so the audit sees a route for it."""
         # A transient failure is a provider's, so it always has the row whose bundle it was.
         bundle = dict(registry.inspect(attempt['dispatch_id'])['bundle'])
-        result = {'stage': 'record' if self.owner_named else 'plan', 'choice': bundle.get('bundle_id'),
-                  'selected_bundle': bundle, 'decision': {'action': 'start'},
+        result = {'stage': 'record' if self.owner_named else 'plan', 'source': 'fallback_retry',
+                  'choice': bundle.get('bundle_id'), 'selected_bundle': bundle, 'decision': {'action': 'start'},
+                  'parent_id': self.parent,
                   **({'constraint': 'user_override',
                       'basis': f'AgentCompass transient retry of dispatch {self.root_id} on the owner-named model'}
-                     if self.owner_named else {})}
+                     if self.owner_named else
+                     {'basis': f'AgentCompass transient retry of dispatch {self.root_id} on its routed bundle'})}
         issued = registry.issue(result, self.task, allocation_task=self.task)
-        return {**result, **issued}
+        decision = {**result, **issued}
+        try:
+            self.judge.append_ledger({
+                'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': decision['stage'], 'source': 'fallback_retry',
+                'choice': decision['choice'],
+                **{k: decision[k] for k in ('decision_id', 'parent_id', 'task_hash', 'bound') if decision.get(k)},
+                **({'task_id': self.task['task_id']} if self.task.get('task_id') else {}),
+                'constraint': decision.get('constraint'), 'basis': decision['basis'][:400],
+                'bundle': {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort', 'bundle_id', 'fast')
+                           if bundle.get(k) is not None},
+                'action': 'start', 'root_dispatch_id': self.root_id, 'attempt': len(self.attempts) + 1})
+        except Exception:   # noqa: BLE001 - auditing never stops a relaunch
+            pass
+        return decision
+
+    def live_attempt(self, failed_id):
+        """Another attempt of this brief that is running or may still appear, if the chain's record names one."""
+        current = ((self.root or {}).get('fallback') or {}).get('current')
+        if not current or current in (failed_id, None):
+            return None
+        try:
+            row = registry.inspect(current)
+        except (KeyError, ValueError):
+            return None
+        return current if registry.unresolved(row, registry.utcnow()) else None
 
     def replan(self):
         """Allocation again on the original inputs with this dispatch's failed bundles unavailable."""
@@ -418,11 +506,12 @@ def final_text(kind, attempts, task):
     return listed
 
 
-def handle(dispatch_id, *, judge=None, host=None, sleep=time.sleep):
+def handle(dispatch_id, *, judge=None, host=None):
     """The bridge's watcher calls this (`agentcompass dispatch --dispatch-action fallback --dispatch-id ID`) when an
-    attempt ends in a failure, and roll when a create fails at once. Returns {'action': 'relaunched' | 'final' |
-    'unsettled' | 'disabled' | 'pending', ...}; the watcher stays silent on `relaunched` and sends one notification
-    otherwise."""
+    attempt ends in a failure, and roll when a create fails at once. Returns {'action': 'relaunched' | 'scheduled' |
+    'final' | 'unsettled' | 'disabled' | 'pending', ...}; the watcher stays silent on `relaunched`, calls again at
+    `retry_at` on `scheduled`, looks again on `pending`, and sends one notification otherwise. Called again for a
+    failure whose scheduled retry is due, it starts that retry."""
     if not enabled():
         return {'action': 'disabled'}
     import dispatch_flow
@@ -434,18 +523,34 @@ def handle(dispatch_id, *, judge=None, host=None, sleep=time.sleep):
         return {'action': 'unsettled', 'state': row['state']}
     root_id = registry.chain_root(row)
     root = row if root_id == dispatch_id else registry.inspect(root_id)
-    chain = Chain.of(root, judge=judge, host=host, sleep=sleep)
+    chain = Chain.of(root, judge=judge, host=host)
     try:
-        chain.claim(dispatch_id)
+        resume = chain.claim(dispatch_id)
     except AlreadyHandled as done:
         return done.outcome
-    return chain.run(failure_of(row), row)
+    return chain.run(failure_of(row), row, resume=resume)
+
+
+def resume_due(dispatch_id, *, host=None, now=None):
+    """Any observation of a brief (dispatch launch/observe) starts its scheduled same-bundle retry once it is due, so
+    the retry does not depend on the failed attempt's watcher alone. None when nothing is due."""
+    if not enabled():
+        return None
+    try:
+        row = registry.inspect(dispatch_id)
+        root = row if registry.chain_root(row) == dispatch_id else registry.inspect(registry.chain_root(row))
+    except (KeyError, ValueError):
+        return None
+    fallback = root.get('fallback') or {}
+    if fallback.get('state') != 'retrying' or not fallback.get('retry_of') \
+            or later_than(fallback.get('retry_at'), now or registry.utcnow()):
+        return None
+    return handle(fallback['retry_of'], host=host)
 
 
 def after_refusal(decision_id, launch, reason, *, access='write', allow_concurrent=None, cwd=None, judge=None,
-                  host=None, sleep=time.sleep):
+                  host=None):
     """roll's first prepare was refused (registry.CapacityChanged) before any row existed: go on to the next candidate."""
     decision = registry.decision_record(decision_id)
-    chain = Chain(decision, launch, access=access, allow_concurrent=allow_concurrent, cwd=cwd, judge=judge,
-                  host=host, sleep=sleep)
+    chain = Chain(decision, launch, access=access, allow_concurrent=allow_concurrent, cwd=cwd, judge=judge, host=host)
     return chain.run(refused(reason), bundle=decision['bundle'])

@@ -1196,6 +1196,27 @@ test('another observer relaunching the attempt makes this watcher look again lat
   assert.equal(f.calls.length, 0);
 });
 
+test('a scheduled same-model retry runs the fallback step again only once it is due, and tells the parent nothing', async () => {
+  const f = watchFixture();
+  f.setAgent({status: 'error'});
+  const retryAt = new Date(100000).toISOString();
+  f.record.deadline = 50;   // a retry past the watch keeps the watcher until the retry has been seen
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10,
+    async () => ({action: 'scheduled', retry_at: retryAt, root_dispatch_id: 'child'})), false);
+  assert.deepEqual([f.record.fallback.status, f.record.fallback.retry_at], ['scheduled', retryAt]);
+  assert(f.record.deadline >= 100000 + 30 * 60 * 1000);
+  assert.equal(f.saved.at(-1).fallback.status, 'scheduled');   // persisted: a restarted watcher waits too
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 99999, async () => assert.fail('ran early')), false);
+  const asked = [];
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 100001, async record => {
+    asked.push(record.dispatch_id);
+    return {action: 'relaunched', dispatch_id: 'child-2', root_dispatch_id: 'child'};
+  }), true);
+  assert.deepEqual(asked, ['child']);
+  assert.equal(f.record.status, 'relaunched');
+  assert.equal(f.calls.length, 0);
+});
+
 test('the relaunched attempt reports its finish under the parent dispatch with the attempts', async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-attempts-'));
   const previous = process.env.ROUTER_STATE_DIR;

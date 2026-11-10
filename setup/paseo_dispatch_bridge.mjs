@@ -37,6 +37,8 @@ const RETRY_STUCK = 'provider retry stuck';
 // classifier's scope; this list only says which sightings to hand over before telling the parent anything).
 const FALLBACK_REASONS = new Set(['error', RETRY_STUCK, CREATE_FAILED]);
 const FALLBACK_TEXT_LIMIT = 6000;
+// A scheduled same-model retry keeps its watcher at least this long past the retry time, to see the retry start.
+const RETRY_WATCH_MS = 30 * 60 * 1000;
 
 // The command dispatch_flow.bridge_env hands down: `agentcompass dispatch --dispatch-action fallback`. Absent, nothing
 // is relaunched and the parent is told as before.
@@ -321,6 +323,9 @@ export function retryStuckText(terminal, targetId) {
 export async function notificationStep(client, record, persist, now = Date.now(),
   fallback = fallbackArgv() ? defaultFallback : null) {
   if (DONE.has(record.status)) return true;
+  // A transient failure's same-model retry is scheduled (dispatch_fallback.Chain.schedule): nothing to do until it is due.
+  if (!record.pending && record.fallback?.status === 'scheduled' && Date.parse(record.fallback.retry_at) > now)
+    return false;
   let event;
   const targetId = record.agent_id ?? record.dispatch_id;
   if (!record.pending) {
@@ -368,6 +373,16 @@ export async function notificationStep(client, record, persist, now = Date.now()
       const outcome = await Promise.resolve(fallback(record)).catch(() => null);
       if (outcome?.action === 'pending') {   // another observer is relaunching it: look again next poll
         record.fallback = {status: 'waiting', at: new Date(now).toISOString()};
+        persist();
+        return false;
+      }
+      if (outcome?.action === 'scheduled') {
+        // The same model is retried after its backoff: run the step again at retry_at, which starts it (or answers
+        // with what another observer already did). The parent hears nothing until a final state.
+        const due = Date.parse(outcome.retry_at);
+        record.fallback = {status: 'scheduled', at: new Date(now).toISOString(),
+          ...(Number.isFinite(due) ? {retry_at: new Date(due).toISOString()} : {})};
+        if (Number.isFinite(due)) record.deadline = Math.max(record.deadline, due + RETRY_WATCH_MS);
         persist();
         return false;
       }
