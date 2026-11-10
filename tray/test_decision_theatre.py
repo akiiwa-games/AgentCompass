@@ -1,3 +1,4 @@
+from PIL import ImageChops
 """Scene/render contracts, lifecycle, and opt-in diagnostics on a hidden real Tk canvas."""
 import copy
 import math
@@ -286,12 +287,13 @@ def test_final_frame_keeps_the_radar_with_its_axis_names_under_the_winner():
     assert shown['alpha'][1]==pytest.approx(1) and shown['beta'][1]==pytest.approx(dt.LEGEND/dt.NAME)
     lowest=renderer.center[1]+renderer.radius*math.cos(math.pi/5)
     assert lowest < shown['alpha'][0][1] < shown['beta'][0][1] < renderer.h-18*renderer.s
-    # The radar is still drawn: the winner's filled shape covers the centre, and a spoke reaches the rim.
+    # The radar is still drawn: the winner's sheet covers the centre, inside the hairline frame of full scale.
     cam=dt.camera_position(dt.DURATION,renderer.w)
     paper=renderer.blank.reduce(renderer.k).getpixel((0,0))
     assert frame.getpixel((round(renderer.center[0]-cam),round(renderer.center[1])))!=paper
-    assert frame.getpixel((round(renderer.center[0]-cam),round(renderer.center[1]-renderer.radius*.9)))!=paper
-    # There is no fixed backdrop: between two spokes, outside both shapes, the stage is bare paper.
+    edge=[dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius,axis,5) for axis in (0,1)]
+    assert frame.getpixel((round((edge[0][0]+edge[1][0])/2),round((edge[0][1]+edge[1][1])/2)))!=paper
+    # There is no other backdrop: just inside the frame, outside both shapes, the stage is bare paper.
     x,y=dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius*.97,0,5)
     x2,y2=dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius*.97,1,5)
     assert frame.getpixel((round((x+x2)/2),round((y+y2)/2)))==paper
@@ -511,21 +513,6 @@ def fitted(source, targets=(.3, .8, .8, .3)):
     return source
 
 
-def test_the_task_s_need_comes_from_the_snapshot_and_is_never_invented():
-    assert dt.scene_from_result(result()).need == ()
-    scene = dt.scene_from_result(fitted(result()))
-    # One target per radar axis, in the radar's order; quota economy has none.
-    assert scene.need == (.3, .8, .8, .3, None)
-    broken = fitted(result())
-    for item in broken['ranking']:
-        item['five_axis_fit']['vision_tools'] = 'n/a'
-        item['five_axis_fit']['divergence']['target'] = float('nan')
-    assert dt.scene_from_result(broken).need == (None, .8, .8, None, None)
-    # A renderer without a recorded need draws the shapes whole and no outline.
-    plain = dt.TheatreRenderer(dt.scene_from_result(result()), 630, 600, 1.5)
-    assert plain.need == () and plain.frame(dt.DURATION).size == (630, 600)
-
-
 def test_shapes_bloom_from_the_centre_without_overshoot_and_the_winner_lands_last():
     renderer = dt.TheatreRenderer(dt.scene_from_result(fitted(result())), 630, 600, 1.5)
     times = [i / 120 for i in range(round(dt.DURATION * 120) + 1)]
@@ -550,52 +537,33 @@ def test_shapes_bloom_from_the_centre_without_overshoot_and_the_winner_lands_las
         assert path[-1] == pytest.approx(renderer.center)
 
 
-def test_the_need_is_a_dashed_line_and_ability_beyond_it_is_a_segment_along_its_axis():
+def test_the_radar_is_two_sheets_of_glass_and_nothing_else():
     source = fitted(result())
-    renderer = dt.TheatreRenderer(dt.scene_from_result(source), 630, 600, 1.5)
-    whole = dt.TheatreRenderer(dt.scene_from_result(result() | {'ranking': [
-        {k: v for k, v in item.items() if k != 'five_axis_fit'} for item in source['ranking']]}), 630, 600, 1.5)
-    frame, flat = renderer.frame(dt.DURATION), whole.frame(dt.DURATION)
-    cam = dt.camera_position(dt.DURATION, renderer.w)
-    cx, cy, radius = renderer.center[0] - cam, renderer.center[1], renderer.radius
-    spot = lambda axis, level, side=0.: tuple(round(v) for v in dt.radar.axis_segment(
-        cx, cy, radius, axis, 5, level, level, side * renderer.s)[0])
-    ink = lambda image, xy: sum(image.getpixel(xy))        # lower is more ink
-    paper = sum(renderer.blank.reduce(renderer.k).getpixel((0, 0)))
-    # A shape is one flat, very light tint: the same near the centre and far from it, with or without a need.
-    for image in (frame, flat):
-        assert image.getpixel(spot(0, .2, 7)) == image.getpixel(spot(0, .55, 7))
-        assert ink(image, spot(0, .55, 7)) < paper - 6
-    # Divergence: the need is .3 and both models go beyond it. Each has its segment on its own side of the spoke,
-    # from the target outwards; inside the target, and without a recorded need, there is none.
-    for style in dt.radar.SERIES_STYLES:
-        side = dt.radar.MARK_SHIFT * style['side']
-        assert ink(frame, spot(0, .5, side)) < ink(flat, spot(0, .5, side)) - 25
-        assert frame.getpixel(spot(0, .15, side)) == flat.getpixel(spot(0, .15, side))
-    # The need itself: a dot on each axis that has a target, joined by a dashed line; none on quota economy.
-    darkest = lambda image, xy: min(sum(p) for _, p in image.crop((xy[0] - 2, xy[1] - 2, xy[0] + 3, xy[1] + 3)).getcolors(64))
-    for axis, target in enumerate(renderer.need[:4]):
-        assert darkest(frame, spot(axis, target)) < darkest(flat, spot(axis, target)) - 60, axis
-    a, b = (dt.radar.point(cx, cy, radius * renderer.need[axis], axis, 5) for axis in (1, 2))
-    along = [(round(a[0] + (b[0] - a[0]) * u / 60), round(a[1] + (b[1] - a[1]) * u / 60)) for u in range(8, 53)]
-    dark = [ink(frame, xy) < ink(flat, xy) - 60 for xy in along]
-    assert any(dark) and not all(dark)                       # dashes and gaps
-
-
-def test_quota_cost_is_a_red_segment_from_the_point_to_full_scale_on_the_economy_axis():
-    source = fitted(result())
+    small = {'alpha': (.5, .6, .55, .4), 'beta': (.6, .45, .5, .6)}
     for item in source['ranking']:
-        if item['bundle']['model'] == 'beta':
-            item['components']['opportunity_cost'] = .06        # quota economy 1 − 5 × .06 = .7
-    renderer = dt.TheatreRenderer(dt.scene_from_result(source), 630, 600, 1.5)
+        if item['bundle']['model'] in small:
+            item['components'].update(dict(zip(('divergence', 'global_rigor', 'module_precision', 'capability'),
+                                               small[item['bundle']['model']])))
+    scene = dt.scene_from_result(source)
+    assert not hasattr(scene, 'need')
+    renderer = dt.TheatreRenderer(scene, 630, 600, 1.5)
     cam = dt.camera_position(dt.DURATION, renderer.w)
     cx, cy, radius = renderer.center[0] - cam, renderer.center[1], renderer.radius
     frame = renderer.frame(dt.DURATION)
-    for index, candidate in enumerate(renderer.scene.pair):
-        value = candidate.values[4]
-        side = dt.radar.MARK_SHIFT * dt.radar.SERIES_STYLES[index]['side'] * renderer.s
-        at = lambda level: tuple(round(v) for v in dt.radar.axis_segment(cx, cy, radius, 4, 5, level, level, side)[0])
-        if value < .9:
-            red, green, blue = frame.getpixel(at((value + 1) / 2 - .02))    # clear of the vertex markers
-            assert red > green + 50 and red > blue + 50, candidate.name
-    assert any(candidate.values[4] < .9 for candidate in renderer.scene.pair)
+    paper = renderer.blank.reduce(renderer.k).getpixel((0, 0))
+    at = lambda axis, level: tuple(round(v) for v in dt.radar.point(cx, cy, radius * level, axis, 5))
+    # No spokes and no marks along the axes: beyond both shapes an axis is bare paper up to the frame.
+    bare = 0
+    for axis in range(5):
+        reach = max(candidate.values[axis] for candidate in renderer.scene.pair)
+        if (1 - reach) * radius > 24:
+            assert frame.getpixel(at(axis, (reach + 1) / 2)) == paper, axis
+            bare += 1
+    assert bare
+    # A sheet is tinted glass: lighter at the top, deeper at the bottom.
+    mean = lambda xy: sum(sum(pixel) for pixel in frame.crop((xy[0] - 2, xy[1] - 2, xy[0] + 3, xy[1] + 3)).getdata()) / 25
+    assert mean((round(cx), round(cy - radius * .3))) > mean((round(cx), round(cy + radius * .3))) + 6
+    assert mean((round(cx), round(cy))) < sum(paper) - 30
+    # The specks of light twinkle while the film runs and rest once it has settled: the last frame is still.
+    assert ImageChops.difference(renderer.frame(7.5), renderer.frame(7.6)).getbbox()
+    assert ImageChops.difference(frame, renderer.frame(dt.DURATION)).getbbox() is None

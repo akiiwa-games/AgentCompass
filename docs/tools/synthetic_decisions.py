@@ -72,19 +72,21 @@ def over_line(window, spend, hours):
     return max(0.0, spend - max(0.0, line_at_end - used))
 
 
-# How each account's usage rose over its period so far: (number of readings, bend). A bend above 1 is usage that
-# came late, below 1 early. Gemini has no recorded readings, so its usage line is fitted and drawn as such.
-READINGS = {"claude-a": (9, 1.5), "claude-b": (7, .75), "codex": (8, 1.25)}
+# How an account's usage rose over its period so far: (share of the elapsed time, share of today's usage).
+# "early": a burst that ran ahead of the quota line, a quiet stretch while the line caught up, then steady work
+# under it. "late": little at first, then work that overtook the line. Gemini has no recorded readings, so its
+# usage line is fitted and drawn as such.
+PROFILES = {"early": ((.1, .22), (.22, .44), (.35, .525), (.5, .6), (.7, .742), (.85, .867)),
+            "late": ((.12, .048), (.28, .126), (.45, .2475), (.6, .468), (.75, .735), (.9, .9))}
+RECORDED = ("claude-a", "claude-b", "codex")
 
 
-def readings(key, used, elapsed):
+def readings(key, capacity, used, elapsed):
     """Synthetic usage readings of one window inside its period: [[hours since its start, used USD], ...]."""
-    if key not in READINGS or elapsed <= 0:
+    if key not in RECORDED or elapsed <= 0:
         return None
-    count, bend = READINGS[key]
-    # Uneven steps, as real work is: every third interval is a pause.
-    return [[round(elapsed * step / count, 2), round(used * ((step - (step % 3 == 0) * .45) / count) ** bend, 2)]
-            for step in range(1, count)]
+    profile = PROFILES["late" if used > capacity * elapsed / WEEK else "early"]
+    return [[round(elapsed * moment, 2), round(used * share, 2)] for moment, share in profile]
 
 
 def quota_line_block(windows=WINDOWS):
@@ -92,7 +94,7 @@ def quota_line_block(windows=WINDOWS):
     for key, (label, capacity, used, reset_in, beta) in windows.items():
         block[key] = {"label": label, "capacity_usd": capacity, "used_usd": used,
                       "elapsed_hours": WEEK - reset_in, "reset_in_hours": reset_in, "beta": beta}
-        samples = readings(key, used, WEEK - reset_in)
+        samples = readings(key, capacity, used, WEEK - reset_in)
         if samples:
             block[key]["samples"] = samples
     return {"windows": block}

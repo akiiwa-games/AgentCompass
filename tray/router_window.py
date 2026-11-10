@@ -1262,11 +1262,9 @@ class Panel:
         self.quota_line = quota_line.QuotaLineCanvas(self.quota_frame)
         self.quota_line.canvas.pack(fill="both", expand=True)
         self.attach_quota_tooltip(self.quota_line, _tr(
-            "每个小图是一个额度窗口：从左到右是本周期（右端是重置），从下到上是额度（顶端是全部额度）。浅色直线是订阅的预测线（恢复线"
-            "），深色线是实际用量，终点是现在；有读数时是实线，没有读数时按期初到当前拟合、画成点线。两条线在“现在”的竖直差距：绿色"
-            "是已恢复还没花的额度（到重置不花就没了），粉色是超前花掉的。每个候选的花费从“现在”接着实际用量线往上画：在预测线下面是"
-            "绿色，越过预测线变红，红色部分按 N = F − β·X/h 从右侧它那一行的得分条里扣掉。得分条末端的浅色部分是超出任"
-            "务需要的能力，不计分。点击画面重播。"))
+            "每个小图是一个额度窗口：从左到右是本周期（右端是重置），从下到上是额度。浅色直线是额度线：按订阅的节奏应该用到哪里。"
+            "粗线是实际用量：在额度线下面是绿色，这个窗口被优先使用；超过额度线变红，这个窗口被降权。"
+            "点线是在重置前把剩余额度用完所需的节奏。高亮的窗口是本次任务用的。点击画面重播。"))
         self.theatre.on_frame = self.quota_line.follow
         self.show_list("ledger")
         self.set_mode("score")
@@ -1377,10 +1375,7 @@ class Panel:
             return
         pair = data.decision_pair(self.plan_result, self.picked(self.pick_a), self.picked(self.pick_b))
         series, raw = data.decision_series(pair)
-        # The task's need, as recorded for the first of the pair: ability beyond it is drawn pale.
-        fit = next((row.get("five_axis_fit") for row in self.plan_result.get("ranking") or []
-                    if pair and row.get("id") == pair[0]["id"]), None)
-        self.radar.show(radar_chart.SCORE_AXES, series, raw, radar_chart.need_values(fit), cost_axis="economy")
+        self.radar.show(radar_chart.SCORE_AXES, series, raw)
         self.show_verdict(*verdict_summary(self.plan_result, pair))
 
     def verdict_text(self):
@@ -1406,9 +1401,6 @@ class Panel:
                 box.columnconfigure(0,weight=1)
                 box.columnconfigure(1,weight=0)
                 canvas._tooltip_text = self.verdict.get() + ("\n"+reason if reason else "")
-                floor=self.verdict_strip.model.get("floor")
-                if floor is not None:
-                    canvas._tooltip_text += "\n" + _tr("分数条共同基线：{0}").format(fmt(floor))
                 self.attach_tooltip(canvas)
                 return
         box.columnconfigure(0,weight=0)

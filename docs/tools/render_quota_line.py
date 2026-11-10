@@ -4,9 +4,9 @@
 
 The same task is routed twice. First while Claude A is ahead of its recovery line: that window is spared and
 the task runs on the account that is under its line. Then two hours before Claude A resets with 40% left:
-the quota that would expire is spent first, in fast mode. The picture explains itself by motion (a forecast
-line and a usage line per window, spend that climbs from now and drains a score); its only words are window
-and model names. The real page is opened on a private
+the quota that would expire is spent first, in fast mode. Per window the picture is a quota line and a usage
+line that rises to now: green and "used first" under the line, red and "held back" over it; the window the
+task runs on is lit, and a dotted pace line closes at the reset. The real page is opened on a private
 desktop by render_ui_screenshots.py; each frame pastes the view's own renderer output into its canvas rectangle
 and is cropped to the list card. Composites are checked against real PrintWindow captures before the GIF is
 written. The GIF opens on the settled second decision, so a viewer without autoplay still sees a whole picture.

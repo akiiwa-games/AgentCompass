@@ -1,6 +1,5 @@
 """Quota-line view: snapshot → display model → frames, and the synthetic decisions the README films replay."""
 import copy
-import math
 from pathlib import Path
 import sys
 
@@ -35,12 +34,6 @@ def earlier():
 
 def pixel(renderer, image, x, y):
     return image.getpixel((round(x * renderer.s), round(y * renderer.s)))
-
-
-def bar_pixel(renderer, image, row, value):
-    """The pixel of a candidate's score bar at `value` on the scores' scale."""
-    block = next(block for block in renderer.blocks if row in block["rows"])
-    return pixel(renderer, image, renderer.sx(value), block["rows"][row])
 
 
 def test_synthetic_decision_follows_the_quota_line_formula_and_tie_break_order():
@@ -91,50 +84,39 @@ def test_model_reads_the_snapshot_as_recorded_and_never_mutates_it():
     original = copy.deepcopy(source)
     data = quota_line.model(source)
     assert source == original
-    ranking = source["ranking"][:quota_line.ROWS]
-    assert [row["id"] for row in data["rows"]] == [row["id"] for row in ranking]
-    assert [(row["fit"], row["score"]) for row in data["rows"]] == [(row["components"]["fit"], row["score"]) for row in ranking]
-    assert data["winner"] == 0 and data["tied"] == 3 and data["raced"] == [0, 1, 2]
-    assert [row["decided_by"] for row in data["rows"]] == [None, "faster", "earliest_expiry", None, None, None]
-    # The clocks run for the slowest of the tied candidates; fast mode needs less of that time.
-    assert data["span"] == demo.HOURS and data["rows"][0]["hours"] == pytest.approx(demo.HOURS / demo.FAST_SPEED, abs=.01)
-    assert data["rows"][0]["fast"] and not data["rows"][1]["fast"]
-    # Every recorded window is a chart, in its recorded order, with the candidates that would spend there.
+    # Every recorded window is a chart, in its recorded order.
     assert [window["key"] for window in data["windows"]] == ["claude-a", "claude-b", "codex", "gemini"]
-    assert [window["rows"] for window in data["windows"]] == [[0, 1, 4], [2], [3], [5]]
     first, codex = data["windows"][0], data["windows"][2]
     assert first["at"] == pytest.approx(166 / 168) and first["period"] == 168 and first["reset"] == 2
     assert first["line"] > first["used"] and codex["line"] < codex["used"]
-    # Ability beyond the need, in the units of F: Opus is far above the task's low need for divergence and vision.
-    opus = demo.HEADLINE_SPECS[0][5]
-    targets = [demo.ANCHOR * level / 3 for level in demo.DEMAND.values()]
-    spare = sum(d * max(0, s - t) for d, s, t in zip(demo.DEMAND.values(), opus, targets)) / sum(demo.DEMAND.values())
-    assert data["rows"][0]["spare"] == pytest.approx(spare, abs=1e-4) and spare > .1
-    assert data["top"] == pytest.approx(max(row["fit"] + row["spare"] for row in data["rows"]))
-    # The same accounts keep their order when another decision is replayed; nothing ties there.
+    # The task's own spend lies on the window the chosen candidate draws from: fast mode, less than the two hours.
+    chosen, row = data["winner"], source["ranking"][0]
+    assert chosen["window"] == "claude-a" and chosen["spend"] == row["quota_line"]["spend_usd"]
+    assert chosen["hours"] == pytest.approx(demo.HOURS / demo.FAST_SPEED, abs=.01)
+    assert chosen["share"] == pytest.approx(chosen["hours"] / 168)
+    # The same accounts keep their order when another decision is replayed; that one runs on the other account.
     before = quota_line.model(earlier())
     assert [w["key"] for w in before["windows"]] == ["claude-a", "claude-b", "codex", "gemini"]
-    assert before["tied"] == 0 and before["raced"] == [0] and before["rows"][0]["id"] == demo.EARLIER_WINNER
-    # The same model and spend: over the line on the window that is ahead, under it on the other account.
-    a, b = (next(r for r in before["rows"] if r["id"] == key) for key in ("opus55_high", "opus55_high_b"))
-    assert a["spend"] == b["spend"] == a["over"] and b["over"] == 0
+    assert before["winner"]["window"] == "claude-b"
+    assert before["windows"][0]["used"] > before["windows"][0]["line"]
 
 
 def test_decisions_without_a_quota_line_record_show_an_empty_state_not_invented_numbers():
     source = snapshot()
     assert quota_line.model({}) is None and quota_line.model(None) is None
     assert quota_line.model({**source, "quota_line": None}) is None
+    # The windows are shown as recorded even when the chosen candidate's spend is unknown: nothing is lit.
     stripped = {**source, "ranking": [{k: v for k, v in row.items() if k != "quota_line"} for row in source["ranking"]]}
-    assert quota_line.model(stripped) is None
+    assert quota_line.model(stripped)["winner"] is None and len(quota_line.model(stripped)["windows"]) == 4
     unknown = copy.deepcopy(source)
     unknown["ranking"][0]["quota_line"]["window"] = "missing"
-    assert [row["id"] for row in quota_line.model(unknown)["rows"]][0] == source["ranking"][1]["id"]
-    # A row without per-axis fit has no uncounted ability to show; a chosen bundle that is not ranked first is still the winner.
-    bare = copy.deepcopy(source)
-    del bare["ranking"][0]["five_axis_fit"]
-    bare["choice"] = bare["ranking"][3]["id"]
-    data = quota_line.model(bare)
-    assert data["rows"][0]["spare"] == 0 and data["winner"] == 3 and data["tied"] == 0 and data["raced"] == [3]
+    assert quota_line.model(unknown)["winner"] is None
+    # A chosen bundle that is not ranked first is still the one whose spend is shown.
+    other = copy.deepcopy(source)
+    other["choice"] = other["ranking"][3]["id"]
+    assert quota_line.model(other)["winner"]["window"] == "codex"
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(stripped), 400, 300, 1.)
+    assert all(state["lit"] == 0 and state["spent"] == 0 for state in renderer.state(decision_theatre.DURATION)["cells"])
     renderer = quota_line.QuotaLineRenderer(None, 400, 300, 1.)
     assert renderer.frame(3.).size == (400, 300) and same(renderer.frame(3.), renderer.frame(9.))
     assert renderer.repaints == 0 and renderer.tip_at(200, 150) == ""
@@ -145,15 +127,14 @@ def test_frames_render_without_a_display_and_repaint_only_the_tiles_that_moved(s
     data = quota_line.model(earlier())
     renderer = quota_line.QuotaLineRenderer(data, *size)
     base = renderer.base.copy()
-    charts, names, bars = ([(index, part) for index in range(4)] for part in ("chart", "names", "bars"))
-    assert set(renderer.tiles) == {*charts, *names, *bars}
-    # The tiles lie side by side across the whole width and leave the margins above and below the blocks alone.
-    boxes = sorted(renderer.tiles.values(), key=lambda box: (box[1], box[0]))
-    assert all(a[3] == b[1] for a, b in zip(boxes[::3], boxes[3::3]))
-    assert all(left[0] == 0 and left[2] == mid[0] and mid[2] == right[0] and right[2] == size[0]
-               for left, mid, right in zip(boxes[::3], boxes[1::3], boxes[2::3]))
-    assert 0 <= boxes[0][1] and boxes[-1][3] <= size[1]
-    times = (0., .2, 1.2, 2.7, 3.5, 4.8, 5.6, 6.3, 7.4, 9.0, decision_theatre.DURATION)
+    # Every window has a head and at least one column; the tiles lie inside the canvas and none overlaps another.
+    assert {name[0] for name in renderer.tiles} == {0, 1, 2, 3}
+    assert all((index, "head") in renderer.tiles and (index, 0) in renderer.tiles for index in range(4))
+    boxes = list(renderer.tiles.values())
+    assert all(0 <= x0 < x1 <= size[0] and 0 <= y0 < y1 <= size[1] for x0, y0, x1, y1 in boxes)
+    assert not any(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+                   for i, a in enumerate(boxes) for b in boxes[i + 1:])
+    times = (0., .2, 1.0, 2.7, 3.5, 4.8, 5.6, 6.8, 7.9, 8.6, decision_theatre.DURATION)
     frames, changed = [], []
     for t in times:
         changed.append(renderer.advance(t))
@@ -161,9 +142,6 @@ def test_frames_render_without_a_display_and_repaint_only_the_tiles_that_moved(s
     assert all(frame.size == size[:2] for frame in frames)
     # The first frame paints every tile once; nothing moves before the first phase.
     assert len(changed[0]) == len(renderer.tiles) and changed[1] == []
-    # While the lines are drawn up to now the charts move and the names come in; while the ability beyond the
-    # need is cut off, only the scores move.
-    assert sorted(changed[2]) == sorted(charts + names + bars) and sorted(changed[4]) == sorted(bars)
     for again in (decision_theatre.DURATION, quota_line.LAST, 9.6):
         assert renderer.advance(again) == [] and same(renderer.live, frames[-1])
     # Every phase adds marks, the caller owns each frame, and the static base is never drawn on.
@@ -175,144 +153,50 @@ def test_frames_render_without_a_display_and_repaint_only_the_tiles_that_moved(s
         assert same(renderer.frame(t), quota_line.QuotaLineRenderer(data, *size).frame(t)), t
 
 
-def test_a_window_that_is_not_moving_is_not_repainted():
+@pytest.mark.parametrize("source", [snapshot, earlier])
+def test_a_chart_cut_into_columns_is_the_same_picture_as_one_painted_whole(monkeypatch, source):
+    data = quota_line.model(source())
+    cut = quota_line.QuotaLineRenderer(data, 486, 425, 1.15)
+    monkeypatch.setattr(quota_line, "COLUMN", 10 ** 6)
+    whole = quota_line.QuotaLineRenderer(data, 486, 425, 1.15)
+    assert len(cut.tiles) > len(whole.tiles) == 8
+    for step in range(0, 100, 3):
+        assert same(cut.frame(step / 10), whole.frame(step / 10)), step / 10
+
+
+def test_only_the_columns_a_line_s_end_passes_through_are_repainted():
     renderer = quota_line.QuotaLineRenderer(quota_line.model(earlier()), 486, 425, 1.15)
-    state = renderer.state
-    plan = quota_line.PHASES["plan"]
-    # Candidates project their spend one after another, best first: early in the phase only the first two are moving.
-    early = plan[0] + .2 * (plan[1] - plan[0])
-    renderer.advance(early)
-    assert [0 < row["laid"] < 1 for row in state(early)["rows"]] == [True, True, False, False, False, False]
-    moved = renderer.advance(early + .02)
-    # Claude B (the winner) projects its spend, all of it under the forecast: its score stands still.
-    # Codex (ranked second) is over its forecast, which drains its score. Claude A and Gemini wait.
-    # The specks of a drain cross the names on their way from the chart to the score.
-    assert moved == [(1, "chart"), (2, "chart"), (2, "names"), (2, "bars")]
+    start, end = quota_line.PHASES["sweep"]
+    middle = start + .45 * (end - start)
+    renderer.advance(middle)
+    moved = renderer.advance(middle + .02)
+    # Each usage line has risen a little: its end's column is painted again, and at most the one next to it.
+    assert {name[0] for name in moved} == {0, 1, 2, 3} and len(moved) <= 8
+    state = renderer.state(middle + .02)
+    for index, part in moved:
+        low, high = renderer.cells[index]["columns"][part]              # never a head: no state has turned
+        assert low <= state["cells"][index]["head"][0] <= high
+    # The rest of the picture is the same as one fresh render of that moment.
+    assert same(renderer.live, quota_line.QuotaLineRenderer(renderer.data, 486, 425, 1.15).frame(middle + .02))
 
 
-def test_while_the_task_runs_a_slow_window_is_repainted_only_when_its_clock_moves_a_pixel():
-    renderer = quota_line.QuotaLineRenderer(quota_line.model(snapshot()), 486, 425, 1.15)
-    start, end = quota_line.PHASES["run"]
-    renderer.advance(start)
-    steps = 60
-    painted = [name for step in range(1, steps) for name in renderer.advance(start + (end - start) * step / steps)]
-    # Gemini: a week-long window, nobody racing on it. Two hours move its "now" by a few pixels; its scores stand still.
-    assert painted.count((3, "bars")) == painted.count((3, "names")) == 0 and 0 < painted.count((3, "chart")) <= 12
-    # The winner's score fills while the task runs; its name is not drawn again for that.
-    assert painted.count((0, "bars")) > 20 and painted.count((0, "names")) <= 2
-    # Claude A is being spent from by the winner: its usage line rises while the task runs.
-    assert painted.count((0, "chart")) > 3 * painted.count((3, "chart"))
-    # The picture is the same as one fresh render of the same moment, whatever was skipped on the way.
-    assert same(renderer.live, quota_line.QuotaLineRenderer(renderer.data, 486, 425, 1.15).frame(start + (end - start) * (steps - 1) / steps))
-
-
-@pytest.mark.parametrize("size", SIZES + [(900, 700, 2.), (200, 120, 1.)])
-@pytest.mark.parametrize("count", [1, 2, 4])
-def test_charts_names_and_scores_stay_inside_the_canvas_and_clear_of_each_other(size, count):
+@pytest.mark.parametrize("count", [1, 2, 3, 4])
+@pytest.mark.parametrize("size", [(297, 196, 1.), (300, 215, 1.), (486, 425, 1.15), (647, 623, 1.5), (420, 800, 1.)])
+def test_charts_stay_inside_the_canvas_and_clear_of_each_other(count, size):
     source = snapshot()
     keys = list(source["quota_line"]["windows"])[:count]
     source["quota_line"]["windows"] = {key: source["quota_line"]["windows"][key] for key in keys}
-    data = quota_line.model(source)
-    assert len(data["windows"]) == count
-    renderer = quota_line.QuotaLineRenderer(data, *size)
-    # Three columns, left to right: charts, names, scores.
-    assert 0 < renderer.cx0 < renderer.cx1 < renderer.nx0 < renderer.sx0 < renderer.sx1 <= renderer.right
-    assert renderer.cx1 - renderer.cx0 >= 75 and renderer.sx0 - renderer.nx0 >= 56 and renderer.sx1 - renderer.sx0 >= 50
-    assert renderer.pitch >= renderer.bar_h + 2 >= 8
-    edges = []
-    for block in renderer.blocks:
-        assert block["top"] >= 0 and block["bottom"] <= renderer.bottom + 1e-6
-        # The window's name stands above its chart; the chart is at least two rows tall.
-        assert block["top"] < block["label"] < block["y0"] < block["y1"] <= block["bottom"]
-        assert block["y1"] - block["y0"] >= quota_line.MIN_LINES * renderer.pitch - 6 - 1e-6
-        # A window's candidates stand beside its own chart, one row each, inside the chart's height.
-        ys = [block["rows"][row] for row in block["window"]["rows"]]
-        assert ys == sorted(ys) and all(b - a == pytest.approx(renderer.pitch) for a, b in zip(ys, ys[1:]))
-        assert all(block["y0"] - 3 <= y <= block["y1"] + 3 for y in ys)
-        edges += [block["top"], block["bottom"]]
-    assert edges == sorted(edges)
-    # The type never shrinks below what the width allows unless the canvas is shorter than the layout's minimum.
-    if size[1] >= quota_line.MIN_HEIGHT * min(size[2], size[0] / quota_line.NOMINAL[0]):
-        assert renderer.s == pytest.approx(min(size[2], size[0] / quota_line.NOMINAL[0]))
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(source), *size)
+    assert len(renderer.cells) == count
+    right, bottom = size[0] / renderer.s, size[1] / renderer.s
+    for cell in renderer.cells:
+        assert 0 <= cell["x0"] < cell["px0"] < cell["px1"] < cell["x1"] <= right + 1e-6
+        assert 0 <= cell["y0"] < cell["py0"] < cell["py1"] < cell["y1"] <= bottom + 1e-6
+        # Room for the name and the state above the chart, and for a line's end around it.
+        assert cell["py0"] - cell["y0"] >= quota_line.HEAD and cell["py1"] - cell["py0"] >= 30
+    for a, b in zip(renderer.cells, renderer.cells[1:]):
+        assert a["x1"] <= b["x0"] or a["y1"] <= b["y0"]
     assert renderer.frame(decision_theatre.DURATION).size == size[:2]
-
-
-def greenish(color):
-    return color[1] > color[0] + 25 and color[1] > color[2]
-
-
-def reddish(color):
-    return color[0] > color[1] + 25 and color[0] > color[2] + 25
-
-
-def test_each_chart_is_the_window_s_own_clock_with_the_forecast_and_the_usage_line():
-    data = quota_line.model(snapshot())
-    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
-    image = renderer.frame(quota_line.PHASES["clock"][1])
-    paper = ImageColor.getrgb(quota_line.theme.CARD)
-    for block in renderer.blocks:
-        window = block["window"]
-        # Left to right is the period: now is where the usage line ends, at the share of the period that has passed.
-        assert renderer.tx(window["at"]) == pytest.approx(renderer.cx0 + (renderer.cx1 - renderer.cx0) * window["at"])
-        # Bottom to top is the quota: nothing at the floor, the whole capacity at the top.
-        assert renderer.uy(block, 0.) == block["y1"] and renderer.uy(block, window["capacity"]) == block["y0"]
-        # The forecast runs straight from the period's start to the whole capacity at the reset.
-        for moment in (.25, .5, .75):
-            spot = pixel(renderer, image, renderer.tx(moment), renderer.uy(block, window["capacity"] * moment))
-            assert spot != paper, (window["key"], moment)
-        # The dot of "now" sits on the usage line's end.
-        assert sum(pixel(renderer, image, renderer.tx(window["at"]), renderer.uy(block, window["used"]))) < 200
-    # Each window is at its own moment of its own period.
-    assert len({round(block["window"]["at"], 3) for block in renderer.blocks}) == 4
-    # Claude A is under its forecast two hours before its reset: the gap at now is quota about to be lost (green).
-    def gap(block):
-        # Between the usage line's end and the forecast, clear of the dot of "now" and of the forecast line itself.
-        window = block["window"]
-        return [pixel(renderer, image, renderer.tx(window["at"]),
-                      renderer.uy(block, window["used"] + (window["line"] - window["used"]) * share))
-                for share in (.4, .5, .6, .7, .8)]
-
-    assert any(greenish(spot) for spot in gap(renderer.blocks[0])) and not any(reddish(spot) for spot in gap(renderer.blocks[0]))
-    # Codex is over its forecast: the gap is debt (pink).
-    assert any(reddish(spot) for spot in gap(renderer.blocks[2])) and not any(greenish(spot) for spot in gap(renderer.blocks[2]))
-
-
-def test_the_usage_line_is_recorded_readings_or_a_fit_that_is_drawn_as_a_fit():
-    source = snapshot()
-    recorded = source["quota_line"]["windows"]
-    assert "samples" in recorded["claude-a"] and "samples" not in recorded["gemini"]
-    data = quota_line.model(source)
-    a, gemini = data["windows"][0], data["windows"][3]
-    # Recorded: the readings as they are (as moments of the period), closed by the decision's own reading.
-    assert a["readings"] == len(recorded["claude-a"]["samples"]) and a["fitted"] == 1
-    assert a["path"][0] == (0., 0.) and a["path"][-1] == (a["at"], a["used"])
-    assert a["path"][1] == (pytest.approx(recorded["claude-a"]["samples"][0][0] / 168), recorded["claude-a"]["samples"][0][1])
-    assert [u for _, u in a["path"]] == sorted(u for _, u in a["path"])
-    # No readings: a straight fit from the period's start to the current usage, marked as fitted.
-    assert gemini["readings"] == 0 and gemini["fitted"] == 1 and gemini["path"] == [(0., 0.), (gemini["at"], gemini["used"])]
-    # One reading is not a line, readings after the decision or malformed ones are ignored: still a fit.
-    for samples in ([[10, 20]], [[500, 20], [600, 30]], [["x", 1], [1], None], "n/a"):
-        broken = copy.deepcopy(source)
-        broken["quota_line"]["windows"]["claude-a"]["samples"] = samples
-        assert quota_line.model(broken)["windows"][0]["readings"] == 0
-    # On the picture a fitted line is dotted (paper shows through along it); a recorded one is solid.
-    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
-    image = renderer.frame(quota_line.PHASES["clock"][1])
-    paper = ImageColor.getrgb(quota_line.theme.CARD)
-
-    def inked(block, t0, t1):
-        window = block["window"]
-        shares = [t0 + (t1 - t0) * step / 80 for step in range(81)]
-        return [pixel(renderer, image, renderer.tx(t), renderer.uy(block, renderer.usage(window, t))) != paper for t in shares]
-
-    fitted = inked(renderer.blocks[3], .15, gemini["at"] * .9)
-    assert any(fitted) and not all(fitted)
-    (t0, _), (t1, _) = a["path"][3], a["path"][4]
-    assert all(inked(renderer.blocks[0], t0, t1))
-    # The hover text says which it is.
-    s = renderer.s
-    assert str(a["readings"]) in renderer.tip_at(renderer.tx(.5) * s, renderer.blocks[0]["y0"] * s)
-    assert renderer.tip_at(renderer.tx(.5) * s, renderer.blocks[3]["y0"] * s) != renderer.tip_at(renderer.tx(.5) * s, renderer.blocks[0]["y0"] * s)
 
 
 def test_readings_come_only_from_the_period_of_the_decision():
@@ -355,126 +239,223 @@ def test_the_page_looks_readings_up_itself_and_never_changes_the_snapshot(monkey
     assert router_data.with_usage_readings(source, "2026-10-30T09:40:00+00:00") is source
 
 
-def test_ability_beyond_the_need_is_cut_off_and_left_pale():
+def greenish(color):
+    return color[1] > color[0] + 25 and color[1] > color[2]
+
+
+def reddish(color):
+    return color[0] > color[1] + 25 and color[0] > color[2] + 25
+
+
+def accent(color):
+    return color[2] > color[0] + 60 and color[2] > color[1] + 60
+
+
+def settled(source=None, size=(647, 623, 1.5)):
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(source or snapshot()), *size)
+    return renderer, renderer.frame(decision_theatre.DURATION)
+
+
+def spot(renderer, image, cell, moment, amount):
+    return pixel(renderer, image, *renderer.at(cell, moment, amount))
+
+
+def state_pixel(renderer, image, cell):
+    """A pixel of the state word's pill, clear of the word itself."""
+    return pixel(renderer, image, cell["x1"] - 17, cell["y0"] + quota_line.HEAD / 2 + 2)
+
+
+def test_each_chart_is_the_window_s_own_clock_with_the_quota_line_from_corner_to_corner():
+    renderer, image = settled()
+    paper = ImageColor.getrgb(quota_line.theme.CARD)
+    for cell in renderer.cells[1:]:                                   # the first one is lit: its card is not paper
+        window = cell["window"]
+        # Left to right is the period, bottom to top is the quota: nothing at the floor, all of it at the top.
+        assert renderer.at(cell, 0., 0.) == (cell["px0"], cell["py1"])
+        assert renderer.at(cell, 1., window["capacity"]) == (cell["px1"], cell["py0"])
+        assert renderer.at(cell, .5, window["capacity"] / 2) == pytest.approx(((cell["px0"] + cell["px1"]) / 2, (cell["py0"] + cell["py1"]) / 2))
+        # The quota line runs straight from the period's start to the whole capacity at the reset.
+        beyond = [moment for moment in (.3, .5, .7, .9) if moment > window["at"] + .08]
+        assert beyond and all(spot(renderer, image, cell, moment, window["capacity"] * moment) != paper for moment in beyond)
+        # Off the lines the chart is bare.
+        assert spot(renderer, image, cell, .2, window["capacity"] * .9) == paper
+    # Each window is at its own moment of its own period.
+    assert len({round(cell["window"]["at"], 3) for cell in renderer.cells}) == 4
+
+
+def test_the_usage_line_is_green_under_the_quota_line_and_red_over_it_and_says_so():
+    renderer, image = settled(earlier())
+    words = {}
+    for cell in renderer.cells:
+        window = cell["window"]
+        for run in cell["runs"]:
+            if run["fitted"] or len(run["pts"]) < 6:
+                continue
+            # A stretch of the line lies on one side of the quota line, and wears that side's colour.
+            moment, amount = run["pts"][len(run["pts"]) // 2]
+            assert (amount > window["capacity"] * moment) == run["over"]
+            assert (reddish if run["over"] else greenish)(spot(renderer, image, cell, moment, amount)), (window["key"], moment)
+        # The state is that of the line's end, now.
+        over = window["used"] > window["line"]
+        assert (reddish if over else greenish)(state_pixel(renderer, image, cell)), window["key"]
+        words[window["key"]] = over
+    assert words == {"claude-a": True, "claude-b": False, "codex": True, "gemini": False}
+    # Both sides occur along one line: Claude A started under its quota line and overtook it.
+    assert [run["over"] for run in renderer.cells[0]["runs"] if not run["fitted"]] == [False, True]
+    # The area between the two lines is tinted on the line's side: clearly lighter than the line itself.
+    cell = renderer.cells[2]
+    window = cell["window"]
+    between = spot(renderer, image, cell, window["at"] - .03, (window["used"] + window["line"]) / 2 - window["capacity"] * .03)
+    assert reddish(between) or between[0] > between[1] > 200, between
+
+
+def test_the_state_turns_as_the_rising_line_crosses_the_quota_line():
+    # Two hours before its reset Claude A is under its quota line, but early in the period it ran ahead of it.
     renderer = quota_line.QuotaLineRenderer(quota_line.model(snapshot()), 647, 623, 1.5)
-    row = renderer.data["rows"][0]
-    inside, beyond = row["fit"] * .6, row["fit"] + row["spare"] * .5
-    grown, cut = renderer.frame(quota_line.PHASES["cap"][0]), renderer.frame(quota_line.PHASES["cap"][1])
-    solid = ImageColor.getrgb(quota_line.SAME_MODEL)
-    # First the bar shows the whole ability in one colour; then the part beyond the need fades, the rest stays.
-    assert bar_pixel(renderer, grown, 0, inside) == bar_pixel(renderer, grown, 0, beyond) == solid
-    assert bar_pixel(renderer, cut, 0, inside) == solid
-    pale = bar_pixel(renderer, cut, 0, beyond)
-    assert pale != solid and sum(pale) > sum(solid) + 150 and pale != ImageColor.getrgb(quota_line.theme.CARD)
-
-
-def test_a_projection_is_green_under_the_forecast_and_red_over_it_and_the_red_part_drains_the_score():
-    data = quota_line.model(earlier())
-    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
-    rows = data["rows"]
-    winner = data["winner"]
-    codex = next(i for i, row in enumerate(rows) if row["window_label"] == "Codex")
-    # The winner's spend stays under its window's forecast: it never crosses, and nothing is taken off its score.
-    assert rows[winner]["over"] == 0 and rows[winner]["cross"] == 1
-    # Codex is already over its forecast: every dollar of the projection is over it.
-    assert rows[codex]["over"] == rows[codex]["spend"] and rows[codex]["cross"] == 0
-    # A window under its forecast whose candidate spends more than the gap: the projection crosses part way.
-    window = dict(period=168., line=300., used=280., capacity=400.)
-    row = dict(spend=60., over=60. - (400 * (126 + 2) / 168 - 280))
-    assert 0 < row["over"] < row["spend"]
-    cross = quota_line.crossing(window, row, 2.)
-    assert cross == pytest.approx(20 / (60 - 400 * 2 / 168))
-    # At the crossing the projection is exactly on the forecast, and at its end exactly X over it.
-    assert 280 + 60 * cross == pytest.approx(300 + 400 * 2 / 168 * cross)
-    assert 280 + 60 - (300 + 400 * 2 / 168) == pytest.approx(row["over"])
-    assert quota_line.crossing(window, dict(spend=60., over=0.), 2.) == 1
-    assert quota_line.crossing({**window, "period": None}, row, 2.) == pytest.approx((60 - row["over"]) / 60)
-    # The score loses its end while the red part is drawn, in proportion to how much of it is drawn.
-    plan = quota_line.PHASES["plan"]
-    block = next(block for block in renderer.blocks if codex in block["rows"])
-    cost = rows[codex]["fit"] - rows[codex]["score"]
+    cell = renderer.cells[0]
+    start, end = quota_line.PHASES["sweep"]
     seen = []
-    for step in range(0, 41):
-        story = plan[0] + (plan[1] - plan[0]) * step / 40
-        state = renderer.state(story)
-        live = state["rows"][codex]
-        assert live["paid"] == pytest.approx(live["drawn"])            # all of Codex's projection is over the forecast
-        assert renderer.heights(codex, state)[0] == pytest.approx(rows[codex]["fit"] - cost * live["paid"])
-        assert state["rows"][winner]["paid"] == 0
-        seen.append(live["paid"])
-        if live["laid"] < 1 and live["drawn"] > .6:
-            # The head of the projection is on the chart, above the point of now (clear of its dot), and red.
-            x, y = renderer.projected(block, rows[codex], live["drawn"])
-            assert y < renderer.uy(block, block["window"]["used"]) + 1e-6
-            assert reddish(pixel(renderer, renderer.frame(story), x, y)), step
-    assert seen == sorted(seen) and seen[0] == 0 and seen[-1] == 1
-    done = renderer.frame(plan[1])
-    assert bar_pixel(renderer, done, codex, rows[codex]["score"] * .5) == ImageColor.getrgb(quota_line.OTHER)
-    scar = bar_pixel(renderer, done, codex, (rows[codex]["score"] + rows[codex]["fit"]) / 2)
-    assert scar != ImageColor.getrgb(quota_line.OTHER) and reddish(scar)
+    for step in range(1, 40):
+        story = start + (end - start) * step / 40
+        live = renderer.state(story)["cells"][0]
+        image = renderer.frame(story)
+        if live["pace"] * 6 >= 1 and live["over"] in (0., 1.):
+            # The word's pill and the line's end wear the colour of the side the end is on.
+            tone = reddish if live["over"] else greenish
+            assert tone(state_pixel(renderer, image, cell)), story
+            x, y = renderer.at(cell, *live["head"])
+            assert tone(pixel(renderer, image, x + 3.2, y)), story
+            seen.append(live["over"])
+    assert seen[0] == 1. and seen[-1] == 0. and seen == sorted(seen, reverse=True)
+    # The usage line only rises, and it ends where the decision read it.
+    heads = [renderer.state(start + (end - start) * step / 40)["cells"][0]["head"] for step in range(41)]
+    assert all(a[0] <= b[0] and a[1] <= b[1] + 1e-9 for a, b in zip(heads, heads[1:]))
+    assert heads[-1] == pytest.approx((cell["window"]["at"], cell["window"]["used"]))
 
 
-def test_tied_candidates_race_the_winner_s_spend_becomes_usage_and_an_unspent_gap_is_lost_at_the_reset():
-    data = quota_line.model(snapshot())
-    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
-    assert data["tied"] == 3 and data["raced"] == [0, 1, 2] and data["winner"] == 0
-    start, end = quota_line.PHASES["run"]
-    half = renderer.state(start + (end - start) * .5)
-    # Equal N: the fast candidate has run further than the others at the same moment.
-    assert half["rows"][0]["done"] > half["rows"][1]["done"] == half["rows"][2]["done"] > 0
-    block, a = renderer.blocks[0], renderer.blocks[0]["window"]
-    before, after = renderer.window_state(block, renderer.state(start)), renderer.window_state(block, renderer.state(end))
-    # Time passes on the window's own clock: two hours take Claude A to its reset.
-    assert before["now"] == pytest.approx(a["at"]) and after["now"] == 1 and after["resets"]
-    # The winner's spend is now usage; what is still under the forecast at the reset is lost.
-    assert after["used"] == pytest.approx(a["used"] + data["rows"][0]["spend"]) and after["used"] < a["capacity"]
-    assert before["lost"] == 0 and after["lost"] == 1
-    settled = renderer.frame(decision_theatre.DURATION)
-    gap = pixel(renderer, settled, renderer.tx(1.) - 1, renderer.uy(block, (after["used"] + a["capacity"]) / 2))
-    assert not greenish(gap) and gap != ImageColor.getrgb(quota_line.theme.CARD)
-    # A window nobody spends from only moves along its clock: its usage stays where it was.
-    other = renderer.blocks[3]
-    moved = renderer.window_state(other, renderer.state(end))
-    assert moved["used"] == other["window"]["used"] and other["window"]["at"] < moved["now"] < 1 and not moved["resets"]
-    # The winner's row lights up; its name is the only one in the accent colour.
-    y = block["rows"][0]
-    assert pixel(renderer, settled, renderer.nx0 - 4, y) == ImageColor.getrgb(quota_line.theme.ACCENT_SOFT)
-    assert pixel(renderer, settled, renderer.nx0 - 4, block["rows"][1]) == ImageColor.getrgb(quota_line.theme.CARD)
+def test_the_usage_line_is_recorded_readings_or_a_fit_that_is_drawn_as_a_fit():
+    source = snapshot()
+    recorded = source["quota_line"]["windows"]
+    assert "samples" in recorded["claude-a"] and "samples" not in recorded["gemini"]
+    renderer, image = settled(source)
+    measured, fitted = renderer.cells[1], renderer.cells[3]
+    assert measured["window"]["readings"] == len(recorded["claude-b"]["samples"]) and fitted["window"]["readings"] == 0
+    assert all(run["fitted"] for run in fitted["runs"]) and not all(run["fitted"] for run in measured["runs"])
+
+    def inked(cell, run):
+        (t0, u0), (t1, u1) = run["pts"][0], run["pts"][-1]
+        return [sum(spot(renderer, image, cell, t0 + (t1 - t0) * step / 60, u0 + (u1 - u0) * step / 60)) < 560
+                for step in range(4, 57)]
+
+    # A fit is dotted: ink and gaps along it. It still starts at nothing and ends at the usage read now.
+    dots = inked(fitted, max(fitted["runs"], key=lambda run: len(run["pts"])))
+    assert any(dots) and not all(dots)
+    assert fitted["runs"][0]["pts"][0] == (0., 0.) and fitted["runs"][-1]["pts"][-1] == pytest.approx((fitted["window"]["at"], fitted["window"]["used"]))
+    # Recorded readings are one solid line through every reading.
+    run = max((run for run in measured["runs"] if not run["fitted"]), key=lambda run: len(run["pts"]))
+    assert all(sum(spot(renderer, image, measured, *point)) < 560 for point in run["pts"][2:-2])
+    period = measured["window"]["period"]
+    points = [point for run in measured["runs"] for point in run["pts"]]
+    for hours, used in recorded["claude-b"]["samples"]:
+        assert any(abs(t - hours / period) < 1e-6 and abs(u - used) < 1e-6 for t, u in points)
+    # A snapshot without usable readings falls back to the fit.
+    for bad in ([], [[1., 2.]], "junk", [[-5., 1.], [9e9, 2.]]):
+        recorded["claude-b"]["samples"] = bad
+        assert quota_line.model(source)["windows"][1]["readings"] == 0
 
 
-def test_the_picture_carries_only_names(monkeypatch):
-    data = quota_line.model(snapshot())
-    renderer = quota_line.QuotaLineRenderer.__new__(quota_line.QuotaLineRenderer)
-    written = []
+def test_the_curve_through_the_readings_never_dips_and_misses_none():
+    path = [(0., 0.), (.1, 5.), (.2, 5.), (.2, 30.), (.5, 31.), (.6, 70.)]         # a pause, a step, a slow stretch
+    curve, lead = quota_line.smooth(path, 1, 300)
+    assert curve[0] == (0., 0.) and curve[-1] == (.6, 70.) and lead > 0
+    assert all(a[0] <= b[0] and a[1] <= b[1] + 1e-9 for a, b in zip(curve, curve[1:]))
+    for moment, amount in path:
+        assert any(abs(t - moment) < 1e-5 and abs(u - amount) < 1e-6 for t, u in curve)
+    # The fitted lead is the straight line it claims to be.
+    assert all(u == pytest.approx(50 * t) for t, u in curve[:lead + 1])
+    # A fit alone is a straight line too.
+    straight, lead = quota_line.smooth([(0., 0.), (.4, 20.)], 1, 300)
+    assert lead == len(straight) - 1 and all(u == pytest.approx(50 * t) for t, u in straight)
+    # Where the curve crosses the quota line it is cut, and each stretch knows its side.
+    runs = quota_line.runs_by_state(curve, 0, 100., True)
+    assert [run["over"] for run in runs] == [False, True, False, True]
+    assert all(a["pts"][-1] == b["pts"][0] for a, b in zip(runs, runs[1:]))
+    assert all(run["over"] is None for run in quota_line.runs_by_state(curve, 0, 100., False))
+
+
+def test_the_window_the_task_draws_from_is_lit_and_its_spend_is_added_to_the_line():
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(snapshot()), 647, 623, 1.5)
+    card = ImageColor.getrgb(quota_line.theme.CARD)
+    before = renderer.frame(quota_line.PHASES["spend"][0])
+    after = renderer.frame(quota_line.PHASES["spend"][1])
+    chosen, other = renderer.cells[0], renderer.cells[1]
+    inside = lambda image, cell: pixel(renderer, image, cell["x0"] + 4, (cell["y0"] + cell["y1"]) / 2)
+    assert inside(before, chosen) == inside(before, other) == inside(after, other) == card
+    assert inside(after, chosen) != card and inside(after, chosen)[2] > inside(after, chosen)[0]
+    # The task's spend continues the usage line from now, in the accent colour, for the task's own duration.
+    window, task = chosen["window"], chosen["task"]
+    assert other["task"] is None and task["spend"] > 0
+    assert chosen["end"] == pytest.approx((window["at"] + task["share"], window["used"] + task["spend"]))
+    middle = (window["at"] + task["share"] / 2, window["used"] + task["spend"] / 2)
+    assert accent(spot(renderer, after, chosen, *middle)) and not accent(spot(renderer, before, chosen, *middle))
+    # A window nobody draws from keeps its end where the decision read it.
+    assert other["end"] == (other["window"]["at"], other["window"]["used"])
+
+
+def test_the_two_lines_close_at_the_reset():
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(earlier()), 647, 623, 1.5)
+    before = renderer.frame(quota_line.PHASES["close"][0])
+    after = renderer.frame(decision_theatre.DURATION)
+    for cell in renderer.cells:
+        window = cell["window"]
+        assert cell["closes"]
+        corner = renderer.at(cell, 1., window["capacity"])
+        # The corner where the lines meet is an open ring until the pace line reaches it, then it is filled.
+        assert not accent(pixel(renderer, before, *corner)) and accent(pixel(renderer, after, *corner))
+        # The pace that uses up what is left: a dotted line from the usage line's end to that corner.
+        (x0, y0), (x1, y1) = renderer.at(cell, *cell["end"]), corner
+        along = [(x0 + (x1 - x0) * step / 200, y0 + (y1 - y0) * step / 200) for step in range(30, 180)]
+        dark = [sum(pixel(renderer, after, x, y)) < 600 for x, y in along]
+        assert any(dark) and not all(dark)
+        assert sum(sum(pixel(renderer, before, x, y)) < 600 for x, y in along) < sum(dark)
+    # A window that is already full, or never resets, has no pace to draw.
+    source = earlier()
+    source["quota_line"]["windows"]["claude-a"]["used_usd"] = source["quota_line"]["windows"]["claude-a"]["capacity_usd"]
+    source["quota_line"]["windows"]["codex"]["reset_in_hours"] = None
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(source), 647, 623, 1.5)
+    assert [cell["closes"] for cell in renderer.cells] == [False, True, False, True]
+    final = renderer.state(decision_theatre.DURATION)["cells"]
+    assert final[0]["closed"] == 0 and final[2]["closed"] == 0 and final[1]["closed"] == 1
+    # Without a reset there is no quota line and no state to tell: the usage line is plain.
+    assert final[2]["over"] is None and all(run["over"] is None for run in renderer.cells[2]["runs"])
+    assert renderer.frame(decision_theatre.DURATION).size == (647, 623)
+
+
+def test_the_picture_carries_only_window_names_and_their_state(monkeypatch):
+    words = []
     real = quota_line.QuotaLineRenderer.text
     monkeypatch.setattr(quota_line.QuotaLineRenderer, "text",
-                        lambda self, value, *a, **k: written.append(str(value)) or real(self, value, *a, **k))
-    renderer.__init__(data, 647, 623, 1.5)
-    # The window names are part of the still picture.
-    assert written == ["Claude A", "Claude B", "Codex", "Gemini"]
-    written.clear()
-    for i in range(100):
-        renderer.frame(i / 10)
-    # While it plays, the only other words are the candidates' model names: no formula, no legend, no numbers.
-    names = {row["name"] for row in data["rows"]}
-    assert set(written) == names and len(names) <= quota_line.ROWS
-    assert all(len(name) <= 12 and not any(sign in name for sign in "$=%") for name in names)
+                        lambda self, value, *args, **kwargs: words.append(str(value)) or real(self, value, *args, **kwargs))
+    renderer = quota_line.QuotaLineRenderer(quota_line.model(earlier()), 486, 425, 1.15)
+    for step in range(0, 100, 4):
+        renderer.advance(step / 10)
+    labels = {window["label"] for window in renderer.data["windows"]}
+    assert set(words) == labels | {quota_line._tr("优先使用"), quota_line._tr("降权")}
 
 
-def test_hover_text_says_what_the_chart_or_the_row_under_the_pointer_stands_for():
-    data = quota_line.model(snapshot())
-    renderer = quota_line.QuotaLineRenderer(data, 647, 623, 1.5)
+def test_hover_text_says_what_the_chart_under_the_pointer_stands_for():
+    renderer, _ = settled(earlier(), (486, 425, 1.15))
     s = renderer.s
-    a, codex = renderer.blocks[0], renderer.blocks[2]
-    over_chart = renderer.tip_at(renderer.tx(.5) * s, (a["y0"] + a["y1"]) / 2 * s)
-    assert "Claude A" in over_chart and "$240" in over_chart and "$400" in over_chart
-    assert quota_line.reset_text(2) in over_chart and "$155" in over_chart            # 400·166/168 − 240 still unspent
-    assert "$" in renderer.tip_at(12, codex["label"] * s)
-    over_bar = renderer.tip_at(renderer.sx(.3) * s, a["rows"][0] * s)
-    assert data["rows"][0]["label"] in over_bar and "0.667" in over_bar and "Claude A" in over_bar
-    sol = next(i for i, row in enumerate(data["rows"]) if row["id"] == "sol_high")
-    assert "0.616" in renderer.tip_at((renderer.nx0 + 5) * s, codex["rows"][sol] * s)
-    assert renderer.tip_at(2, 1) == "" and renderer.tip_at(2, (a["bottom"] + renderer.blocks[1]["top"]) / 2 * s) == ""
+    at = lambda cell: ((cell["px0"] + cell["px1"]) / 2 * s, (cell["py0"] + cell["py1"]) / 2 * s)
+    over, under = renderer.tip_at(*at(renderer.cells[0])), renderer.tip_at(*at(renderer.cells[1]))
+    assert over.startswith("Claude A") and quota_line._tr("这个窗口被降权") in over
+    assert quota_line._tr("实际用量线来自 {0} 个读数").format(renderer.cells[0]["window"]["readings"]) in over
+    assert under.startswith("Claude B") and quota_line._tr("这个窗口被优先使用") in under
+    # The window the task draws from also says which candidate that is and what it spends.
+    task = renderer.cells[1]["task"]
+    assert task["label"] in under and quota_line.usd(task["spend"]) in under and task["label"] not in over
+    assert quota_line._tr("本期没有读数，实际用量线按期初到当前拟合") in renderer.tip_at(*at(renderer.cells[3]))
+    assert renderer.tip_at(1, 1) == ""                                 # the margin around the charts
 
 
 def test_canvas_follows_the_film_clock_only_while_visible(monkeypatch):
@@ -508,20 +489,18 @@ def test_canvas_follows_the_film_clock_only_while_visible(monkeypatch):
         for story in (9.45, 9.6, decision_theatre.DURATION, decision_theatre.DURATION):
             view.follow(story)                           # after the last phase: one settled frame, then nothing
         assert frames == [5., 5.04, 9.45]
-        assert set(view.strips) == set(view.renderer.tiles)
-        assert view.tip_at(10, view.renderer.blocks[0]["y0"] * view.renderer.s)
-        tiles = dict(view.renderer.tiles)
+        assert moved < set(view.strips) <= set(view.renderer.tiles)
+        cell = view.renderer.cells[0]
+        assert view.tip_at((cell["px0"] + 20) * view.renderer.s, (cell["py0"] + 20) * view.renderer.s)
         view.show(snapshot())
         assert frames[-1] == decision_theatre.DURATION and len(frames) == 4
         # The next decision starts from a full image again; the old strips no longer cover it.
         assert all(view.canvas.itemcget(item, "state") == "hidden" for _, item in view.strips.values())
         view.follow(5.)
-        assert view.canvas.itemcget(view.strips[1, "chart"][1], "state") == "normal"
-        # The new decision cuts its tiles at other places: every strip that is shown again sits on its new tile.
-        assert view.renderer.tiles != tiles
-        for name, (_, item) in view.strips.items():
-            if view.canvas.itemcget(item, "state") == "normal":
-                assert view.canvas.coords(item) == [float(v) for v in view.renderer.tiles[name][:2]], name
+        shown = [name for name, (_, item) in view.strips.items() if view.canvas.itemcget(item, "state") == "normal"]
+        assert shown
+        for name in shown:
+            assert view.canvas.coords(view.strips[name][1]) == [float(v) for v in view.renderer.tiles[name][:2]], name
         monkeypatch.setattr(view.canvas, "winfo_width", lambda: 300)
         view.configure(None)                             # a new size drops them
         assert not view.strips and view.photo.width() == 300

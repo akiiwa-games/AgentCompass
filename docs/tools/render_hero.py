@@ -24,12 +24,13 @@ HOLD_MS = 2000
 # the settled frame (the winner under the radar of it and the best-ranked other model) before replaying.
 POSTER_STORY = 9.9
 POSTER_MS = 1500
-# Flat page and key ink colours kept exact so the paper tone never bands. The last row is the colours that
-# carry meaning in small marks (quota cost and over-forecast spend, spend under the forecast, the unspent gap,
-# usage ahead of the forecast, the usage and forecast lines): too few pixels for a median cut to keep them.
+# Flat page and key ink colours kept exact so the paper tone never bands. The last two rows are the colours
+# that carry meaning in thin marks (usage over and under the quota line with their state pills, the quota line,
+# the lit window): too few pixels for a median cut to keep them.
 RESERVED = [(254, 254, 253), (255, 255, 255), (79, 70, 229), (8, 145, 178),
             (15, 23, 42), (100, 116, 139), (148, 163, 184), (226, 232, 240),
-            (239, 68, 68), (16, 185, 129), (110, 231, 183), (253, 164, 175), (254, 202, 202), (51, 65, 85), (163, 177, 198)]
+            (239, 68, 68), (16, 185, 129), (185, 28, 28), (4, 120, 87), (254, 226, 226), (209, 250, 229),
+            (165, 180, 252), (199, 210, 254), (238, 242, 255), (238, 242, 247)]
 
 
 def differs(a, b, top: int = 0) -> int:

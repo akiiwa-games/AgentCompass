@@ -3,10 +3,9 @@
 The scene carries no score or cost text: order, light and geometry carry the comparison,
 and the only words are the task, its kind, the model names and the five axis names.
 It ends on the answer and its reason together: the winner's name under the radar of the
-winner and the best-ranked other model. The radar has no fixed backdrop: the task's need is a
-dashed line through its targets, each model's shape blooms from the centre (the winner last),
-ability beyond a target is a pale segment along that axis, and quota cost is a red segment on
-the quota-economy axis. Full evidence remains in the candidate table.
+winner and the best-ranked other model. The radar says nothing but the two shapes: a hairline
+frame opens from the centre, and each model's shape blooms as a sheet of tinted glass (the winner
+last), with specks of light in the winner's. Full evidence remains in the candidate table.
 """
 from __future__ import annotations
 
@@ -38,7 +37,7 @@ BEATS = (("task", 0., TITLE_HOLD), ("kind", TITLE_HOLD, 2.85), ("open", 2.85, 4.
 WINDOWS = {"appear": (0., TITLE_IN), "underline": (.1, .55), "classify": (TITLE_HOLD, 2.3),
            "gather": (2.85, 3.6), "routes": (3.35, 4.8), "rank": (4.4, 5.4),
            "dissolve": (5.3, 6.0), "lift": (5.4, 6.45), "glide": (5.5, 6.65), "grid": (5.95, 6.9),
-           "need": (6.2, 7.0), "settle": (7.8, 9.1), "effort": (8.35, 9.25)}
+           "settle": (7.8, 9.1), "effort": (8.35, 9.25)}
 # A shape blooms from the radar's centre one axis after another (clockwise from the top), each
 # easing out without overshoot. The other model goes first; the winner's shape lands last.
 BLOOM = (6.9, 6.45)     # story time the pair's shapes start growing: (winner, other model)
@@ -267,7 +266,6 @@ class Scene:
     pair: tuple
     winner: Candidate | None
     recomputed: bool
-    need: tuple = ()        # the task's target on each radar axis (None where it has none), or () when unrecorded
 
 
 def scene_from_result(result):
@@ -305,16 +303,7 @@ def scene_from_result(result):
     first = winner if winner in eligible else next(iter(eligible), None)
     second = next((c for c in eligible if first and c.name != first.name), None)
     pair = tuple(c for c in (first, second) if c and c.values)
-    return Scene(title, kind, tuple(rows), pair, winner, result.get("theatre_source") == "recomputed",
-                 task_need(result, first))
-
-
-def task_need(result, candidate):
-    """The task's target per radar axis as the snapshot recorded it for `candidate`; () when it did not."""
-    row = next((item for item in result.get("ranking") or []
-                if isinstance(item, dict) and candidate and str(item.get("id") or "") == candidate.id), None)
-    need = radar.need_values((row or {}).get("five_axis_fit"))
-    return tuple(need.get(key) for key, _, _ in radar.SCORE_AXES) if need else ()
+    return Scene(title, kind, tuple(rows), pair, winner, result.get("theatre_source") == "recomputed")
 
 
 def route_points(start, end, count=65):
@@ -468,8 +457,8 @@ class TheatreRenderer:
             # The route's end lifts off its row and lands on the radar's centre, where its shape blooms.
             path = bezier2(end, control, self.center)
             self.pens[candidate.id] = (path, arc_lengths(path))
-        need = scene.need if len(scene.need) == len(radar.SCORE_AXES) else ()
-        self.need = tuple(need)
+        # The sheets' colour is laid out once; a frame only cuts them to the shapes.
+        self.sheets = [radar.glass_sheet(round(2*(self.radius + 4*s)*self.k), style) for style in radar.SERIES_STYLES]
         self.final = self.final_layout()
         self.axis_labels = self.axis_layout()
         self.seeds = self.speck_seeds()
@@ -668,7 +657,6 @@ class TheatreRenderer:
         self.grid(draw, t, cam)
         states = self.flow(draw, t, cam)
         self.polygons(image, draw, t, cam)
-        self.need_outline(draw, t, cam)
         self.labels(image, t, cam, states)
         self.specks(draw, t, cam)
         image = image.reduce(self.k)
@@ -798,62 +786,15 @@ class TheatreRenderer:
                 self.probe["head"] = (point[0]-cam, point[1])
 
     def grid(self, draw, t, cam):
-        """Five hairline spokes that draw out from the centre and recede once the shapes have landed."""
+        """The frame of full scale: a hairline pentagon that opens from the centre and recedes once the shapes have landed."""
         shown = ease(window(t, "grid"))
         if shown <= 0 or not self.scene.pair:
             return
-        quiet = 1 - .45*ease(window(t, "settle"))
+        quiet = 1 - .35*ease(window(t, "settle"))
         cx, cy = self.center
-        k, s = self.k, self.s
-        centre = self.screen(((cx, cy),), cam)[0]
-        hair = max(1, round(.7*s*k))
-        for index in range(5):
-            reach = ease(window(t, "grid")*1.25 - index*.06)
-            if reach <= 0:
-                continue
-            tip = self.screen((radar.point(cx, cy, self.radius*reach, index, 5),), cam)[0]
-            draw.line((centre, tip), fill=(203, 213, 225, round(205*shown*quiet)), width=hair)
-            if reach >= 1:
-                # A dot marks full scale and a smaller one half scale: the only fixed marks on the radar.
-                for level, size, ink in ((1., 1.5, (148, 163, 184)), (.5, 1., (203, 213, 225))):
-                    self.dot(draw, radar.point(cx, cy, self.radius*level, index, 5), cam, size,
-                             (*ink, round(255*shown*quiet)))
-
-    def need_outline(self, draw, t, cam):
-        """The task's need: a dashed line drawn through its targets, with a dot on each axis that has one."""
-        drawn = ease(window(t, "need"))
-        if drawn <= 0 or not self.need:
-            return
-        cx, cy = self.center
-        ink, unit = (*ImageColor.getrgb(radar.NEED_INK), 235), self.s*self.k
-        at = lambda index: radar.point(cx, cy, self.radius*self.need[index], index, 5)
-        for run in radar.need_runs(self.need):
-            path = [at(index) for index in run]
-            length = sum(math.dist(a, b) for a, b in zip(path, path[1:]))
-            for dash in radar.dashes(path, radar.NEED_DASH[0]*self.s, radar.NEED_DASH[1]*self.s, length*drawn):
-                draw.line(self.screen(dash, cam), fill=ink, width=max(1, round(radar.NEED_WEIGHT*unit)))
-            travelled = 0.
-            for here, before in zip(path, [path[0]] + path):
-                travelled += math.dist(here, before)
-                if length*drawn >= travelled:        # the dot lands when the line reaches its axis
-                    self.dot(draw, here, cam, radar.NEED_DOT, ink)
-
-    def axis_marks(self, draw, values, index, opened, strength, t, cam):
-        """Ability beyond a target and quota cost: short segments along their axes, beside the spoke."""
-        style = radar.SERIES_STYLES[min(index, 1)]
-        known = ease(window(t, "need")) if self.need else 0.     # a target counts once its line is being drawn
-        need = self.need if known > 0 else None
-        grown = self.bloom(index, t)
-        cx, cy = self.center
-        for kind, axis, start, end in radar.axis_marks(values, need, len(values) - 1):
-            if kind == "cost":
-                if grown[axis] < 1:
-                    continue                         # the cost is read off the point once it has landed
-                ink = (*ImageColor.getrgb(radar.COST_INK), round(radar.COST_ALPHA*opened))    # a cost does not recede
-            else:
-                ink = (*ImageColor.getrgb(style["color"]), round(radar.SPARE_ALPHA*opened*strength*known))
-            segment = radar.axis_segment(cx, cy, self.radius, axis, 5, start, end, radar.MARK_SHIFT*self.s*style["side"])
-            draw.line(self.screen(segment, cam), fill=ink, width=max(1, round(radar.MARK_WIDTH*self.s*self.k)))
+        frame = radar.ring(cx, cy, self.radius*ease(window(t, "grid")*1.25), 5)
+        draw.line(self.screen(frame + frame[:2], cam), fill=(*ImageColor.getrgb(radar.FRAME_INK), round(255*shown*quiet)),
+                  width=max(1, round(self.s*self.k)), joint="curve")
 
     def pen(self, candidate, t):
         path, lengths = self.pens[candidate.id]
@@ -948,11 +889,20 @@ class TheatreRenderer:
             values = [value*g for value, g in zip(candidate.values, grown)]
             points = radar.polygon(values, cx, cy, self.radius)
             opened = min(1., sum(grown)/2.5)
-            # One flat, very light tint; once settled the winner's deepens a little and the other's recedes.
-            depth = style["fill"] + (6 if won else -4)*settled
-            draw.polygon(self.screen(points, cam), fill=(*rgb, round(depth*opened)))
+            # A sheet of tinted glass; once settled the other model's recedes a little.
             strength = 1 - (0 if won else .28)*settled
-            self.axis_marks(draw, values, index, opened, strength, t, cam)
+            unit, shape = self.s*self.k, self.screen(points, cam)
+            sheet, centre = self.sheets[min(index, 1)], ((cx - cam)*self.k, cy*self.k)
+            radar.glass(image, shape, sheet, (centre[0] - sheet.width/2, centre[1] - sheet.height/2), style, unit,
+                        opened*strength)
+            for a, b, lit in radar.highlights(shape, unit):
+                draw.line((a, b), fill=(255, 255, 255, round(radar.SHINE*lit*opened)), width=max(1, round(1.1*unit)))
+            if index == 0:
+                # Specks of light ride the first sheet: they twinkle while it opens and come to rest with it.
+                for n, (x, y, size, light) in enumerate(radar.glints(shape, centre)):
+                    twinkle = lerp(.5 + .5*math.sin(t*6 + n*2.4), 1., settled)
+                    r = size*unit
+                    draw.ellipse((x-r, y-r, x+r, y+r), fill=(255, 255, 255, round(255*light*opened*twinkle)))
             outline = self.screen(points + points[:2], cam)
             weight = style["weight"]*self.s*self.k
             draw.line(outline, fill=(*rgb, round(255*opened*strength)), width=max(1, round(weight)), joint="curve")
@@ -960,19 +910,14 @@ class TheatreRenderer:
                 self.vertex(draw, point, cam, rgb, index, g*strength)
 
     def vertex(self, draw, point, cam, rgb, index, alpha):
-        """Winner: a solid dot in a surface ring. Other model: a hollow one. Both ride their vertex."""
+        """A dot in a surface ring, larger for the winner; it rides its vertex."""
         if alpha <= 0:
             return
         x, y = (point[0]-cam)*self.k, point[1]*self.k
         unit = self.s*self.k
-        if index == 0:
-            for radius, fill in ((4.3, (255, 255, 255, round(255*alpha))), (2.9, (*rgb, round(255*alpha)))):
-                r = radius*unit
-                draw.ellipse((x-r, y-r, x+r, y+r), fill=fill)
-        else:
-            r = 3.1*unit
-            draw.ellipse((x-r, y-r, x+r, y+r), fill=(255, 255, 255, round(255*alpha)), outline=(*rgb, round(255*alpha)),
-                         width=max(1, round(1.35*unit)))
+        for radius, fill in zip(radar.SERIES_STYLES[min(index, 1)]["dot"], ((255, 255, 255), rgb)):
+            r = radius*unit
+            draw.ellipse((x-r, y-r, x+r, y+r), fill=(*fill, round(255*alpha)))
 
     def labels(self, image, t, cam, states):
         s, rank = self.s, ease(window(t, "rank"))

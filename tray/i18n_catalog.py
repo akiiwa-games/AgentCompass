@@ -1,7 +1,6 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
-    '分数条共同基线：{0}': 'Shared score-bar baseline: {0}',
     '高耦合': 'Coupled',
     '方向推演': 'Direction reasoning',
     '复杂构建规划': 'Build planning',
@@ -873,14 +872,16 @@ EN = {
     '{0} 小时后重置': 'resets in {0} h',
     '{0} 天后重置': 'resets in {0} d',
     '此决策没有额度恢复线记录': 'No quota-line record for this decision',
-    '每个小图是一个额度窗口：从左到右是本周期（右端是重置），从下到上是额度（顶端是全部额度）。浅色直线是订阅的预测线（恢复线），深色线是实际用量，终点是现在；有读数时是实线，没有读数时按期初到当前拟合、画成点线。两条线在“现在”的竖直差距：绿色是已恢复还没花的额度（到重置不花就没了），粉色是超前花掉的。每个候选的花费从“现在”接着实际用量线往上画：在预测线下面是绿色，越过预测线变红，红色部分按 N = F − β·X/h 从右侧它那一行的得分条里扣掉。得分条末端的浅色部分是超出任务需要的能力，不计分。点击画面重播。': 'Each small chart is a quota window: left to right is this period (the right edge is the reset), bottom to top is quota (the top is all of it). The pale straight line is the subscription\'s forecast (the recovery line); the dark line is actual usage and ends at now: solid when readings were recorded, dotted when it is fitted from the period\'s start to the current usage. The vertical gap between the two at now is green for quota that has recovered and is unspent (lost at the reset if nobody spends it) and pink for usage ahead of the forecast. Each candidate\'s spend continues the usage line upward from now: green under the forecast, red over it, and the red part is taken off its score bar on the right as N = F − β·X/h. The pale end of a score bar is ability beyond what the task needs, which does not count. Click to replay.',
+    '每个小图是一个额度窗口：从左到右是本周期（右端是重置），从下到上是额度。浅色直线是额度线：按订阅的节奏应该用到哪里。粗线是实际用量：在额度线下面是绿色，这个窗口被优先使用；超过额度线变红，这个窗口被降权。点线是在重置前把剩余额度用完所需的节奏。高亮的窗口是本次任务用的。点击画面重播。': 'Each small chart is a quota window: left to right is this period (the reset is at the right edge), bottom to top is quota. The pale straight line is the quota line: where usage would be at the subscription\'s pace. The bold line is actual usage: green under the quota line, where the window is used first; red over it, where the window is held back. The dotted line is the pace that uses up the rest before the reset. The lit window is the one this task draws from. Click to replay.',
+    '优先使用': 'Used first',
+    '降权': 'Held back',
+    '这个窗口被优先使用': 'this window is used first',
+    '这个窗口被降权': 'this window is held back',
+    '本次任务用这个窗口：{0}，花费 {1}': 'this task draws from this window: {0}, spending {1}',
     '恢复线下还有 {0} 未用': '{0} recovered and unspent',
     '比恢复线多用了 {0}': '{0} ahead of its recovery line',
     '{0}：本期已用 {1} / {2}，{3}；{4}': '{0}: {1} of {2} used this period, {3}; {4}',
-    '花费 {0}，其中 {1} 越线': 'spends {0}, {1} of it over the line',
-    '花费 {0}，全部在线下': 'spends {0}, all under the line',
     '实际用量线来自 {0} 个读数': 'usage line from {0} recorded readings',
     '本期没有读数，实际用量线按期初到当前拟合': 'no readings this period: the usage line is fitted from its start to now',
     '；': '; ',
-    '{0} · {1}：N {2} = F {3} − {4}；{5}': '{0} · {1}: N {2} = F {3} − {4}; {5}',
 }

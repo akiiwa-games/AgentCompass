@@ -11,7 +11,7 @@ from i18n import is_en
 import math
 import time
 
-from PIL import Image, ImageColor, ImageDraw, ImageTk
+from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageTk
 
 import page_stack
 
@@ -51,23 +51,6 @@ def axis_title(mode: str = "score") -> str:
 
 
 ABILITY_AXES = ("divergence", "global_rigor", "module_precision", "capability")
-# Radar axis key -> its key in a ranking row's `five_axis_fit` (the task's demand, score and target per axis).
-FIT_AXES = {"capability": "vision_tools"}
-
-
-def need_values(fit) -> dict:
-    """{radar axis key: the task's target on it} from a ranking row's `five_axis_fit`; {} when none is recorded.
-
-    Quota economy has no target: every point of it counts.
-    """
-    out = {}
-    for key in ABILITY_AXES:
-        axis = fit.get(FIT_AXES.get(key, key)) if isinstance(fit, dict) else None
-        target = axis.get("target") if isinstance(axis, dict) else None
-        if isinstance(target, (int, float)) and not isinstance(target, bool) and math.isfinite(target):
-            out[key] = clamp(target)
-    return out
-
 
 def _score_ability_raw(c, key):
     for source in (key, "vector_fit", "fit"):
@@ -148,86 +131,100 @@ def polygon(values: list[float], cx: float, cy: float, radius: float) -> list[tu
 
 
 # The winner (or first pick) and the model it is compared with: one hue each, validated as a pair for
-# colour-vision separation and 3:1 contrast on the card. Weight and marker repeat the distinction:
-# a heavier line with solid markers against a lighter line with hollow ones. Each shape has one flat,
-# very light tint. `side` is the side of a spoke on which the model's marks along an axis lie.
+# colour-vision separation and 3:1 contrast on the card. Line weight and marker size repeat the distinction.
+# A shape is a sheet of tinted glass and says nothing beyond its five values: its hue runs from `top` to
+# `bottom` at the opacity `body`, denser (`rim`) in a band just inside the edge. `dot` is a vertex marker's
+# surface ring and its core, in px.
 SERIES_STYLES = (
-    {"color": "#4F46E5", "dash": (), "weight": 2.2, "fill": 18, "side": 1.},
-    {"color": "#0891B2", "dash": (), "weight": 1.5, "fill": 12, "side": -1.},
+    {"color": "#4F46E5", "dash": (), "weight": 2.2, "top": "#C7D2FE", "bottom": "#4338CA", "body": 62, "rim": 118,
+     "dot": (4.4, 3.0)},
+    {"color": "#0891B2", "dash": (), "weight": 1.5, "top": "#CFFAFE", "bottom": "#0E7490", "body": 44, "rim": 92,
+     "dot": (3.6, 2.4)},
 )
-# Everything else on the radar is a quantity too. The task's need is a dashed line through its targets on
-# the ability axes. Where a model exceeds a target, a pale segment in its colour runs along that axis from
-# the target to the model's point: ability that is there and is not counted. On the quota-economy axis a
-# red segment runs from the model's point to full scale: what its quota cost takes off.
-NEED_INK = "#334155"
-NEED_DASH, NEED_WEIGHT, NEED_DOT = (4., 3.), 1.2, 2.1     # px on and off, line weight, radius of a target's dot
-MARK_WIDTH, MARK_SHIFT = 2.6, 1.7                         # px: a mark along an axis, and how far beside the spoke
-SPARE_ALPHA = 105
-COST_INK, COST_ALPHA = "#EF4444", 225
-EPSILON = .004                                            # shares of the radius: less than a pixel
+FRAME_INK = "#E2E8F0"         # the hairline pentagon of full scale: the only thing that stays put
+RIM = 3.5                     # px: the denser band inside a sheet's edge
+LIGHT = (-.6, -.8)            # the light comes from the upper left
+SHINE, SHINE_INSET = 210, 4.6  # the white hairline inside the edges that face the light: strength, px from the edge
+GLINTS = 14                   # specks of light in the first sheet
 
 
-def need_runs(need):
-    """Indexes of neighbouring axes that have a need, as runs; a run may pass through the top axis.
+def noise(n: float) -> float:
+    """A fixed pseudo-random share 0..1 for the n-th speck: the same picture every time."""
+    value = math.sin(n * 127.1 + 311.7) * 43758.5453
+    return value - math.floor(value)
 
-    An axis without a need ends the run: the line never crosses an axis it says nothing about.
+
+def glass_sheet(size, style):
+    """A sheet's colour before it is cut to a shape: its hue from light at the top to deep at the bottom."""
+    size = max(1, int(size))
+    ramp = Image.linear_gradient("L").resize((size, size), Image.Resampling.BILINEAR)
+    top, bottom = ImageColor.getrgb(style["top"]), ImageColor.getrgb(style["bottom"])
+    return Image.merge("RGB", [ramp.point([round(top[i] + (bottom[i] - top[i]) * v / 255) for v in range(256)])
+                               for i in range(3)])
+
+
+def glass(image, points, sheet, origin, style, unit, strength=1.):
+    """Lay `sheet`, cut to the polygon `points`, on an RGB image; `origin` is where the sheet's corner lies.
+
+    Only the polygon's bounding box is touched. `unit` is image pixels per px; `strength` fades the sheet in.
     """
-    runs, run = [], []
-    for index, target in enumerate(need):
-        if target is None:
-            runs.append(run)
-            run = []
-        else:
-            run.append(index)
-    runs.append(run)
-    if need and need[0] is not None and need[-1] is not None and len(runs) > 1:
-        runs[0] = runs.pop() + runs[0]
-    return [run for run in runs if run]
+    if strength <= 0 or len(points) < 3:
+        return
+    ox, oy = round(origin[0]), round(origin[1])
+    x0 = max(0, ox, math.floor(min(x for x, _ in points)) - 1)
+    y0 = max(0, oy, math.floor(min(y for _, y in points)) - 1)
+    x1 = min(image.width, ox + sheet.width, math.ceil(max(x for x, _ in points)) + 2)
+    y1 = min(image.height, oy + sheet.height, math.ceil(max(y for _, y in points)) + 2)
+    if x1 <= x0 or y1 <= y0:
+        return
+    local = [(x - x0, y - y0) for x, y in points]
+    inside = Image.new("L", (x1 - x0, y1 - y0), 0)
+    ImageDraw.Draw(inside).polygon(local, fill=255)
+    body = Image.new("L", inside.size, round(style["body"] * strength))
+    ImageDraw.Draw(body).line(local + local[:2], fill=round(style["rim"] * strength),
+                              width=max(1, round(2 * RIM * unit)), joint="curve")
+    image.paste(sheet.crop((x0 - ox, y0 - oy, x1 - ox, y1 - oy)), (x0, y0), ImageChops.darker(inside, body))
 
 
-def dashes(points, on, off, reach=None):
-    """The dashes of a dashed line through `points`; the pattern runs on around corners.
-
-    `reach` draws only that much of the line's length, from its start.
-    """
-    out, travelled, period = [], 0., on + off
-    for (x0, y0), (x1, y1) in zip(points, points[1:]):
-        length = math.hypot(x1 - x0, y1 - y0)
-        if length <= 0:
-            continue
-        end = travelled + length if reach is None else min(travelled + length, reach)
-        start = math.floor(travelled / period) * period
-        while start < end:
-            a, b = max(start, travelled), min(start + on, end)
-            if b > a:
-                u, v = (a - travelled) / length, (b - travelled) / length
-                out.append(((x0 + (x1 - x0) * u, y0 + (y1 - y0) * u), (x0 + (x1 - x0) * v, y0 + (y1 - y0) * v)))
-            start += period
-        travelled += length
-    return out
+def centroid(points):
+    return sum(x for x, _ in points) / len(points), sum(y for _, y in points) / len(points)
 
 
-def axis_marks(values, need=None, cost_axis=None):
-    """What one model's values say beyond its outline: [(kind, axis, from, to)] in shares of the radius.
-
-    "spare": ability beyond the task's need on that axis. "cost": what is missing from full quota economy.
-    """
+def highlights(points, unit):
+    """[(a, b, strength 0..1)]: the edges of a clockwise polygon that face the light, moved just inside the rim."""
+    cx, cy = centroid(points)
+    by = SHINE_INSET * unit
+    if min(math.hypot(x - cx, y - cy) for x, y in points) < 3 * by:
+        return []                                  # too small a shape to have an inside
+    inner = []
+    for x, y in points:
+        reach = math.hypot(x - cx, y - cy)
+        inner.append((x - (x - cx) / reach * by, y - (y - cy) / reach * by))
     out = []
-    for index, value in enumerate(values):
-        target = need[index] if need else None
-        if target is not None and value > target + EPSILON:
-            out.append(("spare", index, target, value))
-    if cost_axis is not None and cost_axis < len(values) and values[cost_axis] < 1 - EPSILON:
-        out.append(("cost", cost_axis, values[cost_axis], 1.))
+    for a, b in zip(inner, inner[1:] + inner[:1]):
+        nx, ny = b[1] - a[1], a[0] - b[0]          # the outward normal of a clockwise edge on a screen
+        length = math.hypot(nx, ny)
+        lit = (nx * LIGHT[0] + ny * LIGHT[1]) / length if length else 0.
+        if lit > .05:
+            out.append((a, b, lit))
     return out
 
 
-def axis_segment(cx, cy, radius, index, count, start, end, shift):
-    """A segment along an axis between two shares of the radius, `shift` pixels beside the spoke."""
-    ax, ay = point(0, 0, 1, index, count)
-    ox, oy = -ay * shift, ax * shift
-    return ((cx + ax * radius * start + ox, cy + ay * radius * start + oy),
-            (cx + ax * radius * end + ox, cy + ay * radius * end + oy))
+def glints(points, centre, count=GLINTS):
+    """[(x, y, radius in px, brightness 0..1)]: specks of light that ride a shape.
+
+    Each sits on the line from `centre` to a fixed point of the outline, so the specks move with the shape.
+    """
+    cx, cy = centre
+    out = []
+    for n in range(count):
+        edge = int(noise(n) * len(points)) % len(points)
+        (ax, ay), (bx, by) = points[edge], points[(edge + 1) % len(points)]
+        along, inward = noise(n + 40), .25 + .7 * math.sqrt(noise(n + 80))
+        x, y = ax + (bx - ax) * along, ay + (by - ay) * along
+        out.append((cx + (x - cx) * inward, cy + (y - cy) * inward, .55 + .9 * noise(n + 120) ** 2,
+                    .47 + .47 * noise(n + 160)))
+    return out
 
 
 def ease_out(progress: float) -> float:
@@ -244,12 +241,11 @@ def interpolate_values(start, target, progress):
 
 
 class RadarRenderer:
-    """Cache the static scaffold at 3x physical resolution; rasterize only the plot, never text.
+    """Cache the static scaffold and the sheets' colour at 3x physical resolution; rasterize only the plot, never text.
 
-    There is no fixed backdrop: five hairline spokes with a dot at full and at half scale are all that
-    stays put. A model is one outline with a flat, very light tint. The task's need is a dashed line through
-    its targets; ability beyond a target and quota cost are short segments along their axes (`axis_marks`).
-    Nothing is blurred, graded or decorative: every mark is where a number is.
+    The only thing that stays put is a hairline pentagon at full scale. A model is a sheet of tinted glass
+    cut to its five values (`glass`), with a crisp outline and a marker on each vertex; the first sheet
+    carries a few specks of light. Nothing is blurred, and nothing is said beyond the two shapes.
     """
 
     supersample = 3
@@ -260,14 +256,9 @@ class RadarRenderer:
         self.center = radius + padding
         self.size = math.ceil(self.center * 2)
         self.grid = Image.new("RGB", (self.size * self.supersample,) * 2, bg)
-        draw = ImageDraw.Draw(self.grid)
-        center = (self.center * self.supersample,) * 2
-        for vertex in self.points([1] * count):
-            draw.line([center, vertex], fill="#DDE3EC", width=self.width(.7))
-        for level, size, ink in ((1, 1.5, "#94A3B8"), (.5, 1., "#CBD5E1")):
-            r = size * scale * self.supersample
-            for x, y in self.points([level] * count):
-                draw.ellipse((x - r, y - r, x + r, y + r), fill=ink)
+        frame = self.points([1] * count)
+        ImageDraw.Draw(self.grid).line(frame + frame[:2], fill=FRAME_INK, width=self.width(1.), joint="curve")
+        self.sheets = [glass_sheet(self.size * self.supersample, style) for style in SERIES_STYLES]
 
     def width(self, logical):
         # Preserve fractional DIP widths until rasterization, instead of rounding at screen resolution.
@@ -277,61 +268,39 @@ class RadarRenderer:
         return [(x * self.supersample, y * self.supersample)
                 for x, y in polygon(values, self.center, self.center, self.radius)]
 
-    def render(self, values, need=None, cost_axis=None):
-        """values: one list per series, primary first. need: the task's target per axis (None where it has none).
-
-        cost_axis: index of the axis whose distance from full scale is quota cost, when the values are decision scores.
-        """
+    def render(self, values):
+        """values: one list per series, primary first."""
         image = self.grid.copy()
+        unit = self.scale * self.supersample
+        centre = (self.center * self.supersample,) * 2
+        orders = range(len(values) - 1, -1, -1)       # the other model first, the first pick on top
+        shapes = [self.points(row) for row in values]
+        for order in orders:
+            glass(image, shapes[order], self.sheets[order], (0, 0), SERIES_STYLES[order], unit)
         # Blend alpha directly into the opaque backing. RGB downsampling is much cheaper than RGBA.
         draw = ImageDraw.Draw(image, "RGBA")
-        need = list(need) if need and len(need) == self.count and any(v is not None for v in need) else None
-        unit = self.scale * self.supersample
-        centre, radius = self.center * self.supersample, self.radius * self.supersample
-        orders = range(len(values) - 1, -1, -1)       # the other model first, the first pick on top
         for order in orders:
-            style = SERIES_STYLES[order]
-            draw.polygon(self.points(values[order]), fill=(*ImageColor.getrgb(style["color"]), style["fill"]))
-        for order in orders:
-            style = SERIES_STYLES[order]
-            for kind, index, start, end in axis_marks(values[order], need, cost_axis):
-                ink = ((*ImageColor.getrgb(COST_INK), COST_ALPHA) if kind == "cost"
-                       else (*ImageColor.getrgb(style["color"]), SPARE_ALPHA))
-                draw.line(axis_segment(centre, centre, radius, index, self.count, start, end,
-                                       MARK_SHIFT * unit * style["side"]), fill=ink, width=self.width(MARK_WIDTH))
+            for a, b, lit in highlights(shapes[order], unit):
+                draw.line((a, b), fill=(255, 255, 255, round(SHINE * lit)), width=self.width(1.1))
+        if shapes:
+            for x, y, size, light in glints(shapes[0], centre):
+                r = size * unit
+                draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, round(255 * light)))
         for order in orders:
             style = SERIES_STYLES[order]
             color = ImageColor.getrgb(style["color"])
-            points = self.points(values[order])
+            points = shapes[order]
             closed = points + points[:2]      # past the seam, so the first corner is joined like the others
             draw.line(closed, fill=color, width=max(1, round(style["weight"] * unit)), joint="curve")
             for x, y in points:
-                if order == 0:
-                    for size, fill in ((4.3, "#FFFFFF"), (2.9, color)):
-                        r = size * unit
-                        draw.ellipse((x - r, y - r, x + r, y + r), fill=fill)
-                else:
-                    r = 3.1 * unit
-                    draw.ellipse((x - r, y - r, x + r, y + r), fill="#FFFFFF", outline=color, width=self.width(1.35))
-        if need:
-            self.need_outline(draw, need)
-        return image.resize((self.size, self.size), Image.Resampling.LANCZOS).convert("RGBA")
-
-    def need_outline(self, draw, need):
-        """The task's need: a dashed line through its targets, with a dot on each axis that has one."""
-        unit = self.scale * self.supersample
-        ink = (*ImageColor.getrgb(NEED_INK), 235)
-        vertices = self.points([0 if v is None else v for v in need])
-        for run in need_runs(need):
-            for dash in dashes([vertices[index] for index in run], NEED_DASH[0] * unit, NEED_DASH[1] * unit):
-                draw.line(dash, fill=ink, width=self.width(NEED_WEIGHT))
-            for index in run:
-                (x, y), r = vertices[index], NEED_DOT * unit
-                draw.ellipse((x - r, y - r, x + r, y + r), fill=ink)
+                for size, fill in zip(style["dot"], ("#FFFFFF", color)):
+                    r = size * unit
+                    draw.ellipse((x - r, y - r, x + r, y + r), fill=fill)
+        return image.reduce(self.supersample).convert("RGBA")
 
 
 class RadarChartCanvas:
-    """A five-axis radar on a tk.Canvas: hairline spokes, axis labels with value pills, up to two series."""
+    """A five-axis radar on a tk.Canvas: a hairline frame, axis labels with value pills, up to two series."""
 
     def __init__(self, parent, size: int = 420, bg: str = "#FFFFFF"):
         import tkinter as tk
@@ -344,7 +313,6 @@ class RadarChartCanvas:
         self.axes = ()
         self.series = []
         self.raw = []
-        self.need = self.cost_axis = None
         self.hover = None
         self._last_size = None
         self._animation_id = None
@@ -376,21 +344,14 @@ class RadarChartCanvas:
     def grid(self, **kw):
         self.canvas.grid(**kw)
 
-    def show(self, axes, series: list[dict], raw: list[dict] | None = None, need: dict | None = None,
-             cost_axis: str | None = None) -> None:
-        """series: [{'label', 'values': {axis key: 0..1}}], primary first. need: {axis key: the task's target}.
-
-        cost_axis: key of the axis whose distance from full scale is quota cost (decision scores only).
-        """
+    def show(self, axes, series: list[dict], raw: list[dict] | None = None) -> None:
+        """series: [{'label', 'values': {axis key: 0..1}}], primary first."""
         previous_axes = [axis[0] for axis in self.axes]
         previous = self._display_values
         self.cancel_animation()
         self.axes = tuple(axes)
         self.series = [{**s, "values": dict(s["values"])} for s in series[:2]]
         self.raw = list(raw or [])[:2]
-        self.need = [need.get(key) for key, _, _ in self.axes] if need else None
-        keys = [key for key, _, _ in self.axes]
-        self.cost_axis = keys.index(cost_axis) if cost_axis in keys else None
         target = self.target_values()
         start = [previous[i] if previous_axes == [axis[0] for axis in self.axes] and i < len(previous)
                  else [0] * len(self.axes) for i in range(len(target))]
@@ -482,7 +443,7 @@ class RadarChartCanvas:
 
     def draw_series(self) -> None:
         c = self.canvas
-        self._photo = ImageTk.PhotoImage(self._renderer.render(self._display_values, self.need, self.cost_axis), master=c)
+        self._photo = ImageTk.PhotoImage(self._renderer.render(self._display_values), master=c)
         c.itemconfigure(self._image_item, image=self._photo)
         cx, cy, radius = self.geometry()
         for order, values in enumerate(self._display_values):

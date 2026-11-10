@@ -11,7 +11,7 @@
 ![Tray](https://img.shields.io/badge/tray-Windows%2011-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-<img src="docs/hero.gif" width="880" alt="The Decision Compass replaying one synthetic decision: task, kind, candidate routes, then the winner and the best-ranked other model opening on five axes against the task's need, and the winner under that radar">
+<img src="docs/hero.gif" width="880" alt="The Decision Compass replaying one synthetic decision: task, kind, candidate routes, then the winner and the best-ranked other model opening as two sheets of tinted glass on five axes, and the winner under that radar">
 
 </div>
 
@@ -56,10 +56,10 @@ Treat a window's quota as recovering evenly over its period. A window with capac
 - **Usage over the line.** The window is being drained faster than it recovers. Each further dollar is borrowed from the rest of the period and is charged at `β`.
 
 <div align="center">
-<img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice, each quota window drawn as a small chart of its forecast line against its actual usage line: first a window that is over its forecast is spared, then two hours before its reset the remaining quota is spent in fast mode">
+<img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice, each quota window drawn as a small chart of its quota line and its rising usage line: first a window that is over its line is held back and the task runs on one that is under, then two hours before its reset the remaining quota is used first in fast mode">
 </div>
 
-The picture has no captions; this is how to read it. Each small chart is one quota window on its own clock: left to right is this period, ending at the reset on the right edge; bottom to top is quota, with the whole period's quota at the top. The pale straight line is the subscription's forecast, the recovery line. The dark line is actual usage, and it ends at now. It is solid where usage readings were recorded and dotted where there are none and the line is fitted from the period's start to the current usage. The vertical gap between the two lines at now is the point: green is quota that has recovered and is unspent, which is lost at the reset if nobody spends it; pink is usage ahead of the forecast. Beside each chart are the candidates that would run on that window, each with its score bar. A candidate's spend continues the usage line upward from now: green while it stays under the forecast, red once it is over, and the red part takes the end of that candidate's score bar away as it is drawn. The pale end of a bar is ability beyond what the task needs, which is not counted. When the task runs, time passes on every window, bars that tied fill at their own speed, the winner's spend becomes usage, and a green gap that reaches the reset turns grey.
+This is how to read it. Each small chart is one quota window on its own clock: left to right is this period, ending at the reset on the right edge; bottom to top is quota, with the whole period's quota at the top. The pale straight line is the quota line: where usage would stand now if the subscription were spent at an even pace. The thick line is actual usage, rising up to now. It is solid where usage readings were recorded and dotted where there are none and the line is fitted from the period's start to the current usage. While usage is under the quota line it is green and the window is marked **Used first**: that quota has recovered and is lost at the reset if nobody spends it. Once usage crosses the line it turns red and the window is marked **Held back**. The window the task runs on lights up, and the task's own spend continues its usage line in indigo. Last, a dotted line runs from now to the top right corner: the pace that uses up what is left exactly at the reset, where the lines close.
 
 The animation replays one 2-hour refactor at two moments. The task needs global rigor and module precision; Opus 5.5 meets the need, so its `F` is 0.667.
 
@@ -152,10 +152,10 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 - **用量在线上。** 这个窗口的消耗快于恢复。再花的每一美元都是向本期后面借的，按 `β` 计价。
 
 <div align="center">
-<img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次，每个额度窗口画成一张小图，对比预测线和实际用量线：先是用量已经高于预测线的窗口被留着不用，然后在重置前两小时用快速模式花掉剩余额度">
+<img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次，每个额度窗口画成一张小图，一根额度线和一根不断上涨的实际用量线：先是用量已经超过额度线的窗口被降权，任务派到线下的窗口；然后在重置前两小时，剩余额度被优先使用，用快速模式花掉">
 </div>
 
-画面里没有说明文字，读法如下。每张小图是一个额度窗口，各走各的时钟：从左到右是本周期，右端是重置；从下到上是额度，顶端是本周期的全部额度。浅色直线是订阅的预测线，也就是恢复线。深色线是实际用量，终点是现在；有用量读数的地方是实线，没有读数时按期初到当前用量拟合，画成点线。两条线在“现在”的竖直差距是重点：绿色是已经恢复、还没花的额度，到重置不花就没了；粉色是比预测多花的部分。每张小图右边是会用到这个窗口的候选和它们的得分条。候选的花费从“现在”接着实际用量线往上画：在预测线下面是绿色，越过预测线变红；红色画出多少，这个候选的得分条末端就被削掉多少。得分条末端的浅色部分是超出任务需要的能力，不计分。任务开始执行后，每个窗口的时间都向前走，平分的得分条按各自的速度填满，胜出者的花费变成实际用量，到重置还没花掉的绿色差距变灰。
+读法如下。每张小图是一个额度窗口，各走各的时钟：从左到右是本周期，右端是重置；从下到上是额度，顶端是本周期的全部额度。浅色直线是额度线：按订阅的节奏匀速使用，此刻应该用到哪里。粗线是实际用量，一直涨到现在；有用量读数的地方是实线，没有读数时按期初到当前用量拟合，画成点线。用量在额度线下面时是绿色，窗口标着**优先使用**：这部分额度已经恢复，到重置不花就没了。用量越过额度线就变红，窗口标着**降权**。本次任务用的窗口会亮起来，任务自己的花费用靛蓝色接在它的用量线后面。最后，一条点线从现在连到右上角：按这个节奏用，剩余额度正好在重置时用完，线在那里闭合。
 
 动画把同一个 2 小时的重构任务放在两个时刻各重放一次。任务需要全局严密和模块精准；Opus 5.5 满足需求，`F` 为 0.667。
 

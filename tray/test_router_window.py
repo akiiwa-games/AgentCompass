@@ -234,7 +234,8 @@ class DecisionBindingTests(unittest.TestCase):
             self.assertEqual(panel.ledger_frame.winfo_manager(), "")
             self.assertEqual(panel.list_switch.value, "quota")
             panel.plan_loaded({**PLAN, "ranking": ranking, "quota_line": {"windows": {"claude": window}}})
-            self.assertEqual([row["id"] for row in panel.quota_line.data["rows"]], ["opus", "opus_x", "sol"])
+            self.assertEqual([item["key"] for item in panel.quota_line.data["windows"]], ["claude"])
+            self.assertEqual(panel.quota_line.data["winner"]["window"], "claude")
             # The film's clock reaches the view on every frame it draws, and stopping the film settles it.
             panel.theatre.elapsed = 3.0
             panel.theatre.draw()
@@ -261,7 +262,7 @@ class DecisionBindingTests(unittest.TestCase):
             panel.show_list("ledger")
             self.assertEqual(panel.quota_frame.winfo_manager(), "")
 
-    def test_static_radar_gets_the_task_s_need_from_the_first_of_the_pair(self):
+    def test_static_radar_shows_the_pair_s_values_and_nothing_about_the_task(self):
         import router_window
         import tk_test_support
         root = tk_test_support.shared_tk_root(self)
@@ -271,14 +272,14 @@ class DecisionBindingTests(unittest.TestCase):
         with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
                 mock.patch.object(router_window.theme, 'set_window_icon'):
             panel = router_window.Panel(root, 'scoring')
-            panel.plan_loaded(PLAN)
-            panel.render_radar()
-            self.assertIsNone(panel.radar.need)                     # nothing recorded: nothing drawn
             panel.plan_loaded({**PLAN, "ranking": ranking})
-            panel.render_radar()
-            self.assertEqual(panel.radar.need, [.3, .8, None, None, None])
-            # Decision scores: the quota-economy axis shows quota cost. Model DNA has no such axis.
-            self.assertEqual(panel.radar.cost_axis, [key for key, _, _ in panel.radar.axes].index("economy"))
+            with mock.patch.object(panel.radar, "show") as show:
+                panel.render_radar()
+            # The axes, the two series and their raw values for the hover text: no need, no cost.
+            (axes, series, raw), keywords = show.call_args
+            self.assertEqual(keywords, {})
+            self.assertEqual(len(series), 2)
+            self.assertFalse(hasattr(panel.radar, "need") or hasattr(panel.radar, "cost_axis"))
 
     def test_opening_decision_skips_a_newest_row_that_replays_to_none(self):
         import router_window
