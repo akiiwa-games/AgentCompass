@@ -57,7 +57,8 @@ def markdown(accounts):
              '`headline.timeToFirstAnswerToken` including single-turn thinking time; mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` '
              'by `scoring.responsiveness` and refreshed offline via `scripts/refresh_speed_data.py`). It is active only when '
              'the task profile marks `realtime_loop: true` (`floor = 0.50`, evaluated per `(model, effort)` with automatic step-down '
-             'to a faster supported effort when the configured effort is below floor); models without community speed data use the '
+             'to a faster effort when the configured effort is below floor, within the range in '
+             '[Model names, efforts and pins](router-internals.md#model-names-efforts-and-pins)); models without community speed data use the '
              'conservative policy `default` (`0.52`, `responsiveness: default`), and packet/web channels (`dot`, `grok-bot`) are `n/a` (`not_applicable`).', '',
              '## Effective policy', '',
              'Routes describe task scope and modality requirements and ship a calibrated `preferred` order. '
