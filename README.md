@@ -11,7 +11,7 @@
 ![Tray](https://img.shields.io/badge/tray-Windows%2011-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-<img src="docs/hero.gif" width="880" alt="The Decision Compass replaying one synthetic decision: task, kind, candidate routes, the top two candidates on five axes, and the winner under that radar">
+<img src="docs/hero.gif" width="880" alt="The Decision Compass replaying one synthetic decision: task, kind, candidate routes, the winner and the best-ranked other model on five axes, and the winner under that radar">
 
 </div>
 
@@ -46,7 +46,7 @@ agentcompass roll --task "<what the worker should do>"
 4. **Ties.** Equal `N` goes to the candidate that uses the under-line quota expiring earliest, then to the one that finishes sooner, then to the cheaper one.
 5. **Launch.** The winner starts as a worker, and the ledger keeps every candidate's score.
 
-The animation above is the tray's Decision Compass replaying one decision: the task, its kind, the candidate routes, the top two candidates on the five axes, and the winner. The numbers in both animations are synthetic.
+The animation above is the tray's Decision Compass replaying one decision: the task, its kind, the candidate routes, the winner and the best-ranked other model on the five axes (routes of the same model score the same on every axis), and the winner. The numbers in both animations are synthetic.
 
 ### Quota: the recovery line
 
@@ -140,7 +140,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 4. **平分时。** `N` 相等，先选所用线下额度最早到期的候选，再选完成更快的，最后选更便宜的。
 5. **启动。** 胜出的候选作为 worker 启动，台账里保留每个候选的分数。
 
-页首的动画是托盘“决策罗盘”重放一次决策：任务、任务类型、候选路线、前两名在五个轴上的对比、胜出者。两段动画里的数字都是合成数据。
+页首的动画是托盘“决策罗盘”重放一次决策：任务、任务类型、候选路线、胜出者与排名最高的另一个模型在五个轴上的对比（同一模型的不同路线各轴得分相同）、胜出者。两段动画里的数字都是合成数据。
 
 ### 额度：恢复线
 
