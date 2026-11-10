@@ -326,7 +326,7 @@ class FleetEconomyTests(unittest.TestCase):
 
     def test_the_order_is_n_then_wait_then_earliest_expiring_quota_then_speed_then_usd(self):
         def cand(score, wait=0.0, reset=None, hours=1.0, usd=1.0):
-            return {'score': score, 'available_in_hours': wait, 'expected_hours': hours, 'expected_usd': usd,
+            return {'score': score, 'available_in_hours': wait, 'expected_hours': hours, 'speed_hours': hours, 'expected_usd': usd,
                     'components': {'earliest_reset_hours': reset, 'five_axis_level': 0.5, 'harness_place': 0}}
         base = cand(0.5, reset=10.0)
         for better, worse in ((cand(0.5001, reset=99.0), base), (cand(0.5, wait=0.0, reset=99.0), cand(0.5, wait=2.0, reset=1.0)),
@@ -665,6 +665,93 @@ class ReadFailureAndHoldTests(unittest.TestCase):
                                  mutate=lambda acc: acc['scoring'].update(five_axis={'enabled': False}))
         self.assertEqual(sorted(c['id'] for c in legacy['ranking'] if c['bundle']['model'] == model and c['bundle']['account'] == 'claude' and c['excluded']),
                          sorted(c['id'] for c in rows if c['excluded']))
+
+
+class SpeedKeyTests(unittest.TestCase):
+    """Round 14b (owner): the "faster" tie-break compares Time/Task at the candidate's own effort, Artificial Analysis first,
+    the arena Agent-board P50 only when AA has no row for that model and effort, and 'speed unknown' sorts last."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fleet = Fleet()
+        cls.data = allocator.load_five_axis()
+
+    def info(self, model, arena_only=False):
+        dur = self.data['models'][model]['duration_multiplier']
+        return {'default_effort': 'high',
+                'five_axis': {'aa_time': {} if arena_only else copy.deepcopy(dur.get('aa') or {}),
+                              'duration_source': dur.get('source')}}
+
+    def aa_minutes(self, model, effort):
+        return self.data['models'][model]['duration_multiplier']['aa']['by_effort'][effort]
+
+    def test_the_review_s3_case_picks_opus_over_fable_51_at_high_on_the_speed_key(self):
+        """Claude 5% used at e = 0.9, a 0.3 h creative task, Dot available. The speed key was arena Time/Task P50 (Fable 5.1
+        10.9 min against Opus 5.5 16.3 min, though Fable writes 54k tokens a task to Opus's 120k). At the same effort AA has
+        Opus 5.5 faster at high, so with N tied Opus goes first and `completion_hours` decides."""
+        d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=0.3, allowed=('claude', 'codex', 'dot'))
+        opus, fable = row(d, 'opus55_high'), row(d, 'fable51_high')
+        for c in (opus, fable):
+            self.assertEqual(c['components']['speed_source'], 'aa.cost_time')
+        self.assertLess(self.aa_minutes('claude-opus-5-5', 'high'), self.aa_minutes('claude-fable-5-1', 'high'))
+        self.assertAlmostEqual(fable['speed_hours'] / opus['speed_hours'],
+                               self.aa_minutes('claude-fable-5-1', 'high') / self.aa_minutes('claude-opus-5-5', 'high'), places=3)
+        # the same N, the review's tie: the arena-based expected_hours (Fable shorter) no longer decides
+        self.assertGreater(opus['expected_hours'], fable['expected_hours'])
+        tied_opus, tied_fable = dict(opus), dict(fable)
+        tied_fable['score'] = tied_opus['score']
+        self.assertLess(allocator.five_axis_order(tied_opus), allocator.five_axis_order(tied_fable))
+        self.assertEqual(allocator.five_axis_deciding_key(tied_opus, tied_fable), 'completion_hours')
+        self.assertIn('speed at high', ' '.join(opus['notes']))
+
+    def test_every_effort_pair_follows_the_aa_time_at_that_effort_including_max(self):
+        opus, fable = self.info('claude-opus-5-5'), self.info('claude-fable-5-1')
+        seen = set()
+        for effort in ('low', 'medium', 'high', 'xhigh', 'max'):
+            # the arena hours passed in point the other way on purpose: AA must win whenever it has the row
+            t_opus, src_o = allocator.five_axis_speed_hours('claude-opus-5-5', effort, opus, 1.0, 99.0)
+            t_fable, src_f = allocator.five_axis_speed_hours('claude-fable-5-1', effort, fable, 1.0, 0.01)
+            self.assertEqual((src_o, src_f), ('aa.cost_time', 'aa.cost_time'), effort)
+            aa_o, aa_f = self.aa_minutes('claude-opus-5-5', effort), self.aa_minutes('claude-fable-5-1', effort)
+            self.assertEqual(t_opus < t_fable, aa_o < aa_f, effort)
+            seen.add(aa_o < aa_f)
+        self.assertEqual(seen, {True, False})        # Opus is faster at the lower efforts and slower at max (public data)
+        self.assertGreater(self.aa_minutes('claude-opus-5-5', 'max'), self.aa_minutes('claude-fable-5-1', 'max'))
+
+    def test_the_arena_time_decides_only_when_aa_has_no_row_for_the_model_and_effort(self):
+        arena = self.info('claude-opus-5-5', arena_only=True)
+        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'high', arena, 1.0, 1.7), (1.7, 'arena.agent_sessions'))
+        # AA has the model at some efforts but not this one: the arena figure applies at that effort only
+        partial = self.info('claude-opus-5-5')
+        del partial['five_axis']['aa_time']['multiplier_by_effort']['xhigh']
+        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'xhigh', partial, 1.0, 1.7), (1.7, 'arena.agent_sessions'))
+        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'high', partial, 1.0, 1.7)[1], 'aa.cost_time')
+        # a model whose duration did not come from the arena has no arena fallback: its speed is unknown
+        partial['five_axis']['duration_source'] = 'aa.cost_time'
+        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'xhigh', partial, 1.0, 1.7), (None, None))
+
+    def test_a_model_with_neither_source_is_speed_unknown_and_sorts_last_on_the_key(self):
+        none = {'default_effort': 'high', 'five_axis': {'aa_time': {}, 'duration_source': None}}
+        self.assertEqual(allocator.five_axis_speed_hours('dot', 'high', none, 1.0, 1.0), (None, None))
+        d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=0.3, allowed=('claude', 'codex', 'dot'))
+        base = row(d, 'luna_high')
+        unknown, slow = dict(base, speed_hours=None), dict(base, speed_hours=1e6)       # same N, wait, reset and USD
+        self.assertLess(allocator.five_axis_order(slow), allocator.five_axis_order(unknown))      # even a very slow known one
+        self.assertEqual(allocator.five_axis_deciding_key(slow, unknown), 'completion_hours')
+
+    def test_a_fast_variant_scales_the_candidates_speed_hours_and_keeps_the_source(self):
+        d = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
+        base, fast = row(d, 'opus55_high'), row(d, 'opus55_high', fast=True)
+        self.assertEqual(fast['components']['speed_source'], base['components']['speed_source'])
+        self.assertLess(fast['speed_hours'], base['speed_hours'])
+        speedup = (base['bundle'].get('fast') or 0) or 0
+        self.assertGreater(base['speed_hours'] / fast['speed_hours'], 1.0 + speedup)
+
+    def test_the_snapshot_row_names_the_deciding_speed_source(self):
+        d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=0.3, allowed=('claude', 'codex', 'dot'))
+        snap = allocator.decision_snapshot(d)
+        top = next(r for r in snap['ranking'] if r.get('components'))
+        self.assertIn('speed_source', top['components'])
 
 
 if __name__ == '__main__':

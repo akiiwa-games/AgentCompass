@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-10T04:32:00+00:00",
+ "generated_at": "2026-11-10T09:44:15+00:00",
  "measurements_sha256": "4f8b6822b1ac5b9daf6b98e71c4724d84df389ad77300eb493f47d2fa5ee4f52",
  "distrusted_sources": [],
  "source_priority": [],
@@ -2019,6 +2019,23 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 86500
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 12.392,
+      "max": 15.955,
+      "none": 8.489
+     },
+     "multiplier_by_effort": {
+      "high": 1.2962,
+      "max": 1.6689,
+      "none": 0.888
+     }
     }
    },
    "image_input": {
@@ -2251,6 +2268,27 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 54300
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 13.063,
+      "low": 7.453,
+      "max": 22.732,
+      "medium": 9.613,
+      "xhigh": 18.948
+     },
+     "multiplier_by_effort": {
+      "high": 1.3664,
+      "low": 0.7796,
+      "max": 2.3778,
+      "medium": 1.0055,
+      "xhigh": 1.982
+     }
     }
    },
    "image_input": {
@@ -2440,6 +2478,27 @@
      "max": 4.8566,
      "medium": 0.8716,
      "xhigh": 2.7474
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 17.653,
+      "low": 6.542,
+      "max": 46.428,
+      "medium": 8.332,
+      "xhigh": 26.264
+     },
+     "multiplier_by_effort": {
+      "high": 1.8465,
+      "low": 0.6843,
+      "max": 4.8565,
+      "medium": 0.8715,
+      "xhigh": 2.7473
+     }
     }
    },
    "image_input": {
@@ -2527,7 +2586,7 @@
    ],
    "legacy": {
     "tier": 4.51,
-    "usd_per_hour": null,
+    "usd_per_hour": 72.92,
     "duration_multiplier": null,
     "subjective": {
      "divergence": 0.5,
@@ -2717,6 +2776,27 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 119900
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 9.56,
+      "low": 3.065,
+      "max": 25.285,
+      "medium": 7.095,
+      "xhigh": 15.994
+     },
+     "multiplier_by_effort": {
+      "high": 1.0,
+      "low": 0.3206,
+      "max": 2.6449,
+      "medium": 0.7422,
+      "xhigh": 1.673
+     }
     }
    },
    "image_input": {
@@ -2962,6 +3042,27 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 34600
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 6.468,
+      "low": 1.81,
+      "max": 19.865,
+      "medium": 3.844,
+      "xhigh": 9.158
+     },
+     "multiplier_by_effort": {
+      "high": 0.6766,
+      "low": 0.1893,
+      "max": 2.0779,
+      "medium": 0.4021,
+      "xhigh": 0.9579
+     }
     }
    },
    "image_input": {
@@ -3204,6 +3305,27 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 43300
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 9.687,
+      "low": 3.715,
+      "max": 22.613,
+      "medium": 7.008,
+      "xhigh": 11.458
+     },
+     "multiplier_by_effort": {
+      "high": 1.0133,
+      "low": 0.3886,
+      "max": 2.3654,
+      "medium": 0.7331,
+      "xhigh": 1.1985
+     }
     }
    },
    "image_input": {
@@ -3447,6 +3569,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "high": 28100
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 28.573
+     },
+     "multiplier_by_effort": {
+      "high": 2.9888
+     }
     }
    },
    "image_input": {
@@ -3677,6 +3812,27 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 146300
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 7.109,
+      "low": 2.65,
+      "max": 31.098,
+      "medium": 3.615,
+      "xhigh": 15.097
+     },
+     "multiplier_by_effort": {
+      "high": 0.7436,
+      "low": 0.2772,
+      "max": 3.2529,
+      "medium": 0.3781,
+      "xhigh": 1.5792
+     }
     }
    },
    "image_input": {
@@ -3908,6 +4064,23 @@
     },
     "output_tokens_per_task_by_effort": {
      "xhigh": 79500
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 21.846,
+      "low": 10.635,
+      "xhigh": 25.974
+     },
+     "multiplier_by_effort": {
+      "high": 2.2851,
+      "low": 1.1124,
+      "xhigh": 2.7169
+     }
     }
    },
    "image_input": {
@@ -4148,6 +4321,21 @@
     },
     "output_tokens_per_task_by_effort": {
      "high": 53300
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 14.908,
+      "medium": 11.947
+     },
+     "multiplier_by_effort": {
+      "high": 1.5594,
+      "medium": 1.2497
+     }
     }
    },
    "image_input": {
@@ -4874,6 +5062,27 @@
     },
     "output_tokens_per_task_by_effort": {
      "high": 25000
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 6.474,
+      "low": 2.18,
+      "max": 16.175,
+      "medium": 4.12,
+      "xhigh": 9.736
+     },
+     "multiplier_by_effort": {
+      "high": 0.6772,
+      "low": 0.228,
+      "max": 1.6919,
+      "medium": 0.431,
+      "xhigh": 1.0184
+     }
     }
    },
    "image_input": {
@@ -5111,6 +5320,29 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 43700
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 4.015,
+      "low": 1.09,
+      "max": 13.469,
+      "medium": 2.602,
+      "none": 2.253,
+      "xhigh": 6.032
+     },
+     "multiplier_by_effort": {
+      "high": 0.42,
+      "low": 0.114,
+      "max": 1.4089,
+      "medium": 0.2722,
+      "none": 0.2357,
+      "xhigh": 0.631
+     }
     }
    },
    "image_input": {
@@ -5601,6 +5833,29 @@
      "max": 40700,
      "medium": 9600,
      "low": 3800
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 5.698,
+      "low": 0.623,
+      "max": 12.415,
+      "medium": 3.446,
+      "none": 2.061,
+      "xhigh": 7.26
+     },
+     "multiplier_by_effort": {
+      "high": 0.596,
+      "low": 0.0652,
+      "max": 1.2986,
+      "medium": 0.3605,
+      "none": 0.2156,
+      "xhigh": 0.7594
+     }
     }
    },
    "image_input": {
@@ -6690,6 +6945,21 @@
     "by_effort": {
      "max": 2.5426,
      "none": 1.733
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "max": 24.306,
+      "none": 16.567
+     },
+     "multiplier_by_effort": {
+      "max": 2.5425,
+      "none": 1.7329
+     }
     }
    },
    "image_input": {
@@ -6931,6 +7201,21 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 65100
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "low": 16.148,
+      "max": 29.44
+     },
+     "multiplier_by_effort": {
+      "low": 1.6891,
+      "max": 3.0795
+     }
     }
    },
    "image_input": {
@@ -7169,6 +7454,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 49800
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 44.662
+     },
+     "multiplier_by_effort": {
+      "default": 4.6718
+     }
     }
    },
    "image_input": {
@@ -7606,6 +7904,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 51000
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 61.773
+     },
+     "multiplier_by_effort": {
+      "default": 6.4616
+     }
     }
    },
    "image_input": {
@@ -7842,6 +8153,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 36200
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 38.168
+     },
+     "multiplier_by_effort": {
+      "default": 3.9925
+     }
     }
    },
    "image_input": {
@@ -8328,6 +8652,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 24900
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 11.944
+     },
+     "multiplier_by_effort": {
+      "default": 1.2494
+     }
     }
    },
    "image_input": {
@@ -8567,6 +8904,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 75100
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 14.205
+     },
+     "multiplier_by_effort": {
+      "default": 1.4859
+     }
     }
    },
    "image_input": {
@@ -8971,6 +9321,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 49600
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 39.763
+     },
+     "multiplier_by_effort": {
+      "default": 4.1593
+     }
     }
    },
    "image_input": {
@@ -9205,6 +9568,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 45000
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 62.135
+     },
+     "multiplier_by_effort": {
+      "default": 6.4995
+     }
     }
    },
    "image_input": {
@@ -9653,6 +10029,19 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 14600
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 5.932
+     },
+     "multiplier_by_effort": {
+      "default": 0.6205
+     }
     }
    },
    "image_input": {
@@ -9891,6 +10280,19 @@
     "output_tps": 261.07,
     "by_effort": {
      "default": 0.4342
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "default": 4.151
+     },
+     "multiplier_by_effort": {
+      "default": 0.4342
+     }
     }
    },
    "image_input": {
@@ -10126,6 +10528,21 @@
     },
     "output_tokens_per_task_by_effort": {
      "default": 25900
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 12.389,
+      "medium": 9.079
+     },
+     "multiplier_by_effort": {
+      "high": 1.2959,
+      "medium": 0.9497
+     }
     }
    },
    "image_input": {
@@ -10359,6 +10776,21 @@
     },
     "output_tokens_per_task_by_effort": {
      "max": 24500
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 9.006,
+      "max": 12.834
+     },
+     "multiplier_by_effort": {
+      "high": 0.9421,
+      "max": 1.3425
+     }
     }
    },
    "image_input": {
@@ -14803,6 +15235,23 @@
     },
     "output_tokens_per_task_by_effort": {
      "high": 50700
+    },
+    "aa": {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "as_of": "2026-11-09",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "anchor_minutes": 9.56,
+     "by_effort": {
+      "high": 28.727,
+      "low": 23.922,
+      "medium": 25.432
+     },
+     "multiplier_by_effort": {
+      "high": 3.0049,
+      "low": 2.5023,
+      "medium": 2.6603
+     }
     }
    },
    "image_input": {

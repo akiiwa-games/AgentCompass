@@ -150,12 +150,40 @@ def _effort_pick(rows, field='value'):
 def pick_duration(usd, info=None, throughput=(), anchor_throughput=()):
     """Completion-speed multiplier relative to the anchor model (`claude-opus-5-5`), from public sources only (round 11,
     user 2026-11-10): primary = `arena.agent_sessions` Time/Task (P50) (storing Time/Task and Output Tokens/Task);
-    fallback = `aa.cost_time` Time/Task (or outputSpeed). Never returns a flat 1.0 across the fleet."""
+    fallback = `aa.cost_time` Time/Task (or outputSpeed). Never returns a flat 1.0 across the fleet.
+
+    Whichever source decides `value`, the result also carries the Artificial Analysis Time/Task of every listed effort
+    (`aa`: minutes and the multiplier against the anchor at High) so the router's "faster" tie-break can compare two
+    candidates at the same effort from one source (round 14b); a model with no AA row has no `aa`."""
     by_src, anchor_by_src = {}, {}
     for e in throughput or ():
         by_src.setdefault(e['source'], []).append(e)
     for e in anchor_throughput or ():
         anchor_by_src.setdefault(e['source'], []).append(e)
+    result = _pick_duration_value(by_src, anchor_by_src)
+    aa = _aa_time_by_effort(by_src.get('aa.cost_time'), anchor_by_src.get('aa.cost_time'))
+    if aa:
+        result['aa'] = aa
+    return result
+
+
+def _aa_time_by_effort(rows, anchor_rows):
+    """AA Time/Task per listed effort: {'by_effort': {effort: minutes}, 'multiplier_by_effort': {effort: minutes / the
+    anchor's minutes at High}, 'anchor_minutes', 'as_of', 'url', 'source'} or None without a usable row."""
+    times = {(r.get('effort') or 'default'): r['time_per_task_min'] for r in rows or ()
+             if isinstance(r.get('time_per_task_min'), (int, float)) and not isinstance(r.get('time_per_task_min'), bool)
+             and r['time_per_task_min'] > 0}
+    if not times:
+        return None
+    anc_s, _, _ = _effort_pick(anchor_rows or (), 'time_per_task_s')
+    anc_min = round((anc_s or 719.3) / 60.0, 3)
+    rep = next(r for r in rows if (r.get('effort') or 'default') in times)
+    return {'source': 'aa.cost_time', 'kind': 'benchmark', 'as_of': rep.get('as_of'), 'url': rep.get('url'),
+            'anchor_minutes': anc_min, 'by_effort': times,
+            'multiplier_by_effort': {e: round(t / anc_min, 4) for e, t in times.items()}}
+
+
+def _pick_duration_value(by_src, anchor_by_src):
     if 'arena.agent_sessions' in by_src:
         rows = by_src['arena.agent_sessions']
         t_min, how, rep = _effort_pick(rows, 'time_per_task_min')

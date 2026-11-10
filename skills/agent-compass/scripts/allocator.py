@@ -2294,6 +2294,8 @@ def five_axis_overlay(accounts, data=None):
                              'fast_mode': fast,
                              'duration_by_effort': dict(dur_row.get('by_effort') or {}),
                              'duration_status': dur_row.get('status', 'missing'),
+                             'duration_source': dur_row.get('source'),
+                             'aa_time': dict(dur_row.get('aa') or {}),
                              **({'list_price': price} if isinstance(price, dict) and price.get('value') else {})}
         if usd is not None:
             info['usd_per_hour'] = usd
@@ -2473,6 +2475,28 @@ def five_axis_duration_multiplier(model, effort, info, policy, curves):
     efforts scale by `burn_scale(policy, curves, effort)` because higher or lower thinking efforts generate
     proportionally more or fewer output tokens at the same model tok/s."""
     return model_duration_multiplier(model, info) * burn_scale(policy, curves, effort)
+
+
+def five_axis_speed_hours(model, effort, info, base_hours, arena_hours):
+    """The candidate's time for the task on the "faster" tie-break, from ONE source per candidate and compared at the
+    candidate's own effort (round 14b, owner): `(hours, source)`.
+
+    1. `aa.cost_time`: Artificial Analysis Time/Task at exactly this effort (the model's `default` listing counts only for
+       its default effort), as a multiple of the anchor model at High, times the task hours. It measures every effort of the
+       same task set, so two models at the same effort compare like for like.
+    2. `arena.agent_sessions`: Arena Agent-board P50 Time/Task, only when there is no AA row for this model and effort;
+       `arena_hours` is the arena duration already scaled to the effort. It mixes users' tasks, so it is the fallback.
+    3. Neither: `(None, None)`: the speed is unknown and the candidate sorts last on this key (pessimistic)."""
+    five = (info or {}).get('five_axis') or {}
+    mult = (five.get('aa_time') or {}).get('multiplier_by_effort') or {}
+    found = mult.get(effort)
+    if found is None and effort == ((info or {}).get('default_effort') or 'high'):
+        found = mult.get('default')
+    if isinstance(found, (int, float)) and not isinstance(found, bool) and found > 0:
+        return base_hours * float(found), 'aa.cost_time'
+    if five.get('duration_source') == 'arena.agent_sessions' and arena_hours is not None:
+        return float(arena_hours), 'arena.agent_sessions'
+    return None, None
 
 
 def five_axis_window_recovery(state, cap_usd):
@@ -2871,8 +2895,10 @@ def five_axis_order(candidate):
        has no such key, it keeps `--can-wait-hours` candidates behind immediate ones at equal N)
     3. Earliest-expiring quota ascending: the soonest reset among the priced long windows the candidate draws (quota that
        lapses first goes first; a candidate drawing none sorts last)
-    4. Faster completion time (wait_hours + expected_hours) ascending: the model's public per-task time (arena Time/Task
-       P50). Speed only breaks ties on N: where the quota costs nothing (for example an account with no priced long window)
+    4. Faster completion time (wait_hours + speed_hours) ascending, where `speed_hours` is the model's public Time/Task at
+       the candidate's own effort: Artificial Analysis first, the arena Agent-board P50 only when AA has no row for that
+       model and effort (`five_axis_speed_hours`; the source is `components['speed_source']`). A candidate with neither is
+       'speed unknown' and sorts after every known one (pessimistic). Speed only breaks ties on N: where the quota costs nothing (for example an account with no priced long window)
        a fast variant and its base tie on N and the faster one wins; there is no rule that lets a faster candidate displace
        a higher-N one. (How close to zero the cost gets near a reset is the price model's business, not this order's.)
     5. Fewer list-price USD spent ascending
@@ -2881,9 +2907,10 @@ def five_axis_order(candidate):
     reset = k.get('earliest_reset_hours')
     reset_key = float('inf') if reset is None else round(float(reset), 4)
     wait_h = float(candidate.get('available_in_hours') or 0.0)
-    dur_h = float(candidate.get('expected_hours') or 0.0)
+    dur_h = candidate.get('speed_hours')
+    done_key = float('inf') if dur_h is None else round(wait_h + float(dur_h), 4)
     usd = float(candidate.get('expected_usd') if candidate.get('expected_usd') is not None else float('inf'))
-    return (-round(float(candidate['score']), 4), round(wait_h, 4), reset_key, round(wait_h + dur_h, 4),
+    return (-round(float(candidate['score']), 4), round(wait_h, 4), reset_key, done_key,
             round(usd, 4), -round(float(k.get('five_axis_level', 0.0)), 4), k.get('harness_place', 0))
 
 
@@ -3557,6 +3584,14 @@ def evaluate_bundle(bundle, task, ctx):
         dur_mult = five_axis_duration_multiplier(model, eff, five_info, policy, five_curves)
         hours = base_hours * dur_mult
         chain_hours = base_chain_hours * dur_mult
+        speed_hours, speed_source = five_axis_speed_hours(model, eff, five_info, base_hours, hours)
+        result['speed_hours'] = speed_hours
+        result['components']['speed_source'] = speed_source or 'unknown'
+        if speed_hours is None:
+            result['notes'].append(f'speed unknown: no Time/Task for {model} at {eff} (AA or arena); '
+                                   f'it sorts last on the faster key')
+        else:
+            result['notes'].append(f'speed at {eff}: {speed_hours:.2f}h from {speed_source}')
     # One basis for spend and time (round 12 S3). On the five-axis path the duration already carries the model's own
     # speed and the effort factor, `usd_per_hour` is the model's dollars per hour of its own work, so the spend is
     # usd/h x the duration this candidate takes and the quota rate takes no second effort scale (`spend_effort` High).
@@ -3847,6 +3882,8 @@ def evaluate_bundle(bundle, task, ctx):
                 result['_five_fast_candidate'] = {
                     'price_multiplier': f_price, 'speed_multiplier': f_speed,
                     'econ_hours': f_econ_h, 'chain_hours': f_chain_h, 'hours': f_hours,
+                    'speed_hours': (None if result.get('speed_hours') is None
+                                    else result['speed_hours'] / f_speed if f_speed > 0 else result['speed_hours']),
                     'step_usd': f_step_usd, 'chain_usd': f_chain_usd, 'source': fast_info.get('source'),
                 }
         elif task.get('force_fast'):
@@ -4248,6 +4285,7 @@ def five_axis_make_fast(c, fast_cand, reason):
     if reason:
         c['components']['fast_reason'] = reason
     c['expected_hours'] = round(fast_cand['hours'], 2)
+    c['speed_hours'] = fast_cand.get('speed_hours')
     c['expected_usd'] = round(fast_cand['step_usd'], 2)
     c['chain_usd'] = round(fast_cand['chain_usd'], 2)
     c['notes'].append(f"fast mode ({fast_cand['price_multiplier']:g}x burn, up to {fast_cand['speed_multiplier']:g}x "
@@ -4982,7 +5020,7 @@ def _snapshot_row(candidate, detail):
     if detail:
         row['components'] = {k: _round(v) for k, v in comps.items()}
         row.update({k: _round(candidate.get(k)) for k in ('expected_pct', 'chain_pct', 'expected_usd', 'chain_usd',
-                                                           'expected_hours', 'available_in_hours') if candidate.get(k) is not None})
+                                                           'expected_hours', 'speed_hours', 'available_in_hours') if candidate.get(k) is not None})
         cap = candidate.get('capacity')
         if isinstance(cap, dict):
             row['capacity'] = {k: _round(cap[k]) for k in SNAPSHOT_CAPACITY_KEYS if k in cap}
@@ -4996,7 +5034,7 @@ def _snapshot_row(candidate, detail):
                 'responsiveness', 'responsiveness_source',
                 'reset_bonus', 'boost', 'free_usage', 'overqualification', 'effort_penalty',
                 'five_axis_level', 'quota_price', 'need_probability', 'need_probability_end', 'substitute_slack',
-                'decided_by', 'earliest_reset_hours', 'reading_at', 'duration_multiplier')
+                'decided_by', 'earliest_reset_hours', 'reading_at', 'duration_multiplier', 'speed_source')
         row['components'] = {k: _round(comps[k]) for k in keep if k in comps and comps[k]}
         for k in ('fit', 'ability', 'opportunity_cost'):
             if k in comps:

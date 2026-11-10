@@ -277,7 +277,7 @@ class FiveAxisTests(unittest.TestCase):
         and what a substitute could take are inside N already, so no key reads them."""
         def cand(name, score=0.5, hours=1.0, usd=10.0, level=0.8, wait=0.0, place=0):
             return {'id': name, 'score': score, 'available_in_hours': wait or None,
-                    'expected_hours': hours, 'expected_usd': usd,
+                    'expected_hours': hours, 'speed_hours': hours, 'expected_usd': usd,
                     'components': {'five_axis_level': level, 'harness_place': place}}
         pool = [
             cand('slower_expensive', hours=0.8, usd=20.0),
@@ -1058,6 +1058,20 @@ class SourceMergeTests(unittest.TestCase):
         self.assertEqual((d_aa['value'], d_aa['source'], d_aa['fallback']), (0.5, 'aa.cost_time', True))
         d_missing = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35}, (), ())
         self.assertEqual(d_missing['status'], 'missing')
+
+    def test_duration_carries_the_aa_time_per_task_of_every_effort_even_when_the_arena_decides(self):
+        arena_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'time_per_task_min': 10.9}]
+        anchor_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'time_per_task_min': 16.3},
+                     {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'time_per_task_s': 600.0}]
+        aa = [{'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'time_per_task_s': 900.0,
+               'time_per_task_min': 15.0, 'as_of': '2026-11-08', 'url': 'https://aa.example'},
+              {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'max', 'time_per_task_s': 1200.0, 'time_per_task_min': 20.0}]
+        d = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {}, arena_tp + aa, anchor_tp)
+        self.assertEqual(d['source'], 'arena.agent_sessions')
+        self.assertEqual(d['aa']['by_effort'], {'high': 15.0, 'max': 20.0})
+        self.assertEqual(d['aa']['multiplier_by_effort'], {'high': 1.5, 'max': 2.0})       # against the anchor at High (10 min)
+        self.assertEqual((d['aa']['source'], d['aa']['as_of'], d['aa']['url']), ('aa.cost_time', '2026-11-08', 'https://aa.example'))
+        self.assertNotIn('aa', self.fa.pick_duration(self.fa.pick_usd(self.entries()), {}, arena_tp, anchor_tp))
         shipped = allocator.load_five_axis()
         mults = {m: r['duration_multiplier']['value'] for m, r in shipped['models'].items()
                  if r.get('duration_multiplier', {}).get('value') is not None}
