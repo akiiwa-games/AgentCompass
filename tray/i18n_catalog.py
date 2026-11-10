@@ -1,6 +1,14 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
+    '用托盘里的「更新 AgentCompass」升级': 'upgrade with "Update AgentCompass" in the tray',
+    '用 uv tool upgrade agentcompass 升级，或从 {0} 下载安装器': 'upgrade with uv tool upgrade agentcompass, or download the installer from {0}',
+    'AgentCompass {0}：读不到 GitHub 发布（{1}）。{2}': 'AgentCompass {0}: could not read GitHub releases ({1}); {2}',
+    '（GitHub 暂时读不到：{0}；按 {1} 读到的发布判断）': ' (GitHub unreachable: {0}; judged by the release read at {1})',
+    'AgentCompass {0}：GitHub 已发布 {1}。{2}': 'AgentCompass {0}: GitHub release {1} is newer; {2}',
+    'AgentCompass {0} 已是最新（GitHub 发布 {1}）': 'AgentCompass {0} is up to date (GitHub release {1})',
+    'AgentCompass {0} 比 GitHub 发布 {1} 更新': 'AgentCompass {0} is newer than GitHub release {1}',
+    'AgentCompass 发布检查出错：{0}。{1}': 'AgentCompass release check failed: {0}; {1}',
     'mpv 检查已中断，Usage Float 将在需要时重试': 'mpv check interrupted; Usage Float will retry when needed',
     '等待 Usage Float 的 mpv 播放组件检查完成': 'Waiting for the Usage Float mpv playback component check to finish',
     'Usage Float 的 mpv 播放组件已就绪': 'The Usage Float mpv playback component is ready',

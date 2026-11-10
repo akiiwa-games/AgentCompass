@@ -641,7 +641,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         # 1a. Installed product matching GitHub release ("matches" notice, product_status='current')
         # and all enabled components current -> pill shows '已是最新', notice text stays in status
         matches_notice = updates.release_notice(inst_root, opener=_fake_opener("v0.4.2"))
-        self.assertIn("AgentCompass 0.4.2 matches GitHub release v0.4.2. No upgrade is waiting.", matches_notice)
+        self.assertIn("AgentCompass 0.4.2 已是最新（GitHub 发布 v0.4.2）", matches_notice)
         with mock.patch.object(updates, "update_dot2api") as up_dot, \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
@@ -661,7 +661,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         self.assertEqual(panel.plugins_pill.cget("text").strip(), "已是最新")
         self.assertIn("Dot2API 插件未启用，已跳过", panel.plugins_status.get())
         self.assertIn("ChatGPT Web 已是最新", panel.plugins_status.get())
-        self.assertIn("matches GitHub release v0.4.2", panel.plugins_status.get())
+        self.assertIn("已是最新（GitHub 发布 v0.4.2）", panel.plugins_status.get())
         self.assertEqual(panel.status.get(), panel.plugins_status.get())
         self.assertEqual(matches_notice.status, "current")
         self.assertFalse(res.busy)
@@ -674,7 +674,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
 
         # 1b. Installed product ahead of GitHub release (product_status='ahead') -> pill still shows '已是最新'
         ahead_notice = updates.release_notice(inst_root, opener=_fake_opener("v0.3.0"))
-        self.assertIn("AgentCompass 0.4.2 is newer than GitHub release v0.3.0.", ahead_notice)
+        self.assertIn("AgentCompass 0.4.2 比 GitHub 发布 v0.3.0 更新", ahead_notice)
         with mock.patch.object(updates, "update_dot2api"), \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
@@ -688,7 +688,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             panel.update_components()
             res_ahead = updates.update_all()
         self.assertEqual(panel.plugins_pill.cget("text").strip(), "已是最新")
-        self.assertIn("is newer than GitHub release v0.3.0", panel.plugins_status.get())
+        self.assertIn("比 GitHub 发布 v0.3.0 更新", panel.plugins_status.get())
         self.assertEqual(ahead_notice.status, "ahead")
         self.assertEqual(res_ahead.product_status, "ahead")
 
@@ -696,7 +696,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         # and AgentCompass notice does not overwrite Muse2API in update-status.json
         newer_notice = updates.release_notice(inst_root, opener=_fake_opener("v0.4.3"))
         self.assertEqual(newer_notice.status, "newer")
-        self.assertIn("GitHub release v0.4.3 is newer", newer_notice)
+        self.assertIn("GitHub 已发布 v0.4.3", newer_notice)
         with mock.patch.object(updates, "update_dot2api"), \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
@@ -711,7 +711,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             self.assertEqual(res_newer.product_status, "newer")
             panel.update_components()
         self.assertEqual(panel.plugins_pill.cget("text").strip(), "需注意")
-        self.assertIn("GitHub release v0.4.3 is newer", panel.plugins_status.get())
+        self.assertIn("GitHub 已发布 v0.4.3", panel.plugins_status.get())
         status_doc = self.update_status.read_status(self.state_dir)
         self.assertNotIn("Muse2API", status_doc.get("results", {}))
         self.assertIn("AgentCompass", status_doc.get("results", {}))
@@ -719,7 +719,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         # 1d. Product release check fails (product_status='failed') -> pill shows '需注意'
         failed_notice = updates.release_notice(inst_root, opener=_failing_opener)
         self.assertEqual(failed_notice.status, "failed")
-        self.assertIn("Could not read GitHub releases (github api timeout)", failed_notice)
+        self.assertIn("读不到 GitHub 发布（github api timeout）", failed_notice)
         with mock.patch.object(updates, "update_dot2api"), \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
@@ -734,7 +734,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             self.assertEqual(res_failed.product_status, "failed")
             panel.update_components()
         self.assertEqual(panel.plugins_pill.cget("text").strip(), "需注意")
-        self.assertIn("Could not read GitHub releases (github api timeout)", panel.plugins_status.get())
+        self.assertIn("读不到 GitHub 发布（github api timeout）", panel.plugins_status.get())
 
         # 1e. updates.LOCK held -> update_all returns busy=True, pill shows '正在更新' (not '已是最新')
         self.assertTrue(updates.LOCK.acquire(blocking=False))
