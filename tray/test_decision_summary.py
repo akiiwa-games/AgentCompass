@@ -60,9 +60,9 @@ def test_short_names_for_known_bundles_and_raw_id_fallbacks(tmp_path,monkeypatch
     language=i18n.get_language()
     try:
         i18n.set_language('en')
-        assert names.choice_label(fast_row)=='Opus 5.5 · High · Fast'
-        assert names.candidate_label(fast_bundle)=='Opus 5.5 · High · Fast'
-        assert names.choice_label(dict(choice='opus55_high+fast',decision_snapshot=dict(ranking=[dict(id='opus55_high+fast',bundle=fast_bundle)])))=='Opus 5.5 · High · Fast'
+        assert names.choice_label(fast_row)=='Opus 5.5 · High · fast'
+        assert names.candidate_label(fast_bundle)=='Opus 5.5 · High · fast'
+        assert names.choice_label(dict(choice='opus55_high+fast',decision_snapshot=dict(ranking=[dict(id='opus55_high+fast',bundle=fast_bundle)])))=='Opus 5.5 · High · fast'
         i18n.set_language('zh')
         assert names.choice_label(fast_row)=='Opus 5.5 · 高 · 快速'
     finally:
