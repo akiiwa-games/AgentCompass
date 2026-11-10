@@ -1,6 +1,9 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
+    '下载 Usage Float 的 mpv 播放组件': 'Downloading the mpv playback component for Usage Float',
+    '正在后台下载 Usage Float 的 mpv 播放组件': 'Downloading the mpv playback component for Usage Float in the background',
+    'mpv 未能下载（Usage Float 需要时会重试）：{0}': 'Could not download mpv (Usage Float will retry when needed): {0}',
     '分数条共同基线：{0}': 'Shared score-bar baseline: {0}',
     '高耦合': 'Coupled',
     '方向推演': 'Direction reasoning',

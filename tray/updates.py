@@ -14,7 +14,9 @@ from i18n import translate as _tr
 
 import argparse
 import hashlib
+import importlib.util
 import json
+import logging
 import os
 import re
 import shutil
@@ -130,6 +132,48 @@ def prepare_gateway(plugin_id: str) -> None:
     gateways.muse_sync(run, services.uv_path())
 
 
+def provision_usage_float_mpv(root: Path) -> str:
+    """Provision on an update worker; direct UI callers return while a worker runs.
+
+    Return a warning for the final plugin result, without failing its Git install.
+    """
+    script = root / "mpv_provision.py"
+    if not script.is_file():
+        return ""
+    callback = getattr(_progress, "callback", None)
+
+    def provision() -> str:
+        try:
+            report("progress", _tr('下载 Usage Float 的 mpv 播放组件'), "Usage Float")
+            name = "_agentcompass_mpv_" + uuid.uuid4().hex
+            spec = importlib.util.spec_from_file_location(name, script)
+            module = importlib.util.module_from_spec(spec)
+            # dataclasses resolves types through sys.modules during module execution.
+            sys.modules[name] = module
+            try:
+                spec.loader.exec_module(module)
+                module.ensure_mpv()
+            finally:
+                sys.modules.pop(name, None)
+            return ""
+        except Exception as exc:
+            message = _tr('mpv 未能下载（Usage Float 需要时会重试）：{0}').format(str(exc))
+            logging.getLogger(__name__).warning("%s", message, exc_info=True)
+            report("result", message, "Usage Float")
+            return message
+
+    if threading.current_thread() is threading.main_thread():
+        def background() -> None:
+            _progress.callback = callback
+            try:
+                provision()
+            finally:
+                _progress.callback = None
+        threading.Thread(target=background, name="usage-float-mpv", daemon=True).start()
+        return _tr('正在后台下载 Usage Float 的 mpv 播放组件')
+    return provision()
+
+
 def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
     """Clone a missing Git plugin into ~/.agent-compass/plugins/<id> and run its initial build/setup."""
     plugin = plugins.BY_ID[plugin_id]
@@ -150,7 +194,9 @@ def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
         patch_and_build()
     elif plugin_id == "muse2api":
         prepare_gateway(plugin_id)
-    return _set_status("updated", _tr('{0} 已下载并部署（{1}）').format(f'{plugin.name}', f'{version(target)}'))
+    warning = provision_usage_float_mpv(target) if plugin_id == "usage-float" else ""
+    message = _tr('{0} 已下载并部署（{1}）').format(plugin.name, version(target))
+    return _set_status("updated", message + ("；" + warning if warning else ""))
 
 
 def update_simple_plugin(plugin_id: str, root: Path) -> str:
@@ -167,7 +213,14 @@ def update_simple_plugin(plugin_id: str, root: Path) -> str:
 
 
 def update_usage_float() -> str:
-    return update_simple_plugin("usage-float", services.USAGE_FLOAT_ROOT)
+    root = services.USAGE_FLOAT_ROOT
+    was_installed = (root / ".git").exists()
+    message = update_simple_plugin("usage-float", root)
+    if was_installed and getattr(_progress, "status", "") != "failed":
+        warning = provision_usage_float_mpv(root)
+        if warning:
+            message += "；" + warning
+    return message
 
 
 def update_gemini_web() -> str:
