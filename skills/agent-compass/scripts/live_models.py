@@ -117,7 +117,7 @@ def candidate_providers(accounts: dict | None, allowed=None) -> list[str]:
         if not isinstance(bundles, dict):
             continue
         for bundle in bundles.values():
-            if not isinstance(bundle, dict) or bundle.get('enabled') is False:
+            if not isinstance(bundle, dict) or not _bundle_enabled(bundle):
                 continue
             if bundle.get('discovery_unavailable'):
                 continue
@@ -193,6 +193,14 @@ def enabled() -> bool:
     if os.environ.get('AGENTCOMPASS_LIVE_MODELS', '').strip().lower() in ('off', '0', 'false'):
         return False
     return True
+
+
+def _bundle_enabled(bundle: dict) -> bool:
+    """A bundle the user unchecked is `disabled: True` at runtime (`enabled: False` in raw specs); a
+    disabled-by-default bundle still launches when named, so it keeps its live check."""
+    if bundle.get('enabled') is False:
+        return False
+    return not (bundle.get('disabled') and not bundle.get('disabled_by_default'))
 
 
 def _read_store(path: Path) -> dict:
@@ -351,7 +359,8 @@ def load_or_refresh(
             on_disk = dict(current['providers'])
             invalidated = current.get('invalidated') if isinstance(current.get('invalidated'), dict) else {}
             for prov, entry in fetched.items():
-                evicted = _parse_time(invalidated.get(prov))
+                stamps = [t for t in (_parse_time(invalidated.get(prov)), _parse_time(invalidated.get('*'))) if t is not None]
+                evicted = max(stamps) if stamps else None
                 if evicted is None or evicted <= started:
                     on_disk[prov] = entry
             out_doc = {'updated_at': ts, 'ttl_seconds': ttl, 'providers': on_disk}
@@ -373,8 +382,6 @@ def invalidate(provider: str | None = None, *, base_dir: Path | None = None) -> 
     """Evict `provider` (or all providers when None) from the live-models cache."""
     path = store_path(base_dir)
     _MEM_CACHE.pop(str(path), None)
-    if not path.exists():
-        return
     try:
         with override_store.locked(path):
             _MEM_CACHE.pop(str(path), None)
@@ -382,7 +389,8 @@ def invalidate(provider: str | None = None, *, base_dir: Path | None = None) -> 
             providers = doc['providers']
             invalidated = doc.get('invalidated') if isinstance(doc.get('invalidated'), dict) else {}
             stamp = datetime.now(timezone.utc).isoformat()
-            for prov in (list(providers) if provider is None else [provider]):
+            # Stamp even when nothing is cached yet, so a refresh already in flight cannot write the evicted list back.
+            for prov in (list(providers) + ['*'] if provider is None else [provider]):
                 providers.pop(prov, None)
                 invalidated[prov] = stamp
             doc['invalidated'] = invalidated
@@ -455,7 +463,7 @@ def warnings(live_doc: dict | None, accounts: dict | None = None, allowed=None, 
                 continue
             unoffered_mods: list[str] = []
             for bid, bundle in bundles.items():
-                if not isinstance(bundle, dict) or bundle.get('enabled') is False:
+                if not isinstance(bundle, dict) or not _bundle_enabled(bundle):
                     continue
                 if bundle.get('discovery_unavailable'):
                     continue

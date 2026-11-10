@@ -3518,6 +3518,31 @@ class LiveModelCheckTests(unittest.TestCase):
         stored = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']
         self.assertEqual(stored['x']['models'], [{'id': 'x3'}])
 
+    def test_an_invalidation_before_any_cache_file_still_beats_an_in_flight_refresh(self):
+        """Review round 2: with no cache file yet, invalidate() returned early, so a refresh already fetching wrote the
+        evicted list back."""
+        import live_models
+        entry = lambda mid: {'ok': True, 'models': [{'id': mid}]}
+        self.assertFalse(self.live_store.exists())
+
+        def slow(provs):
+            live_models.invalidate()  # INVALID_MODEL arrives while this fetch is in flight
+            return {'ok': True, 'providers': {'x': entry('x-old')}}
+
+        live_models.load_or_refresh(['x'], force=True, fetch=slow)
+        stored = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']
+        self.assertNotIn('x', stored)
+
+    def test_a_bundle_the_user_disabled_gives_no_live_list_warning(self):
+        """Review round 2: an unchecked bundle is `disabled: True` at runtime; a provider dropping its model must not
+        warn on every plan."""
+        import live_models
+        accounts = copy.deepcopy(self.accounts)
+        live_doc = {'providers': copy.deepcopy(self.live_providers)}
+        self.assertTrue(any('gemini-4-argon-high' in w for w in live_models.warnings(live_doc, accounts)))
+        accounts['accounts']['antigravity']['bundles']['argon_high']['disabled'] = True
+        self.assertFalse(any('gemini-4-argon-high' in w for w in live_models.warnings(live_doc, accounts)))
+
     def test_structural_model_id_and_paseo_alias_matching(self):
         import live_models
         claude_entry = {
