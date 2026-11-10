@@ -16,7 +16,6 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import logging
 import os
 import re
 import shutil
@@ -132,46 +131,61 @@ def prepare_gateway(plugin_id: str) -> None:
     gateways.muse_sync(run, services.uv_path())
 
 
-def provision_usage_float_mpv(root: Path) -> str:
-    """Provision on an update worker; direct UI callers return while a worker runs.
+_mpv_lock = threading.Lock()
+_mpv_thread: threading.Thread | None = None
 
-    Return a warning for the final plugin result, without failing its Git install.
-    """
+
+def wait_usage_float_mpv() -> None:
+    """CLI exit barrier; GUI install/update operations never wait here."""
+    with _mpv_lock:
+        thread = _mpv_thread
+    if thread is not None and thread.is_alive():
+        print(_tr('等待 Usage Float 的 mpv 播放组件检查完成'), flush=True)
+        thread.join()
+
+
+def provision_usage_float_mpv(root: Path) -> str:
+    """Start one non-daemon provisioner, independent of the update transaction."""
+    global _mpv_thread
     script = root / "mpv_provision.py"
     if not script.is_file():
         return ""
     callback = getattr(_progress, "callback", None)
 
-    def provision() -> str:
+    def background() -> None:
+        _progress.callback = callback
+        status = "current"
         try:
-            report("progress", _tr('下载 Usage Float 的 mpv 播放组件'), "Usage Float")
+            # Let the Git transaction finish before starting any download.
+            with LOCK:
+                pass
             name = "_agentcompass_mpv_" + uuid.uuid4().hex
             spec = importlib.util.spec_from_file_location(name, script)
             module = importlib.util.module_from_spec(spec)
-            # dataclasses resolves types through sys.modules during module execution.
             sys.modules[name] = module
             try:
                 spec.loader.exec_module(module)
                 module.ensure_mpv()
             finally:
                 sys.modules.pop(name, None)
-            return ""
+            message = _tr('Usage Float 的 mpv 播放组件已就绪')
         except Exception as exc:
+            status = "warning"
             message = _tr('mpv 未能下载（Usage Float 需要时会重试）：{0}').format(str(exc))
-            logging.getLogger(__name__).warning("%s", message, exc_info=True)
-            report("result", message, "Usage Float")
-            return message
+        try:
+            directory = Path(os.environ.get("ROUTER_STATE_DIR") or services.STATE_DIR)
+            directory.mkdir(parents=True, exist_ok=True)
+            with (directory / "mpv-provision.log").open("a", encoding="utf-8") as stream:
+                stream.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {status}: {message}\n")
+            report("result", message, "Usage Float mpv", status=status)
+        finally:
+            _progress.callback = None
 
-    if threading.current_thread() is threading.main_thread():
-        def background() -> None:
-            _progress.callback = callback
-            try:
-                provision()
-            finally:
-                _progress.callback = None
-        threading.Thread(target=background, name="usage-float-mpv", daemon=True).start()
-        return _tr('正在后台下载 Usage Float 的 mpv 播放组件')
-    return provision()
+    with _mpv_lock:
+        if _mpv_thread is None or not _mpv_thread.is_alive():
+            _mpv_thread = threading.Thread(target=background, name="usage-float-mpv", daemon=False)
+            _mpv_thread.start()
+    return _tr('正在后台检查 Usage Float 的 mpv 播放组件')
 
 
 def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
@@ -515,7 +529,7 @@ def update_all(progress=None) -> UpdateAllResult:
                 status = "failed"
             results.append(result)
             components[label] = {"status": status, "message": result}
-            report("result", result)
+            report("result", result, status=status)
         notice = product_notice()
         product_status = str(
             getattr(notice, "status", None)
@@ -2244,7 +2258,10 @@ def main() -> int:
         print(_tr("已构建"))
     elif action == "update":
         from update_status import record
-        print(update_all(progress=record))
+        try:
+            print(update_all(progress=record))
+        finally:
+            wait_usage_float_mpv()
     elif action == "update-agentcompass":
         from update_status import record
         release_data = None

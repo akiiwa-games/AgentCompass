@@ -677,10 +677,11 @@ def plugin_start(plugin_id: str) -> str:
         raise ValueError(f"unknown plugin {plugin_id}")
     spec = plugins.BY_ID[plugin_id]
     root = plugins.plugin_root(plugin_id)
+    install_message = ""
     if spec.repo and not (root / ".git").exists():
         import updates
 
-        updates.ensure_plugin(plugin_id)
+        install_message = updates.ensure_plugin(plugin_id)
         refresh_plugin_roots()
     elif plugin_id in gateways.IDS and not gateways.built(plugin_id):
         import updates
@@ -697,7 +698,8 @@ def plugin_start(plugin_id: str) -> str:
     if plugin_id == "easytier":
         return easytier.start()
     if plugin_id == "usage-float":
-        return start_usage_float()
+        message = start_usage_float()
+        return message + ("；" + install_message if install_message else "")
     raise ValueError(f"unknown plugin {plugin_id}")
 
 

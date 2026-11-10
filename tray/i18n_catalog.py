@@ -1,6 +1,10 @@
 """English display catalog; numbered placeholders are formatted after translation."""
 
 EN = {
+    '等待 Usage Float 的 mpv 播放组件检查完成': 'Waiting for the Usage Float mpv playback component check to finish',
+    'Usage Float 的 mpv 播放组件已就绪': 'The Usage Float mpv playback component is ready',
+    '正在后台检查 Usage Float 的 mpv 播放组件': 'Checking the Usage Float mpv playback component in the background',
+
     '下载 Usage Float 的 mpv 播放组件': 'Downloading the mpv playback component for Usage Float',
     '正在后台下载 Usage Float 的 mpv 播放组件': 'Downloading the mpv playback component for Usage Float in the background',
     'mpv 未能下载（Usage Float 需要时会重试）：{0}': 'Could not download mpv (Usage Float will retry when needed): {0}',
