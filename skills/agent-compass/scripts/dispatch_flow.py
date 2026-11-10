@@ -359,7 +359,8 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     if row['state'] in registry.TERMINAL and row['state'] != 'expired':
         if path is None:
             # A transient failure's same-bundle retry that fell due starts here too, not only from its watcher.
-            dispatch_fallback.resume_due(dispatch_id, host=host)
+            if dispatch_fallback.resume_due(dispatch_id, host=host) is not None:
+                row = registry.inspect(dispatch_id, path)   # the retry ran, or was retired: read what it left
         current = registry.current_attempt(dispatch_id, path)
         if current != dispatch_id:
             dispatch_id, row = current, registry.inspect(current, path)
@@ -501,5 +502,9 @@ def cli(args):
         released = registry.release(args.dispatch_id, args.parent_id, args.basis[:400])
         if released['state'] == 'canceled' and row['state'] != 'canceled':
             stop_watcher(args.dispatch_id)
+        if released.get('canceled_retry'):
+            # The scheduled retry is canceled in the registry; its watcher stops waiting for it too.
+            stop_watcher(released['canceled_retry'])
+            return dict(public(released), canceled_retry=released['canceled_retry'])
         return public(released)
     return public(registry.inspect(args.dispatch_id))

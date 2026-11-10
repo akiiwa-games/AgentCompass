@@ -322,6 +322,101 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual((seen['root_dispatch_id'], seen['attempt'], seen['state']), (root['dispatch_id'], 2, 'started'))
         self.assertEqual(seen['dispatch_id'], registry.current_attempt(root['dispatch_id']))
 
+    # Review round 2 (round 055): G1 the parent cancels a scheduled retry; G2 the guard lives as long as the retry may run.
+
+    def scheduled_root(self, minutes, can_wait_hours=1):
+        task = dict(self.task, can_wait_hours=can_wait_hours)
+        root = self.transient_root(task=task, minutes=minutes)
+        out = self.handle(root['dispatch_id'])
+        self.assertEqual(out['action'], 'scheduled')
+        return root, task
+
+    def observe_old(self, dispatch_id):
+        """The parent observes its dispatch (dispatch launch / next_argv), which starts a due retry (resume_due)."""
+        real_handle = fallback.handle
+        with patch.object(fallback, 'handle', side_effect=lambda d, **kw: real_handle(d, **dict(kw, judge=self.judge))):
+            return flow.launch(dispatch_id, 'parent-a', host=self.host, watch_seconds=0)
+
+    def roll_again(self, task):
+        planned = allocator.plan(dict(task), self.usage, registry.utcnow(), accounts=self.accounts)
+        decision = dict(planned, **registry.issue(planned, task))
+        return registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts)
+
+    def test_R3_the_parents_release_cancels_a_scheduled_retry(self):
+        """Review G1 (probe R3): release on the failed first dispatch cancels the retry in one transaction; the
+        watcher, an observation and resume_due that run at the retry time start nothing."""
+        root, _ = self.scheduled_root(minutes=16)
+        released = registry.release(root['dispatch_id'], 'parent-a', 'parent cancels this brief')
+        self.assertEqual(released['canceled_retry'], root['dispatch_id'])
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['outcome']['result']), ('final', 'canceled'))
+        self.assertEqual(fb['handled'][root['dispatch_id']]['result'], 'canceled')
+        self.assertFalse({'until', 'retry_at', 'retry_of'} & set(fb))
+        self.assertEqual(registry.pending(), [])
+        self.assertEqual(flow.public(registry.inspect(root['dispatch_id']))['next_action'], registry.RETRY_CANCELED_NEXT)
+        with self.at(minutes=17):
+            watcher = self.handle(root['dispatch_id'])
+            seen = self.observe_old(root['dispatch_id'])
+            self.assertIsNone(fallback.resume_due(root['dispatch_id'], host=self.host))
+        self.assertEqual((watcher['action'], watcher['result']), ('final', 'canceled'))
+        self.assertEqual(seen['dispatch_id'], root['dispatch_id'])
+        self.assertEqual(self.host.creates, ['claude-lab/claude-sonnet-5-5'])
+
+    def test_the_release_command_stops_the_watcher_of_the_canceled_retry(self):
+        import argparse
+        root, _ = self.scheduled_root(minutes=16)
+        notes = self.root / 'paseo-notifications'
+        notes.mkdir(exist_ok=True)
+        (notes / f"{root['dispatch_id']}.json").write_bytes(b'{}')
+        args = argparse.Namespace(stage='dispatch', dispatch_action='release', dispatch_id=root['dispatch_id'],
+                                  parent_id='parent-a', basis='the owner dropped this brief')
+        with patch.object(flow, 'require_actual_parent'), patch.object(flow, 'reconcile', return_value=[]):
+            out = flow.cli(args)
+        self.assertEqual(out['canceled_retry'], root['dispatch_id'])
+        self.assertTrue((notes / f"{root['dispatch_id']}.json.creation-failed").exists())
+
+    def test_R4_the_brief_cannot_be_dispatched_again_while_its_retry_may_run(self):
+        """Review G2 (probe R4): past retry_at + RUN_LEASE with no watcher and no observer, the guard still holds, so
+        rolling the brief again is refused; the next observation then runs the one retry."""
+        root, task = self.scheduled_root(minutes=3)
+        with self.at(minutes=3 + 11):
+            self.assertEqual([r['dispatch_id'] for r in registry.pending()], [root['dispatch_id']])
+            self.assertIn('retries the same model by itself', flow.public(registry.inspect(root['dispatch_id']))['next_action'])
+            with self.assertRaisesRegex(ValueError, 'already has an active dispatch'):
+                self.roll_again(task)
+        with self.at(minutes=3 + 40):
+            seen = self.observe_old(root['dispatch_id'])
+        self.assertEqual((seen['attempt'], seen['state']), (2, 'started'))
+        self.assertEqual(len(self.host.creates), 2)
+        self.assert_one_worker()
+
+    def test_R4_a_retry_nobody_started_within_the_wait_is_retired_not_run_beside_a_new_dispatch(self):
+        """Review G2: once the wait the task allows is over the guard lapses and the brief may be rolled again; the old
+        retry is then retired by whatever touches it, so the brief never runs twice."""
+        root, task = self.scheduled_root(minutes=3)
+        with self.at(hours=1, minutes=1):
+            self.assertEqual(registry.pending(), [])
+            row = self.roll_again(task)
+            flow.launch(row['dispatch_id'], 'parent-a', host=self.host, watch_seconds=0)
+            self.host.end(row['dispatch_id'], 'idle', terminal={'reason': 'finished'})
+            registry.observe(row['dispatch_id'], self.host.agents[row['dispatch_id']])
+        self.assertEqual(len(self.host.creates), 2)
+        with self.at(hours=1, minutes=30):
+            seen = self.observe_old(root['dispatch_id'])
+            late_watcher = self.handle(root['dispatch_id'])
+        self.assertEqual(len(self.host.creates), 2)
+        self.assertEqual(seen['dispatch_id'], root['dispatch_id'])
+        self.assertEqual(seen['next_action'], fallback.RETRY_EXPIRED_NEXT)
+        self.assertEqual((late_watcher['action'], late_watcher['result']), ('final', 'retry_expired'))
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['outcome']['result']), ('final', 'retry_expired'))
+
+    def test_the_guard_of_a_scheduled_retry_lasts_the_wait_the_task_allows(self):
+        root, _ = self.scheduled_root(minutes=3, can_wait_hours=2)
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        hours = (registry.parse(fb['until']) - registry.parse(fb['handled'][root['dispatch_id']]['retry_at'])).total_seconds()
+        self.assertGreater(hours, 3600 * 1.9)   # can_wait_hours from the failure, well past retry_at + RUN_LEASE
+
     def test_a_stale_step_on_a_live_chain_never_rewrites_it_to_final(self):
         """A step whose prepare is refused because another attempt of the brief is live leaves the chain as it is."""
         root = self.first()

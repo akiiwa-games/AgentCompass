@@ -12,7 +12,8 @@ const WATCH_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 const CREATE_LIMIT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
 // `relaunched`: AgentCompass relaunched the brief after this attempt failed; the new attempt's watcher reports.
-const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched']);
+// `canceled`: the parent released the brief while its retry was scheduled; the parent did that, so nothing is said.
+const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched', 'canceled']);
 const CREATE_FAILED = 'creation failed';
 const WORKER_REMOVED = 'worker removed before it was observed';
 const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
@@ -388,6 +389,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
       }
       record.fallback = {status: 'done', ...fallbackRecord(outcome)};
       if (outcome?.action === 'relaunched') {record.status = 'relaunched'; persist(); return true;}
+      if (outcome?.action === 'final' && outcome.result === 'canceled') {record.status = 'canceled'; persist(); return true;}
       persist();
     }
   }
@@ -400,7 +402,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
       const note = attemptsNote(notificationFile(record.dispatch_id));
       const root = record.fallback?.root_dispatch_id ?? note?.root_dispatch_id;
       const attempts = record.fallback?.lines ?? note?.lines;
-      const final = event.key === 'terminal' && ['blocked', 'owner_named'].includes(record.fallback?.result)
+      const final = event.key === 'terminal' && ['blocked', 'owner_named', 'retry_expired'].includes(record.fallback?.result)
         && record.fallback?.text;
       record.pending = {...event, messageId: createHash('sha256')
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),

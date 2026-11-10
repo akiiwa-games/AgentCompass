@@ -17,7 +17,9 @@ Contract:
   (none given: nothing waits and the next candidate starts now). Nothing sleeps through the wait: the step records the
   retry time (`scheduled`) and returns; the failed attempt's watcher, or any later launch/observe of the brief
   (`resume_due`), runs `handle` again once it is due. The failed attempt's claim and the first dispatch's guard both
-  last until then, so no other observer relaunches it meanwhile. A model the owner named (`roll --model`, a
+  last until then, so no other observer relaunches it meanwhile. The guard lasts as long as the task can wait
+  (can_wait_hours); a retry nobody started by then is retired (`retry_expired`), never run beside a new dispatch of
+  the brief. The parent's release of the dispatch cancels a scheduled retry (registry.retire_scheduled). A model the owner named (`roll --model`, a
   `user_override` decision) follows the same can_wait_hours rule and is never switched: when its backoff does not fit,
   the parent is told (`owner_named`).
 - Otherwise: allocation runs again on the original decision's allocation task (its classifier profile, needs such as
@@ -273,7 +275,12 @@ class Chain:
 
         A claim stays valid until its own `until`: a step in progress holds it for RUN_LEASE, a scheduled retry until
         its retry time (no observer may take a failure over while its backoff is still being waited out). Only a claim
-        whose holder died (a pending one past its `until`) or a scheduled retry that is due may be taken."""
+        whose holder died (a pending one past its `until`) or a scheduled retry that is due may be taken.
+
+        A scheduled retry only runs while the first dispatch's guard holds (fallback `until`, see `schedule`): the
+        guard is what keeps the brief from being dispatched again, so a retry found due after it lapsed is retired
+        (`retry_expired`) in this same transaction instead, and a fresh dispatch of the brief and this retry never both
+        run. Taking a due retry renews the guard, so it cannot lapse between the claim and the relaunch's own guard."""
         claimed = {}
 
         def change(fallback):
@@ -283,13 +290,21 @@ class Chain:
             action = (before or {}).get('action')
             due = action == 'scheduled' and not later_than(before.get('retry_at'), now)
             stale = action == 'pending' and not later_than(before.get('until') or lease_end(before.get('at')), now)
+            resume = due or (stale and bool(before.get('resume')))
+            if resume and fallback.get('retry_of') == failed_id and not later_than(fallback.get('until'), now):
+                registry.retire_scheduled(fallback, now, 'retry_expired', RETRY_EXPIRED_NEXT, self.root_id)
+                claimed['before'] = fallback['handled'][failed_id]
+                claimed['take'] = False
+                return
             claimed['take'] = before is None or due or stale
             if claimed['take']:
-                resume = due or (stale and bool(before.get('resume')))
                 handled[failed_id] = {'action': 'pending', 'at': registry.stamp(now), 'until': registry.stamp(
                     now + timedelta(seconds=registry.RUN_LEASE)), **({'resume': True} if resume else {})}
                 claimed['resume'] = resume
                 fallback['handled'] = handled
+                if resume:
+                    lease = registry.stamp(now + timedelta(seconds=registry.RUN_LEASE))
+                    fallback['until'] = max(fallback['until'], lease, key=registry.parse)
         self.root = registry.update_fallback(self.root['dispatch_id'], change)
         before = claimed['before']
         if claimed['take']:
@@ -406,10 +421,15 @@ class Chain:
         """Nothing blocks for the backoff: the retry time is recorded and the step returns. The failed attempt's watcher
         (paseo_dispatch_bridge.mjs, outcome `scheduled`) or any later observation (`resume_due`, from dispatch launch or
         observe) runs `handle` again once it is due; the claim and the guard hold until then, so no one starts the brief
-        in between and the observer that resumes is the only one."""
+        in between and the observer that resumes is the only one.
+
+        The guard (fallback `until`) lasts as long as the task said it can wait (can_wait_hours from the failure), and at
+        least RUN_LEASE past the retry time: a retry nobody started by then is retired by the next claim (`claim`), so
+        the guard never lapses while the retry may still run."""
         now = registry.utcnow()
         retry_at = registry.stamp(now + timedelta(seconds=wait))
-        until = registry.stamp(now + timedelta(seconds=wait + registry.RUN_LEASE))
+        until = registry.stamp(now + timedelta(seconds=max(wait + registry.RUN_LEASE,
+                                                            float(self.task.get('can_wait_hours') or 0) * 3600)))
         self.ledger('scheduled', attempt, wait_seconds=round(wait), retry_at=retry_at)
         self.save('retrying', current=attempt.get('dispatch_id'), retry_of=failed_id, retry_at=retry_at, until=until)
         return self.outcome(failed_id, {'action': 'scheduled', 'root_dispatch_id': self.root_id, 'retry_at': retry_at,
@@ -491,6 +511,11 @@ class Chain:
                    'root_dispatch_id': self.root_id, 'attempts': self.attempts, 'lines': lines(self.attempts),
                    'text': text}
         return self.outcome(failed_id, outcome)
+
+
+RETRY_EXPIRED_NEXT = ('AgentCompass scheduled a retry of this brief on the same model after a transient provider failure, '
+                      'but nothing started it before the wait the task allows (can_wait_hours) ran out, so the retry is '
+                      'retired and nothing runs this brief. Tell the user; roll it again if it is still wanted.')
 
 
 def final_text(kind, attempts, task):

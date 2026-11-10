@@ -477,6 +477,27 @@ def chain_root(row):
     return row.get('attempt_of') or row['dispatch_id']
 
 
+RETRY_CANCELED_NEXT = ('The parent released this brief while AgentCompass waited to retry it, so the scheduled retry is '
+                       'canceled and nothing runs this brief.')
+
+
+def retire_scheduled(fallback, now, result, next_action, root_id=None):
+    """End a scheduled same-bundle retry in the caller's transaction: the first dispatch's attempt record becomes final
+    and the failed attempt's claim terminal, so a due-retry path that runs later (the watcher, an observation,
+    dispatch_fallback.resume_due) finds it handled and starts nothing. Returns the failed attempt's id, or None when no
+    retry was scheduled."""
+    retry_of = fallback.get('retry_of')
+    if fallback.get('state') != 'retrying' or not retry_of:
+        return None
+    outcome = {'action': 'final', 'result': result, 'root_dispatch_id': root_id,
+               'lines': fallback.get('lines') or [], 'text': next_action, 'at': stamp(now)}
+    fallback['handled'] = {**(fallback.get('handled') or {}), retry_of: outcome}
+    fallback.update(state='final', outcome={'result': result, 'next_action': next_action}, updated_at=stamp(now))
+    for key in ('until', 'retry_at', 'retry_of'):
+        fallback.pop(key, None)
+    return retry_of
+
+
 def fallback_guard(row, now):
     """AgentCompass is between two attempts of this brief (waiting out a transient backoff or relaunching): no worker
     runs, but one is about to, so the brief counts as dispatched until the guard lapses."""
@@ -989,7 +1010,9 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
 
 
 def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):
-    """Explicit cancellation/known pre-send failure, not an invented terminal host receipt."""
+    """Explicit cancellation/known pre-send failure, not an invented terminal host receipt. The parent's cancellation
+    (not `failed`) of a brief AgentCompass is waiting to retry also cancels that retry, in the same transaction
+    (retire_scheduled); the returned row then carries `canceled_retry`, the failed attempt whose watcher to stop."""
     now = now or utcnow()
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)
@@ -999,10 +1022,23 @@ def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):
             raise ValueError('Observe terminal status before releasing a launched dispatch; release does not cancel an agent')
         if row['state'] == 'expired' and (row.get('creation') or {}).get('in_flight') and not failed:
             raise ValueError('Paseo is still creating this worker and cannot cancel a create; release does not stop it')
+        canceled = None
+        if not failed:
+            root = row if chain_root(row) == dispatch_id else get(connection, 'dispatches', chain_root(row))
+            fallback = dict(root.get('fallback') or {})
+            canceled = retire_scheduled(fallback, now, 'canceled', RETRY_CANCELED_NEXT, root['dispatch_id'])
+            if canceled:
+                # The failed row stays as it ended; only its attempt record and history change.
+                root['fallback'] = fallback
+                root.setdefault('events', []).append({'state': root['state'], 'at': stamp(now),
+                                                      'reason': 'scheduled retry canceled: ' + reason[:200]})
+                save(connection, root)
+                if root['dispatch_id'] == dispatch_id:
+                    row = root
         if row['state'] not in TERMINAL or row['state'] == 'expired':
             event(row, 'failed' if failed else 'canceled', now, reason)
             save(connection, row)
-        return row
+        return dict(row, canceled_retry=canceled) if canceled else row
 
 
 def pending(path=None):

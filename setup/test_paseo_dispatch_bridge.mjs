@@ -1217,6 +1217,27 @@ test('a scheduled same-model retry runs the fallback step again only once it is 
   assert.equal(f.calls.length, 0);
 });
 
+test('a scheduled retry the parent canceled ends this watcher silently; one retired past its wait is reported once', async () => {
+  const retryAt = new Date(100000).toISOString();
+  const canceled = watchFixture();
+  canceled.setAgent({status: 'error'});
+  await notificationStep(canceled.client, canceled.record, canceled.persist, 10, async () => ({action: 'scheduled', retry_at: retryAt}));
+  assert.equal(await notificationStep(canceled.client, canceled.record, canceled.persist, 100001,
+    async () => ({action: 'final', result: 'canceled', root_dispatch_id: 'child', text: 'canceled'})), true);
+  assert.equal(canceled.record.status, 'canceled');
+  assert.equal(canceled.calls.length, 0);
+  const expired = watchFixture();
+  expired.setAgent({status: 'error'});
+  await notificationStep(expired.client, expired.record, expired.persist, 10, async () => ({action: 'scheduled', retry_at: retryAt}));
+  const text = 'AgentCompass scheduled a retry of this brief on the same model after a transient provider failure, but ' +
+    'nothing started it before the wait the task allows (can_wait_hours) ran out, so the retry is retired.';
+  assert.equal(await notificationStep(expired.client, expired.record, expired.persist, 100001,
+    async () => ({action: 'final', result: 'retry_expired', root_dispatch_id: 'child', text})), true);
+  assert.equal(expired.calls.length, 1);
+  assert.match(expired.calls[0][1], /State: retry_expired\n/);
+  assert(expired.calls[0][1].includes('can_wait_hours'));
+});
+
 test('the relaunched attempt reports its finish under the parent dispatch with the attempts', async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-attempts-'));
   const previous = process.env.ROUTER_STATE_DIR;
