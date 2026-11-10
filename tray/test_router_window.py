@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
@@ -213,6 +214,102 @@ class DecisionBindingTests(unittest.TestCase):
             panel.render_radar()
             self.assertTrue(panel.radar.canvas.pack_info())
             self.assertEqual(panel.theatre.canvas.winfo_manager(), "")
+
+    def test_a_quota_record_the_view_cannot_read_does_not_stop_the_decision_from_loading(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        window = {"label": "Claude", "capacity_usd": "n/a", "used_usd": "?", "elapsed_hours": 166, "reset_in_hours": 2}
+        ranking = [{**row, "quota_line": {"window": "claude", "hours": "two", "spend_usd": "?"}} for row in PLAN["ranking"][:3]]
+        loaded = lambda panel: (panel.theatre.scene.winner.id, bool(panel.breakdown_rows), 'Opus 5.5' in panel.verdict.get())
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
+                mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+            # Fields of another type are read one by one: the window is left out and nothing is raised.
+            with mock.patch.object(router_window, "log_error") as logged:
+                panel.plan_loaded({**PLAN, "ranking": ranking, "quota_line": {"windows": {"claude": window}}})
+            logged.assert_not_called()
+            self.assertEqual((panel.quota_line.data["windows"], panel.quota_line.data["dropped"]), ([], ["claude"]))
+            self.assertEqual(loaded(panel), ('opus', True, True))
+            # Whatever else goes wrong inside the quota view stays there: it is logged, and the film, the
+            # candidates and the verdict of the decision load as usual.
+            panel.breakdown_rows = []
+            with mock.patch.object(router_window.quota_line, "model", side_effect=ValueError("boom")), \
+                    mock.patch.object(router_window, "log_error") as logged:
+                panel.plan_loaded({**PLAN, "quota_line": {"windows": {"claude": {**window, "used_usd": 240}}}})
+            logged.assert_called_once()
+            self.assertIsInstance(panel.quota_line.error, ValueError)
+            self.assertIsNone(panel.quota_line.data)
+            self.assertEqual(loaded(panel), ('opus', True, True))
+            panel.plan_loaded(PLAN)
+            self.assertIsNone(panel.quota_line.error)
+
+    def test_quota_line_tab_shows_the_loaded_decision_and_follows_the_film(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        window = {"label": "Claude", "capacity_usd": 400, "used_usd": 240, "elapsed_hours": 166, "reset_in_hours": 2}
+        ranking = [{**row, "quota_line": {"window": "claude", "hours": 2, "spend_usd": 40, "over_line_usd": 0}}
+                   for row in PLAN["ranking"][:3]]
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'),                 mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+            panel.plan_loaded(PLAN)
+            # A decision recorded without quota-line fields shows the empty state, never invented numbers.
+            self.assertIsNone(panel.quota_line.data)
+            self.assertEqual(panel.theatre.on_frame, panel.quota_line.follow)
+            panel.show_list("quota")
+            self.assertTrue(panel.quota_frame.pack_info())
+            self.assertEqual(panel.ledger_frame.winfo_manager(), "")
+            self.assertEqual(panel.list_switch.value, "quota")
+            panel.plan_loaded({**PLAN, "ranking": ranking, "quota_line": {"windows": {"claude": window}}})
+            self.assertEqual([item["key"] for item in panel.quota_line.data["windows"]], ["claude"])
+            self.assertEqual(panel.quota_line.data["winner"]["window"], "claude")
+            # The film's clock reaches the view on every frame it draws, and stopping the film settles it.
+            panel.theatre.elapsed = 3.0
+            panel.theatre.draw()
+            self.assertEqual(panel.quota_line.story, decision_theatre.story_time(3.0))
+            panel.render_radar()
+            self.assertEqual(panel.quota_line.story, decision_theatre.DURATION)
+            # Hover: the mark under the pointer in words, else how to read the picture. A click replays.
+            for sequence in ("<Motion>", "<Leave>", "<Button-1>"):
+                self.assertTrue(panel.quota_line.canvas.bind(sequence))
+            bound, tips = {}, iter(["", "Claude: $240", "Claude: $240", ""])
+            view = SimpleNamespace(canvas=SimpleNamespace(bind=lambda sequence, handler, add=None: bound.update({sequence: handler})),
+                                   tip_at=lambda x, y: next(tips))
+            shown = []
+            with mock.patch.object(panel, "attach_tooltip", return_value=(lambda event: shown.append(view.canvas._tooltip_text),
+                                                                          lambda: shown.append(None))):
+                panel.attach_quota_tooltip(view, "legend")
+            for _ in range(4):
+                bound["<Motion>"](SimpleNamespace(x=5, y=5, x_root=5, y_root=5))
+            # Shown again only when the text under the pointer changes.
+            self.assertEqual([text for text in shown if text], ["legend", "Claude: $240", "legend"])
+            with mock.patch.object(panel, "replay_theatre") as replay:
+                bound["<Button-1>"](None)
+                replay.assert_called_once_with()
+            panel.show_list("ledger")
+            self.assertEqual(panel.quota_frame.winfo_manager(), "")
+
+    def test_static_radar_shows_the_pair_s_values_and_nothing_about_the_task(self):
+        import router_window
+        import tk_test_support
+        root = tk_test_support.shared_tk_root(self)
+        root.withdraw()
+        fit = {"divergence": {"demand": 1, "score": .7, "target": .3}, "global_rigor": {"demand": 3, "score": .8, "target": .8}}
+        ranking = [{**row, "five_axis_fit": fit} if row["id"] == "opus" else row for row in PLAN["ranking"]]
+        with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
+                mock.patch.object(router_window.theme, 'set_window_icon'):
+            panel = router_window.Panel(root, 'scoring')
+            panel.plan_loaded({**PLAN, "ranking": ranking})
+            with mock.patch.object(panel.radar, "show") as show:
+                panel.render_radar()
+            # The axes, the two series and their raw values for the hover text: no need, no cost.
+            (axes, series, raw), keywords = show.call_args
+            self.assertEqual(keywords, {})
+            self.assertEqual(len(series), 2)
+            self.assertFalse(hasattr(panel.radar, "need") or hasattr(panel.radar, "cost_axis"))
 
     def test_opening_decision_skips_a_newest_row_that_replays_to_none(self):
         import router_window

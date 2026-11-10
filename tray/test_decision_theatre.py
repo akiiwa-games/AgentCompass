@@ -1,3 +1,4 @@
+from PIL import ImageChops
 """Scene/render contracts, lifecycle, and opt-in diagnostics on a hidden real Tk canvas."""
 import copy
 import math
@@ -30,6 +31,17 @@ def result():
     return dict(task=dict(objective='# A real task\nprivate body',work_kind='research'),choice='a',
                 ranking=[candidate('excluded','blocked',99,['offline']),candidate('b','beta',.6),
                          candidate('a','alpha',.9),candidate('a2','alpha',.8)])
+
+
+def test_film_drives_its_companion_view_and_settles_it_when_stopped():
+    seen=[]
+    theatre=dt.DecisionTheatre.__new__(dt.DecisionTheatre)
+    assert theatre.on_frame is None
+    theatre.on_frame=seen.append
+    theatre.after_id=None
+    theatre.timer=SimpleNamespace(end=lambda:None)
+    theatre.stop()
+    assert seen==[dt.DURATION]
 
 
 @pytest.mark.parametrize('diagnostics', ['off', 'on', 'unwritable'])
@@ -138,7 +150,7 @@ def test_camera_is_one_c2_curve_that_creeps_and_never_stops_mid_film():
     hold=v[round(1.0/step)]
     assert .02*cruise < hold < .08*cruise
     assert x[-1]==pytest.approx(630*dt.CAMERA_SPAN)
-    assert dt.PAN_END <= dt.WINDOWS['fold'][0]
+    assert dt.PAN_END <= dt.WINDOWS['settle'][0]
 
 
 def test_master_tempo_is_smooth_slow_when_read_and_preserves_total_time():
@@ -228,7 +240,7 @@ def test_motion_is_continuous_from_routes_to_the_settled_name():
     assert scales[-1]==pytest.approx(1)
 
 
-def test_effort_arrives_with_the_folded_name():
+def test_effort_arrives_with_the_settled_name():
     source=result()
     for item in source['ranking']:
         item['bundle']['effort']='high'
@@ -236,10 +248,11 @@ def test_effort_arrives_with_the_folded_name():
     calls=[]
     renderer.blit=lambda image,value,*a,**k: calls.append((value,k.get('alpha',1)))
     renderer.frame(dt.DURATION)
-    assert [v for v,a in calls if a>0]==['alpha','· 高']
-    calls.clear(); renderer.frame(dt.WINDOWS['fold'][0])
+    shown=[v for v,a in calls if a>0]
+    assert shown[:2]==['alpha','beta'] and shown[-1]=='· 高'
+    calls.clear(); renderer.frame(dt.WINDOWS['settle'][0])
     assert '· 高' not in [v for v,a in calls if a>0]
-    assert dt.WINDOWS['fold'][0] < dt.WINDOWS['effort'][0] < dt.WINDOWS['fold'][1]
+    assert dt.WINDOWS['settle'][0] < dt.WINDOWS['effort'][0] < dt.WINDOWS['settle'][1]
     import i18n
     original=i18n.translate
     i18n.translate=lambda text: {'高':'High'}.get(text,text)
@@ -248,15 +261,63 @@ def test_effort_arrives_with_the_folded_name():
     finally:
         i18n.translate=original
     assert dt.effort_label('')==''
+    # A fast-mode bundle says so beside its effort.
+    source['ranking'][2]['bundle']['fast']=True
+    scene=dt.scene_from_result(source)
+    assert scene.winner.fast and not scene.pair[1].fast
+    assert dt.effort_label('', True)=='· '+dt._tr('快速')
+    assert dt.TheatreRenderer(scene,630,600,1.5).final['effort'].endswith(dt._tr('快速'))
 
 
-def test_scroll_climax_is_only_the_chosen_name_and_keeps_true_title_phrase():
+def test_final_frame_keeps_the_radar_with_its_axis_names_under_the_winner():
     assert dt.short_title('执行任务：落地「真正的任务」与其它细节')=='真正的任务'
     renderer=dt.TheatreRenderer(dt.scene_from_result(result()),630,600,1.5)
     calls=[]
-    renderer.blit=lambda image,value,*a,**k: calls.append(value) if k.get('alpha',1)>0 else None
-    renderer.frame(dt.DURATION)
-    assert calls==['alpha']
+    real=renderer.blit
+    def blit(image,value,*a,**k):
+        if k.get('alpha',1)>0:
+            calls.append((value,a[:2],k.get('scale',1)))
+        return real(image,value,*a,**k)
+    renderer.blit=blit
+    frame=renderer.frame(dt.DURATION)
+    axes=[label for _,label,_ in dt.radar.SCORE_AXES]
+    # Who won, against whom, and on which five axes: nothing else is written on the last frame.
+    assert [v for v,*_ in calls]==['alpha','beta',*axes]
+    shown={v:(xy,scale) for v,xy,scale in calls}
+    assert shown['alpha'][1]==pytest.approx(1) and shown['beta'][1]==pytest.approx(dt.LEGEND/dt.NAME)
+    lowest=renderer.center[1]+renderer.radius*math.cos(math.pi/5)
+    assert lowest < shown['alpha'][0][1] < shown['beta'][0][1] < renderer.h-18*renderer.s
+    # The radar is still drawn: the winner's sheet covers the centre, inside the hairline frame of full scale.
+    cam=dt.camera_position(dt.DURATION,renderer.w)
+    paper=renderer.blank.reduce(renderer.k).getpixel((0,0))
+    assert frame.getpixel((round(renderer.center[0]-cam),round(renderer.center[1])))!=paper
+    edge=[dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius,axis,5) for axis in (0,1)]
+    assert frame.getpixel((round((edge[0][0]+edge[1][0])/2),round((edge[0][1]+edge[1][1])/2)))!=paper
+    # There is no other backdrop: just inside the frame, outside both shapes, the stage is bare paper.
+    x,y=dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius*.97,0,5)
+    x2,y2=dt.radar.point(renderer.center[0]-cam,renderer.center[1],renderer.radius*.97,1,5)
+    assert frame.getpixel((round((x+x2)/2),round((y+y2)/2)))==paper
+
+
+@pytest.mark.parametrize('size',[(300,300,1),(330,310,1),(474,488,1.15),(630,600,1.5),(900,700,2)])
+@pytest.mark.parametrize('names',[None,('Divergence','Global Rigor','Module Precision','Vision & Tools','Quota Economy')])
+def test_axis_names_stay_inside_the_stage_and_clear_of_each_other(size,names,monkeypatch):
+    if names:
+        monkeypatch.setattr(dt.radar,'SCORE_AXES',tuple((str(i),name,'') for i,name in enumerate(names)))
+    renderer=dt.TheatreRenderer(dt.scene_from_result(result()),*size)
+    cam=dt.camera_position(dt.DURATION,renderer.w)
+    boxes=[]
+    for label,x,y,room in renderer.axis_labels:
+        half=min(room,renderer.measure(label,dt.AXIS_LABEL,False,room))/2
+        boxes.append((x-cam-half,y-7*renderer.s,x-cam+half,y+7*renderer.s))
+    assert len(boxes)==5
+    for left,top,right,bottom in boxes:
+        assert 0<=left and right<=renderer.w and 0<=top and bottom<renderer.final['card'][1]
+    for i,a in enumerate(boxes):
+        for b in boxes[i+1:]:
+            assert a[2]<=b[0] or b[2]<=a[0] or a[3]<=b[1] or b[3]<=a[1]
+    # Every name is shown in full: a narrow stage draws a smaller radar instead of shortening a name.
+    assert all(renderer.measure(label,dt.AXIS_LABEL,False)<=room+.5 for label,_,_,room in renderer.axis_labels)
 
 
 def test_paths_have_exact_endpoints_and_even_particle_velocity():
@@ -437,3 +498,72 @@ def test_two_line_title_grows_upward_and_everything_follows_the_block():
     # Ink specks are seeded from both lines.
     seeds=[seed for seed,*_ in two.ink]
     assert min(y for _,y in seeds)<two.title_at[1]<max(y for _,y in seeds)
+
+
+def fitted(source, targets=(.3, .8, .8, .3)):
+    """The same decision with the task's need recorded, and two models that differ on every axis."""
+    source = copy.deepcopy(source)
+    scores = {'alpha': (.7, .85, .9, .6), 'beta': (.95, .7, .75, .9), 'blocked': (.5, .5, .5, .5)}
+    keys = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
+    for item in source['ranking']:
+        values = scores[item['bundle']['model']]
+        item['components'].update(dict(zip(('divergence', 'global_rigor', 'module_precision', 'capability'), values)))
+        item['five_axis_fit'] = {key: dict(demand=1, score=value, target=target)
+                                 for key, value, target in zip(keys, values, targets)}
+    return source
+
+
+def test_shapes_bloom_from_the_centre_without_overshoot_and_the_winner_lands_last():
+    renderer = dt.TheatreRenderer(dt.scene_from_result(fitted(result())), 630, 600, 1.5)
+    times = [i / 120 for i in range(round(dt.DURATION * 120) + 1)]
+    winner, other = ([renderer.bloom(index, t) for t in times] for index in (0, 1))
+    for growth in (winner, other):
+        assert growth[0] == (0,) * 5 and growth[-1] == (1,) * 5
+        for axis in range(5):
+            steps = [g[axis] for g in growth]
+            # Each axis eases out to exactly its value: never beyond it, never back.
+            assert steps == sorted(steps) and max(steps) == 1
+            assert max(b - a for a, b in zip(steps, steps[1:])) < .06
+        # The shape opens clockwise from the top axis.
+        started = [next(i for i, g in enumerate(growth) if g[axis] > 0) for axis in range(5)]
+        assert started == sorted(started) and len(set(started)) == 5
+    landed = lambda growth: next(t for t, g in zip(times, growth) if g == (1,) * 5)
+    opened = lambda growth: next(t for t, g in zip(times, growth) if g[0] > 0)
+    assert opened(other) < opened(winner) and landed(other) < landed(winner) < dt.WINDOWS['settle'][0]
+    # Both route ends have landed on the centre before the first shape opens there.
+    assert dt.WINDOWS['lift'][1] <= opened(other)
+    for candidate in renderer.scene.pair:
+        path, lengths = renderer.pens[candidate.id]
+        assert path[-1] == pytest.approx(renderer.center)
+
+
+def test_the_radar_is_two_sheets_of_glass_and_nothing_else():
+    source = fitted(result())
+    small = {'alpha': (.5, .6, .55, .4), 'beta': (.6, .45, .5, .6)}
+    for item in source['ranking']:
+        if item['bundle']['model'] in small:
+            item['components'].update(dict(zip(('divergence', 'global_rigor', 'module_precision', 'capability'),
+                                               small[item['bundle']['model']])))
+    scene = dt.scene_from_result(source)
+    assert not hasattr(scene, 'need')
+    renderer = dt.TheatreRenderer(scene, 630, 600, 1.5)
+    cam = dt.camera_position(dt.DURATION, renderer.w)
+    cx, cy, radius = renderer.center[0] - cam, renderer.center[1], renderer.radius
+    frame = renderer.frame(dt.DURATION)
+    paper = renderer.blank.reduce(renderer.k).getpixel((0, 0))
+    at = lambda axis, level: tuple(round(v) for v in dt.radar.point(cx, cy, radius * level, axis, 5))
+    # No spokes and no marks along the axes: beyond both shapes an axis is bare paper up to the frame.
+    bare = 0
+    for axis in range(5):
+        reach = max(candidate.values[axis] for candidate in renderer.scene.pair)
+        if (1 - reach) * radius > 24:
+            assert frame.getpixel(at(axis, (reach + 1) / 2)) == paper, axis
+            bare += 1
+    assert bare
+    # A sheet is tinted glass: lighter at the top, deeper at the bottom.
+    mean = lambda xy: sum(sum(pixel) for pixel in frame.crop((xy[0] - 2, xy[1] - 2, xy[0] + 3, xy[1] + 3)).getdata()) / 25
+    assert mean((round(cx), round(cy - radius * .3))) > mean((round(cx), round(cy + radius * .3))) + 6
+    assert mean((round(cx), round(cy))) < sum(paper) - 30
+    # The specks of light twinkle while the film runs and rest once it has settled: the last frame is still.
+    assert ImageChops.difference(renderer.frame(7.5), renderer.frame(7.6)).getbbox()
+    assert ImageChops.difference(frame, renderer.frame(dt.DURATION)).getbbox() is None

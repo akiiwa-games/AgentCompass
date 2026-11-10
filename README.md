@@ -2,7 +2,7 @@
 
 # 🧭 AgentCompass
 
-**Route sub-agent tasks across your coding subscriptions by model strengths and live quota.**
+**Route sub-agent tasks across your coding subscriptions by what each task needs and what each quota window has left.**
 
 [English](#english) · [简体中文](#简体中文) · [Technical Reference](docs/technical-reference.md) · [`llms.txt`](llms.txt)
 
@@ -11,7 +11,7 @@
 ![Tray](https://img.shields.io/badge/tray-Windows%2011-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-<img src="docs/hero.gif" width="880" alt="AgentCompass Decision Compass replaying a synthetic decision">
+<img src="docs/hero.gif" width="880" alt="The Decision Compass replaying one synthetic decision: task, kind, candidate routes, then the winner and the best-ranked other model opening as two sheets of tinted glass on five axes, and the winner under that radar">
 
 </div>
 
@@ -19,34 +19,68 @@
 
 ## English
 
-### Why AgentCompass
+### What it is for
 
-Even when you funnel all your work through a single main session or one GrokBot, the mental load is no lighter than managing multiple agents yourself:
+If you delegate coding work to sub-agents and pay for more than one subscription, four things are decided by hand on every task:
 
-> *"Hand this new showcase UI straight to Opus 5.5 to design and build. Turn on `xhigh`—I want the result to really stand out."*
->
-> *"Ask Argon whether this strategy can be optimized any further. Proposal only, don't write code."*
->
-> *"Have Astra run the code review and end-to-end tests. If Plus quota runs out, have DeepSeek step in."*
+| Problem | What AgentCompass does |
+| :-- | :-- |
+| Each subscription has its own limits and reset times: 5-hour and weekly windows, on different clocks. | Reads the current-period usage of every signed-in account from local snapshots and follows each window on its own clock. |
+| Quota expires unused on one account while another runs dry. | Spends first the quota that is about to expire, and holds back a window that is being used faster than it recovers. |
+| The right model and effort differ from task to task. | A small classifier states what the task needs; every available `model × effort × account` is scored against that need. |
+| You do not know what a delegated worker will cost until it has run. | Estimates hours and API-equivalent USD for each candidate before launch and writes the decision to a local ledger. |
 
-Each agent is good at different things, and subscription quotas are always moving. It feels like managing a team of dozens of people in your head—remembering who does what best, which effort level to turn on, and which account still has quota left today.
+It works with plans you already have: Claude Max / Pro, ChatGPT / Codex, Google AI Ultra / Pro, Grok, and OpenAI-compatible pools. When the main session wants to delegate a task or ask for a second opinion, it runs one command:
 
-**AgentCompass** takes that scheduling off your hands for the plans and pools you already use (Claude Max / Pro, ChatGPT / Codex, Google AI Ultra / Pro, Grok, and OpenAI-compatible fallbacks). When your main session needs to delegate a task or get a second opinion, it calls `agentcompass roll`:
-
-- **Matches the model to the job** — profiles whether the task is UI design, open-ended strategy advice, repo-wide refactoring, or strict review & E2E testing, and picks a fitting `model × effort` worker (or tells the main session to do single-thread work itself).
-- **Schedules around live 5h / 7d quotas** — reads local quota snapshots across your signed-in accounts, falls back automatically when an account runs dry or is paused, and spends expiring surplus before weekly resets.
-- **Follows explicit instructions when you give them** — if you name a model or effort in your prompt, the main agent passes `--model ... --effort ... --basis "<your words>"` straight through.
-- **Keeps sub-agents on the rails** — an optional `PreToolUse` hook blocks unrouted background spawns, and workers that reach 2M tokens of cumulative context rotate with a handoff brief instead of compacting until they lose the plot.
-
-```text
-$ agentcompass plan --input examples/task.json --dry-run
-task      other_or_mixed · routine · 1.5 h · local_only (runs pytest)
-winner    argon_high   score 0.2589
-          gemini-weekly: 63% left ($158.19), this work ~2.4% (~$6.00),
-          other work wants ~48% before its reset in 89h → opportunity cost 0.0211
-runner-up sol_high     score 0.2528   (codex: 83% left, but observed demand ~84% before reset in 144h)
-excluded  dot          local_only: needs this machine
+```bash
+agentcompass roll --task "<what the worker should do>"
 ```
+
+### How a task is routed
+
+1. **Profile.** The classifier returns the task's expected hours and a need level (0–3) on four ability axes: divergence, global rigor, module precision, vision & tools. Single-thread work is handed back to the main session, and a brief that holds several independent tasks is returned to be split.
+2. **Candidates.** Every model, effort and account that can start the task now. Per-axis model scores come from cited public sources.
+3. **Score.** `N = F − β × X / h`
+   - `F`, the fit: the need-weighted average of the model's axis scores, each capped at what the task needs. Ability above the need does not count, so a rename is not sent to the strongest model at maximum effort.
+   - `X`: the part of this task's spend, in USD, that lands over the recovery line of the account's quota window (next section). `h` is the task's hours; `β` is that window's exchange rate between over-line dollars and fit. This term is the fifth axis, quota economy.
+4. **Ties.** Equal `N` goes to the candidate that uses the under-line quota expiring earliest, then to the one that finishes sooner, then to the cheaper one.
+5. **Launch.** The winner starts as a worker, and the ledger keeps every candidate's score.
+
+The animation above is the tray's Decision Compass replaying one decision: the task, its kind, the candidate routes, the winner and the best-ranked other model on the five axes (routes of the same model score the same on every axis), and the winner. The numbers in both animations are synthetic.
+
+### Quota: the recovery line
+
+Treat a window's quota as recovering evenly over its period. A window with capacity `C` has recovered `C × elapsed / period` so far; that is its recovery line.
+
+- **Usage under the line.** The gap is quota that has recovered and will expire at the reset if nobody spends it. Spending it costs nothing.
+- **Usage over the line.** The window is being drained faster than it recovers. Each further dollar is borrowed from the rest of the period and is charged at `β`.
+
+<div align="center">
+<img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice, each quota window drawn as a small chart of its quota line and its rising usage line: first a window that is over its line is held back and the task runs on one that is under, then two hours before its reset the remaining quota is used first in fast mode">
+</div>
+
+This is how to read it. Each small chart is one quota window on its own clock: left to right is this period, ending at the reset on the right edge; bottom to top is quota, with the whole period's quota at the top. The pale straight line is the quota line: where usage would stand now if the subscription were spent at an even pace. The thick line is actual usage, rising up to now. It is solid where usage readings were recorded and dotted where there are none and the line is fitted from the period's start to the current usage. While usage is under the quota line it is green and the window is marked **Used first**: that quota has recovered and is lost at the reset if nobody spends it. Once usage crosses the line it turns red and the window is marked **Held back**. The window the task runs on lights up, and the task's own spend continues its usage line in indigo. Last, a dotted line runs from now to the top right corner: the pace that uses up what is left exactly at the reset, where the lines close.
+
+The animation replays one 2-hour refactor at two moments. The task needs global rigor and module precision; Opus 5.5 meets the need, so its `F` is 0.667.
+
+**A window ahead of its line is spared.** Five days before Claude A resets, 45% of it is used and its line stands at 29%. Opus 5.5 on Claude A would put $46 over the line: `N = 0.667 − 0.0075 × 46 / 2 = 0.495`. Claude B is under its line, so the same model and the same $46 cost nothing there: `N = 0.667`. The task runs on Claude B.
+
+**Sprint before reset.** Two hours before Claude A resets, 40% of it is left, nearly all of it under the line. Opus 5.5 now scores 0.667 three ways: on Claude A in normal mode (2 h, $46), on Claude A in fast mode (1.3 h, $91), and on Claude B. The tie goes to Claude A, whose quota expires in 2 hours instead of 6 days, and then to fast mode, which finishes 40 minutes sooner. Fast mode wins only because its whole spend stays under the line; with one dollar over, the normal run would rank higher.
+
+**Resets that do not line up.** None of this needs the windows to share a schedule. At that same moment Codex is five days from its reset and ahead of its line, so the $9 for Sol 6.1 are charged (`0.652 − 0.008 × 9 / 2 = 0.616`) while the $91 on Claude A are not.
+
+Three details:
+
+- An account with both a 5-hour and a weekly window is checked against both; the larger over-line amount counts.
+- A free starter allowance is a pool that never resets. Nothing recovers, so all of its spend is over the line. It is not treated as unlimited.
+- The only usage input is each account's consumption in its current period. There is no usage history and no demand forecast.
+
+### Staying in control
+
+- Name a model or an effort in your prompt and the main session passes it through as `--model ... --effort ... --basis "<your words>"`. The router does not override it.
+- `agentcompass plan --input examples/task.json --dry-run` prints the ranking for a task without launching anything or writing to the ledger.
+- An optional `PreToolUse` hook blocks sub-agent launches that did not go through the router.
+- A worker whose cumulative context reaches 2M tokens is replaced by a new worker with a handoff brief instead of being compacted again.
 
 ### Quickstart
 
@@ -75,30 +109,74 @@ Or hand setup to your coding agent:
 
 - **Hosts**: Claude Code, Codex CLI, Google Antigravity (`agy`), Paseo, Pi, OpenCode, Orca, T3 Code, and Herdr core (`hc`).
 - **Host & gateway plugins**: [cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin) (Cindy tasks), [magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router) (Magpie gateway), [usage-float](https://github.com/akiiwa-games/usage-float) (floating quota HUD).
-- **Deep dive**: Scoring formula, quota collection, Windows tray console, host rollout internals, checkout migration, and test suites live in **[`docs/technical-reference.md`](docs/technical-reference.md)**.
+- **Reference**: allocation internals, quota collection, the Windows tray console, host rollout, checkout migration and the test suites are in **[`docs/technical-reference.md`](docs/technical-reference.md)**.
 
 ---
 
 ## 简体中文
 
-### 为什么需要 AgentCompass
+### 它解决什么问题
 
-即使聚焦到一个主会话或一个 GrokBot，你的负担并不比直接管理多个 Agent 轻：
+如果你把编码任务派给子 Agent，同时又订阅了不止一家服务，那么每个任务都有四件事要靠人来定：
 
-> *“新加这个展柜界面，你直接派给 opus5.5 来设计落地。我需要惊艳一点的修改所以开 xhigh 吧。”*
->
-> *“你找 argon 看看这个策略还有没有什么优化的可能性，只出方案，别写代码。”*
->
-> *“让 astra 做代码 review 和端到端测试。plus 额度没了的话，再让 deepseek 顶上。”*
+| 问题 | AgentCompass 的做法 |
+| :-- | :-- |
+| 每个订阅的限额和重置时间各不相同：5 小时窗口、周窗口，各走各的时钟。 | 从本地快照读取每个已登录账号本期的用量，每个窗口按自己的时钟计算。 |
+| 一个账号的额度没用完就作废，另一个账号却已经见底。 | 先花快要作废的额度；消耗速度超过恢复速度的窗口先留着。 |
+| 不同任务适合的模型和档位不同。 | 小模型分类器给出任务的需求；每个可用的 `模型 × 档位 × 账号` 都按这份需求打分。 |
+| 派出去的 worker 要花多少，跑完才知道。 | 启动前先估算每个候选的工时和按 API 价格折算的 USD，并把这次决策写入本地台账。 |
 
-Agent 各擅所长，额度动态变化，仿佛在脑子里管理一支数十人的团队——既要记着谁审美在线、谁适合发散出方案、谁审查严谨，又要盘算哪个任务该开 `xhigh`、哪个账号的 5 小时或周额度还没见底。
+支持你已经在用的订阅：Claude Max / Pro、ChatGPT / Codex、Google AI Ultra / Pro、Grok，以及 OpenAI 兼容的号池。主会话要派发任务或找顾问时，只运行一条命令：
 
-**AgentCompass** 把这套排班与额度调度从你的脑子里接管过来（支持 Claude Max / Pro、ChatGPT / Codex、Google AI Ultra / Pro、Grok 及各类兼容号池）。当主会话需要派发子任务或找顾问征求意见时，只需调用 `agentcompass roll`：
+```bash
+agentcompass roll --task "<交给子 Agent 的完整任务>"
+```
 
-- **按任务长板与难度选人定档** — 自动识别任务属于界面设计、只读方案推演、跨模块重构还是代码审查与测试，匹配合适的 `model × effort` 组合（单线任务留在主会话自己做，多独立交付物提示拆分）。
-- **跟随 5h / 7d 动态额度自动轮转** — 本地读取已登录账号的实时余量，某个账号额度耗尽或暂停时自动切换替补，并在周重置前优先消耗富余额度。
-- **点名即透传，不点名免操心** — 你在对话里明确指定了模型或档位时，主会话会通过 `--model ... --effort ... --basis "<你的原话>"` 原样执行；没指定时由路由器自动拍板。
-- **派工门禁与 2M 上下文轮换** — 可选挂载 `PreToolUse` 门禁拦截主会话私自起子 Agent；worker 历史累计未压缩上下文达到 2M tokens 时自动换人交接，防止反复压缩后失忆。
+### 一个任务如何被路由
+
+1. **画像。** 分类器给出任务的预计工时，以及四个能力轴上的需求等级（0–3）：发散创新、全局严密、模块精准、视觉与工具。单线任务交还主会话自己做；一份任务书里有多个独立任务时，退回给主会话拆分。
+2. **候选。** 所有现在就能开工的模型、档位与账号组合。各轴的模型分数来自注明出处的公开数据。
+3. **打分。** `N = F − β × X / h`
+   - `F` 是契合度：模型各轴分数按需求加权平均，每个轴只算到任务需要的高度。超出需求的能力不计分，所以改个名字不会被派给最强的模型开最高档。
+   - `X` 是这次花费中越过该账号额度窗口恢复线的部分，单位 USD（见下一节）。`h` 是任务工时，`β` 是该窗口越线花费与契合度之间的汇率。这一项就是第五个轴：额度经济。
+4. **平分时。** `N` 相等，先选所用线下额度最早到期的候选，再选完成更快的，最后选更便宜的。
+5. **启动。** 胜出的候选作为 worker 启动，台账里保留每个候选的分数。
+
+页首的动画是托盘“决策罗盘”重放一次决策：任务、任务类型、候选路线、胜出者与排名最高的另一个模型在五个轴上的对比（同一模型的不同路线各轴得分相同）、胜出者。两段动画里的数字都是合成数据。
+
+### 额度：恢复线
+
+把一个窗口的额度看成在周期内匀速恢复。容量为 `C` 的窗口，到现在为止已经恢复了 `C × 已过时间 / 周期`，这就是它的恢复线。
+
+- **用量在线下。** 差额是已经恢复、但到重置时没人用就会作废的额度。花掉它不计成本。
+- **用量在线上。** 这个窗口的消耗快于恢复。再花的每一美元都是向本期后面借的，按 `β` 计价。
+
+<div align="center">
+<img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次，每个额度窗口画成一张小图，一根额度线和一根不断上涨的实际用量线：先是用量已经超过额度线的窗口被降权，任务派到线下的窗口；然后在重置前两小时，剩余额度被优先使用，用快速模式花掉">
+</div>
+
+读法如下。每张小图是一个额度窗口，各走各的时钟：从左到右是本周期，右端是重置；从下到上是额度，顶端是本周期的全部额度。浅色直线是额度线：按订阅的节奏匀速使用，此刻应该用到哪里。粗线是实际用量，一直涨到现在；有用量读数的地方是实线，没有读数时按期初到当前用量拟合，画成点线。用量在额度线下面时是绿色，窗口标着**优先使用**：这部分额度已经恢复，到重置不花就没了。用量越过额度线就变红，窗口标着**降权**。本次任务用的窗口会亮起来，任务自己的花费用靛蓝色接在它的用量线后面。最后，一条点线从现在连到右上角：按这个节奏用，剩余额度正好在重置时用完，线在那里闭合。
+
+动画把同一个 2 小时的重构任务放在两个时刻各重放一次。任务需要全局严密和模块精准；Opus 5.5 满足需求，`F` 为 0.667。
+
+**超前于恢复线的窗口先留着。** 距 Claude A 重置还有五天时，它已经用了 45%，而恢复线只到 29%。在 Claude A 上用 Opus 5.5 会有 $46 越线：`N = 0.667 − 0.0075 × 46 / 2 = 0.495`。Claude B 在线下，同一个模型、同样的 $46 在那里不计成本：`N = 0.667`。任务派到 Claude B。
+
+**重置前狂蹬。** 距 Claude A 重置还有两小时，还剩 40%，几乎全部在线下。这时 Opus 5.5 有三种跑法都是 0.667：Claude A 普通模式（2 小时，$46）、Claude A 快速模式（1.3 小时，$91）、Claude B。平分时先选 Claude A，因为它的额度 2 小时后就到期，而 Claude B 还有 6 天；再选快速模式，因为能早 40 分钟完成。快速模式能胜出，只因为它的整笔花费都在线下；只要有一美元越线，普通模式就会排在前面。
+
+**重置时间不同步。** 以上计算都不要求各窗口的重置时间对齐。在同一时刻，Codex 距重置还有五天且已超前于恢复线，所以 Sol 6.1 的 $9 要计价（`0.652 − 0.008 × 9 / 2 = 0.616`），而 Claude A 上的 $91 不计。
+
+三点补充：
+
+- 同一账号同时有 5 小时窗口和周窗口时，两个窗口各算一次，取越线额较大的那个。
+- 免费的入门赠额是一个永不重置的额度池。它不会恢复，所以花的每一美元都算越线。它不会被当作无限额度。
+- 用量方面的输入只有每个账号本期的消耗。不看历史用量，也不做需求预测。
+
+### 你始终可以做主
+
+- 在对话里点名模型或档位，主会话会以 `--model ... --effort ... --basis "<你的原话>"` 原样透传，路由器不会改。
+- `agentcompass plan --input examples/task.json --dry-run` 只打印某个任务的候选排名，不启动任何 worker，也不写台账。
+- 可选的 `PreToolUse` 门禁会拦截没有经过路由器的子 Agent 启动。
+- worker 的历史累计上下文达到 2M tokens 时，会带着交接任务书换一个新 worker，而不是继续压缩。
 
 ### 快速开始
 
@@ -120,14 +198,14 @@ agentcompass doctor                                       # 查看安装状态�
 agentcompass roll --task "<交给子 Agent 的完整任务>"       # 自动分类、选型并启动 worker
 ```
 
-也可以直接把仓库丢给你的主 Agent：
+也可以直接把仓库交给你的主 Agent：
 *“读一下这个仓库，先跑 `agentcompass setup --dry-run` 给我看会改哪些配置，确认后执行安装并帮我路由这个任务：……”*
 
 ### 支持的宿主与技术文档
 
 - **直接支持的宿主**：Claude Code、Codex CLI、Google Antigravity (`agy`)、Paseo、Pi、OpenCode、Orca、T3 Code、Herdr core (`hc`)。
 - **配套插件**：[cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin)（Cindy 任务路由）、[magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router)（Magpie 网关路由）、[usage-float](https://github.com/akiiwa-games/usage-float)（桌面额度悬浮窗）。
-- **技术与运维细节**：评分公式、多账号额度采集、Windows 托盘控制台、各宿主全局规则同步、从源码目录迁移及测试命令，详见 **[`docs/technical-reference.md`](docs/technical-reference.md)**。
+- **参考文档**：分配实现细节、多账号额度采集、Windows 托盘控制台、各宿主全局规则同步、从源码目录迁移及测试命令，见 **[`docs/technical-reference.md`](docs/technical-reference.md)**。
 
 ## License
 

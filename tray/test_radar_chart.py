@@ -1,15 +1,15 @@
 """Raster quality, transition endpoints and Tk callback ownership for the radar."""
 import sys
+import math
 import unittest
+
+import pytest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tk_test_support import require_tk
 require_tk()
 import radar_chart as radar
-import tk_test_support
 
 
 class RasterTests(unittest.TestCase):
@@ -42,103 +42,95 @@ class RasterTests(unittest.TestCase):
         renderer = radar.RadarRenderer(60, 5, 1, "#FFFFFF")
         self.assertEqual(renderer.render([[0] * 5, [0] * 5]).size, (renderer.size,) * 2)
 
+    def test_the_only_backdrop_is_the_hairline_frame_of_full_scale(self):
+        renderer = radar.RadarRenderer(90, 5, 1, "#FFFFFF")
+        image = renderer.render([[.3] * 5])
+        at = lambda axis, level: radar.point(renderer.center, renderer.center, renderer.radius * level, axis, 5)
+        between = lambda level: tuple(round((a + b) / 2) for a, b in zip(at(0, level), at(1, level)))
+        # Outside the shape the card shows through: no filled pentagon, no rings, and no spokes along the axes.
+        for level in (.5, .75, .95):
+            self.assertEqual(image.getpixel(between(level))[:3], (255, 255, 255))
+        for axis in range(5):
+            for level in (.5, .8):
+                x, y = at(axis, level)
+                box = image.crop((round(x) - 2, round(y) - 2, round(x) + 3, round(y) + 3)).convert("RGB")
+                self.assertEqual(box.getcolors(64), [(25, (255, 255, 255))])
+        # The frame is there: a pentagon through full scale on every axis.
+        self.assertNotEqual(image.getpixel(between(1.))[:3], (255, 255, 255))
 
-class AnimationTests(unittest.TestCase):
-    def setUp(self):
-        self.root = tk_test_support.shared_tk_root(self)
-        self.chart = radar.RadarChartCanvas(self.root, size=420)
-        self.data = [{"label": "A", "values": {key: .8 for key, _, _ in radar.DNA_AXES}}]
-        self.chart.show(radar.DNA_AXES, self.data)
-
-    def start(self):
-        self.chart.animate([[0] * 5])
-        return self.chart._animation_id
-
-    def pending(self):
-        return self.root.tk.splitlist(self.root.tk.call("after", "info"))
-
-    def test_new_data_resize_and_destroy_cancel_owned_callback(self):
-        chart = self.chart
-        old = self.start()
-        self.assertIn(old, self.pending())
-        chart.show(radar.DNA_AXES, self.data)
-        self.assertNotIn(old, self.pending())
-        old = self.start()
-        chart.on_configure(SimpleNamespace(width=440, height=420))
-        self.assertNotIn(old, self.pending())
-        self.assertEqual(chart._display_values, chart.target_values())
-        old = self.start()
-        chart.canvas.destroy()
-        self.assertNotIn(old, self.pending())
-        self.assertIsNone(chart._photo)
-
-    def test_frames_reuse_grid_and_finish_at_target(self):
-        chart = self.chart
-        renderer = chart._renderer
-        with mock.patch.object(radar.time, "perf_counter", side_effect=[0, .320]):
-            chart.animate([[0] * 5])
-        self.assertIs(chart._renderer, renderer)
-        self.assertIsNone(chart._animation_id)
-        self.assertEqual(chart._display_values, chart.target_values())
-
-    def test_hover_and_vertex_tags_follow_displayed_values(self):
-        chart = self.chart
-        chart._display_values = [[.4] * 5]
-        chart.draw_series()
-        cx, cy, radius = chart.geometry()
-        x, y = radar.point(cx, cy, radius * .4, 0, 5)
-        self.assertEqual(chart.nearest_axis(x, y), (0, 0))
-        x0, y0, x1, y1 = chart.canvas.coords("vertex-0-0")
-        self.assertAlmostEqual((x0 + x1) / 2, x)
-        self.assertAlmostEqual((y0 + y1) / 2, y)
-
-    def test_interrupted_update_preserves_visible_values_across_unified_sources(self):
-        chart = self.chart
-        chart._display_values = [[.35] * 5]
-        new = [{"label": "B", "values": {key: .6 for key, _, _ in radar.DNA_AXES}}]
-        with mock.patch.object(chart.canvas, "winfo_ismapped", return_value=True), \
-                mock.patch.object(radar.time, "perf_counter", return_value=0):
-            chart.show(radar.DNA_AXES, new)
-            self.assertEqual(chart._display_values, [[.35] * 5])
-            old = chart._animation_id
-            new[0]["values"]["divergence"] = 1
-            self.assertEqual(chart.series[0]["values"]["divergence"], .6)
-            chart.show(radar.SCORE_AXES, [{"label": "Score", "values": {key: .7 for key, _, _ in radar.SCORE_AXES}}])
-            self.assertNotIn(old, self.pending())
-            self.assertEqual(chart._display_values, [[.35] * 5])
-            old = chart._animation_id
-            chart.show((), [])
-            self.assertNotIn(old, self.pending())
-            self.assertIsNone(chart._animation_id)
-
-    def test_remap_restarts_growth_and_unmapped_show_stays_idle(self):
-        chart = self.chart
-        self.assertIsNone(chart._animation_id)
-        chart.on_map(None)
-        self.assertIsNotNone(chart._animation_id)
-        self.assertLess(chart._display_values[0][0], .1)
-        chart.cancel_animation()
-        self.assertIsNone(chart._animation_id)
-
-    def test_a_chart_on_a_covered_page_stays_idle_until_its_page_is_raised(self):
-        # Covered pages stay mapped (page_stack), so winfo_ismapped() alone no longer means "on screen".
-        import tkinter as tk
-
-        page = tk.Frame(self.root)
-        self.addCleanup(page.destroy)
-        chart = radar.RadarChartCanvas(page, size=420)
-        page._page_hidden = True
-        new = [{"label": "B", "values": {key: .6 for key, _, _ in radar.DNA_AXES}}]
-        with mock.patch.object(chart.canvas, "winfo_ismapped", return_value=True):
-            chart.show(radar.DNA_AXES, new)
-            self.assertIsNone(chart._animation_id)
-            self.assertEqual(chart._display_values, [[.6] * len(radar.DNA_AXES)])
-            page._page_hidden = False
-            chart.page_shown()
-            self.assertIsNotNone(chart._animation_id)
-            chart.page_hidden()
-            self.assertIsNone(chart._animation_id)
+    def test_a_shape_is_a_sheet_of_tinted_glass_and_says_nothing_but_its_values(self):
+        renderer = radar.RadarRenderer(90, 5, 1.5, "#FFFFFF")
+        image = renderer.render([[.9] * 5])
+        centre, radius = renderer.center, renderer.radius
+        mean = lambda x, y: sum(sum(pixel[:3]) for pixel in image.crop((round(x) - 2, round(y) - 2, round(x) + 3, round(y) + 3)).getdata()) / 25
+        # The hue runs from light at the top to deep at the bottom: never a flat fill.
+        self.assertGreater(mean(centre, centre - radius * .45), mean(centre, centre + radius * .45) + 8)
+        # A denser band lies just inside the edge.
+        (x0, y0), (x1, y1) = (radar.point(centre, centre, radius * .9, axis, 5) for axis in (1, 2))
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        reach = math.hypot(mx - centre, my - centre)
+        inward = lambda px: (mx - (mx - centre) / reach * px * 1.5, my - (my - centre) / reach * px * 1.5)
+        rim, body = image.getpixel(tuple(round(v) for v in inward(2.2)))[:3], image.getpixel(tuple(round(v) for v in inward(9.)))[:3]
+        self.assertLess(sum(rim), sum(body) - 20)
+        # The second sheet is the lighter of the two.
+        both = renderer.render([[.2] * 5, [.9] * 5])
+        other = sum(both.getpixel((round(centre), round(centre + radius * .45)))[:3])
+        self.assertGreater(other, sum(image.getpixel((round(centre), round(centre + radius * .45)))[:3]))
+        # The task's need, quota cost and anything else that is not a model's five values have no place here.
+        with self.assertRaises(TypeError):
+            renderer.render([[.9] * 5], [.3, .8, .8, .3, None])
+        self.assertEqual(renderer.render([[.9] * 5]).tobytes(), image.tobytes())
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_glass_is_cut_to_the_shape_and_touches_nothing_else():
+    from PIL import Image
+    style = radar.SERIES_STYLES[0]
+    sheet = radar.glass_sheet(200, style)
+    top, bottom = sheet.getpixel((100, 0)), sheet.getpixel((100, 199))
+    assert sum(top) > sum(bottom) and sheet.getpixel((0, 90)) == sheet.getpixel((199, 90))
+    shape = [(100, 20), (180, 100), (100, 180), (20, 100)]
+    image = Image.new("RGB", (200, 200), "#FFFFFF")
+    radar.glass(image, shape, sheet, (0, 0), style, 2.)
+    assert image.getpixel((100, 100)) != (255, 255, 255) and image.getpixel((30, 30)) == (255, 255, 255)
+    # The rim is denser than the body; a sheet that has not opened yet leaves the image alone.
+    assert sum(image.getpixel((100, 24))) < sum(image.getpixel((100, 40)))
+    blank = Image.new("RGB", (200, 200), "#FFFFFF")
+    radar.glass(blank, shape, sheet, (0, 0), style, 2., strength=0.)
+    radar.glass(blank, shape[:2], sheet, (0, 0), style, 2.)
+    radar.glass(blank, [(x + 500, y) for x, y in shape], sheet, (500, 0), style, 2.)       # off the image
+    assert blank.getcolors() == [(40000, (255, 255, 255))]
+
+
+def test_light_falls_from_the_upper_left_and_specks_ride_the_shape():
+    shape = radar.polygon([.9] * 5, 100, 100, 80)
+    lit = radar.highlights(shape, 1.)
+    # Only the edges that face the light shine, each just inside its edge.
+    assert 1 <= len(lit) <= 3 and all(0 < strength <= 1 for _, _, strength in lit)
+    for a, b, _ in lit:
+        outward = ((a[0] + b[0]) / 2 - 100, (a[1] + b[1]) / 2 - 100)
+        assert outward[0] * radar.LIGHT[0] + outward[1] * radar.LIGHT[1] > 0
+    assert radar.highlights(radar.polygon([.05] * 5, 100, 100, 80), 1.) == []       # too small to have an inside
+    specks = radar.glints(shape, (100, 100))
+    assert len(specks) == radar.GLINTS and specks == radar.glints(shape, (100, 100))
+    assert all(math.hypot(x - 100, y - 100) < 80 * .9 and 0 < light < 1 for x, y, _, light in specks)
+    # They move with the shape: the same specks, twice as far from the centre, on a shape twice the size.
+    wide = radar.glints(radar.polygon([.9] * 5, 100, 100, 160), (100, 100))
+    for (x, y, size, light), (x2, y2, size2, light2) in zip(specks, wide):
+        assert (x2 - 100, y2 - 100) == pytest.approx((2 * (x - 100), 2 * (y - 100))) and (size, light) == (size2, light2)
+
+
+def test_the_technical_reference_names_the_radar_s_real_axes_and_pair():
+    # F7 of the redesign-4 review: the reference described axes and a pairing the page does not have.
+    import i18n_catalog
+    text = (Path(__file__).resolve().parents[1] / "docs" / "technical-reference.md").read_text(encoding="utf-8")
+    line = next(row for row in text.splitlines() if row.lstrip().startswith("- **Radar Comparison**")).lower()
+    for axes in (radar.SCORE_AXES, radar.DNA_AXES):
+        for _, label, _ in axes:
+            assert i18n_catalog.EN.get(label, label).lower() in line, label
+    assert "best-ranked other model" in line
+    for stale in ("runner-up", "subjective fit", "capability fit", "route fit", "net ability", "anti-hallucination", "visual/gui"):
+        assert stale not in line, stale

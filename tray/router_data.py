@@ -341,13 +341,60 @@ def replay(row: dict) -> dict:
     from decision_theatre import snapshot_result
     snapshot = snapshot_result(row)
     if snapshot is not None:
-        return snapshot
+        return with_usage_readings(snapshot, row.get("at"))
     if lacks_split_answer(row.get("profile")):
         return {"choice": None, "ranking": [], "theatre_source": "unreplayable", "replay_note": _tr(LEGACY_REPLAY_NOTE)}
     task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
                       bool((row.get("profile") or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
                       row.get("profile"), row.get("local_only_reason"))
     return {**plan_task(task), "theatre_source": "recomputed"}
+
+
+_READINGS = {"stamp": None, "state": None}
+
+
+def usage_readings_state():
+    """The usage collector's recorded readings (capacity-state.json), read-only and cached until the file changes."""
+    import capacity_stats
+    path = capacity_stats.STATE_FILE
+    stamp = (str(path), path.stat().st_mtime_ns, path.stat().st_size)
+    if _READINGS["stamp"] != stamp:
+        _READINGS.update(stamp=stamp, state=capacity_stats.load_state())
+    return capacity_stats, _READINGS["state"]
+
+
+def with_usage_readings(result: dict, decided_at) -> dict:
+    """Display only: give a snapshot's quota-line windows the usage readings recorded inside their period.
+
+    A window takes part when it names the collector's `account` and `window_id` and carries no `samples` of its
+    own. The readings come from the usage collector; the router's economics never read them (they use the
+    current period's consumption only). The snapshot itself is not changed: a copy is returned.
+    """
+    block = result.get("quota_line") if isinstance(result, dict) else None
+    windows = block.get("windows") if isinstance(block, dict) else None
+    try:
+        at = datetime.fromisoformat(str(decided_at).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return result
+    number = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool)
+    wanted = {key: window for key, window in (windows.items() if isinstance(windows, dict) else ())
+              if isinstance(window, dict) and "samples" not in window and window.get("account") and window.get("window_id")
+              and all(number(window.get(field)) for field in ("reset_in_hours", "elapsed_hours", "capacity_usd"))}
+    if not wanted:
+        return result
+    try:
+        import quota_line
+        stats, state = usage_readings_state()
+        filled = {}
+        for key, window in wanted.items():
+            series = stats.account_series(state, str(window["account"])).get(str(window["window_id"]))
+            samples = quota_line.period_samples(series, at + window["reset_in_hours"] * 3600, at,
+                                                window["elapsed_hours"], window["capacity_usd"])
+            if samples:
+                filled[key] = {**window, "samples": samples}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return result
+    return {**result, "quota_line": {**block, "windows": {**windows, **filled}}} if filled else result
 
 
 def candidate_rows(result: dict) -> list[dict]:
@@ -358,7 +405,7 @@ def candidate_rows(result: dict) -> list[dict]:
         bundle = c.get("bundle") or {}
         rows.append({
             "id": c.get("id"), "model": bundle.get("model"), "account": bundle.get("account"),
-            "effort": bundle.get("effort"), "score": c.get("score"), "fit": comp.get("fit"),
+            "effort": bundle.get("effort"), "fast": bool(bundle.get("fast")), "score": c.get("score"), "fit": comp.get("fit"),
             "ability": comp.get("ability"), "opportunity_cost": comp.get("opportunity_cost"),
             "bonus": round((comp.get("reset_bonus") or 0) + (comp.get("boost") or 0) + (comp.get("free_usage") or 0), 4),
             "penalty": round((comp.get("overqualification") or 0) + (comp.get("effort_penalty") or 0), 4),

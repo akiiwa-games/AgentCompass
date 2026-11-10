@@ -21,12 +21,16 @@ import render_ui_screenshots as shots
 OUTPUT = shots.ROOT / "docs" / "hero.gif"
 HOLD_MS = 2000
 # GitHub shows only the first frame when animated images do not autoplay, so the GIF opens on
-# the top-two radar comparison (story time near the end of the "compare" beat) before replaying.
-POSTER_STORY = 7.7
+# the settled frame (the winner under the radar of it and the best-ranked other model) before replaying.
+POSTER_STORY = 9.9
 POSTER_MS = 1500
-# Flat page and key ink colours kept exact so the paper tone never bands.
-RESERVED = [(254, 254, 253), (255, 255, 255), (79, 70, 229), (6, 182, 212),
-            (15, 23, 42), (100, 116, 139), (148, 163, 184), (226, 232, 240)]
+# Flat page and key ink colours kept exact so the paper tone never bands. The last two rows are the colours
+# that carry meaning in thin marks (usage over and under the quota line with their state pills, the quota line,
+# the lit window): too few pixels for a median cut to keep them.
+RESERVED = [(254, 254, 253), (255, 255, 255), (79, 70, 229), (8, 145, 178),
+            (15, 23, 42), (100, 116, 139), (148, 163, 184), (226, 232, 240),
+            (239, 68, 68), (16, 185, 129), (185, 28, 28), (4, 120, 87), (254, 226, 226), (209, 250, 229),
+            (165, 180, 252), (199, 210, 254), (238, 242, 255), (238, 242, 247)]
 
 
 def differs(a, b, top: int = 0) -> int:
@@ -61,12 +65,15 @@ def frames_from_window(args, state):
         return frame
 
     checks = {}
-    for wall in (2.2, 6.0, theatre.DURATION):  # kind under the title, radar being drawn, settled
+    for wall in (2.2, 6.0, 7.1, 8.4, theatre.DURATION):  # kind under the title, routes lifting, shapes blooming, winner settling, settled
         film.elapsed = wall
         film.draw()
-        shots.pump(root, 10)
-        real = shots.shoot(top, args.scale)
-        checks[wall] = differs(real, composite(wall), client)
+        for _ in range(4):  # a busy machine may capture before the canvas has painted: look again
+            shots.pump(root, 10)
+            real = shots.shoot(top, args.scale)
+            checks[wall] = differs(real, composite(wall), client)
+            if not checks[wall]:
+                break
         if args.check_dir:
             args.check_dir.mkdir(parents=True, exist_ok=True)
             real.save(args.check_dir / f"real-{wall:.1f}.png")

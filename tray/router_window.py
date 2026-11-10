@@ -29,6 +29,7 @@ import ability_floor_chart
 import page_stack
 import decision_theatre
 import decision_summary
+import quota_line
 import display_names
 import ui_theme as theme
 import i18n
@@ -1246,9 +1247,9 @@ class Panel:
         lists = theme.card(right, padding=12, fill="both", expand=True, pady=(12, 0))
         top = ttk.Frame(lists, style="Card.TFrame")
         top.pack(fill="x", pady=(0, 8))
-        self.list_switch = theme.Segmented(top, (("ledger", _tr("最近决策")), ("breakdown", _tr("候选明细"))), self.show_list)
+        self.list_switch = theme.Segmented(top, (("ledger", _tr("最近决策")), ("breakdown", _tr("候选明细")),
+                                                 ("quota", _tr("额度恢复线"))), self.show_list)
         self.list_switch.frame.pack(side="left")
-        ttk.Button(top, text=_tr("刷新"), style="Tiny.TButton", command=self.load_ledger).pack(side="right")
         stack = ttk.Frame(lists, style="Card.TFrame")
         self.list_stack = stack
         stack.pack_propagate(False)
@@ -1262,6 +1263,15 @@ class Panel:
             ("opp", _tr("机会"), 50, "e"), ("net", _tr("加减"), 50, "e"), ("note", _tr("状态"), 44, "w")), 8)
         self.breakdown.bind("<<TreeviewSelect>>", lambda e: self.pick_from_breakdown())
         self.attach_row_tooltip(self.breakdown, self.breakdown_row_tip)
+        # The quota-line view of the same decision; it fills in on the film's clock while the film plays.
+        self.quota_frame = ttk.Frame(stack, style="Card.TFrame")
+        self.quota_line = quota_line.QuotaLineCanvas(self.quota_frame)
+        self.quota_line.canvas.pack(fill="both", expand=True)
+        self.attach_quota_tooltip(self.quota_line, _tr(
+            "每个小图是一个额度窗口：从左到右是本周期（右端是重置），从下到上是额度。浅色直线是额度线：按订阅的节奏应该用到哪里。"
+            "粗线是实际用量：在额度线下面是绿色，这个窗口被优先使用；超过额度线变红，这个窗口被降权。"
+            "点线是在重置前把剩余额度用完所需的节奏。高亮的窗口是本次任务用的。点击画面重播。"))
+        self.theatre.on_frame = self.quota_line.follow
         self.show_list("ledger")
         self.set_mode("score")
         self.prefill(lambda: self.data_module().model_table(), self.models_loaded)
@@ -1272,7 +1282,8 @@ class Panel:
     def show_list(self, which):
         self.list_switch.set(which)
         with freeze_redraw(getattr(self, "list_stack", None)):
-            for name, frame in (("ledger", self.ledger_frame), ("breakdown", self.breakdown_frame)):
+            for name, frame in (("ledger", self.ledger_frame), ("breakdown", self.breakdown_frame),
+                                ("quota", self.quota_frame)):
                 if name == which:
                     frame.pack(fill="both", expand=True)
                 else:
@@ -1396,9 +1407,6 @@ class Panel:
                 box.columnconfigure(0,weight=1)
                 box.columnconfigure(1,weight=0)
                 canvas._tooltip_text = self.verdict.get() + ("\n"+reason if reason else "")
-                floor=self.verdict_strip.model.get("floor")
-                if floor is not None:
-                    canvas._tooltip_text += "\n" + _tr("分数条共同基线：{0}").format(fmt(floor))
                 self.attach_tooltip(canvas)
                 return
         box.columnconfigure(0,weight=0)
@@ -1513,6 +1521,10 @@ class Panel:
     def plan_loaded(self, result):
         self.simulate_button.configure(state="normal", text=_tr("模拟评分"))
         self.plan_result = result or {}
+        # The quota view keeps a record it cannot read to itself: the rest of the decision always loads.
+        self.quota_line.show(self.plan_result)
+        if self.quota_line.error is not None:
+            log_error(self.quota_line.error)
         data = self.data_module()
         rows = data.candidate_rows(self.plan_result)
         if self.plan_result.get("theatre_source") == "unreplayable":
@@ -2316,6 +2328,30 @@ class Panel:
             return ""
         row = rows[int(iid)]
         return " · ".join(str(v) for v in (row["id"], row.get("account")) if v)
+
+    def attach_quota_tooltip(self, view, legend):
+        """Hover text for the quota-line view: the mark under the pointer in words, else how to read the picture."""
+        canvas, current = view.canvas, {"text": None}
+        show, hide = self.attach_tooltip(canvas, bind=False)
+
+        def move(event):
+            text = view.tip_at(event.x, event.y) or legend
+            if text == current["text"]:
+                return
+            hide()
+            current["text"] = canvas._tooltip_text = text
+            show(event)
+
+        def leave(_event=None):
+            current["text"] = None
+            hide()
+
+        def replay(_event=None):
+            leave()
+            self.replay_theatre()
+        canvas.bind("<Motion>", move, add="+")
+        canvas.bind("<Leave>", leave, add="+")
+        canvas.bind("<Button-1>", replay, add="+")
 
     def attach_tooltip(self, widget, bind=True):
         def hide(_event=None):
