@@ -17,6 +17,8 @@ To delegate work to a subagent, worker or advisor, run one command; the router p
 agentcompass roll --task "<what the worker should do>"
 ```
 
+Before you launch, continue or replace a worker, read [the dispatch rules](references/dispatch-rules.md): model and effort overrides, re-rolling an unavailable owner, the 2M continuation limit, permission modes, the gate and `record`, and parent messaging.
+
 Long or multi-line assignments: `--task -` reads stdin, `--brief <file>` reads a file; the worker always gets your text unchanged. Several single-task briefs go in one call, `--brief a.md --brief b.md`: they are classified at the same time and routed one after another (`status: batch`, one result per brief). Do not call `create_agent`, `Agent`, `spawn_agent`, `invoke_subagent` or a CLI yourself.
 
 `agentcompass` is the only entry and works from any directory; do not run files under `scripts/`. Installed package (`uv tool install` / `pip install`): type it as shown. Source checkout without an install: `python -X utf8 <checkout>/agentcompass roll ...` (the same arguments; your global agent rules spell the absolute path). `agentcompass -h` lists the commands, `agentcompass <command> -h` shows the options of one.
@@ -27,4 +29,4 @@ Optional, only when true (`agentcompass roll -h`): `--hours <n>`, `--local-only 
 
 Herdr core auto-detects its actual terminal. Read [Herdr first-time setup and support limits](references/herdr.md) for installation and completion collection. Raw shell roll in Cindy is refused; the Cindy plugin is a separate repository (`cindy-agentcompass-plugin`).
 
-More: [roll reference](references/roll-reference.md) (result variants, Dot/Grok/CLI/native) · [router internals](references/router-internals.md) (when to delegate, plan and record, scoring, launch contract, reference index).
+More: [dispatch rules](references/dispatch-rules.md) · [roll reference](references/roll-reference.md) (result variants, Dot/Grok/CLI/native) · [router internals](references/router-internals.md) (when to delegate, plan and record, scoring, launch contract, reference index).

@@ -52,5 +52,52 @@ class HostRulesTests(unittest.TestCase):
         self.assertTrue(host_rules.load('codex', self.home)[0].startswith(host_rules.load('shared', self.home)[0].strip('\n')))
 
 
+    def test_the_default_is_a_pointer_to_the_installed_skill_docs(self):
+        rules = Path(host_rules.DISPATCH_RULES)
+        self.assertTrue(rules.is_file())
+        self.assertEqual(rules.parent.parent, Path(host_rules.SKILL_DIR))
+        self.assertTrue((rules.parent.parent / 'SKILL.md').is_file())
+        self.assertIn('references/dispatch-rules.md', (rules.parent.parent / 'SKILL.md').read_text(encoding='utf-8'))
+        for kind in host_rules.OVERLAY_FILES:
+            text = host_rules.load(kind, self.home)[0]
+            self.assertIn(host_rules.DISPATCH_RULES, text, kind)
+            self.assertIn('next_action', text, kind)
+            # The dispatch procedure is not copied into every session any more.
+            for detail in ('bypassPermissions', 'notifyOnFinish', '2M', 'gate-hook', 'record --'):
+                self.assertNotIn(detail, text, kind)
+        self.assertLess(len(host_rules.load('shared', self.home)[0]), 2600)
+        self.assertLess(len(host_rules.load('daemon-append', self.home)[0]), 1000)
+
+    def test_a_personal_dispatch_file_is_named_not_copied(self):
+        personal = host_rules.personal_dispatch_path(self.home)
+        self.assertNotIn(personal.as_posix(), host_rules.load('shared', self.home)[0])
+        personal.parent.mkdir(parents=True)
+        personal.write_bytes(b'   \n')
+        self.assertNotIn(personal.as_posix(), host_rules.load('shared', self.home)[0])
+        personal.write_bytes(b'# My worktree flow\n\nSECRET-ISH PERSONAL BODY\n')
+        for kind in host_rules.OVERLAY_FILES:
+            text, source = host_rules.load(kind, self.home)
+            self.assertEqual(source, 'default')
+            self.assertIn(personal.as_posix(), text, kind)
+            self.assertNotIn('PERSONAL BODY', text, kind)
+            self.assertNotIn('@@', text, kind)
+        self.assertNotIn('dispatch', host_rules.OVERLAY_FILES)
+
+    def test_an_overlay_names_the_docs_and_the_personal_file_with_placeholders(self):
+        directory = host_rules.overlay_dir(self.home)
+        directory.mkdir(parents=True)
+        (directory / 'shared.md').write_bytes(b'read @@DISPATCH_RULES@@ then @@PERSONAL_DISPATCH@@ (@@SKILL_DIR@@)\r\n')
+        text, source = host_rules.load('shared', self.home)
+        self.assertEqual(source, 'overlay')
+        self.assertEqual(text, f'read {host_rules.DISPATCH_RULES} then '
+                               f'{host_rules.personal_dispatch_path(self.home).as_posix()} ({host_rules.SKILL_DIR})\r\n')
+
+    def test_the_old_generated_defaults_still_migrate(self):
+        for old in ('# Agent routing rules (AgentCompass)\n\nold body\n',
+                    'Router discipline: ' + host_rules.EXECUTION_POLICY + ' old tail',
+                    host_rules.load('daemon-append', self.home)[0]):
+            self.assertTrue(host_rules.is_legacy_generated(old), old[:40])
+
+
 if __name__ == '__main__':
     unittest.main()
