@@ -454,10 +454,22 @@ class FiveAxisTests(unittest.TestCase):
             self.assertEqual(w_a['window'], 'seven_day')
             self.assertAlmostEqual(w_a['elapsed_hours'], 166.0)
             self.assertEqual(w_a['spend_after_reset'], 0.0)
-        d3 = run_case(3.0)              # 2h before the reset, 1h after: still Pool A, and its fast mode turns on by the speed rule
-        self.assertEqual(d3['choice'], 'opus55_high')
-        self.assertTrue(d3['selected_bundle'].get('fast'))
-        self.assertEqual(d3['ranking'][0]['components']['decided_by'], 'speed')
+        # 2h before the reset with a 3h task: one hour of it falls into Pool A's next period, where its first dollar is a coin
+        # flip again, so Pool B (on its line, a week to run) is the cheaper pool. The fast variant is its own candidate at
+        # twice the spend and twice the cost; with the speed rule gone nothing lets it displace a higher N.
+        d3 = run_case(3.0)
+        self.assertEqual(d3['choice'], 'claude-2__opus55_high')
+        self.assertFalse(d3['selected_bundle'].get('fast'))
+        self.assertNotEqual(d3['ranking'][0]['components']['decided_by'], 'speed')
+        for sec_left in (7200, 600):    # near the reset the plain variant keeps the higher N: the faster one never replaces it
+            usage['accounts']['claude']['windows'][0]['seconds_until_reset'] = sec_left
+            near = run_case(0.1)
+            fast = next(c for c in near['ranking'] if c['id'] == 'opus55_high' and c['bundle'].get('fast'))
+            plain = next(c for c in near['ranking'] if c['id'] == 'opus55_high' and not c['bundle'].get('fast'))
+            self.assertGreater(plain['score'], fast['score'])
+            self.assertLess(fast['expected_hours'], plain['expected_hours'])
+            self.assertFalse(near['selected_bundle'].get('fast'))
+        usage['accounts']['claude']['windows'][0]['seconds_until_reset'] = 2 * 3600
         # 6h: four of the six hours fall in the next period of Pool A, where the first dollar is again a coin flip. Each
         # pool is still priced on its own clock and Pool B (14% into its week, on its line) is the cheaper one for it.
         d6 = run_case(6.0)
@@ -792,7 +804,8 @@ class FiveAxisTests(unittest.TestCase):
         """Rounds 8-11: no fixed 0.15 delay penalty and no 0.06 five_axis_wait_cost constant on the five-axis path.
         Without `can_wait_hours`, `plan()` starts the best ready-now candidate immediately; when `can_wait_hours` is given,
         routine tasks (already reaching the capped fit on a ready-now owner) still start now while frontier tasks prefer
-        waiting for the higher-N model's short-window reset."""
+        waiting for the higher-N model's short-window reset (round 13b: the same holds for a routine task whose waiting
+        candidate has the higher N, since a faster candidate no longer displaces a higher one)."""
         self.assertFalse(hasattr(allocator, 'five_axis_wait_cost'))
         base = {name: row(0.55, usd=5.0) for name, info in self.accounts['models'].items() if isinstance(info, dict)}
         doc = document(self.accounts['models'],
@@ -811,8 +824,14 @@ class FiveAxisTests(unittest.TestCase):
                             profile={'axis_demand': demand(0, 1, 1, 0)})
         frontier = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
                              profile={'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0})
-        self.assertEqual(routine['decision']['action'], 'start')
-        self.assertEqual(routine['selected_bundle']['account'], 'codex')
+        # Round 13b: no rule lets a faster candidate displace a higher N, so with `can_wait_hours` the routine task also waits
+        # when (and only when) the candidate that waits has the higher net score than the best one that can start now.
+        ready_now = max((c for c in routine['ranking'] if not c.get('excluded') and not c.get('available_in_hours')),
+                        key=lambda c: c['score'])
+        self.assertEqual(routine['ranking'][0]['score'], max(c['score'] for c in routine['ranking'] if not c.get('excluded')))
+        self.assertGreater(routine['ranking'][0]['score'], ready_now['score'])
+        self.assertEqual(routine['decision']['action'], 'defer')
+        self.assertEqual(ready_now['bundle']['account'], 'codex')
         self.assertEqual(frontier['decision']['action'], 'defer')
         self.assertEqual(frontier['selected_bundle']['account'], 'claude')
         self.assertGreater(frontier['decision']['start_after_hours'], 0.0)

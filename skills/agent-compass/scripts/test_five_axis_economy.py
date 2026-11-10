@@ -2,14 +2,18 @@
 window's quota price over its own spend, N = F - cost, the price comes from the account's own value ladder and the period's
 own need probability, substitutes enter only through their own slack, and no 5-hour window ever prices."""
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
+import os
+import tempfile
 import random
 import sys
 import unittest
 from unittest.mock import patch
 
 import allocator
+import model_latch
+import provider_retry
 import route_simulation as sim
 from router_test_support import isolated_router_state
 from test_fleet_parity import shipped_template, snapshot
@@ -56,7 +60,7 @@ class Fleet:
         self.accounts = sim.fresh_accounts(shipped_template(), snapshot())
 
     def plan(self, claude_used, codex_used, ec=0.5, ex=0.5, axes=MID, hours=2.0, allowed=('claude', 'codex'), claude2=None,
-             five_hour_used=0.05, mutate=None, codex_reading=True, **task):
+             five_hour_used=0.05, mutate=None, codex_reading=True, claude_long=True, usage_hook=None, **task):
         acc = copy.deepcopy(self.accounts)
         acc['scoring']['five_axis'] = {'enabled': True}
         cl, cx = acc['accounts']['claude']['bundles'], acc['accounts']['codex']['bundles']
@@ -74,6 +78,8 @@ class Fleet:
         usage['accounts']['claude']['windows'] = [
             {'id': 'seven_day', **week(claude_used, ec)}, {'id': 'weekly_fable', **week(claude_used, ec)},
             {'id': 'five_hour', 'remaining_pct_before_reset': 100.0 * (1 - five_hour_used), 'seconds_until_reset': 5 * 3600}]
+        if not claude_long:
+            usage['accounts']['claude']['windows'] = usage['accounts']['claude']['windows'][2:]
         usage['accounts']['codex']['windows'] = [{'id': 'usage', **week(codex_used, ex)}] if codex_reading else []
         if claude2 is not None:
             used2, e2 = claude2
@@ -82,6 +88,8 @@ class Fleet:
                 {'id': 'five_hour', 'remaining_pct_before_reset': 100.0 * (1 - five_hour_used), 'seconds_until_reset': 5 * 3600}]
         if 'codex' not in allowed:
             usage['accounts'].pop('codex', None)
+        if usage_hook:
+            usage_hook(usage)
         profile = {**PROFILE, 'axis_demand': dict(zip(allocator.FIVE_AXES, axes)), 'expected_hours': hours}
         return allocator.plan({'objective': 't', 'hours': hours, 'profile': profile, **task}, usage, NOW, accounts=acc,
                               overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)})
@@ -282,38 +290,66 @@ class FleetEconomyTests(unittest.TestCase):
         self.assertGreater(one, 0.0)
         self.assertAlmostEqual(one, two, places=9)
 
-    def test_an_expiring_sprint_takes_fast_and_a_window_ahead_of_its_line_does_not(self):
-        """Advisor test 7: 2h to the reset with 40% left costs nothing and takes Opus in fast mode; 60% used at half time
-        takes neither Opus nor fast."""
+    def test_speed_only_breaks_ties_on_n_and_a_faster_candidate_never_displaces_a_higher_n(self):
+        """Owner decision of round 13b: the post-ranking speed rule is gone. The order is N, then wait, then the
+        earliest-expiring quota, then the faster completion, then fewer USD. (1) A fast variant is its own candidate at its
+        real spend, so with the cost of a priced window above zero it has the lower N and trails its base (2h to the reset
+        with 40% left; the same at 10 minutes). (2) The under-line mid-week case keeps Sol xhigh on top instead of Opus+fast.
+        (3) Where the quota costs nothing the fast variant and its base tie on N and the faster one wins by completion time."""
         sprint = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
-        top = sprint['ranking'][0]
-        self.assertEqual(top['bundle']['model'], 'claude-opus-5-5')
-        self.assertTrue(top['bundle'].get('fast'))
-        self.assertEqual(top['components']['decided_by'], 'speed')
-        plain = row(sprint, top['id'], fast=False)
-        self.assertLess(top['expected_hours'], plain['expected_hours'])
-        self.assertAlmostEqual(top['components']['fit'], plain['components']['fit'])
-        ahead = self.fleet.plan(0.6, 0.5)
-        self.assertLess(top['components']['opportunity_cost'], 0.35 * row(ahead, 'opus55_high')['components']['opportunity_cost'])
-        self.assertFalse(ahead['selected_bundle'].get('fast'))
-        self.assertNotEqual(ahead['selected_bundle']['model'], 'claude-opus-5-5')
-        # fast variants are separate candidates at their real spend, not a switch on the base one
-        fast = row(sprint, top['id'], fast=True)
-        self.assertGreater(fast['expected_usd'], plain['expected_usd'])
+        for c in eligible(sprint):
+            self.assertNotEqual(c['components'].get('decided_by'), 'speed')
+        opus = row(sprint, 'opus55_high')
+        fast = row(sprint, 'opus55_high', fast=True)
+        self.assertGreater(opus['score'], fast['score'])                    # twice the spend, twice the cost, the same fit
+        self.assertAlmostEqual(opus['components']['fit'], fast['components']['fit'])
+        self.assertGreater(fast['expected_usd'], opus['expected_usd'])
+        self.assertLess(fast['expected_hours'], opus['expected_hours'])
+        self.assertFalse(sprint['selected_bundle'].get('fast'))
+        mid_week = self.fleet.plan(0.3, 0.5, ec=0.5)
+        top = mid_week['ranking'][0]
+        self.assertFalse(top['bundle'].get('fast'))
+        self.assertEqual(top['id'], 'sol_xhigh')
+        self.assertGreater(top['score'], row(mid_week, 'opus55_high', fast=True)['score'])
+        self.assertEqual([c['score'] for c in eligible(mid_week)], sorted((c['score'] for c in eligible(mid_week)), reverse=True))
+        # (3) a candidate whose account has no long window costs nothing, so its fast variant ties its base on N
+        def only_five_hour(acc):
+            acc['accounts']['claude']['windows'] = {'five_hour': acc['accounts']['claude']['windows']['five_hour']}
+        free = self.fleet.plan(0.6, 0.5, allowed=('claude',), mutate=only_five_hour, claude_long=False)
+        plain, quick = row(free, 'opus55_high'), row(free, 'opus55_high', fast=True)
+        self.assertEqual(plain['components']['opportunity_cost'], 0.0)
+        self.assertEqual(round(plain['score'], 4), round(quick['score'], 4))
+        self.assertLess(quick['expected_hours'], plain['expected_hours'])
+        order = [c['bundle'].get('fast', False) for c in eligible(free) if c['id'] == 'opus55_high']
+        self.assertEqual(order, [True, False])
+        self.assertEqual(quick['components']['decided_by'], 'completion_hours')
 
-    def test_fable_5_1_cannot_beat_opus_5_5_and_only_the_speed_rule_can_swap_equal_fit(self):
-        """Advisor test 8."""
+    def test_the_order_is_n_then_wait_then_earliest_expiring_quota_then_speed_then_usd(self):
+        def cand(score, wait=0.0, reset=None, hours=1.0, usd=1.0):
+            return {'score': score, 'available_in_hours': wait, 'expected_hours': hours, 'expected_usd': usd,
+                    'components': {'earliest_reset_hours': reset, 'five_axis_level': 0.5, 'harness_place': 0}}
+        base = cand(0.5, reset=10.0)
+        for better, worse in ((cand(0.5001, reset=99.0), base), (cand(0.5, wait=0.0, reset=99.0), cand(0.5, wait=2.0, reset=1.0)),
+                              (cand(0.5, reset=5.0, hours=9.0), base), (cand(0.5, reset=10.0, hours=0.5, usd=9.0), base),
+                              (cand(0.5, reset=10.0, usd=0.5), base), (base, cand(0.5, reset=None))):
+            self.assertLess(allocator.five_axis_order(better), allocator.five_axis_order(worse))
+        self.assertEqual(allocator.five_axis_deciding_key(cand(0.5, reset=5.0), base), 'earliest_reset_hours')
+        self.assertEqual(allocator.five_axis_deciding_key(cand(0.5, reset=10.0, hours=0.5), base), 'completion_hours')
+
+    def test_fable_5_1_cannot_beat_opus_5_5(self):
+        """Advisor test 8, without the speed rule: at equal fit Fable 5.1 trails Opus 5.5 on N, and in the creative task, where
+        their fits are equal, nothing but N, the earliest expiring quota or speed could separate them."""
         d = self.fleet.plan(0.3, 0.5, axes=FRONTIER, hours=6.0)
         opus, fable = row(d, 'opus55_high'), row(d, 'fable51_high')
         self.assertGreaterEqual(opus['components']['fit'], fable['components']['fit'])
         self.assertGreater(opus['score'], fable['score'])
-        self.assertEqual(d['selected_bundle']['bundle_id'], 'opus55_high')
+        ids = [c['id'] for c in eligible(d)]
+        self.assertLess(ids.index('opus55_high'), ids.index('fable51_high'))
         creative = self.fleet.plan(0.3, 0.5, axes=CREATIVE, hours=0.3)
         o, f = row(creative, 'opus55_high'), row(creative, 'fable51_high')
         self.assertAlmostEqual(o['components']['fit'], f['components']['fit'])
-        for c in eligible(creative):
-            if c['components'].get('decided_by') == 'speed':
-                self.assertLess(c['economy']['need_end_max'], 0.5)
+        ids = [c['id'] for c in eligible(creative) if not c['bundle'].get('fast')]
+        self.assertLess(ids.index('opus55_high'), ids.index('fable51_high'))
 
     def test_a_pool_whose_reading_is_missing_is_no_substitute_and_is_named(self):
         """Advisor test 9: Codex's reading is gone. Its candidates leave automatic routing with a surfaced data error, it is
@@ -396,3 +432,131 @@ class FleetEconomyTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReadFailureAndHoldTests(unittest.TestCase):
+    """Owner decision of round 13b: a failed usage read (even a 429 from the usage endpoint) is a read failure, so the latest
+    successful reading of the CURRENT reset period prices the account, labelled with its read time; with none the account
+    goes to mode B. A provider hold (`provider_retry`, `model_latch`) is a quota/launch failure signal and always wins over a
+    reading, stale or not, on the five-axis path exactly as on the legacy one."""
+
+    def setUp(self):
+        self.fleet = Fleet()
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        env = {'ROUTER_PROVIDER_RETRY': os.path.join(self.dir.name, 'provider-retry.json'),
+               'ROUTER_MODEL_LATCH': os.path.join(self.dir.name, 'model-unavailable.json')}
+        patcher = patch.dict(os.environ, env)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def dated(usage):
+        """Real readings carry the reset instant of each window, which is how a reading is placed in its reset period."""
+        for w in usage['accounts']['claude']['windows']:
+            w['resets_at'] = (NOW + timedelta(seconds=w['seconds_until_reset'])).isoformat()
+
+    @classmethod
+    def failing(cls, read_at):
+        def hook(usage):
+            cls.dated(usage)
+            usage['accounts']['claude'].update(status='stale', available=False, stale=True, fetched_at=read_at.isoformat(),
+                                               error_status=429, error_code='rate_limit_error')
+        return hook
+
+    @staticmethod
+    def bundle(name, model):
+        return {'account': name, 'provider': name, 'model': model, 'launch_model': model}
+
+    def test_a_429_from_the_usage_endpoint_prices_the_latest_reading_of_this_period_and_says_when_it_was_read(self):
+        fresh = self.fleet.plan(0.6, 0.5, axes=FRONTIER, hours=6.0, usage_hook=self.dated)
+        read_at = NOW - timedelta(hours=3)
+        failed = self.fleet.plan(0.6, 0.5, axes=FRONTIER, hours=6.0, usage_hook=self.failing(read_at))
+        claude = [c for c in eligible(failed) if c['bundle']['account'] == 'claude']
+        self.assertTrue(claude)
+        for c in claude:
+            self.assertEqual(c['components']['reading_at'], read_at.isoformat())
+            self.assertTrue(any('priced from the reading taken at ' + read_at.isoformat() in n for n in c['notes']))
+        self.assertTrue(any(read_at.isoformat() in w and 'last good usage reading' in w
+                            for w in failed['decision']['warnings']))
+        # the same reading prices the same: the scores of the real candidates are the fresh ones (a stale state never
+        # renews, so a candidate that would have waited for a reset may gain a fast twin; those are left out here)
+        same = lambda d: [(c['id'], c['score']) for c in eligible(d)
+                          if c['bundle']['account'] == 'claude' and not c['bundle'].get('fast')]
+        self.assertEqual(same(fresh), same(failed))
+        self.assertNotIn('reading_at', fresh['ranking'][0]['components'])
+        snap = allocator.decision_snapshot(failed)
+        top_claude = next(r for r in snap['ranking'] if r.get('id') and 'reading_at' in (r.get('components') or {}))
+        self.assertEqual(top_claude['components']['reading_at'], read_at.isoformat())
+
+    def test_a_failed_read_with_no_reading_in_the_current_period_is_mode_b(self):
+        """The only reading is from before this period's start (the week reset since): it describes another cycle, so the
+        account leaves automatic routing with a surfaced data error and is no substitute for the others."""
+        old = NOW - timedelta(hours=200)
+        d = self.fleet.plan(0.6, 0.5, usage_hook=self.failing(old))
+        gone = [c for c in d['ranking'] if c['bundle']['account'] == 'claude']
+        self.assertTrue(gone)
+        for c in gone:
+            self.assertTrue(c['excluded'])
+            self.assertIn(allocator.QUOTA_READING_UNAVAILABLE, c['excluded'][0])
+        self.assertTrue(any(allocator.QUOTA_READING_UNAVAILABLE in w for w in d['decision']['warnings']))
+        self.assertEqual(d['selected_bundle']['account'], 'codex')
+
+    def test_a_provider_hold_on_a_model_wins_over_a_stale_reading_and_another_model_is_chosen_in_the_same_roll(self):
+        hook = self.failing(NOW - timedelta(hours=3))
+        free = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',), usage_hook=hook)
+        model = free['selected_bundle']['model']
+        self.assertEqual(free['selected_bundle']['account'], 'claude')
+        entry = provider_retry.record(
+            self.bundle('claude', model),
+            {'failure_code': 'provider_turn_failed', 'at': NOW.isoformat(), 'provider_message': 'rate limited, quota exhausted'},
+            dispatch_id='d-1', at=NOW, classify=lambda *a: ('model', {}), accounts=self.fleet.accounts)
+        self.assertIsNotNone(entry)
+        again = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',), usage_hook=hook)
+        held = [c for c in again['ranking'] if c['bundle']['model'] == model and c['bundle']['account'] == 'claude']
+        self.assertTrue(held)
+        for c in held:
+            self.assertTrue(any(provider_retry.EXCLUSION_PREFIX in r for r in c['excluded']), c['excluded'])
+        self.assertEqual([c for c in eligible(again) if c['bundle']['model'] == model], [])       # no fast twin either
+        self.assertNotEqual(again['selected_bundle']['model'], model)
+        self.assertEqual(again['selected_bundle']['account'], 'claude')
+        self.assertTrue(any(w.startswith('claude/') for w in again['decision']['warnings']))
+
+    def test_a_provider_hold_on_a_quota_pool_keeps_that_pool_out_even_though_its_stale_reading_shows_quota(self):
+        """Claude's Fable windows form their own quota pool next to the seven-day one. A hold the classifier scoped to the
+        account holds the pool of the failed model only; the stale reading, which still shows quota, does not undo it."""
+        hook = self.failing(NOW - timedelta(hours=3))
+        base = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',), usage_hook=hook)
+        fable = [c for c in eligible(base) if 'fable' in c['bundle']['model']]
+        self.assertTrue(fable)
+        pool = {'id': 'weekly_fable', 'models': sorted({c['bundle']['model'] for c in fable})}
+        with patch.object(provider_retry, 'resolve_pool', return_value=pool):      # the pools come from structure (pool_of)
+            entry = provider_retry.record(
+                self.bundle('claude', fable[0]['bundle']['model']),
+                {'failure_code': 'provider_turn_failed', 'at': NOW.isoformat(), 'provider_message': 'quota exhausted for this plan'},
+                dispatch_id='d-2', at=NOW, classify=lambda *a: ('account', {}), accounts=self.fleet.accounts)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry['pool']['id'], 'weekly_fable')
+        after = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',), usage_hook=hook)
+        held = [c for c in after['ranking'] if c['bundle']['account'] == 'claude' and any(provider_retry.EXCLUSION_PREFIX in r for r in c['excluded'])]
+        self.assertTrue(held)
+        self.assertTrue(all('fable' in c['bundle']['model'] for c in held))
+        self.assertEqual([c for c in eligible(after) if 'fable' in c['bundle']['model']], [])
+        self.assertTrue([c for c in eligible(after) if c['bundle']['account'] == 'claude'])      # the other pool still routes
+
+    def test_an_invalid_model_latch_excludes_the_model_and_another_model_is_chosen_in_the_same_roll(self):
+        free = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',))
+        model = free['selected_bundle']['model']
+        self.assertIsNotNone(model_latch.record(self.bundle('claude', model), 'INVALID_MODEL', at=NOW))
+        latched = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',))
+        self.assertNotEqual(latched['selected_bundle']['model'], model)
+        self.assertEqual([c for c in eligible(latched) if c['bundle']['model'] == model], [])
+        rows = [c for c in latched['ranking'] if c['bundle']['model'] == model and c['bundle']['account'] == 'claude']
+        self.assertTrue(rows)
+        for c in rows:
+            self.assertTrue(any('model launch failed' in r for r in c['excluded']), c['excluded'])
+        # the same latch on the legacy path (flag off) excludes the same bundles with the same reason
+        legacy = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',),
+                                 mutate=lambda acc: acc['scoring'].update(five_axis={'enabled': False}))
+        self.assertEqual(sorted(c['id'] for c in legacy['ranking'] if c['bundle']['model'] == model and c['bundle']['account'] == 'claude' and c['excluded']),
+                         sorted(c['id'] for c in rows if c['excluded']))

@@ -2861,24 +2861,29 @@ class FiveAxisEconomy:
 
 
 def five_axis_order(candidate):
-    """Lexicographic order on the five-axis path (quota economy v3, advisor report v3 §1.6), in the order of the tuple:
+    """Lexicographic order on the five-axis path (quota economy v3, owner decision of round 13b), in the order of the tuple:
     1. Net score N = F - cost descending (rounded to 4 places so tied models enter the tie-breaks)
     2. Wait before the start ascending (round 10: a candidate that waits for a reset trails one that starts now; the design
        has no such key, it keeps `--can-wait-hours` candidates behind immediate ones at equal N)
-    3. Faster completion time (wait_hours + expected_hours) ascending: the model's public per-task time (owner, S4)
-    4. Fewer list-price USD spent ascending
-    5. Demand-weighted axis level descending, then sibling harness place ascending.
-    How soon quota lapses and what a substitute could take are already inside the cost (the need probability and the
-    outside point of the value ladder), so no key reads them."""
+    3. Earliest-expiring quota ascending: the soonest reset among the priced long windows the candidate draws (quota that
+       lapses first goes first; a candidate drawing none sorts last)
+    4. Faster completion time (wait_hours + expected_hours) ascending: the model's public per-task time (arena Time/Task
+       P50). Speed only breaks ties on N: near a reset the cost goes to zero, a fast variant and its base tie on N, and the
+       faster one wins; there is no rule that lets a faster candidate displace a higher-N one.
+    5. Fewer list-price USD spent ascending
+    6. Demand-weighted axis level descending, then sibling harness place ascending."""
     k = candidate['components']
+    reset = k.get('earliest_reset_hours')
+    reset_key = float('inf') if reset is None else round(float(reset), 4)
     wait_h = float(candidate.get('available_in_hours') or 0.0)
     dur_h = float(candidate.get('expected_hours') or 0.0)
     usd = float(candidate.get('expected_usd') if candidate.get('expected_usd') is not None else float('inf'))
-    return (-round(float(candidate['score']), 4), round(wait_h, 4), round(wait_h + dur_h, 4),
+    return (-round(float(candidate['score']), 4), round(wait_h, 4), reset_key, round(wait_h + dur_h, 4),
             round(usd, 4), -round(float(k.get('five_axis_level', 0.0)), 4), k.get('harness_place', 0))
 
 
-FIVE_AXIS_ORDER_KEYS = ('net_score', 'wait_hours', 'completion_hours', 'usd', 'axis_level', 'harness_place')
+FIVE_AXIS_ORDER_KEYS = ('net_score', 'wait_hours', 'earliest_reset_hours', 'completion_hours', 'usd', 'axis_level',
+                        'harness_place')
 
 
 def five_axis_deciding_key(first, second):
@@ -2887,35 +2892,6 @@ def five_axis_deciding_key(first, second):
         if a != b:
             return name
     return 'tie'
-
-
-def five_axis_speed_rule(eligible):
-    """After the ranking (quota economy v3 §1.5, owner D2): a candidate that is faster than the winner at no lower fit
-    replaces it when the last dollar of its own spend is still more likely to lapse than to be needed (pi at the end of
-    its spend < 1/2 on every window it draws). Fast-mode variants and faster models are one rule; faster is the model's
-    public per-task time (arena Time/Task P50) plus any wait. Returns the replaced winner, or None."""
-    if len(eligible) < 2:
-        return None
-    base = eligible[0]
-
-    def done(c):
-        return float(c.get('available_in_hours') or 0.0) + float(c.get('expected_hours') or 0.0)
-    fit0, t0 = float(base['components'].get('fit') or 0.0), done(base)
-    faster = [c for c in eligible[1:]
-              if float(c['components'].get('fit') or 0.0) >= fit0 - 1e-9 and done(c) < t0 - 1e-9
-              and float((c.get('economy') or {}).get('need_end_max') or 0.0) < 0.5]
-    if not faster:
-        return None
-    pick = min(faster, key=lambda c: (round(done(c), 4), eligible.index(c)))
-    eligible.remove(pick)
-    eligible.insert(0, pick)
-    pick['components']['decided_by_speed'] = True
-    if pick['bundle'].get('fast'):
-        pick['components']['fast_reason'] = 'speed_rule'
-    pick['notes'].append(f"replaces {base['id']} (same or higher fit, done in {done(pick):.2f}h instead of {t0:.2f}h): "
-                         f"its last dollar still lapses more often than it is needed "
-                         f"(need probability {pick['economy']['need_end_max']:.3f} < 0.5)")
-    return base
 
 
 HARNESS_CAPABILITIES = {
@@ -3056,13 +3032,17 @@ def latched_windows(accounts, account):
     return set((((accounts.get('_discovery') or {}).get('accounts') or {}).get(account) or {}).get('exhausted_windows') or ())
 
 
-def cycle_observation(window, observed, usage_row, now):
+def cycle_observation(window, observed, usage_row, now, read_failed_ok=False):
     """The window's reading, or None when a reading that is not current cannot describe the current cycle.
 
     Usage only grows inside a cycle, so an old reading still bounds what is left until its reset. No reading
     describes the cycle after its own reset has passed. A reading that is not current cannot either when the
     account was unavailable, the reading has no time or is from the future, or it was taken more than the
     window's `hours` before its reset (an earlier cycle). A provider rate-limit observation is always kept.
+    `read_failed_ok` (the five-axis path, owner decision of round 13b): an account whose latest read failed still has its
+    last successful reading of this cycle, which is current-period data and is kept, labelled by the caller with its read
+    time. A failing usage endpoint (even a 429 from it) is a read failure, not a quota signal; quota failures arrive as
+    provider holds (`provider_retry`, `model_latch`), which evaluate_bundle applies before any reading is consulted.
     """
     if observed is None or observed.get('rate_limited') is True:
         return observed
@@ -3071,7 +3051,8 @@ def cycle_observation(window, observed, usage_row, now):
     if usage_row.get('status') in (None, 'fresh'):
         return observed     # current, or a caller that does not classify freshness (route_judge.usage_snapshot does)
     fetched = parse_time(usage_row.get('fetched_at'))
-    if usage_row.get('available') is False or fetched is None or (fetched - now).total_seconds() > 60:
+    if ((usage_row.get('available') is False and not read_failed_ok) or fetched is None
+            or (fetched - now).total_seconds() > 60):
         return None
     reset, hours = parse_time(observed.get('resets_at')), window.get('hours')
     if reset is not None and isinstance(hours, (int, float)) and fetched < reset - timedelta(hours=hours):
@@ -3595,7 +3576,7 @@ def evaluate_bundle(bundle, task, ctx):
         named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
             result.setdefault('_five_axis_windows', []).append(wid)
-            observed = cycle_observation(wspec, observed, acct_usage, now)
+            observed = cycle_observation(wspec, observed, acct_usage, now, read_failed_ok=bool(five))
             refusal = window_refusal(wid, wspec, observed, acct_usage, now, latched)
             if refusal:
                 exclude(refusal)
@@ -3697,6 +3678,12 @@ def evaluate_bundle(bundle, task, ctx):
                 five_window_states[wid] = (wspec, state, cap_usd_w, unit)
                 if state['stale'] and 'capacity from a stale observation' not in result['notes']:
                     result['notes'].append('capacity from a stale observation')
+                if acct_usage.get('status') != 'fresh' and acct_usage.get('fetched_at') and not result['components'].get('reading_at'):
+                    # Priced from the last successful reading of this reset period (owner decision of round 13b): labelled
+                    # with its read time so plan, roll and the tray say how old the quota figure is.
+                    result['components']['reading_at'] = acct_usage['fetched_at']
+                    result['notes'].append(f"{wid}: priced from the reading taken at {acct_usage['fetched_at']} "
+                                           f"(the latest read did not succeed; it is the last good reading of this reset period)")
                 continue
             if not state['known']:
                 if state['short']:
@@ -4307,6 +4294,8 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
         c['components']['quota_price'] = binding.get('quota_price', 0.0) if binding and binding['priced'] else 0.0
         c['components']['need_probability'] = binding.get('need_start', 0.0) if binding and binding['priced'] else 0.0
         c['components']['need_probability_end'] = summary['need_end_max']
+        resets = [w['reset_in_hours'] for w in summary['windows'] if w['reset_in_hours'] is not None]
+        c['components']['earliest_reset_hours'] = min(resets) if resets else None
         if binding is not None and binding['priced']:
             _, _, slack = econ.outside_at_task((own_qsrc, binding['window']))
             c['components']['substitute_slack'] = round(slack, 4)
@@ -4397,14 +4386,13 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
         if c['available_in_hours'] and not five:
             c['score'] = round(c['score'] - policy['deferred_start_penalty'], 4)
     if five:
-        # Equal scores go to the candidate drawing on the earliest-expiring under-line quota, then faster completion,
-        # then fewer USD, then higher axis level; the harness order only separates siblings of one model, account and effort.
+        # Equal scores go to the candidate drawing on the earliest-expiring quota, then faster completion, then fewer USD,
+        # then higher axis level; the harness order only separates siblings of one model, account and effort.
         harness_places(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'))
         eligible.sort(key=five_axis_order)
-        displaced = five_axis_speed_rule(eligible)
         for i, c in enumerate(eligible):
-            c['components']['decided_by'] = ('speed' if i == 0 and displaced is not None else
-                                             five_axis_deciding_key(c, eligible[i + 1]) if i + 1 < len(eligible) else 'only_candidate')
+            c['components']['decided_by'] = (five_axis_deciding_key(c, eligible[i + 1]) if i + 1 < len(eligible)
+                                             else 'only_candidate')
     else:
         apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
         eligible.sort(key=lambda c: -c['score'])
@@ -4756,6 +4744,15 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         if unread:
             decision.setdefault('warnings', []).append(
                 f"{', '.join(unread)}: {QUOTA_READING_UNAVAILABLE}; out of automatic routing and no substitute for other accounts")
+        aged = {}
+        for c in candidates:
+            at = c['components'].get('reading_at')
+            if at and not c['excluded']:
+                aged.setdefault(c['bundle']['account'], at)
+        for name, at in sorted(aged.items()):
+            decision.setdefault('warnings', []).append(
+                f"{name}: priced from its last good usage reading, taken at {at} in the current reset period "
+                f"(the latest read failed); a provider hold on a model or pool still wins over this reading")
     state_policy = host_policy.load_policy() if host_policy_config is None else host_policy_config
     state_warnings = account_state.warnings(accounts.get('_discovery'), accounts['accounts'],
                                             lambda name: host_policy.account_allowed(state_policy, name))
@@ -4959,7 +4956,7 @@ def _snapshot_row(candidate, detail):
                 'responsiveness', 'responsiveness_source',
                 'reset_bonus', 'boost', 'free_usage', 'overqualification', 'effort_penalty',
                 'five_axis_level', 'quota_price', 'need_probability', 'need_probability_end', 'substitute_slack',
-                'decided_by', 'duration_multiplier')
+                'decided_by', 'earliest_reset_hours', 'reading_at', 'duration_multiplier')
         row['components'] = {k: _round(comps[k]) for k in keep if k in comps and comps[k]}
         for k in ('fit', 'ability', 'opportunity_cost'):
             if k in comps:
