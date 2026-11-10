@@ -16,6 +16,7 @@ The anchors are the user's judgment. They are inputs here, never outputs.
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -46,6 +47,7 @@ NAMES = {
     'qwen3-coder-next': {'aa': 'Qwen3 Coder Next'},
     'gemini-4-carbon': {'arena': 'Gemini 4 Carbon', 'aa': 'Gemini 4 Carbon'},
     'claude-fable-5-1': {'arena': 'Claude Fable 5.1', 'aa': 'Claude Fable 5.1'},
+    'claude-fable-5-2': {'arena': 'Claude Fable 5.2', 'aa': 'Claude Fable 5.2'},
     'claude-haiku-5-5': {'arena': 'Claude Haiku 5.5', 'aa': 'Claude Haiku 5.5'},
     'gpt-6-luna': {'arena': 'GPT-6 Luna', 'aa': 'GPT-6 Luna'},
     'gpt-6.1-terra': {'arena': 'GPT-6.1 Terra', 'aa': 'GPT-6.1 Terra'},
@@ -74,6 +76,10 @@ LABEL = {'webdev': 'WebDev', 'agent': 'Agent', 'vision': 'Vision', 'hard': 'Text
 class Fitter:
     def __init__(self, target, acc):
         self.models = acc['models']
+        # The day the secondary boards were read, for the basis (file time of the AA download).
+        aa_file = target / 'aa-models.html'
+        self.read = (datetime.fromtimestamp(aa_file.stat().st_mtime, timezone.utc).date().isoformat()
+                     if aa_file.exists() else 'unknown date')
         self.boards = {'webdev': sources.arena(target, 'webdev'), 'agent': sources.arena(target, 'agent'),
                        'vision': sources.arena(target, 'vision'),
                        'hard': sources.arena(target, 'text_style_control', 'hard_prompts'),
@@ -128,7 +134,7 @@ class Fitter:
 
     def fit(self, key):
         names = NAMES.get(key, {})
-        out = {'id': key, 'sources': [], 'fits': {}}
+        out = {'id': key, 'sources': [], 'fits': {}, 'read': self.read}
         arena_name = names.get('arena')
         if arena_name:
             out['fits'] = {b: round(v, 2) for b, v in self.primary(arena_name).items()}
@@ -179,7 +185,7 @@ def basis(entry):
     sec = '; '.join((f'{board[k]} {v[0]:g} as reported in {v[4]}' if v[4] else f'{board[k]} {v[0]:g} (vals.ai/AA board)')
                     + f' -> tier {v[1]} (r {v[2]}, n {v[3]})' for k, v in entry['secondary'].items())
     lead = ('LMArena (not on WebDev/Agent): ' + '; '.join(parts) + '. ') if parts else ''
-    return (lead + f'Secondary measurement, 2026-11-04: {sec}. tier {entry["tier"]} = mean of these fits (each floored at 1.0 like the board maps), each a linear '
+    return (lead + f'Secondary measurement, {entry.get("read", "unknown date")}: {sec}. tier {entry["tier"]} = mean of these fits (each floored at 1.0 like the board maps), each a linear '
             'regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).')
 
 

@@ -78,9 +78,9 @@ ACCOUNT_SETS = {
     'opencode free': {'accounts': {'opencode': ('opencode', 'free')}},
 }
 LAUNCHERS = {'antigravity': 'antigravity-resilient'}
-# What each product's CLI advertises (public model ids, 2026-11-04); discovery turns them into auto bundles.
+# What each product's CLI advertises (public model ids, 2026-11-04; Claude Fable 5.2 added 2026-11-10); discovery turns them into auto bundles.
 CATALOGS = {
-    'claude': ['claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-4-8',
+    'claude': ['claude-opus-5-5', 'claude-fable-5-2', 'claude-fable-5-1', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-4-8',
                'claude-sonnet-4-6', 'claude-haiku-4-5'],
     'codex': ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra',
               'gpt-5.6-luna'],

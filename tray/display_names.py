@@ -9,6 +9,7 @@ import re
 import i18n
 
 MODEL_LABELS = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-fable-5-1": "Fable 5.1",
+                "claude-fable-5-2": "Fable 5.2",
                 "gpt-5.6-sol": "Sol 5.6", "grok-bot": "Grok Bot",
                 "gpt-6-astra": "Astra 6", "gpt-6.1-sol": "Sol 6.1", "gpt-6-pro": "GPT 6 Pro",
                 "gemini-4-argon-high": "Argon 4", "gemini-3.8-flash-high": "Flash 3.8", "grok-4.7": "Grok 4.7",

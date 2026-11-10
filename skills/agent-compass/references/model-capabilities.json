@@ -349,6 +349,26 @@
         "responsiveness": 0.588,
         "responsiveness_basis": "artificial_analysis (Claude Fable 5.1 (High, Default Fallback), 2026-11-06): T_turn=ttft_s+400/output_tps [low: 13.62s->0.765 (86.1 tok/s, ttft 8.97s); medium: 14.89s->0.734 (85.62 tok/s, ttft 10.22s); high: 20.89s->0.588 (86.57 tok/s, ttft 16.27s); xhigh: 69.61s->0.000 (86.24 tok/s, ttft 64.97s); max: 188.31s->0.000 (87.59 tok/s, ttft 183.74s)]; base@high=20.89s -> responsiveness=0.588"
       },
+      "claude-fable-5-2": {
+        "tier": 4.51,
+        "visual": false,
+        "capabilities": {
+          "reasoning": 0.55,
+          "coding": 0.55,
+          "exploration": 0.55,
+          "anti_hallucination": 0.5,
+          "visual": 0.0,
+          "gui": 0.0
+        },
+        "subjective": {
+          "divergence": 0.5,
+          "global_rigor": 0.5,
+          "module_precision": 0.5
+        },
+        "basis": "Secondary measurement, 2026-11-10: Artificial Analysis Intelligence Index 65 (vals.ai/AA board) -> tier 4.51 (r 0.95, n 33). tier 4.51 = mean of these fits (each floored at 1.0 like the board maps), each a linear regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py). Not on LMArena (WebDev, Agent, Vision and Text checked 2026-11-10; boards published 2026-11-08), so coding, the other capabilities and the subjective scores are the documented unmeasured default (accounts.json unmeasured_models.generic), not Fable 5.1 values; refit with calibration/tiers.py once LMArena lists it. Public-data gaps: `cost` and `usd_per_hour` are absent because no repo code derives them from a public price (both are hand-maintained on every row); the Anthropic list price ($8 input / $40 output / $10 and $16 cache write / $0.20 cache read per MTok, platform.claude.com/docs/en/about-claude/pricing, read 2026-11-10) is in tray/capacity_stats.py PRICES. `visual` false = the unmeasured default (not on the LMArena Vision board).",
+        "responsiveness": 0.216,
+        "responsiveness_basis": "artificial_analysis (Claude Fable 5.2 (High, Default Fallback), 2026-11-10): T_turn=ttft_s+400/output_tps [low: 10.92s->0.831 (91.36 tok/s, ttft 6.54s); medium: 17.00s->0.683 (86.28 tok/s, ttft 12.36s); high: 36.14s->0.216 (92.38 tok/s, ttft 31.81s); xhigh: 79.76s->0.000 (102.76 tok/s, ttft 75.87s); max: 220.02s->0.000 (98.28 tok/s, ttft 215.95s)]; base@high=36.14s -> responsiveness=0.216"
+      },
       "claude-opus-5-5": {
         "fast_capable": true,
         "tier": 4.6,
