@@ -32,10 +32,11 @@ PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'dive
 MID, FRONTIER, CREATIVE = (2, 3, 2, 0), (2, 3, 3, 0), (3, 1, 0, 0)
 
 
-def rec_of(capacity=1000.0, used_frac=0.5, elapsed=0.5, reset_hours=None, period=WEEK):
-    """A window record as `five_axis_window_recovery` returns it."""
+def rec_of(capacity=1000.0, used_frac=0.5, elapsed=0.5, reset_hours=None, period=WEEK, lump=0.02):
+    """A window record as `FiveAxisEconomy.record` returns it; `lump` is the burst size as a share of the capacity (the
+    shipped fleet's 2 h task is about 1.8 % of a Max20 week)."""
     return {'capacity_usd': capacity, 'used_usd': capacity * used_frac, 'elapsed_frac': elapsed,
-            'line_now_usd': capacity * elapsed, 'period_hours': period,
+            'line_now_usd': capacity * elapsed, 'period_hours': period, 'lump_usd': capacity * lump,
             'reset_hours': (1 - elapsed) * period if reset_hours is None else reset_hours, 'unstarted': False}
 
 
@@ -120,20 +121,24 @@ class NeedTailTests(unittest.TestCase):
         self.assertEqual(beta(4000.0, 3.0, 0.4), 0.0)       # underflow side
 
     def test_on_the_line_the_mean_demand_to_come_equals_the_remaining_capacity(self):
-        """Advisor test 5 (line identity): at U = e C the predicted demand still to come, (U + C)(1 - e)/(e + 1), is exactly
-        C - U, so the recovery line is where the expected demand just fills the period. With the single-window lump q = C
-        (owner D3) the distribution is skewed, so the probability pi = 1/2 contour sits below the line, near 0.73 e C; pi
-        is still below 1/2 well under the line and above it on the line."""
+        """Advisor test 5 / v3.1 test 4 (line identity): at U = e C the predicted demand still to come,
+        (U + q)(1 - e)/(e + s) with s = q / C, is exactly C - U for every burst size q, so the recovery line is where the
+        expected demand just fills the period. With the v3.1 burst size the distribution is close to symmetric: pi on the
+        line is within 0.45 to 0.65, below one half well under the line and above it a little way over it."""
         rng = random.Random(7)
         for _ in range(25):
-            cap, e = rng.uniform(5.0, 5000.0), rng.uniform(0.05, 0.95)
-            rec = rec_of(cap, e, e)
-            mean = cap * sum(allocator.five_axis_need_tail(rec, r * cap) for r in range(1, 400))
-            # the integer-lump mean of the continuous-extension tail is the negative-binomial mean (U + C)(1 - e)/(e + 1)
-            self.assertAlmostEqual(mean / (cap * (1 - e)), 1.0, delta=0.03)
-            self.assertLess(allocator.five_axis_need_probability(rec_of(cap, 0.5 * e, e), 0.5 * e * cap), 0.5)
-            self.assertGreater(allocator.five_axis_need_probability(rec_of(cap, e, e), e * cap), 0.5)
-            self.assertAlmostEqual((e * cap + cap) * (1 - e) / (e + 1), cap - e * cap, places=9)
+            cap, e, share = rng.uniform(5.0, 5000.0), rng.uniform(0.05, 0.95), rng.uniform(0.005, 0.1)
+            q = share * cap
+            rec = rec_of(cap, e, e, lump=share)
+            s_ = q / cap
+            self.assertAlmostEqual((e * cap + q) * (1 - e) / (e + s_), cap - e * cap, places=9)
+            # the integer-lump mean of the continuous-extension tail is the negative-binomial mean: q * sum_r P(K >= r)
+            mean = q * sum(allocator.five_axis_need_tail(rec, r * q) for r in range(1, int(8 * cap / q)))
+            self.assertAlmostEqual(mean / (cap * (1 - e)), 1.0, delta=0.01)
+            self.assertLess(allocator.five_axis_need_probability(rec_of(cap, 0.5 * e, e, lump=share), 0.5 * e * cap), 0.5)
+            on_line = allocator.five_axis_need_probability(rec, e * cap)
+            self.assertTrue(0.40 < on_line < 0.70, (cap, e, share, on_line))
+            self.assertGreater(allocator.five_axis_need_probability(rec_of(cap, min(1.0, e + 0.15), e, lump=share), (e + 0.15) * cap), 0.5)
 
     def test_the_tail_grows_with_use_falls_toward_the_reset_and_is_a_probability(self):
         previous = -1.0
@@ -199,7 +204,8 @@ class PriceTests(unittest.TestCase):
         rec = rec_of(1704.5, 0.6, 1 - 2 / WEEK, reset_hours=2.0)
         got = allocator.five_axis_spend_cost(rec, ladder, spend, hours, spend, {})
         before = allocator.five_axis_spend_cost({**rec, 'reset_hours': allocator.math.inf}, ladder, spend / 3, hours)['cost']
-        fresh = {'capacity_usd': 1704.5, 'used_usd': 0.0, 'elapsed_frac': 0.0, 'reset_hours': allocator.math.inf}
+        fresh = {'capacity_usd': 1704.5, 'used_usd': 0.0, 'elapsed_frac': 0.0, 'reset_hours': allocator.math.inf,
+                 'lump_usd': rec['lump_usd']}
         after = allocator.five_axis_spend_cost(fresh, ladder, spend * 2 / 3, hours)['cost']
         self.assertAlmostEqual(got['spend_before'], spend / 3, places=6)
         self.assertAlmostEqual(got['cost'], before + after, delta=2e-3)
@@ -293,31 +299,40 @@ class FleetEconomyTests(unittest.TestCase):
     def test_speed_only_breaks_ties_on_n_and_a_faster_candidate_never_displaces_a_higher_n(self):
         """Owner decision of round 13b: the post-ranking speed rule is gone. The order is N, then wait, then the
         earliest-expiring quota, then the faster completion, then fewer USD. (1) A fast variant is its own candidate at its
-        real spend, so with the cost of a priced window above zero it has the lower N and trails its base (2h to the reset
-        with 40% left; the same at 10 minutes). (2) The under-line mid-week case keeps Sol xhigh on top instead of Opus+fast.
+        real spend; 2h before the weekly reset the cost of both is below N's resolution, so the fast one wins on time (round 15). (2) The under-line mid-week case keeps Sol xhigh on top instead of Opus+fast.
         (3) Where the quota costs nothing the fast variant and its base tie on N and the faster one wins by completion time."""
         sprint = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
         for c in eligible(sprint):
             self.assertNotEqual(c['components'].get('decided_by'), 'speed')
         opus = row(sprint, 'opus55_high')
         fast = row(sprint, 'opus55_high', fast=True)
-        self.assertGreater(opus['score'], fast['score'])                    # twice the spend, twice the cost, the same fit
+        # (1) 2h to the weekly reset with 40% left: with the v3.1 burst size nothing of the week is likely to be needed,
+        # so both variants cost less than the 4-place resolution of N, tie on N, and the fast one wins on completion time
+        for c in (opus, fast):
+            self.assertLess(c['components']['opportunity_cost'], 5e-5)
+        self.assertEqual(round(opus['score'], 4), round(fast['score'], 4))
         self.assertAlmostEqual(opus['components']['fit'], fast['components']['fit'])
         self.assertGreater(fast['expected_usd'], opus['expected_usd'])
         self.assertLess(fast['expected_hours'], opus['expected_hours'])
-        self.assertFalse(sprint['selected_bundle'].get('fast'))
-        mid_week = self.fleet.plan(0.3, 0.5, ec=0.5)
+        self.assertEqual(fast['components']['decided_by'], 'completion_hours')
+        self.assertEqual(sprint['choice'], fast['id'])
+        # (2) well under the line (30% used at half time) the week is not likely to be needed either (v3.1: the line is
+        # where pi is about one half, the curve is narrow), so the best candidates tie on N and the fastest goes first; on
+        # the line (50% used) the quota has a price again and Sol xhigh stays above Opus+fast
+        under = self.fleet.plan(0.3, 0.5, ec=0.5)
+        self.assertLess(eligible(under)[0]['components']['opportunity_cost'], 5e-5)
+        self.assertEqual(eligible(under)[0]['components']['decided_by'], 'completion_hours')
+        mid_week = self.fleet.plan(0.5, 0.5, ec=0.5)
         top = mid_week['ranking'][0]
         self.assertFalse(top['bundle'].get('fast'))
         self.assertEqual(top['id'], 'sol_xhigh')
         self.assertGreater(top['score'], row(mid_week, 'opus55_high', fast=True)['score'])
         self.assertEqual([c['score'] for c in eligible(mid_week)], sorted((c['score'] for c in eligible(mid_week)), reverse=True))
-        # (3) a candidate whose account has no long window costs nothing, so its fast variant ties its base on N
-        def only_five_hour(acc):
-            acc['accounts']['claude']['windows'] = {'five_hour': acc['accounts']['claude']['windows']['five_hour']}
-        free = self.fleet.plan(0.6, 0.5, allowed=('claude',), mutate=only_five_hour, claude_long=False)
+        # (3) where the quota costs nothing (2h before the weekly reset, plenty left) the fast variant ties its base on N
+        # and the faster one wins by completion time
+        free = self.fleet.plan(0.6, 0.5, allowed=('claude',), ec=1 - 2 / WEEK)
         plain, quick = row(free, 'opus55_high'), row(free, 'opus55_high', fast=True)
-        self.assertEqual(plain['components']['opportunity_cost'], 0.0)
+        self.assertLess(plain['components']['opportunity_cost'], 5e-5)
         self.assertEqual(round(plain['score'], 4), round(quick['score'], 4))
         self.assertLess(quick['expected_hours'], plain['expected_hours'])
         order = [c['bundle'].get('fast', False) for c in eligible(free) if (c.get('base_id') or c['id']) == 'opus55_high']
@@ -497,9 +512,8 @@ class FastVariantIdentityTests(unittest.TestCase):
         self.fleet = Fleet()
 
     def plan(self, **task):
-        def only_five_hour(acc):      # no long window: cost 0, so the fast variant ties its base on N and wins on speed
-            acc['accounts']['claude']['windows'] = {'five_hour': acc['accounts']['claude']['windows']['five_hour']}
-        return self.fleet.plan(0.6, 0.5, allowed=('claude',), mutate=only_five_hour, claude_long=False, **task)
+        # 2h before the weekly reset the quota costs nothing: the fast variant ties its base on N and wins on speed
+        return self.fleet.plan(0.6, 0.5, allowed=('claude',), ec=1 - 2 / WEEK, **task)
 
     def test_the_variants_have_distinct_ids_and_the_fast_one_launches_as_its_base_bundle(self):
         d = self.plan()
@@ -752,6 +766,271 @@ class SpeedKeyTests(unittest.TestCase):
         snap = allocator.decision_snapshot(d)
         top = next(r for r in snap['ranking'] if r.get('components'))
         self.assertIn('speed_source', top['components'])
+
+
+def window_reports(decision):
+    return {b['label']: b for b in decision['decision']['system']['quota_windows']}
+
+
+class BurstSizeTests(unittest.TestCase):
+    """Round 15 (advisor v3.1, option A, owner): the burst size q_w = min(C_w, mean over the demand grid of the account's own
+    best candidate's spend x min(1, hours to the weekly reset / its hours)), with no 5-hour quantity in it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fleet = Fleet()
+
+    def plan(self, *args, hours=2.0, **kwargs):
+        """`Fleet.plan` with the task's hours also given at the top level, where `plan()` reads them."""
+        return self.fleet.plan(*args, hours=hours, expected_hours=hours, **kwargs)
+
+    def markov(self, w):
+        """E[demand to come] / room, the Markov bound on pi at the window's current use."""
+        cap, used, q = w['capacity_usd'], w['used_usd'], w['lump_usd']
+        e = 1.0 - w['reset_in_hours'] / w['period_hours']
+        return (used + q) * (1.0 - e) / ((e + q / cap) * (cap - used))
+
+    def before_the_reset(self, decision):
+        """Candidates whose whole task finishes before the weekly reset (nothing falls into the next period)."""
+        return [c for c in eligible(decision) if all(w['spend_after_reset'] == 0.0 for w in c['economy']['windows'])]
+
+    def test_two_hours_before_the_weekly_reset_nothing_of_the_week_is_needed_and_the_fast_twin_wins_on_time(self):
+        """Advisor v3.1 test 1: 2 h (and 10 min) before the weekly reset with 40 to 99 % left on Max20 and on Codex Pro,
+        the need probability is at most the Markov bound, every candidate that finishes before the reset costs less than N's
+        4-place resolution, the fast variant ties its base on N and wins on completion time."""
+        for tau, hours in ((2.0, 2.0), (1 / 6, 0.1)):
+            e = 1.0 - tau / WEEK
+            for left in (0.40, 0.60, 0.80, 0.90, 0.99):
+                d = self.plan(1 - left, 1 - left, ec=e, ex=e, hours=hours)
+                for label, w in window_reports(d).items():
+                    self.assertLessEqual(w['need_probability'], self.markov(w) + 1e-12, (label, left, tau))
+                    self.assertGreater(w['lump_usd'], 0.0)
+                    self.assertLess(w['lump_usd'], w['capacity_usd'] * 0.1, (label, left, tau))
+                inside = self.before_the_reset(d)
+                self.assertGreaterEqual(len(inside), 4, (left, tau))
+                for c in inside:
+                    self.assertLess(c['components']['opportunity_cost'], 5e-5, (c['id'], left, tau))
+                pairs = 0
+                ids = {c['id'] for c in inside}
+                for fast in [c for c in inside if c['bundle'].get('fast') and c['base_id'] in ids]:
+                    base = row(d, fast['base_id'])
+                    self.assertEqual(round(base['score'], 4), round(fast['score'], 4), (fast['id'], left, tau))
+                    self.assertLess(allocator.five_axis_order(fast), allocator.five_axis_order(base), (fast['id'], left, tau))
+                    self.assertEqual(allocator.five_axis_deciding_key(fast, base), 'completion_hours')
+                    pairs += 1
+                self.assertGreaterEqual(pairs, 1, (left, tau))
+                self.assertTrue(d['selected_bundle'].get('fast'), (left, tau))
+
+    def test_the_5h_clock_usage_and_existence_move_neither_the_price_nor_the_probability_nor_the_lump(self):
+        """Advisor v3.1 test 2: the same fleet with the 5-hour window's reset, its use, and finally the window itself changed
+        or removed: every candidate's cost and need probability, and every weekly window's lump, are bit-identical."""
+        def with_five_hour(used, seconds):
+            def hook(usage):
+                for w in usage['accounts']['claude']['windows']:
+                    if w['id'] == 'five_hour':
+                        w['seconds_until_reset'] = seconds
+            return dict(five_hour_used=used, usage_hook=hook)
+
+        def without_five_hour(acc):
+            windows = acc['accounts']['claude']['windows']
+            self.assertIn('five_hour', windows)
+            windows.pop('five_hour')
+
+        def drop_reading(usage):
+            usage['accounts']['claude']['windows'] = [w for w in usage['accounts']['claude']['windows'] if w['id'] != 'five_hour']
+
+        runs = [self.plan(0.55, 0.45, ec=0.6, **with_five_hour(used, secs))
+                for used, secs in ((0.05, 5 * 3600), (0.5, 3600), (0.8, 4 * 3600), (0.95, 600))]
+        runs.append(self.plan(0.55, 0.45, ec=0.6, mutate=without_five_hour, usage_hook=drop_reading))
+
+        def table(d):
+            return ({c['id']: (c['components']['opportunity_cost'], c['components']['need_probability'],
+                               c['components']['quota_price']) for c in eligible(d)},
+                    {k: (w['need_probability'], w['lump_usd'], w['quota_price']) for k, w in window_reports(d).items()})
+        first_costs, first_windows = table(runs[0])
+        for d in runs[1:]:
+            costs, windows = table(d)
+            shared = set(first_costs) & set(costs)
+            self.assertGreaterEqual(len(shared), 8)
+            for key in shared:
+                self.assertEqual(costs[key], first_costs[key], key)
+            self.assertEqual(windows, first_windows)
+
+    def test_an_account_with_and_without_a_short_window_pays_the_same_weekly_cost(self):
+        """Advisor v3.1 test 3: two accounts on the same plan with the same weekly state and bundles, one with a 5-hour window
+        and one without: the same weekly cost, need probability and lump."""
+        def two_accounts(acc):
+            acc['accounts']['claude-2']['plan'] = acc['accounts']['claude']['plan']
+            acc['accounts']['claude-2']['windows'] = {k: copy.deepcopy(v) for k, v in acc['accounts']['claude']['windows'].items()
+                                                      if k != 'five_hour'}
+            three = {k: v for k, v in acc['accounts']['claude']['bundles'].items()
+                     if v['model'] in ('claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5') and v['effort'] == 'high'}
+            acc['accounts']['claude']['bundles'] = three
+            acc['accounts']['claude-2']['bundles'] = {f'claude-2__{k}': {**v, 'account': 'claude-2'} for k, v in three.items()}
+
+        def hook(usage):
+            usage['accounts']['claude-2']['windows'] = [w for w in usage['accounts']['claude-2']['windows'] if w['id'] != 'five_hour']
+        d = self.plan(0.6, 0.5, ec=0.5, allowed=('claude', 'claude-2'), claude2=(0.6, 0.5), mutate=two_accounts, usage_hook=hook)
+        reports = window_reports(d)
+        for label in ('seven_day', 'weekly_fable'):
+            if f'claude/{label}' in reports and f'claude-2/{label}' in reports:
+                a, b = reports[f'claude/{label}'], reports[f'claude-2/{label}']
+                self.assertEqual((a['lump_usd'], a['need_probability'], a['quota_price']),
+                                 (b['lump_usd'], b['need_probability'], b['quota_price']))
+        self.assertTrue(any(k.startswith('claude-2/') for k in reports))
+        for model in ('opus55_high', 'sonnet55_high', 'haiku55_high'):
+            one, two = row(d, model), row(d, f'claude-2__{model}')
+            self.assertEqual(one['components']['opportunity_cost'], two['components']['opportunity_cost'], model)
+
+    def test_the_pi_curve_is_monotone_in_use_and_non_increasing_toward_the_reset_for_any_burst_size(self):
+        rng = random.Random(11)
+        for _ in range(12):
+            cap, share = rng.uniform(10.0, 4000.0), rng.uniform(0.003, 0.1)
+            previous = -1.0
+            for u in range(0, 101, 4):
+                p = allocator.five_axis_need_probability(rec_of(cap, u / 100, 0.5, lump=share), cap * u / 100)
+                self.assertGreaterEqual(p, previous - 1e-12)
+                previous = p
+            late = [allocator.five_axis_need_probability(rec_of(cap, 0.5, e, lump=share), 0.5 * cap) for e in (0.2, 0.5, 0.8, 0.95, 0.999)]
+            self.assertEqual(late, sorted(late, reverse=True))
+
+    def test_the_burst_is_cut_at_the_reset_and_is_the_whole_task_when_the_task_ends_before_it(self):
+        """Advisor v3.1 test 5: a task longer than the hours to the reset spends only the share before it, so the lump is at
+        most the dearest candidate's dollars per hour x the hours to the reset; a task that ends before the reset gives the
+        same lump whatever the reset time is."""
+        short_a = self.plan(0.5, 0.5, ec=0.5, hours=0.25)
+        short_b = self.plan(0.5, 0.5, ec=0.9, hours=0.25)           # 17 h to the reset, still more than the task
+        for label, w in window_reports(short_a).items():
+            self.assertEqual(w['lump_usd'], window_reports(short_b)[label]['lump_usd'], label)
+        tau = 2.0
+        long_task = self.plan(0.5, 0.5, ec=1 - tau / WEEK, ex=1 - tau / WEEK, hours=20.0)
+        for label, w in window_reports(long_task).items():
+            account = label.split('/')[0]
+            rate = max(c['expected_usd'] / c['expected_hours'] for c in eligible(long_task)
+                       if c['bundle']['account'] == account and not c['bundle'].get('fast') and c['expected_hours'] > 0)
+            self.assertLessEqual(w['lump_usd'], rate * tau * 1.0001, label)
+            whole = window_reports(self.plan(0.5, 0.5, ec=0.5, hours=20.0)).get(label)
+            if whole is not None:
+                self.assertLess(w['lump_usd'], whole['lump_usd'], label)
+
+    def test_scaling_dollars_leaves_the_probability_and_scaling_the_task_scales_the_burst(self):
+        """Advisor v3.1 test 6: multiplying C, U and q by a constant leaves pi unchanged; a task twice as long (still ending
+        before the reset) has twice the burst."""
+        for k in (0.01, 3.0, 250.0):
+            for share in (0.01, 0.04):
+                self.assertAlmostEqual(allocator.five_axis_need_probability(rec_of(1000.0, 0.45, 0.5, lump=share), 450.0),
+                                       allocator.five_axis_need_probability(rec_of(1000.0 * k, 0.45, 0.5, lump=share), 450.0 * k), places=12)
+        one = self.plan(0.5, 0.5, ec=0.5, hours=1.0)
+        two = self.plan(0.5, 0.5, ec=0.5, hours=2.0)
+        for label, w in window_reports(one).items():
+            self.assertAlmostEqual(window_reports(two)[label]['lump_usd'] / w['lump_usd'], 2.0, delta=0.02, msg=label)
+
+    def test_a_really_tight_week_still_prices_the_work_2h_before_the_reset(self):
+        """Advisor v3.1 test 7: 5 % of the week left two hours before the reset: the work may well be needed (the advisor's
+        pi = 0.040 with the 2 h burst of $30.61), and the dear candidate pays more than N's resolution. (In a whole fleet the
+        5 % week lets no big candidate start at all, so this is a window-level check; the whole-fleet check uses 8 %.)"""
+        e = 1.0 - 2.0 / WEEK
+        rec = rec_of(1704.5, 0.95, e, reset_hours=2.0, lump=30.61 / 1704.5)
+        self.assertAlmostEqual(allocator.five_axis_need_probability(rec, rec['used_usd']), 0.0401, places=3)
+        cost = allocator.five_axis_spend_cost(rec, ladder_for(), 45.72, 2.0)['cost']
+        self.assertGreater(cost, 1e-3)
+        d = self.plan(0.92, 0.92, ec=e, ex=e)
+        for label, w in window_reports(d).items():
+            if w['used_usd'] > 0:
+                self.assertGreater(w['need_probability'], 0.0, label)
+                self.assertLessEqual(w['need_probability'], self.markov(w) + 1e-12, label)
+
+    def test_a_lump_is_required_and_the_fresh_period_carries_its_own(self):
+        """The tail never falls back to the whole capacity: a record without `lump_usd` is an error (round 15); the part of
+        a task after the reset is priced with the new period's own untruncated burst."""
+        bare = rec_of(1000.0, 0.5, 0.5)
+        bare.pop('lump_usd')
+        with self.assertRaises(KeyError):
+            allocator.five_axis_need_tail(bare, 100.0)
+        ladder = ladder_for()
+        rec = rec_of(1704.5, 0.6, 1 - 2 / WEEK, reset_hours=2.0, lump=0.001)
+        small = allocator.five_axis_spend_cost(rec, ladder, 137.0, 6.0, fresh_lump=17.0)['cost']
+        big = allocator.five_axis_spend_cost(rec, ladder, 137.0, 6.0, fresh_lump=170.0)['cost']
+        self.assertNotEqual(small, big)
+
+
+class WeeklyWindowTests(unittest.TestCase):
+    """Round 15 (owner: "every account should have a weekly quota"): a quota account whose weekly (long reset-period) window
+    is missing or unread is a surfaced mode-B data error. It is not routable on the five-axis path and it is never a free
+    outside point (slack 1) for another account's window."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fleet = Fleet()
+
+    def only_five_hour(self, acc):
+        acc['accounts']['claude']['windows'] = {'five_hour': acc['accounts']['claude']['windows']['five_hour']}
+
+    def claude_rows(self, d):
+        return [c for c in d['ranking'] if c['bundle']['account'] == 'claude']
+
+    def codex_price(self, d):
+        return price_of(d, 'codex')
+
+    def test_a_weekly_window_that_is_not_read_while_the_5h_window_is_leaves_routing_and_is_no_outside_point(self):
+        alone = self.fleet.plan(0.5, 0.5, allowed=('codex',))
+        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'), claude_long=False)       # only claude's five_hour is read
+        rows = self.claude_rows(d)
+        self.assertTrue(rows)
+        for c in rows:
+            self.assertTrue(c['excluded'], c['id'])
+            self.assertIn(allocator.QUOTA_LONG_UNREAD, c['excluded'][0], c['id'])
+        self.assertTrue(any(allocator.QUOTA_LONG_UNREAD in w and 'claude' in w for w in d['decision']['warnings']))
+        self.assertNotEqual(d['selected_bundle']['account'], 'claude')
+        # claude is not Codex's outside point: Codex's weekly price is the one it has with claude absent
+        self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12)
+
+    def test_an_account_with_no_weekly_window_declared_is_a_data_error_and_no_outside_point(self):
+        alone = self.fleet.plan(0.5, 0.5, allowed=('codex',))
+        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=self.only_five_hour, claude_long=False)
+        for c in self.claude_rows(d):
+            self.assertTrue(c['excluded'], c['id'])
+            self.assertIn(allocator.QUOTA_NO_LONG_WINDOW, c['excluded'][0], c['id'])
+        warning = next(w for w in d['decision']['warnings'] if allocator.QUOTA_NO_LONG_WINDOW in w)
+        self.assertIn('claude', warning)
+        self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12)
+        # naming the model dispatches it with the error surfaced, as for an unknown capacity
+        named = self.fleet.plan(0.5, 0.5, allowed=('claude',), mutate=self.only_five_hour, claude_long=False,
+                                pinned_bundle='opus55_high')
+        self.assertEqual(named['selected_bundle']['bundle_id'], 'opus55_high')
+        self.assertTrue(any(allocator.QUOTA_NO_LONG_WINDOW in n for n in next(c for c in named['ranking'] if c['id'] == 'opus55_high')['notes']))
+
+    def test_a_bundle_that_draws_no_window_at_all_is_the_same_data_error(self):
+        """The shape of a metered API account with no budget window (its auto bundles carry an explicit empty `draws`)."""
+        def no_draws(acc):
+            for b in acc['accounts']['claude']['bundles'].values():
+                b['draws'] = []
+        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=no_draws)
+        rows = self.claude_rows(d)
+        self.assertTrue(rows)
+        for c in rows:
+            self.assertTrue(c['excluded'], c['id'])
+            self.assertIn(allocator.QUOTA_NO_LONG_WINDOW, c['excluded'][0], c['id'])
+        self.assertNotEqual(d['selected_bundle']['account'], 'claude')
+
+    def test_a_weekly_window_that_is_read_keeps_the_account_in_routing(self):
+        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'))
+        self.assertTrue([c for c in eligible(d) if c['bundle']['account'] == 'claude'])
+        self.assertFalse([w for w in d['decision'].get('warnings') or [] if 'weekly quota' in w or 'no weekly' in w])
+
+    def test_a_free_pools_auto_bundles_draw_the_allowance_that_the_overlay_declares(self):
+        acc = copy.deepcopy(self.fleet.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        acc['accounts']['pool'] = {'plan': 'free', 'billing': 'subscription', 'free_allowance': True, 'verified': True,
+                                   'bundles': {'auto:pool:opencode:x': {'provider': 'opencode', 'harness': 'opencode',
+                                                                         'model': 'glm-5.3-flash-free', 'draws': [], 'auto': True},
+                                               'named': {'provider': 'opencode', 'harness': 'opencode', 'model': 'glm-5.3-flash-free',
+                                                         'draws': ['elsewhere']}}}
+        out = allocator.five_axis_overlay(acc)['accounts']['pool']
+        self.assertEqual(list(out['windows']), ['allowance'])
+        self.assertEqual(out['bundles']['auto:pool:opencode:x']['draws'], ['allowance'])
+        self.assertEqual(out['bundles']['named']['draws'], ['elsewhere'])       # an explicit non-empty draw is left alone
+        self.assertTrue(out['capacity_unknown'])                                 # and the unsourced capacity stays mode B
 
 
 if __name__ == '__main__':

@@ -328,7 +328,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertAlmostEqual(starter['used_usd'], 10.0)
         self.assertIsNone(allocator.five_axis_window_recovery({'known': False}, 100.0))
         # The starter allowance's clock never runs: its need probability depends on use only.
-        self.assertGreater(allocator.five_axis_need_probability(starter, starter['used_usd']), 0.0)
+        self.assertGreater(allocator.five_axis_need_probability({**starter, 'lump_usd': 5.0}, starter['used_usd']), 0.0)
 
     def test_nested_windows_and_5h_plus_weekly_price_only_the_dearest_long_window_once(self):
         """Quota economy v3: a candidate drawing the 5-hour window, the weekly window and the nested weekly_fable window
@@ -349,19 +349,21 @@ class FiveAxisTests(unittest.TestCase):
         # seven_day behind its line (80% left at mid-week), weekly_fable well ahead of it (30% left at mid-week).
         for w in usage['accounts']['claude']['windows']:
             if w['id'] == 'seven_day':
-                w['remaining_pct_before_reset'] = 80.0
+                w['remaining_pct_before_reset'] = 25.0
                 w['seconds_until_reset'] = 84 * 3600
             elif w['id'] == 'five_hour':
                 w['remaining_pct_before_reset'] = 90.0
                 w['seconds_until_reset'] = int(2.5 * 3600)
             elif w['id'] == 'weekly_fable':
-                w['remaining_pct_before_reset'] = 30.0
+                w['remaining_pct_before_reset'] = 12.0
                 w['seconds_until_reset'] = 84 * 3600
+        # Claude alone: with no other account to take displaced work the windows price (round 15: the burst size is small, so a
+        # window that another account could cover is nearly free; both weekly windows are tight here so that none of them can)
         original = allocator.load_five_axis
         allocator.load_five_axis = lambda path=None: doc
         try:
             d = allocator.plan({'objective': 't', 'hours': 1.0, 'profile': {**PROFILE, 'axis_demand': demand(2, 2, 2, 0)}},
-                               usage, NOW, accounts=acc, overrides=[], records=[], host_policy_config=self.policy)
+                               usage, NOW, accounts=acc, overrides=[], records=[], host_policy_config={'allowed_accounts': ['claude']})
         finally:
             allocator.load_five_axis = original
         fable_high = next(c for c in d['ranking'] if c['id'] == 'fable51_high')
@@ -448,27 +450,37 @@ class FiveAxisTests(unittest.TestCase):
             d = run_case(hours)
             pool_a, pool_b = pools(d)
             self.assertAlmostEqual(pool_a['components']['fit'], pool_b['components']['fit'])
-            self.assertLess(pool_a['components']['opportunity_cost'], pool_b['components']['opportunity_cost'])
-            self.assertEqual(d['choice'], 'opus55_high')
+            w_a0, w_b0 = pool_a['economy']['windows'][0], pool_b['economy']['windows'][0]
+            self.assertLess(w_a0['need_start'], 1e-6)                    # 2h to the reset with 40% left: nothing of it is needed
+            self.assertGreater(w_b0['need_start'], 0.4)                  # on its line, a week to run: a coin flip
+            self.assertLessEqual(pool_a['components']['opportunity_cost'], pool_b['components']['opportunity_cost'])
+            # both cost less than N's resolution (round 15: Pool A can take Pool B's work, Pool B's price is nil); the
+            # earliest-expiring quota goes first, then the faster completion
+            self.assertEqual((d['ranking'][0].get('base_id') or d['ranking'][0]['id']), 'opus55_high')
             w_a = pool_a['economy']['windows'][0]
             self.assertEqual(w_a['window'], 'seven_day')
             self.assertAlmostEqual(w_a['elapsed_hours'], 166.0)
             self.assertEqual(w_a['spend_after_reset'], 0.0)
-        # 2h before the reset with a 3h task: one hour of it falls into Pool A's next period, where its first dollar is a coin
-        # flip again, so Pool B (on its line, a week to run) is the cheaper pool. The fast variant is its own candidate at
-        # twice the spend and twice the cost; with the speed rule gone nothing lets it displace a higher N.
+        # 2h before the reset with a 3h task: one hour of it falls into Pool A's next period, where its first dollar is needed
+        # again with the new period's own odds, so the plain Opus on Pool A pays for that hour and trails Pool B. Its fast
+        # variant finishes the 3h task in 2h, before the reset: nothing crosses and it is free again (fast mode is its own
+        # candidate at its real spend, so this is a result of the price and not a rule).
         d3 = run_case(3.0)
-        self.assertEqual(d3['choice'], 'claude-2__opus55_high')
-        self.assertFalse(d3['selected_bundle'].get('fast'))
-        self.assertNotEqual(d3['ranking'][0]['components']['decided_by'], 'speed')
-        for sec_left in (7200, 600):    # near the reset the plain variant keeps the higher N: the faster one never replaces it
+        a3, b3 = pools(d3)
+        self.assertGreater(a3['economy']['windows'][0]['spend_after_reset'], 0.0)
+        self.assertGreater(a3['components']['opportunity_cost'], b3['components']['opportunity_cost'])
+        self.assertLess(a3['score'], b3['score'])
+        fast3 = next(c for c in d3['ranking'] if c['id'] == 'opus55_high+fast')
+        self.assertEqual(fast3['economy']['windows'][0]['spend_after_reset'], 0.0)
+        self.assertEqual(round(fast3['score'], 4), round(b3['score'], 4))
+        for sec_left in (7200, 600):    # near the reset both variants cost nothing: they tie on N and the faster one goes first
             usage['accounts']['claude']['windows'][0]['seconds_until_reset'] = sec_left
             near = run_case(0.1)
             fast = next(c for c in near['ranking'] if c['id'] == 'opus55_high+fast')
             plain = next(c for c in near['ranking'] if c['id'] == 'opus55_high' and not c['bundle'].get('fast'))
-            self.assertGreater(plain['score'], fast['score'])
+            self.assertEqual(round(plain['score'], 4), round(fast['score'], 4))
             self.assertLess(fast['expected_hours'], plain['expected_hours'])
-            self.assertFalse(near['selected_bundle'].get('fast'))
+            self.assertTrue(near['selected_bundle'].get('fast'))
         usage['accounts']['claude']['windows'][0]['seconds_until_reset'] = 2 * 3600
         # 6h: four of the six hours fall in the next period of Pool A, where the first dollar is again a coin flip. Each
         # pool is still priced on its own clock and Pool B (14% into its week, on its line) is the cheaper one for it.
@@ -478,7 +490,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertAlmostEqual(w_cross['spend_before_reset'], cross['expected_usd'] * 2.0 / 6.0, places=1)
         self.assertAlmostEqual(w_cross['spend_after_reset'], cross['expected_usd'] * 4.0 / 6.0, places=1)
         self.assertGreater(cross['components']['opportunity_cost'], other['components']['opportunity_cost'])
-        self.assertEqual(d6['choice'], 'claude-2__opus55_high')
+        self.assertEqual((d6['ranking'][0].get('base_id') or d6['ranking'][0]['id']), 'claude-2__opus55_high')
 
     def test_image_input_exclusion_and_unknown_modality_mode_b(self):
         """Round 11 item 4: when vision_tools >= 2, models with public image_input == 'no' are excluded; models with
@@ -600,11 +612,11 @@ class FiveAxisTests(unittest.TestCase):
         state = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 40.0, 'reset_hours': 84.0, 'short': False,
                  'end_hours': 84.0, 'stale': False}
 
-        def cand(account, model, wid, fits, spend, wait=0, long_wait=False):
+        def cand(account, model, wid, fits, spend, wait=0, long_wait=False, remaining=None):
             return {'bundle': {'account': account, 'model': model}, 'available_in_hours': wait or None,
                     '_five_long_wait': long_wait,
                     'expected_usd': spend, 'components': {'fit': fits['divergence']}, '_five_scaled': fits,
-                    '_five_window_states': {wid: ({}, dict(state), 1000.0, 1.0)}}
+                    '_five_window_states': {wid: ({}, {**state, **({'remaining': remaining} if remaining else {})}, 1000.0, 1.0)}}
         strong = dict(divergence=0.8, global_rigor=0.8, module_precision=0.8, vision_tools=0.8)
         cheap = dict(divergence=0.4, global_rigor=0.4, module_precision=0.4, vision_tools=0.4)
         own = [cand('claude', 'claude-opus-5-5', 'seven_day', strong, 20.0), cand('claude', 'claude-haiku-5-5', 'seven_day', cheap, 1.0)]
@@ -617,15 +629,15 @@ class FiveAxisTests(unittest.TestCase):
             return allocator.five_axis_quota_price(econ.rec(econ.points[key][0], 'seven_day'), econ.ladder(key), 400.0)
         alone = price(own)
         self.assertGreater(alone, 0.0)                       # nothing else can do the work: displaced work loses all its fit
-        with_sub = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0)])
+        with_sub = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, remaining=90.0)])
         self.assertLess(with_sub, alone)
-        renewing = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5, long_wait=True)])
+        renewing = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5, long_wait=True, remaining=90.0)])
         self.assertEqual(renewing, alone)                    # its long window must renew first: it cannot take the work now
-        five_hour = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5)])
+        five_hour = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5, remaining=90.0)])
         self.assertEqual(five_hour, with_sub)                # it waits only for its 5-hour window: weekly room is what counts
         unmetered = {**cand('dot', 'dot', 'x', strong, 0.0), '_five_window_states': {}, '_five_unmetered': True}
         self.assertEqual(price(own + [unmetered]), alone)    # an unmetered channel relieves no window: it never lowers a price
-        self.assertEqual(price(own + [unmetered, cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0)]), with_sub)
+        self.assertEqual(price(own + [unmetered, cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, remaining=90.0)]), with_sub)
 
     def test_spend_is_usd_per_hour_times_the_duration_the_candidate_takes(self):
         """S3: one basis for spend and time, for a model faster than the anchor and for a higher effort."""
@@ -809,7 +821,8 @@ class FiveAxisTests(unittest.TestCase):
         Without `can_wait_hours`, `plan()` starts the best ready-now candidate immediately; when `can_wait_hours` is given,
         routine tasks (already reaching the capped fit on a ready-now owner) still start now while frontier tasks prefer
         waiting for the higher-N model's short-window reset (round 13b: the same holds for a routine task whose waiting
-        candidate has the higher N, since a faster candidate no longer displaces a higher one)."""
+        candidate has the higher N, since a faster candidate no longer displaces a higher one; in round 15 no routine
+        candidate has the higher N any more)."""
         self.assertFalse(hasattr(allocator, 'five_axis_wait_cost'))
         base = {name: row(0.55, usd=5.0) for name, info in self.accounts['models'].items() if isinstance(info, dict)}
         doc = document(self.accounts['models'],
@@ -833,8 +846,10 @@ class FiveAxisTests(unittest.TestCase):
         ready_now = max((c for c in routine['ranking'] if not c.get('excluded') and not c.get('available_in_hours')),
                         key=lambda c: c['score'])
         self.assertEqual(routine['ranking'][0]['score'], max(c['score'] for c in routine['ranking'] if not c.get('excluded')))
-        self.assertGreater(routine['ranking'][0]['score'], ready_now['score'])
-        self.assertEqual(routine['decision']['action'], 'defer')
+        # round 15: with the v3.1 burst size no candidate's quota costs anything here, so the routine task's waiting candidates
+        # do not have a higher N than the best one that can start now, and it starts now
+        self.assertEqual(round(routine['ranking'][0]['score'], 4), round(ready_now['score'], 4))
+        self.assertEqual(routine['decision']['action'], 'start')
         self.assertEqual(ready_now['bundle']['account'], 'codex')
         self.assertEqual(frontier['decision']['action'], 'defer')
         self.assertEqual(frontier['selected_bundle']['account'], 'claude')

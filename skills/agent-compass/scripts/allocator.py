@@ -471,6 +471,13 @@ OBSERVED_MAX_AGE_HOURS = 2      # the live burn rate is only worth acting on whi
 
 METERED_LAST_RESORT = 'metered access is a last resort'
 QUOTA_READING_UNAVAILABLE = 'quota reading unavailable (no current observation of any window of this account, so its spend cannot be priced)'
+# Round 15 (owner): every quota account has a weekly (long reset-period) window; one without is a surfaced data error, never a
+# 5-hour-only account that stands in for other accounts' work as a free outside point.
+QUOTA_LONG_UNREAD = ('weekly quota reading unavailable (the account has a long reset-period window but no current or last-good '
+                     'observation of it, only its 5-hour window is read, so its spend cannot be priced)')
+QUOTA_NO_LONG_WINDOW = ('no weekly quota window (neither the account configuration nor the public capacity data gives this '
+                        'account a long reset-period window, so its spend cannot be priced)')
+QUOTA_DATA_ERRORS = (QUOTA_READING_UNAVAILABLE, QUOTA_LONG_UNREAD, QUOTA_NO_LONG_WINDOW)
 
 
 def accounts_override_path(environ=None):
@@ -2330,6 +2337,11 @@ def five_axis_overlay(accounts, data=None):
                 spec['capacity_usd'] = {}
                 spec['capacity_unknown'] = True
                 spec['capacity_source'] = {'allowance': {'status': 'missing', 'plan': spec.get('plan') or 'free'}}
+                # Auto bundles were derived while this account declared no window, so they carry an explicit empty `draws`
+                # (authoritative): every model of a free pool spends the one allowance, so they draw it (round 15).
+                for b in (spec.get('bundles') or {}).values():
+                    if isinstance(b, dict) and b.get('draws') == []:
+                        b['draws'] = ['allowance']
             acct_spend = 0.0
             seen_models = set()
             for b in (spec.get('bundles') or {}).values():
@@ -2503,8 +2515,8 @@ def five_axis_window_recovery(state, cap_usd):
     """One quota window on its own clock (quota economy v3): capacity C, used U (in-flight leases included), elapsed
     fraction e of the period and the reset. `line_now_usd` = C * e is the recovery line: the pace at which the period's
     capacity just runs out. The expected demand still to come at U = C * e equals the remaining capacity (the mean identity
-    in `five_axis_need_tail`); `five_axis_need_tail` is not one half there (about 0.52 at e = 0.1 up to 0.81 at e = 0.9
-    with the single-window lump q = C), so the line is a reference pace and not a probability contour.
+    in `five_axis_need_tail`); `five_axis_need_tail` there is near one half (0.47 to 0.63 with the burst size of v3.1), so
+    the line is a reference pace and not an exact probability contour.
 
     Starter allowances (`hours is None` or `inf`, `reset_hours` inf) never reset: the clock does not run, e = 0. Rolling
     windows that start their clock on first use (`state.get('unstarted')`) are at e = 0 with U = 0. Nothing here reads a
@@ -2577,21 +2589,24 @@ def regularized_incomplete_beta(a, b, x):
 def five_axis_need_tail(rec, room_usd):
     """P(the demand that reaches this window before its reset is at least `room_usd`), from the period's own readings.
 
-    Quota economy v3 (advisor report v3 §1.2 with the single-window lump q = C, owner D3): consumption arrives in lumps of
-    q = C; the prior is one virtual lump at the recovery-line pace and the observation is the U / C lumps seen in the
-    elapsed fraction e of the period. The lumps still to come are negative binomial, K ~ NegBin(n + 1, p) with n = U / C and
-    p = (e + 1) / 2, so P(K * C >= room) = I_{(1 - e) / 2}(room / C, n + 1). The mean of the demand still to come is
-    (U + C) (1 - e) / (e + 1), which at U = e C is exactly the remaining capacity C - U (the mean identity). That is all the
-    line identity says: with lumps of size C the distribution is skewed, so pi at U = e C is above one half (0.52 at e = 0.1,
-    0.61 at e = 0.5, 0.81 at e = 0.9), and the pi = 1/2 contour lies below the recovery line.
-    `rec` is `five_axis_window_recovery`'s answer. Only long reset-period windows are priced: a 5-hour window never calls this."""
+    Quota economy v3.1 (advisor report v3 section 1.2 with the burst size of v3.1, owner option A, round 15): consumption
+    arrives in lumps of size q = `rec['lump_usd']`; the prior is one virtual lump at the recovery-line pace and the
+    observation is the U / q lumps seen in the elapsed fraction e of the period. The lumps still to come are negative
+    binomial, K ~ NegBin(n + 1, p) with n = U / q, s = q / C and p = (e + s) / (1 + s), so
+    P(K * q >= room) = I_{(1 - e) / (1 + s)}(room / q, n + 1). The mean of the demand still to come is
+    (U + q) (1 - e) / (e + s), which at U = e C is exactly the remaining capacity C - U for every q (the mean identity).
+    `rec` is `five_axis_window_recovery`'s answer plus `lump_usd`, which `FiveAxisEconomy.lump` builds from the account's own
+    candidates and the window's own reset clock; a record without it is an error, there is no fallback to C (round 15).
+    Only long reset-period windows are priced: a 5-hour window never calls this."""
+    lump = min(float(rec['capacity_usd']), float(rec['lump_usd']))      # KeyError when the record has no lump: no default
     if room_usd <= 0:
         return 1.0
     cap = float(rec['capacity_usd'])
     e = float(rec.get('elapsed_frac') or 0.0)
-    if cap <= 0 or e >= 1.0:
+    if cap <= 0 or e >= 1.0 or lump <= 0:
         return 0.0
-    return regularized_incomplete_beta(room_usd / cap, float(rec['used_usd']) / cap + 1.0, (1.0 - e) / 2.0)
+    s = lump / cap
+    return regularized_incomplete_beta(room_usd / lump, float(rec['used_usd']) / lump + 1.0, (1.0 - e) / (1.0 + s))
 
 
 def five_axis_need_probability(rec, level_usd):
@@ -2719,12 +2734,13 @@ def five_axis_table_integral(table, spend_usd):
     return table['cum'][k] + _quadratic_integral(table['lam'], k, x - k) * table['step']
 
 
-def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tables=None):
+def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tables=None, fresh_lump=None):
     """cost_i = integral over [U, U + S] of lambda_w(y) dy: the fit the rest of the period loses because this candidate
     takes `spend_usd` of window `rec` (same unit as the fit, so N = F - cost needs no weight). A task that crosses the
     reset is split by time: the part before it is priced on the current period, the part after it on a fresh period
     (n = 0, e = 0). `spend_max` (default `spend_usd`) is the largest spend any candidate takes of this window; `tables`
-    caches the price tables built for it ('now', 'fresh'). Returns {'cost', 'lambda_start', 'need_start', 'need_end',
+    caches the price tables built for it ('now', 'fresh'). `fresh_lump` is the new period's untruncated burst size (the
+    record's own `lump_usd` when not given). Returns {'cost', 'lambda_start', 'need_start', 'need_end',
     'spend_before', 'spend_after'}."""
     tables = {} if tables is None else tables
     spend = max(0.0, float(spend_usd))
@@ -2743,7 +2759,8 @@ def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tab
     need_end = five_axis_need_probability(rec, float(rec['used_usd']) + before)
     if crossing and after > 0:
         cap = float(rec['capacity_usd'])
-        fresh = {'capacity_usd': cap, 'used_usd': 0.0, 'elapsed_frac': 0.0}
+        fresh = {'capacity_usd': cap, 'used_usd': 0.0, 'elapsed_frac': 0.0,
+                 'lump_usd': rec['lump_usd'] if fresh_lump is None else fresh_lump}
         if 'fresh' not in tables:
             tables['fresh'] = five_axis_price_table(fresh, ladder, spend_max)
         cost += five_axis_table_integral(tables['fresh'], after)
@@ -2780,7 +2797,7 @@ class FiveAxisEconomy:
         self.units = {}
         self.unit_wkeys = {}
         self.points = {}
-        self._tables, self._ladders, self._alts, self._recs = {}, {}, {}, {}
+        self._tables, self._ladders, self._alts, self._recs, self._lumps = {}, {}, {}, {}, {}
         for c in [*eligible, *extra]:
             qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
             states = {wid: (st, cap) for wid, (_, st, cap, _) in (c.get('_five_window_states') or {}).items()
@@ -2792,6 +2809,7 @@ class FiveAxisEconomy:
             entry = {'cand': c, 'qsrc': qsrc, 'startable': not c.get('_five_long_wait'),
                      'unmetered': bool(c.get('_five_unmetered')),
                      'spend': float(c.get('expected_usd') or 0.0), 'states': states,
+                     'hours': float(c.get('_five_econ_hours') or c.get('expected_hours') or 0.0),
                      'fits': fit_cache[key] + (float(c['components'].get('fit') or 0.0),),
                      'unit': (qsrc, frozenset(states))}
             self.entries.append(entry)
@@ -2812,7 +2830,36 @@ class FiveAxisEconomy:
 
     def rec(self, entry, wid):
         st, cap = entry['states'][wid]
-        return five_axis_window_recovery(st, cap)
+        return self.record((entry['qsrc'], wid), st, cap)
+
+    def record(self, wkey, st, cap):
+        """The window's recovery record with its burst size `lump_usd` attached (None when the window is unreadable)."""
+        rec = five_axis_window_recovery(st, cap)
+        if rec is not None:
+            rec['lump_usd'] = self.lump(wkey, rec['reset_hours'])
+        return rec
+
+    def lump(self, wkey, reset_hours=None):
+        """q_w, the window's burst size (advisor v3.1, option A, owner round 15): the average over the demand grid of what one
+        task like the current one spends of this window on the account's own best candidate for that demand (the cheapest
+        of the highest fit), cut at the window's own reset: a task longer than the hours to the reset spends only the
+        share `reset_hours / hours` of its dollars before it. `reset_hours` None means the untruncated size (a fresh
+        period). Capped by the window's capacity. It reads only this account's candidates, their public `usd_per_hour` and
+        durations, and the weekly clock: no 5-hour window, no outside point, no constant."""
+        tau = float('inf') if reset_hours is None else float(reset_hours)
+        key = (wkey, tau)
+        got = self._lumps.get(key)
+        if got is None:
+            own = [e for e in (self.points.get(wkey) or []) if e['spend'] > 0]
+            total = 0.0
+            for gi in range(len(self.grid)):
+                if own:
+                    top = max(own, key=lambda e: (round(e['fits'][gi], 9), -e['spend']))
+                    share = 1.0 if top['hours'] <= 0 or tau == float('inf') else min(1.0, tau / top['hours'])
+                    total += top['spend'] * share
+            cap = max((float(e['states'][wkey[1]][1]) for e in own), default=0.0)
+            got = self._lumps[key] = min(cap, total / len(self.grid)) if own else 0.0
+        return got
 
     def _alt(self, unit, gi):
         """(fit, slack) of the best candidate of an outside unit at demand point gi (ties: cheapest)."""
@@ -2858,8 +2905,9 @@ class FiveAxisEconomy:
 
     def window_cost(self, wkey, rec, spend, econ_hours):
         tables = self._tables.setdefault((wkey, round(rec['used_usd'], 6), round(rec['elapsed_frac'], 9),
-                                          round(rec['capacity_usd'], 6)), {})
-        return five_axis_spend_cost(rec, self.ladder(wkey), spend, econ_hours, self.spend_max.get(wkey, spend), tables)
+                                          round(rec['capacity_usd'], 6), round(rec['lump_usd'], 6)), {})
+        return five_axis_spend_cost(rec, self.ladder(wkey), spend, econ_hours, self.spend_max.get(wkey, spend), tables,
+                                    fresh_lump=self.lump(wkey))
 
     def report(self):
         """One block per priced window for the plan's `system.quota_windows` (and the README page): its state and its
@@ -2881,6 +2929,7 @@ class FiveAxisEconomy:
                 'elapsed_hours': None if period is None else round(period - rec['reset_hours'], 2),
                 'reset_in_hours': None if rec['reset_hours'] == float('inf') else round(rec['reset_hours'], 2),
                 'need_probability': round(five_axis_need_probability(rec, rec['used_usd']), 4),
+                'lump_usd': round(rec['lump_usd'], 2),
                 'quota_price': round(five_axis_quota_price(rec, ladder, rec['used_usd']), 6) if ladder['steps'] else 0.0,
                 'ladder_steps': len(ladder['steps']), 'outside_fit': round(outside, 4), 'best_fit': round(best, 4),
                 'substitute_slack': round(slack, 4), 'candidates': len(self.points[wkey]),
@@ -3605,6 +3654,7 @@ def evaluate_bundle(bundle, task, ctx):
     unknown = False
     available_at = None
     five_window_states = {}
+    long_applicable = False         # the bundle draws at least one long reset-period window (read or not)
     if spec.get('unlimited'):
         result['notes'].append('unlimited usage')
     # Free capacity is priced as zero opportunity cost below. The extra free-usage preference is declared per account
@@ -3632,6 +3682,7 @@ def evaluate_bundle(bundle, task, ctx):
         named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
             result.setdefault('_five_axis_windows', []).append(wid)
+            long_applicable = long_applicable or not window_is_short(wspec, policy)
             observed = cycle_observation(wspec, observed, acct_usage, now, read_failed_ok=bool(five))
             refusal = window_refusal(wid, wspec, observed, acct_usage, now, latched)
             if refusal:
@@ -3808,11 +3859,18 @@ def evaluate_bundle(bundle, task, ctx):
                     result.setdefault('data_errors', []).append(err)
                 else:
                     exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
-            if (result.get('_five_axis_windows') and not five_window_states and not spec.get('unlimited')
-                    and not result['excluded'] and not result.get('data_errors')):
-                # The account has windows but none can be read now: its spend cannot be priced and it cannot stand in for
-                # another account either, so it leaves automatic routing as a surfaced data error (round 13).
-                err = QUOTA_READING_UNAVAILABLE
+            if (not spec.get('unlimited') and not result['excluded'] and not result.get('data_errors')
+                    and not any(not st.get('short') for _, st, _, _ in five_window_states.values())):
+                # Priced on the weekly window or not at all (round 15): a candidate with no long reset-period window in its
+                # state cannot be priced and cannot stand in for another account's work, so it leaves automatic routing as
+                # a surfaced data error. Three causes, three messages: nothing of the account can be read (round 13); the
+                # weekly window is declared but not read while the 5-hour window is; no weekly window exists at all.
+                if not result.get('_five_axis_windows') or not long_applicable:
+                    err = QUOTA_NO_LONG_WINDOW if not long_applicable else QUOTA_READING_UNAVAILABLE
+                elif five_window_states:
+                    err = QUOTA_LONG_UNREAD
+                else:
+                    err = QUOTA_READING_UNAVAILABLE
                 if named:
                     result['notes'].append(f'data error: {err}; dispatched because it was named')
                     result.setdefault('data_errors', []).append(err)
@@ -4309,7 +4367,8 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
     def eval_windows(c, w_states, own_qsrc, spend, chain_usd, econ_h):
         rows = []
         for wid, (wspec, st, cap_usd_w, _) in w_states.items():
-            rec = five_axis_window_recovery(st, cap_usd_w)
+            rec = (five_axis_window_recovery(st, cap_usd_w) if st.get('short')
+                   else econ.record((own_qsrc, wid), st, cap_usd_w))
             if rec is None:
                 continue
             rem = st['remaining']
@@ -4818,10 +4877,11 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     if cwd_warnings:
         decision.setdefault('warnings', []).extend(cwd_warnings)
     if accounts.get('_five_axis'):
-        unread = sorted({c['bundle']['account'] for c in candidates if any(QUOTA_READING_UNAVAILABLE in str(r) for r in c['excluded'])})
-        if unread:
-            decision.setdefault('warnings', []).append(
-                f"{', '.join(unread)}: {QUOTA_READING_UNAVAILABLE}; out of automatic routing and no substitute for other accounts")
+        for err in QUOTA_DATA_ERRORS:
+            unread = sorted({c['bundle']['account'] for c in candidates if any(err in str(r) for r in c['excluded'])})
+            if unread:
+                decision.setdefault('warnings', []).append(
+                    f"{', '.join(unread)}: {err}; out of automatic routing and no substitute for other accounts")
         aged = {}
         for c in candidates:
             at = c['components'].get('reading_at')
