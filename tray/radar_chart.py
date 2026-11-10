@@ -11,7 +11,7 @@ from i18n import is_en
 import math
 import time
 
-from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageTk
+from PIL import Image, ImageColor, ImageDraw, ImageTk
 
 import page_stack
 
@@ -169,11 +169,28 @@ def counted_shape(points, capped):
 # colour-vision separation and 3:1 contrast on the card. Weight and marker repeat the distinction:
 # a heavier line with solid markers against a lighter line with hollow ones.
 SERIES_STYLES = (
-    {"color": "#4F46E5", "dash": (), "weight": 2.1, "fill": 44, "counted": 60, "spare": 30},
-    {"color": "#0891B2", "dash": (), "weight": 1.5, "fill": 26, "counted": 30, "spare": 22},
+    {"color": "#4F46E5", "dash": (), "weight": 2.2, "fill": 46, "counted": 44, "spare": 13},
+    {"color": "#0891B2", "dash": (), "weight": 1.5, "fill": 26, "counted": 24, "spare": 10},
 )
+# Fills are flat tints with crisp edges: `fill` when no need is known; otherwise `spare` under the whole shape
+# and `counted` on top of the part within the need. No gradients, no blur.
 NEED_INK = "#334155"
-FEATHER, FILL_REDUCE = 5., 4      # px of soft edge on the counted fill; its mask is built this many times smaller
+NEED_TICK = 5.        # half length, px, of the tick that marks the task's need on an axis
+
+
+def need_runs(need):
+    """Indexes of neighbouring axes that have a need, as runs; a run may pass through the top axis."""
+    runs, run = [], []
+    for index, target in enumerate(need):
+        if target is None:
+            runs.append(run)
+            run = []
+        else:
+            run.append(index)
+    runs.append(run)
+    if need and need[0] is not None and need[-1] is not None and len(runs) > 1:
+        runs[0] = runs.pop() + runs[0]
+    return [run for run in runs if run]
 
 
 def ease_out(progress: float) -> float:
@@ -193,8 +210,9 @@ class RadarRenderer:
     """Cache the static scaffold at 3x physical resolution; rasterize only the plot, never text.
 
     There is no fixed backdrop: five hairline spokes with a dot at full and at half scale are all that
-    stays put, so the data shapes dominate. When the task's need is known it is a quiet dashed outline,
-    and each shape is filled in two depths: full inside the need, pale beyond it (ability that does not count).
+    stays put, so the data shapes dominate. When the task's need is known it is a tick across each axis,
+    joined by a hairline, and each shape is two flat tints: deeper inside the need, pale beyond it (ability
+    that does not count). Nothing is blurred or graded: every edge is where a number is.
     """
 
     supersample = 3
@@ -222,23 +240,6 @@ class RadarRenderer:
         return [(x * self.supersample, y * self.supersample)
                 for x, y in polygon(values, self.center, self.center, self.radius)]
 
-    def dashed_line(self, draw, points, color, width, closed=True, dash=(5, 3.5)):
-        dash, gap = (v * self.scale * self.supersample for v in dash)
-        phase = 0.0
-        for start, end in zip(points, points[1:] + points[:1] if closed else points[1:]):
-            length = math.dist(start, end)
-            position = 0.0
-            while position < length:
-                visible = phase < dash
-                step = min((dash if visible else dash + gap) - phase, length - position)
-                if visible:
-                    a, b = position / length, (position + step) / length
-                    draw.line([(start[0] + (end[0] - start[0]) * t,
-                                start[1] + (end[1] - start[1]) * t) for t in (a, b)],
-                              fill=color, width=width)
-                position += step
-                phase = (phase + step) % (dash + gap)
-
     def render(self, values, need=None):
         """values: one list per series, primary first. need: the task's target per axis (None where it has none)."""
         image = self.grid.copy()
@@ -247,10 +248,13 @@ class RadarRenderer:
         need = list(need) if need and len(need) == self.count and any(v is not None for v in need) else None
         unit = self.scale * self.supersample
         if need:
+            # Other model first, the first pick on top: the whole shape pale, the part within the need deeper.
             for order in range(len(values) - 1, -1, -1):
-                draw.polygon(self.points(values[order]), fill=(*ImageColor.getrgb(SERIES_STYLES[order]["color"]),
-                                                               SERIES_STYLES[order]["spare"]))
-            self.counted_fill(image, values, need)
+                color, style = ImageColor.getrgb(SERIES_STYLES[order]["color"]), SERIES_STYLES[order]
+                whole = self.points(values[order])
+                capped = self.points([v if t is None else min(v, t) for v, t in zip(values[order], need)])
+                draw.polygon(whole, fill=(*color, style["spare"]))
+                draw.polygon(counted_shape(whole, capped), fill=(*color, style["counted"]))
         for order in range(len(values) - 1, -1, -1):
             style = SERIES_STYLES[order]
             color = ImageColor.getrgb(style["color"])
@@ -259,8 +263,6 @@ class RadarRenderer:
                 draw.polygon(points, fill=(*color, style["fill"]))
             closed = points + points[:2]      # past the seam, so the first corner is joined like the others
             weight = style["weight"] * unit
-            for extra, alpha in ((4.6, 13), (2.2, 26)) if order == 0 else ((2.4, 16),):
-                draw.line(closed, fill=(*color, alpha), width=max(1, round(weight + extra * unit)), joint="curve")
             draw.line(closed, fill=color, width=max(1, round(weight)), joint="curve")
             for x, y in points:
                 if order == 0:
@@ -274,52 +276,21 @@ class RadarRenderer:
             self.need_outline(draw, need)
         return image.resize((self.size, self.size), Image.Resampling.LANCZOS).convert("RGBA")
 
-    def counted_fill(self, image, values, need):
-        """The part of each shape inside the need, with a feathered edge: a glow, not a second outline.
-
-        Both series go into one small layer (the feather hides its size) that is enlarged and blended once.
-        """
-        unit = self.scale * self.supersample
-        shapes = [[(x / FILL_REDUCE, y / FILL_REDUCE) for x, y in counted_shape(
-                       self.points(series), self.points([v if t is None else min(v, t) for v, t in zip(series, need)]))]
-                  for series in values]
-        pad = FEATHER * unit / FILL_REDUCE + 1
-        xs, ys = [x for shape in shapes for x, _ in shape], [y for shape in shapes for _, y in shape]
-        left, top = max(0, math.floor(min(xs) - pad)), max(0, math.floor(min(ys) - pad))
-        right = min(image.width // FILL_REDUCE, math.ceil(max(xs) + pad))
-        bottom = min(image.height // FILL_REDUCE, math.ceil(max(ys) + pad))
-        if right <= left or bottom <= top:
-            return
-        layer = None
-        for order in range(len(values) - 1, -1, -1):
-            mask = Image.new("L", (right - left, bottom - top), 0)
-            ImageDraw.Draw(mask).polygon([(x - left, y - top) for x, y in shapes[order]], fill=SERIES_STYLES[order]["counted"])
-            tint = Image.new("RGBA", mask.size, ImageColor.getrgb(SERIES_STYLES[order]["color"]) + (0,))
-            tint.putalpha(mask.filter(ImageFilter.BoxBlur(FEATHER * unit / FILL_REDUCE)))
-            layer = tint if layer is None else Image.alpha_composite(layer, tint)
-        layer = layer.resize((layer.width * FILL_REDUCE, layer.height * FILL_REDUCE), Image.Resampling.BILINEAR)
-        image.paste(layer, (left * FILL_REDUCE, top * FILL_REDUCE), layer)
-
     def need_outline(self, draw, need):
-        """The need on the axes that have one, as runs of neighbouring axes (the outline skips an axis without one)."""
+        """The task's need: a tick across each axis that has one, neighbouring ticks joined by a hairline."""
+        unit = self.scale * self.supersample
+        rgb = ImageColor.getrgb(NEED_INK)
         vertices = self.points([0 if v is None else v for v in need])
-        runs, run = [], []
-        for vertex, target in zip(vertices, need):
-            if target is None:
-                runs.append(run)
-                run = []
-            else:
-                run.append(vertex)
-        runs.append(run)
-        if need[0] is not None and need[-1] is not None and len(runs) > 1:
-            runs[0] = runs.pop() + runs[0]
-        ink = (*ImageColor.getrgb(NEED_INK), 215)
-        r = 1.7 * self.scale * self.supersample
-        for run in runs:
+        for run in need_runs(need):
             if len(run) > 1:
-                self.dashed_line(draw, run, ink, self.width(1.15), closed=len(runs) == 1, dash=(3.2, 2.8))
-            for x, y in run:
-                draw.ellipse((x - r, y - r, x + r, y + r), fill="#FFFFFF", outline=ink, width=self.width(.8))
+                draw.line([vertices[index] for index in run], fill=(*rgb, 64), width=max(1, round(.9 * unit)))
+        for index, target in enumerate(need):
+            if target is None:
+                continue
+            (x, y), (ax, ay) = vertices[index], point(0, 0, 1, index, self.count)
+            half = NEED_TICK * unit
+            draw.line(((x - ay * half, y + ax * half), (x + ay * half, y - ax * half)), fill=(*rgb, 235),
+                      width=max(1, round(1.7 * unit)))
 
 
 class RadarChartCanvas:

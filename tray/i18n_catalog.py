@@ -873,7 +873,7 @@ EN = {
     '{0} 小时后重置': 'resets in {0} h',
     '{0} 天后重置': 'resets in {0} d',
     '此决策没有额度恢复线记录': 'No quota-line record for this decision',
-    '每个表盘是一个额度窗口：指针是恢复线，转一圈是一个周期，到 12 点重置。弧是本期已花的额度，绿点是已恢复、还没花的额度。花在指针后面不计成本；越过指针的部分（红色）按 N = F − β·X/h 从该候选的柱子里扣掉。柱子上方的浅色部分是超出任务需要的能力，不计分。点击画面重播。': 'Each dial is a quota window: the hand is its recovery line, one turn is one period, and it resets at twelve. The arc is what this period has spent; green beads are quota that has recovered and is still unspent. Spend behind the hand is free; the part that passes the hand (red) is taken off that candidate\'s bar as N = F − β·X/h. The pale cap on a bar is ability beyond what the task needs, which does not count. Click to replay.',
+    '每条横轨是一个额度窗口：整条是本周期的额度，右端是重置。灰色是本期已花的额度，竖线是恢复线，随时间向右走；灰色和竖线之间的浅绿色是已恢复、还没花的额度。每个候选的花费画在它所用窗口的横轨下面：竖线左边不计成本，越过竖线的部分（红色）按 N = F − β·X/h 从同一行右侧的得分条里扣掉。得分条末端的浅色部分是超出任务需要的能力，不计分。点击画面重播。': 'Each track is a quota window: its whole length is this period\'s quota and its right end is the reset. Grey is what the period has spent; the vertical line is the recovery line, moving right as time passes; the pale green between them is quota that has recovered and is still unspent. Each candidate\'s spend is drawn under the track of the window it would use: left of the line it is free; the part that passes the line (red) is taken off the score bar in the same row as N = F − β·X/h. The pale end of a score bar is ability beyond what the task needs, which does not count. Click to replay.',
     '恢复线下还有 {0} 未用': '{0} recovered and unspent',
     '比恢复线多用了 {0}': '{0} ahead of its recovery line',
     '{0}：本期已用 {1} / {2}，{3}；{4}': '{0}: {1} of {2} used this period, {3}; {4}',

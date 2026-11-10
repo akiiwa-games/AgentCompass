@@ -550,7 +550,7 @@ def test_shapes_bloom_from_the_centre_without_overshoot_and_the_winner_lands_las
         assert path[-1] == pytest.approx(renderer.center)
 
 
-def test_ability_beyond_the_need_is_drawn_pale_and_the_need_is_a_quiet_outline():
+def test_ability_beyond_the_need_is_drawn_pale_and_the_need_is_a_tick_on_each_axis():
     from PIL import ImageChops
     source = fitted(result())
     renderer = dt.TheatreRenderer(dt.scene_from_result(source), 630, 600, 1.5)
@@ -569,12 +569,16 @@ def test_ability_beyond_the_need_is_drawn_pale_and_the_need_is_a_quiet_outline()
     assert ink(frame, inside) < ink(frame, beyond) - 25 and ink(frame, beyond) < paper - 12
     # Without a recorded need the same two spots are filled alike.
     assert abs(ink(flat, inside) - ink(flat, beyond)) < 25
-    # The need's outline is drawn along the axes that have a target, and only when one is recorded.
-    middle = tuple(round((a + b) / 2) for a, b in zip(at(1, .8), at(2, .8)))
-    box = (middle[0] - 3, middle[1] - 3, middle[0] + 4, middle[1] + 4)
+    # The need is a tick across each axis that has a target, drawn only when one is recorded.
+    need = renderer.need[1]
+    x, y = dt.radar.point(cx, cy, radius * need, 1, 5)
+    ax, ay = dt.radar.point(0, 0, 1, 1, 5)
+    off = dt.radar.NEED_TICK * renderer.s * .6                 # on the tick, clear of the spoke
+    spot = (round(x - ay * off), round(y + ax * off))
+    box = (spot[0] - 2, spot[1] - 2, spot[0] + 3, spot[1] + 3)
     darkest = lambda image: min(sum(p) for _, p in image.crop(box).getcolors(64))
     assert darkest(frame) < darkest(flat) - 60
-    # The counted fill of a settled shape is rasterized once, however long the film holds.
-    masks = {key: value for key, value in renderer.masks.items() if not isinstance(key, tuple)}
-    renderer.frame(dt.DURATION - .2); renderer.frame(dt.DURATION)
-    assert set(masks) == {0, 1} and all(renderer.masks[key] is value for key, value in masks.items())
+    # Fills are flat: within one tint the colour does not change with the distance from the centre.
+    near, far = at(2, .2), at(2, .45)
+    near, far = (near[0] - 7, near[1]), (far[0] - 7, far[1])
+    assert frame.getpixel(near) == frame.getpixel(far)

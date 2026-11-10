@@ -1,13 +1,14 @@
 """Quota-line view of one decision, told by motion instead of words.
 
-Each window is a clock face. One turn is one period, so the hand is the recovery line ℓ(t) = C·(t − t0)/L:
-it sweeps on the window's own clock and reaches twelve at the reset. Spend is an arc that grows from twelve.
-Behind the hand lie beads: quota that has recovered and is still unspent. Spend that stays behind the hand
-eats beads and costs nothing; spend that runs past the hand is drawn hot, and what it costs drains out of that
-candidate's bar at the same moment. Under every clock stand the candidates that would spend there: a bar is
-N = F − β·X/h, the pale cap above it is ability beyond the task's need (not counted), the red slice is the
-cost. Then the clocks run for the length of the task: tied candidates race, and beads the hand carries past
-twelve are lost unless the winner has eaten them first.
+Each window is a horizontal track whose length is the period's quota. Used quota fills it from the left. The
+recovery line ℓ(t) = C·(t − t0)/L is a marker that advances along the track on the window's own clock and
+reaches the right end at the reset, so "behind the line" and "past the line" are literally left and right of
+it. Between the fill and the marker lies quota that has recovered and is still unspent. Under every track,
+on the same scale, each candidate that would spend there lays its spend from the end of the fill: the part
+behind the line is free, the part past it turns red and drains that candidate's score bar, which stands in
+the same row: N = F − β·X/h, with the ability beyond the task's need cut off as a pale cap. Then the lines
+advance for the length of the task: tied candidates race, and free quota the line carries to the reset is
+lost unless the winner has spent it first.
 
 Everything shown is read from the decision snapshot; the page never re-plans or re-prices a candidate.
 It needs (names follow the quota-economy design, round 047):
@@ -19,7 +20,7 @@ It needs (names follow the quota-economy design, round 047):
                                decided_by ("N" | "earliest_expiry" | "faster" | "cheaper": the sort key that put this
                                row below the previous one)}
 
-Only geometry is derived here: the hand's angle (now − t0)/L, the arc lengths U/C and b·h/C, the bar ends F
+Only geometry is derived here: the line's place (now − t0)/L, the lengths U/C and b·h/C, the bar ends F
 and N, and the uncounted ability Σ demand·max(0, score − target) / Σ demand.
 The model and the renderer are plain Python + Pillow, so they are tested without a display.
 """
@@ -37,25 +38,25 @@ from radar_chart import clamp
 
 ROWS, WINDOWS = 6, 4
 # Story-time windows on the decision film's clock (decision_theatre): the view follows the film while it plays.
-PHASES = {"clock": (.35, 2.3),      # the faces appear; hands and spend wind up to now
-          "rise": (2.0, 3.1),       # bars grow to each candidate's whole ability
+PHASES = {"clock": (.35, 2.3),      # the tracks appear; each line and its window's spend run up to now
+          "rise": (2.0, 3.1),       # score bars grow to each candidate's whole ability
           "cap": (3.1, 3.9),        # ability beyond the task's need is cut off and left pale
-          "plan": (3.9, 6.2),       # each candidate's spend is laid on its clock; over-line spend drains its bar
-          "tie": (6.0, 6.5),        # equal N: a level joins the tied bars
-          "run": (6.5, 8.6),        # the clocks run for the task: tied candidates race, expiring quota is lost
+          "plan": (3.9, 6.2),       # each candidate's spend is laid under its track; over-line spend drains its bar
+          "tie": (6.0, 6.5),        # equal N: a line joins the ends of the tied bars
+          "run": (6.5, 8.6),        # the lines advance for the task: tied candidates race, expiring quota is lost
           "settle": (8.6, 9.35)}    # the winner is named
 FIRST, LAST = min(a for a, _ in PHASES.values()), max(b for _, b in PHASES.values())
-NOMINAL = (420, 372)      # layout size in 96-dpi pixels; a smaller canvas scales the whole view down
-MIN_HEIGHT = 226          # below this the view shrinks with the height too
+NOMINAL = (330, 200)      # layout size in 96-dpi pixels; a smaller canvas scales the whole view down
+MIN_HEIGHT = 190          # below this the view shrinks with the height too
+ROW_PITCH = 29.           # tallest a row gets: one per window track and one per candidate
+TILE_PAD = 4.             # how far a recovery line's handle may reach above the first block
 SUPERSAMPLE = 2
 BODY, SMALL = 12, 11      # px at 96 dpi: the tray's 9 pt body text is 12 px
 # Colour carries the legend. Quiet tones are the state of a window, saturated ones are this task.
 TRACK, USED, AHEAD, ASH = "#EDF1F6", "#B4C0D0", "#FDA4AF", "#D5DCE6"
-FREE, PLANNED, UNDER, OVER, BURNT = "#34D399", "#6EE7B7", theme.GREEN, theme.RED, "#FECACA"
+FREE, PLANNED, UNDER, OVER, BURNT = "#A7F3D0", "#34D399", theme.GREEN, theme.RED, "#FECACA"
 WINNER, SAME_MODEL, SAME_MODEL_QUIET, OTHER, OTHER_QUIET = theme.ACCENT, "#818CF8", "#A5B4FC", "#A3B1C6", "#C3CCD9"
-LANE, LANE_PITCH, LANE_ROOM = 3.2, 5., 17.    # thickness and pitch of a what-if spend arc; room they take outside the face
-PLOT, GAP = 176., 5.                          # tallest the bars get; gap between two bars
-QUIET_STEPS, BEATS = 8, 15                    # steps in which the losers recede; ticks per second of restless beads
+QUIET_STEPS, BEATS = 8, 15        # steps in which the losers recede; ticks per second of quota about to expire
 TIE_KEYS = ("earliest_expiry", "faster", "cheaper")
 AXES = ("divergence", "global_rigor", "module_precision", "vision_tools")
 
@@ -123,7 +124,7 @@ def model(result):
     recorded = block.get("windows") if isinstance(block, dict) else None
     if not isinstance(recorded, dict) or not recorded:
         return None
-    # Windows keep their recorded order, so replaying another decision does not shuffle the clocks.
+    # Windows keep their recorded order, so replaying another decision does not shuffle the tracks.
     keys = list(recorded)[:WINDOWS]
     rows = []
     for item in result.get("ranking") or []:
@@ -159,7 +160,7 @@ def model(result):
         row["window_label"] = next(window["label"] for window in shown if window["key"] == row["window"])
     raced = list(range(tied)) if tied > 1 else [winner]
     return dict(rows=rows, windows=shown, winner=winner, tied=tied if tied > 1 else 0, raced=raced,
-                # The clocks run for the longest of the raced candidates; a candidate without hours takes all of it.
+                # The task runs for the longest of the raced candidates; a candidate without hours takes all of it.
                 span=max([rows[index]["hours"] or 0. for index in raced]) or 1.,
                 top=max(row["fit"] + row["spare"] for row in rows) or 1.)
 
@@ -167,9 +168,10 @@ def model(result):
 class QuotaLineRenderer:
     """Draws the view at a story time; `frame(DURATION)` is the settled, static picture.
 
-    Everything that never moves (window names, clock faces, baselines) is drawn once into a base layer.
-    The picture is cut into tiles: per window one for its clock and one for its candidates, and one for the
-    winner's name. A frame redraws only the tiles whose state changed since the last one.
+    Everything that never moves (window names, empty tracks, the scores' zero line) is drawn once into a base
+    layer. Each window's block is cut into three tiles: its candidates' names, its track and spend lanes, and
+    its candidates' scores. A frame redraws only the tiles whose state changed since the last one; the margins
+    around the blocks belong to no tile and are never painted again.
     """
 
     def __init__(self, data, width, height, scale=1.):
@@ -187,55 +189,45 @@ class QuotaLineRenderer:
 
     # --- layout, in 96-dpi pixels -----------------------------------------------------------------
     def layout(self):
-        data, count = self.data, len(self.data["windows"])
-        self.cell = min(150., (self.right - 4) / count)
-        left = (self.right - self.cell * count) / 2
-        # The clocks are as large as the width allows, up to two fifths of the height.
-        self.radius = max(14., min(38., (self.cell - 6) / 2 - LANE_ROOM, (.4 * self.bottom - 6) / 2 - LANE_ROOM))
-        self.thick = max(4.5, self.radius * .26)
-        face = 2 * (self.radius + LANE_ROOM)
-        # Height the bars do not need opens the space the spend crosses, then the margins.
-        spare = max(0., self.bottom - (20 + face + 12 + PLOT + 36))
-        air = min(22., spare * .5)
-        self.name_y = 9. + (spare - air) * .5
-        self.cy = self.name_y + 11 + face / 2
-        self.plot_top = self.cy + face / 2 + 12 + air
-        self.base_y = self.bottom - 36 - (spare - air) * .5
-        self.strip_y = self.base_y + 5
-        self.pill_y = self.base_y + 21
-        self.columns = []
-        for index, window in enumerate(data["windows"]):
-            x0 = left + index * self.cell
-            rows = window["rows"]
-            width = max(4., min(15., (self.cell - 24 - GAP * (len(rows) - 1)) / max(1, len(rows))))
-            start = x0 + self.cell / 2 - (len(rows) * width + GAP * (len(rows) - 1)) / 2
-            self.columns.append(dict(window=window, x0=x0, x1=x0 + self.cell, cx=x0 + self.cell / 2,
-                                     bars={row: (start + slot * (width + GAP), start + slot * (width + GAP) + width)
-                                           for slot, row in enumerate(rows)},
-                                     pitch=min(LANE_PITCH, (LANE_ROOM - 2) / max(3, len(rows))),
-                                     beads=max(12, round(2 * math.pi * (self.radius - self.thick / 2) / 5.4))))
-        # Tile boxes in screen pixels; together they cover the canvas.
-        edges = [0] + [round(column["x1"] * self.s) for column in self.columns[:-1]] + [self.w]
-        strip = min(self.h, round(self.strip_y * self.s))
-        split = min(strip, round((self.cy + face / 2 + 6) * self.s))
+        data, windows = self.data, self.data["windows"]
+        count, lines = len(windows), len(windows) + len(data["rows"])
+        gap = min(12., max(3., self.bottom * .03))
+        self.pitch = min(ROW_PITCH, (self.bottom - 10 - gap * (count - 1)) / lines)
+        top = (self.bottom - self.pitch * lines - gap * (count - 1)) / 2
+        # Three columns: names, the windows' tracks (one USD scale per window), the candidates' scores.
+        self.gutter = max(76., min(88., self.right * .2))
+        self.tx0 = self.gutter + 6
+        self.tx1 = self.tx0 + (self.right - self.tx0 - 8) * .54
+        self.sx0, self.sx1 = self.tx1 + 20, self.right - 8
+        self.track_h = max(5., min(10., self.pitch * .4))
+        self.lane_h = max(3., min(5.5, self.pitch * .2))
+        self.bar_h = max(6., min(13., self.pitch * .5))
+        self.blocks, y = [], top
+        for window in windows:
+            rows = {row: y + self.pitch * (slot + 1.5) for slot, row in enumerate(window["rows"])}
+            self.blocks.append(dict(window=window, top=y, y=y + self.pitch / 2, rows=rows,
+                                    bottom=y + self.pitch * (1 + len(rows))))
+            y = self.blocks[-1]["bottom"] + gap
+        # Tile boxes in screen pixels: three columns, cut between the windows' blocks.
+        names = min(self.w, round((self.gutter + 1) * self.s))
+        split = min(self.w, round((self.tx1 + self.sx0) / 2 * self.s))
+        edges = ([max(0, math.floor((top - TILE_PAD) * self.s))]
+                 + [min(self.h, round((a["bottom"] + b["top"]) / 2 * self.s)) for a, b in zip(self.blocks, self.blocks[1:])]
+                 + [min(self.h, math.ceil((self.blocks[-1]["bottom"] + TILE_PAD) * self.s))])
         for index in range(count):
-            self.tiles[index, "clock"] = (edges[index], 0, edges[index + 1], split)
-            self.tiles[index, "bars"] = (edges[index], split, edges[index + 1], strip)
-        self.tiles["winner"] = (0, strip, self.w, self.h)
-        # A hand moves in steps of one drawn pixel at its tip: a window that barely moves is barely repainted.
-        self.hand_steps = max(1, round(2 * math.pi * (self.radius + LANE_ROOM) * self.s * self.k))
+            self.tiles[index, "names"] = (0, edges[index], names, edges[index + 1])
+            self.tiles[index, "track"] = (names, edges[index], split, edges[index + 1])
+            self.tiles[index, "bars"] = (split, edges[index], self.w, edges[index + 1])
+        # A recovery line moves in steps of one drawn pixel: a window that barely moves is barely repainted.
+        self.mark_steps = max(1, round((self.tx1 - self.tx0) * self.s * self.k))
 
-    def level(self, value):
-        return self.base_y - (self.base_y - self.plot_top) * clamp(value / self.data["top"])
+    def tx(self, fraction):
+        """Where a fraction of a window's capacity lies on its track."""
+        return self.tx0 + (self.tx1 - self.tx0) * clamp(fraction)
 
-    def on_face(self, column, fraction, radius):
-        """A point on a window's clock: `fraction` of a turn clockwise from twelve."""
-        angle = 2 * math.pi * fraction - math.pi / 2
-        return column["cx"] + radius * math.cos(angle), self.cy + radius * math.sin(angle)
-
-    def lane_radius(self, column, row):
-        """Outer radius of the what-if spend arc of a candidate, just outside its window's face."""
-        return self.radius + 2 + LANE + column["window"]["rows"].index(row) * column["pitch"]
+    def sx(self, value):
+        """Where a score lies on the scores' common scale."""
+        return self.sx0 + (self.sx1 - self.sx0) * clamp(value / self.data["top"])
 
     # --- drawing helpers: coordinates are 96-dpi pixels, converted once here -------------------
     def p(self, value):
@@ -256,23 +248,22 @@ class QuotaLineRenderer:
                 value = value[:-1]
             value += "…"
         self.draw.text((self.X(x), self.Y(y)), value, font=f, anchor=anchor,
-                       fill=(*ImageColor.getrgb(color), round(255 * clamp(alpha))))
+                       fill=self.ink(color, alpha))
         return f.getlength(value) / (self.s * self.k)
-
-    def width(self, value, size, bold=False):
-        return font(round(size * self.s * self.k), bold).getlength(str(value)) / (self.s * self.k)
 
     def ink(self, color, alpha=1.):
         rgb = ImageColor.getrgb(color) if isinstance(color, str) else color
         return (*rgb, round(255 * clamp(alpha)))
 
-    def box(self, x0, y0, x1, y1, color, alpha=1., round_top=0.):
-        if x1 - x0 <= 0 or y1 - y0 <= .05 or alpha <= .01:
+    def box(self, x0, y0, x1, y1, color, alpha=1., radius=0., left=True, right=True):
+        """A filled bar; `radius` rounds its left and/or right end."""
+        if x1 - x0 <= .05 or y1 - y0 <= .05 or alpha <= .01:
             return
         xy = (self.X(x0), self.Y(y0), self.X(x1), self.Y(y1))
-        radius = min(self.p(round_top), (xy[2] - xy[0]) / 2, xy[3] - xy[1])
-        if radius >= 1:
-            self.draw.rounded_rectangle(xy, radius=radius, fill=self.ink(color, alpha), corners=(True, True, False, False))
+        # Pillow cannot round one end only when the radius takes the whole height or width.
+        radius = math.floor(min(self.p(radius), (xy[2] - xy[0]) / 2 - 1, (xy[3] - xy[1]) / 2 - 1))
+        if radius >= 1 and (left or right):
+            self.draw.rounded_rectangle(xy, radius=radius, fill=self.ink(color, alpha), corners=(left, right, right, left))
         else:
             self.draw.rectangle(xy, fill=self.ink(color, alpha))
 
@@ -299,15 +290,6 @@ class QuotaLineRenderer:
         x, y, r = self.X(x), self.Y(y), self.p(radius)
         self.draw.ellipse((x - r, y - r, x + r, y + r), fill=self.ink(color, alpha))
 
-    def arc(self, column, outer, thick, start, end, color, alpha=1.):
-        """Part of a ring around a window's centre, from `start` to `end` turns clockwise from twelve."""
-        start, end = max(0., start), min(1., end)
-        if end - start <= 1e-4 or alpha <= .01:
-            return
-        x, y, r = self.X(column["cx"]), self.Y(self.cy), self.p(outer)
-        self.draw.arc((x - r, y - r, x + r, y + r), 360 * start - 90, 360 * end - 90, fill=self.ink(color, alpha),
-                      width=max(1, round(self.p(thick))))
-
     def canvas(self):
         image = Image.new("RGB", (self.w * self.k, self.h * self.k), theme.CARD)
         self.draw = ImageDraw.Draw(image, "RGBA")
@@ -322,10 +304,18 @@ class QuotaLineRenderer:
 
     def static(self):
         image = self.canvas()
-        for column in self.columns:
-            window = column["window"]
-            self.text(window["label"], column["cx"], self.name_y, SMALL, theme.TEXT, True, anchor="mm", limit=self.cell - 6)
-            self.rule((column["x0"] + 9, self.base_y + .5), (column["x1"] - 9, self.base_y + .5), theme.BORDER, 1.)
+        half = self.track_h / 2
+        for block in self.blocks:
+            window, y = block["window"], block["y"]
+            self.text(window["label"], 6, y, SMALL, theme.TEXT, True, limit=self.gutter - 6)
+            # The whole track is the period's quota; its right end is the reset.
+            self.box(self.tx0, y - half, self.tx1, y + half, TRACK, radius=2.)
+            if window["period"]:
+                self.rule((self.tx1, y - half - 3), (self.tx1, y + half + 3), theme.FAINT, 1.6)
+            if block["rows"]:
+                ys = list(block["rows"].values())
+                self.rule((self.sx0 - .5, ys[0] - self.bar_h / 2 - 2), (self.sx0 - .5, ys[-1] + self.bar_h / 2 + 2),
+                          theme.BORDER, 1.)
         return image
 
     # --- state: one value per moving thing, shared by the painters and the redraw test ---------------
@@ -335,13 +325,13 @@ class QuotaLineRenderer:
         wound, run, settled = phase(story, "clock"), lin(story, "run"), phase(story, "settle")
         cut, joined = phase(story, "cap"), phase(story, "tie")
         cool = phase(story, "tie")
-        # The losers recede in a few steps and restless beads tick: neither needs a repaint on every frame.
+        # The losers recede in a few steps and expiring quota ticks: neither needs a repaint on every frame.
         out = dict(story=story, wound=wound, run=run, settled=settled, cut=cut, joined=joined, rows=[],
                    quiet=round(settled * QUIET_STEPS) / QUIET_STEPS, beat=math.floor(story * BEATS) / BEATS)
         for index, row in enumerate(rows):
             grown = ease(staggered(lin(story, "rise"), index, count, .18))
             laid = staggered(lin(story, "plan"), index, count, .32)
-            drawn = ease((laid - .2) / .8)                                    # share of the spend arc that is laid
+            drawn = ease(laid)                                                # share of the spend that is laid
             red = max(0., drawn * row["spend"] - (row["spend"] - row["over"]))  # USD of it that are over the line
             paid = red / row["over"] if row["over"] > 0 else 0.
             hours = row["hours"] or data["span"]
@@ -353,16 +343,16 @@ class QuotaLineRenderer:
                                     heat=(1 - cool) if paid > 0 else 0.))
         return out
 
-    def window_state(self, column, state):
-        """Where a window's hand and spend stand, in turns."""
-        window, data = column["window"], self.data
+    def window_state(self, block, state):
+        """Where a window's recovery line and spend stand, as fractions of its capacity."""
+        window, data = block["window"], self.data
         capacity = window["capacity"] or 1.
         used = clamp(window["used"] / capacity)
-        hand, resets = window["at"], False
+        mark, resets = window["at"], False
         if window["period"]:
-            hand = min(1., window["at"] + state["run"] * data["span"] / window["period"])
+            mark = min(1., window["at"] + state["run"] * data["span"] / window["period"])
             if 0 < state["run"] < 1:
-                hand = max(window["at"], math.floor(hand * self.hand_steps) / self.hand_steps)
+                mark = max(window["at"], math.floor(mark * self.mark_steps) / self.mark_steps)
             resets = window["reset"] <= data["span"] * (1 + 1e-6)
         winner = data["rows"][data["winner"]]
         eaten = spent = 0.
@@ -370,30 +360,32 @@ class QuotaLineRenderer:
             done = state["rows"][data["winner"]]["done"]
             spent = clamp(done * winner["spend"] / capacity)
             eaten = clamp(min(done * winner["spend"], winner["spend"] - winner["over"]) / capacity)
-        return dict(used=used * state["wound"], hand=hand * state["wound"], resets=resets, eaten=eaten, spent=spent,
+        return dict(used=used * state["wound"], mark=mark * state["wound"], resets=resets, eaten=eaten, spent=spent,
                     lost=ease((state["run"] - .8) / .2) if resets else 0.)
 
     def key(self, name, state):
         """What a tile shows: equal keys mean an identical tile, so it is not painted again."""
         data = self.data
-        if name == "winner":
-            return (state["settled"],)
-        column, part = self.columns[name[0]], name[1]
-        rows = [state["rows"][row] for row in column["window"]["rows"]]
+        block, part = self.blocks[name[0]], name[1]
+        ids = list(block["rows"])
+        rows = [state["rows"][row] for row in ids]
+        # A drain in flight crosses from the spend lane to the score and moves with the clock itself.
+        flying = any(0 < row["paid"] < 1 for row in rows)
+        named = state["settled"] if data["winner"] in ids else 0.
+        if part == "names":
+            return (min(1., state["wound"] * 3), state["quiet"], named)
         if part == "bars":
-            spare = any(data["rows"][row]["spare"] > 0 for row in column["window"]["rows"])
-            # A spend leaving its bar and a drain falling onto it are in flight over this tile.
-            flying = any(0 < row["laid"] < .2 or 0 < row["paid"] < 1 for row in rows)
-            return (state["cut"] if spare else 0., state["joined"] if data["tied"] else 0., state["quiet"],
+            spare = any(data["rows"][row]["spare"] > 0 for row in ids)
+            tied = data["tied"] and any(row < data["tied"] for row in ids)
+            return (state["cut"] if spare else 0., state["joined"] if tied else 0., state["quiet"], named,
                     tuple((row["grown"], row["paid"], row["done"], row["won"], row["heat"]) for row in rows),
                     state["story"] if flying else None)
-        flying = any(0 < row["laid"] < 1 for row in rows)
-        face = self.window_state(column, state)
+        face = self.window_state(block, state)
         laid = any(row["laid"] > 0 for row in rows)
-        # Beads about to be lost are restless until the reset takes them.
+        # Quota about to expire is restless until the reset takes it.
         restless = face["resets"] and state["wound"] >= 1 and face["lost"] < 1 and state["story"] < PHASES["run"][1]
-        return (state["wound"], face["hand"], face["eaten"], face["spent"], face["lost"], state["quiet"] if laid else 0.,
-                tuple((row["laid"], row["done"]) for row in rows),
+        return (state["wound"], face["mark"], face["eaten"], face["spent"], face["lost"], state["quiet"] if laid else 0.,
+                named, tuple((row["laid"], row["done"]) for row in rows),
                 state["story"] if flying else state["beat"] if restless else None)
 
     # --- frame -------------------------------------------------------------------------------------
@@ -411,10 +403,7 @@ class QuotaLineRenderer:
             self.repaints += 1
             tile = self.base.crop((x0 * k, y0 * k, x1 * k, y1 * k))
             self.draw, self.ox, self.oy = ImageDraw.Draw(tile, "RGBA"), x0 * k, y0 * k
-            if name == "winner":
-                self.winner(state)
-            else:
-                self.column(self.columns[name[0]], state, name[1])
+            self.block(self.blocks[name[0]], state, name[1])
             self.live.paste(tile.reduce(k), (x0, y0))
             changed.append(name)
         self.ox = self.oy = 0
@@ -424,70 +413,67 @@ class QuotaLineRenderer:
         self.advance(story)
         return self.live.copy()
 
-    # --- one window: its clock, then its candidates ---------------------------------------------------
-    def column(self, column, state, part):
-        if part == "clock":
-            self.clock(column, state, self.window_state(column, state))
-        else:
-            self.level_line(column, state)
-        for row in column["window"]["rows"]:
-            if part == "bars":
-                self.bar(column, row, state)
-            self.spend(column, row, state, part == "clock")
+    # --- one window: its candidates' names, its track and their spend lanes, their scores ---------------
+    def block(self, block, state, part):
+        data = self.data
+        if data["winner"] in block["rows"] and state["settled"] > 0:
+            # The winner's row, across both columns: its name is the one that lights up.
+            y, half = block["rows"][data["winner"]], min(self.pitch / 2 - 1, self.bar_h / 2 + 5)
+            self.box(3, y - half, self.right - 3, y + half, theme.ACCENT_SOFT, state["settled"], radius=6.)
+        if part == "track":
+            self.track(block, state, self.window_state(block, state))
+        elif part == "bars":
+            self.level_line(block, state)
+        for row in block["rows"]:
+            if part == "names":
+                self.name(block, row, state)
+                continue
+            if part == "track":
+                self.lane(block, row, state)
+            else:
+                self.score(block, row, state)
+            self.drain(block, row, state)
 
-    def clock(self, column, state, face):
-        window, shown = column["window"], state["wound"]
+    def track(self, block, state, face):
+        window, shown = block["window"], state["wound"]
         if shown <= 0:
             return
-        radius, thick, story = self.radius, self.thick, state["beat"]
-        self.arc(column, radius, thick, 0., 1., TRACK, min(1., shown * 3))
-        used, hand = face["used"], face["hand"]
-        # Spend behind the hand is quiet; spend that ran past the hand is the window's debt.
-        self.arc(column, radius, thick, 0., min(used, hand), USED)
-        self.arc(column, radius, thick, hand, used, AHEAD)
-        # The winner's own spend, once the clocks run: it eats beads, or runs hot past the hand.
-        self.arc(column, radius, thick, used, used + face["eaten"], UNDER)
-        self.arc(column, radius, thick, used + face["eaten"], used + face["spent"], OVER)
-        front, mid = used + face["spent"], radius - thick / 2
-        size = min(2.1, thick * .3)
-        for bead in range(column["beads"]):
-            at = (bead + .5) / column["beads"]
-            if not front < at < hand:
-                continue
-            if face["resets"]:
-                # About to be lost: restless while the hand closes on twelve, then gone with the reset.
-                flicker = .62 + .38 * math.sin(story * 8.5 + bead * 1.9) if story < PHASES["run"][1] else 1.
-                lost = face["lost"]
-                self.dot(*self.on_face(column, at, mid), size, ASH, lost)
-                self.dot(*self.on_face(column, at, mid + 10 * lost), size * (1 - .4 * lost), FREE, flicker * (1 - lost))
-            else:
-                self.dot(*self.on_face(column, at, mid), size, FREE)
-        # Twelve o'clock is the reset: a fixed notch the hand closes on.
+        y, half, x = block["y"], self.track_h / 2, self.tx
+        used, mark = face["used"], face["mark"]
+        front = used + face["spent"]
+        if window["period"] and mark > front:
+            # Recovered and not spent: free to use, and gone at the reset.
+            lost, calm = face["lost"], 1.
+            if face["resets"] and state["story"] < PHASES["run"][1]:
+                calm = .62 + .38 * math.sin(state["beat"] * 8.5)       # restless while the line closes on the reset
+            thin = half * (1 - .55 * lost)
+            self.box(x(front), y - thin, x(mark), y + thin, mix(FREE, ASH, lost), calm * (1 - .45 * lost))
+        if block["rows"]:
+            # Where this window's spend stands: every candidate's spend starts under this point.
+            low = max(block["rows"].values()) + self.lane_h / 2 + 2
+            self.rule((x(used), y + half + 1), (x(used), low), theme.FAINT, 1., min(1., shown * 3) * .55, dash=(1.5, 2.5))
+        # Spend behind the line is quiet; spend that ran past the line is the window's debt.
+        self.box(x(0.), y - half, x(min(used, mark)), y + half, USED, radius=2., right=False)
+        self.box(x(mark), y - half, x(used), y + half, AHEAD)
+        # The winner's own spend, once the task runs: it takes the free quota, or runs hot past the line.
+        self.box(x(used), y - half, x(used + face["eaten"]), y + half, UNDER)
+        self.box(x(used + face["eaten"]), y - half, x(front), y + half, OVER)
         if window["period"]:
-            self.rule(self.on_face(column, 0., radius - thick - 2.5), self.on_face(column, 0., radius + 2.5), theme.FAINT, 1.6,
-                      min(1., shown * 3))
-        seen = min(1., shown * 3)
-        self.rule(self.on_face(column, hand, radius + 2), self.on_face(column, hand, radius + LANE_ROOM - 2), theme.MUTED, 1., seen * .7)
-        self.rule((column["cx"], self.cy), self.on_face(column, hand, radius + 2), theme.INK, 1.9, seen)
-        self.dot(*self.on_face(column, hand, radius + 2), .95, theme.INK, seen)
-        self.dot(column["cx"], self.cy, 2.6, theme.INK, seen)
-        self.dot(column["cx"], self.cy, 1., theme.CARD, seen)
+            # The recovery line: it advances with the clock and crosses the spends planned on this window.
+            seen, at = min(1., shown * 3), x(mark)
+            low = max(block["rows"].values()) + self.lane_h / 2 + 2 if block["rows"] else y + half + 3
+            self.rule((at, y + half + 1), (at, low), theme.INK, 1., seen * .28)
+            self.rule((at, y - half - 3), (at, y + half + 2), theme.INK, 1.8, seen)
+            self.draw.polygon([(self.X(at - 3.4), self.Y(y - half - 7)), (self.X(at + 3.4), self.Y(y - half - 7)),
+                               (self.X(at), self.Y(y - half - 2))], fill=self.ink(theme.INK, seen))
 
-    def level_line(self, column, state):
-        """Equal N: one level across the tied bars, wherever their windows stand."""
-        data, joined = self.data, state["joined"]
-        if not data["tied"] or joined <= 0:
-            return
-        ends = []
-        for index in range(data["tied"]):
-            owner = next(c for c in self.columns if index in c["bars"])
-            ends += owner["bars"][index]
-        left, right = min(ends) - 5, max(ends) + 5
-        right = left + (right - left) * joined
-        y = self.level(data["rows"][0]["score"])
-        if min(column["x1"], right) > max(column["x0"], left):
-            self.rule((max(column["x0"], left), y), (min(column["x1"], right), y), theme.INK, 1.,
-                      .75 - .3 * state["quiet"], dash=(2.5, 2.5))
+    def name(self, block, row, state):
+        data, item = self.data, self.data["rows"][row]
+        shown = min(1., state["wound"] * 3)
+        won = state["settled"] if row == data["winner"] else 0.
+        quiet = state["quiet"] if row != data["winner"] else 0.
+        self.text(item["name"], 12, block["rows"][row], SMALL, mix(theme.MUTED, theme.ACCENT, won), won >= .5,
+                  limit=self.gutter - 12, alpha=shown * (1 - .35 * quiet))
 
     def tone(self, row, state):
         data, settled = self.data, state["quiet"]
@@ -502,81 +488,79 @@ class QuotaLineRenderer:
         cost = max(0., item["fit"] - item["score"])
         return item["fit"] - cost * state["rows"][row]["paid"], item["fit"], item["fit"] + item["spare"]
 
-    def bar(self, column, row, state):
-        data, item, live = self.data, self.data["rows"][row], state["rows"][row]
-        x0, x1 = column["bars"][row]
-        middle = (x0 + x1) / 2
-        settled, color = state["quiet"], self.tone(row, state)
-        grown = live["grown"]
-        solid, fit, whole = self.heights(row, state)
-        if grown > 0:
-            cut = state["cut"]
-            top, edge = self.level(whole * grown), self.level(min(fit, whole * grown))
-            if item["spare"] > 0 and top < edge:
-                # Ability beyond the need: cut off with a surface gap and left pale. It does not count.
-                self.box(x0, top, x1, edge - 1.6 * cut, color, 1 - .8 * cut, round_top=3.5)
-            if live["paid"] > 0:
-                # What over-line spend costs: hot while it drains, then a pale scar.
-                self.box(x0, edge, x1, self.level(solid) - 1.2, mix(BURNT, OVER, live["heat"]), .55 + .45 * live["heat"],
-                         round_top=0 if item["spare"] > 0 else 3.5)
-            self.box(x0, self.level(min(solid, whole * grown)), x1, self.base_y, color,
-                     round_top=3.5 if cut > 0 or item["spare"] <= 0 or live["paid"] > 0 else 0)
-            if data["tied"] and live["done"] > 0 and row in data["raced"]:
-                # The race, where the tie is: equal bars fill at each candidate's own speed.
-                strength = 1. if row == data["winner"] else .5 * (1 - settled)
-                self.box(x0, self.level(solid * live["done"]), x1, self.base_y, mix(SAME_MODEL, WINNER, 1.), strength,
-                         round_top=3.5 if live["done"] >= 1 else 0)
-            if item["fast"] and grown >= 1 and x1 - x0 >= 7:
-                self.chevrons(middle, self.base_y - 9, min(3.2, (x1 - x0) * .2))
-
-    def spend(self, column, row, state, arcs):
-        """This candidate's spend on its window's clock. Without `arcs`, only what is in flight to or from its bar."""
-        data, item, live = self.data, self.data["rows"][row], state["rows"][row]
-        window, settled = column["window"], state["quiet"]
-        laid = live["laid"]
-        if laid <= 0 or window["capacity"] <= 0 or not (arcs or laid < 1):
-            return
-        x0, x1 = column["bars"][row]
-        middle, color = (x0 + x1) / 2, self.tone(row, state)
-        solid, fit, whole = self.heights(row, state)
+    def spend(self, block, row):
+        """Where a candidate's spend would lie on its window's track: (start, end of the free part, end)."""
+        item, window = self.data["rows"][row], block["window"]
         capacity = window["capacity"]
-        outer = self.lane_radius(column, row)
+        if capacity <= 0:
+            return None
         start = clamp(window["used"] / capacity)
-        under, total = (item["spend"] - item["over"]) / capacity, item["spend"] / capacity
-        tip = self.level(whole) - 3
-        entry = self.on_face(column, start, outer - LANE / 2)
-        if laid < .2:
-            # The spend leaves its bar for the clock.
-            u = ease(laid / .2)
-            self.dot(*self.curve((middle, tip), entry, u), 2.2, color)
-            return
-        drawn = live["drawn"] * total
-        # A raced candidate's planned arc turns solid as its run progresses; the winner's moves onto the face.
-        merged = live["done"] if row == data["winner"] else 0.
-        solid_part = live["done"] * total if row != data["winner"] else 0.
-        fade = (1 - merged) * (1 - .45 * settled * (row != data["winner"]))
-        head = self.on_face(column, min(1., start + drawn), outer - LANE / 2)
-        if arcs:
-            self.arc(column, outer, LANE, start, start + min(drawn, under), PLANNED, fade)
-            self.arc(column, outer, LANE, start, start + min(solid_part, under) * (1 - settled), UNDER, fade)
-            self.arc(column, outer, LANE, start + under, start + drawn, OVER, fade)
-            if laid < 1:
-                self.dot(*head, 2., OVER if drawn > under else UNDER)
-            elif 0 < live["done"] < 1 and row != data["winner"]:
-                self.dot(*self.on_face(column, min(1., start + solid_part), outer - LANE / 2), 2., UNDER)
-        if 0 < live["paid"] < 1:
-            # Simultaneous cause and effect: over-line spend falls from the arc and takes the bar's top with it.
-            target = (middle, self.level(solid))
-            for speck in range(5):
-                u = (state["story"] * 2.4 + speck / 5) % 1
-                self.dot(*self.curve(head, target, u), 1.7 - .5 * u, OVER, math.sin(math.pi * u) ** .6)
+        return start, start + (item["spend"] - item["over"]) / capacity, start + item["spend"] / capacity
 
-    def curve(self, start, end, u):
-        """A point on the gentle arc between a bar's top and its clock."""
-        bend = (start[0] + (end[0] - start[0]) * .5 + (end[1] - start[1]) * .12, (start[1] + end[1]) / 2)
-        a = (lerp(start[0], bend[0], u), lerp(start[1], bend[1], u))
-        b = (lerp(bend[0], end[0], u), lerp(bend[1], end[1], u))
-        return lerp(a[0], b[0], u), lerp(a[1], b[1], u)
+    def lane(self, block, row, state):
+        """What this candidate would spend, laid under its window's track on the same scale."""
+        data, live, span = self.data, state["rows"][row], self.spend(block, row)
+        if live["laid"] <= 0 or span is None:
+            return
+        start, free, end = span
+        head = start + live["drawn"] * (end - start)
+        y, half, x = block["rows"][row], self.lane_h / 2, self.tx
+        # The winner's lane moves onto the track as it runs; the others fade once the winner is named.
+        fade = (1 - live["done"]) if row == data["winner"] else 1 - .5 * state["quiet"]
+        self.box(x(start), y - half, x(min(head, free)), y + half, PLANNED, fade, radius=half, right=head <= free)
+        self.box(x(free), y - half, x(head), y + half, OVER, fade, radius=half, left=False)
+        if live["laid"] < 1:
+            self.dot(x(head), y, half + 1.1, OVER if head > free else UNDER)
+
+    def score(self, block, row, state):
+        data, item, live = self.data, self.data["rows"][row], state["rows"][row]
+        grown = live["grown"]
+        if grown <= 0:
+            return
+        y, half, x = block["rows"][row], self.bar_h / 2, self.sx
+        color, cut = self.tone(row, state), state["cut"]
+        solid, fit, whole = self.heights(row, state)
+        end, edge = x(whole * grown), x(min(fit, whole * grown))
+        if item["spare"] > 0 and end > edge:
+            # Ability beyond the need: cut off with a surface gap and left pale. It does not count.
+            self.box(edge + 1.6 * cut, y - half, end, y + half, color, 1 - .8 * cut, radius=3., left=False)
+        if live["paid"] > 0:
+            # What over-line spend costs: hot while it drains, then a pale scar.
+            self.box(x(solid) + 1.2, y - half, edge, y + half, mix(BURNT, OVER, live["heat"]), .55 + .45 * live["heat"],
+                     radius=3., left=False, right=item["spare"] <= 0)
+        self.box(self.sx0, y - half, x(min(solid, whole * grown)), y + half, color, radius=3., left=False,
+                 right=cut > 0 or item["spare"] <= 0 or live["paid"] > 0)
+        if data["tied"] and live["done"] > 0 and row in data["raced"]:
+            # The race, where the tie is: equal bars fill at each candidate's own speed.
+            strength = 1. if row == data["winner"] else .5 * (1 - state["quiet"])
+            self.box(self.sx0, y - half, x(solid * live["done"]), y + half, WINNER, strength, radius=3., left=False,
+                     right=live["done"] >= 1)
+        if item["fast"] and grown >= 1 and self.bar_h >= 7:
+            self.chevrons(self.sx0 + 8, y, min(3.2, self.bar_h * .27))
+
+    def drain(self, block, row, state):
+        """Simultaneous cause and effect: over-line spend leaves the lane and takes the end of the score with it."""
+        live, span = state["rows"][row], self.spend(block, row)
+        if not 0 < live["paid"] < 1 or span is None:
+            return
+        start, free, end = span
+        y = block["rows"][row]
+        x0, x1 = self.tx(start + live["drawn"] * (end - start)), self.sx(self.heights(row, state)[0])
+        for speck in range(5):
+            u = (state["story"] * 2.4 + speck / 5) % 1
+            lift = math.sin(math.pi * u)
+            self.dot(lerp(x0, x1, u), y - (self.bar_h / 2 + 3) * lift, 1.7 - .5 * u, OVER, lift ** .6)
+
+    def level_line(self, block, state):
+        """Equal N: one line down the ends of the tied bars, whichever windows they spend from."""
+        data, joined = self.data, state["joined"]
+        if not data["tied"] or joined <= 0:
+            return
+        ys = sorted(y for owner in self.blocks for row, y in owner["rows"].items() if row < data["tied"])
+        reach = min(self.bar_h / 2 + 4, self.pitch / 2)          # stays inside the tiles of the tied rows' windows
+        top, bottom = ys[0] - reach, ys[-1] + reach
+        at = self.sx(data["rows"][0]["score"])
+        self.rule((at, top), (at, top + (bottom - top) * joined), theme.INK, 1., .75 - .3 * state["quiet"], dash=(2.5, 2.5))
 
     def chevrons(self, x, y, size):
         """Fast mode: » on the bar."""
@@ -585,44 +569,23 @@ class QuotaLineRenderer:
                       (self.X(x + shift - size * .45), self.Y(y + size))]
             self.draw.line(points, fill=(255, 255, 255, 235), width=max(1, round(self.p(1.25))), joint="curve")
 
-    # --- the winner's name, under its bar ----------------------------------------------------------------
-    def winner(self, state):
-        shown = state["settled"]
-        if shown <= 0:
-            return
-        data = self.data
-        row = data["rows"][data["winner"]]
-        column = next(c for c in self.columns if data["winner"] in c["bars"])
-        x0, x1 = column["bars"][data["winner"]]
-        middle = (x0 + x1) / 2
-        limit = self.right - 28
-        width = min(limit, self.width(row["label"], BODY, True)) + 20
-        left = min(max(4., middle - width / 2), self.right - 4 - width)
-        y = self.pill_y + 4 * (1 - shown)
-        top = self.strip_y + 3
-        xy = (self.X(left), self.Y(y - 11), self.X(left + width), self.Y(y + 11))
-        self.draw.polygon([(self.X(middle - 5), self.Y(y - 10.5)), (self.X(middle), self.Y(top)),
-                           (self.X(middle + 5), self.Y(y - 10.5))], fill=self.ink(theme.ACCENT_SOFT, shown))
-        self.draw.rounded_rectangle(xy, radius=self.p(8), fill=self.ink(theme.ACCENT_SOFT, shown))
-        self.text(row["label"], left + width / 2, y - .5, BODY, theme.ACCENT, True, anchor="mm", limit=limit, alpha=shown)
-
     # --- hover text, for the page ---------------------------------------------------------------------------
     def tip_at(self, x, y):
-        """What the mark under a screen point stands for, in words; '' over empty paper."""
+        """What the row under a screen point stands for, in words; '' over empty paper."""
         if not self.data:
             return ""
         x, y = x / self.s, y / self.s
-        for column in self.columns:
-            window = column["window"]
-            if math.hypot(x - column["cx"], y - self.cy) <= self.radius + LANE_ROOM:
+        for block in self.blocks:
+            window = block["window"]
+            if abs(y - block["y"]) <= self.pitch / 2:
                 gap = window["line"] - window["used"]
                 state = (_tr("恢复线下还有 {0} 未用").format(usd(gap)) if gap >= 0
                          else _tr("比恢复线多用了 {0}").format(usd(-gap)))
                 return _tr("{0}：本期已用 {1} / {2}，{3}；{4}").format(
                     window["label"], usd(window["used"]), usd(window["capacity"]), reset_text(window["reset"]), state)
-            for row, (x0, x1) in column["bars"].items():
-                item = self.data["rows"][row]
-                if x0 - 3 <= x <= x1 + 3 and self.level(item["fit"] + item["spare"]) - 3 <= y <= self.base_y + 3:
+            for row, at in block["rows"].items():
+                if abs(y - at) <= self.pitch / 2:
+                    item = self.data["rows"][row]
                     cost = max(0., item["fit"] - item["score"])
                     spend = (_tr("花费 {0}，其中 {1} 越线").format(usd(item["spend"]), usd(item["over"])) if item["over"] > 0
                              else _tr("花费 {0}，全部在线下").format(usd(item["spend"])))
@@ -700,6 +663,8 @@ class QuotaLineCanvas:
             held = self.strips.get(name)
             if held is not None and (held[0].width(), held[0].height()) == strip.size:
                 held[0].paste(strip)
+                # Another decision cuts its tiles elsewhere: a strip of the same size may belong at a new place.
+                self.canvas.coords(held[1], box[0], box[1])
                 self.canvas.itemconfigure(held[1], state="normal")
             else:
                 if held is not None:

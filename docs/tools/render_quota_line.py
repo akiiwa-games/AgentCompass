@@ -1,11 +1,11 @@
 """Render docs/quota-line.gif off-screen: the Decision Compass "Quota line" tab replaying two synthetic decisions.
 
-    python docs/tools/render_quota_line.py [--scale 1.5] [--fps 20] [--speed 1.0] [--check-dir DIR]
+    python docs/tools/render_quota_line.py [--scale 1.5] [--fps 20] [--speed 1.6] [--check-dir DIR]
 
 The same task is routed twice. First while Claude A is ahead of its recovery line: that window is spared and
 the task runs on the account that is under its line. Then two hours before Claude A resets with 40% left:
-the quota that would expire is spent first, in fast mode. The picture explains itself by motion (clock hands,
-arcs, beads, bars); its only words are the window names and the winner. The real page is opened on a private
+the quota that would expire is spent first, in fast mode. The picture explains itself by motion (tracks that
+fill, a recovery line that advances, spend that drains a score); its only words are window and model names. The real page is opened on a private
 desktop by render_ui_screenshots.py; each frame pastes the view's own renderer output into its canvas rectangle
 and is cropped to the list card. Composites are checked against real PrintWindow captures before the GIF is
 written. The GIF opens on the settled second decision, so a viewer without autoplay still sees a whole picture.
@@ -21,7 +21,7 @@ import render_hero as hero
 import render_ui_screenshots as shots
 
 OUTPUT = shots.ROOT / "docs" / "quota-line.gif"
-POSTER_MS, LEAD_MS, HOLD_MS = 1300, 500, 2600      # the opening still, the bare view before a replay, its settled result
+POSTER_MS, LEAD_MS, HOLD_MS = 800, 400, 1700      # the opening still, the bare view before a replay, its settled result
 CHECKS = (0., 1.4, 3.5, 5.2, 7.6, 9.9)             # story times compared against the real window
 
 
@@ -96,7 +96,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--scale", type=float, default=1.5, help="display scale; 1.5 gives a ~630 px wide card")
     parser.add_argument("--fps", type=int, default=20)
-    parser.add_argument("--speed", type=float, default=1.0, help="story seconds per second of film")
+    parser.add_argument("--speed", type=float, default=1.6, help="story seconds per second of film")
     parser.add_argument("--check-dir", type=Path, help="also save the real/composite check captures here")
     args = parser.parse_args()
     import ui_theme

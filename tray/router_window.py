@@ -1262,9 +1262,9 @@ class Panel:
         self.quota_line = quota_line.QuotaLineCanvas(self.quota_frame)
         self.quota_line.canvas.pack(fill="both", expand=True)
         self.attach_quota_tooltip(self.quota_line, _tr(
-            "每个表盘是一个额度窗口：指针是恢复线，转一圈是一个周期，到 12 点重置。弧是本期已花的额度，绿点是已恢复、还没花的额度。"
-            "花在指针后面不计成本；越过指针的部分（红色）按 N = F − β·X/h 从该候选的柱子里扣掉。"
-            "柱子上方的浅色部分是超出任务需要的能力，不计分。点击画面重播。"))
+            "每条横轨是一个额度窗口：整条是本周期的额度，右端是重置。灰色是本期已花的额度，竖线是恢复线，随时间向右走；"
+            "灰色和竖线之间的浅绿色是已恢复、还没花的额度。每个候选的花费画在它所用窗口的横轨下面：竖线左边不计成本，越过竖线的部分（"
+            "红色）按 N = F − β·X/h 从同一行右侧的得分条里扣掉。得分条末端的浅色部分是超出任务需要的能力，不计分。点击画面重播。"))
         self.theatre.on_frame = self.quota_line.follow
         self.show_list("ledger")
         self.set_mode("score")

@@ -16,7 +16,7 @@ import math
 import re
 import time
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageColor, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageColor, ImageTk
 
 from i18n import translate as _tr
 import page_stack
@@ -42,8 +42,6 @@ WINDOWS = {"appear": (0., TITLE_IN), "underline": (.1, .55), "classify": (TITLE_
 # easing out without overshoot. The other model goes first; the winner's shape lands last.
 BLOOM = (6.9, 6.45)     # story time the pair's shapes start growing: (winner, other model)
 BLOOM_SPAN, BLOOM_STAGGER = .62, .045
-FEATHER = 5.            # px of soft edge on the counted fill
-FILL_REDUCE = 4         # the counted fill's mask is built this many times smaller than the supersampled frame
 NAME = 22               # px of the pair's name tile: the legend shows it at LEGEND/NAME, the winner at 1
 LEGEND = 13
 AXIS_LABEL = 12
@@ -471,12 +469,6 @@ class TheatreRenderer:
             self.pens[candidate.id] = (path, arc_lengths(path))
         need = scene.need if len(scene.need) == len(radar.SCORE_AXES) else ()
         self.need = tuple(need)
-        # Radial falloff for the counted fills: lighter at the centre, full at the rim.
-        small = math.ceil(self.radius*self.k/FILL_REDUCE) + 2
-        self.fill_half = small*FILL_REDUCE
-        ramp = Image.radial_gradient("L").resize((2*small, 2*small), Image.Resampling.BILINEAR)
-        self.falloff = ramp.point([round(255*(.58 + .42*min(1., v/181)**1.5)) for v in range(256)])
-        self.masks = {}
         self.final = self.final_layout()
         self.axis_labels = self.axis_layout()
         self.seeds = self.speck_seeds()
@@ -827,38 +819,24 @@ class TheatreRenderer:
                              (*ink, round(255*shown*quiet)))
 
     def need_outline(self, draw, t, cam):
-        """The task's need on the axes that have one: a quiet dashed outline, drawn once and kept."""
+        """The task's need: a tick across each axis that has one, neighbouring ticks joined by a hairline."""
         drawn = ease(window(t, "need"))
         if drawn <= 0 or not self.need:
             return
         cx, cy = self.center
-        ink = (*ImageColor.getrgb(radar.NEED_INK), round(215*drawn))
-        size = max(1, round(1.15*self.s*self.k))
-        runs, run = [], []
+        rgb, unit = ImageColor.getrgb(radar.NEED_INK), self.s*self.k
+        at = lambda index: radar.point(cx, cy, self.radius*self.need[index], index, 5)
+        for run in radar.need_runs(self.need):
+            if len(run) > 1:
+                draw.line(self.screen([at(index) for index in run], cam), fill=(*rgb, round(64*drawn)),
+                          width=max(1, round(.9*unit)))
+        half = radar.NEED_TICK*self.s*drawn
         for index, target in enumerate(self.need):
             if target is None:
-                runs.append(run)
-                run = []
-            else:
-                run.append(radar.point(cx, cy, self.radius*target, index, 5))
-        runs.append(run)
-        if self.need[0] is not None and self.need[-1] is not None and len(runs) > 1:
-            runs[0] = runs.pop() + runs[0]      # the outline continues through the top axis
-        on, off = 3.2*self.s*self.k, 2.8*self.s*self.k
-        for run in runs:
-            for point in run:
-                self.dot(draw, point, cam, 1.7, (255, 255, 255, round(255*drawn)), ink)
-            points = self.screen(run, cam)
-            phase = 0.
-            for a, b in zip(points, points[1:]):
-                length = math.dist(a, b)
-                at = -phase
-                while at < length*drawn:
-                    lo, hi = max(0., at)/length, min(length*drawn, at + on)/length
-                    if hi > lo:
-                        draw.line((lerp2(a, b, lo), lerp2(a, b, hi)), fill=ink, width=size)
-                    at += on + off
-                phase = (length + phase) % (on + off)
+                continue
+            (x, y), (ax, ay) = at(index), radar.point(0, 0, 1, index, 5)
+            draw.line(self.screen([(x - ay*half, y + ax*half), (x + ay*half, y - ax*half)], cam),
+                      fill=(*rgb, round(235*drawn)), width=max(1, round(1.7*unit)))
 
     def pen(self, candidate, t):
         path, lengths = self.pens[candidate.id]
@@ -917,41 +895,6 @@ class TheatreRenderer:
                 self.probe["leader"] = (end[0]-cam, end[1])
         return states
 
-    def soft_fill(self, image, points, rgb, alpha, cam, key=None):
-        """Fill a polygon with the radial falloff at `alpha` (0..255 at the rim) and a feathered edge.
-
-        The mask is built around the radar's own centre at a quarter of the supersampled size (the
-        feather hides the difference) and enlarged once. A shape that has stopped moving passes a
-        `key`, so its mask is rasterized once however the camera drifts afterwards.
-        """
-        alpha = round(alpha)
-        if alpha <= 0:
-            return
-        size, half = self.falloff.size, self.fill_half
-        held = self.masks.get(key) if key is not None else None
-        if held is None:
-            cx, cy = self.center
-            unit = self.k / FILL_REDUCE
-            mask = Image.new("L", size, 0)
-            ImageDraw.Draw(mask).polygon([((x - cx)*unit + size[0]/2, (y - cy)*unit + size[1]/2) for x, y in points],
-                                         fill=255)
-            mask = ImageChops.multiply(mask.filter(ImageFilter.BoxBlur(FEATHER*self.s*unit)), self.falloff)
-            # Only the mask's own box is enlarged and pasted: a shape is much smaller than the radar's square.
-            box = mask.getbbox()
-            if box is None:
-                return
-            full = mask.crop(box).resize(((box[2] - box[0])*FILL_REDUCE, (box[3] - box[1])*FILL_REDUCE),
-                                         Image.Resampling.BILINEAR)
-            held = [full, (box[0]*FILL_REDUCE, box[1]*FILL_REDUCE), None, None]
-            if key is not None:
-                self.masks[key] = held
-        full, (left, top), tinted, ready = held
-        if tinted != alpha:
-            # A settled shape only changes its depth: one table lookup, no new raster.
-            ready = full.point([v*alpha//255 for v in range(256)])
-            held[2:] = alpha, ready
-        image.paste(rgb, (round((self.center[0] - cam)*self.k) - half + left, round(self.center[1]*self.k) - half + top), ready)
-
     def polygons(self, image, draw, t, cam):
         settled = ease(window(t, "settle"))
         winner = self.scene.winner
@@ -970,7 +913,8 @@ class TheatreRenderer:
             path, lengths, travelled = self.pen(candidate, t)
             if travelled <= 0:
                 continue
-            rgb = ImageColor.getrgb(radar.SERIES_STYLES[min(index, 1)]["color"])
+            style = radar.SERIES_STYLES[min(index, 1)]
+            rgb = ImageColor.getrgb(style["color"])
             grown = self.bloom(index, t)
             if index == 0:
                 head = partial(path, lengths, travelled)[-1]
@@ -992,17 +936,15 @@ class TheatreRenderer:
                 counted = radar.counted_shape(points, radar.polygon(
                     [value if target is None else min(value, target*g) for value, target, g in zip(values, self.need, grown)],
                     cx, cy, self.radius))
-                draw.polygon(self.screen(points, cam), fill=(*rgb, round((30 if index == 0 else 22)*opened)))
+                draw.polygon(self.screen(points, cam), fill=(*rgb, round(style["spare"]*opened)))
             else:
                 counted = points
-            depth = (52 if index == 0 else 34) + (20 if won else -8)*settled
-            self.soft_fill(image, counted, rgb, depth*opened, cam, index if grown[-1] >= 1 else None)
+            # Flat tints with crisp edges; once settled the winner's deepens a little and the other's recedes.
+            depth = style["counted" if self.need else "fill"] + (10 if won else -6)*settled
+            draw.polygon(self.screen(counted, cam), fill=(*rgb, round(depth*opened)))
             outline = self.screen(points + points[:2], cam)
-            weight = (2.1 if index == 0 else 1.5)*self.s*self.k
+            weight = style["weight"]*self.s*self.k
             strength = 1 - (0 if won else .28)*settled
-            for extra, alpha in ((4.6, 13), (2.2, 26)) if index == 0 else ((2.4, 16),):
-                draw.line(outline, fill=(*rgb, round(alpha*opened*strength)), width=max(1, round(weight + extra*self.s*self.k)),
-                          joint="curve")
             draw.line(outline, fill=(*rgb, round(255*opened*strength)), width=max(1, round(weight)), joint="curve")
             for point, g in zip(points, grown):
                 self.vertex(draw, point, cam, rgb, index, g*strength)
