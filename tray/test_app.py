@@ -168,6 +168,21 @@ class MenuTests(TrayTestCase):
         self.assertFalse(app.notify_if_restarted(again_icon))
         again_icon.notify.assert_not_called()
 
+    def test_tray_start_marks_itself_started_and_reports_a_loader_rollback(self):
+        icon = mock.Mock()
+        icon.run.side_effect = lambda setup: setup(icon)
+        self.addCleanup(lambda: hasattr(app.sys, "_agentcompass_tray_started") and delattr(app.sys, "_agentcompass_tray_started"))
+        notice = "AgentCompass 已回退到代码包 0.4.2（原为 0.4.3）：tray startup failed: boom。详情见 ~/.agent-compass/tray-errors.log"
+        with mock.patch.object(app, "single_instance", return_value=True), \
+             mock.patch.object(app.pystray, "Icon", return_value=icon), \
+             mock.patch.object(app.threading, "Thread"), \
+             mock.patch.object(app.sys, "argv", ["app.pyw", "--attach-only"]), \
+             mock.patch.object(app.updates, "rollback_notice", return_value=notice), \
+             mock.patch.object(app, "log_info"):
+            app.main()
+        self.assertIs(app.sys._agentcompass_tray_started, True)
+        icon.notify.assert_any_call(notice, "AgentCompass")
+
     def test_tray_start_warms_the_window_hidden(self):
         icon = mock.Mock()
         icon.run.side_effect = lambda setup: setup(icon)

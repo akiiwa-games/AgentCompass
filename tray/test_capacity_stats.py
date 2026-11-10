@@ -297,6 +297,32 @@ class AntigravityTests(Fixture):
         slot = entry["buckets"][cs.hour_key(T0)]["gemini-3.8-flash-high"]
         self.assertEqual((slot[1], round(slot[0])), (3, 120))
 
+    def test_a_scratch_folder_that_cannot_be_removed_does_not_fail_the_scan(self):
+        # 2026-11-10: Windows refused to remove the copy's scratch folder (WinError 145, a file still held),
+        # the scan raised from the folder's cleanup and the component crashed.
+        import os
+        real_rmdir = os.rmdir
+        refused = []
+
+        def rmdir(path, *args, **kwargs):
+            if Path(path).parent == Path(tempfile.gettempdir()):
+                refused.append(path)
+                raise OSError(145, "The directory is not empty", str(path))
+            return real_rmdir(path, *args, **kwargs)
+
+        path, connection = self.conversation()
+        connection.close()
+        entry = cs.new_entry(path, "antigravity")
+        try:
+            with mock.patch("os.rmdir", side_effect=rmdir):
+                cs.scan_antigravity(path, entry)
+        finally:
+            for folder in refused:
+                real_rmdir(folder)
+        self.assertTrue(refused)
+        self.assertEqual(entry["buckets"][cs.hour_key(T0)]["gemini-3.8-flash-high"][1], 3)
+        self.assertNotEqual(entry["offset"], 0)
+
     def test_a_database_that_cannot_be_read_records_nothing_and_is_tried_again(self):
         folder = self.root / ".gemini" / "antigravity-cli" / "conversations"
         folder.mkdir(parents=True)

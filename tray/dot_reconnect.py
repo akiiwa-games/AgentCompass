@@ -138,7 +138,7 @@ def reconnect(now: float | None = None) -> str | None:
         return None
     # One name per address, so a retry after a half-finished attempt finds the plugin it already added.
     name = f"{BASE_NAME} {hashlib.sha1(base.encode()).hexdigest()[:6]}"
-    with tempfile.TemporaryDirectory() as directory:
+    with tempfile.TemporaryDirectory(prefix="agentcompass-dot-", ignore_cleanup_errors=True) as directory:
         url_file = Path(directory) / "url.txt"
         url_file.write_text(mcp, encoding="utf-8")
         result = run_node(endpoint, "register", name, DESCRIPTION, str(url_file))
@@ -151,7 +151,7 @@ def reconnect(now: float | None = None) -> str | None:
                                  if isinstance(n, str) and n.startswith(BASE_NAME + " ") and n != name))
     current = {"host": HOST, "url": base, "name": name, "at": now, "old_names": previous, "wake_pending": True}
     save_state(current)
-    with tempfile.TemporaryDirectory() as directory:
+    with tempfile.TemporaryDirectory(prefix="agentcompass-dot-", ignore_cleanup_errors=True) as directory:
         message_file = Path(directory) / "message.txt"
         message_file.write_text(wake_message(name), encoding="utf-8")
         woke = run_node(endpoint, "wake", str(message_file))

@@ -848,6 +848,7 @@ EN = {
     '未检测到运行中的托盘，无需重启托盘': 'No running tray detected; tray restart skipped',
     '正在重启托盘…': 'Restarting tray…',
     '托盘已重启 · AgentCompass {0}': 'Tray restarted · AgentCompass {0}',
+    'AgentCompass 已回退到代码包 {0}（原为 {1}）：{2}。详情见 ~/.agent-compass/tray-errors.log': 'AgentCompass went back to code package {0} (was {1}): {2}. Details in ~/.agent-compass/tray-errors.log',
     '托盘正在重启中，已忽略重复请求': 'Tray restart already in progress; duplicate request ignored',
     '开始检查并更新 AgentCompass': 'Checking and updating AgentCompass',
     '下载并校验代码增量包': 'Downloading and verifying incremental code package',

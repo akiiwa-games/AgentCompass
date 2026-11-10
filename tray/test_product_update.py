@@ -1381,5 +1381,33 @@ class IncrementalCodePackageUpdateTests(unittest.TestCase):
                 )
 
 
+class RollbackNoticeTests(unittest.TestCase):
+    def write_state(self, root: Path, **fields) -> None:
+        (root / "app").mkdir(parents=True, exist_ok=True)
+        (root / "app" / "state.json").write_bytes(json.dumps({"current_version": "0.4.2", **fields}).encode("utf-8"))
+
+    def test_a_rollback_is_reported_once_with_versions_and_reason(self):
+        with TemporaryDirectory() as tmp:
+            root, state_dir = Path(tmp) / "install", Path(tmp) / "state"
+            self.write_state(root, rolled_back_from="0.4.3", rollback_reason="tray startup failed: boom", rolled_back_at=1794309843.8)
+            message = updates.rollback_notice(install_root=root, state_dir=state_dir)
+            self.assertIn("0.4.2", message)
+            self.assertIn("0.4.3", message)
+            self.assertIn("tray startup failed: boom", message)
+            self.assertIsNone(updates.rollback_notice(install_root=root, state_dir=state_dir))
+            # A later rollback is news again.
+            self.write_state(root, rolled_back_from="0.4.3", rollback_reason="tray import failed: x", rolled_back_at="2026-11-11T01:00:00Z")
+            self.assertIn("tray import failed: x", updates.rollback_notice(install_root=root, state_dir=state_dir))
+
+    def test_no_rollback_and_a_checkout_say_nothing(self):
+        with TemporaryDirectory() as tmp:
+            root, state_dir = Path(tmp) / "install", Path(tmp) / "state"
+            self.write_state(root, updated_at="2026-11-10T07:35:20Z")
+            self.assertIsNone(updates.rollback_notice(install_root=root, state_dir=state_dir))
+            self.assertIsNone(updates.rollback_notice(install_root=Path(tmp) / "missing", state_dir=state_dir))
+            with mock.patch.object(updates.component_launch, "frozen", return_value=False):
+                self.assertIsNone(updates.rollback_notice(state_dir=state_dir))
+
+
 if __name__ == "__main__":
     unittest.main()
