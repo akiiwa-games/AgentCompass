@@ -622,11 +622,16 @@ def step_paseo_host(z: Zero):
     z.evidence("A-uncertain-create-after-continuation.json", {"dispatch": dispatch_status(op, did) if did else None, "bridge_answers": z.bridge_answers(), "bridge_calls": z.bridge_calls()})
     op.check("the host never saw a second create for that dispatch", sum(1 for c in z.bridge_calls() if c["operation"] == "create" and c["dispatch_id"] == did) == 1, z.bridge_calls()[-5:])
 
-    op = run.operation("Paseo host: definite creation failure releases the reservation", "the host rejects the create before anything exists: failed state, reservation released, a re-roll can launch")
+    op = run.operation("Paseo host: definite creation failure releases the reservation", "the host rejects the create before anything exists: the same roll relaunches the brief on another candidate (or reports the cause with fallback off), the reservation is released, a re-roll can launch")
     z.set_fault(create="reject")
     result = z.call(op, "roll", "--task", z.task("ok", "reject"), **env)
     doc = parse(result.stdout) or {}
-    op.check("roll reports an error with the cause, not launched", doc.get("status") in ("error", "blocked") and doc.get("cause"), json.dumps(doc)[:400])
+    attempts = doc.get("attempts") or details(doc).get("attempts") or (details(doc).get("worker") or {}).get("attempts") or []
+    op.check("roll relaunches the rejected brief by itself and lists both attempts", doc.get("status") == "launched" and len(attempts) >= 2, json.dumps(doc)[:400])
+    z.set_fault(create="reject")
+    result = z.call(op, "roll", "--task", z.task("ok", "reject-fallback-off"), **{**env, "AGENTCOMPASS_ROLL_FALLBACK": "off"})
+    doc = parse(result.stdout) or {}
+    op.check("with AGENTCOMPASS_ROLL_FALLBACK=off roll reports an error with the cause, not launched", doc.get("status") in ("error", "blocked") and doc.get("cause"), json.dumps(doc)[:400])
     reservations = (parse(z.call(op, "dispatch", "--dispatch-action", "reconcile", **env).stdout) or {}).get("active_reservations", [])
     op.check("the failed attempt holds no reservation", not [r for r in reservations if r.get("state") in ("prepared", "launching")], reservations)
     result = z.call(op, "roll", "--task", z.task("ok", "after-reject"), **env)

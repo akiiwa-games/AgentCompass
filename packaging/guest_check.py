@@ -641,9 +641,19 @@ def gui_session(exe, tag, router_only=False):
     seconds2, page = settle(f"{tag}-quota-page-right.png")
     check("the window is not hung after opening the Quota Monitor page (screenshots kept for review)", not user32.IsHungAppWindow(hwnd) and page is not None, (seconds, seconds2))
     label_before = region_hash(page, 600, 62, 275, 36) if page else None
-    time.sleep(6)
-    idle_seconds, idle = settle(f"{tag}-quota-idle.png")
-    check("control: with nobody touching it the update-time label does not change on its own", bool(label_before) and region_hash(idle, 600, 62, 275, 36) == label_before, label_before)
+    # Since 537194f the visible Quota Monitor page reloads itself every 15 s, so the idle control expects that refresh (within 40 s:
+    # 15 s interval plus the slow repaint) instead of a frozen label.
+    label_idle = None
+    idle_started = time.time()
+    while label_before and time.time() - idle_started < 40:
+        time.sleep(3)
+        _, idle = settle(f"{tag}-quota-idle.png")
+        label_idle = region_hash(idle, 600, 62, 275, 36) if idle else None
+        if label_idle and label_idle != label_before:
+            break
+    check("control: with nobody touching it the visible quota page refreshes its update-time label on its own (15 s auto refresh)",
+          bool(label_before) and bool(label_idle) and label_idle != label_before, (label_before, label_idle, round(time.time() - idle_started, 1)))
+    label_before = label_idle or label_before
     click_shot(929, 79)
     after_seconds, after = settle(f"{tag}-quota-after-refresh.png", limit=60)
     label_after = region_hash(after, 600, 62, 275, 36) if after else None

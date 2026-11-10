@@ -1797,8 +1797,9 @@ print(json.dumps({{
              res_once.returncode == 0
              and "claude 7d×2" in once_out and "150%" in once_out
              and "claude 5h×2" in once_out and "100%" in once_out
-             and "codex" in once_out
-             and not any("7d" in line for line in once_out.splitlines() if line.startswith("codex")),
+             # usage-float e293e77 shows each Codex window as its own row (80% / 85% left from the fake 20% / 15% used)
+             and any(line.startswith("codex 7d") and "80%" in line for line in once_out.splitlines())
+             and any(line.startswith("codex 5h") and "85%" in line for line in once_out.splitlines()),
              {"rc": res_once.returncode, "stdout": once_out, "stderr": res_once.stderr[-200:]})
 
 
