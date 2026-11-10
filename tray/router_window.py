@@ -814,6 +814,8 @@ class Panel:
         if self.closing:
             self._release_show_event()
             if not any(t.is_alive() for t in self.long_jobs):
+                import updates
+                updates.abandon_usage_float_mpv()
                 os._exit(0)
             self._poll_id = self.root.after(30, self.poll)
             return
@@ -828,6 +830,8 @@ class Panel:
         if not parent_ok or superseded:
             self._release_show_event()
         if hidden and (not parent_ok or superseded) and not any(t.is_alive() for t in self.long_jobs):
+            import updates
+            updates.abandon_usage_float_mpv()
             os._exit(0)  # the tray that kept this window warm is gone or code package was upgraded
         if not hidden and superseded and not getattr(self, "_superseded_notified", False):
             self._superseded_notified = True
@@ -934,6 +938,8 @@ class Panel:
             pass
         # An update owns child installers; keep the process until it finishes, without the window.
         if not any(t.is_alive() for t in self.long_jobs):
+            import updates
+            updates.abandon_usage_float_mpv()
             os._exit(0)
         self.drain_results()
         self._poll_id = self.root.after(30, self.poll)

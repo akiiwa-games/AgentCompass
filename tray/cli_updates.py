@@ -797,7 +797,7 @@ def update_all(progress=None, *, auto: bool = False, only: list[str] | None = No
             else:
                 message = update(target.id, home, environ, outcome=outcome)
             if not auto:
-                _record_status({"kind": "result", "component": target.name, "message": message})
+                _record_status({"kind": "result", "component": target.name, "message": message, "status": outcome.get("status", "failed")})
             status = outcome.get("status", "failed")
             if status in result:
                 result[status].append(target.id)
