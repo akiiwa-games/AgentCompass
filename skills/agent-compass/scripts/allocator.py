@@ -470,6 +470,7 @@ OBSERVED_MAX_AGE_HOURS = 2      # the live burn rate is only worth acting on whi
 
 
 METERED_LAST_RESORT = 'metered access is a last resort'
+QUOTA_READING_UNAVAILABLE = 'quota reading unavailable (no current observation of any window of this account, so its spend cannot be priced)'
 
 
 def accounts_override_path(environ=None):
@@ -2475,11 +2476,13 @@ def five_axis_duration_multiplier(model, effort, info, policy, curves):
 
 
 def five_axis_window_recovery(state, cap_usd):
-    """Recovery line l(now) and current used U in USD for a window on its own clock (advisor report v2 §1-2, §5).
+    """One quota window on its own clock (quota economy v3): capacity C, used U (in-flight leases included), elapsed
+    fraction e of the period and the reset. `line_now_usd` = C * e is the recovery line: the pace at which the period's
+    capacity just runs out, i.e. the dollar level where `five_axis_need_tail` is one half.
 
-    Starter allowances (`hours is None` or `inf` or `reset_hours is inf`) have T = inf (L = inf), so l(t) = 0 and
-    every dollar of spend is above the recovery line (X = S). Rolling windows that start their clock on first use
-    (`state.get('unstarted')`) have t0 = now and U = 0 until used, so l(now) = 0 and tau = L."""
+    Starter allowances (`hours is None` or `inf`, `reset_hours` inf) never reset: the clock does not run, e = 0. Rolling
+    windows that start their clock on first use (`state.get('unstarted')`) are at e = 0 with U = 0. Nothing here reads a
+    history: only the period's own readings."""
     if not cap_usd or cap_usd <= 0 or not state or not state.get('known'):
         return None
     full = float(state.get('full', 100.0) or 100.0)
@@ -2489,78 +2492,236 @@ def five_axis_window_recovery(state, cap_usd):
     hours = state.get('hours')
     reset_h = state.get('reset_hours')
     if hours is None or reset_h is None or hours == float('inf') or reset_h == float('inf') or float(hours) <= 0:
-        return {'capacity_usd': pool_cap, 'used_usd': used_usd, 'line_now_usd': 0.0,
-                'under_line_usd': 0.0, 'above_line_usd': used_usd, 'period_hours': None, 'reset_hours': float('inf'),
-                'unstarted': False}
+        return {'capacity_usd': pool_cap, 'used_usd': used_usd, 'elapsed_frac': 0.0, 'line_now_usd': 0.0,
+                'period_hours': None, 'reset_hours': float('inf'), 'unstarted': False}
     L = float(hours)
     if state.get('unstarted') and used_usd <= 1e-9:
-        return {'capacity_usd': pool_cap, 'used_usd': 0.0, 'line_now_usd': 0.0,
-                'under_line_usd': 0.0, 'above_line_usd': 0.0, 'period_hours': L, 'reset_hours': L,
-                'unstarted': True}
+        return {'capacity_usd': pool_cap, 'used_usd': 0.0, 'elapsed_frac': 0.0, 'line_now_usd': 0.0,
+                'period_hours': L, 'reset_hours': L, 'unstarted': True}
     tau = max(0.0, min(L, float(reset_h)))
-    line_now = pool_cap * max(0.0, L - tau) / L
-    delta = line_now - used_usd
-    return {'capacity_usd': pool_cap, 'used_usd': used_usd, 'line_now_usd': line_now,
-            'under_line_usd': max(0.0, delta), 'above_line_usd': max(0.0, -delta),
+    elapsed = (L - tau) / L
+    return {'capacity_usd': pool_cap, 'used_usd': used_usd, 'elapsed_frac': elapsed, 'line_now_usd': pool_cap * elapsed,
             'period_hours': L, 'reset_hours': tau, 'unstarted': False}
 
 
-def five_axis_over_line_usd(state, cap_usd, step_usd, task_hours):
-    """Spend X in USD above the window's recovery line l(t), segmented across a reset if the task crosses T (§2).
-
-    Before the reset at tau = min(h, T - now), the recovery line reaches l(now + tau) = l(now) + C * tau / L, giving
-    accumulated under-line allowance A_0 = max(0, l(now + tau) - U). Spend before the reset is S_0 = S * (tau / h),
-    and over-line spend in the current period is X_0 = max(0, S_0 - A_0). Any work after the reset starts at U_1 = 0
-    on a fresh period of length L with recovery rate C / L, so X_1 = max(0, S_1 - C * (h - tau) / L)."""
-    rec = five_axis_window_recovery(state, cap_usd)
-    if rec is None:
-        return None
-    pool_cap = rec['capacity_usd']
-    S = max(0.0, float(step_usd or 0.0))
-    h = max(1e-6, float(task_hours or 0.0))
-    L = rec['period_hours']
-    U = rec['used_usd']
-    if L is None:
-        return {'over_line_usd': S, 'allowance_usd': 0.0, 'line_now_usd': 0.0, 'line_end_usd': 0.0,
-                'used_usd': U, 'under_line_usd': 0.0, 'reset_hours': float('inf'), 'period_hours': None,
-                'unstarted': False}
-    tau_reset = rec['reset_hours']
-    tau = min(h, tau_reset)
-    line_tau = rec['line_now_usd'] + pool_cap * (tau / L)
-    A_0 = max(0.0, line_tau - U)
-    S_0 = S * (tau / h) if h > 0 else S
-    X_0 = max(0.0, S_0 - A_0)
-    X_1 = 0.0
-    A_1 = 0.0
-    if h > tau:
-        rem_h = h - tau
-        S_1 = S - S_0
-        A_1 = pool_cap * (rem_h / L)
-        X_1 = max(0.0, S_1 - A_1)
-    return {'over_line_usd': X_0 + X_1, 'allowance_usd': A_0 + A_1, 'line_now_usd': rec['line_now_usd'],
-            'line_end_usd': line_tau, 'used_usd': U, 'under_line_usd': rec['under_line_usd'],
-            'reset_hours': tau_reset, 'period_hours': L, 'unstarted': rec['unstarted']}
+def _beta_continued_fraction(a, b, x):
+    """Continued fraction of the incomplete beta function (modified Lentz), the series both tails use."""
+    tiny = 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    d = 1.0 / (tiny if abs(d) < tiny else d)
+    h = d
+    for m in range(1, 500):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        d = 1.0 / (tiny if abs(d) < tiny else d)
+        c = 1.0 + aa / c
+        c = tiny if abs(c) < tiny else c
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        d = 1.0 / (tiny if abs(d) < tiny else d)
+        c = 1.0 + aa / c
+        c = tiny if abs(c) < tiny else c
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 1e-13:
+            break
+    return h
 
 
-def five_axis_non_expiring_under_line_usd(state, cap_usd, task_hours):
-    """Non-expiring under-line allowance A_v(h) on a substitute pool over [now, now + h] (advisor report v2 §2, §6.3).
-
-    If the substitute window does not reset during the task (h < tau_reset), its under-line allowance at now + h is
-    max(0, l(now + h) - U). If the substitute window resets at tau_reset <= h, its pre-reset under-line quota expires
-    at tau_reset and cannot save quota for work after the task finishes; only the post-reset recovery accrued in
-    [now + tau_reset, now + h] (C * min(L, h - tau_reset) / L) is non-expiring."""
-    rec = five_axis_window_recovery(state, cap_usd)
-    if rec is None or rec['period_hours'] is None:
+def regularized_incomplete_beta(a, b, x):
+    """I_x(a, b) for real a, b > 0 and 0 <= x <= 1 (pure Python; the continuous extension of the negative-binomial tail)."""
+    if x <= 0.0:
         return 0.0
-    pool_cap = rec['capacity_usd']
-    L = rec['period_hours']
-    h = max(0.0, float(task_hours or 0.0))
-    tau_reset = rec['reset_hours']
-    if h < tau_reset:
-        line_end = rec['line_now_usd'] + pool_cap * (h / L)
-        return max(0.0, line_end - rec['used_usd'])
-    rem_h = min(L, h - tau_reset)
-    return pool_cap * (rem_h / L)
+    if x >= 1.0:
+        return 1.0
+    log_front = (math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log1p(-x))
+    direct = x < (a + 1.0) / (a + b + 2.0)
+    if log_front < -700.0:      # the front factor underflows: the tail on that side is zero to double precision
+        return 0.0 if direct else 1.0
+    front = math.exp(log_front)
+    if direct:
+        return min(1.0, front * _beta_continued_fraction(a, b, x) / a)
+    return max(0.0, 1.0 - front * _beta_continued_fraction(b, a, 1.0 - x) / b)
+
+
+def five_axis_need_tail(rec, room_usd):
+    """P(the demand that reaches this window before its reset is at least `room_usd`), from the period's own readings.
+
+    Quota economy v3 (advisor report v3 §1.2 with the single-window lump q = C, owner D3): consumption arrives in lumps of
+    q = C; the prior is one virtual lump at the recovery-line pace and the observation is the U / C lumps seen in the
+    elapsed fraction e of the period. The lumps still to come are negative binomial, K ~ NegBin(n + 1, p) with n = U / C and
+    p = (e + 1) / 2, so P(K * C >= room) = I_{(1 - e) / 2}(room / C, n + 1). The mean of the demand still to come is
+    (U + C) (1 - e) / (e + 1), which at U = e C is exactly the remaining capacity: the recovery line is the pi = 1/2 contour.
+    `rec` is `five_axis_window_recovery`'s answer. Only long reset-period windows are priced: a 5-hour window never calls this."""
+    if room_usd <= 0:
+        return 1.0
+    cap = float(rec['capacity_usd'])
+    e = float(rec.get('elapsed_frac') or 0.0)
+    if cap <= 0 or e >= 1.0:
+        return 0.0
+    return regularized_incomplete_beta(room_usd / cap, float(rec['used_usd']) / cap + 1.0, (1.0 - e) / 2.0)
+
+
+def five_axis_need_probability(rec, level_usd):
+    """pi_w(y): the probability the dollar at cumulative use `level_usd` of this window is needed before its reset."""
+    return five_axis_need_tail(rec, float(rec['capacity_usd']) - float(level_usd))
+
+
+def five_axis_substitute_slack(rec, spend_usd):
+    """a_v: the probability that a task of `spend_usd` displaced onto window `rec` still finds the room later, 1 minus the
+    need-tail of what remains after it. It reads only this window's own state and no price, so substitutes cannot
+    discount each other (the price graph has no cycle)."""
+    room = float(rec['capacity_usd']) - float(rec['used_usd']) - float(spend_usd)
+    if room < 0:
+        return 0.0
+    return 1.0 - five_axis_need_tail(rec, room)
+
+
+def five_axis_outside_value(alternatives, own_best_fit):
+    """V: the expected best fit still available elsewhere when this account's work is displaced. `alternatives` is a list
+    of (fit, slack); they are tried by fit descending, each is open with its own slack probability and counts at most
+    `own_best_fit`; when none has room the loss is total (0)."""
+    value, none_open = 0.0, 1.0
+    for fit, slack in sorted(alternatives, key=lambda t: (-t[0], -t[1])):
+        value += none_open * slack * min(fit, own_best_fit)
+        none_open *= (1.0 - slack)
+    return value
+
+
+def five_axis_upper_hull(points, outside_fit):
+    """Upper concave envelope, ascending in spend, of (spend, fit) points above the outside option (0, outside_fit) up to
+    the cheapest highest-fit point. Each edge is a step of the account's value ladder; [] when no point beats the outside."""
+    best = [(s, f) for s, f in points if s > 0 and f > outside_fit + 1e-12]
+    if not best:
+        return []
+    fmax = max(f for _, f in best)
+    top = min(s for s, f in best if f >= fmax - 1e-9)
+    chosen, running = [], outside_fit
+    for s, f in sorted((p for p in best if p[0] <= top + 1e-12), key=lambda p: (p[0], -p[1])):
+        if f > running + 1e-12:         # dominated points (dearer and no better) cannot be on the envelope
+            chosen.append((s, f))
+            running = f
+    hull = [(0.0, outside_fit)]
+    for s, f in chosen:
+        while len(hull) >= 2 and ((hull[-1][1] - hull[-2][1]) * (s - hull[-2][0])
+                                  <= (f - hull[-2][1]) * (hull[-1][0] - hull[-2][0])):
+            hull.pop()
+        hull.append((s, f))
+    return hull
+
+
+def five_axis_value_ladder(hulls):
+    """The account's merged value ladder from one upper hull per demand point: {'steps': [(rho_j, sigma_j)], 'full_usd'}
+    with sigma ascending. A step is one edge of a hull (giving up the dearer end saves its spend and costs its fit, a slope
+    sigma = d fit / d USD for this task); rho_j is the share of the full-demand spend still needed once every step
+    cheaper in slope than sigma_j has been given up. Equal slopes are one group, priced at the group's rho."""
+    steps, full = [], 0.0
+    for hull in hulls:
+        if len(hull) < 2:
+            continue
+        full += hull[-1][0]
+        for lo, hi in zip(hull, hull[1:]):
+            steps.append(((hi[1] - lo[1]) / (hi[0] - lo[0]), hi[0] - lo[0]))
+    ladder, given_up = [], 0.0
+    steps.sort()
+    i = 0
+    while i < len(steps):
+        slope, j, group = steps[i][0], i, 0.0
+        while j < len(steps) and steps[j][0] - slope <= 1e-12 * max(1.0, abs(slope)):
+            group += steps[j][1]
+            j += 1
+        ladder.append(((full - given_up) / full, slope))
+        given_up += group
+        i = j
+    return {'steps': ladder, 'full_usd': full}
+
+
+def five_axis_quota_price(rec, ladder, level_usd):
+    """lambda_w(y): fit lost elsewhere per USD at cumulative use y, sum_j (sigma_j - sigma_{j-1}) * need-tail((C - y) / rho_j).
+    The tail of the room left at y when every cheaper step has been given up: how likely it is that the work which
+    still needs the dollar at y (up to the step with slope sigma_j) turns up before the reset."""
+    room = float(rec['capacity_usd']) - float(level_usd)
+    price, prev = 0.0, 0.0
+    for rho, slope in ladder['steps']:
+        price += (slope - prev) * five_axis_need_tail(rec, room / rho)
+        prev = slope
+    return price
+
+
+FIVE_AXIS_PRICE_NODES = 48     # nodes of the price table a window's candidates are integrated on (even)
+
+
+def _quadratic_integral(lam, k, t):
+    """Integral over [x_k, x_k + t * step], in units of `step`, of the quadratic through nodes c-1, c, c+1."""
+    c = min(max(k, 1), len(lam) - 2)
+    a = (lam[c + 1] - lam[c - 1]) / 2.0
+    b = (lam[c + 1] - 2.0 * lam[c] + lam[c - 1]) / 2.0
+
+    def prim(s):
+        return lam[c] * s + a * s * s / 2.0 + b * s ** 3 / 3.0
+    s0 = k - c
+    return prim(s0 + t) - prim(s0)
+
+
+def five_axis_price_table(rec, ladder, spend_max, nodes=FIVE_AXIS_PRICE_NODES):
+    """lambda_w sampled at U + k * step, k = 0..nodes, with its cumulative integral (piecewise quadratic through three
+    neighbouring nodes), so the cost of any spend up to `spend_max` is one lookup. None when there is nothing to price."""
+    if spend_max <= 0 or not ladder['steps']:
+        return None
+    nodes += nodes % 2
+    step = spend_max / nodes
+    used = float(rec['used_usd'])
+    lam = [five_axis_quota_price(rec, ladder, used + k * step) for k in range(nodes + 1)]
+    cum = [0.0]
+    for k in range(nodes):
+        cum.append(cum[-1] + _quadratic_integral(lam, k, 1.0) * step)
+    return {'start': used, 'step': step, 'nodes': nodes, 'lam': lam, 'cum': cum}
+
+
+def five_axis_table_integral(table, spend_usd):
+    """integral of lambda over [U, U + spend] from a `five_axis_price_table`; a spend past its range uses its last node."""
+    if table is None or spend_usd <= 0:
+        return 0.0
+    x = min(spend_usd, table['step'] * table['nodes']) / table['step']
+    k = min(int(x), table['nodes'] - 1)
+    return table['cum'][k] + _quadratic_integral(table['lam'], k, x - k) * table['step']
+
+
+def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tables=None):
+    """cost_i = integral over [U, U + S] of lambda_w(y) dy: the fit the rest of the period loses because this candidate
+    takes `spend_usd` of window `rec` (same unit as the fit, so N = F - cost needs no weight). A task that crosses the
+    reset is split by time: the part before it is priced on the current period, the part after it on a fresh period
+    (n = 0, e = 0). `spend_max` (default `spend_usd`) is the largest spend any candidate takes of this window; `tables`
+    caches the price tables built for it ('now', 'fresh'). Returns {'cost', 'lambda_start', 'need_start', 'need_end',
+    'spend_before', 'spend_after'}."""
+    tables = {} if tables is None else tables
+    spend = max(0.0, float(spend_usd))
+    spend_max = max(spend, float(spend_max or 0.0))
+    hours = max(1e-9, float(task_hours or 0.0))
+    tau = rec.get('reset_hours')
+    crossing = tau is not None and tau != float('inf') and tau < hours
+    before = spend * (float(tau) / hours) if crossing else spend
+    after = spend - before
+    if 'now' not in tables:
+        tables['now'] = five_axis_price_table(rec, ladder, spend_max)
+    table = tables['now']
+    lam0 = table['lam'][0] if table else five_axis_quota_price(rec, ladder, rec['used_usd'])
+    cost = five_axis_table_integral(table, before)
+    need_start = five_axis_need_probability(rec, rec['used_usd'])
+    need_end = five_axis_need_probability(rec, float(rec['used_usd']) + before)
+    if crossing and after > 0:
+        cap = float(rec['capacity_usd'])
+        fresh = {'capacity_usd': cap, 'used_usd': 0.0, 'elapsed_frac': 0.0}
+        if 'fresh' not in tables:
+            tables['fresh'] = five_axis_price_table(fresh, ladder, spend_max)
+        cost += five_axis_table_integral(tables['fresh'], after)
+        need_end = five_axis_need_probability(fresh, min(after, cap))
+    return {'cost': cost, 'lambda_start': lam0, 'need_start': need_start, 'need_end': need_end,
+            'spend_before': before, 'spend_after': after}
 
 
 FIVE_AXIS_DEMAND_GRID = tuple(
@@ -2569,92 +2730,192 @@ FIVE_AXIS_DEMAND_GRID = tuple(
 )
 
 
-def five_axis_beta_fallback(win_models, wkey, all_models):
-    """The models that could do window `wkey`'s work if its quota were spent elsewhere: the distinct canonical models of
-    candidates that can start now, are not in mode B and do not draw this window. Owner decision S2 (the substitute
-    pool's own over-line state) changes only this function."""
-    return all_models - win_models[wkey]
+class FiveAxisEconomy:
+    """Quota economy v3 for one plan (advisor report v3, owner decisions D1-D3 of round 13).
 
+    Every long reset-period window w = (quota source, window id) is priced on its own state and clock: its value ladder
+    comes from the candidates that draw it and, as the ladder's outside point only, from the startable candidates that do
+    not (each with its own `five_axis_substitute_slack`, which reads that candidate's windows and no price). The price graph
+    is therefore acyclic and one pass gives the unique answer. 5-hour windows (`short`) keep their feasibility role in
+    `evaluate_bundle` and never enter a price, a tail or a ladder here."""
 
-def five_axis_beta(eligible, accounts, policy, anchor_value=FIVE_AXIS_ANCHOR_VALUE):
-    """Per-window shadow exchange rate beta_w (fit per USD) from public ability + burn over the 63-point demand grid (§3).
+    def __init__(self, eligible, accounts, policy, task):
+        cfg = five_axis_config(policy) or FIVE_AXIS_DEFAULTS
+        anchor = (accounts.get('_five_axis') or {}).get('anchor_value', FIVE_AXIS_ANCHOR_VALUE)
+        shortfall = float(cfg['shortfall_weight'])
+        self.grid = FIVE_AXIS_DEMAND_GRID
+        targets = [five_axis_targets(d, anchor) for d in self.grid]
+        self.task_gi = len(self.grid)           # the extra fit slot: the task's own demand (diagnostics only)
+        any_startable = any(not c.get('available_in_hours') for c in eligible)
+        fit_cache = {}
+        self.entries = []
+        self.spend_max = {}
+        self.units = {}
+        self.unit_wkeys = {}
+        self.points = {}
+        self._tables, self._ladders, self._alts, self._recs = {}, {}, {}, {}
+        for c in eligible:
+            qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
+            states = {wid: (st, cap) for wid, (_, st, cap, _) in (c.get('_five_window_states') or {}).items()
+                      if not st.get('short')}
+            scaled = c.get('_five_scaled') or {}
+            key = tuple(sorted(scaled.items()))
+            if key not in fit_cache:
+                fit_cache[key] = tuple(five_axis_fit(scaled, d, t, shortfall)[0] for d, t in zip(self.grid, targets))
+            entry = {'cand': c, 'qsrc': qsrc, 'startable': not c.get('available_in_hours') or not any_startable,
+                     'spend': float(c.get('expected_usd') or 0.0), 'states': states,
+                     'fits': fit_cache[key] + (float(c['components'].get('fit') or 0.0),),
+                     'unit': (qsrc, frozenset(states))}
+            self.entries.append(entry)
+            fast = c.get('_five_fast_candidate')
+            peak = max(entry['spend'], float(fast['step_usd']) if fast else 0.0)
+            for wid in states:
+                self.spend_max[(qsrc, wid)] = max(self.spend_max.get((qsrc, wid), 0.0), peak)
+        for e in self.entries:
+            if e['startable']:
+                self.units.setdefault(e['unit'], []).append(e)
+                self.unit_wkeys[e['unit']] = frozenset((e['qsrc'], wid) for wid in e['states'])
+        drawn = {}
+        for e in self.entries:
+            for wid in e['states']:
+                drawn.setdefault((e['qsrc'], wid), []).append(e)
+        for wkey, rows in drawn.items():        # a window nobody can start on now is laddered by its own waiting candidates
+            self.points[wkey] = [e for e in rows if e['startable']] or rows
 
-    For each window w = (quota_source, wid), M_w is the distinct canonical models of startable candidates drawing w, and
-    M_out(w) (`five_axis_beta_fallback`) is the distinct canonical models of eligible candidates that can start now and
-    do not draw w. `eligible` already holds only candidates that passed mode B (no data error, capacity known) and the
-    image-input requirement, so a free pool whose capacity is unreadable is never a fallback. Over all 63 non-zero
-    thinking demand vectors d, beta_w = sum_d gap_w(d) / sum_d burn(i*(d)), with gap_w(d) = max(0, F_i*(d) - max_{j in
-    M_out} F_j(d)) and i*(d) the best capped fit in w (ties: lowest usd). An empty M_out is the design's max over no
-    candidate = 0 (nothing else can do the work, so displacing it loses all of F_i*(d)): gap = F_i*(d)."""
-    startable = [c for c in eligible if not (c.get('available_in_hours') or 0)]
-    if not startable:       # everything waits for a reset: the deferred candidates are then each other's fallback
-        startable = list(eligible)
-    win_models = {}
-    all_models = set()
-    for c in startable:
-        b = c['bundle']
-        acct = b['account']
-        qsrc = provider_inventory.quota_source(acct, accounts)
-        m = canonical(b['model'], accounts)
-        info = model_spec(accounts, m)
-        if usd_unpriced(m, info):
-            continue
-        all_models.add(m)
-        for wid in c.get('_five_axis_windows') or ():
-            win_models.setdefault((qsrc, wid), set()).add(m)
-    model_high_fit = {}
-    model_usd = {}
-    for m in all_models:
-        info = model_spec(accounts, m)
-        model_usd[m] = model_usd_per_hour(m, info)
-        scores = ((info.get('five_axis') or {}).get('scores')) or {}
-        fits = []
-        for d in FIVE_AXIS_DEMAND_GRID:
-            targets = five_axis_targets(d, anchor_value)
-            _, scaled = five_axis_level(scores, d, 1.0)
-            f_val, _ = five_axis_fit(scaled, d, targets, 1.0)
-            fits.append(f_val)
-        model_high_fit[m] = fits
-    betas = {}
-    for wkey, m_in in win_models.items():
-        m_in_valid = [m for m in m_in if model_usd.get(m, 0.0) > 0]
-        if not m_in_valid:
-            betas[wkey] = 0.0       # nothing priced draws this window: there is no burn to exchange against
-            continue
-        m_out = five_axis_beta_fallback(win_models, wkey, all_models)
-        total_gain = 0.0
-        total_burn = 0.0
-        for idx in range(len(FIVE_AXIS_DEMAND_GRID)):
-            i_star = max(m_in_valid, key=lambda m: (round(model_high_fit[m][idx], 6), -model_usd[m]))
-            best_in = model_high_fit[i_star][idx]
-            best_out = max((model_high_fit[m][idx] for m in m_out), default=0.0)
-            total_gain += max(0.0, best_in - best_out)
-            total_burn += model_usd[i_star]
-        betas[wkey] = round(total_gain / total_burn, 6) if total_burn > 0 else 0.0
-    return betas
+    def rec(self, entry, wid):
+        st, cap = entry['states'][wid]
+        return five_axis_window_recovery(st, cap)
+
+    def _alt(self, unit, gi):
+        """(fit, slack) of the best candidate of an outside unit at demand point gi (ties: cheapest)."""
+        got = self._alts.get((unit, gi))
+        if got is None:
+            rows = self.units[unit]
+            best = max(rows, key=lambda e: (round(e['fits'][gi], 9), -e['spend']))
+            slack = 1.0
+            for wid in best['states']:
+                rec = self.rec(best, wid)
+                if rec is not None:
+                    slack = min(slack, five_axis_substitute_slack(rec, best['spend']))
+            got = self._alts[(unit, gi)] = (best['fits'][gi], slack)
+        return got
+
+    def _outside(self, wkey, gi):
+        return [self._alt(u, gi) for u in self.units if wkey not in self.unit_wkeys[u]]
+
+    def ladder(self, wkey):
+        """The account's value ladder for window `wkey`, averaged over the demand grid (owner D1)."""
+        got = self._ladders.get(wkey)
+        if got is None:
+            own = self.points.get(wkey) or []
+            hulls = []
+            for gi in range(len(self.grid)):
+                pts = [(e['spend'], e['fits'][gi]) for e in own if e['spend'] > 0]
+                if pts:
+                    outside = five_axis_outside_value([(f, a) for f, a in self._outside(wkey, gi) if f > 0],
+                                                      max(f for _, f in pts))
+                    hulls.append(five_axis_upper_hull(pts, outside))
+            got = self._ladders[wkey] = five_axis_value_ladder(hulls)
+        return got
+
+    def outside_at_task(self, wkey):
+        """(V, own best fit, P(some outside candidate has room)) at the task's own demand, for the report."""
+        own = [e for e in (self.points.get(wkey) or []) if e['spend'] > 0]
+        alts = [(f, a) for f, a in self._outside(wkey, self.task_gi) if f > 0]
+        best = max((e['fits'][self.task_gi] for e in own), default=0.0)
+        none_open = 1.0
+        for _, a in alts:
+            none_open *= (1.0 - a)
+        return five_axis_outside_value(alts, best), best, 1.0 - none_open
+
+    def window_cost(self, wkey, rec, spend, econ_hours):
+        tables = self._tables.setdefault((wkey, round(rec['used_usd'], 6), round(rec['elapsed_frac'], 9),
+                                          round(rec['capacity_usd'], 6)), {})
+        return five_axis_spend_cost(rec, self.ladder(wkey), spend, econ_hours, self.spend_max.get(wkey, spend), tables)
+
+    def report(self):
+        """One block per priced window for the plan's `system.quota_windows` (and the README page): its state and its
+        price now. Only windows some eligible candidate draws appear."""
+        out = []
+        for wkey in sorted(self.points):
+            e = self.points[wkey][0]
+            rec = self.rec(e, wkey[1])
+            if rec is None:
+                continue
+            ladder = self.ladder(wkey)
+            outside, best, slack = self.outside_at_task(wkey)
+            period = rec['period_hours']
+            out.append({
+                'label': f'{wkey[0]}/{wkey[1]}', 'quota_source': wkey[0], 'window': wkey[1],
+                'capacity_usd': round(rec['capacity_usd'], 2), 'used_usd': round(rec['used_usd'], 2),
+                'recovery_line_usd': round(rec['line_now_usd'], 2),
+                'period_hours': None if period is None else round(period, 2),
+                'elapsed_hours': None if period is None else round(period - rec['reset_hours'], 2),
+                'reset_in_hours': None if rec['reset_hours'] == float('inf') else round(rec['reset_hours'], 2),
+                'need_probability': round(five_axis_need_probability(rec, rec['used_usd']), 4),
+                'quota_price': round(five_axis_quota_price(rec, ladder, rec['used_usd']), 6) if ladder['steps'] else 0.0,
+                'ladder_steps': len(ladder['steps']), 'outside_fit': round(outside, 4), 'best_fit': round(best, 4),
+                'substitute_slack': round(slack, 4), 'candidates': len(self.points[wkey]),
+            })
+        return out
 
 
 def five_axis_order(candidate):
-    """Lexicographic order on the five-axis path (advisor report v2 §5), in the order of the returned tuple:
-    1. Net score N = F - beta_w * X / h descending (rounded to 4 places so tied under-line models enter the tie-breaks)
-    2. Wait before the start ascending (round 10: a candidate that waits for a reset trails one that starts now; the
-       design has no such key, it keeps `--can-wait-hours` candidates behind immediate ones at equal N)
-    3. Earliest-expiring under-line quota ascending (use quota that is behind its recovery line and resets soonest
-       first; a candidate with none sorts last)
-    4. Own over-line spend before substitute absorption ascending (between the design's keys 2 and 3: at an equal
-       reset time the candidate that leans less on the line goes first)
-    5. Faster completion time (wait_hours + expected_hours) ascending: the model's public per-task time (owner, S4)
-    6. Fewer list-price USD spent ascending
-    7. Demand-weighted axis level descending, then sibling harness place ascending."""
+    """Lexicographic order on the five-axis path (quota economy v3, advisor report v3 §1.6), in the order of the tuple:
+    1. Net score N = F - cost descending (rounded to 4 places so tied models enter the tie-breaks)
+    2. Wait before the start ascending (round 10: a candidate that waits for a reset trails one that starts now; the design
+       has no such key, it keeps `--can-wait-hours` candidates behind immediate ones at equal N)
+    3. Faster completion time (wait_hours + expected_hours) ascending: the model's public per-task time (owner, S4)
+    4. Fewer list-price USD spent ascending
+    5. Demand-weighted axis level descending, then sibling harness place ascending.
+    How soon quota lapses and what a substitute could take are already inside the cost (the need probability and the
+    outside point of the value ladder), so no key reads them."""
     k = candidate['components']
-    earliest_reset = k.get('earliest_under_line_reset_hours')
-    reset_key = float('inf') if earliest_reset is None else round(float(earliest_reset), 4)
-    own_over = round(float(k.get('own_over_line_usd', 0.0) or 0.0), 4)
     wait_h = float(candidate.get('available_in_hours') or 0.0)
     dur_h = float(candidate.get('expected_hours') or 0.0)
     usd = float(candidate.get('expected_usd') if candidate.get('expected_usd') is not None else float('inf'))
-    return (-round(float(candidate['score']), 4), round(wait_h, 4), reset_key, own_over, round(wait_h + dur_h, 4),
+    return (-round(float(candidate['score']), 4), round(wait_h, 4), round(wait_h + dur_h, 4),
             round(usd, 4), -round(float(k.get('five_axis_level', 0.0)), 4), k.get('harness_place', 0))
+
+
+FIVE_AXIS_ORDER_KEYS = ('net_score', 'wait_hours', 'completion_hours', 'usd', 'axis_level', 'harness_place')
+
+
+def five_axis_deciding_key(first, second):
+    """The name of the first key of `five_axis_order` on which `first` beats `second` ('tie' when none does)."""
+    for name, a, b in zip(FIVE_AXIS_ORDER_KEYS, five_axis_order(first), five_axis_order(second)):
+        if a != b:
+            return name
+    return 'tie'
+
+
+def five_axis_speed_rule(eligible):
+    """After the ranking (quota economy v3 §1.5, owner D2): a candidate that is faster than the winner at no lower fit
+    replaces it when the last dollar of its own spend is still more likely to lapse than to be needed (pi at the end of
+    its spend < 1/2 on every window it draws). Fast-mode variants and faster models are one rule; faster is the model's
+    public per-task time (arena Time/Task P50) plus any wait. Returns the replaced winner, or None."""
+    if len(eligible) < 2:
+        return None
+    base = eligible[0]
+
+    def done(c):
+        return float(c.get('available_in_hours') or 0.0) + float(c.get('expected_hours') or 0.0)
+    fit0, t0 = float(base['components'].get('fit') or 0.0), done(base)
+    faster = [c for c in eligible[1:]
+              if float(c['components'].get('fit') or 0.0) >= fit0 - 1e-9 and done(c) < t0 - 1e-9
+              and float((c.get('economy') or {}).get('need_end_max') or 0.0) < 0.5]
+    if not faster:
+        return None
+    pick = min(faster, key=lambda c: (round(done(c), 4), eligible.index(c)))
+    eligible.remove(pick)
+    eligible.insert(0, pick)
+    pick['components']['decided_by_speed'] = True
+    if pick['bundle'].get('fast'):
+        pick['components']['fast_reason'] = 'speed_rule'
+    pick['notes'].append(f"replaces {base['id']} (same or higher fit, done in {done(pick):.2f}h instead of {t0:.2f}h): "
+                         f"its last dollar still lapses more often than it is needed "
+                         f"(need probability {pick['economy']['need_end_max']:.3f} < 0.5)")
+    return base
 
 
 HARNESS_CAPABILITIES = {
@@ -3503,6 +3764,16 @@ def evaluate_bundle(bundle, task, ctx):
                     result.setdefault('data_errors', []).append(err)
                 else:
                     exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
+            if (result.get('_five_axis_windows') and not five_window_states and not spec.get('unlimited')
+                    and not result['excluded'] and not result.get('data_errors')):
+                # The account has windows but none can be read now: its spend cannot be priced and it cannot stand in for
+                # another account either, so it leaves automatic routing as a surfaced data error (round 13).
+                err = QUOTA_READING_UNAVAILABLE
+                if named:
+                    result['notes'].append(f'data error: {err}; dispatched because it was named')
+                    result.setdefault('data_errors', []).append(err)
+                else:
+                    exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
             result['_five_window_states'] = five_window_states
             result['_five_econ_hours'] = econ_hours
             result['_five_chain_hours'] = econ_chain_hours
@@ -3700,6 +3971,7 @@ def evaluate_bundle(bundle, task, ctx):
         # effort's extra burn is priced in its usd and its gain in the effort-scaled axes). The economy decides.
         _, scaled = five_axis_level(axes, task['five_axis_demand'], five_axis_effort_ratio(five_info, policy, five_curves, eff))
         fit, axis_rows = five_axis_fit(scaled, task['five_axis_demand'], task['five_axis_targets'], float(five['shortfall_weight']))
+        result['_five_scaled'] = scaled         # the economy re-reads this candidate's effort-scaled axes over the demand grid
         result['components'].update(five_axis_level=round(effective, 4),
                                     five_axis_shortfall=round(sum(r['demand'] * r['shortfall'] for r in axis_rows.values())
                                                               / max(1, sum(r['demand'] for r in axis_rows.values())), 4))
@@ -3947,152 +4219,130 @@ def harness_factor_report(policy):
             'basis': table.get('basis') or ''}
 
 
+def five_axis_make_fast(c, fast_cand, reason):
+    """Turn candidate `c` into its fast-mode variant at the vendor's burn and speed (a separate candidate, priced at its
+    real spend; round 13)."""
+    c['bundle']['fast'] = True
+    c['components']['fast'] = True
+    if reason:
+        c['components']['fast_reason'] = reason
+    c['expected_hours'] = round(fast_cand['hours'], 2)
+    c['expected_usd'] = round(fast_cand['step_usd'], 2)
+    c['chain_usd'] = round(fast_cand['chain_usd'], 2)
+    c['notes'].append(f"fast mode ({fast_cand['price_multiplier']:g}x burn, up to {fast_cand['speed_multiplier']:g}x "
+                      f"output speed: the vendor's upper bound, applied to the whole duration)")
+
+
 def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
-    """Quota economy v2 (advisor report v2 §1-5): recovery line l(t) = C * (t - t0) / L, over-line spend X segmented
-    across resets, nested and multi-window max X, desync-aware same-model substitute-pool absorption, beta_w from public
-    ability and burn over the 63-point demand grid, and automatic fast mode when its whole spend stays under the line."""
-    anchor_val = (accounts.get('_five_axis') or {}).get('anchor_value', FIVE_AXIS_ANCHOR_VALUE)
-    betas = five_axis_beta(eligible, accounts, policy, anchor_val)
+    """Quota economy v3 (advisor report v3; owner decisions of round 13): cost_i = integral over the candidate's own spend
+    of the window's quota price lambda_w(y) dy, N = F - cost, with lambda_w from the account's own value ladder (averaged
+    over the 63-point demand grid) and the period's own need probability pi_w(y). Only long reset-period windows price; the
+    5-hour windows keep their feasibility role. A multi-window candidate pays its most expensive window (never both).
+    Fast-mode variants are separate candidates appended to `candidates` and `eligible` at their real spend (a forced fast
+    replaces the base). Returns the per-window report for the plan's `system.quota_windows`."""
+    econ = FiveAxisEconomy(eligible, accounts, policy, task)
     base_hours = max(1e-6, float(task['hours'] or 0.0))
 
-    sub_pools = {}
-    for c in eligible:
-        if c.get('available_in_hours'):
-            continue
-        w_states = c.get('_five_window_states') or {}
-        if not w_states:
-            continue
-        m = canonical(c['bundle']['model'], accounts)
-        qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
-        sub_pools.setdefault(m, {}).setdefault(qsrc, w_states)
-
-    def substitute_allowance(model, own_qsrc, econ_h):
-        pools = sub_pools.get(model) or {}
-        total = 0.0
-        for qsrc, w_states in pools.items():
-            if qsrc == own_qsrc:
-                continue
-            long_ws = [(st, cap) for _, (_, st, cap, _) in w_states.items() if not st.get('short')]
-            use_ws = long_ws or [(st, cap) for _, (_, st, cap, _) in w_states.items()]
-            if not use_ws:
-                continue
-            total += min(five_axis_non_expiring_under_line_usd(st, cap, econ_h) for st, cap in use_ws)
-        return total
-
-    def eval_windows(c, w_states, own_qsrc, model, step_usd, chain_usd, econ_h):
+    def eval_windows(c, w_states, own_qsrc, spend, chain_usd, econ_h):
         rows = []
         for wid, (wspec, st, cap_usd_w, _) in w_states.items():
-            over = five_axis_over_line_usd(st, cap_usd_w, step_usd, econ_h)
-            if over is None:
+            rec = five_axis_window_recovery(st, cap_usd_w)
+            if rec is None:
                 continue
             rem = st['remaining']
             rem_usd = rem * cap_usd_w / 100.0
-            step_pct = (100.0 * step_usd / cap_usd_w) if cap_usd_w > 0 else 0.0
+            step_pct = (100.0 * spend / cap_usd_w) if cap_usd_w > 0 else 0.0
             chain_pct = (100.0 * chain_usd / cap_usd_w) if cap_usd_w > 0 else 0.0
-            after_pct = rem - step_pct
-            after_usd = rem_usd - step_usd
+            reset_h = rec['reset_hours']
             end_h = st['end_hours']
-            reset_h = over['reset_hours']
-            expires_first = end_h < reset_h
-            b_val = betas.get((own_qsrc, wid), 0.0)
-            rows.append({
-                'window': wid,
+            period = rec['period_hours']
+            row = {
+                'window': wid, 'quota_source': own_qsrc,
                 'short': bool(st.get('short')),
-                'unstarted': bool(over.get('unstarted')),
-                'remaining': rem,
-                'after': after_pct,
-                'step_pct': step_pct,
-                'chain_pct': chain_pct,
-                'capacity_usd': round(cap_usd_w, 2),
-                'remaining_usd': round(rem_usd, 2),
+                'unstarted': bool(rec.get('unstarted')),
+                'remaining': rem, 'after': rem - step_pct, 'step_pct': step_pct, 'chain_pct': chain_pct,
+                'capacity_usd': round(cap_usd_w, 2), 'remaining_usd': round(rem_usd, 2),
                 'reserved_usd': round(st.get('reserved_usd', 0.0), 2),
-                'expected_usd': round(step_usd, 2),
-                'chain_usd': round(chain_usd, 2),
-                'after_usd': round(after_usd, 2),
-                'line_now_usd': round(over['line_now_usd'], 2),
-                'line_end_usd': round(over['line_end_usd'], 2),
-                'used_usd': round(over['used_usd'], 2),
-                'under_line_usd': round(over['under_line_usd'], 2),
-                'allowance_usd': round(over['allowance_usd'], 2),
-                'over_line_usd': round(over['over_line_usd'], 4),
-                'beta': b_val,
-                'reset_hours': reset_h,
-                'end_hours': end_h,
-                'expires_first': expires_first,
-                'stale': st['stale'],
+                'expected_usd': round(spend, 2), 'chain_usd': round(chain_usd, 2), 'after_usd': round(rem_usd - spend, 2),
+                'used_usd': round(rec['used_usd'], 2), 'line_now_usd': round(rec['line_now_usd'], 2),
+                'period_hours': None if period is None else round(period, 2),
+                'elapsed_hours': None if period is None else round(period - reset_h, 2),
+                'reset_hours': None if reset_h == float('inf') else reset_h,
+                'end_hours': None if end_h == float('inf') else end_h, 'expires_first': end_h < reset_h,
+                'stale': st['stale'], 'priced': False, 'cost': 0.0, 'opportunity_cost': 0.0,
                 **({k: st[k] for k in ('natural_reset_hours', 'expected_reset_at') if k in st}),
-            })
+            }
+            if not row['short'] and spend > 0:
+                got = econ.window_cost((own_qsrc, wid), rec, spend, econ_h)
+                row.update(priced=True, cost=round(got['cost'], 6), opportunity_cost=round(got['cost'], 6),
+                           quota_price=round(got['lambda_start'], 6), need_start=round(got['need_start'], 4),
+                           need_end=round(got['need_end'], 4), spend_before_reset=round(got['spend_before'], 2),
+                           spend_after_reset=round(got['spend_after'], 2))
+            rows.append(row)
         if not rows:
-            return None, 0.0, 0.0, 0.0, 0.0, None
-        # The binding window is the one whose over-line spend is the candidate's X; its beta prices that spend (N2).
-        binding = max(rows, key=lambda r: (r['over_line_usd'], not r['short'], r['beta'], -r['after']))
-        own_over = binding['over_line_usd']
-        beta_val = binding['beta']
-        sub_abs = 0.0 if c.get('available_in_hours') else substitute_allowance(model, own_qsrc, econ_h)
-        net_over = max(0.0, own_over - sub_abs)
-        opp_cost = round(beta_val * net_over / base_hours, 4)
-        binding = {
-            **binding,
-            'over_line_usd': round(own_over, 2),
-            'substitute_absorbed_usd': round(min(own_over, sub_abs), 2),
-            'net_over_line_usd': round(net_over, 2),
-            'beta': round(beta_val, 6),
-            'opportunity_cost': opp_cost,
+            return None
+        binding = max(rows, key=lambda r: (r['cost'], not r['short'], -r['after']))
+        priced = [r for r in rows if r['priced']]
+        return binding, {
+            'windows': [{k: r[k] for k in ('quota_source', 'window', 'capacity_usd', 'used_usd', 'period_hours',
+                                           'elapsed_hours', 'cost', 'quota_price', 'need_start',
+                                           'need_end', 'spend_before_reset', 'spend_after_reset')}
+                        | {'spend_usd': r['expected_usd'],
+                           'reset_in_hours': None if r['reset_hours'] is None else round(r['reset_hours'], 2)}
+                        for r in priced],
+            'cost': binding['cost'], 'need_end_max': max((r['need_end'] for r in priced), default=0.0),
+            'binding_window': binding['window'] if binding['priced'] else None,
         }
-        period_rows = [r for r in rows if not r['short']] or rows
-        under_resets = [r['reset_hours'] for r in period_rows
-                        if not r['unstarted'] and r['under_line_usd'] > 1e-6 and r['reset_hours'] != float('inf')
-                        and (own_over <= 1e-6 or r['reset_hours'] <= econ_h)]
-        earliest_reset = min(under_resets) if under_resets else None
-        return binding, own_over, net_over, beta_val, opp_cost, earliest_reset
 
-    for c in eligible:
-        w_states = c.get('_five_window_states') or {}
-        model = canonical(c['bundle']['model'], accounts)
-        own_qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
-        econ_h = float(c.get('_five_econ_hours') or base_hours)
-        step_usd = float(c.get('expected_usd') or 0.0)
-        chain_usd = float(c.get('chain_usd') or step_usd)
-        binding, own_over, net_over, beta_val, opp_cost, earliest_reset = eval_windows(
-            c, w_states, own_qsrc, model, step_usd, chain_usd, econ_h)
-        fast_cand = c.get('_five_fast_candidate')
-        if fast_cand and w_states:
-            f_binding, f_own_over, f_net_over, f_beta, f_opp, f_earliest = eval_windows(
-                c, w_states, own_qsrc, model, fast_cand['step_usd'], fast_cand['chain_usd'], fast_cand['econ_hours'])
-            if f_binding is not None and (task.get('force_fast') or f_own_over <= 1e-9):
-                binding, own_over, net_over, beta_val, opp_cost, earliest_reset = (
-                    f_binding, f_own_over, f_net_over, f_beta, f_opp, f_earliest)
-                c['bundle']['fast'] = True
-                c['components']['fast'] = True
-                f_reason = 'user_override' if task.get('force_fast') else 'under_recovery_line'
-                c['components']['fast_reason'] = f_reason
-                c['expected_hours'] = round(fast_cand['hours'], 2)
-                c['expected_usd'] = round(fast_cand['step_usd'], 2)
-                c['chain_usd'] = round(fast_cand['chain_usd'], 2)
-                c['notes'].append(f"fast mode enabled ({f_reason}: {fast_cand['price_multiplier']:g}x burn, up to "
-                                  f"{fast_cand['speed_multiplier']:g}x output speed: the vendor's upper bound, applied to the "
-                                  f"whole duration)")
+    def price(c, w_states, own_qsrc, spend, chain_usd, econ_h):
+        got = eval_windows(c, w_states, own_qsrc, spend, chain_usd, econ_h)
+        binding, summary = got if got else (None, {'windows': [], 'cost': 0.0, 'need_end_max': 0.0, 'binding_window': None})
         if binding is not None:
             c['capacity'] = binding
             c['expected_pct'] = round(binding['step_pct'], 2)
             c['chain_pct'] = round(binding['chain_pct'], 2)
-        c['components']['opportunity_cost'] = opp_cost
-        c['components']['own_over_line_usd'] = round(own_over, 4)
-        c['components']['net_over_line_usd'] = round(net_over, 4)
-        c['components']['beta'] = round(beta_val, 6)
-        if earliest_reset is not None:
-            c['components']['earliest_under_line_reset_hours'] = round(earliest_reset, 4)
+        cost = round(summary['cost'], 4)
+        c['economy'] = summary
+        c['components']['opportunity_cost'] = cost
+        c['components']['quota_price'] = binding.get('quota_price', 0.0) if binding and binding['priced'] else 0.0
+        c['components']['need_probability'] = binding.get('need_start', 0.0) if binding and binding['priced'] else 0.0
+        c['components']['need_probability_end'] = summary['need_end_max']
+        if binding is not None and binding['priced']:
+            _, _, slack = econ.outside_at_task((own_qsrc, binding['window']))
+            c['components']['substitute_slack'] = round(slack, 4)
         if isinstance(c.get('five_axis_price'), dict):
-            c['five_axis_price'].update(
-                own_over_line_usd=round(own_over, 2),
-                net_over_line_usd=round(net_over, 2),
-                beta=round(beta_val, 6),
-                earliest_under_line_reset_hours=None if earliest_reset is None else round(earliest_reset, 2),
-            )
+            c['five_axis_price'].update(cost=cost, quota_price=c['components']['quota_price'],
+                                        need_probability=c['components']['need_probability'],
+                                        need_probability_end=c['components']['need_probability_end'])
+
+    variants = []
+    for c in list(eligible):
+        w_states = c.get('_five_window_states') or {}
+        own_qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
+        econ_h = float(c.get('_five_econ_hours') or base_hours)
+        step_usd = float(c.get('expected_usd') or 0.0)
+        chain_usd = float(c.get('chain_usd') or step_usd)
+        fast_cand = c.get('_five_fast_candidate') if w_states else None
+        if fast_cand and task.get('force_fast'):
+            five_axis_make_fast(c, fast_cand, 'user_override')
+            price(c, w_states, own_qsrc, fast_cand['step_usd'], fast_cand['chain_usd'], fast_cand['econ_hours'])
+            continue
+        if fast_cand:
+            twin = {**c, 'bundle': dict(c['bundle']), 'components': dict(c['components']), 'notes': list(c['notes']),
+                    'excluded': list(c['excluded']),
+                    'five_axis_price': dict(c['five_axis_price']) if isinstance(c.get('five_axis_price'), dict) else None}
+            five_axis_make_fast(twin, fast_cand, 'net_score')
+            price(twin, w_states, own_qsrc, fast_cand['step_usd'], fast_cand['chain_usd'], fast_cand['econ_hours'])
+            variants.append(twin)
+        price(c, w_states, own_qsrc, step_usd, chain_usd, econ_h)
+    candidates.extend(variants)
+    eligible.extend(variants)
+    report = econ.report()
     for c in candidates:
-        for priv in ('_five_axis_windows', '_five_window_states', '_five_econ_hours',
-                     '_five_chain_hours', '_five_context_scale', '_five_fast_candidate'):
+        for priv in ('_five_axis_windows', '_five_window_states', '_five_econ_hours', '_five_chain_hours',
+                     '_five_context_scale', '_five_fast_candidate', '_five_scaled'):
             c.pop(priv, None)
+    return report
 
 
 def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overrides=(), records=(), host_policy_config=None):
@@ -4120,8 +4370,9 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()
                   if five or bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
     eligible = [c for c in candidates if not c['excluded']]
+    quota_windows = None
     if five:
-        apply_five_axis_economy(candidates, eligible, task, accounts, policy)
+        quota_windows = apply_five_axis_economy(candidates, eligible, task, accounts, policy)
     # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
     # that value only. Opportunity cost is already in score units at the opportunity_exchange rate, so it is
     # subtracted as it is. No normalization over the candidate set.
@@ -4150,13 +4401,19 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
         # then fewer USD, then higher axis level; the harness order only separates siblings of one model, account and effort.
         harness_places(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'))
         eligible.sort(key=five_axis_order)
+        displaced = five_axis_speed_rule(eligible)
+        for i, c in enumerate(eligible):
+            c['components']['decided_by'] = ('speed' if i == 0 and displaced is not None else
+                                             five_axis_deciding_key(c, eligible[i + 1]) if i + 1 < len(eligible) else 'only_candidate')
     else:
         apply_harness_order(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'), weights)
         eligible.sort(key=lambda c: -c['score'])
     system = {'weights': {k: round(v, 3) for k, v in weights.items()},
               'harness_factors': harness_factor_report(policy),
               '_live_models': ctx['live_models']}
-    if not five:        # the five-axis economy prices by beta_w; the old exchange rates are not part of its decision
+    if five:
+        system['quota_windows'] = quota_windows
+    if not five:        # the five-axis economy prices by the quota price of the account's own windows; the old exchange rates are not part of its decision
         exchange = opportunity_exchange(policy)
         system.update(shortage_loss_per_usd=exchange['shortage_loss_per_usd'],
                       shortage_loss_per_worker_hour=exchange['shortage_loss_per_worker_hour'],
@@ -4494,6 +4751,11 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                     for name, spec in accounts['accounts'].items() if spec.get('cwd_regex') and spec.get('allowed_cwd')]
     if cwd_warnings:
         decision.setdefault('warnings', []).extend(cwd_warnings)
+    if accounts.get('_five_axis'):
+        unread = sorted({c['bundle']['account'] for c in candidates if any(QUOTA_READING_UNAVAILABLE in str(r) for r in c['excluded'])})
+        if unread:
+            decision.setdefault('warnings', []).append(
+                f"{', '.join(unread)}: {QUOTA_READING_UNAVAILABLE}; out of automatic routing and no substitute for other accounts")
     state_policy = host_policy.load_policy() if host_policy_config is None else host_policy_config
     state_warnings = account_state.warnings(accounts.get('_discovery'), accounts['accounts'],
                                             lambda name: host_policy.account_allowed(state_policy, name))
@@ -4649,7 +4911,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                                      expected_hours=top.get('expected_hours'))
     result['expected_usd'] = top.get('expected_usd')
     result['expected_hours'] = top.get('expected_hours')
-    result['decision']['alternatives'] = [c['id'] for c in pool if c is not top][:3]
+    result['decision']['alternatives'] = list(dict.fromkeys(c['id'] for c in pool if c['id'] != top['id']))[:3]
     if top['available_in_hours']:
         decision.update({'action': 'defer', 'start_after_hours': round(top['available_in_hours'], 1)})
     return result
@@ -4659,8 +4921,9 @@ SNAPSHOT_FULL, SNAPSHOT_COMPACT, SNAPSHOT_EXCLUDED = 6, 8, 16
 SNAPSHOT_CAPACITY_KEYS = ('window', 'remaining', 'after', 'step_pct', 'chain_pct', 'capacity_usd', 'remaining_usd',
                           'expected_usd', 'reset_hours', 'end_hours', 'expires_first', 'demand_pct', 'demand_source',
                           'shortage_probability', 'scarcity_cost', 'opportunity_cost', 'reset_sunk_weight', 'reset_bonus',
-                          'surplus_pct', 'line_now_usd', 'line_end_usd', 'used_usd', 'under_line_usd', 'allowance_usd',
-                          'over_line_usd', 'substitute_absorbed_usd', 'net_over_line_usd', 'beta', 'stale')
+                          'surplus_pct', 'line_now_usd', 'used_usd', 'quota_source', 'period_hours', 'elapsed_hours',
+                          'priced', 'cost', 'quota_price', 'need_start', 'need_end', 'spend_before_reset',
+                          'spend_after_reset', 'stale')
 SNAPSHOT_DECISION_KEYS = ('action', 'needs_user_decision', 'margin', 'needs_judgment', 'reason', 'alternatives', 'continuity',
                           'fast', 'fast_reason', 'responsiveness', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
 
@@ -4695,12 +4958,25 @@ def _snapshot_row(candidate, detail):
         keep = ('fit', 'ability', 'opportunity_cost', 'capability', 'divergence', 'global_rigor', 'module_precision',
                 'responsiveness', 'responsiveness_source',
                 'reset_bonus', 'boost', 'free_usage', 'overqualification', 'effort_penalty',
-                'five_axis_level', 'own_over_line_usd', 'net_over_line_usd', 'beta',
-                'earliest_under_line_reset_hours', 'duration_multiplier')
+                'five_axis_level', 'quota_price', 'need_probability', 'need_probability_end', 'substitute_slack',
+                'decided_by', 'duration_multiplier')
         row['components'] = {k: _round(comps[k]) for k in keep if k in comps and comps[k]}
         for k in ('fit', 'ability', 'opportunity_cost'):
             if k in comps:
                 row['components'][k] = _round(comps[k])
+    econ = candidate.get('economy')
+    if isinstance(econ, dict) and not excluded:
+        # What the README page reads (round 13): per priced window the candidate's spend, cost and need probability at the
+        # start and at the end of that spend, plus the key that separated it from the next row.
+        row['economy'] = {'cost': _round(econ.get('cost')), 'need_end_max': _round(econ.get('need_end_max')),
+                          'binding_window': econ.get('binding_window'),
+                          'decided_by': comps.get('decided_by'),
+                          'windows': [{k: _round(v) for k, v in w.items()}
+                                      for w in econ.get('windows') or ()]}
+        if 'expected_usd' not in row and candidate.get('expected_usd') is not None:
+            row['expected_usd'] = _round(candidate['expected_usd'])
+        if 'expected_hours' not in row and candidate.get('expected_hours') is not None:
+            row['expected_hours'] = _round(candidate['expected_hours'])
     return row
 
 
@@ -4742,6 +5018,7 @@ def decision_snapshot(result, task=None):
                      'task': {k: v for k, v in d_task.items() if k != 'profile'} | (
                          {'profile': clean_profile} if clean_profile is not None else {}),
                      'system': {'weights': system.get('weights'),
+                                'quota_windows': system.get('quota_windows'),
                                 'shortage_loss_per_usd': system.get('shortage_loss_per_usd'),
                                 'shortage_loss_per_worker_hour': system.get('shortage_loss_per_worker_hour'),
                                 'opportunity_exchange': {k: exchange[k] for k in (
@@ -4782,20 +5059,21 @@ def explain(top, system):
     if cap:
         rem_usd_str = f" (${cap['remaining_usd']:.2f})" if cap.get('remaining_usd') is not None else ""
         exp_usd_str = f" (~${top['expected_usd']:.2f})" if top.get('expected_usd') is not None else ""
-        if 'net_over_line_usd' in cap:
+        if 'priced' in cap:
+            priced = (f"need probability {cap['need_start']:.2f} -> {cap['need_end']:.2f}, quota price "
+                      f"{cap['quota_price']:.5f} fit/USD" if cap.get('priced') else 'a short window: feasibility only, not priced')
             parts.append(f"{cap['window']}: {cap['remaining']:.0f}% left{rem_usd_str}, work ~{top['expected_pct']}%{exp_usd_str} "
-                         f"(chain ~{top['chain_pct']}%), recovery line ${cap.get('line_now_usd', 0.0):.2f} "
-                         f"(under-line ${cap.get('under_line_usd', 0.0):.2f}), over-line X=${cap.get('over_line_usd', 0.0):.2f} "
-                         f"(net X=${cap.get('net_over_line_usd', 0.0):.2f}, beta {cap.get('beta', 0.0):.5f}), "
-                         f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
-                         f"opportunity cost {top['components']['opportunity_cost']}")
+                         f"(chain ~{top['chain_pct']}%), {priced}, "
+                         + (f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
+                            if cap.get('end_hours') is not None else 'with no reset, ')
+                         + f"opportunity cost {top['components']['opportunity_cost']}")
         else:
             parts.append(f"{cap['window']}: {cap['remaining']:.0f}% left{rem_usd_str}, work ~{top['expected_pct']}%{exp_usd_str} "
                          f"(chain ~{top['chain_pct']}%), other work wants ~{cap['demand_pct']:.0f}% ({cap['demand_source']}) "
                          f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
                          f"opportunity cost {top['components']['opportunity_cost']}")
     exchange = (system or {}).get('opportunity_exchange') or {}
-    if exchange.get('score_per_displaced_usd') and not (cap and 'net_over_line_usd' in cap):
+    if exchange.get('score_per_displaced_usd') and not (cap and 'priced' in cap):
         parts.append(f"value/cost exchange {exchange['score_per_displaced_usd']:g} score per displaced USD "
                      f"(${exchange['usd_per_score_point']:g} displaced USD per score point)")
     factor = top['components'].get('harness_factor')
@@ -4808,7 +5086,7 @@ def explain(top, system):
             parts.append(f"fast mode enabled ({top['components'].get('fast_reason', 'plentiful_quota')}, "
                          f"bonus {top['components'].get('fast_bonus', 0):+.2f})")
         else:
-            parts.append(f"fast mode enabled ({top['components'].get('fast_reason', 'under_recovery_line')})")
+            parts.append(f"fast mode enabled ({top['components'].get('fast_reason') or 'priced as its own candidate'})")
     if top['components'].get('boost'):
         parts.append(f"includes a temporary user-override boost of {top['components']['boost']:+.2f}")
     if top['components'].get('responsiveness_source') == 'default':
