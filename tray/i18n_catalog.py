@@ -34,6 +34,7 @@ EN = {
     '极高': 'Very high',
     '最高': 'Max',
     '超高': 'Ultra',
+    '快速': 'Fast',
     '额度未记录': 'Quota not recorded',
     '动画': 'Animate',
     '重播 · 点击画面或按 Esc 跳过': 'Replay · Click the stage or press Esc to skip',

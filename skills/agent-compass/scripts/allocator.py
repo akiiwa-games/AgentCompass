@@ -2778,13 +2778,17 @@ FIVE_AXIS_DEMAND_GRID = tuple(
 class FiveAxisEconomy:
     """Quota economy v3 for one plan (advisor report v3, owner decisions D1-D3 of round 13).
 
+    `pool` is the account's own candidates, evaluated with the current task's flags neutralised (`rank`'s economy pool), so
+    a window's price does not move with local_only, realtime_loop, vision, a named model or whether a candidate fits the
+    remaining capacity now. The remaining capacity enters only through the window's own state (room, used, reset clock).
+
     Every long reset-period window w = (quota source, window id) is priced on its own state and clock: its value ladder
     comes from the candidates that draw it and, as the ladder's outside point only, from the startable candidates that do
     not (each with its own `five_axis_substitute_slack`, which reads that candidate's windows and no price). The price graph
     is therefore acyclic and one pass gives the unique answer. 5-hour windows (`short`) keep their feasibility role in
     `evaluate_bundle` and never enter a price, a tail or a ladder here."""
 
-    def __init__(self, eligible, accounts, policy, task, extra=()):
+    def __init__(self, pool, accounts, policy, task, extra=()):
         cfg = five_axis_config(policy) or FIVE_AXIS_DEFAULTS
         anchor = (accounts.get('_five_axis') or {}).get('anchor_value', FIVE_AXIS_ANCHOR_VALUE)
         shortfall = float(cfg['shortfall_weight'])
@@ -2798,16 +2802,18 @@ class FiveAxisEconomy:
         self.unit_wkeys = {}
         self.points = {}
         self._tables, self._ladders, self._alts, self._recs, self._lumps = {}, {}, {}, {}, {}
-        for c in [*eligible, *extra]:
+        for c in [*pool, *extra]:
             qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
             states = {wid: (st, cap) for wid, (_, st, cap, _) in (c.get('_five_window_states') or {}).items()
                       if not st.get('short')}
+            if not states:
+                continue        # no long-window state: nothing to ladder and never an outside point (a data error upstream)
             scaled = c.get('_five_scaled') or {}
             key = tuple(sorted(scaled.items()))
             if key not in fit_cache:
                 fit_cache[key] = tuple(five_axis_fit(scaled, d, t, shortfall)[0] for d, t in zip(self.grid, targets))
             entry = {'cand': c, 'qsrc': qsrc, 'startable': not c.get('_five_long_wait'),
-                     'unmetered': bool(c.get('_five_unmetered')),
+                     'unmetered': bool(c.get('_five_unmetered')), 'metered': bool(c.get('_five_metered')),
                      'spend': float(c.get('expected_usd') or 0.0), 'states': states,
                      'hours': float(c.get('_five_econ_hours') or c.get('expected_hours') or 0.0),
                      'fits': fit_cache[key] + (float(c['components'].get('fit') or 0.0),),
@@ -2818,7 +2824,7 @@ class FiveAxisEconomy:
             for wid in states:
                 self.spend_max[(qsrc, wid)] = max(self.spend_max.get((qsrc, wid), 0.0), peak)
         for e in self.entries:
-            if e['startable'] and not e['unmetered']:
+            if e['startable'] and not e['unmetered'] and not e['metered']:
                 self.units.setdefault(e['unit'], []).append(e)
                 self.unit_wkeys[e['unit']] = frozenset((e['qsrc'], wid) for wid in e['states'])
         drawn = {}
@@ -3433,12 +3439,26 @@ def evaluate_bundle(bundle, task, ctx):
         result['components'].update({key: caps.get(key, 0) for key in ('visual', 'gui')})
     now = ctx['now']
 
+    # Economy pool mode (round 16, owner policy: a window's price must not depend on the current task's flags): the pool is
+    # what an account can run at all, evaluated with the task's flags neutralised (`rank` builds that task). It keeps the
+    # account-level exclusions (host policy, checkbox, discovery, holds, unverified, data errors, weekly window) and drops
+    # the ones that belong to the task: local-only, outbound, file transfer, image input, a named constraint, the demanded
+    # axes, the realtime floor, whether the remaining capacity fits THIS task, and the 5-hour windows.
+    pool = bool(task.get('_economy_pool'))
+
     def exclude(reason):
         result['excluded'].append(reason)
+
+    def task_exclude(reason):
+        """An exclusion that belongs to the current task, not to the account: the ranking keeps it, the pool does not."""
+        if not pool:
+            result['excluded'].append(reason)
 
     def short_exclude(reason):
         """An exclusion by a 5-hour window alone: the work cannot start now, but the account still has its long windows, so
         the economy (which prices only long windows) keeps this candidate as a substitute and in its own ladder."""
+        if pool:
+            return
         result['excluded'].append(reason)
         result.setdefault('_five_short_reasons', []).append(reason)
 
@@ -3483,12 +3503,13 @@ def evaluate_bundle(bundle, task, ctx):
         exclude('account not verified as launchable')
     if info.get('advisor_only') and kind not in info.get('advisor_for', ()):
         exclude('advisor only; cannot execute')
+    account_out = bool(result['excluded'])      # out by the host, the checkbox, a hold or billing: not by this task
     if info.get('excluded_when') == 'local_only' and task['local_only']:
-        exclude("the parent marked this work local-only (it must run on this machine: in-place edits, local tools, secrets or live accounts); this worker runs remotely")
+        task_exclude("the parent marked this work local-only (it must run on this machine: in-place edits, local tools, secrets or live accounts); this worker runs remotely")
     if info.get('excluded_when') == 'local_only' and task.get('outbound_ok') is False:
-        exclude('the parent disallowed outbound work; this worker runs remotely')
+        task_exclude('the parent disallowed outbound work; this worker runs remotely')
     if info.get('text_only') and task.get('file_transfer'):
-        exclude('this text-only runner cannot transfer or apply local files')
+        task_exclude('this text-only runner cannot transfer or apply local files')
     route = capabilities['routes'].get(kind) or {}
     # Route lists and the models table's visual ability are another dimension set: the five-axis path reads neither
     # (round 7); vision is the vision_tools axis, and a model with no vision data leaves routing by rule B.
@@ -3501,23 +3522,24 @@ def evaluate_bundle(bundle, task, ctx):
     # Harness input limits apply to every bundle on the harness, manual or auto (HARNESS_CAPABILITIES).
     harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
     if task['needs_visual'] and not harness_accepts_visual(harness, model):
-        exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
+        task_exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
     if task['constraint_model'] and not model_pin_matches(task, bundle, own_model):
-        exclude('explicit model constraint')
+        task_exclude('explicit model constraint')
     if task.get('constraint_effort') and str(scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
-        exclude('explicit effort constraint')
+        task_exclude('explicit effort constraint')
     if five:
         # Rule B: a demanded axis with no data at all, no cited usd on a metered account, or unknown image_input
         # modality when the task demands image input (vision_tools >= 2), leaves automatic routing; naming the model
         # (--model, or its bundle) still dispatches it, with the data error as a warning and its cost unpriced.
         state = info.get('five_axis') or {'missing': list(FIVE_AXES), 'usd_status': 'missing'}
         billed = not (spec.get('unmetered') or spec.get('unlimited'))
-        named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
+        named = not pool and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
         img_info = state.get('image_input') or {'status': 'missing'}
-        needs_image_input = task['five_axis_demand'].get('vision_tools', 0) >= 2
+        needs_image_input = task['five_axis_demand'].get('vision_tools', 0) >= 2 and not pool
         if needs_image_input and img_info.get('status') == 'no':
             exclude(f"model does not accept image input ({img_info.get('source') or 'public data'})")
-        blind = [a for a, w in task['five_axis_demand'].items() if w >= five['demanded_level'] and a in state.get('missing', ())]
+        blind = [] if pool else [a for a, w in task['five_axis_demand'].items()
+                                 if w >= five['demanded_level'] and a in state.get('missing', ())]
         errors = (
             ([f'no trusted data for the demanded axis {", ".join(blind)}'] if blind else [])
             + (['usd_per_hour has no cited source on a metered account'] if billed and state.get('usd_status') != 'ok' else [])
@@ -3606,7 +3628,7 @@ def evaluate_bundle(bundle, task, ctx):
                             f'(too slow per turn for a live loop)')
     expires = parse_time(spec.get('expires_at'))
     if expires is not None and (expires - now).total_seconds() < hours * 3600:
-        exclude('subscription ends before the work would finish')
+        task_exclude('subscription ends before the work would finish')
 
     worker = task['worker']
     worn = worker_worn(worker, policy)
@@ -3675,11 +3697,13 @@ def evaluate_bundle(bundle, task, ctx):
     if five:
         # Purpose-limited unmetered channels (Dot, ChatGPT Web) have no quota to relieve: never another window's substitute.
         result['_five_unmetered'] = bool(spec.get('unmetered') or spec.get('unlimited'))
+        # A metered (API) account is a last resort: it has a ladder of its own but is never another window's substitute.
+        result['_five_metered'] = billing == 'metered'
     if not spec.get('unmetered'):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
         latched = latched_windows(accounts, bundle['account'])
-        named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
+        named = not pool and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
             result.setdefault('_five_axis_windows', []).append(wid)
             long_applicable = long_applicable or not window_is_short(wspec, policy)
@@ -3761,7 +3785,8 @@ def evaluate_bundle(bundle, task, ctx):
                 req_hours = econ_chain_hours if task['coupling'] == 'high' else econ_hours
                 h_before = req_hours if (tau is None or tau == float('inf') or w_len is None) else min(req_hours, max(0.0, float(tau)))
                 need = h_before * unit * context_scale
-                if state['remaining'] - need < policy['safety_margin_pct'] and w_len is not None and state['reset_hours'] <= policy['defer_if_reset_within_hours']:
+                if (not pool and state['remaining'] - need < policy['safety_margin_pct'] and w_len is not None
+                        and state['reset_hours'] <= policy['defer_if_reset_within_hours']):
                     renewed = after_reset(state, w_len)
                     if renewed is not None and renewed['expiry_hours'] is not None and renewed['expiry_hours'] < hours:
                         renewed = None
@@ -3773,16 +3798,16 @@ def evaluate_bundle(bundle, task, ctx):
                         result['notes'].append(f'{wid} renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)')
                 if state['remaining'] - need < policy['safety_margin_pct']:
                     if state['reset_hours'] == float('inf'):
-                        exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
-                                '(starter allowance does not reset)')
+                        task_exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
+                                     '(starter allowance does not reset)')
                     else:
-                        exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
-                                f'and it resets in {state["reset_hours"] / 24:.1f} days')
+                        task_exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
+                                     f'and it resets in {state["reset_hours"] / 24:.1f} days')
                         result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
                 elif w_len is not None and req_hours > h_before:
                     rem_need = min(req_hours - h_before, float(w_len)) * unit * context_scale
                     if 100.0 - rem_need < policy['safety_margin_pct']:
-                        exclude(f'{wid} full capacity (100%) is short of the ~{rem_need:.1f}% the work needs per period plus {policy["safety_margin_pct"]}% margin')
+                        task_exclude(f'{wid} full capacity (100%) is short of the ~{rem_need:.1f}% the work needs per period plus {policy["safety_margin_pct"]}% margin')
                 five_window_states[wid] = (wspec, state, cap_usd_w, unit)
                 if state['stale'] and 'capacity from a stale observation' not in result['notes']:
                     result['notes'].append('capacity from a stale observation')
@@ -3859,7 +3884,7 @@ def evaluate_bundle(bundle, task, ctx):
                     result.setdefault('data_errors', []).append(err)
                 else:
                     exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
-            if (not spec.get('unlimited') and not result['excluded'] and not result.get('data_errors')
+            if (not spec.get('unlimited') and not account_out and not result.get('data_errors')
                     and not any(not st.get('short') for _, st, _, _ in five_window_states.values())):
                 # Priced on the weekly window or not at all (round 15): a candidate with no long reset-period window in its
                 # state cannot be priced and cannot stand in for another account's work, so it leaves automatic routing as
@@ -3895,7 +3920,7 @@ def evaluate_bundle(bundle, task, ctx):
             unknown = True
             opportunity += policy['unknown_capacity_penalty']
             result['notes'].append('no current capacity observation; unknown is not exhausted')
-    if five and not task.get('disable_fast') and not result['excluded'] and available_at is None:
+    if five and (pool or not task.get('disable_fast')) and not result['excluded'] and available_at is None:
         fast_info = ((five_info.get('five_axis') or {}).get('fast_mode')) or {}
         if fast_info.get('status') == 'ok' and fast_modes.supported(harness, model, info):
             f_price = float(fast_info.get('price_multiplier') or 2.0)
@@ -3910,6 +3935,8 @@ def evaluate_bundle(bundle, task, ctx):
                 if unit is None:
                     fast_ok = False
                     break
+                if pool:
+                    continue        # the pool asks what the account can run, not whether it fits the remaining capacity now
                 f_unit = unit * f_price * f_speed * context_scale     # per fast hour; x f_econ_h is price x the normal spend
                 w_len = wspec.get('hours')
                 tau = st.get('reset_hours')
@@ -4350,18 +4377,16 @@ def five_axis_make_fast(c, fast_cand, reason):
                       f"output speed: the vendor's upper bound, applied to the whole duration)")
 
 
-def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
+def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=None):
     """Quota economy v3 (advisor report v3; owner decisions of round 13): cost_i = integral over the candidate's own spend
     of the window's quota price lambda_w(y) dy, N = F - cost, with lambda_w from the account's own value ladder (averaged
     over the 63-point demand grid) and the period's own need probability pi_w(y). Only long reset-period windows price; the
     5-hour windows keep their feasibility role. A multi-window candidate pays its most expensive window (never both).
     Fast-mode variants are separate candidates appended to `candidates` and `eligible` at their real spend (a forced fast
     replaces the base). Returns the per-window report for the plan's `system.quota_windows`."""
-    # A candidate held back only by a 5-hour window keeps its account's long windows: it stays in its own ladder and stays a
-    # substitute for the others, so the 5-hour clock never reaches any price (owner, round 14).
-    waiting = [c for c in candidates if c['excluded'] and len(c['excluded']) == len(c.get('_five_short_reasons') or ())
-               and c.get('_five_window_states') is not None and c.get('_five_scaled')]
-    econ = FiveAxisEconomy(eligible, accounts, policy, task, extra=waiting)
+    # The ladders, outside points and lumps come from the account's own pool (`rank` evaluates it with the task's flags
+    # neutralised, owner round 16): neither a task flag nor whether a candidate fits the remaining capacity reaches a price.
+    econ = FiveAxisEconomy(eligible if pool is None else pool, accounts, policy, task)
     base_hours = max(1e-6, float(task['hours'] or 0.0))
 
     def eval_windows(c, w_states, own_qsrc, spend, chain_usd, econ_h):
@@ -4465,7 +4490,7 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
     for c in candidates:
         for priv in ('_five_axis_windows', '_five_window_states', '_five_econ_hours', '_five_chain_hours',
                      '_five_context_scale', '_five_fast_candidate', '_five_scaled', '_five_short_reasons',
-                     '_five_long_wait', '_five_unmetered'):
+                     '_five_long_wait', '_five_unmetered', '_five_metered'):
             c.pop(priv, None)
     return report
 
@@ -4484,6 +4509,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
                allowed=lambda name: host_policy.account_allowed(state_policy, name),
                now=now,
            )}
+    pool_bundles = dict(ctx['bundles'])         # the catalog, before a task-named effort adds bundles to it
     ctx['bundles'].update(named_effort_bundles(task, ctx))
     five = five_axis_config(policy) if accounts.get('_five_axis') else None     # set only by five_axis_overlay
     if five:
@@ -4497,7 +4523,13 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     eligible = [c for c in candidates if not c['excluded']]
     quota_windows = None
     if five:
-        quota_windows = apply_five_axis_economy(candidates, eligible, task, accounts, policy)
+        pool_task = {**task, 'realtime_loop': False, 'local_only': False, 'outbound_ok': None, 'file_transfer': False,
+                     'needs_visual': False, 'needs_gui': False, 'critical': False, 'wants_fast': False,
+                     'read_only_review': False, 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None,
+                     'metered_ok': True, 'metered_fallback': False, 'disable_fast': False, 'force_fast': False,
+                     'slow_pin_fallback': False, '_economy_pool': True}
+        pool = [c for c in (evaluate_bundle(b, pool_task, ctx) for b in pool_bundles.values()) if not c['excluded']]
+        quota_windows = apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=pool)
     # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
     # that value only. Opportunity cost is already in score units at the opportunity_exchange rate, so it is
     # subtracted as it is. No normalization over the candidate set.
@@ -5112,7 +5144,41 @@ def _snapshot_row(candidate, detail):
             row['expected_usd'] = _round(candidate['expected_usd'])
         if 'expected_hours' not in row and candidate.get('expected_hours') is not None:
             row['expected_hours'] = _round(candidate['expected_hours'])
+        line = candidate_quota_line(candidate)
+        if line is not None:
+            row['quota_line'] = line
     return row
+
+
+def candidate_quota_line(candidate):
+    """The window this candidate's cost is binding on, as the README quota page reads it (round 16, J1): {window: 'source/window'
+    (the key in the snapshot's quota_line.windows), hours: the candidate's hours, spend_usd: its spend of that window}. None
+    when the candidate prices no long window. The allocator is the one writer; `economy` and `quota_windows` stay as they are."""
+    econ = candidate.get('economy')
+    bound = econ.get('binding_window') if isinstance(econ, dict) else None
+    if not bound:
+        return None
+    for w in econ.get('windows') or ():
+        if w.get('window') == bound and w.get('quota_source') is not None:
+            hours = candidate.get('expected_hours')
+            return {'window': f"{w['quota_source']}/{bound}", 'hours': _round(hours if hours is not None else 0.0),
+                    'spend_usd': _round(w.get('spend_usd'))}
+    return None
+
+
+def snapshot_quota_line(quota_windows):
+    """`snapshot.quota_line` for the README quota page: every priced long window of the decision, keyed by its label, with the
+    capacity C, the use U and the clock the page draws (elapsed hours since the period's start, hours to the reset; None =
+    never resets). `account` and `window_id` are the usage collector's keys, where the page may look its readings up."""
+    windows = {}
+    for w in quota_windows or ():
+        label = w.get('label')
+        if not label:
+            continue
+        windows[label] = {'label': label, 'capacity_usd': w.get('capacity_usd'), 'used_usd': w.get('used_usd'),
+                          'elapsed_hours': w.get('elapsed_hours'), 'reset_in_hours': w.get('reset_in_hours'),
+                          'account': w.get('quota_source'), 'window_id': w.get('window')}
+    return {'windows': windows} if windows else None
 
 
 def decision_snapshot(result, task=None):
@@ -5149,6 +5215,7 @@ def decision_snapshot(result, task=None):
         'choice': result.get('choice'),
         'selected_bundle': result.get('selected_bundle'),
         'expected_usd': _round(result.get('expected_usd')),
+        **({'quota_line': quota_line} if (quota_line := snapshot_quota_line(system.get('quota_windows'))) else {}),
         'decision': {**{k: decision[k] for k in SNAPSHOT_DECISION_KEYS if decision.get(k) is not None},
                      'task': {k: v for k, v in d_task.items() if k != 'profile'} | (
                          {'profile': clean_profile} if clean_profile is not None else {}),

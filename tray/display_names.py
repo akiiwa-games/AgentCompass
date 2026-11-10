@@ -24,6 +24,7 @@ WORK_KINDS = {
     "frontend_implementation": "前端界面实现", "research": "开放式方案调研",
 }
 DIFFICULTIES = {"routine": "常规", "hard": "困难", "coupled": "高耦合", "extreme": "极难", "easy": "简单", "medium": "中等"}
+FAST_SUFFIX = "+fast"      # fast_modes.ID_SUFFIX: the router's id for a bundle's fast-mode twin
 EFFORTS = {"low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最高", "ultra": "超高"}
 
 
@@ -56,13 +57,15 @@ def effort_text(effort):
 
 
 def candidate_label(row):
-    """Opus 5.5 · High for a candidate row or bundle dict; the raw id when no model is recorded."""
+    """Opus 5.5 · High for a candidate row or bundle dict (Opus 5.5 · High · Fast for its fast-mode variant); the raw id when
+    no model is recorded."""
     row = row or {}
     model = row.get("model")
     if not model:
         return str(row.get("id") or row.get("bundle_id") or "—")
     effort = effort_text(row.get("effort"))
-    return model_label(str(model)) + (" · " + effort if effort else "")
+    fast = _tr("快速") if row.get("fast") is True else ""
+    return model_label(str(model)) + "".join(" · " + part for part in (effort, fast) if part)
 
 
 def choice_label(row):
@@ -74,8 +77,10 @@ def choice_label(row):
         ranking = snapshot.get("ranking") if isinstance(snapshot, dict) else None
         found = next((c for c in ranking or [] if isinstance(c, dict) and c.get("id") == choice), {})
         bundle = found.get("bundle") or {}
-    if bundle.get("model") and bundle.get("bundle_id", choice) == choice:
-        return candidate_label(bundle)
+    # A fast-mode variant's id is its bundle's id plus FAST_SUFFIX; its bundle record carries the base id and fast=True.
+    base = choice[:-len(FAST_SUFFIX)] if isinstance(choice, str) and choice.endswith(FAST_SUFFIX) else choice
+    if bundle.get("model") and bundle.get("bundle_id", base) == base:
+        return candidate_label({**bundle, "fast": bundle.get("fast") is True or base != choice})
     return str(choice or "—")
 
 

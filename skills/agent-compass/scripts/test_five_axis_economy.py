@@ -954,14 +954,132 @@ class BurstSizeTests(unittest.TestCase):
         self.assertNotEqual(small, big)
 
 
-class WeeklyWindowTests(unittest.TestCase):
-    """Round 15 (owner: "every account should have a weekly quota"): a quota account whose weekly (long reset-period) window
-    is missing or unread is a surfaced mode-B data error. It is not routable on the five-axis path and it is never a free
-    outside point (slack 1) for another account's window."""
+
+class PoolIndependenceTests(unittest.TestCase):
+    """Round 16 (owner policy, review R2): a window price does not depend on the current task flags. Each account ladder, outside
+    point and lump come from the account own candidates (the economy pool, evaluated with the task flags neutralised) and
+    not from the ones this task may pick or from whether they fit the remaining capacity; the remaining capacity enters only
+    through the window own state (room, used, reset clock)."""
 
     @classmethod
     def setUpClass(cls):
         cls.fleet = Fleet()
+
+    def plan(self, *args, hours=2.0, **kwargs):
+        return self.fleet.plan(*args, hours=hours, expected_hours=hours, **kwargs)
+
+    def economies(self, *args, **kwargs):
+        """(decision, the FiveAxisEconomy objects the plan built), so the unrounded ladder, lump and outside values compare."""
+        built = []
+        real = allocator.FiveAxisEconomy.report
+
+        def spy(econ):
+            built.append(econ)
+            return real(econ)
+        with patch.object(allocator.FiveAxisEconomy, 'report', spy):
+            d = self.plan(*args, **kwargs)
+        return d, built[-1]
+
+    def fingerprint(self, econ):
+        out = {}
+        for wkey in sorted(econ.points):
+            ladder = econ.ladder(wkey)
+            out[wkey] = (repr(ladder['steps']), econ.lump(wkey), econ.spend_max.get(wkey),
+                         repr(econ.outside_at_task(wkey)), len(econ.points[wkey]))
+        out['units'] = sorted(map(repr, econ.units))
+        return out
+
+    FLAGS = {
+        'realtime_loop': {'needs': {'realtime_loop': True}},
+        'visual': {'needs': {'visual': True}},
+        'critical': {'needs': {'critical': True}},
+        'outbound_denied': {'needs': {'outbound_ok': False}},
+        'file_transfer': {'needs': {'file_transfer': True}},
+        'disable_fast': {'needs': {'disable_fast': True}},
+        'force_fast': {'needs': {'force_fast': True}},
+        'named_model': {'constraints': {'model': 'claude-opus-5-5'}},
+        'named_effort': {'constraints': {'effort': 'high'}},
+        'metered_ok': {'metered_ok': True},
+        'not_local_only': {'local_only': False},
+    }
+
+    def test_toggling_each_task_flag_leaves_every_windows_price_inputs_bit_identical(self):
+        d0, base = self.economies(0.5, 0.5)
+        reference = self.fingerprint(base)
+        self.assertGreaterEqual(len([k for k in reference if k != 'units']), 3)       # claude x2 and codex weekly windows
+        reports = {w['label']: w for w in d0['decision']['system']['quota_windows']}
+        sets = {}
+        for name, flag in self.FLAGS.items():
+            d, econ = self.economies(0.5, 0.5, **flag)
+            self.assertEqual(self.fingerprint(econ), reference, name)
+            for w in d['decision']['system']['quota_windows']:
+                for key in ('quota_price', 'need_probability', 'lump_usd', 'substitute_slack', 'outside_fit', 'best_fit',
+                            'ladder_steps', 'candidates'):
+                    self.assertEqual(w[key], reports[w['label']][key], (name, w['label'], key))
+            sets[name] = {c['id'] for c in eligible(d)}
+        # the flags do change who may run (otherwise the check would be vacuous), they just do not change a price
+        self.assertNotEqual(sets['realtime_loop'], {c['id'] for c in eligible(d0)})
+        self.assertNotEqual(sets['named_model'], {c['id'] for c in eligible(d0)})
+
+    def test_a_flag_that_holds_candidates_back_does_not_move_a_candidates_own_cost(self):
+        """The candidates that stay eligible are priced against the same ladder, so with the same spend their cost is the
+        same: realtime_loop alone used to move codex lambda 0.0158 -> 0.00185."""
+        d0 = self.plan(0.5, 0.5)
+        d1 = self.plan(0.5, 0.5, needs={'realtime_loop': True})
+        both = {c['id']: c for c in eligible(d0)}
+        shared = [c for c in eligible(d1) if c['id'] in both and c['bundle'].get('effort') == both[c['id']]['bundle'].get('effort')]
+        self.assertTrue(shared)
+        for c in shared:
+            self.assertEqual(c['components']['quota_price'], both[c['id']]['components']['quota_price'], c['id'])
+            self.assertEqual(c['components']['need_probability'], both[c['id']]['components']['need_probability'], c['id'])
+
+    def test_the_usage_sweep_through_the_old_safety_margin_boundary_moves_the_lump_and_cost_smoothly(self):
+        """Review R2(b): Claude at 93 % -> 94 % used changed the lump 21.87 -> 0.59 and Haiku cost 43 times, because the
+        candidates that stopped fitting left the ladder. The lump is now constant (it does not read the remaining capacity),
+        and the price and the cost move only as the need probability does."""
+        used = [0.90 + 0.005 * i for i in range(10)]            # 90 % .. 94.5 %
+        windows, haiku = [], []
+        for u in used:
+            d = self.plan(u, 0.5)
+            windows.append(window_reports(d)['claude/seven_day'])
+            haiku.append(next(c for c in eligible(d) if c['id'] == 'haiku55_high')['components']['opportunity_cost'])
+        self.assertEqual(len({w['lump_usd'] for w in windows}), 1)
+        prices = [w['quota_price'] for w in windows]
+        self.assertEqual(prices, sorted(prices))
+        for a, b in zip(prices, prices[1:]):
+            self.assertLess(b / a, 1.1)
+        self.assertEqual(haiku, sorted(haiku))
+        for a, b in zip(haiku, haiku[1:]):
+            self.assertLess(b / a, 1.1)
+        self.assertLess(haiku[-1] / haiku[0], 1.5)
+
+    def test_a_candidate_that_no_longer_fits_the_remaining_capacity_still_stands_in_its_accounts_ladder(self):
+        """At 96 % used no Claude candidate fits a 2 h task, yet the Claude window still has its pool: ladder steps and lump
+        of the Codex window do not change with it (Codex outside option moves only through the slack that Claude window
+        state gives, which is the remaining capacity entering as room)."""
+        d_low, econ_low = self.economies(0.5, 0.5)
+        d_high, econ_high = self.economies(0.96, 0.5)
+        self.assertFalse([c for c in eligible(d_high) if c['bundle']['account'] == 'claude'])
+        key = next(k for k in econ_low.points if k[0] == 'claude')
+        self.assertEqual(econ_high.ladder(key)['steps'], econ_low.ladder(key)['steps'])
+        self.assertEqual(econ_high.lump(key), econ_low.lump(key))
+        codex = next(k for k in econ_low.points if k[0] == 'codex')
+        self.assertEqual(econ_high.lump(codex), econ_low.lump(codex))
+        self.assertEqual(len(econ_high.points[codex]), len(econ_low.points[codex]))
+
+
+class WeeklyWindowTests(unittest.TestCase):
+    """Round 15 (owner: "every account should have a weekly quota"): a quota account whose weekly (long reset-period) window
+    is missing or unread is a surfaced mode-B data error. It is not routable on the five-axis path and it is never a free
+    outside point (slack 1) for another account's window. Round 16 (review R1): the error does not depend on the account's
+    other exclusions, so a candidate held back only by its 5-hour window gets it too and never enters the economy."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fleet = Fleet()
+
+    def plan(self, *args, hours=2.0, **kwargs):
+        return self.fleet.plan(*args, hours=hours, expected_hours=hours, **kwargs)
 
     def only_five_hour(self, acc):
         acc['accounts']['claude']['windows'] = {'five_hour': acc['accounts']['claude']['windows']['five_hour']}
@@ -972,31 +1090,58 @@ class WeeklyWindowTests(unittest.TestCase):
     def codex_price(self, d):
         return price_of(d, 'codex')
 
-    def test_a_weekly_window_that_is_not_read_while_the_5h_window_is_leaves_routing_and_is_no_outside_point(self):
-        alone = self.fleet.plan(0.5, 0.5, allowed=('codex',))
-        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'), claude_long=False)       # only claude's five_hour is read
+    def has_error(self, row, code):
+        return any(code in r for r in row['excluded'])
+
+    def held_by_five_hour(self, row):
+        return any(r.startswith('five_hour ') for r in row['excluded'])
+
+    def assert_every_row_has_one_of(self, d, codes):
         rows = self.claude_rows(d)
         self.assertTrue(rows)
         for c in rows:
-            self.assertTrue(c['excluded'], c['id'])
-            self.assertIn(allocator.QUOTA_LONG_UNREAD, c['excluded'][0], c['id'])
-        self.assertTrue(any(allocator.QUOTA_LONG_UNREAD in w and 'claude' in w for w in d['decision']['warnings']))
-        self.assertNotEqual(d['selected_bundle']['account'], 'claude')
-        # claude is not Codex's outside point: Codex's weekly price is the one it has with claude absent
-        self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12)
+            self.assertTrue(any(self.has_error(c, code) for code in codes), (c['id'], c['excluded']))
+        return rows
+
+    def test_a_weekly_window_that_is_not_read_while_the_5h_window_is_leaves_routing_and_is_no_outside_point(self):
+        for hours in (2.0, 6.0):
+            alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
+            d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), claude_long=False, hours=hours)    # only five_hour is read
+            rows = self.assert_every_row_has_one_of(d, (allocator.QUOTA_LONG_UNREAD, allocator.QUOTA_READING_UNAVAILABLE))
+            self.assertTrue(any(self.has_error(c, allocator.QUOTA_LONG_UNREAD) for c in rows), hours)
+            self.assertTrue(any(allocator.QUOTA_LONG_UNREAD in w and 'claude' in w for w in d['decision']['warnings']))
+            self.assertNotEqual(d['selected_bundle']['account'], 'claude')
+            # claude is not Codex price source: Codex weekly price is the one it has with claude absent
+            self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
+
+    def test_a_candidate_held_back_only_by_its_5h_window_still_gets_the_weekly_error_and_is_no_outside_point(self):
+        """Review R1: with a 2 h (and a 6 h) task some Claude candidates cannot start on the 5-hour window alone. They used to
+        skip the weekly data error (it required no other exclusion), entered the economy as `waiting` with no long window
+        state, and became a slack-1.0 free outside point that cut Codex price by 10.6 %."""
+        for hours in (2.0, 6.0):
+            alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
+            d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), claude_long=False, hours=hours)
+            held = [c for c in self.claude_rows(d) if self.held_by_five_hour(c)]
+            self.assertTrue(held, hours)
+            for c in held:
+                self.assertTrue(any(self.has_error(c, code) for code in allocator.QUOTA_DATA_ERRORS), (c['id'], c['excluded']))
+            self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
+            # nothing of Claude is priced, and every window sees the same outside option as with Claude absent
+            windows, windows_alone = d['decision']['system']['quota_windows'], alone['decision']['system']['quota_windows']
+            self.assertFalse([w for w in windows if w['quota_source'] == 'claude'])
+            self.assertEqual(windows, windows_alone)
 
     def test_an_account_with_no_weekly_window_declared_is_a_data_error_and_no_outside_point(self):
-        alone = self.fleet.plan(0.5, 0.5, allowed=('codex',))
-        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=self.only_five_hour, claude_long=False)
-        for c in self.claude_rows(d):
-            self.assertTrue(c['excluded'], c['id'])
-            self.assertIn(allocator.QUOTA_NO_LONG_WINDOW, c['excluded'][0], c['id'])
-        warning = next(w for w in d['decision']['warnings'] if allocator.QUOTA_NO_LONG_WINDOW in w)
-        self.assertIn('claude', warning)
-        self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12)
+        for hours in (2.0, 6.0):
+            alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
+            d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=self.only_five_hour, claude_long=False, hours=hours)
+            self.assert_every_row_has_one_of(d, (allocator.QUOTA_NO_LONG_WINDOW,))
+            self.assertTrue([c for c in self.claude_rows(d) if self.held_by_five_hour(c)], hours)       # incl. the 5h-held ones
+            warning = next(w for w in d['decision']['warnings'] if allocator.QUOTA_NO_LONG_WINDOW in w)
+            self.assertIn('claude', warning)
+            self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
         # naming the model dispatches it with the error surfaced, as for an unknown capacity
-        named = self.fleet.plan(0.5, 0.5, allowed=('claude',), mutate=self.only_five_hour, claude_long=False,
-                                pinned_bundle='opus55_high')
+        named = self.plan(0.5, 0.5, allowed=('claude',), mutate=self.only_five_hour, claude_long=False, pinned_bundle='opus55_high')
         self.assertEqual(named['selected_bundle']['bundle_id'], 'opus55_high')
         self.assertTrue(any(allocator.QUOTA_NO_LONG_WINDOW in n for n in next(c for c in named['ranking'] if c['id'] == 'opus55_high')['notes']))
 
@@ -1005,16 +1150,37 @@ class WeeklyWindowTests(unittest.TestCase):
         def no_draws(acc):
             for b in acc['accounts']['claude']['bundles'].values():
                 b['draws'] = []
-        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=no_draws)
-        rows = self.claude_rows(d)
-        self.assertTrue(rows)
-        for c in rows:
-            self.assertTrue(c['excluded'], c['id'])
-            self.assertIn(allocator.QUOTA_NO_LONG_WINDOW, c['excluded'][0], c['id'])
-        self.assertNotEqual(d['selected_bundle']['account'], 'claude')
+        for hours in (2.0, 6.0):
+            alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
+            d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=no_draws, hours=hours)
+            self.assert_every_row_has_one_of(d, (allocator.QUOTA_NO_LONG_WINDOW,))
+            self.assertNotEqual(d['selected_bundle']['account'], 'claude')
+            self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
+
+    def test_an_account_with_no_reading_at_all_is_the_reading_unavailable_error_incl_the_5h_held_candidates(self):
+        def nothing_read(usage):
+            usage['accounts']['claude']['windows'] = []
+        for hours in (2.0, 6.0):
+            alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
+            d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), usage_hook=nothing_read, hours=hours)
+            self.assert_every_row_has_one_of(d, (allocator.QUOTA_READING_UNAVAILABLE,))
+            self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
+        # a candidate of an account that is read, held by the 5-hour clock, with no weekly state of its own
+        d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), claude_long=False)
+        fable = next(c for c in d['ranking'] if c['id'] == 'fable52_high')
+        self.assertTrue(self.held_by_five_hour(fable) and self.has_error(fable, allocator.QUOTA_READING_UNAVAILABLE), fable['excluded'])
+
+    def test_the_economy_never_builds_an_entry_for_a_candidate_with_no_long_window_state(self):
+        """Defence in depth: even if some path lets a stateless candidate through, the economy skips it, so it cannot become an
+        outside point whatever the data error says."""
+        stateless = {'bundle': {'account': 'claude', 'id': 'x'}, 'components': {'fit': 0.9}, 'expected_usd': 5.0,
+                     '_five_window_states': {}, '_five_scaled': {a: 0.9 for a in allocator.FIVE_AXES}}
+        econ = allocator.FiveAxisEconomy([stateless], self.fleet.accounts, {}, {'hours': 2.0})
+        self.assertEqual(econ.entries, [])
+        self.assertEqual(econ.units, {})
 
     def test_a_weekly_window_that_is_read_keeps_the_account_in_routing(self):
-        d = self.fleet.plan(0.5, 0.5, allowed=('claude', 'codex'))
+        d = self.plan(0.5, 0.5, allowed=('claude', 'codex'))
         self.assertTrue([c for c in eligible(d) if c['bundle']['account'] == 'claude'])
         self.assertFalse([w for w in d['decision'].get('warnings') or [] if 'weekly quota' in w or 'no weekly' in w])
 
@@ -1031,6 +1197,64 @@ class WeeklyWindowTests(unittest.TestCase):
         self.assertEqual(out['bundles']['auto:pool:opencode:x']['draws'], ['allowance'])
         self.assertEqual(out['bundles']['named']['draws'], ['elsewhere'])       # an explicit non-empty draw is left alone
         self.assertTrue(out['capacity_unknown'])                                 # and the unsourced capacity stays mode B
+
+
+class SnapshotQuotaLineTests(unittest.TestCase):
+    """Round 16 (review J1): the README quota page reads `snapshot.quota_line.windows` and `ranking[*].quota_line`; the allocator is
+    their single writer and the existing `system.quota_windows` / `ranking[*].economy` stay."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fleet = Fleet()
+        cls.d = cls.fleet.plan(0.5, 0.5, hours=2.0, expected_hours=2.0)
+        cls.snap = allocator.decision_snapshot(cls.d)
+
+    def test_every_priced_window_is_written_once_keyed_by_its_label_with_the_fields_the_page_draws(self):
+        windows = self.snap['quota_line']['windows']
+        reports = {w['label']: w for w in self.d['decision']['system']['quota_windows']}
+        self.assertEqual(set(windows), set(reports))
+        self.assertGreaterEqual(len(windows), 3)
+        for label, w in windows.items():
+            r = reports[label]
+            self.assertEqual(w['label'], label)
+            for src, dst in (('capacity_usd', 'capacity_usd'), ('used_usd', 'used_usd'), ('elapsed_hours', 'elapsed_hours'),
+                             ('reset_in_hours', 'reset_in_hours')):
+                self.assertEqual(w[dst], r[src], (label, dst))
+            self.assertEqual(w['account'], r['quota_source'])
+            self.assertEqual(w['window_id'], r['window'])
+            self.assertEqual(label, f"{w['account']}/{w['window_id']}")
+            self.assertGreater(w['capacity_usd'], 0)
+            self.assertAlmostEqual(w['elapsed_hours'] + w['reset_in_hours'], 168.0, places=1)
+        # the old readers keep their fields
+        self.assertTrue(self.snap['decision']['system']['quota_windows'])
+        self.assertTrue(all('economy' in c for c in self.snap['ranking'] if not c['excluded']))
+
+    def test_the_chosen_candidates_row_names_its_binding_window_its_hours_and_its_spend_of_it(self):
+        windows = self.snap['quota_line']['windows']
+        rows = [c for c in self.snap['ranking'] if c['id'] == self.snap['choice']]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        line = row['quota_line']
+        self.assertIn(line['window'], windows)
+        priced = {f"{w['quota_source']}/{w['window']}": w for w in row['economy']['windows']}
+        self.assertEqual(line['window'], f"{priced[line['window']]['quota_source']}/{row['economy']['binding_window']}")
+        self.assertEqual(line['spend_usd'], priced[line['window']]['spend_usd'])
+        self.assertEqual(line['hours'], row['expected_hours'])
+        self.assertGreater(line['spend_usd'], 0)
+
+    def test_every_eligible_row_that_prices_a_window_has_a_line_and_a_blocked_row_has_none(self):
+        for c in self.snap['ranking']:
+            if c['excluded']:
+                self.assertNotIn('quota_line', c)
+            elif c['economy']['binding_window']:
+                self.assertIn(c['quota_line']['window'], self.snap['quota_line']['windows'])
+
+    def test_the_block_is_plain_json_and_absent_when_nothing_was_priced(self):
+        import json
+        json.dumps(self.snap)
+        self.assertIsNone(allocator.snapshot_quota_line([]))
+        self.assertIsNone(allocator.candidate_quota_line({'economy': {'binding_window': None, 'windows': []}}))
+        self.assertIsNone(allocator.candidate_quota_line({}))
 
 
 if __name__ == '__main__':
