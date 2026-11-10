@@ -54,7 +54,14 @@ import override_store
 
 FAILURE_CODE = 'provider_retry_stuck'
 TURN_FAILED_CODE = 'provider_turn_failed'
-FAILURE_CODES = (FAILURE_CODE, TURN_FAILED_CODE)
+INVALID_MODEL_CODE = 'INVALID_MODEL'
+MODEL_FAILURE_CODES = ('invalid_model', 'model_not_found', 'unknown_model', 'unsupported_model')
+FAILURE_CODES = (FAILURE_CODE, TURN_FAILED_CODE, INVALID_MODEL_CODE)
+
+
+def is_model_failure_code(code):
+    return isinstance(code, str) and code.strip().lower() in MODEL_FAILURE_CODES
+
 # A failed turn whose message the classifier reads as not the provider's doing.
 WORKER_TURN_FAILED_CODE = 'worker_turn_failed'
 TASK_INPUT_CODE = 'task_input_rejected'
@@ -271,6 +278,8 @@ def validate_scope(answer):
 
 def classify_scope(account, provider, model, message, failure=FAILURE_CODE):
     """(scope, metadata) from the configured System-One classifier; `unknown` when it cannot answer."""
+    if is_model_failure_code(failure):
+        return 'model', {'source': 'failure_code', 'reason': f'provider rejected model with {failure}'}
     if not isinstance(message, str) or not message:
         return 'unknown', {'source': 'no_message'}
     import route_judge
@@ -333,7 +342,8 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None, a
     failure = failure if isinstance(failure, dict) else {}
     account, model = (bundle or {}).get('account'), launch_model(bundle)
     code = failure.get('failure_code')
-    if (not enabled() or code not in FAILURE_CODES or not isinstance(account, str)
+    model_code = is_model_failure_code(code)
+    if (not enabled() or (code not in FAILURE_CODES and not model_code) or not isinstance(account, str)
             or not isinstance(model, str) or not isinstance(dispatch_id, str)):
         return None
     path = path or store_path()
@@ -342,8 +352,13 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None, a
     provider = bundle.get('provider') or account
     message = failure.get('provider_message') if isinstance(failure.get('provider_message'), str) else None
     message = message[:MESSAGE_LIMIT] if message else None
-    # The classifier can take seconds: ask it before taking the lock.
-    scope, meta = (classify or classify_scope)(account, provider, model, message, code)
+    if model_code:
+        scope, meta = 'model', {'source': 'failure_code', 'reason': f'provider rejected model with {code}'}
+        if not message:
+            message = f'provider no longer offers {model}'
+    else:
+        # The classifier can take seconds: ask it before taking the lock.
+        scope, meta = (classify or classify_scope)(account, provider, model, message, code)
     scope = scope if scope in SCOPES else 'unknown'
     # Reading the accounts can take a moment too, and a scope that holds nothing needs no pool.
     pool = resolve_pool(bundle, accounts) if scope not in NO_HOLD else None
@@ -378,7 +393,8 @@ def record(bundle, failure, *, dispatch_id, at=None, classify=None, path=None, a
                 retry = nxt
         entry = {'account': account, 'provider': provider, 'model': None if wide else model,
                  'failure_code': code, 'scope': scope,
-                 'scope_source': 'widened' if widened else ('classifier' if scope != 'unknown' else 'unknown_default'),
+                 'scope_source': 'failure_code' if model_code else (
+                     'widened' if widened else ('classifier' if scope != 'unknown' else 'unknown_default')),
                  'classifier': {k: meta.get(k) for k in ('source', 'scorer_type', 'provider', 'model', 'reason',
                                                           'fallback_reason') if meta.get(k)},
                  'message': message, 'next': nxt.isoformat() if nxt else None,
@@ -516,7 +532,10 @@ def retry_text(entry):
 def describe(entry):
     pool = hold_pool(entry)
     scope = f"quota pool {pool['id']} of the account" if pool else 'account' if _account_hold(entry) else 'model'
-    what = 'turn failed' if entry.get('failure_code') == TURN_FAILED_CODE else 'kept retrying without progress'
+    what = (f"no longer offers model ({entry.get('failure_code')})"
+            if is_model_failure_code(entry.get('failure_code'))
+            else 'turn failed' if entry.get('failure_code') == TURN_FAILED_CODE
+            else 'kept retrying without progress')
     return (f"{EXCLUSION_PREFIX} on this {scope}: provider {what} ({entry.get('message') or 'no message'}); "
             f"{retry_text(entry)}")
 
@@ -570,6 +589,26 @@ def clear(account, model=None, *, include_account=False, launched_at=None, path=
             doc['entries'].pop(k)
         override_store.write(path, doc)
     return True
+
+
+def clear_launch_hold(account, model, *, launched_at=None, path=None):
+    """Lift a create-time `INVALID_MODEL` hold once a worker launched after the hold has started on that model."""
+    path = path or store_path()
+    if not enabled() or not isinstance(account, str) or not isinstance(model, str) or not path.exists():
+        return False
+    launched = _time(launched_at) if launched_at is not None else None
+    target = key(account, model)
+    with override_store.locked(path):
+        doc = _read(path)
+        entry = doc['entries'].get(target)
+        if not (isinstance(entry, dict) and is_model_failure_code(entry.get('failure_code'))):
+            return False
+        if launched_at is not None and not (launched and (_time(entry.get('observed_at')) or launched) < launched):
+            return False
+        doc['entries'].pop(target, None)
+        override_store.write(path, doc)
+    return True
+
 
 
 def _lifts(entry, last_good, credential_key):

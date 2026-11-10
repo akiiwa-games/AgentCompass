@@ -43,3 +43,9 @@ def isolated_model_latches(monkeypatch):
 def isolated_provider_retries(monkeypatch):
     """Tests never read or write the machine's provider-retry holds; provider-retry tests point it at their own file."""
     monkeypatch.setenv('ROUTER_PROVIDER_RETRY', 'off')
+
+
+@pytest.fixture(autouse=True)
+def isolated_live_models(monkeypatch):
+    """Tests never read or write the machine's live-model cache; live-model tests point it at their own file."""
+    monkeypatch.setenv('ROUTER_LIVE_MODELS', 'off')

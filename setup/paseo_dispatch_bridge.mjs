@@ -510,6 +510,22 @@ export function project(agent) {
   return result;
 }
 
+export function normalizeProviderModels(models) {
+  if (!Array.isArray(models)) return [];
+  const out = [];
+  for (const item of models) {
+    if (!item || typeof item !== 'object') continue;
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    if (!id) continue;
+    const aliases = Array.isArray(item.aliases)
+      ? item.aliases.filter(a => typeof a === 'string' && a.trim()).map(a => a.trim())
+      : [];
+    const label = typeof item.label === 'string' && item.label.trim() ? item.label.trim() : undefined;
+    out.push({id, ...(aliases.length ? {aliases} : {}), ...(label ? {label} : {})});
+  }
+  return out;
+}
+
 export async function execute(client, input, notify = ensureNotification) {
   if (input.operation === 'create') {
     const r = input.request;
@@ -639,6 +655,40 @@ export async function execute(client, input, notify = ensureNotification) {
       cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
     } while (cursor);
     return {ok: true, agents, cwd: await workspaceDirectory(client, input.workspace_id)};
+  }
+  if (input.operation === 'provider_models') {
+    const cwd = typeof input.cwd === 'string' && input.cwd.trim() ? input.cwd.trim() : undefined;
+    const opts = cwd ? {cwd} : {};
+    const snapByProvider = new Map();
+    if (typeof client.getProvidersSnapshot === 'function') {
+      try {
+        const snap = await client.getProvidersSnapshot(opts);
+        for (const p of snap?.entries ?? snap?.providers ?? []) {
+          if (p && typeof p.provider === 'string' && p.provider.trim()) snapByProvider.set(p.provider.trim(), p);
+        }
+      } catch {}
+    }
+    const requested = Array.isArray(input.providers)
+      ? [...new Set(input.providers.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim()))]
+      : [...snapByProvider.keys()];
+    const entries = await Promise.all(requested.map(async provider => {
+      const snap = snapByProvider.get(provider);
+      if (snap && snap.enabled === false)
+        return [provider, {ok: false, status: 'disabled', error: 'provider_disabled', models: []}];
+      try {
+        const res = await client.listProviderModels(provider, opts);
+        if (!Array.isArray(res?.models) || (typeof res.error === 'string' && res.error.trim()))
+          return [provider, {ok: false, status: snap?.status && snap.status !== 'ready' ? snap.status : 'unavailable',
+            error: 'model_list_unavailable', models: []}];
+        if (snap && snap.status && snap.status !== 'ready' && res.models.length === 0)
+          return [provider, {ok: false, status: snap.status, error: 'provider_unavailable', models: []}];
+        return [provider, {ok: true, status: 'ready', models: normalizeProviderModels(res.models)}];
+      } catch {
+        return [provider, {ok: false, status: snap?.status && snap.status !== 'ready' ? snap.status : 'unavailable',
+          error: 'model_list_unavailable', models: []}];
+      }
+    }));
+    return {ok: true, fetched_at: new Date().toISOString(), providers: Object.fromEntries(entries)};
   }
   if (input.operation !== 'observe') throw new Error('unsupported_operation');
   let agent = input.agent_id ? (await client.fetchAgent(input.agent_id))?.agent : null;

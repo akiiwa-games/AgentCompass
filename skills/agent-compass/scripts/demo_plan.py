@@ -44,7 +44,8 @@ def plan(document, allocator):
                             'resets_at': (now + timedelta(hours=4 if short else reset_hours)).isoformat()})
         usage['accounts'][name] = {'status': 'fresh', 'available': True, 'stale': False,
                                    'fetched_at': now.isoformat(), 'windows': windows}
-    with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': 'off'}):  # this machine's cooldowns are host state
+    with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': 'off', 'ROUTER_MODEL_LATCH': 'off',
+                                 'ROUTER_PROVIDER_RETRY': 'off', 'ROUTER_LIVE_MODELS': 'off'}):  # this machine's cooldowns are host state
         result = allocator.plan(task, usage, now, records=[], accounts=accounts, overrides=[],
                                 host_policy_config={'allowed_accounts': list(snapshot)})
     result['demo'] = True

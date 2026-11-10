@@ -22,6 +22,7 @@ import fast_modes
 import window_scope
 import host_policy
 import launch_failures
+import live_models
 import model_latch
 import provider_retry
 import override_store
@@ -2479,6 +2480,9 @@ def evaluate_bundle(bundle, task, ctx):
     retrying = provider_retry.reason(bundle, ctx.get('provider_retries'))
     if retrying:
         exclude(retrying)
+    unoffered = live_models.reason(bundle, ctx.get('live_models'), bundle['account'], spec)
+    if unoffered:
+        exclude(unoffered)
     # Only subscription accounts join automatic routing. A checked metered (API) bundle is a last resort:
     # explicit selection, task.metered_ok, or plan()'s fallback pass when no subscription can take the work.
     # Unknown billing stays explicit selection only.
@@ -3063,13 +3067,19 @@ def harness_factor_report(policy):
 
 
 def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overrides=(), records=(), host_policy_config=None):
+    state_policy = host_policy.load_policy() if host_policy_config is None else host_policy_config
     ctx = {'policy': policy, 'accounts': accounts, 'capabilities': capabilities, 'usage': usage, 'now': now,
            'unavailable': set(unavailable), 'bundles': bundles(accounts),
-           'host_policy': host_policy.load_policy() if host_policy_config is None else host_policy_config,
+           'host_policy': state_policy,
            'overrides': list(overrides), 'records': list(records or ()),
            'launch_failures': launch_failures.active() if launch_failures.enabled() else {},
            'model_latches': model_latch.active(now=now),
-           'provider_retries': provider_retry.active(now=now)}
+           'provider_retries': provider_retry.active(now=now),
+           'live_models': live_models.load_or_refresh(
+               accounts=accounts,
+               allowed=lambda name: host_policy.account_allowed(state_policy, name),
+               now=now,
+           )}
     ctx['bundles'].update(named_effort_bundles(task, ctx))
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()
                   if bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
@@ -3104,7 +3114,8 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
                                   'shortage_loss_per_usd': exchange['shortage_loss_per_usd'],
                                   'shortage_loss_per_worker_hour': exchange['shortage_loss_per_worker_hour'],
                                   'opportunity_exchange': exchange,
-                                  'harness_factors': harness_factor_report(policy)}
+                                  'harness_factors': harness_factor_report(policy),
+                                  '_live_models': ctx['live_models']}
 
 
 def sibling_key(candidate):
@@ -3421,8 +3432,18 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                                             lambda name: host_policy.account_allowed(state_policy, name))
     if state_warnings:
         decision.setdefault('warnings', []).extend(state_warnings)
-    latch_warnings = model_latch.warnings(model_latch.active(now=now),
-                                          lambda name: host_policy.account_allowed(state_policy, name))
+    live_doc = system.pop('_live_models', None) or live_models.load_or_refresh(
+        accounts=accounts,
+        allowed=lambda name: host_policy.account_allowed(state_policy, name),
+        now=now,
+    )
+    latch_warnings = live_models.warnings(
+        live_doc,
+        accounts,
+        lambda name: host_policy.account_allowed(state_policy, name),
+    )
+    latch_warnings += model_latch.warnings(model_latch.active(now=now),
+                                           lambda name: host_policy.account_allowed(state_policy, name))
     latch_warnings += provider_retry.warnings(provider_retry.active(now=now),
                                               lambda name: host_policy.account_allowed(state_policy, name))
     if latch_warnings:

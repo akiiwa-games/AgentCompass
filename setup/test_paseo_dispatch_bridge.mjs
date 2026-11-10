@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
-import {execute, project, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
+import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationRecord, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
   workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE} from './paseo_dispatch_bridge.mjs';
 
@@ -1033,4 +1033,81 @@ test("a resumed worker's error from its previous turn is not this dispatch's pro
   assert.equal(f.record.terminal.reason, 'error');
   assert.equal(f.record.terminal.failure_code, undefined);
   assert.doesNotMatch(f.calls[0][1], /ended with this error/);
+});
+
+test('provider_models reads live models per provider with structural ids and aliases, and reports disabled or unreadable providers', async () => {
+  const fake = {
+    getProvidersSnapshot: async () => ({
+      providers: [
+        {provider: 'antigravity-resilient', enabled: true, status: 'ready'},
+        {provider: 'claude', enabled: true, status: 'ready'},
+        {provider: 'codex-disabled', enabled: false, status: 'disabled'},
+        {provider: 'opencode-broken', enabled: true, status: 'error'},
+      ],
+    }),
+    listProviderModels: async provider => {
+      if (provider === 'antigravity-resilient') {
+        return {
+          models: [
+            {id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)'},
+            {id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)'},
+          ],
+        };
+      }
+      if (provider === 'claude') {
+        return {
+          models: [
+            {id: 'claude-fable-5', aliases: ['claude-fable-5[1m]'], label: 'Fable 5'},
+            {id: 'claude-opus-5-5', aliases: ['claude-opus-5-5[1m]'], label: 'Opus 5.5'},
+          ],
+        };
+      }
+      if (provider === 'opencode-broken') {
+        return {models: [], error: 'secret-provider-error-canary'};
+      }
+      throw new Error('secret-throw-canary');
+    },
+  };
+  const res = await execute(fake, {
+    operation: 'provider_models',
+    providers: ['antigravity-resilient', 'claude', 'codex-disabled', 'opencode-broken', 'missing-provider'],
+  });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.providers['antigravity-resilient'], {
+    ok: true,
+    status: 'ready',
+    models: [
+      {id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)'},
+      {id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)'},
+    ],
+  });
+  assert.deepEqual(res.providers.claude, {
+    ok: true,
+    status: 'ready',
+    models: [
+      {id: 'claude-fable-5', aliases: ['claude-fable-5[1m]'], label: 'Fable 5'},
+      {id: 'claude-opus-5-5', aliases: ['claude-opus-5-5[1m]'], label: 'Opus 5.5'},
+    ],
+  });
+  assert.deepEqual(res.providers['codex-disabled'], {
+    ok: false,
+    status: 'disabled',
+    error: 'provider_disabled',
+    models: [],
+  });
+  assert.deepEqual(res.providers['opencode-broken'], {
+    ok: false,
+    status: 'error',
+    error: 'model_list_unavailable',
+    models: [],
+  });
+  assert.deepEqual(res.providers['missing-provider'], {
+    ok: false,
+    status: 'unavailable',
+    error: 'model_list_unavailable',
+    models: [],
+  });
+  assert(!JSON.stringify(res).includes('canary'));
+  assert.deepEqual(normalizeProviderModels([{id: ' m1 ', aliases: [' a1 ', '', null], label: ' L1 '}, null, {}]),
+    [{id: 'm1', aliases: ['a1'], label: 'L1'}]);
 });

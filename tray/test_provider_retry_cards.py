@@ -190,5 +190,104 @@ def test_the_model_list_marks_a_held_model_and_badges_a_held_account(tmp_path, m
     assert json.loads(store.read_text(encoding='utf-8'))['entries']['codex']['retry_at'] is None
 
 
+def test_account_cards_and_model_rows_surface_live_model_exclusions_and_unreadable_lists(tmp_path, monkeypatch):
+    from test_model_catalog import settings
+    import live_models
+    import provider_retry
+    target = settings(tmp_path, monkeypatch)
+    live_store = target.parent / live_models.FILE
+    retry_store = target.parent / provider_retry.FILE
+    monkeypatch.setenv('ROUTER_LIVE_MODELS', str(live_store))
+    monkeypatch.setenv('ROUTER_PROVIDER_RETRY', str(retry_store))
+    monkeypatch.setattr(router_data, 'account_badge', lambda *args: ('就绪', 'ok'))
+    monkeypatch.setattr(router_data, 'pool_reservations', lambda **kw: {})
+    monkeypatch.setattr(router_data.router_priority, 'targets', lambda *args, **kw: [])
+    monkeypatch.setattr(router_data.plugins, 'load', lambda: {})
+    alloc, _ = router_data.modules()
+    rtr_mock = Mock()
+    rtr_mock.usage_snapshot.return_value = {'accounts': {}}
+    monkeypatch.setattr(router_data, 'modules', lambda: (alloc, rtr_mock))
+    monkeypatch.setattr(alloc.provider_inventory, 'current', lambda: {'accounts': {
+        'antigravity': {'family': 'antigravity', 'status': 'ready', 'identity': 'id-agy'},
+        'codex': {'family': 'codex', 'status': 'ready', 'identity': 'id-codex'},
+    }})
+    (alloc.REFERENCES / 'accounts.json').write_text(json.dumps({
+        'scoring': {'safety_margin_pct': 5},
+        'models': {
+            'gemini-4-argon-high': {'label': 'Gemini 4 Argon (High)'},
+            'gemini-3.8-flash-high': {'label': 'Gemini 3.8 Flash (High)'},
+            'gpt-6.1-sol': {'label': 'GPT-6.1 Sol'},
+        },
+        'accounts': {
+            'antigravity': {
+                'verified': True,
+                'bundles': {
+                    'argon_high': {'provider': 'antigravity-resilient', 'model': 'gemini-4-argon-high', 'effort': 'high'},
+                    'flash_high': {'provider': 'antigravity-resilient', 'model': 'gemini-3.8-flash-high', 'effort': 'high'},
+                },
+            },
+            'codex': {
+                'verified': True,
+                'bundles': {
+                    'sol_high': {'provider': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high'},
+                },
+            },
+        },
+    }), encoding='utf-8')
+    router_data._invalidate_accounts_cache()
+    now = datetime.now(timezone.utc)
+
+    # 1. Provider no longer offers gemini-4-argon-high on antigravity-resilient, and codex live list is unavailable.
+    live_store.write_text(json.dumps({
+        'updated_at': now.isoformat(),
+        'ttl_seconds': 60,
+        'providers': {
+            'antigravity-resilient': {
+                'ok': True,
+                'status': 'ready',
+                'fetched_at': now.isoformat(),
+                'models': [{'id': 'gemini-3.8-flash-high'}],
+            },
+            'codex': {
+                'ok': False,
+                'status': 'unavailable',
+                'error': 'model_list_unavailable',
+                'fetched_at': now.isoformat(),
+                'models': [],
+            },
+        },
+    }), encoding='utf-8')
+    live_models._MEM_CACHE.clear()
+
+    cards = {c['account']: c for c in router_data.account_cards()}
+    assert cards['antigravity']['kind'] == 'warn'
+    assert 'provider no longer offers gemini-4-argon-high' in cards['antigravity']['badge']
+    assert cards['codex']['kind'] == 'warn'
+    assert 'model list unavailable' in cards['codex']['badge']
+
+    rows = {(r['account'], r['harness']): r for r in router_data.harness_model_rows()}
+    agy_row = rows[('antigravity', 'antigravity-resilient')]
+    argon_group = next(m for m in agy_row['models'] if 'argon' in m['model'])
+    assert 'provider no longer offers gemini-4-argon-high' in argon_group['launch_unavailable']
+    flash_group = next(m for m in agy_row['models'] if 'flash' in m['model'])
+    assert 'launch_unavailable' not in flash_group
+    codex_row = rows[('codex', 'codex')]
+    assert codex_row['kind'] == 'warn'
+    assert 'model list unavailable' in codex_row['badge']
+
+    # 2. INVALID_MODEL recorded in provider_retry surfaces as a model-scoped hold on the card and model row.
+    live_store.unlink()
+    live_models._MEM_CACHE.clear()
+    provider_retry.record(
+        {'account': 'antigravity', 'provider': 'antigravity-resilient', 'model': 'gemini-4-argon-high'},
+        {'failure_code': 'INVALID_MODEL', 'at': now.isoformat()},
+        dispatch_id='d-invalid-tray',
+    )
+    cards2 = {c['account']: c for c in router_data.account_cards()}
+    assert cards2['antigravity']['kind'] == 'warn'
+    assert 'provider no longer offers gemini-4-argon-high' in cards2['antigravity']['badge']
+
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -924,6 +924,11 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
                               launched_at=row.get('launched_at') or row.get('created_at'))
         except OSError:
             pass
+        try:
+            provider_retry.clear_launch_hold(row['bundle'].get('account'), provider_retry.launch_model(row['bundle']),
+                                             launched_at=row.get('launched_at') or row.get('created_at'))
+        except OSError:
+            pass
     return row
 
 

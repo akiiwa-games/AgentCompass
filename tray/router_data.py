@@ -157,6 +157,7 @@ def _accounts_fingerprint(allocator) -> tuple | None:
         STATE_DIR / "quota-exhaustion.json",
         STATE_DIR / "plan-inactive.json",
         STATE_DIR / "venice-usage.json",
+        Path(os.environ.get("ROUTER_LIVE_MODELS") or (STATE_DIR / "paseo-live-models.json")),
         Path.home() / ".usage-float" / "usage-cache.json",
         paseo_home / "config.json",
     )
@@ -167,7 +168,7 @@ def _accounts_fingerprint(allocator) -> tuple | None:
             stamps.append((str(path), st.st_mtime_ns, st.st_size))
         except OSError:
             stamps.append((str(path), None, None))
-    return (str(STATE_DIR), os.environ.get("ROUTER_HOST_POLICY"), *stamps)
+    return (str(STATE_DIR), os.environ.get("ROUTER_HOST_POLICY"), os.environ.get("ROUTER_LIVE_MODELS"), *stamps)
 
 
 def _cached_accounts(allocator=None) -> dict:
@@ -574,6 +575,7 @@ def account_cards() -> list[dict]:
     ]
     reservations = pool_reservations(accounts=accounts, now=now)
     retry_holds = provider_retry_holds(allocator)
+    live_doc = live_model_state(allocator, accounts)
     try:
         priority = router_priority.targets(allocator, accounts)
     except Exception:
@@ -598,6 +600,9 @@ def account_cards() -> list[dict]:
             text, kind = (held if kind == "ok" else f"{text}；{held}"), "warn"
         else:
             held = None
+        live_note = live_model_hold_text(allocator, live_doc, name, spec)
+        if live_note and kind != "idle":
+            text, kind = (live_note if kind == "ok" else f"{text}；{live_note}"), "warn"
         status = (row or {}).get("status")
         reading_failed = status in ("usage_failing", "plan_inactive", "auth_failed") or bool((row or {}).get("usage_read_failed"))
         windows = []
@@ -1329,6 +1334,7 @@ def harness_model_rows() -> list[dict]:
     latches = latch.active(path=None if os.environ.get("ROUTER_MODEL_LATCH") else STATE_DIR / latch.FILE,
                            catalog=model_catalog.read(STATE_DIR / "model-catalog.json"))
     retry_holds = provider_retry_holds(allocator)
+    live_doc = live_model_state(allocator, accounts)
     for (account, harness), models in groups.items():
         if not any(not bundle.get("discovery_unavailable") for entries in models.values() for _, _, bundle in entries):
             continue
@@ -1354,19 +1360,27 @@ def harness_model_rows() -> list[dict]:
                      "bundle_refs": [(owner, bid) for owner, bid, _ in bundles]}
             group.update(_model_group_tags([b for _, _, b in bundles], flags))
             unavailable = (launch_unavailable_text(allocator, latches, account, bundles)
-                           or retry_model_text(allocator, retry_holds, account, bundles))
+                           or retry_model_text(allocator, retry_holds, account, bundles)
+                           or live_model_group_text(allocator, live_doc, account, spec, bundles))
             if unavailable:
                 group["launch_unavailable"] = unavailable
             row["models"].append(group)
         failing = sum(1 for group in row["models"] if group.get("launch_unavailable"))
         account_hold = retry_holds.get(account)
         pool_holds = {k: v for k, v in retry_holds.items() if v.get("account") == account and retry_hold_pool(v)}
+        unavail_provs = [
+            allocator.live_models.unavailable_detail((live_doc.get("providers") or {}).get(p))
+            for p in row["providers"]
+        ]
+        unavail_provs = [d for d in unavail_provs if d]
         if account_hold and kind == "ok":
             row["badge"], row["kind"] = retry_hold_text({account: account_hold}, account), "warn"
         elif pool_holds and kind == "ok":
             row["badge"], row["kind"] = retry_hold_text(pool_holds, account), "warn"
         elif failing and kind == "ok":
             row["badge"], row["kind"] = _tr("{0} 个模型启动失败，已排除派发").format(failing), "warn"
+        elif unavail_provs and kind == "ok":
+            row["badge"], row["kind"] = _tr("模型列表暂不可用（{0}）").format(unavail_provs[0]), "warn"
         rows.append(row)
     present = {row['account'] for row in rows}
     for account, spec in table.items():
@@ -1402,7 +1416,90 @@ def provider_retry_holds(allocator) -> dict:
     return found if isinstance(found, dict) else {}
 
 
+def live_model_state(allocator, accounts: dict | None = None) -> dict:
+    """Live Paseo provider model lists from accounts or the state directory cache."""
+    if isinstance(accounts, dict) and isinstance(accounts.get("_live_models"), dict):
+        return accounts["_live_models"]
+    live_mod = getattr(allocator, "live_models", None)
+    if live_mod is None or not isinstance(getattr(live_mod, "FILE", None), str):
+        return {"providers": {}}
+    cached = live_mod.read_cached(base_dir=STATE_DIR, allow_stale=True)
+    if not isinstance(cached, dict):
+        return {"providers": {}}
+    if (cached.get("providers") or {}) or not live_mod.enabled():
+        return cached
+    refreshed = live_mod.load_or_refresh(accounts=accounts, base_dir=STATE_DIR)
+    return refreshed if isinstance(refreshed, dict) else {"providers": {}}
+
+
+def _resolve_live_models_module(allocator):
+    live_mod = getattr(allocator, "live_models", None)
+    if live_mod is not None and isinstance(getattr(live_mod, "FILE", None), str):
+        return live_mod
+    try:
+        import live_models as real_live_models
+        return real_live_models
+    except Exception:
+        return None
+
+
+def live_model_hold_text(allocator, live_doc: dict, account: str, spec: dict) -> str | None:
+    """Account card note when live Paseo model list omits configured models or is unavailable."""
+    if not isinstance(live_doc, dict) or not isinstance(spec, dict):
+        return None
+    providers = live_doc.get("providers")
+    if not isinstance(providers, dict) or not providers:
+        return None
+    live_mod = _resolve_live_models_module(allocator)
+    if live_mod is None:
+        return None
+    unoffered_models: list[str] = []
+    unavail_details: list[str] = []
+    for bid, bspec in (spec.get("bundles") or {}).items():
+        if not isinstance(bspec, dict) or bspec.get("disabled") or bspec.get("discovery_unavailable"):
+            continue
+        b_prov = bspec.get("provider") or account
+        if b_prov == "pi" and account != "pi":
+            continue
+        if not live_mod.is_paseo_bundle(bspec, account, spec):
+            continue
+        entry = providers.get(b_prov)
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("ok") is False:
+            detail = live_mod.unavailable_detail(entry) or "model list unavailable"
+            if detail not in unavail_details:
+                unavail_details.append(detail)
+        elif entry.get("ok") is True:
+            mod = live_mod.launch_model(bspec)
+            if mod and not live_mod.offers_model(b_prov, mod, entry) and mod not in unoffered_models:
+                unoffered_models.append(mod)
+    notes: list[str] = []
+    for mod in unoffered_models:
+        notes.append(_tr("{0} 已排除派发（provider no longer offers {1}）").format(model_label(mod), mod))
+    for detail in unavail_details:
+        notes.append(_tr("模型列表暂不可用（{0}）").format(detail))
+    return "；".join(notes) or None
+
+
+def live_model_group_text(allocator, live_doc: dict, account: str, spec: dict, bundles: list) -> str | None:
+    """Model row note when the provider's live model list no longer offers a bundle's launch model."""
+    if not isinstance(live_doc, dict) or not isinstance(live_doc.get("providers"), dict) or not live_doc["providers"]:
+        return None
+    live_mod = _resolve_live_models_module(allocator)
+    if live_mod is None:
+        return None
+    for owner, _, bundle in bundles:
+        unoffered = live_mod.reason(bundle, live_doc, owner, spec)
+        if unoffered:
+            return _tr("提供方不再提供该模型（{0}），已排除派发").format(unoffered)
+    return None
+
+
 def _retry_what(entry: dict) -> str:
+    code = str(entry.get("failure_code") or "").strip().lower()
+    if code in ("invalid_model", "model_not_found", "unknown_model", "unsupported_model"):
+        return _tr("提供方不再提供该模型")
     return _tr("提供方报错") if entry.get("failure_code") == "provider_turn_failed" else _tr("提供方持续重试")
 
 
