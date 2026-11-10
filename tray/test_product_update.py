@@ -1,6 +1,7 @@
 import hashlib
 import json
 import sys
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -95,6 +96,69 @@ class ProductNoticeTests(unittest.TestCase):
             self.assertIn("uv tool upgrade agentcompass", text)
             self.assertIn("v9.9.9", text)
             self.assertNotIn("agent-compass", text)
+
+
+class ReleaseNoticeCacheTests(unittest.TestCase):
+    """The integrations check shares the 6 h release cache and survives a rate-limited GitHub read."""
+
+    def _root(self, directory: str, version: str = "0.4.3") -> Path:
+        root = Path(directory) / "app"
+        (root / "agentcompass").mkdir(parents=True)
+        (root / "agentcompass" / "__init__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
+        if str(REPO) not in sys.path:
+            sys.path.insert(0, str(REPO))
+        return root
+
+    def _cache(self, state: Path, tag: str, age_seconds: float) -> None:
+        state.mkdir(parents=True, exist_ok=True)
+        (state / updates.RELEASE_CACHE_NAME).write_text(json.dumps({
+            "checked_at": time.time() - age_seconds, "tag_name": tag, "version": tag.lstrip("v"),
+            "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/" + tag, "assets": [],
+        }), encoding="utf-8")
+
+    def test_a_fresh_cache_answers_without_calling_github(self):
+        with TemporaryDirectory() as directory:
+            root = self._root(directory)
+            state = Path(directory) / "state"
+            self._cache(state, "v0.4.3", age_seconds=60)
+            with mock.patch.object(updates.urllib.request, "urlopen",
+                                   side_effect=AssertionError("GitHub was called despite a fresh cache")):
+                notice = updates.release_notice(root, state_dir=state)
+            self.assertEqual(notice.status, "current")
+            self.assertIn("v0.4.3", notice)
+
+    def test_a_rate_limited_read_falls_back_to_the_cached_release(self):
+        with TemporaryDirectory() as directory:
+            root = self._root(directory)
+            state = Path(directory) / "state"
+            self._cache(state, "v0.4.4", age_seconds=updates.RELEASE_CHECK_INTERVAL_SECONDS + 60)
+            limited = OSError("HTTP Error 403: rate limit exceeded")
+            with mock.patch.object(updates.urllib.request, "urlopen", side_effect=limited):
+                notice = updates.release_notice(root, state_dir=state)
+            self.assertEqual(notice.status, "newer")
+            self.assertIn("v0.4.4", notice)
+            self.assertIn("rate limit exceeded", notice)
+            self.assertNotIn(".git", notice)
+
+    def test_no_cache_and_no_github_is_a_failure(self):
+        with TemporaryDirectory() as directory:
+            root = self._root(directory)
+            with mock.patch.object(updates.urllib.request, "urlopen", side_effect=OSError("offline")):
+                notice = updates.release_notice(root, state_dir=Path(directory) / "state")
+            self.assertEqual(notice.status, "failed")
+            self.assertIn("offline", notice)
+
+    def test_the_installer_build_points_at_the_tray_update_button(self):
+        with TemporaryDirectory() as directory:
+            root = self._root(directory, version="0.4.2")
+            state = Path(directory) / "state"
+            self._cache(state, "v0.4.3", age_seconds=60)
+            with mock.patch.object(updates.component_launch, "frozen", return_value=True):
+                notice = updates.release_notice(root, state_dir=state)
+            self.assertEqual(notice.status, "newer")
+            self.assertIn("更新 AgentCompass", notice)
+            self.assertNotIn("uv tool upgrade", notice)
+            self.assertNotIn(".git", notice)
 
 
 class InstallShapeAndVersionDisplayTests(unittest.TestCase):

@@ -1112,6 +1112,32 @@ def _parse_github_release(payload: dict, fallback_page: str) -> dict:
     }
 
 
+def _latest_release(api: str, page: str, force: bool = False, state_dir: Path | None = None, opener=None,
+                    network: bool = True) -> tuple[dict, str]:
+    """(release, error). Reads GitHub only when the cached release is older than RELEASE_CHECK_INTERVAL_SECONDS
+    (or when forced, or for a test opener). A failed read keeps the cached release and returns the error, so one
+    rate-limited call does not erase what the last good read saw."""
+    cache_file = _release_cache_path(state_dir)
+    cached = _read_cached_release(cache_file)
+    fresh = bool(
+        cached
+        and cached.get("tag_name")
+        and (time.time() - float(cached.get("checked_at") or 0)) < RELEASE_CHECK_INTERVAL_SECONDS
+    )
+    if not network or not (force or opener is not None or not fresh):
+        return cached or {}, ""
+    request = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json", "User-Agent": "agentcompass"})
+    open_url = opener or urllib.request.urlopen
+    try:
+        with open_url(request, timeout=20) as response:
+            release = _parse_github_release(json.loads(response.read().decode("utf-8")), page)
+    except Exception as exc:
+        return cached or {}, str(exc) or exc.__class__.__name__
+    if state_dir is not None or opener is None:
+        _write_cached_release(cache_file, release)
+    return release, ""
+
+
 def check_product_release(
     force: bool = False,
     root: Path | None = None,
@@ -1129,34 +1155,10 @@ def check_product_release(
     from agentcompass.origin import RELEASES_API, RELEASES_PAGE
 
     installs = inspect_installs(root=root, home=home, which_path=which_path, frozen=frozen)
-    cache_file = _release_cache_path(state_dir)
-    cached = _read_cached_release(cache_file)
-    now = time.time()
-    cache_fresh = bool(
-        cached
-        and cached.get("tag_name")
-        and (now - float(cached.get("checked_at") or 0)) < RELEASE_CHECK_INTERVAL_SECONDS
+    release_data, error_text = _latest_release(
+        RELEASES_API, RELEASES_PAGE, force=force, state_dir=state_dir, opener=opener, network=network
     )
-
-    release_data = cached or {}
-    check_ok = True
-    error_text = ""
-
-    if network and (force or opener is not None or not cache_fresh):
-        request = urllib.request.Request(
-            RELEASES_API,
-            headers={"Accept": "application/vnd.github+json", "User-Agent": "agentcompass"},
-        )
-        open_url = opener or urllib.request.urlopen
-        try:
-            with open_url(request, timeout=20) as response:
-                raw_payload = json.loads(response.read().decode("utf-8"))
-            release_data = _parse_github_release(raw_payload, RELEASES_PAGE)
-            if state_dir is not None or opener is None:
-                _write_cached_release(cache_file, release_data)
-        except Exception as exc:
-            check_ok = False
-            error_text = str(exc)
+    check_ok = not error_text
 
     tray_ver = installs["tray"]["version"]
     remote_ver = str(release_data.get("version") or str(release_data.get("tag_name") or "").lstrip("vV")).strip()
@@ -2197,63 +2199,63 @@ def update_agentcompass(
         LOCK.release()
 
 
-def release_notice(root: Path, opener=None) -> ProductNoticeResult:
-    """Tell a non-git install how to upgrade. Does not download or replace files."""
+def _upgrade_hint() -> str:
+    """How this install upgrades: the installer build has the tray's own update button; a uv/pip install upgrades with uv."""
+    if component_launch.frozen():
+        return _tr("用托盘里的「更新 AgentCompass」升级")
+    from agentcompass.origin import RELEASES_PAGE
+    return _tr("用 uv tool upgrade agentcompass 升级，或从 {0} 下载安装器").format(RELEASES_PAGE)
+
+
+def release_notice(root: Path, opener=None, state_dir: Path | None = None) -> ProductNoticeResult:
+    """Tell a non-git install whether a newer release exists. Does not download or replace files.
+
+    Shares the release cache with check_product_release, so the integrations check and the AgentCompass update
+    button make at most one GitHub call per RELEASE_CHECK_INTERVAL_SECONDS between them; when GitHub cannot be read
+    (rate limit, offline) the last good reading decides, labelled with its time."""
     if str(root) not in os.sys.path:
         os.sys.path.append(str(root))
     from agentcompass.origin import RELEASES_API, RELEASES_PAGE
 
     local = local_version(root)
-    request = urllib.request.Request(
-        RELEASES_API,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "agentcompass"},
-    )
-    open_url = opener or urllib.request.urlopen
-    try:
-        with open_url(request, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except Exception as error:
+    release, error = _latest_release(RELEASES_API, RELEASES_PAGE, state_dir=state_dir, opener=opener)
+    tag = str(release.get("tag_name") or "")
+    if not tag:
         return ProductNoticeResult(
-            f"AgentCompass {local} has no .git checkout, so it cannot git pull. "
-            f"Could not read GitHub releases ({error}). "
-            f"Upgrade with: uv tool upgrade agentcompass "
-            f"or download the installer from {RELEASES_PAGE}",
+            _tr("AgentCompass {0}：读不到 GitHub 发布（{1}）。{2}").format(local, error or "no release", _upgrade_hint()),
             status="failed",
         )
-    tag = str(payload.get("tag_name") or "")
-    page = str(payload.get("html_url") or RELEASES_PAGE)
+    seen = ""
+    if error:
+        try:
+            when = time.strftime("%m-%d %H:%M", time.localtime(float(release.get("checked_at") or 0)))
+        except (TypeError, ValueError, OverflowError, OSError):
+            when = "?"
+        seen = _tr("（GitHub 暂时读不到：{0}；按 {1} 读到的发布判断）").format(error, when)
     remote = _version_key(tag)
     here = _version_key(local)
     if remote > here:
         return ProductNoticeResult(
-            f"AgentCompass {local} is not a git checkout. GitHub release {tag} is newer. "
-            f"Upgrade the router with: uv tool upgrade agentcompass "
-            f"Or download the Windows installer from: {page}",
+            _tr("AgentCompass {0}：GitHub 已发布 {1}。{2}").format(local, tag, _upgrade_hint()) + seen,
             status="newer",
         )
     if remote == here:
-        return ProductNoticeResult(
-            f"AgentCompass {local} matches GitHub release {tag}. No upgrade is waiting.",
-            status="current",
-        )
-    return ProductNoticeResult(
-        f"AgentCompass {local} is newer than GitHub release {tag or 'unknown'}.",
-        status="ahead",
-    )
+        return ProductNoticeResult(_tr("AgentCompass {0} 已是最新（GitHub 发布 {1}）").format(local, tag) + seen,
+                                   status="current")
+    return ProductNoticeResult(_tr("AgentCompass {0} 比 GitHub 发布 {1} 更新").format(local, tag) + seen,
+                               status="ahead")
 
 
-def product_notice(root: Path | None = None, opener=None) -> ProductNoticeResult:
+def product_notice(root: Path | None = None, opener=None, state_dir: Path | None = None) -> ProductNoticeResult:
     """Empty for a dev checkout, so the existing git updater is unchanged."""
     root = root or Path(__file__).resolve().parents[1]
     if (root / ".git").exists():
         return ProductNoticeResult("", status="dev")
     try:
-        return release_notice(root, opener=opener)
+        return release_notice(root, opener=opener, state_dir=state_dir)
     except Exception as error:
         return ProductNoticeResult(
-            f"AgentCompass has no git checkout and the release check failed: {error}. "
-            "Upgrade with: uv tool upgrade agentcompass "
-            "or download the installer from https://github.com/akiiwa-games/AgentCompass/releases/latest",
+            _tr("AgentCompass 发布检查出错：{0}。{1}").format(error, _upgrade_hint()),
             status="failed",
         )
 
