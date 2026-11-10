@@ -3246,5 +3246,329 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertEqual(self.real_classify('opencode', 'opencode', 'm', None)[0], 'unknown')
 
 
+class LiveModelCheckTests(unittest.TestCase):
+    """2026-11-10: `roll` picked `argon_high` (`antigravity-resilient/gemini-4-argon-high`) when Antigravity offered only
+    six starter models; Paseo rejected it at launch with `INVALID_MODEL`. Candidate providers' live model lists are read
+    before ranking, cached briefly, and matched structurally by exact `id` and Paseo `aliases`."""
+    setUp_dispatch, snapshot = DispatchTests.setUp, DispatchTests.snapshot
+    issue, prepare = DispatchTests.issue, DispatchTests.prepare
+    brief = RollTests.brief
+
+    def setUp(self):
+        import live_models
+        import provider_retry
+        self.setUp_dispatch()
+        self.live_store = self.root / live_models.FILE
+        self.retry_store = self.root / provider_retry.FILE
+        self.latch_store = self.root / 'model-unavailable.json'
+        env = patch.dict(os.environ, {
+            'ROUTER_LIVE_MODELS': str(self.live_store),
+            'ROUTER_PROVIDER_RETRY': str(self.retry_store),
+            'ROUTER_MODEL_LATCH': str(self.latch_store),
+            'ROUTER_STATE_DIR': str(self.root),
+        })
+        env.start()
+        self.addCleanup(env.stop)
+        self.creates, self.choices, self.fetched_providers = [], [], []
+        self.usage['accounts']['antigravity'] = {
+            'status': 'fresh',
+            'fetched_at': self.now.isoformat(),
+            'windows': [
+                {
+                    'id': wid,
+                    'used_pct': 100 - rem,
+                    'remaining_pct_before_reset': rem,
+                    'resets_at': (self.now + timedelta(hours=hours)).isoformat(),
+                    'seconds_until_reset': hours * 3600,
+                }
+                for wid, rem, hours in [
+                    ('gemini-5h', 90, 4.0),
+                    ('gemini-weekly', 95, 120.0),
+                    ('3p-5h', 90, 4.0),
+                    ('3p-weekly', 95, 120.0),
+                ]
+            ],
+        }
+        # Task where `argon_high` wins when offered, and the next candidate wins in the same roll when excluded.
+        self.creative_task = {
+            'id': 'creative-task',
+            'task_id': 'creative-task',
+            'work_kind': 'creative_divergence',
+            'difficulty': 'hard',
+            'expected_hours': 0.5,
+            'needs': {'local_only': True},
+        }
+        self.live_providers = {
+            'antigravity-resilient': {
+                'ok': True,
+                'status': 'ready',
+                'models': [
+                    {'id': 'gemini-3.8-flash-high'},
+                    {'id': 'gemini-3.8-flash-medium'},
+                    {'id': 'gemini-3.8-flash-low'},
+                    {'id': 'claude-sonnet-4-6'},
+                    {'id': 'claude-opus-4-6-thinking'},
+                    {'id': 'gpt-oss-120b-medium'},
+                ],
+            },
+            'claude-lab': {
+                'ok': True,
+                'status': 'ready',
+                'models': [
+                    {'id': 'claude-opus-5-5', 'aliases': ['claude-opus-5-5[1m]']},
+                    {'id': 'claude-sonnet-5-5', 'aliases': ['claude-sonnet-5-5[1m]']},
+                    {'id': 'claude-fable-5-1'},
+                ],
+            },
+            'codex': {
+                'ok': True,
+                'status': 'ready',
+                'models': [
+                    {'id': 'gpt-6.1-sol'},
+                    {'id': 'gpt-6-astra'},
+                ],
+            },
+            'pi': {
+                'ok': True,
+                'status': 'ready',
+                'models': [
+                    {'id': 'openai-codex/gpt-6.1-sol'},
+                    {'id': 'openai-codex/gpt-6-astra'},
+                ],
+            },
+        }
+
+    def fetch_live(self, providers, cwd=None, timeout=10):
+        self.fetched_providers.append(list(providers))
+        return {
+            'ok': True,
+            'fetched_at': self.now.isoformat(),
+            'providers': {p: self.live_providers[p] for p in providers if p in self.live_providers},
+        }
+
+    def host(self, request):
+        if request['operation'] == 'create':
+            self.creates.append(request['request']['provider'])
+            return {
+                'ok': True,
+                'sent': True,
+                'agent': self.snapshot({'request': request['request'], 'dispatch_id': request['dispatch_id']},
+                                       id=request['dispatch_id']),
+                'completion_notification': {'status': 'watching', 'pid': 123},
+            }
+        return {'ok': True, 'agent': None, 'creation': None}
+
+    def roll(self, host=None, task=None):
+        import argparse
+        import roll
+        active_task = dict(task or self.creative_task)
+        brief = self.root / 'task.md'
+        brief.write_bytes(self.brief.encode('utf-8'))
+        args = argparse.Namespace(
+            brief=brief, file=[], apply_to=None, local_only=None, hours=0.5, title=None,
+            workspace=None, task_id=f'live-task-{len(self.choices)}', wait=0, parent_id=None, parent_host=None,
+            parent_address=None, provider=None, model=None, effort=None, basis=None, usage_cache=None, dry_run=False,
+            verbose=False, task=None, new_worker=True, resume=None, fast=False, keep_whole=None, access=None,
+            allow_concurrent=None, account=None,
+        )
+
+        def plan_stage(document, _):
+            planned = allocator.plan(dict(active_task), self.usage, self.now, accounts=self.accounts)
+            self.choices.append(planned['choice'])
+            return dict(planned, **registry.issue(planned, document['task'], self.now)), 0
+
+        judge = type('Judge', (), {
+            'plan_stage': staticmethod(plan_stage),
+            'usage_snapshot': staticmethod(lambda _: self.usage),
+            'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
+            'cli_prefix': staticmethod(lambda name: [name]),
+        })
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'ROUTER_PARENT_AGENT_ID': ''}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \
+                patch.object(flow, 'paseo_reachable', return_value=True), \
+                patch.object(flow, 'host_call', host or self.host), \
+                patch.object(allocator, 'load_accounts', return_value=self.accounts):
+            return roll.run(args, judge)
+
+    def test_a_bundle_missing_from_the_live_list_is_excluded_with_reason_and_the_next_one_launches_in_the_same_roll(self):
+        import live_models
+        # Without live filtering (when gemini-4-argon-high IS offered), argon_high wins creative_divergence.
+        full_providers = copy.deepcopy(self.live_providers)
+        full_providers['antigravity-resilient']['models'].append({'id': 'gemini-4-argon-high'})
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=lambda provs, **kw: {
+            'ok': True, 'fetched_at': self.now.isoformat(), 'providers': {p: full_providers[p] for p in provs}
+        }):
+            baseline = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+        self.assertEqual(baseline['choice'], 'argon_high')
+        live_models.invalidate()
+
+        # Incident reproduction: antigravity-resilient offers only the 6 starter models (no gemini-4-argon-high).
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=self.fetch_live):
+            result, code = self.roll()
+            self.assertEqual((result['status'], code), ('launched', 0))
+            self.assertNotEqual(self.choices[0], 'argon_high')
+            self.assertEqual(len(self.creates), 1)
+            self.assertNotEqual(self.creates[0], 'antigravity-resilient/gemini-4-argon-high')
+            self.assertTrue(
+                any('provider no longer offers gemini-4-argon-high' in w for w in result.get('warnings') or ()),
+                result,
+            )
+            # Both plan and prepare inside the roll shared the 60s cache, so Paseo was queried only once.
+            self.assertEqual(len(self.fetched_providers), 1)
+            plan = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+            self.assertEqual(len(self.fetched_providers), 1)
+            argon_row = next(c for c in plan['ranking'] if c['id'] == 'argon_high')
+            self.assertIn('provider no longer offers gemini-4-argon-high', argon_row['excluded'])
+            flash_row = next(c for c in plan['ranking'] if c['id'] == 'flash_high')
+            self.assertNotIn('provider no longer offers gemini-3.8-flash-high', flash_row['excluded'])
+            # Past the 60s TTL, the cache refreshes.
+            allocator.plan(dict(self.creative_task), self.usage,
+                           self.now + timedelta(seconds=live_models.TTL_SECONDS + 1), accounts=self.accounts)
+            self.assertEqual(len(self.fetched_providers), 2)
+
+    def test_an_unreadable_live_list_does_not_exclude_and_surfaces_model_list_unavailable_plus_invalid_model_latch(self):
+        import live_models
+        import model_latch
+        import provider_retry
+        # 1. Paseo down / unreachable when reading models: do not exclude argon_high; surface "model list unavailable".
+        with patch.object(live_models, 'fetch_from_paseo', return_value={'ok': False, 'error': 'host_connection_failed'}):
+            plan = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+            self.assertEqual(plan['choice'], 'argon_high')
+            argon_row = next(c for c in plan['ranking'] if c['id'] == 'argon_high')
+            self.assertEqual(argon_row['excluded'], [])
+            self.assertTrue(
+                any('model list unavailable' in w for w in plan['decision'].get('warnings') or ()),
+                plan['decision'],
+            )
+        live_models.invalidate()
+
+        # 2. Provider disabled in Paseo: do not exclude on live-model basis; surface "model list unavailable".
+        disabled_providers = copy.deepcopy(self.live_providers)
+        disabled_providers['antigravity-resilient'] = {
+            'ok': False, 'status': 'disabled', 'error': 'provider_disabled', 'models': []
+        }
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=lambda provs, **kw: {
+            'ok': True, 'fetched_at': self.now.isoformat(), 'providers': {p: disabled_providers[p] for p in provs}
+        }):
+            plan2 = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+            self.assertEqual(plan2['choice'], 'argon_high')
+            self.assertTrue(
+                any('antigravity (antigravity-resilient): model list unavailable (provider_disabled)' in w
+                    for w in plan2['decision'].get('warnings') or ()),
+                plan2['decision'],
+            )
+        live_models.invalidate()
+
+        # 3. Fallback when the live list was unreadable and launch fails with INVALID_MODEL: one mechanism, the
+        # existing model latch, holds only that model (no provider_retry hold) and gives one warning on the next roll.
+        def reject_argon(request):
+            if request['operation'] == 'create' and request['request']['provider'] == 'antigravity-resilient/gemini-4-argon-high':
+                self.creates.append(request['request']['provider'])
+                return {'ok': False, 'sent': False, 'error': 'host_creation_failed',
+                        'failure_class': 'model_unavailable', 'failure_code': 'INVALID_MODEL'}
+            return self.host(request)
+
+        with patch.object(live_models, 'fetch_from_paseo', return_value={'ok': False, 'error': 'host_connection_failed'}):
+            first, code1 = self.roll(host=reject_argon)
+            self.assertEqual((first['status'], code1), ('error', 1))
+            self.assertEqual(set(model_latch.active(now=self.now)), {'antigravity/gemini-4-argon-high'})
+            self.assertEqual(provider_retry.active(now=self.now), {})
+            self.assertNotIn('antigravity-resilient', json.loads(self.live_store.read_text(encoding='utf-8'))['providers'])
+        # The refused model is now also missing from the live list: still one warning line for it.
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=self.fetch_live):
+            second, code2 = self.roll(host=reject_argon)
+            self.assertEqual((second['status'], code2), ('launched', 0))
+            self.assertNotEqual(self.choices[1], 'argon_high')
+            plan = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+            lines = [w for w in plan['decision'].get('warnings') or () if 'gemini-4-argon-high' in w]
+            self.assertEqual(len(lines), 1, lines)
+
+    def test_a_provider_paseo_does_not_know_gives_no_warning_and_no_exclusion(self):
+        """llmproxy (LiteLLM, harness codex) is not a Paseo provider: the bridge answers `unknown_provider`."""
+        import live_models
+        providers = copy.deepcopy(self.live_providers)
+        providers['antigravity-resilient'] = {'ok': False, 'status': 'unknown_provider', 'error': 'unknown_provider',
+                                              'models': []}
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=lambda provs, **kw: {
+                'ok': True, 'providers': {p: providers[p] for p in provs if p in providers}}):
+            plan = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
+        self.assertEqual(plan['choice'], 'argon_high')
+        self.assertFalse([w for w in plan['decision'].get('warnings') or () if 'model list' in w or 'no longer' in w])
+        self.assertIsNone(live_models.unavailable_detail(providers['antigravity-resilient']))
+
+    def test_cache_writes_merge_under_the_lock_and_respect_a_later_invalidation(self):
+        """Review 2026-11-10: a refresh wrote its whole read-time snapshot back, losing a concurrent refresh of another
+        provider and an invalidation made during its fetch."""
+        import live_models
+        entry = lambda mid: {'ok': True, 'models': [{'id': mid}]}
+        live_models.load_or_refresh(['x'], fetch=lambda provs: {'ok': True, 'providers': {'x': entry('x1')}})
+
+        def slow_a(provs):
+            # While A fetches: B refreshes another provider, and x is invalidated.
+            live_models.load_or_refresh(['b'], fetch=lambda p: {'ok': True, 'providers': {'b': entry('b1')}})
+            live_models.invalidate('x')
+            return {'ok': True, 'providers': {'a': entry('a1'), 'x': entry('x2')}}
+
+        answer = live_models.load_or_refresh(['a', 'x'], force=True, fetch=slow_a)
+        self.assertEqual(set(answer['providers']), {'a', 'x'})  # this call still answers with what it read
+        stored = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']
+        self.assertEqual(set(stored), {'a', 'b'})  # b survives; x stays evicted until the next refresh
+        live_models.load_or_refresh(['x'], fetch=lambda provs: {'ok': True, 'providers': {'x': entry('x3')}})
+        stored = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']
+        self.assertEqual(stored['x']['models'], [{'id': 'x3'}])
+
+    def test_an_invalidation_before_any_cache_file_still_beats_an_in_flight_refresh(self):
+        """Review round 2: with no cache file yet, invalidate() returned early, so a refresh already fetching wrote the
+        evicted list back."""
+        import live_models
+        entry = lambda mid: {'ok': True, 'models': [{'id': mid}]}
+        self.assertFalse(self.live_store.exists())
+
+        def slow(provs):
+            live_models.invalidate()  # INVALID_MODEL arrives while this fetch is in flight
+            return {'ok': True, 'providers': {'x': entry('x-old')}}
+
+        live_models.load_or_refresh(['x'], force=True, fetch=slow)
+        stored = json.loads(self.live_store.read_text(encoding='utf-8'))['providers']
+        self.assertNotIn('x', stored)
+
+    def test_a_bundle_the_user_disabled_gives_no_live_list_warning(self):
+        """Review round 2: an unchecked bundle is `disabled: True` at runtime; a provider dropping its model must not
+        warn on every plan."""
+        import live_models
+        accounts = copy.deepcopy(self.accounts)
+        live_doc = {'providers': copy.deepcopy(self.live_providers)}
+        self.assertTrue(any('gemini-4-argon-high' in w for w in live_models.warnings(live_doc, accounts)))
+        accounts['accounts']['antigravity']['bundles']['argon_high']['disabled'] = True
+        self.assertFalse(any('gemini-4-argon-high' in w for w in live_models.warnings(live_doc, accounts)))
+
+    def test_structural_model_id_and_paseo_alias_matching(self):
+        import live_models
+        claude_entry = {
+            'ok': True,
+            'status': 'ready',
+            'models': [
+                {'id': 'claude-fable-5', 'aliases': ['claude-fable-5[1m]'], 'label': 'Fable 5'},
+                {'id': 'claude-opus-5-5', 'aliases': ['claude-opus-5-5[1m]'], 'label': 'Opus 5.5'},
+            ],
+        }
+        # Exact id match.
+        self.assertTrue(live_models.offers_model('claude', 'claude-fable-5', claude_entry))
+        self.assertTrue(live_models.offers_model('claude', 'claude/claude-fable-5', claude_entry))
+        # Paseo alias match.
+        self.assertTrue(live_models.offers_model('claude', 'claude-fable-5[1m]', claude_entry))
+        self.assertTrue(live_models.offers_model('claude', 'claude/claude-fable-5[1m]', claude_entry))
+        # Prefix normalization on provider-scoped model ids (e.g. opencode/deepseek-v4.1-flash-free).
+        opencode_entry = {'ok': True, 'status': 'ready', 'models': [{'id': 'opencode/deepseek-v4.1-flash-free'}]}
+        self.assertTrue(live_models.offers_model('opencode', 'opencode/deepseek-v4.1-flash-free', opencode_entry))
+        self.assertTrue(live_models.offers_model('opencode', 'deepseek-v4.1-flash-free', opencode_entry))
+        # No substring, prefix, or family-keyword matching: gemini-4-argon-high is not matched by gemini-4-argon-low.
+        agy_entry = {'ok': True, 'status': 'ready', 'models': [{'id': 'gemini-4-argon-low'}, {'id': 'gemini-4-argon'}]}
+        self.assertFalse(live_models.offers_model('antigravity-resilient', 'gemini-4-argon-high', agy_entry))
+        self.assertFalse(live_models.offers_model('claude', 'claude-fable-5-1', claude_entry))
+
+
+
 if __name__ == '__main__':
     unittest.main()

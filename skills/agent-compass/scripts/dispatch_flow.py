@@ -177,6 +177,13 @@ def settle_create(row, creation, now, path):
             model_latch.record(settled['bundle'], settled.get('failure_code'), source=settled['dispatch_id'])
         except OSError:
             pass
+        if model_latch.means_unavailable(settled.get('failure_code')):
+            # The provider just refused this model: drop its cached live list so the next roll reads it afresh.
+            import live_models
+            try:
+                live_models.invalidate(live_models.bundle_provider(settled.get('bundle')))
+            except OSError:
+                pass
     return settled
 
 

@@ -8,7 +8,8 @@ run (refresh_in_background), never on the routing thread. Nothing is stored exce
 
 An expired token (agy renews it on its next start) or a failed request leaves the last good answer in place and is
 retried after RETRY_MINUTES, but that answer stops counting once it is PLAN_MAX_AGE_HOURS old: an old tier is no longer
-evidence of the tier. A lost sign-in drops it at once. A tier with no paid plan behind it (`free-tier`) reads as `Free`.
+evidence of the tier. A lost sign-in drops it at once. A tier with no paid plan behind it (`free-tier`) reads as `Free`, whichever response field
+carried it.
 """
 from datetime import datetime, timedelta, timezone
 import atexit
@@ -30,6 +31,8 @@ PLAN_MAX_AGE_HOURS = 48
 RETRY_MINUTES = 30
 TIMEOUT_SECONDS = 8
 EXIT_GRACE_SECONDS = 2
+# Tier ids with no paid Google AI plan behind them. `standard-tier` is not here: it can be a paid Code Assist plan.
+FREE_TIER_IDS = frozenset(('free-tier',))
 PLATFORMS = {'win32': 'WINDOWS_AMD64', 'darwin': 'DARWIN_ARM64', 'linux': 'LINUX_AMD64'}
 
 
@@ -74,7 +77,9 @@ def cached_plan(state_dir, now=None):
         return None
     if (now or _now()) - read_at >= timedelta(hours=PLAN_MAX_AGE_HOURS):
         return None
-    return 'Free' if document.get('source') == 'currentTier' and document.get('tier_id') == 'free-tier' else plan
+    # The tier id decides, whichever field carried it: Google returns `free-tier` under `paidTier` too
+    # ("Antigravity Starter Quota", seen 2026-11-10), and that is still no paid plan.
+    return 'Free' if document.get('tier_id') in FREE_TIER_IDS else plan
 
 
 def _write_cache(state_dir, document):
