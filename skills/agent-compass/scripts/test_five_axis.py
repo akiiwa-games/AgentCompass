@@ -441,7 +441,7 @@ class FiveAxisTests(unittest.TestCase):
                 allocator.load_five_axis = original
 
         def pools(d):
-            plain = lambda i: next(c for c in d['ranking'] if c['id'] == i and not c['bundle'].get('fast'))
+            plain = lambda i: next(c for c in d['ranking'] if c['id'] == i)
             return plain('opus55_high'), plain('claude-2__opus55_high')
 
         for hours in (1.0, 1.9):        # the task ends before Pool A's reset: its last dollars lapse, so they cost less
@@ -464,7 +464,7 @@ class FiveAxisTests(unittest.TestCase):
         for sec_left in (7200, 600):    # near the reset the plain variant keeps the higher N: the faster one never replaces it
             usage['accounts']['claude']['windows'][0]['seconds_until_reset'] = sec_left
             near = run_case(0.1)
-            fast = next(c for c in near['ranking'] if c['id'] == 'opus55_high' and c['bundle'].get('fast'))
+            fast = next(c for c in near['ranking'] if c['id'] == 'opus55_high+fast')
             plain = next(c for c in near['ranking'] if c['id'] == 'opus55_high' and not c['bundle'].get('fast'))
             self.assertGreater(plain['score'], fast['score'])
             self.assertLess(fast['expected_hours'], plain['expected_hours'])
@@ -589,18 +589,20 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(fable['usd_per_hour'], public)         # one source: the public data's labelled option-B value
         self.assertIn('Option B', fable['usd_per_hour_basis'])
 
-    def test_the_outside_option_is_only_what_can_start_now_and_an_empty_outside_prices_the_whole_fit(self):
-        """Quota economy v3: a window's ladder takes its outside point only from candidates that can start now and draw a
-        different window; a candidate that waits for a reset is no substitute; with no outside at all the ladder is the
-        steepest it can be."""
+    def test_the_outside_option_is_only_what_long_windows_can_absorb_and_an_empty_outside_prices_the_whole_fit(self):
+        """Quota economy v3 (round 14): a window's ladder takes its outside point only from candidates that draw a different
+        window and whose LONG windows have room now. A candidate that must wait for a long window to renew is no substitute;
+        one that only waits for its 5-hour window is (the 5-hour clock never reaches a price); an unmetered, purpose-limited
+        channel (Dot, ChatGPT Web) is never one; with no outside at all the ladder is the steepest it can be."""
         acc = copy.deepcopy(self.accounts)
         acc['scoring']['five_axis'] = {'enabled': True}
         acc = allocator.five_axis_overlay(acc, document(acc['models']))
         state = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 40.0, 'reset_hours': 84.0, 'short': False,
                  'end_hours': 84.0, 'stale': False}
 
-        def cand(account, model, wid, fits, spend, wait=0):
+        def cand(account, model, wid, fits, spend, wait=0, long_wait=False):
             return {'bundle': {'account': account, 'model': model}, 'available_in_hours': wait or None,
+                    '_five_long_wait': long_wait,
                     'expected_usd': spend, 'components': {'fit': fits['divergence']}, '_five_scaled': fits,
                     '_five_window_states': {wid: ({}, dict(state), 1000.0, 1.0)}}
         strong = dict(divergence=0.8, global_rigor=0.8, module_precision=0.8, vision_tools=0.8)
@@ -617,11 +619,13 @@ class FiveAxisTests(unittest.TestCase):
         self.assertGreater(alone, 0.0)                       # nothing else can do the work: displaced work loses all its fit
         with_sub = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0)])
         self.assertLess(with_sub, alone)
-        waiting = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5)])
-        self.assertEqual(waiting, alone)                     # it waits for a reset: it cannot take the work now
-        unmetered = {**cand('dot', 'dot', 'x', strong, 0.0), '_five_window_states': {}}
-        always_open = price(own + [unmetered])
-        self.assertLess(always_open, with_sub)               # an unmetered candidate is always open (slack 1)
+        renewing = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5, long_wait=True)])
+        self.assertEqual(renewing, alone)                    # its long window must renew first: it cannot take the work now
+        five_hour = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5)])
+        self.assertEqual(five_hour, with_sub)                # it waits only for its 5-hour window: weekly room is what counts
+        unmetered = {**cand('dot', 'dot', 'x', strong, 0.0), '_five_window_states': {}, '_five_unmetered': True}
+        self.assertEqual(price(own + [unmetered]), alone)    # an unmetered channel relieves no window: it never lowers a price
+        self.assertEqual(price(own + [unmetered, cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0)]), with_sub)
 
     def test_spend_is_usd_per_hour_times_the_duration_the_candidate_takes(self):
         """S3: one basis for spend and time, for a model faster than the anchor and for a higher effort."""

@@ -4,6 +4,15 @@ Sources and billing semantics: ../references/fast-modes.md.
 No family-name inference: a new Opus/GPT model needs a verified contract.
 """
 
+# A fast-mode variant is its own candidate in a ranking and carries its base bundle's id plus this suffix, so a bundle id names
+# exactly one variant: the plain bundle id the base one, `<id>+fast` the fast one.
+ID_SUFFIX = '+fast'
+
+
+def variant_id(bundle_id):
+    return f'{bundle_id}{ID_SUFFIX}'
+
+
 MODELS = {
     'codex': frozenset(('gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna')),
     'claude': frozenset(('claude-opus-5-5', 'claude-fable-5-2', 'claude-opus-5', 'claude-opus-4-8')),

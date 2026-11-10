@@ -60,7 +60,7 @@ class Fleet:
         self.accounts = sim.fresh_accounts(shipped_template(), snapshot())
 
     def plan(self, claude_used, codex_used, ec=0.5, ex=0.5, axes=MID, hours=2.0, allowed=('claude', 'codex'), claude2=None,
-             five_hour_used=0.05, mutate=None, codex_reading=True, claude_long=True, usage_hook=None, **task):
+             five_hour_used=0.05, mutate=None, codex_reading=True, claude_long=True, usage_hook=None, local_only=True, **task):
         acc = copy.deepcopy(self.accounts)
         acc['scoring']['five_axis'] = {'enabled': True}
         cl, cx = acc['accounts']['claude']['bundles'], acc['accounts']['codex']['bundles']
@@ -90,7 +90,7 @@ class Fleet:
             usage['accounts'].pop('codex', None)
         if usage_hook:
             usage_hook(usage)
-        profile = {**PROFILE, 'axis_demand': dict(zip(allocator.FIVE_AXES, axes)), 'expected_hours': hours}
+        profile = {**PROFILE, 'axis_demand': dict(zip(allocator.FIVE_AXES, axes)), 'expected_hours': hours, 'local_only': local_only}
         return allocator.plan({'objective': 't', 'hours': hours, 'profile': profile, **task}, usage, NOW, accounts=acc,
                               overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)})
 
@@ -100,7 +100,7 @@ def eligible(decision):
 
 
 def row(decision, bundle_id, fast=False):
-    return next(c for c in eligible(decision) if c['id'] == bundle_id and bool(c['bundle'].get('fast')) == fast)
+    return next(c for c in eligible(decision) if (c.get('base_id') or c['id']) == bundle_id and bool(c['bundle'].get('fast')) == fast)
 
 
 def price_of(decision, account):
@@ -320,7 +320,7 @@ class FleetEconomyTests(unittest.TestCase):
         self.assertEqual(plain['components']['opportunity_cost'], 0.0)
         self.assertEqual(round(plain['score'], 4), round(quick['score'], 4))
         self.assertLess(quick['expected_hours'], plain['expected_hours'])
-        order = [c['bundle'].get('fast', False) for c in eligible(free) if c['id'] == 'opus55_high']
+        order = [c['bundle'].get('fast', False) for c in eligible(free) if (c.get('base_id') or c['id']) == 'opus55_high']
         self.assertEqual(order, [True, False])
         self.assertEqual(quick['components']['decided_by'], 'completion_hours')
 
@@ -430,8 +430,113 @@ class FleetEconomyTests(unittest.TestCase):
         json.dumps(snap, allow_nan=False)
 
 
-if __name__ == '__main__':
-    unittest.main()
+class PriceIndependenceTests(unittest.TestCase):
+    """Owner decisions of round 14: a window's price depends on the account's own windows and on the metered substitutes' long
+    windows, and on nothing else: not on a purpose-limited channel (Dot, ChatGPT Web), not on the current task's flags, and
+    not on any 5-hour clock."""
+
+    def setUp(self):
+        self.fleet = Fleet()
+
+    @staticmethod
+    def metered(d):
+        rows = {(c['id'], bool(c['bundle'].get('fast')), c['bundle']['account']): (c['components']['opportunity_cost'], c['score'])
+                for c in d['ranking'] if not c.get('excluded') and c.get('score') is not None
+                and c['bundle']['account'] in ('claude', 'codex')}
+        windows = {w['label']: (w['quota_price'], w['substitute_slack'], w['outside_fit']) for w in d['decision']['system']['quota_windows']}
+        return rows, windows
+
+    def test_toggling_local_only_leaves_every_metered_price_bit_identical_and_dot_wins_when_its_fit_ties(self):
+        """Dot is eligible only when the work may leave the machine, which says nothing about how scarce Claude's or Codex's
+        weeks are. It is no outside point of any window, so every metered window's price and every metered candidate's cost
+        is the same whether Dot is in the plan or not; and where its capped fit ties the best, its cost of about 0 wins."""
+        kw = dict(allowed=('claude', 'codex', 'dot'), axes=(1, 1, 0, 0), hours=0.3)
+        shut = self.fleet.plan(0.6, 0.9, local_only=True, **kw)
+        open_ = self.fleet.plan(0.6, 0.9, local_only=False, **kw)
+        self.assertFalse([c for c in eligible(shut) if c['bundle']['account'] == 'dot'])
+        self.assertTrue([c for c in eligible(open_) if c['bundle']['account'] == 'dot'])
+        self.assertEqual(self.metered(shut), self.metered(open_))
+        dot = next(c for c in eligible(open_) if c['bundle']['account'] == 'dot')
+        best_metered = max(c['components']['fit'] for c in eligible(open_) if c['bundle']['account'] != 'dot')
+        self.assertAlmostEqual(dot['components']['fit'], best_metered)          # its capped fit ties the best
+        self.assertEqual(dot['components']['opportunity_cost'], 0.0)
+        self.assertEqual(open_['selected_bundle']['account'], 'dot')
+        self.assertNotEqual(shut['selected_bundle']['account'], 'dot')
+        # the same on a frontier task: the metered prices still do not move whether Dot may take the work or not
+        hard_shut = self.fleet.plan(0.6, 0.9, local_only=True, allowed=('claude', 'codex', 'dot'), axes=FRONTIER, hours=6.0)
+        hard_open = self.fleet.plan(0.6, 0.9, local_only=False, allowed=('claude', 'codex', 'dot'), axes=FRONTIER, hours=6.0)
+        self.assertEqual(self.metered(hard_shut), self.metered(hard_open))
+
+    def test_varying_only_a_substitutes_5h_usage_leaves_every_other_windows_price_identical(self):
+        """Claude's week is 90% free while Codex's is on its line. Claude is Codex's substitute, and whether Claude's 5-hour
+        window is empty, nearly full (the work would wait for it) or even closes Claude out for the task never changes what
+        a dollar of Codex's week costs, nor Claude's own prices."""
+        runs = [self.fleet.plan(0.1, 0.5, five_hour_used=u, axes=FRONTIER, hours=2.0) for u in (0.0, 0.5, 0.9, 0.95, 0.995)]
+        waits = [[c.get('available_in_hours') for c in eligible(d) if c['bundle']['account'] == 'claude'] for d in runs]
+        self.assertTrue(any(any(w for w in ws) for ws in waits) or any(not ws for ws in waits), waits)   # 5h really did bite
+        base = self.metered_prices(runs[0])
+        for d in runs[1:]:
+            self.assertEqual(self.metered_prices(d), base)
+
+    @staticmethod
+    def metered_prices(d):
+        out = {}
+        for w in d['decision']['system']['quota_windows']:
+            out[w['label']] = (w['quota_price'], w['need_probability'], w['substitute_slack'], w['outside_fit'])
+        codex = {c['id']: c['components']['opportunity_cost'] for c in eligible(d)
+                 if c['bundle']['account'] == 'codex' and not c['bundle'].get('fast')}
+        return out, codex
+
+
+class FastVariantIdentityTests(unittest.TestCase):
+    """Owner decision of round 14: a fast-mode variant is its own candidate with its own id (`<bundle id>+fast`), so a bundle
+    id names exactly one variant. The launch identity (`selected_bundle.bundle_id`) stays the bundle's own id and the `fast`
+    flag says how to launch it."""
+
+    def setUp(self):
+        self.fleet = Fleet()
+
+    def plan(self, **task):
+        def only_five_hour(acc):      # no long window: cost 0, so the fast variant ties its base on N and wins on speed
+            acc['accounts']['claude']['windows'] = {'five_hour': acc['accounts']['claude']['windows']['five_hour']}
+        return self.fleet.plan(0.6, 0.5, allowed=('claude',), mutate=only_five_hour, claude_long=False, **task)
+
+    def test_the_variants_have_distinct_ids_and_the_fast_one_launches_as_its_base_bundle(self):
+        d = self.plan()
+        self.assertEqual(d['choice'], 'opus55_high+fast')
+        self.assertEqual(d['selected_bundle']['bundle_id'], 'opus55_high')
+        self.assertTrue(d['selected_bundle']['fast'])
+        ids = [c['id'] for c in eligible(d)]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn('opus55_high', ids)
+        self.assertIn('opus55_high+fast', ids)
+
+    def test_a_pinned_bundle_gets_exactly_that_variant(self):
+        base = self.plan(pinned_bundle='opus55_high')
+        self.assertEqual(base['choice'], 'opus55_high')
+        self.assertFalse(base['selected_bundle'].get('fast'))
+        self.assertAlmostEqual(base['selected_bundle']['expected_usd'], 22.86)
+        fast = self.plan(pinned_bundle='opus55_high+fast')
+        self.assertEqual(fast['choice'], 'opus55_high+fast')
+        self.assertTrue(fast['selected_bundle']['fast'])
+        self.assertEqual(fast['selected_bundle']['bundle_id'], 'opus55_high')
+        self.assertAlmostEqual(fast['selected_bundle']['expected_usd'], 45.72)
+        forced = self.plan(pinned_bundle='opus55_high', force_fast=True)       # --fast on a named bundle: that bundle, fast
+        self.assertTrue(forced['selected_bundle']['fast'])
+        self.assertEqual(forced['selected_bundle']['bundle_id'], 'opus55_high')
+        self.assertEqual(forced['choice'], 'opus55_high+fast')
+
+    def test_alternatives_keep_the_base_variant_and_the_table_shows_which_row_is_fast(self):
+        import demo_plan
+        d = self.plan()
+        self.assertEqual(d['choice'], 'opus55_high+fast')
+        self.assertIn('opus55_high', d['decision']['alternatives'])
+        table = demo_plan.format_table(d)
+        rows = {line.split()[1]: line for line in table.splitlines() if line.split()[:1] and line.split()[0].isdigit()}
+        self.assertIn('opus55_high+fast', rows)
+        self.assertIn('opus55_high', rows)
+        self.assertTrue(rows['opus55_high+fast'].rstrip().endswith('winner'))
+        self.assertTrue(rows['opus55_high'].rstrip().endswith('eligible'))
 
 
 class ReadFailureAndHoldTests(unittest.TestCase):
@@ -560,3 +665,7 @@ class ReadFailureAndHoldTests(unittest.TestCase):
                                  mutate=lambda acc: acc['scoring'].update(five_axis={'enabled': False}))
         self.assertEqual(sorted(c['id'] for c in legacy['ranking'] if c['bundle']['model'] == model and c['bundle']['account'] == 'claude' and c['excluded']),
                          sorted(c['id'] for c in rows if c['excluded']))
+
+
+if __name__ == '__main__':
+    unittest.main()

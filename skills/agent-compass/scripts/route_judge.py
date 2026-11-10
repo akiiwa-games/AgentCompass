@@ -20,6 +20,7 @@ import override_store
 import dispatch_registry
 import dispatch_flow
 import entry
+import fast_modes
 import provider_inventory
 import antigravity_plan
 import public_data
@@ -2031,7 +2032,8 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
     if not chain_id and not task_id and not req_hash:
         return None
     for row in reversed(records):
-        if not isinstance(row, dict) or row.get('stage') != 'plan' or row.get('choice') != bundle_id:
+        if (not isinstance(row, dict) or row.get('stage') != 'plan'
+                or row.get('choice') not in (bundle_id, fast_modes.variant_id(bundle_id))):
             continue
         try:
             at = datetime.fromisoformat(str(row.get('at')).replace('Z', '+00:00'))
@@ -2246,12 +2248,13 @@ def record_constraint(args, task=None):
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
-            row = next((c for c in plan['ranking'] if c['id'] == chosen), None)
+            row = allocator.candidate_for_bundle(plan['ranking'], chosen, fast_requested)
             # record / roll --provider never calls the classifier. agrees is a comparison only when
             # the caller already supplied a profile; otherwise it is a marker, not a score.
             skipped = not isinstance(plan_task.get('profile'), dict)
             result.update({'router_choice': plan['choice'],
-                           'agrees': None if skipped else chosen is not None and chosen == plan['choice'],
+                           'agrees': None if skipped else chosen is not None and chosen == (plan.get('selected_bundle') or {}).get('bundle_id', plan['choice'])
+                           and fast_requested == bool((plan.get('selected_bundle') or {}).get('fast')),
                            'classifier_skipped': skipped,
                            'router_reason': plan['decision'].get('reason'),
                            'override_cost': None if row is None else {'excluded': row['excluded'], 'score': row['score'],
