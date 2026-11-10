@@ -168,6 +168,19 @@ def warning(name, row):
     return lines
 
 
+def _free_pool_warning(name, spec):
+    if not isinstance(spec, dict) or not (spec.get('capacity_unknown') and spec.get('five_axis_free_pool')):
+        return None
+    local = spec.get('local_spend_usd')
+    if isinstance(local, dict) and local.get('used_usd') is not None:
+        spend_note = f"; local lower-bound spend U >= ${local['used_usd']:.2f} ({local['tokens']:,} tokens from {local['source']})"
+    elif isinstance(local, (int, float)) and not isinstance(local, bool) and local > 0:
+        spend_note = f" (local opencode.db lower-bound spend U ~${float(local):.2f})"
+    else:
+        spend_note = ''
+    return f"{name}: capacity_unknown — quota unknown, spend unpriced{spend_note}; out of automatic routing (use --model to run)"
+
+
 def warnings(inventory, specs=None, allowed=None):
     """Every account's state and plan warning, for `plan`/`roll`. `allowed(name)` skips accounts this host does not use."""
     found = []
@@ -180,6 +193,15 @@ def warnings(inventory, specs=None, allowed=None):
         if spec.get('plan_unknown'):
             found.append(f"{name}: plan {spec['plan_unknown']!r} is not a known plan; priced at the conservative "
                          f"{spec.get('plan_priced_as')} capacity")
+        free_warn = _free_pool_warning(name, spec)
+        if free_warn:
+            found.append(free_warn)
+    for name, spec in (specs or {}).items():
+        if name in rows or not isinstance(spec, dict) or (allowed is not None and not allowed(name)):
+            continue
+        free_warn = _free_pool_warning(name, spec)
+        if free_warn:
+            found.append(free_warn)
     return found
 
 

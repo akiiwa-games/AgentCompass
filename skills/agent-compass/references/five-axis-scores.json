@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-09T11:33:50+00:00",
- "measurements_sha256": "a8c2bd6ed066e150ae4ec902e3c554b6eea2561aa8777339de0ea643438447bc",
+ "generated_at": "2026-11-10T04:32:00+00:00",
+ "measurements_sha256": "4f8b6822b1ac5b9daf6b98e71c4724d84df389ad77300eb493f47d2fa5ee4f52",
  "distrusted_sources": [],
  "source_priority": [],
  "user_overrides": [],
@@ -40,26 +40,26 @@
    "y_max": 0.9894
   },
   "global_rigor.long_context~aa.index": {
-   "a": 0.6936,
-   "b": 0.0021,
-   "r": 0.5634,
-   "n": 23,
+   "a": 0.6961,
+   "b": 0.002,
+   "r": 0.5738,
+   "n": 24,
    "y_min": 0.5839,
    "y_max": 0.8355
   },
   "global_rigor.anti_hallucination~aa.index": {
-   "a": 0.4337,
-   "b": 0.0071,
-   "r": 0.87,
-   "n": 26,
+   "a": 0.4267,
+   "b": 0.0073,
+   "r": 0.889,
+   "n": 27,
    "y_min": 0.4737,
-   "y_max": 0.8626
+   "y_max": 0.9218
   },
   "module_precision.terminal~aa.index": {
-   "a": -0.1466,
-   "b": 0.0182,
-   "r": 0.9119,
-   "n": 26,
+   "a": -0.1273,
+   "b": 0.0175,
+   "r": 0.9136,
+   "n": 27,
    "y_min": 0.0,
    "y_max": 0.95
   },
@@ -96,10 +96,10 @@
    "y_max": 0.8485
   },
   "vision_tools.tools~aa.index": {
-   "a": 0.3314,
-   "b": 0.0105,
-   "r": 0.7695,
-   "n": 26,
+   "a": 0.3421,
+   "b": 0.0101,
+   "r": 0.7789,
+   "n": 27,
    "y_min": 0.0106,
    "y_max": 0.9038
   },
@@ -149,7 +149,7 @@
      "capacity_usd": 11.92,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -160,7 +160,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       }
@@ -173,7 +173,7 @@
      "capacity_usd": 155.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -184,7 +184,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       }
@@ -199,7 +199,7 @@
      "capacity_usd": 110.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 30,
+     "age_days": 31,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -210,7 +210,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -229,7 +229,7 @@
      "capacity_usd": 1217.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 30,
+     "age_days": 31,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -240,7 +240,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -259,7 +259,7 @@
      "capacity_usd": 608.5,
      "status": "stale",
      "rung": 1,
-     "age_days": 30,
+     "age_days": 31,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -279,12 +279,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-         "age_days": 30,
+         "age_days": 31,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -305,7 +305,7 @@
      "capacity_usd": 271.75,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -316,7 +316,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       }
@@ -329,7 +329,7 @@
      "capacity_usd": 1704.5,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -340,7 +340,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       },
@@ -352,7 +352,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "one heavy user's measured full week at API-equivalent prices",
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -365,7 +365,7 @@
      "capacity_usd": 852.25,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -385,7 +385,7 @@
          "as_of": "2026-11-02",
          "fetched_at": "2026-11-09T05:34:15+00:00",
          "method": "median measured account week at API rates (cache included)",
-         "age_days": 7,
+         "age_days": 8,
          "stale": false,
          "rung": 1
         },
@@ -397,12 +397,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "one heavy user's measured full week at API-equivalent prices",
-         "age_days": 30,
+         "age_days": 31,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       }
@@ -417,7 +417,7 @@
      "capacity_usd": 110.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 30,
+     "age_days": 31,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -428,7 +428,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -448,7 +448,7 @@
      "capacity_usd": 1217.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 30,
+     "age_days": 31,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -459,7 +459,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -479,7 +479,7 @@
      "capacity_usd": 608.5,
      "status": "stale",
      "rung": 1,
-     "age_days": 30,
+     "age_days": 31,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -499,12 +499,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-         "age_days": 30,
+         "age_days": 31,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -528,7 +528,7 @@
      "capacity_usd": 61.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -539,7 +539,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       },
@@ -551,7 +551,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -564,7 +564,7 @@
      "capacity_usd": 10.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -575,7 +575,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       }
@@ -590,7 +590,7 @@
      "capacity_usd": 61.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -601,7 +601,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       },
@@ -613,7 +613,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
-       "age_days": 30,
+       "age_days": 31,
        "stale": true,
        "rung": 1
       }
@@ -627,7 +627,7 @@
      "capacity_usd": 10.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -638,7 +638,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       }
@@ -654,7 +654,7 @@
      "capacity_usd": 265.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 31,
+     "age_days": 32,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -665,7 +665,7 @@
        "as_of": "2026-10-09",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of a heavy user's logged full weekly windows at API prices",
-       "age_days": 31,
+       "age_days": 32,
        "stale": true,
        "rung": 1
       },
@@ -677,7 +677,7 @@
        "as_of": "2026-10-04",
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "midpoint of the measured weekly range at API prices",
-       "age_days": 36,
+       "age_days": 37,
        "stale": true,
        "rung": 1
       }
@@ -698,7 +698,7 @@
      "capacity_usd": 615.5,
      "status": "ok",
      "rung": 1,
-     "age_days": 7,
+     "age_days": 8,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -709,7 +709,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 7,
+       "age_days": 8,
        "stale": false,
        "rung": 1
       },
@@ -721,7 +721,7 @@
        "as_of": "2026-10-04",
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "measured weekly window at API prices",
-       "age_days": 36,
+       "age_days": 37,
        "stale": true,
        "rung": 1
       }
@@ -738,7 +738,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -758,12 +758,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -776,7 +776,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -796,12 +796,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -814,7 +814,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -834,12 +834,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -852,7 +852,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -872,12 +872,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -892,7 +892,7 @@
      "capacity_usd": 100.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -912,12 +912,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -930,7 +930,7 @@
      "capacity_usd": 645.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -950,12 +950,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -968,7 +968,7 @@
      "capacity_usd": 100.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -988,12 +988,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -1006,7 +1006,7 @@
      "capacity_usd": 645.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1026,12 +1026,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -1046,7 +1046,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1057,7 +1057,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1070,7 +1070,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1081,7 +1081,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1094,7 +1094,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1105,7 +1105,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1118,7 +1118,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1129,7 +1129,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1144,7 +1144,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1164,12 +1164,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -1183,7 +1183,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1203,12 +1203,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -1222,7 +1222,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1242,12 +1242,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -1261,7 +1261,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1281,12 +1281,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 62,
+         "age_days": 63,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 3
       }
@@ -1302,7 +1302,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1313,7 +1313,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1327,7 +1327,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1338,7 +1338,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1352,7 +1352,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1363,7 +1363,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1377,7 +1377,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 62,
+     "age_days": 63,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1388,7 +1388,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 62,
+       "age_days": 63,
        "stale": true,
        "rung": 1
       }
@@ -1412,7 +1412,7 @@
    "source": "community.eneasf.antigravity",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 62,
+   "age_days": 63,
    "as_of": "2026-09-08",
    "threshold_days": 21,
    "windows": [
@@ -1428,7 +1428,7 @@
    "source": "community.finops.claude_max20",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 30,
+   "age_days": 31,
    "as_of": "2026-10-10",
    "threshold_days": 21,
    "windows": [
@@ -1443,7 +1443,7 @@
    "source": "community.finops.codex_plus",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 30,
+   "age_days": 31,
    "as_of": "2026-10-10",
    "threshold_days": 21,
    "windows": [
@@ -1456,7 +1456,7 @@
    "source": "community.finops.codex_pro100",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 31,
+   "age_days": 32,
    "as_of": "2026-10-09",
    "threshold_days": 21,
    "windows": [
@@ -1469,7 +1469,7 @@
    "source": "community.inventive.codex",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 36,
+   "age_days": 37,
    "as_of": "2026-10-04",
    "threshold_days": 21,
    "windows": [
@@ -1485,7 +1485,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.cost_time": {
@@ -1493,7 +1493,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.index": {
@@ -1501,7 +1501,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.lcr": {
@@ -1509,7 +1509,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.mmmu_pro": {
@@ -1517,7 +1517,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.omniscience_index": {
@@ -1525,7 +1525,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.price": {
@@ -1533,7 +1533,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.tau2_bench": {
@@ -1541,7 +1541,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "aa.terminalbench_4": {
@@ -1549,7 +1549,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "arena.agent_alignment": {
@@ -1557,7 +1557,7 @@
    "as_of": "2026-10-16",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:26:22+00:00",
-   "age_days": 24,
+   "age_days": 25,
    "stale": true
   },
   "arena.agent_alignment_deceptive_completion": {
@@ -1565,7 +1565,7 @@
    "as_of": "2026-10-16",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:26:22+00:00",
-   "age_days": 24,
+   "age_days": 25,
    "stale": true
   },
   "arena.agent_alignment_false_attribution": {
@@ -1573,7 +1573,7 @@
    "as_of": "2026-10-16",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:26:22+00:00",
-   "age_days": 24,
+   "age_days": 25,
    "stale": true
   },
   "arena.agent_code": {
@@ -1581,7 +1581,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "arena.agent_sessions": {
@@ -1589,7 +1589,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "arena.agent_work_gui": {
@@ -1597,7 +1597,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "arena.agent_work_tools": {
@@ -1605,7 +1605,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "community.eneasf.antigravity": {
@@ -1613,7 +1613,7 @@
    "as_of": "2026-09-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:49:38+00:00",
-   "age_days": 62,
+   "age_days": 63,
    "stale": true
   },
   "community.finops.claude_max20": {
@@ -1621,7 +1621,7 @@
    "as_of": "2026-10-10",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T06:36:08+00:00",
-   "age_days": 30,
+   "age_days": 31,
    "stale": true
   },
   "community.finops.codex_plus": {
@@ -1629,7 +1629,7 @@
    "as_of": "2026-10-10",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:16+00:00",
-   "age_days": 30,
+   "age_days": 31,
    "stale": true
   },
   "community.finops.codex_pro100": {
@@ -1637,7 +1637,7 @@
    "as_of": "2026-10-09",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:16+00:00",
-   "age_days": 31,
+   "age_days": 32,
    "stale": true
   },
   "community.inventive.codex": {
@@ -1645,7 +1645,7 @@
    "as_of": "2026-10-04",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:17+00:00",
-   "age_days": 36,
+   "age_days": 37,
    "stale": true
   },
   "community.wokey.claude": {
@@ -1653,7 +1653,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:15+00:00",
-   "age_days": 7,
+   "age_days": 8,
    "stale": false
   },
   "community.wokey.codex": {
@@ -1661,7 +1661,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:15+00:00",
-   "age_days": 7,
+   "age_days": 8,
    "stale": false
   },
   "derived.community_mix": {
@@ -1669,7 +1669,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "the older of the mix data date and the AA fetch date",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 7,
+   "age_days": 8,
    "stale": false
   },
   "eqbench.creative_writing_v3": {
@@ -1677,7 +1677,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:52+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "lmarena.creative_writing": {
@@ -1685,7 +1685,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:39+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "lmarena.text_overall": {
@@ -1693,7 +1693,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:39+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "lmarena.tier_fit": {
@@ -1701,7 +1701,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:37+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "lmarena.vision": {
@@ -1709,7 +1709,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:40+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "lmarena.webdev": {
@@ -1717,7 +1717,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:37+00:00",
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "metr.time_horizon_p50": {
@@ -1731,7 +1731,15 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:50+00:00",
-   "age_days": 0,
+   "age_days": 1,
+   "stale": false
+  },
+  "openrouter.modality": {
+   "kind": "vendor",
+   "as_of": "2026-11-09",
+   "as_of_kind": "fetch date (the source publishes no data date)",
+   "fetched_at": "2026-11-09T03:43:50+00:00",
+   "age_days": 1,
    "stale": false
   },
   "openrouter.price": {
@@ -1739,7 +1747,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:50+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "osworld.verified": {
@@ -1747,7 +1755,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:53+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "secondary.tier_fit": {
@@ -1755,7 +1763,7 @@
    "as_of": "2026-09-01",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T03:43:48+00:00",
-   "age_days": 69,
+   "age_days": 70,
    "stale": true
   },
   "vals.swebench_1_4h": {
@@ -1763,7 +1771,7 @@
    "as_of": "2026-09-01",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T03:43:48+00:00",
-   "age_days": 69,
+   "age_days": 70,
    "stale": true
   },
   "vals.swebench_lt15m": {
@@ -1771,7 +1779,7 @@
    "as_of": "2026-09-01",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T03:43:48+00:00",
-   "age_days": 69,
+   "age_days": 70,
    "stale": true
   },
   "vals.terminal_bench_2": {
@@ -1779,7 +1787,7 @@
    "as_of": "2026-06-04",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 158,
+   "age_days": 159,
    "stale": true
   },
   "vendor.anthropic.max": {
@@ -1787,6 +1795,14 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:12+00:00",
+   "age_days": 1,
+   "stale": false
+  },
+  "vendor.fast_mode": {
+   "kind": "vendor",
+   "as_of": "2026-11-10",
+   "as_of_kind": "data date",
+   "fetched_at": null,
    "age_days": 0,
    "stale": false
   },
@@ -1795,7 +1811,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:09+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "vendor.openai.pro100": {
@@ -1803,7 +1819,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:13+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   }
  },
@@ -1880,7 +1896,7 @@
        "status": "measured"
       },
       "long_context": {
-       "value": 0.7543,
+       "value": 0.7542,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -1983,10 +1999,58 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.5092,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 8.3 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 8.3,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 86500,
+    "output_tokens_per_min": 10421.7,
+    "by_effort": {
+     "max": 0.5092
+    },
+    "time_per_task_min_by_effort": {
+     "max": 8.3
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 86500
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.3,
+     "output": 1.2,
+     "cache_read": 0.006
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "DeepSeek V4.1 Flash 1017 (High)"
    },
    "intelligence_index": 28.64,
    "economy_static": 0.933,
@@ -2167,10 +2231,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.6687,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 10.9 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 10.9,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 54300,
+    "output_tokens_per_min": 4981.7,
+    "by_effort": {
+     "max": 0.6687
+    },
+    "time_per_task_min_by_effort": {
+     "max": 10.9
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 54300
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 10,
+     "output": 50,
+     "cache_read": 0.25
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Claude Fable 5.1 (High, Default Fallback)"
    },
    "intelligence_index": 47.17,
    "economy_static": 0.293,
@@ -2194,6 +2305,240 @@
      "coding": 0.78,
      "exploration": 0.9,
      "anti_hallucination": 0.9,
+     "visual": 0.0,
+     "gui": 0.0
+    },
+    "visual": false
+   }
+  },
+  "claude-fable-5-2": {
+   "axes": {
+    "divergence": {
+     "value": 0.8763,
+     "status": "backfilled",
+     "components": {},
+     "missing_components": [
+      "chat",
+      "creative"
+     ],
+     "backfill": {
+      "predictor": "aa.index",
+      "x": 61.82,
+      "level": "axis"
+     }
+    },
+    "global_rigor": {
+     "value": 0.4321,
+     "status": "partial",
+     "components": {
+      "long_context": {
+       "value": 0.8065,
+       "sources": {
+        "aa.lcr": 0.8065
+       },
+       "status": "measured"
+      },
+      "anti_hallucination": {
+       "value": 0.9218,
+       "sources": {
+        "aa.omniscience_index": 0.9218
+       },
+       "status": "measured"
+      }
+     },
+     "missing_components": [
+      "agentic",
+      "long_horizon"
+     ]
+    },
+    "module_precision": {
+     "value": 0.4214,
+     "status": "partial",
+     "components": {
+      "terminal": {
+       "value": 0.8429,
+       "sources": {
+        "aa.terminalbench_4": 0.8429
+       },
+       "status": "measured"
+      }
+     },
+     "missing_components": [
+      "alignment"
+     ]
+    },
+    "vision_tools": {
+     "value": 0.2258,
+     "status": "partial",
+     "components": {
+      "tools": {
+       "value": 0.9032,
+       "sources": {
+        "aa.automationbench": 0.9032
+       },
+       "status": "measured"
+      }
+     },
+     "missing_components": [
+      "vision",
+      "gui_design",
+      "gui"
+     ]
+    }
+   },
+   "scores": {
+    "divergence": 0.8763,
+    "global_rigor": 0.4321,
+    "module_precision": 0.4214,
+    "vision_tools": 0.2258
+   },
+   "missing_axes": [],
+   "usd_per_hour": {
+    "value": 72.92,
+    "status": "ok",
+    "merge": "fallback (not listed on arena.ai Agent / Overall): source priority: derived.community_mix",
+    "used": [
+     "derived.community_mix"
+    ],
+    "sources": {
+     "derived.community_mix": {
+      "value": 72.92,
+      "how": "High listing",
+      "kind": "derived",
+      "as_of": "2026-11-02",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "method": "AA output speed x community token mix at AA list prices",
+      "by_effort": {
+       "high": 72.92,
+       "low": 72.115,
+       "max": 77.581,
+       "medium": 68.105,
+       "xhigh": 81.121
+      }
+     }
+    },
+    "max_over_min": null,
+    "kind": "derived",
+    "fallback": true
+   },
+   "duration_multiplier": {
+    "value": 1.8466,
+    "status": "ok",
+    "source": "aa.cost_time",
+    "kind": "benchmark",
+    "fallback": true,
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "fallback (not on arena.ai Agent / Overall): AA Time/Task 1059.16 s / anchor 573.58 s (High listing)",
+    "time_per_task_s": 1059.16,
+    "anchor_time_per_task_s": 573.58,
+    "time_per_task_min": 17.653,
+    "output_tps": 92.38,
+    "by_effort": {
+     "high": 1.8466,
+     "low": 0.6844,
+     "max": 4.8566,
+     "medium": 0.8716,
+     "xhigh": 2.7474
+    }
+   },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "ok",
+    "price_multiplier": 2.0,
+    "speed_multiplier": 2.5,
+    "source": "vendor.fast_mode",
+    "kind": "vendor",
+    "as_of": "2026-11-10",
+    "url": "https://code.claude.com/docs/en/fast-mode",
+    "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "fast_price": {
+     "input": 16.0,
+     "output": 80.0
+    },
+    "standard_price": {
+     "input": 8.0,
+     "output": 40.0
+    },
+    "method": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is $16/$80 per MTok (2x standard $8/$40) with up to 2.5x output tokens per second."
+   },
+   "price": {
+    "value": {
+     "input": 8,
+     "output": 40,
+     "cache_read": 0.2
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Claude Fable 5.2 (High, Default Fallback)"
+   },
+   "intelligence_index": 61.82,
+   "economy_static": 0.171,
+   "legacy_public_tier": {
+    "value": 4.52,
+    "source": "secondary.tier_fit",
+    "note": "comparison only; the router no longer gates on a scalar tier"
+   },
+   "data_errors": [
+    {
+     "model": "claude-fable-5-2",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
+    },
+    {
+     "model": "claude-fable-5-2",
+     "field": "divergence.chat,creative",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+    },
+    {
+     "model": "claude-fable-5-2",
+     "field": "global_rigor.agentic,long_horizon",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+    },
+    {
+     "model": "claude-fable-5-2",
+     "field": "module_precision.alignment",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+    },
+    {
+     "model": "claude-fable-5-2",
+     "field": "vision_tools.vision,gui_design,gui",
+     "reason": "component_unmeasured_no_fit",
+     "level": "yellow",
+     "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+    }
+   ],
+   "legacy": {
+    "tier": 4.51,
+    "usd_per_hour": null,
+    "duration_multiplier": null,
+    "subjective": {
+     "divergence": 0.5,
+     "global_rigor": 0.5,
+     "module_precision": 0.5
+    },
+    "capabilities": {
+     "reasoning": 0.55,
+     "coding": 0.55,
+     "exploration": 0.55,
+     "anti_hallucination": 0.5,
      "visual": 0.0,
      "gui": 0.0
     },
@@ -2353,9 +2698,70 @@
    },
    "duration_multiplier": {
     "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 16.3 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 16.3,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 119900,
+    "output_tokens_per_min": 7355.8,
+    "by_effort": {
+     "max": 1.0
+    },
+    "time_per_task_min_by_effort": {
+     "max": 16.3
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 119900
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "ok",
+    "price_multiplier": 2.0,
+    "speed_multiplier": 2.5,
+    "source": "vendor.fast_mode",
+    "kind": "vendor",
+    "as_of": "2026-11-10",
+    "url": "https://code.claude.com/docs/en/fast-mode",
+    "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "fast_price": {
+     "input": 8.0,
+     "output": 40.0
+    },
+    "standard_price": {
+     "input": 4.0,
+     "output": 20.0
+    },
+    "method": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is $8/$40 per MTok (2x standard $4/$20) with up to 2.5x output tokens per second."
+   },
+   "price": {
+    "value": {
+     "input": 4,
+     "output": 20,
+     "cache_read": 0.2
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Claude Opus 5.5 (High, Default Fallback)"
    },
    "intelligence_index": 51.84,
    "economy_static": 0.396,
@@ -2536,10 +2942,59 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.589,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 9.6 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 9.6,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 34600,
+    "output_tokens_per_min": 3604.2,
+    "by_effort": {
+     "max": 0.589
+    },
+    "time_per_task_min_by_effort": {
+     "max": 9.6
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 34600
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "missing",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null,
+    "reason": "provider does not publish a fast-mode burn or speed multiplier"
+   },
+   "price": {
+    "value": {
+     "input": 2,
+     "output": 10,
+     "cache_read": 0.1
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "GPT-6.1 Sol (High)"
    },
    "intelligence_index": 50.33,
    "economy_static": 0.71,
@@ -2548,7 +3003,15 @@
     "source": "user",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [],
+   "data_errors": [
+    {
+     "model": "gpt-6.1-sol",
+     "field": "fast_mode",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+    }
+   ],
    "legacy": {
     "tier": 3.6,
     "usd_per_hour": 2.6,
@@ -2721,10 +3184,59 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.8344,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 13.6 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 13.6,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 43300,
+    "output_tokens_per_min": 3183.8,
+    "by_effort": {
+     "max": 0.8344
+    },
+    "time_per_task_min_by_effort": {
+     "max": 13.6
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 43300
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "missing",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null,
+    "reason": "provider does not publish a fast-mode burn or speed multiplier"
+   },
+   "price": {
+    "value": {
+     "input": 10,
+     "output": 50,
+     "cache_read": 1
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "GPT-6 Astra (High)"
    },
    "intelligence_index": 54.85,
    "economy_static": 0.342,
@@ -2733,7 +3245,15 @@
     "source": "user",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [],
+   "data_errors": [
+    {
+     "model": "gpt-6-astra",
+     "field": "fast_mode",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+    }
+   ],
    "legacy": {
     "tier": 4.2,
     "usd_per_hour": 22.6,
@@ -2907,10 +3427,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.4479,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 7.3 min / anchor 16.3 min (High listing)",
+    "time_per_task_min": 7.3,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 28100,
+    "output_tokens_per_min": 3849.3,
+    "by_effort": {
+     "high": 0.4479
+    },
+    "time_per_task_min_by_effort": {
+     "high": 7.3
+    },
+    "output_tokens_per_task_by_effort": {
+     "high": 28100
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (audio, file, image, text, video)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 4,
+     "output": 20,
+     "cache_read": 0.2
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Gemini 4 Argon (High)"
    },
    "intelligence_index": 50.41,
    "economy_static": 0.693,
@@ -3090,10 +3657,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.9816,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 16 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 16.0,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 146300,
+    "output_tokens_per_min": 9143.8,
+    "by_effort": {
+     "max": 0.9816
+    },
+    "time_per_task_min_by_effort": {
+     "max": 16.0
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 146300
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2,
+     "output": 10,
+     "cache_read": 0.1
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Claude Sonnet 5.5 (High, Default Fallback)"
    },
    "intelligence_index": 41.52,
    "economy_static": 0.539,
@@ -3274,10 +3888,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.9939,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 16.2 min / anchor 16.3 min (median of the listed efforts ['xhigh'])",
+    "time_per_task_min": 16.2,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 79500,
+    "output_tokens_per_min": 4907.4,
+    "by_effort": {
+     "xhigh": 0.9939
+    },
+    "time_per_task_min_by_effort": {
+     "xhigh": 16.2
+    },
+    "output_tokens_per_task_by_effort": {
+     "xhigh": 79500
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2,
+     "output": 6,
+     "cache_read": 0.5
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Grok 4.7 (High)"
    },
    "intelligence_index": 35.21,
    "economy_static": 0.582,
@@ -3467,10 +4128,58 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.5276,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 8.6 min / anchor 16.3 min (High listing)",
+    "time_per_task_min": 8.6,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 53300,
+    "output_tokens_per_min": 6197.7,
+    "by_effort": {
+     "high": 0.5276
+    },
+    "time_per_task_min_by_effort": {
+     "high": 8.6
+    },
+    "output_tokens_per_task_by_effort": {
+     "high": 53300
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.75,
+     "output": 3.75,
+     "cache_read": 0.075
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Gemini 3.8 Flash (High)"
    },
    "intelligence_index": 30.85,
    "economy_static": 0.752,
@@ -3571,11 +4280,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -3589,7 +4314,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "grok-bot",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "grok-bot",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "grok-bot",
@@ -3712,11 +4451,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -3730,7 +4485,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "dot",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "dot",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "dot",
@@ -3831,11 +4600,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -3849,7 +4634,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "gpt-6-pro",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "gpt-6-pro",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "gpt-6-pro",
@@ -4055,10 +4854,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.1104,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 1.8 min / anchor 16.3 min (High listing)",
+    "time_per_task_min": 1.8,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 25000,
+    "output_tokens_per_min": 13888.9,
+    "by_effort": {
+     "high": 0.1104
+    },
+    "time_per_task_min_by_effort": {
+     "high": 1.8
+    },
+    "output_tokens_per_task_by_effort": {
+     "high": 25000
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text, image, file)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.1,
+     "output": 0.5,
+     "cache_read": 0.01
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Claude Haiku 5.5 (High)"
    },
    "intelligence_index": 29.87,
    "economy_static": 0.849,
@@ -4245,10 +5091,58 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.546,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 8.9 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 8.9,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 43700,
+    "output_tokens_per_min": 4910.1,
+    "by_effort": {
+     "max": 0.546
+    },
+    "time_per_task_min_by_effort": {
+     "max": 8.9
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 43700
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "aa.mmmu_pro",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+    "sources": [
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "missing",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null,
+    "reason": "provider does not publish a fast-mode burn or speed multiplier"
+   },
+   "price": {
+    "value": {
+     "input": 1,
+     "output": 5,
+     "cache_read": 0.05
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "GPT-6.1 Terra (High)"
    },
    "intelligence_index": 42.43,
    "economy_static": 0.736,
@@ -4257,7 +5151,15 @@
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [],
+   "data_errors": [
+    {
+     "model": "gpt-6.1-terra",
+     "field": "fast_mode",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+    }
+   ],
    "legacy": {
     "tier": 3.2,
     "usd_per_hour": 3.0,
@@ -4417,10 +5319,58 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.3804,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 6.2 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 6.2,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 40300,
+    "output_tokens_per_min": 6500.0,
+    "by_effort": {
+     "max": 0.3804
+    },
+    "time_per_task_min_by_effort": {
+     "max": 6.2
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 40300
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "missing",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null,
+    "reason": "provider does not publish a fast-mode burn or speed multiplier"
+   },
+   "price": {
+    "value": {
+     "input": 2.0,
+     "output": 10.0,
+     "cache_read": 0.2
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "openai/gpt-6-sol"
    },
    "intelligence_index": null,
    "economy_static": 0.465,
@@ -4430,6 +5380,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "gpt-6-sol",
+     "field": "fast_mode",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+    },
     {
      "model": "gpt-6-sol",
      "field": "global_rigor.long_context",
@@ -4618,10 +5575,65 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.1043,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 1.7 min / anchor 16.3 min (median of the listed efforts ['low', 'max', 'medium'])",
+    "time_per_task_min": 1.7,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 40700,
+    "output_tokens_per_min": 23941.2,
+    "by_effort": {
+     "max": 0.3742,
+     "medium": 0.1043,
+     "low": 0.0479
+    },
+    "time_per_task_min_by_effort": {
+     "max": 6.1,
+     "medium": 1.7,
+     "low": 0.78
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 40700,
+     "medium": 9600,
+     "low": 3800
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "missing",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null,
+    "reason": "provider does not publish a fast-mode burn or speed multiplier"
+   },
+   "price": {
+    "value": {
+     "input": 0.1,
+     "output": 0.5,
+     "cache_read": 0.01
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "GPT-6 Luna (High)"
    },
    "intelligence_index": 21.43,
    "economy_static": 0.944,
@@ -4630,7 +5642,15 @@
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [],
+   "data_errors": [
+    {
+     "model": "gpt-6-luna",
+     "field": "fast_mode",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+    }
+   ],
    "legacy": {
     "tier": 2.61,
     "usd_per_hour": 0.8,
@@ -4798,10 +5818,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.2454,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 4 min / anchor 16.3 min (median of the listed efforts ['xhigh'])",
+    "time_per_task_min": 4.0,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 23300,
+    "output_tokens_per_min": 5825.0,
+    "by_effort": {
+     "xhigh": 0.2454
+    },
+    "time_per_task_min_by_effort": {
+     "xhigh": 4.0
+    },
+    "output_tokens_per_task_by_effort": {
+     "xhigh": 23300
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 4.0,
+     "output": 20.0,
+     "cache_read": 0.4
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "openai/gpt-5.6-sol"
    },
    "intelligence_index": null,
    "economy_static": 0.366,
@@ -4980,10 +6047,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.1718,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 2.8 min / anchor 16.3 min (median of the listed efforts ['xhigh'])",
+    "time_per_task_min": 2.8,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 17400,
+    "output_tokens_per_min": 6214.3,
+    "by_effort": {
+     "xhigh": 0.1718
+    },
+    "time_per_task_min_by_effort": {
+     "xhigh": 2.8
+    },
+    "output_tokens_per_task_by_effort": {
+     "xhigh": 17400
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2.0,
+     "output": 12.0,
+     "cache_read": 0.2
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "openai/gpt-5.6-terra"
    },
    "intelligence_index": null,
    "economy_static": 0.519,
@@ -5127,10 +6241,41 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.2,
+     "output": 1.2,
+     "cache_read": 0.02
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "openai/gpt-5.6-luna"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -5145,7 +6290,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "gpt-5.6-luna",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "gpt-5.6-luna",
@@ -5260,11 +6412,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -5278,7 +6446,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "grok-4.7-build-fast",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "grok-4.7-build-fast",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "grok-4.7-build-fast",
@@ -5493,10 +6675,52 @@
     "fallback": true
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "value": 2.5426,
+    "status": "ok",
+    "source": "aa.cost_time",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "fallback": true,
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "fallback (not on arena.ai Agent / Overall): AA Time/Task 1458.36 s / anchor 573.58 s (median of the listed efforts ['max'])",
+    "time_per_task_s": 1458.36,
+    "anchor_time_per_task_s": 573.58,
+    "time_per_task_min": 24.306,
+    "output_tps": 67.7,
+    "by_effort": {
+     "max": 2.5426,
+     "none": 1.733
+    }
+   },
+   "image_input": {
+    "value": false,
+    "status": "no",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 1.32,
+     "output": 3.96,
+     "cache_read": 0.044
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "DeepSeek V4 Pro 0813 (Max)"
    },
    "intelligence_index": 23.06,
    "economy_static": 0.632,
@@ -5687,10 +6911,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.908,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 14.8 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 14.8,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 65100,
+    "output_tokens_per_min": 4398.6,
+    "by_effort": {
+     "max": 0.908
+    },
+    "time_per_task_min_by_effort": {
+     "max": 14.8
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 65100
+    }
+   },
+   "image_input": {
+    "value": false,
+    "status": "no",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 1.4,
+     "output": 4.4,
+     "cache_read": 0.26
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "GLM-5.3 (Low)"
    },
    "intelligence_index": 23.11,
    "economy_static": 0.774,
@@ -5878,10 +7149,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.4172,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 6.8 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 6.8,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 49800,
+    "output_tokens_per_min": 7323.5,
+    "by_effort": {
+     "default": 0.4172
+    },
+    "time_per_task_min_by_effort": {
+     "default": 6.8
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 49800
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.15,
+     "output": 0.5,
+     "cache_read": 0.03
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "GLM-5.3-Flash"
    },
    "intelligence_index": 27.8,
    "economy_static": 0.909,
@@ -6012,10 +7330,45 @@
     "fallback": true
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "value": 1.4568,
+    "status": "ok",
+    "source": "aa.cost_time",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "fallback": true,
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "fallback (AA outputSpeed): anchor 104.73 tok/s / 71.89 tok/s (the only listing (no effort named))",
+    "output_tps": 71.89
+   },
+   "image_input": {
+    "value": false,
+    "status": "no",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.31,
+     "output": 1,
+     "cache_read": 0.28500000000000003
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Qwen3 Coder Next"
    },
    "intelligence_index": null,
    "economy_static": 0.468,
@@ -6233,10 +7586,58 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.9141,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 14.9 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 14.9,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 51000,
+    "output_tokens_per_min": 3422.8,
+    "by_effort": {
+     "default": 0.9141
+    },
+    "time_per_task_min_by_effort": {
+     "default": 14.9
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 51000
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2,
+     "output": 6,
+     "cache_read": 0.25
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Qwen3.8 Max (0902)"
    },
    "intelligence_index": 33.65,
    "economy_static": 0.753,
@@ -6421,10 +7822,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.4908,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 8 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 8.0,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 36200,
+    "output_tokens_per_min": 4525.0,
+    "by_effort": {
+     "max": 0.4908
+    },
+    "time_per_task_min_by_effort": {
+     "max": 8.0
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 36200
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "aa.mmmu_pro",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+    "sources": [
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2,
+     "output": 10,
+     "cache_read": 0.2
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Kimi K3.1 Pro"
    },
    "intelligence_index": 46.45,
    "economy_static": 0.606,
@@ -6596,10 +8044,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.5706,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 9.3 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 9.3,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 25600,
+    "output_tokens_per_min": 2752.7,
+    "by_effort": {
+     "max": 0.5706
+    },
+    "time_per_task_min_by_effort": {
+     "max": 9.3
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 25600
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text, image, video)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.192,
+     "output": 16.0,
+     "cache_read": 0.182
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "moonshotai/kimi-k3"
    },
    "intelligence_index": null,
    "economy_static": 0.723,
@@ -6813,10 +8308,59 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.2147,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 3.5 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 3.5,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 24900,
+    "output_tokens_per_min": 7114.3,
+    "by_effort": {
+     "default": 0.2147
+    },
+    "time_per_task_min_by_effort": {
+     "default": 3.5
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 24900
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro",
+     "osworld.verified"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.3,
+     "output": 1.2,
+     "cache_read": 0.06
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "MiniMax-M3"
    },
    "intelligence_index": 18.88,
    "economy_static": 0.72,
@@ -7003,10 +8547,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.5583,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 9.1 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 9.1,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 75100,
+    "output_tokens_per_min": 8252.7,
+    "by_effort": {
+     "default": 0.5583
+    },
+    "time_per_task_min_by_effort": {
+     "default": 9.1
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 75100
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "aa.mmmu_pro",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+    "sources": [
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.15,
+     "output": 0.6,
+     "cache_read": 0.015
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "MiniMax-M3.1-Flash"
    },
    "intelligence_index": 29.06,
    "economy_static": 0.905,
@@ -7111,11 +8702,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -7129,7 +8736,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "doubao-seed-2-1-pro-260628",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "doubao-seed-2-1-pro-260628",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "doubao-seed-2-1-pro-260628",
@@ -7330,10 +8951,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.9939,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 16.2 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 16.2,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 49600,
+    "output_tokens_per_min": 3061.7,
+    "by_effort": {
+     "default": 0.9939
+    },
+    "time_per_task_min_by_effort": {
+     "default": 16.2
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 49600
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.435,
+     "output": 0.87,
+     "cache_read": 0.0036
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "MiMo-V2.6-Pro"
    },
    "intelligence_index": 29.89,
    "economy_static": 0.96,
@@ -7517,10 +9185,58 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.9387,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 15.3 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 15.3,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 45000,
+    "output_tokens_per_min": 2941.2,
+    "by_effort": {
+     "default": 0.9387
+    },
+    "time_per_task_min_by_effort": {
+     "default": 15.3
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 45000
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.14,
+     "output": 0.28,
+     "cache_read": 0.0028
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "MiMo-V2.6-Flash"
    },
    "intelligence_index": 26.73,
    "economy_static": 0.982,
@@ -7664,11 +9380,43 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.2454,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 4 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 4.0,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 7800,
+    "output_tokens_per_min": 1950.0,
+    "by_effort": {
+     "default": 0.2454
+    },
+    "time_per_task_min_by_effort": {
+     "default": 4.0
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 7800
+    }
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": 0.893,
    "legacy_public_tier": {
@@ -7677,6 +9425,13 @@
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
    "data_errors": [
+    {
+     "model": "nemotron-3-ultra-free",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
+    },
     {
      "model": "nemotron-3-ultra-free",
      "field": "divergence",
@@ -7878,10 +9633,57 @@
     "fallback": true
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "value": 0.1656,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 2.7 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 2.7,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 14600,
+    "output_tokens_per_min": 5407.4,
+    "by_effort": {
+     "default": 0.1656
+    },
+    "time_per_task_min_by_effort": {
+     "default": 2.7
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 14600
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.175,
+     "output": 0.5,
+     "cache_read": 0.05
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Nemotron 3.5 Super VL"
    },
    "intelligence_index": 13.62,
    "economy_static": 0.566,
@@ -8075,10 +9877,51 @@
     "fallback": true
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "value": 0.4342,
+    "status": "ok",
+    "source": "aa.cost_time",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "fallback": true,
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "fallback (not on arena.ai Agent / Overall): AA Time/Task 249.07 s / anchor 573.58 s (the only listing (no effort named))",
+    "time_per_task_s": 249.07,
+    "anchor_time_per_task_s": 573.58,
+    "time_per_task_min": 4.151,
+    "output_tps": 261.07,
+    "by_effort": {
+     "default": 0.4342
+    }
+   },
+   "image_input": {
+    "value": false,
+    "status": "no",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.06,
+     "output": 0.2,
+     "cache_read": 0.035
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Nemotron 3.5 Lightning"
    },
    "intelligence_index": 5.53,
    "economy_static": 0.651,
@@ -8159,7 +10002,7 @@
        }
       },
       "long_context": {
-       "value": 0.749,
+       "value": 0.7491,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -8263,10 +10106,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.2699,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 4.4 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 4.4,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 25900,
+    "output_tokens_per_min": 5886.4,
+    "by_effort": {
+     "default": 0.2699
+    },
+    "time_per_task_min_by_effort": {
+     "default": 4.4
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 25900
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.7,
+     "output": 2.1,
+     "cache_read": 0.07
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Mistral Large 4 (High)"
    },
    "intelligence_index": 26.12,
    "economy_static": 0.775,
@@ -8321,7 +10211,7 @@
      "missing_components": []
     },
     "global_rigor": {
-     "value": 0.7307,
+     "value": 0.7304,
      "status": "partial",
      "components": {
       "agentic": {
@@ -8347,7 +10237,7 @@
        "status": "measured"
       },
       "long_context": {
-       "value": 0.7795,
+       "value": 0.7783,
        "sources": {},
        "status": "backfilled",
        "backfill": {
@@ -8418,7 +10308,7 @@
    },
    "scores": {
     "divergence": 0.7689,
-    "global_rigor": 0.7307,
+    "global_rigor": 0.7304,
     "module_precision": 0.6441,
     "vision_tools": 0.6711
    },
@@ -8449,10 +10339,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.2147,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 3.5 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 3.5,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 24500,
+    "output_tokens_per_min": 7000.0,
+    "by_effort": {
+     "max": 0.2147
+    },
+    "time_per_task_min_by_effort": {
+     "max": 3.5
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 24500
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "aa.mmmu_pro",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+    "sources": [
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 4,
+     "output": 20,
+     "cache_read": 0.2
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Muse Wonder (High)"
    },
    "intelligence_index": 40.53,
    "economy_static": 0.408,
@@ -8597,11 +10534,43 @@
     "reason": "listed on arena.ai Agent / Overall as Beam 1.0 501B A23B without Cost/Task"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": 0.092,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 1.5 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 1.5,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 13800,
+    "output_tokens_per_min": 9200.0,
+    "by_effort": {
+     "default": 0.092
+    },
+    "time_per_task_min_by_effort": {
+     "default": 1.5
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 13800
+    }
+   },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "sources": [],
+    "reason": "no cited public modality source"
    },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -8615,7 +10584,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "beam-free",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "beam-free",
@@ -8730,11 +10706,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -8748,7 +10740,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "flint-40b-free",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "flint-40b-free",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "flint-40b-free",
@@ -8897,10 +10903,41 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text, image, file)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 1.0,
+     "output": 5.0,
+     "cache_read": 0.1
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "anthropic/claude-haiku-4.5"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -8915,7 +10952,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "claude-haiku-4-5",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "claude-haiku-4-5",
@@ -9064,10 +11108,41 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 5.0,
+     "output": 25.0,
+     "cache_read": 0.5
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "anthropic/claude-opus-4.6"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -9082,7 +11157,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "claude-opus-4-6",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "claude-opus-4-6",
@@ -9237,10 +11319,42 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "osworld.verified"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 3.0,
+     "output": 15.0,
+     "cache_read": 0.3
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "anthropic/claude-sonnet-4.6"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -9255,7 +11369,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "claude-sonnet-4-6",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "claude-sonnet-4-6",
@@ -9428,10 +11549,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.7362,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 12 min / anchor 16.3 min (median of the listed efforts ['max'])",
+    "time_per_task_min": 12.0,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 57200,
+    "output_tokens_per_min": 4766.7,
+    "by_effort": {
+     "max": 0.7362
+    },
+    "time_per_task_min_by_effort": {
+     "max": 12.0
+    },
+    "output_tokens_per_task_by_effort": {
+     "max": 57200
+    }
+   },
+   "image_input": {
+    "value": false,
+    "status": "no",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.006,
+     "output": 6.8,
+     "cache_read": 0.005
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "z-ai/glm-5.2"
    },
    "intelligence_index": null,
    "economy_static": 0.767,
@@ -9608,15 +11776,50 @@
     "fallback": true
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "value": 0.708,
+    "status": "ok",
+    "source": "aa.cost_time",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "fallback": true,
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "fallback (AA outputSpeed): anchor 104.73 tok/s / 147.93 tok/s (High listing)",
+    "output_tps": 147.93
+   },
+   "image_input": {
+    "value": false,
+    "status": "no",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.15,
+     "output": 0.6,
+     "cache_read": 0.1
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "gpt-oss-120b (High)"
    },
    "intelligence_index": null,
    "economy_static": 0.539,
    "legacy_public_tier": {
-    "value": 1.0,
+    "value": 1.16,
     "source": "secondary.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
@@ -9767,10 +11970,41 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.25,
+     "output": 1.5,
+     "cache_read": 0.025
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "google/gemini-3.1-flash-lite"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -9785,7 +12019,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "gemini-3.1-flash-lite",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "gemini-3.1-flash-lite",
@@ -9949,10 +12190,45 @@
     "fallback": true
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes derived.community_mix",
+    "value": 1.8609,
+    "status": "ok",
+    "source": "aa.cost_time",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "fallback": true,
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "method": "fallback (AA outputSpeed): anchor 104.73 tok/s / 56.28 tok/s (the only listing (no effort named))",
+    "output_tps": 56.28
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text, image)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.95,
+     "output": 4,
+     "cache_read": 0.19
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Kimi K2.7 Code"
    },
    "intelligence_index": null,
    "economy_static": 0.552,
@@ -10109,10 +12385,40 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text, image, video)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.325,
+     "output": 1.95
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "qwen/qwen3.6-plus"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -10127,7 +12433,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "qwen3.6-plus",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "qwen3.6-plus",
@@ -10276,10 +12589,41 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 5.0,
+     "output": 25.0,
+     "cache_read": 0.5
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "anthropic/claude-opus-4.7"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -10294,7 +12638,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "claude-opus-4-7",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "claude-opus-4-7",
@@ -10455,10 +12806,42 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "missing",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null,
+    "reason": "provider does not publish a fast-mode burn or speed multiplier"
+   },
+   "price": {
+    "value": {
+     "input": 5.0,
+     "output": 25.0,
+     "cache_read": 0.5
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "anthropic/claude-opus-4.8"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -10473,7 +12856,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "claude-opus-4-8",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "claude-opus-4-8",
+     "field": "fast_mode",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
     },
     {
      "model": "claude-opus-4-8",
@@ -10609,10 +13006,41 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2.0,
+     "output": 6.0,
+     "cache_read": 0.3
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "x-ai/grok-4.5"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -10627,7 +13055,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "grok-4.5",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "grok-4.5",
@@ -10817,10 +13252,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.4172,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 6.8 min / anchor 16.3 min (median of the listed efforts ['xhigh'])",
+    "time_per_task_min": 6.8,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 35000,
+    "output_tokens_per_min": 5147.1,
+    "by_effort": {
+     "xhigh": 0.4172
+    },
+    "time_per_task_min_by_effort": {
+     "xhigh": 6.8
+    },
+    "output_tokens_per_task_by_effort": {
+     "xhigh": 35000
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2.0,
+     "output": 6.0,
+     "cache_read": 0.5
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "x-ai/grok-4.6"
    },
    "intelligence_index": null,
    "economy_static": 0.536,
@@ -11015,10 +13497,58 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.1656,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 2.7 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 2.7,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 13200,
+    "output_tokens_per_min": 4888.9,
+    "by_effort": {
+     "default": 0.1656
+    },
+    "time_per_task_min_by_effort": {
+     "default": 2.7
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 13200
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "aa.mmmu_pro"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 2,
+     "output": 12,
+     "cache_read": 0.2
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Gemini 3.1 Pro Preview"
    },
    "intelligence_index": null,
    "economy_static": 0.551,
@@ -11210,10 +13740,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
+    "value": 0.3313,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 5.4 min / anchor 16.3 min (High listing)",
+    "time_per_task_min": 5.4,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 44700,
+    "output_tokens_per_min": 8277.8,
+    "by_effort": {
+     "high": 0.3313
+    },
+    "time_per_task_min_by_effort": {
+     "high": 5.4
+    },
+    "output_tokens_per_task_by_effort": {
+     "high": 44700
+    }
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
     "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.75,
+     "output": 3.75,
+     "cache_read": 0.075
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "google/gemini-3.7-flash"
    },
    "intelligence_index": null,
    "economy_static": 0.718,
@@ -11369,10 +13946,42 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "lmarena.vision",
+    "kind": "benchmark",
+    "as_of": "2026-11-08",
+    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+    "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+    "sources": [
+     "lmarena.vision",
+     "osworld.verified"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 0.65,
+     "output": 3.41,
+     "cache_read": 0.15
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "moonshotai/kimi-k2.6"
    },
    "intelligence_index": null,
    "economy_static": null,
@@ -11387,7 +13996,14 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "kimi-k2.6",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
     },
     {
      "model": "kimi-k2.6",
@@ -11515,11 +14131,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -11533,7 +14165,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "qwen3-max",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "qwen3-max",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "qwen3-max",
@@ -11703,10 +14349,57 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.1166,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 1.9 min / anchor 16.3 min (the only listing (no effort named))",
+    "time_per_task_min": 1.9,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 15700,
+    "output_tokens_per_min": 8263.2,
+    "by_effort": {
+     "default": 0.1166
+    },
+    "time_per_task_min_by_effort": {
+     "default": 1.9
+    },
+    "output_tokens_per_task_by_effort": {
+     "default": 15700
+    }
+   },
+   "image_input": {
+    "value": false,
+    "status": "no",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (text)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 1.475,
+     "output": 4.425,
+     "cache_read": 0.295
+    },
+    "source": "openrouter.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://openrouter.ai/api/v1/models",
+    "listed_as": "qwen/qwen3.7-max"
    },
    "intelligence_index": null,
    "economy_static": 0.576,
@@ -11836,11 +14529,27 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "value": 1.0,
+    "value": null,
+    "status": "missing",
     "source": null,
     "kind": null,
-    "method": "no speed data: neutral 1.0"
+    "method": "no cited public completion-speed source"
    },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
    "intelligence_index": null,
    "economy_static": null,
    "legacy_public_tier": {
@@ -11854,7 +14563,21 @@
      "field": "usd_per_hour",
      "reason": "no_cited_source",
      "level": "red_if_metered",
-     "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+    },
+    {
+     "model": "qwen3-flash-2025-07-28",
+     "field": "duration_multiplier",
+     "reason": "no_cited_source",
+     "level": "yellow",
+     "effect": "no public completion-speed measurement"
+    },
+    {
+     "model": "qwen3-flash-2025-07-28",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
     },
     {
      "model": "qwen3-flash-2025-07-28",
@@ -12060,10 +14783,53 @@
     "fallback": false
    },
    "duration_multiplier": {
-    "value": 1.0,
-    "source": "usd merge includes arena.agent_sessions",
-    "kind": "benchmark",
-    "method": "the hourly figure already prices the model pace (user, 2026-11-09)"
+    "value": 0.6503,
+    "status": "ok",
+    "source": "arena.agent_sessions",
+    "kind": "community",
+    "fallback": false,
+    "as_of": "2026-11-08",
+    "url": "https://arena.ai/leaderboard/agent",
+    "method": "arena.ai Agent / Overall Time/Task (P50) 10.6 min / anchor 16.3 min (High listing)",
+    "time_per_task_min": 10.6,
+    "anchor_time_per_task_min": 16.3,
+    "output_tokens_per_task": 50700,
+    "output_tokens_per_min": 4783.0,
+    "by_effort": {
+     "high": 0.6503
+    },
+    "time_per_task_min_by_effort": {
+     "high": 10.6
+    },
+    "output_tokens_per_task_by_effort": {
+     "high": 50700
+    }
+   },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 4,
+     "output": 20,
+     "cache_read": 0.2
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-09",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Gemini 4 Carbon (High)"
    },
    "intelligence_index": 60.03,
    "economy_static": 0.634,
@@ -12072,7 +14838,15 @@
     "source": "lmarena.tier_fit",
     "note": "comparison only; the router no longer gates on a scalar tier"
    },
-   "data_errors": [],
+   "data_errors": [
+    {
+     "model": "gemini-4-carbon",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
+    }
+   ],
    "legacy": {
     "tier": 4.35,
     "usd_per_hour": 4.0,
@@ -12096,11 +14870,74 @@
  },
  "data_errors": [
   {
+   "model": "claude-fable-5-2",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
+  },
+  {
+   "model": "claude-fable-5-2",
+   "field": "divergence.chat,creative",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+  },
+  {
+   "model": "claude-fable-5-2",
+   "field": "global_rigor.agentic,long_horizon",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+  },
+  {
+   "model": "claude-fable-5-2",
+   "field": "module_precision.alignment",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+  },
+  {
+   "model": "claude-fable-5-2",
+   "field": "vision_tools.vision,gui_design,gui",
+   "reason": "component_unmeasured_no_fit",
+   "level": "yellow",
+   "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+  },
+  {
+   "model": "gpt-6.1-sol",
+   "field": "fast_mode",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+  },
+  {
+   "model": "gpt-6-astra",
+   "field": "fast_mode",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+  },
+  {
    "model": "grok-bot",
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "grok-bot",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "grok-bot",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "grok-bot",
@@ -12135,7 +14972,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "dot",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "dot",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "dot",
@@ -12149,7 +15000,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "gpt-6-pro",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "gpt-6-pro",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "gpt-6-pro",
@@ -12178,6 +15043,20 @@
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
    "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "gpt-6.1-terra",
+   "field": "fast_mode",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+  },
+  {
+   "model": "gpt-6-sol",
+   "field": "fast_mode",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
   },
   {
    "model": "gpt-6-sol",
@@ -12192,6 +15071,13 @@
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+  },
+  {
+   "model": "gpt-6-luna",
+   "field": "fast_mode",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
   },
   {
    "model": "gpt-5.6-sol",
@@ -12226,7 +15112,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "gpt-5.6-luna",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "gpt-5.6-luna",
@@ -12254,7 +15147,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "grok-4.7-build-fast",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "grok-4.7-build-fast",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "grok-4.7-build-fast",
@@ -12338,7 +15245,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "doubao-seed-2-1-pro-260628",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "doubao-seed-2-1-pro-260628",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "doubao-seed-2-1-pro-260628",
@@ -12367,6 +15288,13 @@
    "reason": "component_unmeasured_no_fit",
    "level": "yellow",
    "effect": "missing components count as 0 in the axis mean (pessimistic partial axis)"
+  },
+  {
+   "model": "nemotron-3-ultra-free",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "nemotron-3-ultra-free",
@@ -12401,7 +15329,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "beam-free",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "beam-free",
@@ -12429,7 +15364,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "flint-40b-free",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "flint-40b-free",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "flint-40b-free",
@@ -12464,7 +15413,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "claude-haiku-4-5",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "claude-haiku-4-5",
@@ -12492,7 +15448,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "claude-opus-4-6",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "claude-opus-4-6",
@@ -12520,7 +15483,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "claude-sonnet-4-6",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "claude-sonnet-4-6",
@@ -12590,7 +15560,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "gemini-3.1-flash-lite",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "gemini-3.1-flash-lite",
@@ -12646,7 +15623,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "qwen3.6-plus",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "qwen3.6-plus",
@@ -12674,7 +15658,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "claude-opus-4-7",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "claude-opus-4-7",
@@ -12702,7 +15693,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "claude-opus-4-8",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "claude-opus-4-8",
+   "field": "fast_mode",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
   },
   {
    "model": "claude-opus-4-8",
@@ -12723,7 +15728,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "grok-4.5",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "grok-4.5",
@@ -12793,7 +15805,14 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "kimi-k2.6",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
   },
   {
    "model": "kimi-k2.6",
@@ -12821,7 +15840,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "qwen3-max",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "qwen3-max",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "qwen3-max",
@@ -12877,7 +15910,21 @@
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
-   "effect": "out of automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced; free and unmetered accounts are unaffected"
+   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
+  },
+  {
+   "model": "qwen3-flash-2025-07-28",
+   "field": "duration_multiplier",
+   "reason": "no_cited_source",
+   "level": "yellow",
+   "effect": "no public completion-speed measurement"
+  },
+  {
+   "model": "qwen3-flash-2025-07-28",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   },
   {
    "model": "qwen3-flash-2025-07-28",
@@ -12906,6 +15953,13 @@
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
    "effect": "scores 0; a task that demands this axis leaves automatic routing for the model"
+  },
+  {
+   "model": "gemini-4-carbon",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when vision_tools >= 2 (mode B)"
   }
  ]
 }

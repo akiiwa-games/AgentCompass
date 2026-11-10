@@ -127,16 +127,144 @@ def pick_usd(entries, priority=None):
     return {'value': value, 'status': 'ok', 'merge': merge, 'used': used, 'sources': values, 'max_over_min': spread}
 
 
-def pick_duration(usd, info):
-    used = set(usd.get('used') or ())
-    if used & set(TIME_BASED):
-        return {'value': 1.0, 'source': 'usd merge includes ' + ', '.join(sorted(used & set(TIME_BASED))),
-                'kind': 'benchmark', 'method': 'the hourly figure already prices the model pace (user, 2026-11-09)'}
-    shipped = info.get('duration_multiplier')
-    if shipped is not None:
-        return {'value': float(shipped), 'source': 'accounts.duration_multiplier', 'kind': 'community',
-                'method': 'shipped duration_multiplier, kept: no time-based usd source for this model'}
-    return {'value': 1.0, 'source': None, 'kind': None, 'method': 'no speed data: neutral 1.0'}
+FAST_CAPABLE_MODELS = frozenset(('gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna',
+                                 'claude-opus-5-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-fable-5-2'))
+
+
+def _effort_pick(rows, field='value'):
+    """Pick High, else default, else median of listed efforts for `field` across `rows`."""
+    valid = [r for r in rows if isinstance(r.get(field), (int, float)) and r[field] > 0]
+    if not valid:
+        return None, None, None
+    by_eff = {r.get('effort') or 'default': r for r in valid}
+    if 'high' in by_eff:
+        return by_eff['high'][field], 'High listing', by_eff['high']
+    if 'default' in by_eff:
+        return by_eff['default'][field], 'the only listing (no effort named)', by_eff['default']
+    listed = {k: v for k, v in by_eff.items() if k in EFFORTS} or by_eff
+    val = round(statistics.median(r[field] for r in listed.values()), 3)
+    rep = next(iter(listed.values()))
+    return val, f'median of the listed efforts {sorted(listed)}', rep
+
+
+def pick_duration(usd, info=None, throughput=(), anchor_throughput=()):
+    """Completion-speed multiplier relative to the anchor model (`claude-opus-5-5`), from public sources only (round 11,
+    user 2026-11-10): primary = `arena.agent_sessions` Time/Task (P50) (storing Time/Task and Output Tokens/Task);
+    fallback = `aa.cost_time` Time/Task (or outputSpeed). Never returns a flat 1.0 across the fleet."""
+    by_src, anchor_by_src = {}, {}
+    for e in throughput or ():
+        by_src.setdefault(e['source'], []).append(e)
+    for e in anchor_throughput or ():
+        anchor_by_src.setdefault(e['source'], []).append(e)
+    if 'arena.agent_sessions' in by_src:
+        rows = by_src['arena.agent_sessions']
+        t_min, how, rep = _effort_pick(rows, 'time_per_task_min')
+        anc_rows = anchor_by_src.get('arena.agent_sessions') or ()
+        anc_min, _, _ = _effort_pick(anc_rows, 'time_per_task_min')
+        anc_min = anc_min or 16.3
+        if t_min and anc_min:
+            tok = rep.get('output_tokens_per_task') if rep else None
+            by_eff_mult = {r.get('effort') or 'default': round(r['time_per_task_min'] / anc_min, 4)
+                           for r in rows if isinstance(r.get('time_per_task_min'), (int, float)) and r['time_per_task_min'] > 0}
+            by_eff_time = {r.get('effort') or 'default': r['time_per_task_min']
+                           for r in rows if isinstance(r.get('time_per_task_min'), (int, float)) and r['time_per_task_min'] > 0}
+            by_eff_tok = {r.get('effort') or 'default': r['output_tokens_per_task']
+                          for r in rows if isinstance(r.get('output_tokens_per_task'), (int, float))}
+            return {
+                'value': round(t_min / anc_min, 4), 'status': 'ok', 'source': 'arena.agent_sessions',
+                'kind': 'community', 'fallback': False, 'as_of': rep.get('as_of'), 'url': rep.get('url'),
+                'method': f'arena.ai Agent / Overall Time/Task (P50) {t_min:g} min / anchor {anc_min:g} min ({how})',
+                'time_per_task_min': t_min, 'anchor_time_per_task_min': anc_min,
+                'output_tokens_per_task': tok,
+                'output_tokens_per_min': round(tok / t_min, 1) if isinstance(tok, (int, float)) and t_min > 0 else None,
+                'by_effort': by_eff_mult, 'time_per_task_min_by_effort': by_eff_time,
+                'output_tokens_per_task_by_effort': by_eff_tok,
+            }
+    if 'aa.cost_time' in by_src:
+        rows = by_src['aa.cost_time']
+        t_s, how, rep = _effort_pick(rows, 'time_per_task_s')
+        anc_rows = anchor_by_src.get('aa.cost_time') or ()
+        anc_s, _, _ = _effort_pick(anc_rows, 'time_per_task_s')
+        anc_s = anc_s or 719.3
+        if t_s and anc_s:
+            tps = rep.get('output_tps') if rep else None
+            by_eff_mult = {r.get('effort') or 'default': round(r['time_per_task_s'] / anc_s, 4)
+                           for r in rows if isinstance(r.get('time_per_task_s'), (int, float)) and r['time_per_task_s'] > 0}
+            return {
+                'value': round(t_s / anc_s, 4), 'status': 'ok', 'source': 'aa.cost_time',
+                'kind': 'benchmark', 'fallback': True, 'as_of': rep.get('as_of'), 'url': rep.get('url'),
+                'method': f'fallback (not on arena.ai Agent / Overall): AA Time/Task {t_s:g} s / anchor {anc_s:g} s ({how})',
+                'time_per_task_s': t_s, 'anchor_time_per_task_s': anc_s,
+                'time_per_task_min': round(t_s / 60.0, 3), 'output_tps': tps, 'by_effort': by_eff_mult,
+            }
+        tps, how_tps, rep_tps = _effort_pick(rows, 'output_tps')
+        anc_tps, _, _ = _effort_pick(anc_rows, 'output_tps')
+        anc_tps = anc_tps or 83.29
+        if tps and anc_tps:
+            return {
+                'value': round(anc_tps / tps, 4), 'status': 'ok', 'source': 'aa.cost_time',
+                'kind': 'benchmark', 'fallback': True, 'as_of': rep_tps.get('as_of'), 'url': rep_tps.get('url'),
+                'method': f'fallback (AA outputSpeed): anchor {anc_tps:g} tok/s / {tps:g} tok/s ({how_tps})',
+                'output_tps': tps,
+            }
+    return {'value': None, 'status': 'missing', 'source': None, 'kind': None,
+            'method': 'no cited public completion-speed source'}
+
+
+def pick_image_input(entries):
+    """Image-input modality from cited public sources (round 11, user 2026-11-10): a public vision/GUI benchmark listing
+    wins over a vendor/OpenRouter modality flag; without any source, status is `unknown` (mode B when vision_tools >= 2)."""
+    if not entries:
+        return {'value': None, 'status': 'unknown', 'source': None, 'kind': None, 'sources': [],
+                'reason': 'no cited public modality source'}
+    bench_yes = [e for e in entries if e.get('kind') == 'benchmark' and e.get('value') is True]
+    if bench_yes:
+        e0 = bench_yes[0]
+        return {'value': True, 'status': 'yes', 'source': e0['source'], 'kind': 'benchmark',
+                'as_of': e0.get('as_of'), 'url': e0.get('url'), 'method': e0.get('method'),
+                'sources': [e['source'] for e in bench_yes]}
+    yes = [e for e in entries if e.get('value') is True]
+    if yes:
+        e0 = yes[0]
+        return {'value': True, 'status': 'yes', 'source': e0['source'], 'kind': e0.get('kind'),
+                'as_of': e0.get('as_of'), 'url': e0.get('url'), 'method': e0.get('method'),
+                'sources': [e['source'] for e in yes]}
+    no = [e for e in entries if e.get('value') is False]
+    if no:
+        e0 = no[0]
+        return {'value': False, 'status': 'no', 'source': e0['source'], 'kind': e0.get('kind'),
+                'as_of': e0.get('as_of'), 'url': e0.get('url'), 'method': e0.get('method'),
+                'sources': [e['source'] for e in no]}
+    return {'value': None, 'status': 'unknown', 'source': None, 'kind': None, 'sources': [],
+            'reason': 'no cited public modality source'}
+
+
+def pick_fast_mode(model, entries):
+    """Public fast-mode price and speed multipliers (round 11, user 2026-11-10)."""
+    if entries:
+        e0 = entries[0]
+        val = e0.get('value') or {}
+        return {'status': 'ok', 'price_multiplier': val.get('price_multiplier'),
+                'speed_multiplier': val.get('speed_multiplier'), 'source': e0['source'],
+                'kind': e0.get('kind', 'vendor'), 'as_of': e0.get('as_of'), 'url': e0.get('url'),
+                'pricing_url': e0.get('pricing_url'), 'fast_price': e0.get('fast_price'),
+                'standard_price': e0.get('standard_price'), 'method': e0.get('method')}
+    if model in FAST_CAPABLE_MODELS:
+        return {'status': 'missing', 'price_multiplier': None, 'speed_multiplier': None, 'source': None,
+                'reason': 'provider does not publish a fast-mode burn or speed multiplier'}
+    return {'status': 'unsupported', 'price_multiplier': None, 'speed_multiplier': None, 'source': None}
+
+
+def pick_price(entries):
+    """Public list price (USD per million tokens) for converting local token counts (e.g. opencode.db) into USD."""
+    for src in ('aa.price', 'openrouter.price'):
+        for e in entries or ():
+            if e.get('source') == src and isinstance(e.get('value'), dict):
+                v = e['value']
+                if (v.get('output') or 0) > 0 or (v.get('input') or 0) > 0:
+                    return {'value': v, 'source': src, 'kind': e.get('kind', 'vendor'),
+                            'as_of': e.get('as_of'), 'url': e.get('url'), 'listed_as': e.get('listed_as')}
+    return None
 
 
 def legacy_tier(entries):
@@ -206,16 +334,19 @@ class Scorer:
                            if c in r['comps'][a] and r['comps'][a][c]['status'] == 'measured' and name in r['preds']]
                     fits[(a, c, name)] = self.fit(pts)
         # Component backfill: every unmeasured component from the component's fit on the AA index (over every measured
-        # model that has it), so a partial axis does not average only its measured components.
+        # model that has it), except when a model has only AA capability measurements (Arena does not list it yet, e.g.
+        # claude-fable-5-2: round 11 item 6), so AA never backfills missing Arena components from itself.
         for r in rows.values():
+            if not any(not e['source'].startswith('aa.') for a in AXES for e in self.trusted(r['fields'].get(a))):
+                continue
             for a, comps in AXES.items():
                 for c in comps:
                     name, x, f = self.backfill(fits, (a, c), r['preds'])
                     if c not in r['comps'][a] and f:
                         r['comps'][a][c] = {'value': self.predict(f, x), 'sources': {},
                                             'status': 'backfilled', 'backfill': {'predictor': name, 'x': x}}
-        # Pessimistic unknowns for partial axes (round 8, user): any expected component of the axis that remains
-        # unmeasured and has no backfill fit counts as 0, so a single board (e.g. Alignment alone) cannot carry the axis.
+        # Pessimistic unknowns for partial axes (round 8 & round 11, user): any expected component of the axis that
+        # remains unmeasured counts as 0, so a single board or AA alone (before Arena lists a model) cannot carry the axis.
         anchor_comps = (rows.get(measurements.ANCHOR) or {}).get('comps') or {}
         expected = {a: [c for c in comps if c in (anchor_comps.get(a) or {})
                         or any(fits.get((a, c, n)) for n in PREDICTORS)] or list(comps)
@@ -236,7 +367,8 @@ class Scorer:
         for a in AXES:
             for name in PREDICTORS:
                 pts = [(r['preds'][name], r['axes'][a]['value']) for r in rows.values()
-                       if r['axes'][a]['status'] in ('measured', 'partial') and name in r['preds']]
+                       if r['axes'][a]['status'] in ('measured', 'partial') and not r['axes'][a]['missing_components']
+                       and name in r['preds']]
                 fits[(a, None, name)] = self.fit(pts)
         for m, r in rows.items():
             for a, ax in r['axes'].items():
@@ -531,13 +663,28 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
     rows, fits = scorer.score()
     usd = USD_BASES[usd_basis]['fn'](scorer, rows, meas, priority)
     caps, cap_errors = capacity(meas, plans, usd, now, usd_basis)
+    anchor_tp = scorer.trusted(((rows.get(measurements.ANCHOR) or {}).get('fields') or {}).get('throughput'))
     models, errors = {}, []
     for m, r in rows.items():
         model_errors = []
         if usd[m]['status'] == 'missing':
             model_errors.append({'model': m, 'field': 'usd_per_hour', 'reason': 'no_cited_source', 'level': 'red_if_metered',
-                                 'effect': 'out of automatic routing on a metered account (billed or quota windows); a named '
-                                           'dispatch runs with its cost unpriced; free and unmetered accounts are unaffected'})
+                                 'effect': 'out of automatic routing on any quota-pool or metered account; a named '
+                                           'dispatch runs with its cost unpriced'})
+        dur = pick_duration(usd[m], acc['models'][m], scorer.trusted(r['fields'].get('throughput')), anchor_tp)
+        if dur['status'] == 'missing':
+            model_errors.append({'model': m, 'field': 'duration_multiplier', 'reason': 'no_cited_source', 'level': 'yellow',
+                                 'effect': 'no public completion-speed measurement'})
+        img = pick_image_input(scorer.trusted(r['fields'].get('image_input')))
+        if img['status'] == 'unknown':
+            model_errors.append({'model': m, 'field': 'image_input', 'reason': 'no_cited_source',
+                                 'level': 'red_if_vision_demanded',
+                                 'effect': 'unknown image-input modality; excluded from automatic routing when '
+                                           'vision_tools >= 2 (mode B)'})
+        fm = pick_fast_mode(m, scorer.trusted(r['fields'].get('fast_mode')))
+        if fm['status'] == 'missing':
+            model_errors.append({'model': m, 'field': 'fast_mode', 'reason': 'no_cited_source', 'level': 'yellow',
+                                 'effect': 'fast mode is not priced or enabled from a policy multiplier on the five-axis path'})
         for a, ax in r['axes'].items():
             if ax.get('flag') == 'missing':
                 model_errors.append({'model': m, 'field': a, 'reason': 'no_trusted_source', 'level': 'red_if_demanded',
@@ -551,7 +698,9 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
         u = usd[m]['value']
         models[m] = {'axes': r['axes'], 'scores': {a: ax['value'] for a, ax in r['axes'].items()},
                      'missing_axes': [a for a, ax in r['axes'].items() if ax.get('flag') == 'missing'],
-                     'usd_per_hour': usd[m], 'duration_multiplier': pick_duration(usd[m], acc['models'][m]),
+                     'usd_per_hour': usd[m], 'duration_multiplier': dur,
+                     'image_input': img, 'fast_mode': fm,
+                     'price': pick_price(scorer.trusted(r['fields'].get('price'))),
                      'intelligence_index': idx[0]['value'] if idx else None,
                      'economy_static': round(1 / (1 + u / 15), 3) if u is not None else None,
                      'legacy_public_tier': legacy_tier(scorer.trusted(r['fields'].get('tier'))),

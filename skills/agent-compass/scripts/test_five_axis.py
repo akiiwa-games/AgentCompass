@@ -36,10 +36,18 @@ def demand(div, rigor, code, vision):
     return {'divergence': div, 'global_rigor': rigor, 'module_precision': code, 'vision_tools': vision}
 
 
-def row(scores=0.8, usd=5.0, missing=()):
+def row(scores=0.8, usd=5.0, missing=(), image_input='yes', dur=1.0, fast=None):
     scores = scores if isinstance(scores, dict) else dict.fromkeys(allocator.FIVE_AXES, scores)
-    return {'scores': scores, 'missing_axes': list(missing), 'usd_per_hour': {'value': usd},
-            'duration_multiplier': {'value': 1.0}, 'intelligence_index': 50.0}
+    img_val = True if image_input == 'yes' else False if image_input == 'no' else None
+    out = {'scores': scores, 'missing_axes': list(missing),
+           'usd_per_hour': {'value': usd, 'list_price_per_m': {'input': 0.1, 'output': 0.4}},
+           'duration_multiplier': {'value': dur, 'status': 'ok', 'source': 'arena.agent_sessions'},
+           'intelligence_index': 50.0,
+           'image_input': {'value': img_val, 'status': image_input,
+                           'source': 'aa.modality' if image_input in ('yes', 'no') else None}}
+    if fast is not None:
+        out['fast_mode'] = fast
+    return out
 
 
 def document(models, **override):
@@ -106,15 +114,20 @@ class FiveAxisTests(unittest.TestCase):
         self.assertGreater(sol_high(coding)['components']['fit'], sol_high(creative)['components']['fit'] + 0.3)
         self.assertEqual(sol_high(coding)['components']['five_axis_shortfall'], 0.0)
 
-    def test_fit_is_the_demand_weighted_score_minus_the_shortfall_below_the_anchor_target(self):
+    def test_fit_is_capped_at_the_anchor_target_with_shortfall_penalty_and_no_bonus_above_need(self):
         targets = allocator.five_axis_targets(demand(3, 1, 0, 2))
         self.assertEqual(targets, {'divergence': 0.8, 'global_rigor': round(0.8 / 3, 4), 'vision_tools': round(1.6 / 3, 4)})
         scaled = {'divergence': 0.7, 'global_rigor': 0.9, 'module_precision': 0.1, 'vision_tools': 0.5}
         fit, rows = allocator.five_axis_fit(scaled, demand(3, 1, 0, 2), targets, 1.0)
-        expected = (3 * (0.7 - 0.1) + 1 * 0.9 + 2 * (0.5 - (1.6 / 3 - 0.5))) / 6
+        # Round 11: per axis min(s, t) - 1.0 * max(0, t - s); global_rigor 0.9 is capped at target 0.2667.
+        expected = (3 * (0.7 - 0.1) + 1 * round(0.8 / 3, 4) + 2 * (0.5 - (round(1.6 / 3, 4) - 0.5))) / 6
         self.assertAlmostEqual(fit, expected, places=4)
+        self.assertEqual(rows['global_rigor']['capped_score'], round(0.8 / 3, 4))
         self.assertNotIn('module_precision', rows)           # an undemanded axis does not count
-        # Continuous: a small score change moves the fit by a small amount on both sides of the target.
+        # Above target: no bonus above the task's need.
+        nudged_above = allocator.five_axis_fit({**scaled, 'global_rigor': 0.98}, demand(3, 1, 0, 2), targets, 1.0)[0]
+        self.assertEqual(nudged_above, fit)
+        # Below target: continuous with slope 2 * d / sum_d.
         for axis, eps in (('divergence', 0.01), ('vision_tools', -0.04)):
             nudged = allocator.five_axis_fit({**scaled, axis: scaled[axis] + eps}, demand(3, 1, 0, 2), targets, 1.0)[0]
             self.assertLess(abs(nudged - fit), 2 * abs(eps))
@@ -232,9 +245,8 @@ class FiveAxisTests(unittest.TestCase):
         spec = out['accounts']['claude']
         self.assertEqual(spec['capacity_usd'], {'seven_day': 1700.0, 'five_hour': 270.0})
         self.assertNotIn('capacity_change', spec)
-        # Displaced work is counted in hours of the window's reference model (round 6), at its merged usd.
-        self.assertEqual(spec['reference_usd_per_hour'], {'seven_day': 15.0, 'five_hour': 15.0})
-        # Max 20x weekly_fable has no community value: unknown, with neither the template figure nor the burn prior.
+        self.assertNotIn('reference_usd_per_hour', spec)     # round 11: replaced by per-window beta_w
+        # Max 20x weekly_fable has no community value in CAPACITY here: unknown, with neither the template figure nor the burn prior.
         self.assertTrue(spec['capacity_unknown'])
         self.assertEqual(spec['capacity_source']['weekly_fable']['status'], 'missing')
         self.assertIsNone(allocator.template_capacity_usd(spec, 'weekly_fable'))
@@ -248,103 +260,336 @@ class FiveAxisTests(unittest.TestCase):
         # Antigravity has no community source: every window unknown.
         self.assertEqual(out['accounts']['antigravity']['capacity_usd'], {})
         self.assertTrue(out['accounts']['antigravity']['capacity_unknown'])
+        # OpenCode ("free" pool) is an ordinary quota pool on the five-axis path: no unmetered/unlimited flag, capacity_unknown.
+        self.assertFalse(out['accounts']['opencode'].get('unmetered'))
+        self.assertFalse(out['accounts']['opencode'].get('unlimited'))
+        self.assertTrue(out['accounts']['opencode']['capacity_unknown'])
 
-    def test_equal_scores_go_to_the_lower_opportunity_cost_then_the_higher_level(self):
-        # Round 5: the price no longer breaks ties (it handed every saturated tie to free models); quota scarcity does,
-        # then the stronger model (round 7: its level, no floor to count from).
-        def cand(name, usd, level, oc=0.0, score=0.5):
-            return {'id': name, 'score': score, 'five_axis_price': {'usd_per_hour': usd},
-                    'components': {'five_axis_level': level, 'opportunity_cost': oc}}
-        pool = [cand('free', 0.0, 0.55), cand('dear_scarce', 20.0, 0.95, oc=0.3), cand('cheap', 5.0, 0.6),
-                cand('dear', 20.0, 0.9), cand('best', 30.0, 0.9, score=0.6), cand('free_scarce', 0.0, 0.55, oc=0.1)]
+    def test_tie_break_order_net_score_then_earliest_expiring_under_line_then_faster_then_fewer_usd(self):
+        """Round 11 (advisor report v2 §0, §4-5): order is N, then earliest-expiring under-line quota, then faster
+        completion (throughput / fast mode), then fewer USD, then axis level."""
+        def cand(name, score=0.5, reset_u=60.0, own_over=0.0, hours=1.0, usd=10.0, level=0.8, wait=0.0):
+            return {'id': name, 'score': score, 'available_in_hours': wait or None,
+                    'expected_hours': hours, 'expected_usd': usd,
+                    'components': {'earliest_under_line_reset_hours': reset_u, 'own_over_line_usd': own_over,
+                                   'five_axis_level': level, 'harness_place': 0}}
+        pool = [
+            cand('later_reset', score=0.5, reset_u=110.0, hours=0.2, usd=1.0),
+            cand('slower_expensive', score=0.5, reset_u=60.0, hours=0.8, usd=20.0),
+            cand('faster_dear', score=0.5, reset_u=60.0, hours=0.2, usd=20.0),
+            cand('faster_cheap', score=0.5, reset_u=60.0, hours=0.2, usd=5.0),
+            cand('higher_n', score=0.6, reset_u=None, own_over=50.0, hours=2.0, usd=50.0),
+            cand('borrowed_over_line', score=0.5, reset_u=None, own_over=15.0, hours=0.1, usd=1.0),
+        ]
         self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
-                         ['best', 'dear', 'cheap', 'free', 'free_scarce', 'dear_scarce'])
-        self.assertNotIn('overqualification_weight', allocator.FIVE_AXIS_DEFAULTS)     # round 6: no such term
-        self.assertFalse(hasattr(allocator, 'five_axis_overqualification'))
-        for gone in ('five_axis_gate', 'five_axis_gate_level'):                     # round 7: no floors
+                         ['higher_n', 'faster_cheap', 'faster_dear', 'slower_expensive', 'later_reset', 'borrowed_over_line'])
+        self.assertEqual(allocator.FIVE_AXIS_DEFAULTS['weights']['fit'], 1.0)
+        for gone in ('overqualification_weight', 'strong_level', 'pace', 'pace_smoothing'):
+            self.assertNotIn(gone, allocator.FIVE_AXIS_DEFAULTS, gone)
+        for gone in ('five_axis_overqualification', 'five_axis_gate', 'five_axis_gate_level',
+                     'five_axis_pacing', 'five_axis_wait_cost'):
             self.assertFalse(hasattr(allocator, gone), gone)
-        self.assertNotIn('strong_level', allocator.FIVE_AXIS_DEFAULTS)
 
-    POLICY = {'safety_margin_pct': 5, 'demand_pace_floor_ratio': 0.5}
+    def test_recovery_line_x_within_period_across_reset_unstarted_and_infinite_reset(self):
+        """Round 11 (advisor report v2 §1-2, §5.1): recovery line l(t) = C * (t - t0) / L, over-line spend X segmented
+        across resets, unstarted rolling windows start at t0 = now, and starter allowances (T = inf) have l(t) = 0 so X = S."""
+        # 1. Behind the line (50% elapsed = $850 line, 30% used = $510, δ = +$340): a $100 2h task has X = 0.
+        behind = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 70.0, 'reset_hours': 84.0}
+        r_behind = allocator.five_axis_over_line_usd(behind, 1700.0, 100.0, 2.0)
+        self.assertAlmostEqual(r_behind['line_now_usd'], 850.0, places=2)
+        self.assertAlmostEqual(r_behind['used_usd'], 510.0, places=2)
+        self.assertAlmostEqual(r_behind['under_line_usd'], 340.0, places=2)
+        self.assertEqual(r_behind['over_line_usd'], 0.0)
+        # 2. Exactly on the line (50% elapsed = $850, 50% used = $850): only spend above recovery C/L * h ($20.24) is over line.
+        on_line = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 50.0, 'reset_hours': 84.0}
+        r_on = allocator.five_axis_over_line_usd(on_line, 1700.0, 50.0, 2.0)
+        self.assertAlmostEqual(r_on['over_line_usd'], 50.0 - 1700.0 * 2.0 / 168.0, places=3)
+        # 3. Ahead of the line (50% elapsed = $850, 70% used = $1190): l(t1) = $870.24 < U, so A_0 = 0 and X = full S ($50).
+        ahead = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 30.0, 'reset_hours': 84.0}
+        r_ahead = allocator.five_axis_over_line_usd(ahead, 1700.0, 50.0, 2.0)
+        self.assertAlmostEqual(r_ahead['over_line_usd'], 50.0, places=3)
+        # 4. Segmenting across a reset (tau_reset = 2h, h = 6h, R = $681.8, S = 6 * 22.86 = $137.16):
+        #    Pre-reset 2h spends $45.72 <= R ($681.8) so X_0 = 0; post-reset 4h spends $91.44 vs 4 * 1704.5/168 = $40.58 -> X_1 = 50.86.
+        cross = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 40.0, 'reset_hours': 2.0}
+        r_cross = allocator.five_axis_over_line_usd(cross, 1704.5, 6.0 * 22.86, 6.0)
+        self.assertAlmostEqual(r_cross['over_line_usd'], 4.0 * 22.86 - 1704.5 * 4.0 / 168.0, places=2)
+        # 5. Unstarted rolling window (t0 = now, U = 0): l(now) = 0, allowance over h is C * h / L.
+        unstarted = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 100.0, 'reset_hours': 168.0, 'unstarted': True}
+        r_unstarted = allocator.five_axis_over_line_usd(unstarted, 2580.0, 6.0 * 22.86, 6.0)
+        self.assertTrue(r_unstarted['unstarted'])
+        self.assertAlmostEqual(r_unstarted['over_line_usd'], 6.0 * 22.86 - 2580.0 * 6.0 / 168.0, places=2)
+        # 6. Starter allowance (T = inf, hours = None): l(t) = 0, so every dollar of spend is above the line (X = S).
+        starter = {'known': True, 'full': 100.0, 'hours': None, 'remaining': 80.0, 'reset_hours': float('inf')}
+        r_starter = allocator.five_axis_over_line_usd(starter, 50.0, 9.0, 2.0)
+        self.assertEqual(r_starter['line_now_usd'], 0.0)
+        self.assertEqual(r_starter['over_line_usd'], 9.0)
 
-    @staticmethod
-    def week(remaining, reset_hours, rate=None):
-        state = {'full': 100.0, 'hours': 168.0, 'remaining': remaining, 'reset_hours': reset_hours,
-                 'end_hours': reset_hours, 'short': False}
-        used, elapsed = 100.0 - remaining, 168.0 - reset_hours
-        rate = used / elapsed if rate is None and elapsed > 0 else (rate or 0.0)
-        return state, (rate * reset_hours, 1.0, rate, 'period average')
-
-    def test_pacing_price_is_never_zero_while_the_window_is_far_from_empty(self):
-        cfg = allocator.FIVE_AXIS_DEFAULTS
-        for remaining, reset in ((100.0, 168.0), (90.0, 84.0), (95.0, 20.0)):     # week start, ample mid-week, near the end
-            state, forecast = self.week(remaining, reset)
-            price = allocator.five_axis_pacing(state, forecast, self.POLICY, cfg)['price']
-            self.assertGreater(price, 0.0, (remaining, reset))
-        # The demand floor: no observed use still projects half the straight-line pace.
-        row = allocator.five_axis_pacing(*self.week(100.0, 168.0, rate=0.0), self.POLICY, cfg)
-        self.assertAlmostEqual(row['demand_pct'], 50.0, places=1)
-
-    def test_pacing_price_rises_ahead_of_pace(self):
-        cfg = allocator.FIVE_AXIS_DEFAULTS
-        # Mid-week, the same demand forecast: 20% used is behind an even pace, 50% on it, 60% ahead.
-        rows = [allocator.five_axis_pacing({**self.week(r, 84.0)[0]}, (25.0, 1.0, 25.0 / 84.0, 'observed'), self.POLICY, cfg)
-                for r in (80.0, 50.0, 40.0)]
-        self.assertEqual([r['pace'] > 1.0 for r in rows], [False, False, True])
-        self.assertLess(rows[0]['price'], rows[1]['price'])
-        self.assertLess(rows[1]['price'], rows[2]['price'])
-        # Demand above what is left: the price keeps rising past 1 instead of flattening.
-        heavy = [allocator.five_axis_pacing(self.week(r, 84.0)[0], (60.0, 1.0, 60.0 / 84.0, 'observed'), self.POLICY, cfg)
-                 for r in (50.0, 40.0)]
-        self.assertGreater(heavy[0]['price'], 1.0)
-        self.assertGreater(heavy[1]['price'], heavy[0]['price'])
-
-    def test_a_long_window_charges_burn_times_the_pacing_price_in_reference_hours(self):
-        policy = {**self.accounts['scoring'], 'safety_margin_pct': 5, 'demand_pace_floor_ratio': 0.5}
-        spec = {'capacity_usd': {'seven_day': 1700.0}}
-        state, forecast = self.week(90.0, 84.0)
-        state.update(known=True, stale=False)
-        step = 100.0 * 150.0 / 1700.0       # a $150 task
-        pacing = {**allocator.FIVE_AXIS_DEFAULTS, 'reference_usd_per_hour': 50.0}
-        row = allocator.window_cost(spec, 'seven_day', state, step, forecast, policy, {'notes': []}, NOW, pacing=pacing)
-        per_hour = allocator.exchange_rate(policy, 'shortage_loss_per_worker_hour')
-        self.assertAlmostEqual(row['pacing']['cost'], round(per_hour * 3.0 * row['pacing']['price'], 4), places=4)
-        self.assertGreater(row['opportunity_cost'], 0.0)
-        self.assertGreaterEqual(row['opportunity_cost'], row['pacing']['cost'])
-        off = allocator.window_cost(spec, 'seven_day', state, step, forecast, policy, {'notes': []}, NOW,
-                                    pacing={**pacing, 'pace': False})
-        self.assertNotIn('pacing', off)
-        self.assertLess(off['opportunity_cost'], row['opportunity_cost'])
-
-    def test_ample_quota_still_charges_the_burn_of_a_billed_candidate(self):
-        doc = document(self.accounts['models'])
-        d = self.plan(self.accounts, doc, state='ample', profile={'axis_demand': demand(0, 1, 2, 0)})
-        claude = [c for c in d['ranking'] if c['bundle']['account'] == 'claude' and c['score'] is not None]
-        self.assertTrue(claude)
-        self.assertTrue(all(c['components']['opportunity_cost'] > 0 for c in claude))
-        self.assertTrue(all((c.get('capacity') or {}).get('pacing') for c in claude))
-        self.assertFalse([c for c in d['ranking'] if c['components'].get('overqualification')])
-
-    def test_capacity_unknown_window_still_prices_scarcity_from_live_percent_and_reset(self):
+    def test_nested_windows_and_5h_plus_weekly_take_the_larger_over_line_x(self):
+        """Round 11 (advisor report v2 §2, §5): 5h + weekly and nested pools (weekly_fable ⊂ seven_day) each compute their
+        own over-line spend X and take the maximum (never double-counting)."""
         acc = copy.deepcopy(self.accounts)
-        spec = acc['accounts']['codex']
-        for key in ('capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour'):
-            spec.pop(key, None)
-        spec['capacity_unknown'] = True
-        doc = document(acc['models'])
-        doc['capacity'] = {}
+        acc['scoring']['five_axis'] = {'enabled': True}
+        doc = document(acc['models'], **{'claude-fable-5-1': row(0.85, usd=36.11)})
+        doc['capacity'] = {
+            'claude': {'max20': {
+                'seven_day': window(1700.0, ref='claude-opus-5-5'),
+                'five_hour': window(270.0, ref='claude-opus-5-5'),
+                'weekly_fable': window(850.0, ref='claude-fable-5-1'),
+            }},
+            'codex': {'pro': {'usage': window(615.0)}},
+        }
+        acc = allocator.five_axis_overlay(acc, doc)
+        usage = self.usage(acc, 'ample')
+        # Set seven_day behind line (80% left at mid-week -> under-line $510), but weekly_fable ahead of line (30% left at mid-week).
+        for w in usage['accounts']['claude']['windows']:
+            if w['id'] == 'seven_day':
+                w['remaining_pct_before_reset'] = 80.0
+                w['seconds_until_reset'] = 84 * 3600
+            elif w['id'] == 'five_hour':
+                w['remaining_pct_before_reset'] = 90.0
+                w['seconds_until_reset'] = int(2.5 * 3600)
+            elif w['id'] == 'weekly_fable':
+                w['remaining_pct_before_reset'] = 30.0
+                w['seconds_until_reset'] = 84 * 3600
+        original = allocator.load_five_axis
+        allocator.load_five_axis = lambda path=None: doc
+        try:
+            d = allocator.plan({'objective': 't', 'hours': 1.0, 'profile': {**PROFILE, 'axis_demand': demand(2, 2, 2, 0)}},
+                               usage, NOW, accounts=acc, overrides=[], records=[], host_policy_config=self.policy)
+        finally:
+            allocator.load_five_axis = original
+        fable_high = next(c for c in d['ranking'] if c['id'] == 'fable51_high')
+        opus_high = next(c for c in d['ranking'] if c['id'] == 'opus55_high')
+        # Opus draws seven_day + five_hour (both behind line -> X = 0); Fable also draws weekly_fable (ahead of line -> X = $36.11).
+        self.assertEqual(opus_high['components']['own_over_line_usd'], 0.0)
+        self.assertAlmostEqual(fable_high['components']['own_over_line_usd'], 36.11, places=2)
+        self.assertEqual(fable_high['capacity']['window'], 'weekly_fable')
 
-        def codex_cost(state):
-            d = self.plan(acc, doc, state=state, profile={'axis_demand': demand(0, 1, 2, 0)})
-            rows = [c for c in d['ranking'] if c['bundle']['account'] == 'codex' and not c['excluded']]
-            self.assertTrue(rows, state)
-            self.assertIn('data error: no cited capacity (capacity ladder empty); scarcity from the live',
-                          ' '.join(rows[0]['notes']))
-            return rows[0]['components']['opportunity_cost']
+    def test_substitute_pool_absorbs_over_line_spend_and_advisor_desync_example(self):
+        """Round 11 (advisor report v2 §2, §6.3): a desynchronized same-model substitute pool absorbs over-line spend with
+        its non-expiring under-line quota. Verifies the advisor's §6.3 example (Pool A 2h to reset with 40% left, Pool B
+        6 days to reset on the line): 3h task picks Pool A with fast mode (entire spend before reset), 6h task picks
+        Pool A in normal mode (saving $45.7 before reset while Pool B absorbs the post-reset $50.9)."""
+        acc = copy.deepcopy(self.accounts)
+        acc.pop('_discovery', None)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        # Configure Pool A (`claude`, C=1704.5) and Pool B (`claude-2`, C=2580.0, 1 account on its recovery line).
+        acc['accounts']['claude']['windows'] = {'seven_day': {'hours': 168}, 'five_hour': {'hours': 5}}
+        acc['accounts']['claude-2']['windows'] = {'seven_day': {'hours': 168}, 'five_hour': {'hours': 5}}
+        acc['accounts']['claude-2']['plan'] = 'pool_b'
+        acc['accounts']['claude']['bundles'] = {
+            'opus55_high': {'provider': 'claude', 'harness': 'claude', 'account': 'claude', 'model': 'claude-opus-5-5', 'effort': 'high'},
+        }
+        acc['accounts']['claude-2']['bundles'] = {
+            'claude-2__opus55_high': {'provider': 'claude', 'harness': 'claude', 'account': 'claude-2', 'model': 'claude-opus-5-5', 'effort': 'high'},
+        }
+        fast_cfg = {'status': 'ok', 'price_multiplier': 2.0, 'speed_multiplier': 1.5, 'source': 'anthropic.fast_mode'}
+        base_rows = {name: row(0.5, usd=5.0) for name, info in acc['models'].items() if isinstance(info, dict)}
+        doc = document(
+            acc['models'],
+            **{
+                **base_rows,
+                'claude-opus-5-5': row(demand(0.7333, 0.8000, 0.8000, 0.8000), usd=22.86, dur=1.0, fast=fast_cfg),
+                'claude-sonnet-5-5': row(demand(0.6000, 0.6500, 0.6000, 0.7000), usd=12.83, dur=0.98),
+                'claude-haiku-5-5': row(demand(0.5000, 0.5000, 0.4500, 0.5000), usd=2.67, dur=0.11),
+                'glm-5.3-flash-free': row(demand(0.6820, 0.5580, 0.5940, 0.5000), usd=1.50, image_input='no'),
+            },
+        )
+        doc['capacity'] = {
+            'claude': {
+                'max20': {'seven_day': window(1704.5, ref='claude-opus-5-5'),
+                          'five_hour': window(1000.0, ref='claude-opus-5-5')},
+                'pool_b': {'seven_day': window(2580.0, ref='claude-opus-5-5'),
+                           'five_hour': window(1000.0, ref='claude-opus-5-5')},
+            },
+            'codex': {'pro': {'usage': window(615.0)}},
+        }
+        usage = self.usage(acc, 'ample')
+        # Pool A (`claude`): 2h until reset, 40% remaining (R = $681.8).
+        usage['accounts']['claude']['windows'] = [
+            {'id': 'seven_day', 'remaining_pct_before_reset': 40.0, 'seconds_until_reset': 2 * 3600},
+            {'id': 'five_hour', 'remaining_pct_before_reset': 95.0, 'seconds_until_reset': 5 * 3600},
+        ]
+        # Pool B (`claude-2`): 144h (6 days) until reset, exactly on the recovery line (elapsed 24/168 = 14.2857% -> 85.7143% left).
+        usage['accounts']['claude-2'] = {
+            'status': 'fresh', 'available': True, 'fetched_at': NOW.isoformat(),
+            'windows': [
+                {'id': 'seven_day', 'remaining_pct_before_reset': 100.0 * 144.0 / 168.0, 'seconds_until_reset': 144 * 3600},
+                {'id': 'five_hour', 'remaining_pct_before_reset': 95.0, 'seconds_until_reset': 5 * 3600},
+            ],
+        }
 
-        ample, tight = codex_cost('ample'), codex_cost('codex tight')
-        self.assertGreater(tight, ample)
-        self.assertGreater(tight, 0.0)
+        def run_case(hours):
+            original = allocator.load_five_axis
+            allocator.load_five_axis = lambda path=None: doc
+            try:
+                return allocator.plan(
+                    {'objective': 'frontier rewrite', 'expected_hours': hours,
+                     'profile': {**PROFILE, 'axis_demand': demand(2, 3, 3, 0), 'expected_hours': hours}},
+                    copy.deepcopy(usage), NOW, accounts=copy.deepcopy(acc),
+                    overrides=[], records=[], host_policy_config={'allowed_accounts': ['claude', 'claude-2']},
+                )
+            finally:
+                allocator.load_five_axis = original
+
+        # 3h task: Pool A (`opus55_high`) wins and enables fast mode (finishes in 2h before reset, X_own = 0, N = 0.7333).
+        d3 = run_case(3.0)
+        self.assertEqual(d3['choice'], 'opus55_high')
+        self.assertTrue(d3['selected_bundle'].get('fast'))
+        top3 = next(c for c in d3['ranking'] if c['id'] == 'opus55_high')
+        b3 = next(c for c in d3['ranking'] if c['id'] == 'claude-2__opus55_high')
+        self.assertAlmostEqual(top3['score'], 0.7333, places=3)
+        self.assertEqual(top3['components']['own_over_line_usd'], 0.0)
+        self.assertEqual(top3['components']['net_over_line_usd'], 0.0)
+        self.assertAlmostEqual(b3['components']['own_over_line_usd'], 68.58 - 3.0 * (2580.0 / 168.0), places=1)
+        self.assertAlmostEqual(b3['components']['net_over_line_usd'],
+                               b3['components']['own_over_line_usd'] - 1.0 * (1704.5 / 168.0), places=1)
+
+        # 6h task: Pool A (`opus55_high`) wins in normal mode (fast mode stays off because post-reset fast spend exceeds line;
+        # Pool A normal has own_over ~50.9 absorbed by Pool B's 92.1 under-line allowance -> net_over = 0, N = 0.7333 > Pool B's 0.7278).
+        d6 = run_case(6.0)
+        self.assertEqual(d6['choice'], 'opus55_high')
+        self.assertFalse(d6['selected_bundle'].get('fast'))
+        top6 = next(c for c in d6['ranking'] if c['id'] == 'opus55_high')
+        b6 = next(c for c in d6['ranking'] if c['id'] == 'claude-2__opus55_high')
+        self.assertAlmostEqual(top6['components']['own_over_line_usd'], 4.0 * 22.86 - 4.0 * (1704.5 / 168.0), places=1)
+        self.assertEqual(top6['components']['net_over_line_usd'], 0.0)
+        self.assertAlmostEqual(top6['score'], 0.7333, places=3)
+        self.assertAlmostEqual(b6['components']['own_over_line_usd'], 6.0 * 22.86 - 6.0 * (2580.0 / 168.0), places=1)
+        self.assertAlmostEqual(b6['components']['net_over_line_usd'],
+                               b6['components']['own_over_line_usd'] - 4.0 * (1704.5 / 168.0), places=1)
+        self.assertLess(b6['score'], top6['score'])
+
+    def test_image_input_exclusion_and_unknown_modality_mode_b(self):
+        """Round 11 item 4: when vision_tools >= 2, models with public image_input == 'no' are excluded; models with
+        unknown modality leave automatic routing under Mode B (dispatched with warning only when named via --model)."""
+        doc = document(
+            self.accounts['models'],
+            **{
+                'gpt-6.1-sol': row(0.85, usd=6.12, image_input='no'),
+                'claude-sonnet-5-5': row(0.85, usd=12.83, image_input='unknown'),
+                'claude-opus-5-5': row(0.85, usd=22.86, image_input='yes'),
+            },
+        )
+        # Level 2 (reading images) and Level 3 (operating GUI via screenshots):
+        for vis_level in (2, 3):
+            d = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 2, vis_level)})
+            sol_rows = self.rows_for(d, 'gpt-6.1-sol')
+            sonnet_rows = self.rows_for(d, 'claude-sonnet-5-5')
+            opus_rows = [c for c in self.rows_for(d, 'claude-opus-5-5') if not c['excluded']]
+            self.assertTrue(all(any('model does not accept image input' in e for e in c['excluded']) for c in sol_rows))
+            self.assertTrue(all(any('image_input modality has no cited source' in e for e in c['excluded']) for c in sonnet_rows))
+            self.assertTrue(opus_rows)
+        # Naming the unknown-modality model via --model dispatches it with a Mode B warning:
+        named = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 2, 2)},
+                          constraints={'model': 'claude-sonnet-5-5'})
+        chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
+        self.assertEqual(allocator.canonical(chosen['bundle']['model'], self.accounts), 'claude-sonnet-5-5')
+        self.assertIn('data error: image_input modality has no cited source; dispatched because it was named',
+                      ' '.join(chosen['notes']))
+        # Naming a model whose public data explicitly says no image input stays blocked even when named:
+        blocked = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 2, 2)},
+                            constraints={'model': 'gpt-6.1-sol'})
+        self.assertEqual(blocked['choice'], 'none')
+        # Level 0-1 (no image input needed): neither is excluded for modality.
+        text_only = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 2, 1)})
+        self.assertFalse(any('image input' in e or 'image_input' in e
+                             for c in text_only['ranking'] for e in c['excluded']))
+
+    def test_free_pool_mode_b_and_opencode_db_local_spend_lower_bound(self):
+        """Round 11 item 5: 'free' models are an ordinary quota pool; when capacity is unreadable (opencode), they are
+        marked capacity_unknown (out of automatic routing, surfaced in plan warnings and tray warnings, runnable via
+        --model with 'quota unknown, spend unpriced' warning, and opencode.db token counts x public list price give U)."""
+        import account_state
+        tray_dir = str(Path(__file__).resolve().parents[3] / 'tray')
+        if tray_dir not in sys.path:
+            sys.path.insert(0, tray_dir)
+        import router_data
+        doc = document(self.accounts['models'], **{'glm-5.3-flash-free': row(0.75, usd=1.50, image_input='no')})
+        acc = copy.deepcopy(self.accounts)
+        acc['accounts']['opencode']['bundles'] = {
+            'glm53_free': {'provider': 'opencode', 'harness': 'opencode', 'account': 'opencode', 'model': 'glm-5.3-flash-free'}
+        }
+        acc.setdefault('_discovery', {}).setdefault('accounts', {})['opencode'] = {
+            'usage': {'models': {'glm-5.3-flash-free': {'input': 1_000_000, 'output': 500_000, 'cache_read': 0, 'cost': 0.0}}}
+        }
+        auto = self.plan(acc, doc, profile={'axis_demand': demand(1, 2, 2, 0)})
+        glm_rows = self.rows_for(auto, 'glm-5.3-flash-free')
+        self.assertTrue(glm_rows)
+        self.assertTrue(all(any('capacity_unknown (quota unknown, spend unpriced)' in e for e in c['excluded'])
+                            for c in glm_rows))
+        self.assertTrue(any('opencode: capacity_unknown — quota unknown, spend unpriced' in w
+                            for w in auto['decision'].get('warnings', ())))
+        # Naming --model glm-5.3-flash-free runs it with the "quota unknown, spend unpriced" warning and local spend U:
+        named = self.plan(acc, doc, profile={'axis_demand': demand(1, 2, 2, 0)},
+                          constraints={'model': 'glm-5.3-flash-free'})
+        chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
+        self.assertEqual(allocator.canonical(chosen['bundle']['model'], acc), 'glm-5.3-flash-free')
+        self.assertIn('capacity_unknown (quota unknown, spend unpriced); dispatched because it was named',
+                      ' '.join(chosen['notes']))
+        self.assertIn('local opencode.db lower-bound spend', ' '.join(chosen['notes']))
+        # Tray / account_state warnings surface opencode when five_axis is enabled:
+        overlaid = copy.deepcopy(acc)
+        overlaid['scoring']['five_axis'] = {'enabled': True}
+        overlaid = allocator.five_axis_overlay(overlaid, doc)
+        self.assertGreater(overlaid['accounts']['opencode'].get('local_spend_usd', 0.0), 0.0)
+        ws = account_state.warnings(overlaid.get('_discovery'), overlaid['accounts'])
+        self.assertTrue(any('opencode:' in w and 'quota unknown, spend unpriced' in w for w in ws), ws)
+        self.assertTrue(overlaid['accounts']['opencode'].get('five_axis_free_pool'))
+
+    def test_fable_5_2_on_five_axis_path_and_never_beats_opus_5_5_via_artifacts(self):
+        """Round 11 item 6: claude-fable-5-2 has public five-axis scores (partial axes count missing components as 0),
+        labelled option-B fallback usd_per_hour, Anthropic fast-mode pricing ($16/$80 = 2x, 2.5x speed), and never beats
+        Opus 5.5 via data artifacts."""
+        shipped = allocator.load_five_axis()
+        fable52 = shipped['models']['claude-fable-5-2']
+        opus55 = shipped['models']['claude-opus-5-5']
+        self.assertEqual(fable52['usd_per_hour']['kind'], 'derived')
+        self.assertTrue(fable52['usd_per_hour']['fallback'])
+        self.assertGreater(fable52['usd_per_hour']['value'], opus55['usd_per_hour']['value'])
+        self.assertEqual(fable52['fast_mode']['status'], 'ok')
+        self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
+        self.assertEqual(fable52['image_input']['status'], 'unknown')
+        # Partial axes on Fable 5.2 count missing Arena components as 0, so its module_precision and vision_tools are <= Opus 5.5.
+        self.assertLessEqual(fable52['scores']['module_precision'], opus55['scores']['module_precision'])
+        self.assertLessEqual(fable52['scores']['vision_tools'], opus55['scores']['vision_tools'])
+
+    def test_no_history_read_by_five_axis_economics(self):
+        """Round 11 item 2: five-axis economics reads ONLY current-period window state (C, U, t0, T) + in-flight leases +
+        public model data. Fails if demand_forecast, window_cost, usage_samples, capacity.json, or completed ledger
+        history is read or changes any five-axis score."""
+        from unittest.mock import patch
+        doc = document(self.accounts['models'])
+        acc = copy.deepcopy(self.accounts)
+        acc['scoring']['five_axis'] = {'enabled': True}
+        usage = self.usage(acc, 'ample')
+        # Inject poisoned 24h burn rates into usage windows and completed history into records:
+        usage_poisoned = copy.deepcopy(usage)
+        for row_u in usage_poisoned['accounts'].values():
+            for w in row_u.get('windows', ()):
+                w['pct_per_hour_24h'] = 999.0
+                w['historical_samples'] = [1, 2, 3]
+        completed_history = [
+            {'ts': '2026-11-04T08:00:00Z', 'status': 'completed',
+             'bundle': {'account': 'claude', 'model': 'claude-opus-5-5', 'effort': 'high', 'bundle_id': 'opus55_high'},
+             'expected_usd': 500.0, 'expected_hours': 10.0}
+        ]
+        original = allocator.load_five_axis
+        allocator.load_five_axis = lambda path=None: doc
+        try:
+            with patch.object(allocator, 'demand_forecast', side_effect=AssertionError('demand_forecast must not be called on five-axis path')), \
+                    patch.object(allocator, 'window_cost', side_effect=AssertionError('window_cost must not be called on five-axis path')):
+                clean = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'axis_demand': demand(2, 3, 2, 0)}},
+                                       usage, NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
+                                       host_policy_config=self.policy)
+                poisoned = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'axis_demand': demand(2, 3, 2, 0)}},
+                                          usage_poisoned, NOW, accounts=copy.deepcopy(acc), overrides=[],
+                                          records=completed_history, host_policy_config=self.policy)
+        finally:
+            allocator.load_five_axis = original
+        self.assertEqual(clean['choice'], poisoned['choice'])
+        self.assertEqual({c['id']: c['score'] for c in clean['ranking']},
+                         {c['id']: c['score'] for c in poisoned['ranking']})
 
     def test_classifier_axis_demand_is_parsed_and_used(self):
         prof = allocator.validate_profile({**PROFILE, 'axis_demand': demand(1, 2, 3, 0)})
@@ -372,20 +617,12 @@ class FiveAxisTests(unittest.TestCase):
         self.assertNotIn('axis_demand', off['properties'])
         self.assertEqual(off, route_judge.scorer_schema(allocator, caps))     # the shipped policy leaves it off
 
-    def test_waiting_cost_scales_with_demand_instead_of_fixed_deferred_start_penalty(self):
-        """Rounds 8-9 (user): no fixed 0.15 delay penalty on the five-axis path; waiting cost is linear in `(1 - target)`.
+    def test_can_wait_hours_defers_only_for_higher_net_score_without_fixed_wait_cost_constant(self):
+        """Rounds 8-11: no fixed 0.15 delay penalty and no 0.06 five_axis_wait_cost constant on the five-axis path.
         Without `can_wait_hours`, `plan()` starts the best ready-now candidate immediately; when `can_wait_hours` is given,
-        routine tasks still start now while high-demand tasks prefer waiting for the capable model's short-window reset."""
-        policy = self.accounts['scoring']
-        per_hour = allocator.exchange_rate(policy, 'shortage_loss_per_worker_hour')
-        low_t = allocator.five_axis_targets(demand(0, 1, 1, 0))
-        high_t = allocator.five_axis_targets(demand(3, 3, 0, 0))
-        low_wait = allocator.five_axis_wait_cost(3.0, demand(0, 1, 1, 0), low_t, policy)
-        high_wait = allocator.five_axis_wait_cost(3.0, demand(3, 3, 0, 0), high_t, policy)
-        self.assertAlmostEqual(low_wait, round(per_hour * 3.0 * (1.0 - 0.8 / 3.0), 4))
-        self.assertAlmostEqual(high_wait, round(per_hour * 3.0 * (1.0 - 0.8), 4))
-        self.assertGreater(low_wait, high_wait * 3)
-        self.assertGreater(high_wait, 0.0)
+        routine tasks (already reaching the capped fit on a ready-now owner) still start now while frontier tasks prefer
+        waiting for the higher-N model's short-window reset."""
+        self.assertFalse(hasattr(allocator, 'five_axis_wait_cost'))
         base = {name: row(0.55, usd=5.0) for name, info in self.accounts['models'].items() if isinstance(info, dict)}
         doc = document(self.accounts['models'],
                        **{**base,
@@ -397,7 +634,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(immediate['decision']['action'], 'start')
         self.assertFalse(immediate['decision']['needs_user_decision'])
         self.assertEqual(immediate['selected_bundle']['account'], 'codex')
-        self.assertEqual(immediate['decision']['better_if_waiting']['bundle'], 'opus55_max')
+        self.assertIn(immediate['decision']['better_if_waiting']['bundle'], ('opus55_xhigh', 'opus55_max'))
         # With can_wait_hours: routine starts now, frontier defers for the capable model's reset.
         routine = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
                             profile={'axis_demand': demand(0, 1, 1, 0)})
@@ -613,11 +850,24 @@ class SourceMergeTests(unittest.TestCase):
         self.assertEqual(usd['value'], 15.0)
         self.assertEqual(scorer.components(meas['models']['m'], 'divergence')['creative']['value'], 0.8)
 
-    def test_duration_is_neutral_only_when_a_time_based_source_is_merged(self):
-        timed = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35})
-        untimed = self.fa.pick_duration(self.fa.pick_usd(self.entries()[3:]), {'duration_multiplier': 1.35})
-        self.assertEqual(timed['value'], 1.0)
-        self.assertEqual((untimed['value'], untimed['kind']), (1.35, 'community'))
+    def test_duration_is_from_arena_time_per_task_or_aa_fallback_never_flat_one(self):
+        arena_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high',
+                     'time_per_task_min': 11.7, 'output_tokens_per_task': 19400, 'as_of': '2026-11-08'}]
+        anchor_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max',
+                      'time_per_task_min': 16.3, 'output_tokens_per_task': 24300, 'as_of': '2026-11-08'}]
+        d_arena = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35}, arena_tp, anchor_tp)
+        self.assertEqual((d_arena['value'], d_arena['source'], d_arena['fallback']), (round(11.7 / 16.3, 4), 'arena.agent_sessions', False))
+        self.assertEqual((d_arena['time_per_task_min'], d_arena['output_tokens_per_task']), (11.7, 19400))
+        aa_tp = [{'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'output_tps': 166.58}]
+        d_aa = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35}, aa_tp,
+                                     [{'source': 'aa.cost_time', 'effort': 'high', 'output_tps': 83.29}])
+        self.assertEqual((d_aa['value'], d_aa['source'], d_aa['fallback']), (0.5, 'aa.cost_time', True))
+        d_missing = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35}, (), ())
+        self.assertEqual(d_missing['status'], 'missing')
+        shipped = allocator.load_five_axis()
+        mults = {m: r['duration_multiplier']['value'] for m, r in shipped['models'].items()
+                 if r.get('duration_multiplier', {}).get('value') is not None}
+        self.assertGreater(len(set(mults.values())), 5)
 
 
 class CommunityCapacityTests(unittest.TestCase):
@@ -841,7 +1091,9 @@ class DerivedUsdTests(unittest.TestCase):
         self.assertTrue(usd['m']['fallback'])
         self.assertEqual(usd['m']['kind'], 'derived')
         self.assertEqual(usd['unlisted']['status'], 'missing')
-        self.assertEqual(self.fa.pick_duration(usd['m'], {'duration_multiplier': 1.35})['value'], 1.0)
+        self.assertEqual(self.fa.pick_duration(usd['m'], {'duration_multiplier': 1.35},
+                                               [{'source': 'aa.cost_time', 'effort': 'high', 'output_tps': 100.0}],
+                                               [{'source': 'aa.cost_time', 'effort': 'high', 'output_tps': 50.0}])['value'], 0.5)
         # Round 8: when arena.agent_sessions is present, it is the primary source (kind community, fallback False).
         builder.out['m']['usd_per_hour'].append({'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max',
                                                  'value': 6.125, 'as_of': '2026-11-08', 'url': 'https://arena.ai/leaderboard/agent',

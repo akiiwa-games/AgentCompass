@@ -186,6 +186,40 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertNotIn('stale_reading', card_unavail['badge'])
         self.assertIn('额度接口暂不可用', card_unavail['badge'])
 
+    def test_five_axis_free_pool_capacity_unknown_shows_mode_b_warning_and_local_spend(self):
+        allocator, router = Mock(), Mock()
+        inventory = Mock(quota_sources=real_inventory.quota_sources)
+        allocator.load_accounts.return_value = {
+            'accounts': {
+                'opencode': {
+                    'label': 'OpenCode Zen',
+                    'capacity_unknown': True,
+                    'five_axis_free_pool': True,
+                    'local_spend_usd': 1.85,
+                    'local_spend_tokens': 42000,
+                    'local_spend_source': 'opencode_db_token_list_price_lower_bound',
+                    'windows': {},
+                    'bundles': {},
+                }
+            },
+            '_discovery': {'accounts': {'opencode': {'family': 'opencode', 'status': 'ready'}}},
+        }
+        allocator.host_policy.load_policy.return_value = None
+        allocator.host_policy.account_allowed.return_value = True
+        router.usage_snapshot.return_value = {'accounts': {}}
+        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+             patch.dict(sys.modules, {'provider_inventory': inventory}), \
+             patch.object(router_data, '_read_json', return_value={}), \
+             patch.object(router_data, 'pool_reservations', return_value={}), \
+             patch.object(router_data.router_priority, 'targets', return_value=[]), \
+             patch.object(router_data.plugins, 'load', return_value={}):
+            card = router_data.account_cards()[0]
+        self.assertEqual(card['kind'], 'warn')
+        self.assertTrue(card.get('capacity_unknown'))
+        self.assertIn('不参与自动路由', card['badge'])
+        self.assertIn('capacity_unknown', card['usage_note'])
+        self.assertIn('$1.85', card['usage_note'])
+
 
 if __name__ == '__main__':
     unittest.main()

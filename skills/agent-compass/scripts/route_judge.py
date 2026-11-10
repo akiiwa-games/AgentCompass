@@ -2218,6 +2218,11 @@ def record_constraint(args, task=None):
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
+    overlaid_accounts = allocator.five_axis_overlay(accounts)
+    overlaid_spec = (overlaid_accounts.get('accounts') or {}).get(args.account) or {}
+    five_on = bool(overlaid_accounts.get('_five_axis'))
+    if five_on and overlaid_spec.get('capacity_unknown') and overlaid_spec.get('five_axis_free_pool'):
+        warnings = [f"{args.account}/{pin.model}: capacity_unknown (quota unknown, spend unpriced); dispatched because the user named it", *warnings]
     if retrying:
         warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
                     "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
@@ -2234,7 +2239,10 @@ def record_constraint(args, task=None):
     if task:
         try:
             plan_task = {**task, 'force_fast': True} if fast_requested else task
-            plan = allocator.plan(plan_task, usage, now, records=records if records is not None else read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
+            plan_records = (records if records is not None else
+                            dispatch_flow.reservation_records(read_only=not LEDGER_WRITES) if five_on and not (task.get('chain') or {}).get('id') else
+                            read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
+            plan = allocator.plan(plan_task, usage, now, records=plan_records)
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
@@ -2556,7 +2564,6 @@ def plan_stage(document, args):
             pass
     now = datetime.now(timezone.utc)
     usage = usage_snapshot(args.usage_cache, None, now)
-    records = read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES)
     unavailable = list(document['unavailable']) if isinstance(document.get('unavailable'), list) else []
     needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
     if getattr(args, 'fast', False):
@@ -2566,6 +2573,14 @@ def plan_stage(document, args):
     capabilities = allocator.load_capabilities()
     loaded_accounts = allocator.load_accounts()
     policy = loaded_accounts['scoring']
+    five_axis_on = allocator.five_axis_config(policy) is not None
+    guard_cfg = capabilities.get('remote_reroute_guard') or {}
+    need_ledger = (not five_axis_on
+                   or bool((task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else False)
+                   or bool(guard_cfg.get('enabled') is True and isinstance(guard_cfg.get('bundle_id'), str)
+                           and guard_cfg.get('bundle_id') in unavailable))
+    records = ((read_ledger() if need_ledger else [])
+               + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
     extra_alerts, scorer = [], None
     hours_estimate = None
     live_disabled = os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1'

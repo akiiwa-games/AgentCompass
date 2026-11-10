@@ -6,7 +6,7 @@ No family-name inference: a new Opus/GPT model needs a verified contract.
 
 MODELS = {
     'codex': frozenset(('gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna')),
-    'claude': frozenset(('claude-opus-5-5', 'claude-opus-5', 'claude-opus-4-8')),
+    'claude': frozenset(('claude-opus-5-5', 'claude-fable-5-2', 'claude-opus-5', 'claude-opus-4-8')),
 }
 
 

@@ -155,26 +155,42 @@ EFFORT_WORDS = {'max': 'max', 'xhigh': 'xhigh', 'high': 'high', 'medium': 'mediu
                 'minimal': 'minimal', 'non-reasoning': 'none'}
 
 
+def _aa_companion_html(target):
+    """When building from a dated snapshot (e.g. 20261109) alongside 20261110 where AA renamed Fable 5.1 to 5.2,
+    include companion AA HTML files so both Fable 5.1 and Fable 5.2 retain their cited AA records."""
+    out = [target / 'aa-models.html']
+    if target.name == '20261109' and (target.parent / '20261110' / 'aa-models.html').exists():
+        out.append(target.parent / '20261110' / 'aa-models.html')
+    elif target.name == '20261110' and (target.parent / '20261109' / 'aa-models.html').exists():
+        out.append(target.parent / '20261109' / 'aa-models.html')
+    return [p for p in out if p.exists()]
+
+
 def artificial_analysis(target, field='index'):
     """{base model: {effort or '': value}} from the AA models leaderboard table; `field` is 'index' (Intelligence Index)
     or 'cost' (cost per task, USD)."""
-    raw = (target / 'aa-models.html').read_text(encoding='utf-8', errors='ignore')
-    table = re.search(r'<table.*?</table>', raw, re.S).group(0)
     out = defaultdict(dict)
-    for row in re.findall(r'<tr.*?</tr>', table, re.S):
-        cells = [re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', c))).strip()
-                 for c in re.findall(r'<t[hd].*?</t[hd]>', row, re.S)]
-        if len(cells) < 4 or not re.fullmatch(r'\d+(\.\d+)?', cells[3]):
-            continue
-        tag = variant(cells[0]).replace(' with fallback', '').strip().lower()
-        if field == 'cost':
-            cost = re.fullmatch(r'\$([\d.]+)', cells[4])
-            if not cost:
+    for html_path in _aa_companion_html(target):
+        raw = html_path.read_text(encoding='utf-8', errors='ignore')
+        table = re.search(r'<table.*?</table>', raw, re.S).group(0)
+        present_bases = set(out)
+        for row in re.findall(r'<tr.*?</tr>', table, re.S):
+            cells = [re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', c))).strip()
+                     for c in re.findall(r'<t[hd].*?</t[hd]>', row, re.S)]
+            if len(cells) < 4 or not re.fullmatch(r'\d+(\.\d+)?', cells[3]):
                 continue
-            value = float(cost.group(1))
-        else:
-            value = float(cells[3])
-        out[base_name(cells[0])][EFFORT_WORDS.get(tag, tag)] = value
+            b = base_name(cells[0])
+            if b in present_bases:
+                continue
+            tag = variant(cells[0]).replace(' with fallback', '').strip().lower()
+            if field == 'cost':
+                cost = re.fullmatch(r'\$([\d.]+)', cells[4])
+                if not cost:
+                    continue
+                value = float(cost.group(1))
+            else:
+                value = float(cells[3])
+            out[b][EFFORT_WORDS.get(tag, tag)] = value
     return dict(out)
 
 
@@ -185,17 +201,22 @@ def aa_records(target):
     """The model records embedded in the AA leaderboard page (Next.js RSC stream): one dict per listed variant with
     `name`, `intelligenceIndex`, `intelligenceIndexCostPerTask` (USD), `intelligenceIndexTimePerTask` (s), prices and
     `scores` (sub-benchmarks, fractions)."""
-    raw = (target / 'aa-models.html').read_text(encoding='utf-8', errors='ignore')
-    stream = ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
-    dec, out, seen = json.JSONDecoder(), [], set()
-    for m in re.finditer(r'\{"slug":"', stream):
-        try:
-            obj, _ = dec.raw_decode(stream, m.start())
-        except ValueError:
-            continue
-        if 'intelligenceIndex' in obj and obj.get('name') not in seen:
-            seen.add(obj.get('name'))
-            out.append(obj)
+    dec, out, seen, seen_bases = json.JSONDecoder(), [], set(), set()
+    for html_path in _aa_companion_html(target):
+        raw = html_path.read_text(encoding='utf-8', errors='ignore')
+        stream = ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
+        prior_bases = set(seen_bases)
+        for m in re.finditer(r'\{"slug":"', stream):
+            try:
+                obj, _ = dec.raw_decode(stream, m.start())
+            except ValueError:
+                continue
+            name = obj.get('name')
+            b = base_name(name) if name else None
+            if 'intelligenceIndex' in obj and name not in seen and b not in prior_bases:
+                seen.add(name)
+                seen_bases.add(b)
+                out.append(obj)
     return out
 
 
@@ -219,6 +240,17 @@ def openrouter(target):
                                                                      ('cache_read', 'input_cache_read')) if p.get(src) not in (None, '')}
         except (TypeError, ValueError, KeyError):
             continue
+    return out
+
+
+def openrouter_modalities(target):
+    """{model id: [input_modalities]} from OpenRouter's `/api/v1/models` `architecture.input_modalities`."""
+    rows = json.loads((target / 'openrouter-models.json').read_text(encoding='utf-8')).get('data') or []
+    out = {}
+    for r in rows:
+        mods = (r.get('architecture') or {}).get('input_modalities')
+        if r.get('id') and isinstance(mods, list) and mods:
+            out[r['id']] = [str(m).lower() for m in mods if isinstance(m, str)]
     return out
 
 

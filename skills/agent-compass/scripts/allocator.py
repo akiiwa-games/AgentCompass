@@ -550,7 +550,7 @@ def load_accounts(path=None):
                         bundle['_harness_disabled'] = True
                         bundle['_model_disabled'] = bundle.get('disabled', False)
                         bundle['disabled'] = True
-    override = None if path else capacity_override_path()
+    override = None if path or five_axis_config(accounts.get('scoring')) is not None else capacity_override_path()
     if override is not None:
         try:
             measured = json.loads(override.read_text(encoding='utf-8-sig'))
@@ -805,44 +805,14 @@ def inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records
     return sum(active.values())
 
 
-def five_axis_pacing(state, forecast, policy, pacing):
-    """The pacing shadow price of one long window on the five-axis path (round 6, user 2026-11-09): how much of a
-    marginal unit of the window other work will want before the window ends. Projected demand over the
-    rest of the window (the allocator's forecast: observed rate, else the period average, else the straight line, never
-    below `demand_pace_floor_ratio` of the straight line) over the usable remainder, times where usage stands against an
-    even pace ((used + k) / (elapsed + k), k = `pace_smoothing`; ahead of pace raises it). It is not zero while the
-    window is far from empty: a window that will be needed later is worth something at every point of the period. Not
-    capped at 1: above 1 demand outruns the window, and the price has to keep rising to ration it (a cap held the price
-    flat from the first hour of a heavy week, so running ahead of pace could not raise it)."""
-    full, hours = state.get('full', 100.0), max(float(state['hours']), 1e-6)
-    rate = max(float(forecast[2] or 0.0), float(policy.get('demand_pace_floor_ratio', 0.5)) * full / hours)
-    demand = rate * max(0.0, state['end_hours'])
-    usable = state['remaining'] - policy['safety_margin_pct']
-    elapsed = clamp(1.0 - state.get('natural_reset_hours', state['reset_hours']) / hours, 0.0, 1.0)
-    used = clamp(1.0 - state['remaining'] / full, 0.0, 1.0)
-    k = float(pacing.get('pace_smoothing', 0.1))
-    pace = (used + k) / (elapsed + k)
-    pressure = demand / usable if usable > 0 else float('inf')
-    pressure = min(pressure, 99.0)      # an empty usable remainder: the shortage term and the reserve take over
-    return {'price': round(pressure * pace, 4), 'pressure': round(pressure, 4),
-            'pace': round(pace, 4), 'demand_pct': round(demand, 1), 'used_pct': round(100 * used, 1),
-            'elapsed_pct': round(100 * elapsed, 1)}
-
-
-def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step_usd=None, unit=None, pacing=None):
+def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step_usd=None, unit=None):
     """One window's share of the opportunity cost: the other work that spending `step` here would push past the
     window's end (expected shortage with the step minus without it), valued at list price against the window's USD
     capacity (explicit `capacity_usd`, else the derived pool) times the opportunity exchange
     (`exchange_rate`, preferring `scoring.opportunity_exchange`). Only a window with no USD
     capacity at all counts worker-hours, at this bundle's own burn (`unit`, %/worker-hour) or the account prior if
     higher: dividing a high-burn model's shortage by a cheap model's prior inflated it (Argon 1.6%/h over Flash
-    0.2%/h was 8x, fixed 2026-10-27).
-
-    On the five-axis path (`pacing`, round 6) displaced work is counted in hours of the window's reference model at
-    `score_per_displaced_worker_hour` (option-B usd runs about 6.6x the shipped usd scale the per-usd exchange was set on:
-    Opus $49.2/h against $7.5/h), and the window also charges its pacing cost: the step in reference-model hours times
-    the same exchange times `five_axis_pacing`. The window costs the larger of the two (both price the same displaced
-    work: the shortage term its tail, the pacing term its expectation), plus the scarcity term."""
+    0.2%/h was 8x, fixed 2026-10-27)."""
     mean, sd, rate, source = forecast
     remaining, end = state['remaining'], state['end_hours']
     usable = remaining - policy['safety_margin_pct']       # other work cannot use the reserve either
@@ -854,18 +824,7 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
     real_step_usd = (step * capacity / 100.0) if capacity else (step_usd if step_usd is not None else (step * eff_cap_usd / 100.0 if eff_cap_usd else None))
     rem_usd = (remaining * eff_cap_usd / 100.0) if eff_cap_usd else None
     after_usd = (rem_usd - real_step_usd) if (rem_usd is not None and real_step_usd is not None) else None
-    ref_usd = (pacing or {}).get('reference_usd_per_hour')
-    pace_row = None
-    if eff_cap_usd and ref_usd:
-        displaced = shortage * eff_cap_usd / 100
-        per_hour = exchange_rate(policy, 'shortage_loss_per_worker_hour')
-        cost = per_hour * displaced / ref_usd
-        if real_step_usd is not None and pacing.get('pace', True):
-            pace_row = five_axis_pacing(state, forecast, policy, pacing)
-            pace_row['reference_usd_per_hour'] = round(ref_usd, 4)
-            pace_row['cost'] = round(per_hour * real_step_usd / ref_usd * pace_row['price'], 4)
-            cost = max(cost, pace_row['cost'])
-    elif eff_cap_usd:
+    if eff_cap_usd:
         displaced = shortage * eff_cap_usd / 100
         cost = exchange_rate(policy, 'shortage_loss_per_usd') * displaced
     else:
@@ -895,8 +854,6 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
     reset_bonus = round(float(policy.get('reset_bonus_max', 1.2)) * sunk_weight, 4) if sunk_weight > 0 else 0.0
     cost *= 1.0 - sunk_weight
     scarcity_cost *= 1.0 - sunk_weight
-    if pace_row is not None:
-        pace_row['cost'] = round(pace_row['cost'] * (1.0 - sunk_weight), 4)
     if source == 'observed' and mean > remaining:
         result['notes'].append(f"{wid}: other work at the observed {rate:.2f}%/h wants ~{mean:.0f}% before its "
                                f"{'expiry' if expires_first else 'reset'} in {end:.0f}h; {remaining:.0f}% is left")
@@ -913,7 +870,6 @@ def window_cost(spec, wid, state, step, forecast, policy, result, now=None, step
             ('usd_displaced' if eff_cap_usd else 'worker_hours_displaced'): round(displaced, 3),
             **({'reset_sunk_weight': sunk_weight, 'reset_bonus': reset_bonus, 'surplus_pct': round(excess_pct, 1)}
                if reset_bonus > 0 else {}),
-            **({'pacing': pace_row} if pace_row is not None else {}),
             'opportunity_cost': round(cost, 4)}
 
 
@@ -2145,11 +2101,9 @@ FIVE_AXIS_THINKING = ('divergence', 'global_rigor', 'module_precision')
 FIVE_AXIS_INDEX_PER_TIER = 1 / 0.0495
 FIVE_AXIS_ANCHOR_VALUE = 0.8     # the anchor model's value on every axis (calibration/measurements.py ANCHOR_VALUE)
 FIVE_AXIS_DEFAULTS = {
-    'weights': {'fit': 0.4, 'ability': 0.0, 'continuity': 0.25},
+    'weights': {'fit': 1.0, 'ability': 0.0, 'continuity': 0.25},
     'demanded_level': 1,         # rule B: an axis demanded at this level or above must have data
     'shortfall_weight': 1.0,     # extra fit lost per point of axis score below the demanded target (round 7)
-    'pace': True,                # the pacing cost of each long window (round 6); False = shortage-only, for audits
-    'pace_smoothing': 0.1,       # k in the pacing price's (used + k) / (elapsed + k): keeps the period start finite
 }
 FIVE_AXIS_DEMAND_SCHEMA = {
     'type': 'object', 'additionalProperties': False, 'required': list(FIVE_AXES),
@@ -2210,20 +2164,101 @@ def validate_axis_demand(raw):
     return out
 
 
+def opencode_local_spend_usd(models_table, discovery=None):
+    """Convert local `opencode.db` token counts into a lower-bound USD spend per model using public list prices."""
+    import sqlite3
+    prices = {}
+    for m_name, m_info in (models_table or {}).items():
+        if not isinstance(m_info, dict):
+            continue
+        p = ((m_info.get('five_axis') or {}).get('list_price_per_m')) or {}
+        if isinstance(p.get('input'), (int, float)) and isinstance(p.get('output'), (int, float)):
+            prices[m_name] = (float(p['input']), float(p['output']))
+            for alias in m_info.get('aliases') or ():
+                prices[str(alias)] = (float(p['input']), float(p['output']))
+    if not prices:
+        return {}
+    spend = {}
+    disc_models = (((discovery or {}).get('accounts') or {}).get('opencode') or {}).get('usage', {}).get('models') or {}
+    for model_id, m_row in disc_models.items():
+        if not isinstance(m_row, dict):
+            continue
+        key = str(model_id).strip()
+        rate = prices.get(key)
+        if rate is None:
+            for cand_name, cand_rate in prices.items():
+                if key == cand_name or key.endswith('/' + cand_name) or cand_name.startswith(key):
+                    rate = cand_rate
+                    key = cand_name
+                    break
+        if rate is None:
+            continue
+        p_in, p_out = rate
+        in_total = float(m_row.get('input') or 0) + 0.1 * float(m_row.get('cache_read') or 0) + float(m_row.get('cache_write') or 0)
+        out_total = float(m_row.get('output') or 0) + float(m_row.get('reasoning') or 0)
+        usd = (in_total * p_in + out_total * p_out) / 1e6
+        if usd > 0:
+            spend[key] = round(max(spend.get(key, 0.0), usd), 4)
+    db_path = Path(os.environ.get('OPENCODE_DB_PATH')
+                   or (Path.home() / '.local' / 'share' / 'opencode' / 'opencode.db'))
+    if not db_path.exists():
+        return spend
+    try:
+        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=1.0)
+        try:
+            rows = conn.execute(
+                "SELECT json_extract(data, '$.modelID'), "
+                "SUM(COALESCE(json_extract(data, '$.tokens.input'), 0)), "
+                "SUM(COALESCE(json_extract(data, '$.tokens.output'), 0) + COALESCE(json_extract(data, '$.tokens.reasoning'), 0)), "
+                "SUM(COALESCE(json_extract(data, '$.tokens.cache.read'), 0)), "
+                "SUM(COALESCE(json_extract(data, '$.tokens.cache.write'), 0)) "
+                "FROM message WHERE json_extract(data, '$.role') = 'assistant' "
+                "GROUP BY json_extract(data, '$.modelID')"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return spend
+    db_spend = {}
+    for model_id, tok_in, tok_out, tok_cread, tok_cwrite in rows:
+        if not model_id:
+            continue
+        key = str(model_id).strip()
+        rate = prices.get(key)
+        if rate is None:
+            for cand_name, cand_rate in prices.items():
+                if key == cand_name or key.endswith('/' + cand_name) or cand_name.startswith(key):
+                    rate = cand_rate
+                    key = cand_name
+                    break
+        if rate is None:
+            continue
+        p_in, p_out = rate
+        in_total = float(tok_in or 0) + 0.1 * float(tok_cread or 0) + float(tok_cwrite or 0)
+        out_total = float(tok_out or 0)
+        usd = (in_total * p_in + out_total * p_out) / 1e6
+        db_spend[key] = round(db_spend.get(key, 0.0) + usd, 4)
+    for k, v in db_spend.items():
+        spend[k] = max(spend.get(k, 0.0), v)
+    return spend
+
+
 def five_axis_overlay(accounts, data=None):
     """A copy of `accounts` carrying the five-axis data, or `accounts` itself when the path is off.
 
-    Each model row gets `five_axis` {scores, missing, index, usd_status}; usd_per_hour and duration_multiplier become
-    the merged cited values (an unsourced usd is removed, not defaulted). The scalar tier is left in place but the
-    five-axis path does not read it. Each windowed account's capacity is the data's community real-usage figure for
-    its plan and window (round 4), replacing the packaged figure and any dated change; a window without one is marked
-    unknown, with no template fallback."""
+    Each model row gets `five_axis` {scores, missing, index, usd_status, image_input, fast_mode, duration_by_effort};
+    usd_per_hour and duration_multiplier become the merged cited values (an unsourced usd is removed, not defaulted).
+    The scalar tier is left in place but the five-axis path does not read it. Each windowed account's capacity is the
+    data's community real-usage figure for its plan and window (round 4), replacing the packaged figure and any dated
+    change; a window without one is marked unknown, with no template fallback. Free pools are ordinary quota pools with
+    C/U/t0/T (round 11): when capacity is unreadable, they enter mode B (`capacity_unknown`), out of automatic routing."""
     cfg = five_axis_config(accounts.get('scoring'))
     if cfg is None:
         return accounts
     import copy
     data = data if data is not None else load_five_axis(cfg.get('path'))
     out = copy.deepcopy(accounts)
+    out.pop('_measured', None)      # quota economy v2 never reads historical rate observations from capacity.json
     rows = data.get('models') or {}
     indexes = [r.get('intelligence_index') for r in rows.values() if isinstance(r.get('intelligence_index'), (int, float))]
     median_index = statistics.median(indexes) if indexes else 45.0
@@ -2232,20 +2267,63 @@ def five_axis_overlay(accounts, data=None):
             continue
         row = rows.get(name)
         usd = ((row or {}).get('usd_per_hour') or {}).get('value')
+        img = (row or {}).get('image_input') or {'status': 'missing'}
+        fast = (row or {}).get('fast_mode') or {'status': 'not_offered'}
+        dur_row = (row or {}).get('duration_multiplier') or {}
+        price_m = ((row or {}).get('usd_per_hour') or {}).get('list_price_per_m')
         info['five_axis'] = {'scores': {a: float(((row or {}).get('scores') or {}).get(a) or 0.0) for a in FIVE_AXES},
                              'missing': list(FIVE_AXES) if row is None else list(row.get('missing_axes') or ()),
                              'index': (row or {}).get('intelligence_index') or median_index,
-                             'usd_status': 'ok' if usd is not None else 'missing'}
+                             'usd_status': 'ok' if usd is not None else 'missing',
+                             'image_input': img,
+                             'fast_mode': fast,
+                             'duration_by_effort': dict(dur_row.get('by_effort') or {}),
+                             'duration_status': dur_row.get('status', 'missing'),
+                             **({'list_price_per_m': price_m} if price_m else {})}
         if usd is not None:
             info['usd_per_hour'] = usd
         else:
             info.pop('usd_per_hour', None)
-        duration = ((row or {}).get('duration_multiplier') or {}).get('value')
+        duration = dur_row.get('value')
         if duration is not None:
             info['duration_multiplier'] = float(duration)
+        else:
+            info.pop('duration_multiplier', None)
+    local_spend = opencode_local_spend_usd(out.get('models') or {}, out.get('_discovery'))
     community = data.get('capacity') or {}
     for name, spec in (out.get('accounts') or {}).items():
-        if not isinstance(spec, dict) or not spec.get('windows') or spec.get('unmetered'):
+        if not isinstance(spec, dict):
+            continue
+        spec.pop('observed', None)          # never feed 3h/24h historical rates into five-axis economics
+        spec.pop('free_usage_bonus', None)  # free pools are ordinary quota pools, never given an unlimited bonus
+        is_free_pool = bool(spec.get('unlimited') or spec.get('unmetered') or str(spec.get('plan') or '') == 'free'
+                            or str(name).startswith('opencode'))
+        if is_free_pool and spec.get('billing') != 'metered':
+            # Round 11 (user 2026-11-10): "free" models are an ordinary quota pool (same C/U/t0/T; a starter allowance
+            # has T = inf so recovery line is 0 and X = S). Remove unmetered / unlimited / $0 spend on the five-axis path.
+            spec.pop('unmetered', None)
+            spec.pop('unlimited', None)
+            spec['five_axis_free_pool'] = True
+            if not spec.get('windows'):
+                spec['windows'] = {'allowance': {'hours': None}}
+                spec['capacity_usd'] = {}
+                spec['capacity_unknown'] = True
+                spec['capacity_source'] = {'allowance': {'status': 'missing', 'plan': spec.get('plan') or 'free'}}
+            acct_spend = 0.0
+            seen_models = set()
+            for b in (spec.get('bundles') or {}).values():
+                if not isinstance(b, dict):
+                    continue
+                m_key = canonical(b.get('model') or '', out)
+                if m_key in local_spend and m_key not in seen_models:
+                    seen_models.add(m_key)
+                    acct_spend += local_spend[m_key]
+            if acct_spend == 0.0 and str(name).startswith('opencode'):
+                acct_spend = sum(local_spend.values())
+            if acct_spend > 0:
+                spec['local_spend_usd'] = round(acct_spend, 4)
+                spec['local_spend_source'] = 'opencode.db token counts x public list price (lower bound)'
+        if not spec.get('windows') or spec.get('unmetered'):
             continue
         family = str(provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_family(spec) or '')
         family = family.removesuffix('-resilient')
@@ -2256,28 +2334,29 @@ def five_axis_overlay(accounts, data=None):
                                           and str(provider_inventory.account_family(n, out, out.get('_discovery') or {})
                                                   or account_family(s) or '') == 'codex'), plan)
         rows_ = (community.get(family) or {}).get(plan) or {}
+        explicit_caps = spec.get('capacity_usd') if isinstance(spec.get('capacity_usd'), dict) else {}
         caps = {wid: float(rows_[wid]['capacity_usd']) for wid in spec['windows']
                 if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
+        if not caps and is_free_pool and explicit_caps:
+            caps = {wid: float(v) for wid, v in explicit_caps.items()
+                    if wid in spec['windows'] and isinstance(v, (int, float)) and v > 0}
         spec['capacity_usd'] = caps
         spec.pop('capacity_change', None)       # the community measurement is the capacity in effect when measured
-        # Displaced work is counted in hours of the window's reference model (round 6), at its merged usd.
-        spec['reference_usd_per_hour'] = {
-            wid: float(v) for wid in spec['windows']
-            if isinstance(v := (((rows.get((rows_.get(wid) or {}).get('reference_model') or '') or {}).get('usd_per_hour')
-                                 or {}).get('value')), (int, float)) and v > 0}
-        spec['capacity_source'] = {wid: {'status': (rows_.get(wid) or {}).get('status', 'missing'),
+        spec['capacity_source'] = {wid: {'status': ('explicit' if wid in caps and wid not in rows_
+                                                    else (rows_.get(wid) or {}).get('status', 'missing')),
                                          'age_days': (rows_.get(wid) or {}).get('age_days'), 'plan': plan or None}
                                    for wid in spec['windows']}
         unknown = [wid for wid in spec['windows'] if wid not in caps]
         if unknown:
             spec['capacity_unknown'] = True
-            # Nor the local percent-per-hour priors: an unknown window is priced from its live percentage only.
             burn = {w: r for w, r in (spec.get('burn_pct_per_worker_hour') or {}).items() if w not in unknown}
             spec['burn_pct_per_worker_hour'] = burn
             for info in (out.get('models') or {}).values():
                 if isinstance(info, dict) and isinstance(info.get('burn_pct_per_worker_hour'), dict):
                     info['burn_pct_per_worker_hour'] = {w: r for w, r in info['burn_pct_per_worker_hour'].items()
                                                         if w not in unknown}
+        else:
+            spec.pop('capacity_unknown', None)
     anchor = data.get('anchor') or {}
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor.get('model'),
                          'anchor_value': float(anchor.get('value') or FIVE_AXIS_ANCHOR_VALUE), 'median_index': median_index}
@@ -2349,44 +2428,205 @@ def five_axis_targets(demand, anchor_value=FIVE_AXIS_ANCHOR_VALUE):
 
 
 def five_axis_fit(scaled, demand, targets, shortfall_weight=1.0):
-    """(fit, {axis: row}): the demand-weighted mean over the demanded axes of score - shortfall_weight x
-    max(0, target - score). Continuous and increasing in every demanded score; a shortfall costs (1 + weight) per
-    point, a surplus earns 1 per point. Undemanded axes do not count."""
+    """(fit, {axis: row}): the demand-weighted mean over the demanded axes of min(score, target) - shortfall_weight x
+    max(0, target - score). Capped at each axis's target (round 11): no bonus above the task's need, no
+    overqualification penalty."""
     total = sum(w for w in demand.values() if w > 0)
     rows, value = {}, 0.0
     for a, w in demand.items():
         if w <= 0:
             continue
         short = max(0.0, targets[a] - scaled[a])
-        rows[a] = {'demand': w, 'score': round(scaled[a], 4), 'target': targets[a], 'shortfall': round(short, 4)}
-        value += w * (scaled[a] - shortfall_weight * short)
+        capped = min(scaled[a], targets[a])
+        rows[a] = {'demand': w, 'score': round(scaled[a], 4), 'capped_score': round(capped, 4),
+                   'target': targets[a], 'shortfall': round(short, 4)}
+        value += w * (capped - shortfall_weight * short)
     return (value / total if total else 0.0), rows
 
 
-def five_axis_wait_cost(wait_hours, demand, targets, policy):
-    """Score cost of waiting `wait_hours` for a window reset on the five-axis path (rounds 8-9, user 2026-11-09).
+def five_axis_duration_multiplier(model, effort, info, policy, curves):
+    """Effort-aware completion-time multiplier relative to the anchor on the five-axis path.
 
-    Replaces the fixed 0.15 `deferred_start_penalty` when the caller allows waiting (`can_wait_hours > 0`). One hour of
-    wait is priced at `shortage_loss_per_worker_hour` and scaled linearly by `(1 - target)`, where `target` is the task's
-    demand-weighted target score on 0..1 (linear like `shortfall_weight = 1`, with no extra exponent): routine tasks
-    (low target) pay a high waiting cost and start now; high-demand tasks (target near the anchor 0.8) pay a smaller
-    waiting cost and prefer waiting for a capable model when `can_wait_hours` permits.
-    """
-    if not wait_hours or wait_hours <= 0:
+    Baseline `model_duration_multiplier` comes from Arena Agent-board P50 Time/Task relative to the anchor at High;
+    efforts scale by `burn_scale(policy, curves, effort)` because higher or lower thinking efforts generate
+    proportionally more or fewer output tokens at the same model tok/s."""
+    return model_duration_multiplier(model, info) * burn_scale(policy, curves, effort)
+
+
+def five_axis_window_recovery(state, cap_usd):
+    """Recovery line l(now) and current used U in USD for a window on its own clock (advisor report v2 §1-2, §5).
+
+    Starter allowances (`hours is None` or `inf` or `reset_hours is inf`) have T = inf (L = inf), so l(t) = 0 and
+    every dollar of spend is above the recovery line (X = S). Rolling windows that start their clock on first use
+    (`state.get('unstarted')`) have t0 = now and U = 0 until used, so l(now) = 0 and tau = L."""
+    if not cap_usd or cap_usd <= 0 or not state or not state.get('known'):
+        return None
+    full = float(state.get('full', 100.0) or 100.0)
+    pool_cap = cap_usd * (full / 100.0)
+    rem_pct = float(state.get('remaining', full))
+    used_usd = max(0.0, (full - rem_pct) / 100.0 * cap_usd)
+    hours = state.get('hours')
+    reset_h = state.get('reset_hours')
+    if hours is None or reset_h is None or hours == float('inf') or reset_h == float('inf') or float(hours) <= 0:
+        return {'capacity_usd': pool_cap, 'used_usd': used_usd, 'line_now_usd': 0.0,
+                'under_line_usd': 0.0, 'above_line_usd': used_usd, 'period_hours': None, 'reset_hours': float('inf'),
+                'unstarted': False}
+    L = float(hours)
+    if state.get('unstarted') and used_usd <= 1e-9:
+        return {'capacity_usd': pool_cap, 'used_usd': 0.0, 'line_now_usd': 0.0,
+                'under_line_usd': 0.0, 'above_line_usd': 0.0, 'period_hours': L, 'reset_hours': L,
+                'unstarted': True}
+    tau = max(0.0, min(L, float(reset_h)))
+    line_now = pool_cap * max(0.0, L - tau) / L
+    delta = line_now - used_usd
+    return {'capacity_usd': pool_cap, 'used_usd': used_usd, 'line_now_usd': line_now,
+            'under_line_usd': max(0.0, delta), 'above_line_usd': max(0.0, -delta),
+            'period_hours': L, 'reset_hours': tau, 'unstarted': False}
+
+
+def five_axis_over_line_usd(state, cap_usd, step_usd, task_hours):
+    """Spend X in USD above the window's recovery line l(t), segmented across a reset if the task crosses T (§2).
+
+    Before the reset at tau = min(h, T - now), the recovery line reaches l(now + tau) = l(now) + C * tau / L, giving
+    accumulated under-line allowance A_0 = max(0, l(now + tau) - U). Spend before the reset is S_0 = S * (tau / h),
+    and over-line spend in the current period is X_0 = max(0, S_0 - A_0). Any work after the reset starts at U_1 = 0
+    on a fresh period of length L with recovery rate C / L, so X_1 = max(0, S_1 - C * (h - tau) / L)."""
+    rec = five_axis_window_recovery(state, cap_usd)
+    if rec is None:
+        return None
+    pool_cap = rec['capacity_usd']
+    S = max(0.0, float(step_usd or 0.0))
+    h = max(1e-6, float(task_hours or 0.0))
+    L = rec['period_hours']
+    U = rec['used_usd']
+    if L is None:
+        return {'over_line_usd': S, 'allowance_usd': 0.0, 'line_now_usd': 0.0, 'line_end_usd': 0.0,
+                'used_usd': U, 'under_line_usd': 0.0, 'reset_hours': float('inf'), 'period_hours': None,
+                'unstarted': False}
+    tau_reset = rec['reset_hours']
+    tau = min(h, tau_reset)
+    line_tau = rec['line_now_usd'] + pool_cap * (tau / L)
+    A_0 = max(0.0, line_tau - U)
+    S_0 = S * (tau / h) if h > 0 else S
+    X_0 = max(0.0, S_0 - A_0)
+    X_1 = 0.0
+    A_1 = 0.0
+    if h > tau:
+        rem_h = h - tau
+        S_1 = S - S_0
+        A_1 = pool_cap * (rem_h / L)
+        X_1 = max(0.0, S_1 - A_1)
+    return {'over_line_usd': X_0 + X_1, 'allowance_usd': A_0 + A_1, 'line_now_usd': rec['line_now_usd'],
+            'line_end_usd': line_tau, 'used_usd': U, 'under_line_usd': rec['under_line_usd'],
+            'reset_hours': tau_reset, 'period_hours': L, 'unstarted': rec['unstarted']}
+
+
+def five_axis_non_expiring_under_line_usd(state, cap_usd, task_hours):
+    """Non-expiring under-line allowance A_v(h) on a substitute pool over [now, now + h] (advisor report v2 §2, §6.3).
+
+    If the substitute window does not reset during the task (h < tau_reset), its under-line allowance at now + h is
+    max(0, l(now + h) - U). If the substitute window resets at tau_reset <= h, its pre-reset under-line quota expires
+    at tau_reset and cannot save quota for work after the task finishes; only the post-reset recovery accrued in
+    [now + tau_reset, now + h] (C * min(L, h - tau_reset) / L) is non-expiring."""
+    rec = five_axis_window_recovery(state, cap_usd)
+    if rec is None or rec['period_hours'] is None:
         return 0.0
-    total = sum(w for w in demand.values() if w > 0)
-    target = sum(w * targets[a] for a, w in demand.items() if w > 0) / total if total else 0.0
-    per_hour = exchange_rate(policy, 'shortage_loss_per_worker_hour')
-    return round(per_hour * float(wait_hours) * (1.0 - target), 4)
+    pool_cap = rec['capacity_usd']
+    L = rec['period_hours']
+    h = max(0.0, float(task_hours or 0.0))
+    tau_reset = rec['reset_hours']
+    if h < tau_reset:
+        line_end = rec['line_now_usd'] + pool_cap * (h / L)
+        return max(0.0, line_end - rec['used_usd'])
+    rem_h = min(L, h - tau_reset)
+    return pool_cap * (rem_h / L)
+
+
+FIVE_AXIS_DEMAND_GRID = tuple(
+    {'divergence': d1, 'global_rigor': d2, 'module_precision': d3, 'vision_tools': 0}
+    for d1 in range(4) for d2 in range(4) for d3 in range(4) if (d1 or d2 or d3)
+)
+
+
+def five_axis_beta(eligible, accounts, policy, anchor_value=FIVE_AXIS_ANCHOR_VALUE, needs_image=False):
+    """Per-window shadow exchange rate beta_w (fit per USD) from public ability + burn over the 63-point demand grid (§3).
+
+    For each window w = (quota_source, wid), M_w is the distinct canonical models of startable candidates drawing w, and
+    M_out(w) is the distinct canonical models of startable candidates outside w and not in M_w plus the baseline free
+    models (filtered by image-input support when the task demands image input). Over all 63 non-zero thinking demand
+    vectors d, beta_w = sum_d gap_w(d) / min_usd_in_w."""
+    startable = [c for c in eligible if not (c.get('available_in_hours') or 0)]
+    if not startable:
+        startable = list(eligible)
+    win_models = {}
+    all_models = set()
+    for c in startable:
+        b = c['bundle']
+        acct = b['account']
+        qsrc = provider_inventory.quota_source(acct, accounts)
+        m = canonical(b['model'], accounts)
+        info = model_spec(accounts, m)
+        if five_axis_usd_missing(info):
+            continue
+        all_models.add(m)
+        for wid in c.get('_five_axis_windows') or ():
+            win_models.setdefault((qsrc, wid), set()).add(m)
+    fallback_free = {
+        canonical(name, accounts) for name, minfo in (accounts.get('models') or {}).items()
+        if isinstance(minfo, dict) and str(name).endswith('-free')
+        and ((minfo.get('five_axis') or {}).get('scores'))
+        and (not needs_image or ((minfo.get('five_axis') or {}).get('image_input') or {}).get('status') == 'yes')
+    }
+    model_high_fit = {}
+    model_usd = {}
+    for m in all_models | fallback_free:
+        info = model_spec(accounts, m)
+        model_usd[m] = model_usd_per_hour(m, info)
+        scores = ((info.get('five_axis') or {}).get('scores')) or {}
+        fits = []
+        for d in FIVE_AXIS_DEMAND_GRID:
+            targets = five_axis_targets(d, anchor_value)
+            _, scaled = five_axis_level(scores, d, 1.0)
+            f_val, _ = five_axis_fit(scaled, d, targets, 1.0)
+            fits.append(f_val)
+        model_high_fit[m] = fits
+    betas = {}
+    for wkey, m_in in win_models.items():
+        m_in_valid = [m for m in m_in if m in model_high_fit and model_usd.get(m, 0.0) > 0]
+        m_out = (all_models - m_in) | (fallback_free - m_in)
+        if not m_in_valid or not m_out:
+            betas[wkey] = 0.0
+            continue
+        total_gain = 0.0
+        total_burn = 0.0
+        n_grid = len(FIVE_AXIS_DEMAND_GRID)
+        for idx in range(n_grid):
+            i_star = max(m_in_valid, key=lambda m: (round(model_high_fit[m][idx], 6), -model_usd[m]))
+            best_in = model_high_fit[i_star][idx]
+            best_out = max((model_high_fit[m][idx] for m in m_out if m in model_high_fit), default=0.0)
+            total_gain += max(0.0, best_in - best_out)
+            total_burn += model_usd[i_star]
+        betas[wkey] = round(total_gain / total_burn, 6) if total_burn > 0 else 0.0
+    return betas
 
 
 def five_axis_order(candidate):
-    """Sort key on the five-axis path: score, then opportunity cost (quota scarcity) ascending, then the demand-weighted
-    axis level descending (round 5, user-approved; round 7: no floor to measure it from), then the sibling harness place
-    (the same model, account and effort on another harness; never decides between models)."""
+    """Lexicographic order on the five-axis path (advisor report v2 §5):
+    1. Net score N = F - beta_w * X / h descending (rounded to 4 places so tied under-line models enter the tie-breaks)
+    2. Earliest-expiring under-line quota ascending (use quota that is behind its recovery line and resets soonest first;
+       if a candidate has no under-line quota, +inf, then smallest own over-line spend before substitute absorption)
+    3. Faster completion time (wait_hours + expected_hours) ascending
+    4. Fewer list-price USD spent ascending
+    5. Demand-weighted axis level descending, then sibling harness place ascending."""
     k = candidate['components']
-    return (-candidate['score'], round(k.get('opportunity_cost', 0.0), 4), -k.get('five_axis_level', 0.0),
-            k.get('harness_place', 0))
+    earliest_reset = k.get('earliest_under_line_reset_hours')
+    reset_key = float('inf') if earliest_reset is None else round(float(earliest_reset), 4)
+    own_over = round(float(k.get('own_over_line_usd', 0.0) or 0.0), 4)
+    wait_h = float(candidate.get('available_in_hours') or 0.0)
+    dur_h = float(candidate.get('expected_hours') or 0.0)
+    usd = float(candidate.get('expected_usd') if candidate.get('expected_usd') is not None else float('inf'))
+    return (-round(float(candidate['score']), 4), round(wait_h, 4), reset_key, own_over, round(wait_h + dur_h, 4),
+            round(usd, 4), -round(float(k.get('five_axis_level', 0.0)), 4), k.get('harness_place', 0))
 
 
 HARNESS_CAPABILITIES = {
@@ -2689,8 +2929,29 @@ def pool_size(observed):
 def window_state(wid, spec, observed, account_spec, now, short_hours, account_stale=False, expected_reset_at=None):
     """Remaining capacity, time to the end of the allowance and how sure we are."""
     hours = spec.get('hours')
+    starter = hours is None or hours == float('inf')
     expires = parse_time(account_spec.get('expires_at'))
-    row = {'id': wid, 'hours': hours, 'short': hours is not None and hours < short_hours, 'known': False, 'stale': bool(account_stale)}
+    row = {'id': wid, 'hours': hours, 'short': (hours is not None and hours != float('inf') and hours < short_hours),
+           'known': False, 'stale': bool(account_stale)}
+    if starter:
+        cap = capacity_usd(account_spec, wid, now)
+        if cap is None or cap <= 0:
+            return row
+        full = 100.0 * pool_size(observed)
+        row['full'] = full
+        remaining = (observed or {}).get('remaining_pct_before_reset')
+        if remaining is None:
+            remaining = (observed or {}).get('observed_remaining_pct')
+        if remaining is None:
+            used_usd = (observed or {}).get('used_usd')
+            if used_usd is None:
+                used_usd = account_spec.get('local_spend_usd', 0.0)
+            remaining = max(0.0, full - 100.0 * float(used_usd or 0.0) / cap)
+        expiry_hours = (expires - now).total_seconds() / 3600 if expires is not None and expires > now else None
+        end_hours = expiry_hours if expiry_hours is not None else float('inf')
+        row.update({'known': True, 'remaining': remaining, 'reset_hours': float('inf'), 'end_hours': end_hours,
+                    'expiry_hours': expiry_hours, 'target_remaining': 0.0, 'reset_at': None})
+        return row
     if observed is None or hours is None:
         return row
     # Percentages are of one account's allowance; a pool of N accounts holds N x 100 when full.
@@ -2706,6 +2967,9 @@ def window_state(wid, spec, observed, account_spec, now, short_hours, account_st
         # An unstarted rolling short window (used_pct == 0, resets_at == null) has full 5h capacity ready.
         seconds = hours * 3600
         row['stale'] = bool(account_stale)
+        row['unstarted'] = True
+    elif (row['short'] or account_family(account_spec) == 'antigravity' or spec.get('starts_on_first_use')) and remaining == 100:
+        row['unstarted'] = True
     expected_hours = ((expected_reset_at - now).total_seconds() / 3600
                       if expected_reset_at is not None and expected_reset_at > now else None)
     if expected_hours is not None:
@@ -2879,15 +3143,22 @@ def evaluate_bundle(bundle, task, ctx):
     if task.get('constraint_effort') and str(scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
         exclude('explicit effort constraint')
     if five:
-        # Rule B: a demanded axis with no data at all, or no cited usd on a metered account (billed or quota windows),
-        # leaves automatic routing; naming the model (--model, or its bundle) still dispatches it, with the data error as
-        # a warning and its cost unpriced (model_usd_per_hour returns 0, never the 4.0 prior).
+        # Rule B: a demanded axis with no data at all, no cited usd on a metered account, or unknown image_input
+        # modality when the task demands image input (vision_tools >= 2), leaves automatic routing; naming the model
+        # (--model, or its bundle) still dispatches it, with the data error as a warning and its cost unpriced.
         state = info.get('five_axis') or {'missing': list(FIVE_AXES), 'usd_status': 'missing'}
         billed = not (spec.get('unmetered') or spec.get('unlimited'))
         named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
+        img_info = state.get('image_input') or {'status': 'missing'}
+        needs_image_input = task['five_axis_demand'].get('vision_tools', 0) >= 2
+        if needs_image_input and img_info.get('status') == 'no':
+            exclude(f"model does not accept image input ({img_info.get('source') or 'public data'})")
         blind = [a for a, w in task['five_axis_demand'].items() if w >= five['demanded_level'] and a in state.get('missing', ())]
-        errors = ([f'no trusted data for the demanded axis {", ".join(blind)}'] if blind else []) + (
-            ['usd_per_hour has no cited source on a metered account'] if billed and state.get('usd_status') != 'ok' else [])
+        errors = (
+            ([f'no trusted data for the demanded axis {", ".join(blind)}'] if blind else [])
+            + (['usd_per_hour has no cited source on a metered account'] if billed and state.get('usd_status') != 'ok' else [])
+            + (['image_input modality has no cited source'] if needs_image_input and img_info.get('status') not in ('yes', 'no') else [])
+        )
         for error in errors:
             if named:
                 unpriced = ' (its cost is not priced)' if error.startswith('usd_per_hour') else ''
@@ -2984,13 +3255,23 @@ def evaluate_bundle(bundle, task, ctx):
             result['notes'].append(f"the worker has carried {carried / 1e6:.1f}M historical tokens of context over "
                                    f"{worker.get('compactions', '?')} compactions; rotate with a handoff packet")
     context_scale = 1 + context_extra
+    if five:
+        dur_mult = five_axis_duration_multiplier(model, eff, five_info, policy, five_curves)
+        hours = base_hours * dur_mult
+        chain_hours = base_chain_hours * dur_mult
+        econ_hours = base_hours
+        econ_chain_hours = base_chain_hours
+    else:
+        econ_hours = hours
+        econ_chain_hours = chain_hours
     step_pct = chain_pct = None
-    step_usd = bundle_task_usd(spec, model, eff, hours, policy, curves, info, context_scale)
-    chain_usd = bundle_task_usd(spec, model, eff, chain_hours, policy, curves, info, context_scale)
+    step_usd = bundle_task_usd(spec, model, eff, econ_hours, policy, curves, info, context_scale)
+    chain_usd = bundle_task_usd(spec, model, eff, econ_chain_hours, policy, curves, info, context_scale)
     binding = None
     opportunity = 0.0
     unknown = False
     available_at = None
+    five_window_states = {}
     if spec.get('unlimited'):
         result['notes'].append('unlimited usage')
     # Free capacity is priced as zero opportunity cost below. The extra free-usage preference is declared per account
@@ -3012,7 +3293,9 @@ def evaluate_bundle(bundle, task, ctx):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
         latched = latched_windows(accounts, bundle['account'])
+        named = model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id']
         for wid, wspec, observed in applicable_windows(spec, model, acct_usage, bundle, accounts):
+            result.setdefault('_five_axis_windows', []).append(wid)
             observed = cycle_observation(wspec, observed, acct_usage, now)
             refusal = window_refusal(wid, wspec, observed, acct_usage, now, latched)
             if refusal:
@@ -3021,6 +3304,101 @@ def evaluate_bundle(bundle, task, ctx):
             state = window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                  account_stale=acct_stale, expected_reset_at=expected)
             unit = unit_rate(spec, wid, model, eff, policy, curves, info, now)
+            if five:
+                cap_usd_w = capacity_usd(spec, wid, now)
+                if cap_usd_w is None:
+                    if state['known'] and state['remaining'] <= policy['safety_margin_pct']:
+                        exclude(f'{wid} has {state["remaining"]:.0f}% left, inside the {policy["safety_margin_pct"]}% reserve '
+                                '(capacity unknown, so the need cannot be priced)')
+                        result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+                        continue
+                    err = f'{wid} capacity_unknown (quota unknown, spend unpriced)'
+                    if named:
+                        local_u = spec.get('local_spend_usd')
+                        local_note = f'; local opencode.db lower-bound spend ~${local_u:.2f}' if isinstance(local_u, (int, float)) and local_u > 0 else ''
+                        result['notes'].append(f'data error: {err}; dispatched because it was named{local_note}')
+                        result.setdefault('data_errors', []).append(err)
+                    else:
+                        exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
+                    continue
+                if not state['known']:
+                    if state['short']:
+                        w_len = float(wspec.get('hours') or 0) or econ_hours
+                        step = None if unit is None else min(econ_hours, w_len) * unit * context_scale
+                        margin_pct = short_window_limits(spec, wid, policy, now)[2]
+                        if step is not None and 100.0 - step < margin_pct:
+                            exclude(f'{wid} full capacity (100%) is short of the ~{step:.1f}% the work needs plus {margin_pct}% margin')
+                        elif (observed and (reset_dt := parse_time(observed.get('resets_at'))) is not None
+                              and reset_dt > now and observed.get('reset_time_passed') is not True):
+                            wait = (reset_dt - now).total_seconds() / 3600
+                            exclude(f'{wid} has an active reset in {wait:.1f}h with unknown remaining percentage')
+                    continue
+                state, reserved_usd, reserved_pct = reserve_inflight(
+                    bundle['account'], spec, wid, wspec, state, ctx.get('records'), accounts, policy, now)
+                if reserved_usd > 0:
+                    result['notes'].append(f'{wid}: -${reserved_usd:.2f} (-{reserved_pct:.1f}%) reserved by in-flight {bundle["account"]} dispatch')
+                if state['short']:
+                    w_len = float(wspec.get('hours') or 0) or econ_hours
+                    tau = state.get('reset_hours', w_len)
+                    h_before = min(econ_hours, w_len) if (tau is None or tau == float('inf') or state.get('unstarted')) else min(econ_hours, max(0.0, float(tau)))
+                    step = None if unit is None else h_before * unit * context_scale
+                    step_period = None if unit is None else min(max(0.0, econ_hours - h_before), w_len) * unit * context_scale
+                    small_short, floor_pct, margin_pct = short_window_limits(spec, wid, policy, now)
+                    empty = state['remaining'] <= floor_pct
+                    if empty or (step is not None and state['remaining'] - step < margin_pct):
+                        wait = state['reset_hours']
+                        what = 'is empty' if empty else f'has {state["remaining"]:.0f}%, short of the ~{step:.1f}% the work needs,'
+                        post_period = None if unit is None else min(econ_hours, w_len) * unit * context_scale
+                        if post_period is not None and 100.0 - post_period < margin_pct:
+                            exclude(f'{wid} full capacity (100%) is short of the ~{post_period:.1f}% the work needs plus {margin_pct}% margin')
+                        elif (not small_short and not state['stale'] and 0 < wait <= policy['defer_if_reset_within_hours']
+                              and wait >= state.get('natural_reset_hours', wait)):
+                            available_at = max(available_at or 0, wait)
+                            result['notes'].append(f'{wid} {what} for {wait:.1f}h; start after its reset')
+                            renewed = after_reset(state, w_len)
+                            if renewed is not None:
+                                renewed['unstarted'] = True
+                                five_window_states[wid] = (wspec, renewed, cap_usd_w, unit)
+                        else:
+                            exclude(f'{wid} {what} for {wait:.1f}h')
+                        continue
+                    if step_period is not None and 100.0 - step_period < margin_pct:
+                        exclude(f'{wid} full capacity (100%) is short of the ~{step_period:.1f}% the work needs plus {margin_pct}% margin')
+                        continue
+                    five_window_states[wid] = (wspec, state, cap_usd_w, unit)
+                    continue
+                if unit is None:
+                    continue
+                w_len = wspec.get('hours')
+                tau = state.get('reset_hours')
+                req_hours = econ_chain_hours if task['coupling'] == 'high' else econ_hours
+                h_before = req_hours if (tau is None or tau == float('inf') or w_len is None) else min(req_hours, max(0.0, float(tau)))
+                need = h_before * unit * context_scale
+                if state['remaining'] - need < policy['safety_margin_pct'] and w_len is not None and state['reset_hours'] <= policy['defer_if_reset_within_hours']:
+                    renewed = after_reset(state, w_len)
+                    if renewed is not None and renewed['expiry_hours'] is not None and renewed['expiry_hours'] < hours:
+                        renewed = None
+                    if renewed is not None and 100.0 - min(req_hours, float(w_len)) * unit * context_scale >= policy['safety_margin_pct']:
+                        state = renewed
+                        available_at = max(available_at or 0, renewed['deferred_hours'])
+                        need = min(req_hours, float(w_len)) * unit * context_scale
+                        result['notes'].append(f'{wid} renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)')
+                if state['remaining'] - need < policy['safety_margin_pct']:
+                    if state['reset_hours'] == float('inf'):
+                        exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
+                                '(starter allowance does not reset)')
+                    else:
+                        exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
+                                f'and it resets in {state["reset_hours"] / 24:.1f} days')
+                        result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+                elif w_len is not None and req_hours > h_before:
+                    rem_need = min(req_hours - h_before, float(w_len)) * unit * context_scale
+                    if 100.0 - rem_need < policy['safety_margin_pct']:
+                        exclude(f'{wid} full capacity (100%) is short of the ~{rem_need:.1f}% the work needs per period plus {policy["safety_margin_pct"]}% margin')
+                five_window_states[wid] = (wspec, state, cap_usd_w, unit)
+                if state['stale'] and 'capacity from a stale observation' not in result['notes']:
+                    result['notes'].append('capacity from a stale observation')
+                continue
             if not state['known']:
                 if state['short']:
                     step = None if unit is None else hours * unit * context_scale
@@ -3051,23 +3429,6 @@ def evaluate_bundle(bundle, task, ctx):
                         exclude(f'{wid} {what} for {wait:.1f}h')
                     continue        # the work starts after the reset, when the short window is full again
                 continue            # running a standard short window dry only delays work until its reset; the weekly window prices the loss
-            if unit is None and five:
-                # Capacity unknown: the need cannot be priced in percent, but the live percentage and the reset time
-                # still give the window's scarcity (and its reset bonus) and the reserve still holds.
-                if state['remaining'] <= policy['safety_margin_pct']:
-                    exclude(f'{wid} has {state["remaining"]:.0f}% left, inside the {policy["safety_margin_pct"]}% reserve '
-                            '(capacity unknown, so the need cannot be priced)')
-                    result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
-                    continue
-                row = window_cost(spec, wid, state, 0.0, demand_forecast(spec, wid, state, policy), policy, result, now,
-                                  step_usd=None, unit=None)
-                row.update(chain_pct=0.0, stale=state['stale'], capacity_unknown=True)
-                opportunity += row['opportunity_cost']
-                result['notes'].append(f'{wid}: data error: no cited capacity (capacity ladder empty); scarcity from the live '
-                                       f'{state["remaining"]:.0f}% and the reset in {state["reset_hours"]:.1f}h')
-                if binding is None or (row['opportunity_cost'], -row['after']) > (binding['opportunity_cost'], -binding['after']):
-                    binding = row
-                continue
             if unit is None:
                 result['notes'].append(f'{wid}: observed {state["remaining"]:.1f}% remaining'
                                        + (' (stale)' if acct_stale or state['stale'] else '')
@@ -3088,15 +3449,30 @@ def evaluate_bundle(bundle, task, ctx):
                 exclude(f'{wid} has {state["remaining"]:.0f}% left; the work needs ~{need:.1f}% plus a {policy["safety_margin_pct"]}% margin '
                         f'and it resets in {state["reset_hours"] / 24:.1f} days')
                 result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
-            pacing = ({**five, 'reference_usd_per_hour': (spec.get('reference_usd_per_hour') or {}).get(wid)}
-                      if five else None)
             row = window_cost(spec, wid, state, step, demand_forecast(spec, wid, state, policy), policy, result, now, step_usd=step_usd,
-                              unit=unit * context_scale, pacing=pacing)
+                              unit=unit * context_scale)
             opportunity += row['opportunity_cost']
             row.update(chain_pct=chain, chain_usd=round(chain_usd, 2), stale=state['stale'])
             if binding is None or (row['opportunity_cost'], -row['after']) > (binding['opportunity_cost'], -binding['after']):
                 binding = row
-        if binding:
+        if five:
+            if spec.get('capacity_unknown') and not result.get('_five_axis_windows'):
+                err = 'capacity_unknown (quota unknown, spend unpriced)'
+                if named:
+                    local_u = spec.get('local_spend_usd')
+                    local_note = f'; local opencode.db lower-bound spend ~${local_u:.2f}' if isinstance(local_u, (int, float)) and local_u > 0 else ''
+                    result['notes'].append(f'data error: {err}; dispatched because it was named{local_note}')
+                    result.setdefault('data_errors', []).append(err)
+                else:
+                    exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
+            result['_five_window_states'] = five_window_states
+            result['_five_econ_hours'] = econ_hours
+            result['_five_chain_hours'] = econ_chain_hours
+            result['_five_context_scale'] = context_scale
+            if not five_window_states and not result['excluded'] and not result.get('data_errors'):
+                unknown = True
+                result['notes'].append('no current capacity observation; unknown is not exhausted')
+        elif binding:
             step_pct, chain_pct = binding['step_pct'], binding['chain_pct']
             if binding.get('reset_bonus'):
                 result['components']['reset_bonus'] = binding['reset_bonus']
@@ -3108,8 +3484,59 @@ def evaluate_bundle(bundle, task, ctx):
             unknown = True
             opportunity += policy['unknown_capacity_penalty']
             result['notes'].append('no current capacity observation; unknown is not exhausted')
+    if five and not task.get('disable_fast') and not result['excluded'] and available_at is None:
+        fast_info = ((five_info.get('five_axis') or {}).get('fast_mode')) or {}
+        if fast_info.get('status') == 'ok' and fast_modes.supported(harness, model, info):
+            f_price = float(fast_info.get('price_multiplier') or 2.0)
+            f_speed = float(fast_info.get('speed_multiplier') or 1.0)
+            f_econ_h = econ_hours / f_speed if f_speed > 0 else econ_hours
+            f_chain_h = econ_chain_hours / f_speed if f_speed > 0 else econ_chain_hours
+            f_hours = hours / f_speed if f_speed > 0 else hours
+            f_step_usd = step_usd * f_price
+            f_chain_usd = chain_usd * f_price
+            fast_ok = bool(five_window_states)
+            for wid, (wspec, st, cap_usd_w, unit) in five_window_states.items():
+                if unit is None:
+                    fast_ok = False
+                    break
+                f_unit = unit * f_price * context_scale
+                w_len = wspec.get('hours')
+                tau = st.get('reset_hours')
+                if st['short']:
+                    w_l = float(w_len or 0) or f_econ_h
+                    h_bef = min(f_econ_h, w_l) if (tau is None or tau == float('inf') or st.get('unstarted')) else min(f_econ_h, max(0.0, float(tau)))
+                    f_step = h_bef * f_unit
+                    f_per = min(max(0.0, f_econ_h - h_bef), w_l) * f_unit
+                    _, fl_pct, mg_pct = short_window_limits(spec, wid, policy, now)
+                    if st['remaining'] <= fl_pct or st['remaining'] - f_step < mg_pct or 100.0 - f_per < mg_pct:
+                        fast_ok = False
+                        break
+                else:
+                    req_h = f_chain_h if task['coupling'] == 'high' else f_econ_h
+                    h_bef = req_h if (tau is None or tau == float('inf') or w_len is None) else min(req_h, max(0.0, float(tau)))
+                    f_need = h_bef * f_unit
+                    if st['remaining'] - f_need < policy['safety_margin_pct']:
+                        fast_ok = False
+                        break
+                    if w_len is not None and req_h > h_bef:
+                        f_rem = min(req_h - h_bef, float(w_len)) * f_unit
+                        if 100.0 - f_rem < policy['safety_margin_pct']:
+                            fast_ok = False
+                            break
+            if task.get('force_fast') and not fast_ok:
+                exclude(f'fast mode ({f_price:g}x burn) exceeds remaining window safety margin')
+            elif fast_ok:
+                result['_five_fast_candidate'] = {
+                    'price_multiplier': f_price, 'speed_multiplier': f_speed,
+                    'econ_hours': f_econ_h, 'chain_hours': f_chain_h, 'hours': f_hours,
+                    'step_usd': f_step_usd, 'chain_usd': f_chain_usd, 'source': fast_info.get('source'),
+                }
+        elif task.get('force_fast'):
+            err = f"fast_mode has no cited public pricing/speed for {model} ({fast_info.get('reason') or fast_info.get('status') or 'missing'})"
+            result['notes'].append(f'data error: {err}; fast mode not enabled')
+            result.setdefault('data_errors', []).append(err)
     fast_mult = fast_modes.codex_burn_multiplier(policy, spec)
-    if (harness == 'codex' and fast_modes.supported(harness, model, info) and not task.get('disable_fast')
+    if (not five and harness == 'codex' and fast_modes.supported(harness, model, info) and not task.get('disable_fast')
             and not result['excluded'] and available_at is None):
         horizon = float(policy.get('reset_horizon_hours') or 0)
         in_horizon = bool(binding and not binding.get('stale') and not binding.get('expires_first')
@@ -3200,7 +3627,7 @@ def evaluate_bundle(bundle, task, ctx):
                     step_usd, chain_usd = step_usd * fast_mult, chain_usd * fast_mult
                     result['notes'].append(f'fast mode enabled ({fast_reason}: {fast_mult:g}x quota burn, '
                                            f'{fast_binding["after"]:.0f}% left after step)')
-    paid_fast = (harness == 'claude' and fast_modes.supported(harness, model, info)
+    paid_fast = (not five and harness == 'claude' and fast_modes.supported(harness, model, info)
                  and task.get('force_fast') and not task.get('disable_fast'))
     if paid_fast:
         # Preserve existing eligibility/protection checks above. Their subscription
@@ -3483,6 +3910,153 @@ def harness_factor_report(policy):
             'basis': table.get('basis') or ''}
 
 
+def apply_five_axis_economy(candidates, eligible, task, accounts, policy):
+    """Quota economy v2 (advisor report v2 §1-5): recovery line l(t) = C * (t - t0) / L, over-line spend X segmented
+    across resets, nested and multi-window max X, desync-aware same-model substitute-pool absorption, beta_w from public
+    ability and burn over the 63-point demand grid, and automatic fast mode when its whole spend stays under the line."""
+    anchor_val = (accounts.get('_five_axis') or {}).get('anchor_value', FIVE_AXIS_ANCHOR_VALUE)
+    needs_img = task['five_axis_demand'].get('vision_tools', 0) >= 2
+    betas = five_axis_beta(eligible, accounts, policy, anchor_val, needs_image=needs_img)
+    base_hours = max(1e-6, float(task['hours'] or 0.0))
+
+    sub_pools = {}
+    for c in eligible:
+        if c.get('available_in_hours'):
+            continue
+        w_states = c.get('_five_window_states') or {}
+        if not w_states:
+            continue
+        m = canonical(c['bundle']['model'], accounts)
+        qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
+        sub_pools.setdefault(m, {}).setdefault(qsrc, w_states)
+
+    def substitute_allowance(model, own_qsrc, econ_h):
+        pools = sub_pools.get(model) or {}
+        total = 0.0
+        for qsrc, w_states in pools.items():
+            if qsrc == own_qsrc:
+                continue
+            long_ws = [(st, cap) for _, (_, st, cap, _) in w_states.items() if not st.get('short')]
+            use_ws = long_ws or [(st, cap) for _, (_, st, cap, _) in w_states.items()]
+            if not use_ws:
+                continue
+            total += min(five_axis_non_expiring_under_line_usd(st, cap, econ_h) for st, cap in use_ws)
+        return total
+
+    def eval_windows(c, w_states, own_qsrc, model, step_usd, chain_usd, econ_h):
+        rows = []
+        for wid, (wspec, st, cap_usd_w, _) in w_states.items():
+            over = five_axis_over_line_usd(st, cap_usd_w, step_usd, econ_h)
+            if over is None:
+                continue
+            rem = st['remaining']
+            rem_usd = rem * cap_usd_w / 100.0
+            step_pct = (100.0 * step_usd / cap_usd_w) if cap_usd_w > 0 else 0.0
+            chain_pct = (100.0 * chain_usd / cap_usd_w) if cap_usd_w > 0 else 0.0
+            after_pct = rem - step_pct
+            after_usd = rem_usd - step_usd
+            end_h = st['end_hours']
+            reset_h = over['reset_hours']
+            expires_first = end_h < reset_h
+            b_val = betas.get((own_qsrc, wid), 0.0)
+            rows.append({
+                'window': wid,
+                'short': bool(st.get('short')),
+                'unstarted': bool(over.get('unstarted')),
+                'remaining': rem,
+                'after': after_pct,
+                'step_pct': step_pct,
+                'chain_pct': chain_pct,
+                'capacity_usd': round(cap_usd_w, 2),
+                'remaining_usd': round(rem_usd, 2),
+                'reserved_usd': round(st.get('reserved_usd', 0.0), 2),
+                'expected_usd': round(step_usd, 2),
+                'chain_usd': round(chain_usd, 2),
+                'after_usd': round(after_usd, 2),
+                'line_now_usd': round(over['line_now_usd'], 2),
+                'line_end_usd': round(over['line_end_usd'], 2),
+                'used_usd': round(over['used_usd'], 2),
+                'under_line_usd': round(over['under_line_usd'], 2),
+                'allowance_usd': round(over['allowance_usd'], 2),
+                'over_line_usd': round(over['over_line_usd'], 4),
+                'beta': b_val,
+                'reset_hours': reset_h,
+                'end_hours': end_h,
+                'expires_first': expires_first,
+                'stale': st['stale'],
+                **({k: st[k] for k in ('natural_reset_hours', 'expected_reset_at') if k in st}),
+            })
+        if not rows:
+            return None, 0.0, 0.0, 0.0, 0.0, None
+        own_over = max(r['over_line_usd'] for r in rows)
+        beta_val = max(r['beta'] for r in rows)
+        sub_abs = 0.0 if c.get('available_in_hours') else substitute_allowance(model, own_qsrc, econ_h)
+        net_over = max(0.0, own_over - sub_abs)
+        opp_cost = round(beta_val * net_over / base_hours, 4)
+        binding = max(rows, key=lambda r: (r['over_line_usd'], not r['short'], r['beta'], -r['after']))
+        binding = {
+            **binding,
+            'over_line_usd': round(own_over, 2),
+            'substitute_absorbed_usd': round(min(own_over, sub_abs), 2),
+            'net_over_line_usd': round(net_over, 2),
+            'beta': round(beta_val, 6),
+            'opportunity_cost': opp_cost,
+        }
+        period_rows = [r for r in rows if not r['short']] or rows
+        under_resets = [r['reset_hours'] for r in period_rows
+                        if not r['unstarted'] and r['under_line_usd'] > 1e-6 and r['reset_hours'] != float('inf')
+                        and (own_over <= 1e-6 or r['reset_hours'] <= econ_h)]
+        earliest_reset = min(under_resets) if under_resets else None
+        return binding, own_over, net_over, beta_val, opp_cost, earliest_reset
+
+    for c in eligible:
+        w_states = c.get('_five_window_states') or {}
+        model = canonical(c['bundle']['model'], accounts)
+        own_qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
+        econ_h = float(c.get('_five_econ_hours') or base_hours)
+        step_usd = float(c.get('expected_usd') or 0.0)
+        chain_usd = float(c.get('chain_usd') or step_usd)
+        binding, own_over, net_over, beta_val, opp_cost, earliest_reset = eval_windows(
+            c, w_states, own_qsrc, model, step_usd, chain_usd, econ_h)
+        fast_cand = c.get('_five_fast_candidate')
+        if fast_cand and w_states:
+            f_binding, f_own_over, f_net_over, f_beta, f_opp, f_earliest = eval_windows(
+                c, w_states, own_qsrc, model, fast_cand['step_usd'], fast_cand['chain_usd'], fast_cand['econ_hours'])
+            if f_binding is not None and (task.get('force_fast') or f_own_over <= 1e-9):
+                binding, own_over, net_over, beta_val, opp_cost, earliest_reset = (
+                    f_binding, f_own_over, f_net_over, f_beta, f_opp, f_earliest)
+                c['bundle']['fast'] = True
+                c['components']['fast'] = True
+                f_reason = 'user_override' if task.get('force_fast') else 'under_recovery_line'
+                c['components']['fast_reason'] = f_reason
+                c['expected_hours'] = round(fast_cand['hours'], 2)
+                c['expected_usd'] = round(fast_cand['step_usd'], 2)
+                c['chain_usd'] = round(fast_cand['chain_usd'], 2)
+                c['notes'].append(f"fast mode enabled ({f_reason}: {fast_cand['price_multiplier']:g}x burn, "
+                                  f"{fast_cand['speed_multiplier']:g}x speed)")
+        if binding is not None:
+            c['capacity'] = binding
+            c['expected_pct'] = round(binding['step_pct'], 2)
+            c['chain_pct'] = round(binding['chain_pct'], 2)
+        c['components']['opportunity_cost'] = opp_cost
+        c['components']['own_over_line_usd'] = round(own_over, 4)
+        c['components']['net_over_line_usd'] = round(net_over, 4)
+        c['components']['beta'] = round(beta_val, 6)
+        if earliest_reset is not None:
+            c['components']['earliest_under_line_reset_hours'] = round(earliest_reset, 4)
+        if isinstance(c.get('five_axis_price'), dict):
+            c['five_axis_price'].update(
+                own_over_line_usd=round(own_over, 2),
+                net_over_line_usd=round(net_over, 2),
+                beta=round(beta_val, 6),
+                earliest_under_line_reset_hours=None if earliest_reset is None else round(earliest_reset, 2),
+            )
+    for c in candidates:
+        for priv in ('_five_axis_windows', '_five_window_states', '_five_econ_hours',
+                     '_five_chain_hours', '_five_context_scale', '_five_fast_candidate'):
+            c.pop(priv, None)
+
+
 def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overrides=(), records=(), host_policy_config=None):
     state_policy = host_policy.load_policy() if host_policy_config is None else host_policy_config
     ctx = {'policy': policy, 'accounts': accounts, 'capabilities': capabilities, 'usage': usage, 'now': now,
@@ -3508,6 +4082,8 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()
                   if five or bundle_applies(b, task) or exact_pin(task, b, row_key(b['model'], accounts))]
     eligible = [c for c in candidates if not c['excluded']]
+    if five:
+        apply_five_axis_economy(candidates, eligible, task, accounts, policy)
     # Weighted fit and ability are the value of this model on this harness. harness_factor (default 1) scales
     # that value only. Opportunity cost is already in score units at the opportunity_exchange rate, so it is
     # subtracted as it is. No normalization over the candidate set.
@@ -3529,16 +4105,11 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
         if quality != 1.0:
             score += (quality - 1.0) * value
         c['score'] = round(score, 4)
-        if c['available_in_hours']:
-            if five:
-                wait_cost = five_axis_wait_cost(c['available_in_hours'], task['five_axis_demand'], task['five_axis_targets'], policy)
-                c['components']['wait_cost'] = wait_cost
-                c['score'] = round(c['score'] - wait_cost, 4)
-            else:
-                c['score'] = round(c['score'] - policy['deferred_start_penalty'], 4)
+        if c['available_in_hours'] and not five:
+            c['score'] = round(c['score'] - policy['deferred_start_penalty'], 4)
     if five:
-        # Equal scores go to the candidate drawing on the least scarce quota, then the higher axis level; the harness
-        # order only separates siblings of one model, account and effort, as a tie-break and never in the score.
+        # Equal scores go to the candidate drawing on the earliest-expiring under-line quota, then faster completion,
+        # then fewer USD, then higher axis level; the harness order only separates siblings of one model, account and effort.
         harness_places(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'))
         eligible.sort(key=five_axis_order)
     else:
@@ -3922,8 +4493,11 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                                 minimum_sufficient=task['minimum_sufficient'])
     if applied:
         decision['overrides'] = applied
+    ranked_candidates = ([*eligible, *[c for c in candidates if c['excluded']]]
+                         if accounts.get('_five_axis')
+                         else sorted(candidates, key=lambda c: (c['score'] is None, -(c['score'] or 0))))
     result = {'stage': 'plan', 'source': 'deterministic_allocator', 'observed_at': now.isoformat(), 'decision': decision,
-              'ranking': sorted(candidates, key=lambda c: (c['score'] is None, -(c['score'] or 0))), 'usage': usage}
+              'ranking': ranked_candidates, 'usage': usage}
     if not eligible:
         closest = sorted((c for c in candidates if c['excluded']), key=lambda c: (len(c['excluded']), -c['components']['fit']))[:2]
         named_block = named_pin_block(task, candidates)
@@ -3994,6 +4568,12 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     margin = round(top['score'] - rival['score'], 4) if rival is not None and not forced else None
     decision['margin'] = margin
     decision['needs_judgment'] = bool(margin is not None and margin < policy['needs_judgment_margin'])
+    if top.get('data_errors'):
+        for note in top.get('notes') or ():
+            if str(note).startswith('data error:'):
+                w_note = f"{top['id']}: {note}"
+                if w_note not in decision.get('warnings', ()):
+                    decision.setdefault('warnings', []).append(w_note)
     if top['bundle'].get('fast'):
         decision['fast'] = True
         decision['fast_reason'] = top['components'].get('fast_reason')
@@ -4039,7 +4619,8 @@ SNAPSHOT_FULL, SNAPSHOT_COMPACT, SNAPSHOT_EXCLUDED = 6, 8, 16
 SNAPSHOT_CAPACITY_KEYS = ('window', 'remaining', 'after', 'step_pct', 'chain_pct', 'capacity_usd', 'remaining_usd',
                           'expected_usd', 'reset_hours', 'end_hours', 'expires_first', 'demand_pct', 'demand_source',
                           'shortage_probability', 'scarcity_cost', 'opportunity_cost', 'reset_sunk_weight', 'reset_bonus',
-                          'surplus_pct', 'stale')
+                          'surplus_pct', 'line_now_usd', 'line_end_usd', 'used_usd', 'under_line_usd', 'allowance_usd',
+                          'over_line_usd', 'substitute_absorbed_usd', 'net_over_line_usd', 'beta', 'stale')
 SNAPSHOT_DECISION_KEYS = ('action', 'needs_user_decision', 'margin', 'needs_judgment', 'reason', 'alternatives', 'continuity',
                           'fast', 'fast_reason', 'responsiveness', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
 
@@ -4073,7 +4654,9 @@ def _snapshot_row(candidate, detail):
     else:
         keep = ('fit', 'ability', 'opportunity_cost', 'capability', 'divergence', 'global_rigor', 'module_precision',
                 'responsiveness', 'responsiveness_source',
-                'reset_bonus', 'boost', 'free_usage', 'overqualification', 'effort_penalty')
+                'reset_bonus', 'boost', 'free_usage', 'overqualification', 'effort_penalty',
+                'five_axis_level', 'own_over_line_usd', 'net_over_line_usd', 'beta',
+                'earliest_under_line_reset_hours', 'duration_multiplier')
         row['components'] = {k: _round(comps[k]) for k in keep if k in comps and comps[k]}
         for k in ('fit', 'ability', 'opportunity_cost'):
             if k in comps:
@@ -4136,10 +4719,11 @@ def decision_snapshot(result, task=None):
 def assumptions(candidates, accounts):
     notes = []
     meta = accounts.get('_measured')
-    if not meta:
-        notes.append('no fresh capacity.json from the tray capacity service: demand falls back to the straight-line schedule')
-    elif meta['age_hours'] > 6:
-        notes.append(f"usage readings are {meta['age_hours']:.0f}h old; is the tray capacity service running?")
+    if not accounts.get('_five_axis'):
+        if not meta:
+            notes.append('no fresh capacity.json from the tray capacity service: demand falls back to the straight-line schedule')
+        elif meta['age_hours'] > 6:
+            notes.append(f"usage readings are {meta['age_hours']:.0f}h old; is the tray capacity service running?")
     for c in candidates:
         if c['excluded']:
             continue
@@ -4158,12 +4742,20 @@ def explain(top, system):
     if cap:
         rem_usd_str = f" (${cap['remaining_usd']:.2f})" if cap.get('remaining_usd') is not None else ""
         exp_usd_str = f" (~${top['expected_usd']:.2f})" if top.get('expected_usd') is not None else ""
-        parts.append(f"{cap['window']}: {cap['remaining']:.0f}% left{rem_usd_str}, work ~{top['expected_pct']}%{exp_usd_str} "
-                     f"(chain ~{top['chain_pct']}%), other work wants ~{cap['demand_pct']:.0f}% ({cap['demand_source']}) "
-                     f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
-                     f"opportunity cost {top['components']['opportunity_cost']}")
+        if 'net_over_line_usd' in cap:
+            parts.append(f"{cap['window']}: {cap['remaining']:.0f}% left{rem_usd_str}, work ~{top['expected_pct']}%{exp_usd_str} "
+                         f"(chain ~{top['chain_pct']}%), recovery line ${cap.get('line_now_usd', 0.0):.2f} "
+                         f"(under-line ${cap.get('under_line_usd', 0.0):.2f}), over-line X=${cap.get('over_line_usd', 0.0):.2f} "
+                         f"(net X=${cap.get('net_over_line_usd', 0.0):.2f}, beta {cap.get('beta', 0.0):.5f}), "
+                         f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
+                         f"opportunity cost {top['components']['opportunity_cost']}")
+        else:
+            parts.append(f"{cap['window']}: {cap['remaining']:.0f}% left{rem_usd_str}, work ~{top['expected_pct']}%{exp_usd_str} "
+                         f"(chain ~{top['chain_pct']}%), other work wants ~{cap['demand_pct']:.0f}% ({cap['demand_source']}) "
+                         f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
+                         f"opportunity cost {top['components']['opportunity_cost']}")
     exchange = (system or {}).get('opportunity_exchange') or {}
-    if exchange.get('score_per_displaced_usd'):
+    if exchange.get('score_per_displaced_usd') and not (cap and 'net_over_line_usd' in cap):
         parts.append(f"value/cost exchange {exchange['score_per_displaced_usd']:g} score per displaced USD "
                      f"(${exchange['usd_per_score_point']:g} displaced USD per score point)")
     factor = top['components'].get('harness_factor')
@@ -4172,8 +4764,11 @@ def explain(top, system):
     if top['components'].get('reset_bonus'):
         parts.append(f"includes an expiring-reset bonus of {top['components']['reset_bonus']:+.2f}")
     if top['bundle'].get('fast'):
-        parts.append(f"fast mode enabled ({top['components'].get('fast_reason', 'plentiful_quota')}, "
-                     f"bonus {top['components'].get('fast_bonus', 0):+.2f})")
+        if 'fast_bonus' in top['components']:
+            parts.append(f"fast mode enabled ({top['components'].get('fast_reason', 'plentiful_quota')}, "
+                         f"bonus {top['components'].get('fast_bonus', 0):+.2f})")
+        else:
+            parts.append(f"fast mode enabled ({top['components'].get('fast_reason', 'under_recovery_line')})")
     if top['components'].get('boost'):
         parts.append(f"includes a temporary user-override boost of {top['components']['boost']:+.2f}")
     if top['components'].get('responsiveness_source') == 'default':

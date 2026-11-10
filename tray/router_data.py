@@ -537,6 +537,13 @@ def account_cards() -> list[dict]:
 
     now = now_utc()
     accounts = _cached_accounts(allocator)
+    if callable(getattr(allocator, "five_axis_overlay", None)):
+        try:
+            overlaid = allocator.five_axis_overlay(accounts)
+            if isinstance(overlaid, dict):
+                accounts = overlaid
+        except Exception:
+            pass
     inventory = accounts.get("_discovery") if isinstance(accounts.get("_discovery"), dict) else provider_inventory.current()
     sources = provider_inventory.quota_sources(accounts)
     if getattr(router.usage_snapshot, "__module__", "") == "route_judge" and not hasattr(router.usage_snapshot, "_mock_name"):
@@ -652,6 +659,21 @@ def account_cards() -> list[dict]:
             else 'stale' if reading_failed and usage_row.get("status") == "fresh"
             else usage_row.get("status")
         )
+        free_unknown = bool(spec.get("capacity_unknown") and spec.get("five_axis_free_pool"))
+        raw_local = spec.get("local_spend_usd")
+        local_spend = (raw_local if isinstance(raw_local, dict)
+                       else {"used_usd": float(raw_local), "tokens": int(spec.get("local_spend_tokens") or 0),
+                             "source": spec.get("local_spend_source") or "opencode.db"}
+                       if isinstance(raw_local, (int, float)) and not isinstance(raw_local, bool) else None)
+        if free_unknown and kind == "ok":
+            text, kind = _tr("额度上限未知（不参与自动路由）"), "warn"
+        free_note = (
+            _tr("额度上限未知（capacity_unknown），不参与自动路由；本地累计消耗下界 U ≥ ${0:.2f}（{1:,} tokens，{2}）").format(
+                float(local_spend["used_usd"]), int(local_spend.get("tokens") or 0), local_spend.get("source") or "opencode.db")
+            if free_unknown and local_spend and local_spend.get("used_usd") is not None else
+            _tr("额度上限未知（capacity_unknown），不参与自动路由")
+            if free_unknown else None
+        )
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,
                       "status": status, "status_reason": (row or {}).get("reason"), "retry_hold": bool(held),
@@ -662,7 +684,10 @@ def account_cards() -> list[dict]:
                       "usage_status": usage_status,
                       "usage_age_seconds": usage_row.get("observation_age_seconds"),
                       "pool_members": member_rows,
+                      **({"capacity_unknown": True} if spec.get("capacity_unknown") else {}),
+                      **({"local_spend_usd": local_spend} if local_spend else {}),
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
+                          free_note if free_note is not None else
                           _tr("API 余额未提供，非无限额度") if spec.get('billing') == 'metered' and not windows else None,
                       "windows": windows, "bundles": bundle_pills,
                       "host_enabled": bool(pool_allowed(name)),

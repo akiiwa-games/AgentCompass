@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-09T11:33:49+00:00",
+ "generated_at": "2026-11-10T04:03:36+00:00",
  "conversion": "capability value = min(1, 0.8 x s / s_anchor), anchor claude-opus-5-5; see calibration/measurements.py",
  "sources": {
   "lmarena.tier_fit": {
@@ -307,7 +307,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "Artificial Analysis `artificial-analysis-long-context-reasoning` at the High variant (else the only listing)",
-   "models_listed": 167,
+   "models_listed": 169,
    "kind": "benchmark",
    "anchor": {
     "reference": 0.8267,
@@ -322,7 +322,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "Artificial Analysis `omniscience` at the High variant (else the only listing)",
-   "models_listed": 54,
+   "models_listed": 57,
    "kind": "benchmark",
    "anchor": {
     "reference": 0.7118,
@@ -337,7 +337,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "Artificial Analysis `terminalbench-4-0` at the High variant (else the only listing)",
-   "models_listed": 82,
+   "models_listed": 85,
    "kind": "benchmark",
    "anchor": {
     "reference": 0.5657,
@@ -352,7 +352,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing)",
-   "models_listed": 70,
+   "models_listed": 71,
    "kind": "benchmark",
    "anchor": {
     "reference": 0.8584,
@@ -389,12 +389,23 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "Artificial Analysis `automationbench-aa` at the High variant (else the only listing)",
-   "models_listed": 83,
+   "models_listed": 86,
    "kind": "benchmark",
    "anchor": {
     "reference": 0.6321,
     "how": "claude-opus-5-5 listed"
    }
+  },
+  "openrouter.modality": {
+   "file": "openrouter-models.json",
+   "url": "https://openrouter.ai/api/v1/models",
+   "fetched_at": "2026-11-09T03:43:50+00:00",
+   "sha256": "d94d8370997bb6a32c8265d0c5368d98c121355ebed0c51698539d81e32bdc13",
+   "as_of": "2026-11-09",
+   "as_of_kind": "fetch date (the source publishes no data date)",
+   "method": "OpenRouter /api/v1/models architecture.input_modalities",
+   "models_listed": 461,
+   "kind": "vendor"
   },
   "aa.cost_time": {
    "file": "aa-models.html",
@@ -404,7 +415,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "intelligenceIndexCostPerTask * 3600 / intelligenceIndexTimePerTask (audit round 046 section 2.3, method A)",
-   "models_listed": 183,
+   "models_listed": 186,
    "kind": "benchmark"
   },
   "aa.price": {
@@ -415,7 +426,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "AA listed price1mInputTokens / price1mOutputTokens / cacheHitPrice",
-   "models_listed": 183,
+   "models_listed": 186,
    "kind": "vendor"
   },
   "aa.index": {
@@ -426,7 +437,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "AA Intelligence Index at the High variant (else the only listing)",
-   "models_listed": 183,
+   "models_listed": 186,
    "kind": "benchmark"
   },
   "openrouter.price": {
@@ -478,6 +489,18 @@
      "reason": "listed on arena.ai Agent / Overall as Beam 1.0 501B A23B without Cost/Task"
     }
    }
+  },
+  "vendor.fast_mode": {
+   "file": null,
+   "url": "https://code.claude.com/docs/en/fast-mode",
+   "fetched_at": null,
+   "sha256": null,
+   "as_of": "2026-11-10",
+   "as_of_kind": "data date",
+   "method": "Anthropic Claude Code fast-mode and API pricing documentation (read 2026-11-10)",
+   "models_listed": 2,
+   "kind": "vendor",
+   "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing"
   },
   "community.wokey.claude": {
    "file": "community-wokey-claude.html",
@@ -1177,6 +1200,42 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "DeepSeek V4.1 Flash 1017"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "deepseek/deepseek-v4.1-flash",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -1344,6 +1403,7 @@
      "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
      "cost_per_task_usd": 0.15,
      "time_per_task_min": 8.3,
+     "output_tokens_per_task": 86500,
      "sessions": 78504
     },
     {
@@ -1405,6 +1465,65 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 12.392,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "DeepSeek V4.1 Flash 1017 (High)",
+     "time_per_task_s": 743.53,
+     "time_per_task_min": 12.392,
+     "output_tps": 148.52
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 15.955,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "DeepSeek V4.1 Flash 1017 (Max)",
+     "time_per_task_s": 957.28,
+     "time_per_task_min": 15.955,
+     "output_tps": 145.16
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 8.489,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "DeepSeek V4.1 Flash 1017 (Non-reasoning)",
+     "time_per_task_s": 509.35,
+     "time_per_task_min": 8.489,
+     "output_tps": 128.32
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 8.3,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
+     "time_per_task_min": 8.3,
+     "output_tokens_per_task": 86500,
+     "output_tokens_per_min": 10421.7,
+     "sessions": 78504
     }
    ],
    "intelligence_index": [
@@ -1592,6 +1711,33 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Claude Fable 5.1 (Max)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-fable-5.1",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -1767,6 +1913,7 @@
      "listed_as": "Claude Fable 5.1 (Max)",
      "cost_per_task_usd": 6.56,
      "time_per_task_min": 10.9,
+     "output_tokens_per_task": 54300,
      "sessions": 17468
     },
     {
@@ -1870,6 +2017,93 @@
      "mix_as_of": "2026-11-02"
     }
    ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 13.063,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Claude Fable 5.1 (High, Default Fallback)",
+     "time_per_task_s": 783.8,
+     "time_per_task_min": 13.063,
+     "output_tps": 84.24
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 7.453,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Claude Fable 5.1 (Low, Default Fallback)",
+     "time_per_task_s": 447.16,
+     "time_per_task_min": 7.453,
+     "output_tps": 84.61
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 22.732,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "Claude Fable 5.1 (Max, Default Fallback)",
+     "time_per_task_s": 1363.94,
+     "time_per_task_min": 22.732,
+     "output_tps": 86.47
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 9.613,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Claude Fable 5.1 (Medium, Default Fallback)",
+     "time_per_task_s": 576.79,
+     "time_per_task_min": 9.613,
+     "output_tps": 84.17
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 18.948,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Claude Fable 5.1 (Xhigh, Default Fallback)",
+     "time_per_task_s": 1136.88,
+     "time_per_task_min": 18.948,
+     "output_tps": 85.37
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 10.9,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "Claude Fable 5.1 (Max)",
+     "time_per_task_min": 10.9,
+     "output_tokens_per_task": 54300,
+     "output_tokens_per_min": 4981.7,
+     "sessions": 17468
+    }
+   ],
    "intelligence_index": [
     {
      "source": "aa.index",
@@ -1910,6 +2144,374 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "anthropic/claude-fable-5.1"
+    }
+   ]
+  },
+  "claude-fable-5-2": {
+   "tier": [
+    {
+     "source": "secondary.tier_fit",
+     "kind": "benchmark",
+     "value": 4.52,
+     "as_of": "2026-09-01",
+     "fetched_at": "2026-11-09T03:43:48+00:00",
+     "url": "https://www.vals.ai/benchmarks/swebench",
+     "method": "tiers.py secondary fit",
+     "fits": {
+      "aa": 4.52
+     },
+     "listed_as": {
+      "aa": "Claude Fable 5.2"
+     },
+     "vendor_reported": {}
+    }
+   ],
+   "global_rigor": [
+    {
+     "source": "aa.lcr",
+     "kind": "benchmark",
+     "value": 0.8065,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `artificial-analysis-long-context-reasoning` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "long_context",
+     "listed_as": "Claude Fable 5.2",
+     "raw": 0.8333,
+     "reference": 0.8267
+    },
+    {
+     "source": "aa.omniscience_index",
+     "kind": "benchmark",
+     "value": 0.9218,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `omniscience` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "anti_hallucination",
+     "listed_as": "Claude Fable 5.2",
+     "raw": 64.0333,
+     "reference": 0.7118
+    }
+   ],
+   "module_precision": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": 0.8429,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "terminal",
+     "listed_as": "Claude Fable 5.2",
+     "raw": 0.596,
+     "reference": 0.5657
+    }
+   ],
+   "vision_tools": [
+    {
+     "source": "aa.automationbench",
+     "kind": "benchmark",
+     "value": 0.9032,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `automationbench-aa` at the High variant (else the only listing); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "component": "tools",
+     "listed_as": "Claude Fable 5.2",
+     "raw": 0.7136,
+     "reference": 0.6321
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 30.857,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "cost per task x 3600 / time per task",
+     "effort": "high",
+     "listed_as": "Claude Fable 5.2 (High, Default Fallback)",
+     "cost_per_task": 9.07841,
+     "time_per_task_s": 1059.16
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 28.406,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "cost per task x 3600 / time per task",
+     "effort": "low",
+     "listed_as": "Claude Fable 5.2 (Low, Default Fallback)",
+     "cost_per_task": 3.09724,
+     "time_per_task_s": 392.53
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 34.297,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "cost per task x 3600 / time per task",
+     "effort": "max",
+     "listed_as": "Claude Fable 5.2 (Max, Default Fallback)",
+     "cost_per_task": 26.53856,
+     "time_per_task_s": 2785.67
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 27.383,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "cost per task x 3600 / time per task",
+     "effort": "medium",
+     "listed_as": "Claude Fable 5.2 (Medium, Default Fallback)",
+     "cost_per_task": 3.80261,
+     "time_per_task_s": 499.91
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 33.875,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "cost per task x 3600 / time per task",
+     "effort": "xhigh",
+     "listed_as": "Claude Fable 5.2 (Xhigh, Default Fallback)",
+     "cost_per_task": 14.82859,
+     "time_per_task_s": 1575.87
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 72.92,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Claude Fable 5.2 (High, Default Fallback)",
+     "output_tokens_per_hour": 332554,
+     "usd_per_million_output_at_mix": 219.273,
+     "prices": {
+      "output": 40,
+      "input": 8,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 72.115,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Claude Fable 5.2 (Low, Default Fallback)",
+     "output_tokens_per_hour": 328883,
+     "usd_per_million_output_at_mix": 219.273,
+     "prices": {
+      "output": 40,
+      "input": 8,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 77.581,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "max",
+     "listed_as": "Claude Fable 5.2 (Max, Default Fallback)",
+     "output_tokens_per_hour": 353809,
+     "usd_per_million_output_at_mix": 219.273,
+     "prices": {
+      "output": 40,
+      "input": 8,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 68.105,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Claude Fable 5.2 (Medium, Default Fallback)",
+     "output_tokens_per_hour": 310593,
+     "usd_per_million_output_at_mix": 219.273,
+     "prices": {
+      "output": 40,
+      "input": 8,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 81.121,
+     "as_of": "2026-11-02",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "Claude Fable 5.2 (Xhigh, Default Fallback)",
+     "output_tokens_per_hour": 369954,
+     "usd_per_million_output_at_mix": 219.273,
+     "prices": {
+      "output": 40,
+      "input": 8,
+      "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 17.653,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Claude Fable 5.2 (High, Default Fallback)",
+     "time_per_task_s": 1059.16,
+     "time_per_task_min": 17.653,
+     "output_tps": 92.38
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 6.542,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Claude Fable 5.2 (Low, Default Fallback)",
+     "time_per_task_s": 392.53,
+     "time_per_task_min": 6.542,
+     "output_tps": 91.36
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 46.428,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "Claude Fable 5.2 (Max, Default Fallback)",
+     "time_per_task_s": 2785.67,
+     "time_per_task_min": 46.428,
+     "output_tps": 98.28
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 8.332,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Claude Fable 5.2 (Medium, Default Fallback)",
+     "time_per_task_s": 499.91,
+     "time_per_task_min": 8.332,
+     "output_tps": 86.28
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 26.264,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Claude Fable 5.2 (Xhigh, Default Fallback)",
+     "time_per_task_s": 1575.87,
+     "time_per_task_min": 26.264,
+     "output_tps": 102.76
+    }
+   ],
+   "intelligence_index": [
+    {
+     "source": "aa.index",
+     "kind": "benchmark",
+     "value": 61.82,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index",
+     "listed_as": "Claude Fable 5.2 (High, Default Fallback)"
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 8,
+      "output": 40,
+      "cache_read": 0.2
+     },
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Claude Fable 5.2 (High, Default Fallback)"
+    }
+   ],
+   "fast_mode": [
+    {
+     "source": "vendor.fast_mode",
+     "kind": "vendor",
+     "value": {
+      "price_multiplier": 2.0,
+      "speed_multiplier": 2.5
+     },
+     "as_of": "2026-11-10",
+     "fetched_at": null,
+     "url": "https://code.claude.com/docs/en/fast-mode",
+     "method": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is $16/$80 per MTok (2x standard $8/$40) with up to 2.5x output tokens per second.",
+     "fast_price": {
+      "input": 16.0,
+      "output": 80.0
+     },
+     "standard_price": {
+      "input": 8.0,
+      "output": 40.0
+     },
+     "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing"
     }
    ]
   },
@@ -2042,6 +2644,43 @@
      "listed_as": "Claude Opus 5.5",
      "raw": 0.6321,
      "reference": 0.6321
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Claude Opus 5.5 (High)"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "Claude Opus 5.5"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-opus-5.5",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
     }
    ],
    "global_rigor": [
@@ -2217,6 +2856,7 @@
      "listed_as": "Claude Opus 5.5 (Max)",
      "cost_per_task_usd": 6.21,
      "time_per_task_min": 16.3,
+     "output_tokens_per_task": 119900,
      "sessions": 14358
     },
     {
@@ -2320,6 +2960,93 @@
      "mix_as_of": "2026-11-02"
     }
    ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 9.56,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Claude Opus 5.5 (High, Default Fallback)",
+     "time_per_task_s": 573.58,
+     "time_per_task_min": 9.56,
+     "output_tps": 104.73
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.065,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Claude Opus 5.5 (Low, Default Fallback)",
+     "time_per_task_s": 183.9,
+     "time_per_task_min": 3.065,
+     "output_tps": 103.64
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 25.285,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "Claude Opus 5.5 (Max, Default Fallback)",
+     "time_per_task_s": 1517.11,
+     "time_per_task_min": 25.285,
+     "output_tps": 114.24
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 7.095,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Claude Opus 5.5 (Medium, Default Fallback)",
+     "time_per_task_s": 425.7,
+     "time_per_task_min": 7.095,
+     "output_tps": 102.93
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 15.994,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Claude Opus 5.5 (Xhigh, Default Fallback)",
+     "time_per_task_s": 959.64,
+     "time_per_task_min": 15.994,
+     "output_tps": 107.74
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 16.3,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "Claude Opus 5.5 (Max)",
+     "time_per_task_min": 16.3,
+     "output_tokens_per_task": 119900,
+     "output_tokens_per_min": 7355.8,
+     "sessions": 14358
+    }
+   ],
    "intelligence_index": [
     {
      "source": "aa.index",
@@ -2360,6 +3087,29 @@
      "url": "https://openrouter.ai/api/v1/models",
      "method": "USD per million tokens",
      "listed_as": "anthropic/claude-opus-5.5"
+    }
+   ],
+   "fast_mode": [
+    {
+     "source": "vendor.fast_mode",
+     "kind": "vendor",
+     "value": {
+      "price_multiplier": 2.0,
+      "speed_multiplier": 2.5
+     },
+     "as_of": "2026-11-10",
+     "fetched_at": null,
+     "url": "https://code.claude.com/docs/en/fast-mode",
+     "method": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is $8/$40 per MTok (2x standard $4/$20) with up to 2.5x output tokens per second.",
+     "fast_price": {
+      "input": 8.0,
+      "output": 40.0
+     },
+     "standard_price": {
+      "input": 4.0,
+      "output": 20.0
+     },
+     "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing"
     }
    ]
   },
@@ -2479,6 +3229,43 @@
      "listed_as": "GPT-6.1 Sol",
      "raw": 0.645,
      "reference": 0.6321
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GPT-6.1 Sol (Max)"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "GPT-6.1 Sol"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-6.1-sol",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
     }
    ],
    "global_rigor": [
@@ -2654,6 +3441,7 @@
      "listed_as": "GPT-6.1 Sol (Max)",
      "cost_per_task_usd": 0.98,
      "time_per_task_min": 9.6,
+     "output_tokens_per_task": 34600,
      "sessions": 30514
     },
     {
@@ -2755,6 +3543,93 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 6.468,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "GPT-6.1 Sol (High)",
+     "time_per_task_s": 388.09,
+     "time_per_task_min": 6.468,
+     "output_tps": 58.25
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 1.81,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "GPT-6.1 Sol (Low)",
+     "time_per_task_s": 108.63,
+     "time_per_task_min": 1.81,
+     "output_tps": 53.74
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 19.865,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Sol (Max)",
+     "time_per_task_s": 1191.92,
+     "time_per_task_min": 19.865,
+     "output_tps": 56.9
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.844,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "GPT-6.1 Sol (Medium)",
+     "time_per_task_s": 230.67,
+     "time_per_task_min": 3.844,
+     "output_tps": 58.61
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 9.158,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "GPT-6.1 Sol (Xhigh)",
+     "time_per_task_s": 549.46,
+     "time_per_task_min": 9.158,
+     "output_tps": 55.04
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 9.6,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Sol (Max)",
+     "time_per_task_min": 9.6,
+     "output_tokens_per_task": 34600,
+     "output_tokens_per_min": 3604.2,
+     "sessions": 30514
     }
    ],
    "intelligence_index": [
@@ -2931,6 +3806,43 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GPT-6 Astra (Max)"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "GPT-6 Astra"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-6-astra",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -3104,6 +4016,7 @@
      "listed_as": "GPT-6 Astra (Max)",
      "cost_per_task_usd": 6.54,
      "time_per_task_min": 13.6,
+     "output_tokens_per_task": 43300,
      "sessions": 15520
     },
     {
@@ -3205,6 +4118,93 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 9.687,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "GPT-6 Astra (High)",
+     "time_per_task_s": 581.19,
+     "time_per_task_min": 9.687,
+     "output_tps": 39.8
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.715,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "GPT-6 Astra (Low)",
+     "time_per_task_s": 222.92,
+     "time_per_task_min": 3.715,
+     "output_tps": 40.94
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 22.613,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "GPT-6 Astra (Max)",
+     "time_per_task_s": 1356.8,
+     "time_per_task_min": 22.613,
+     "output_tps": 38.31
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 7.008,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "GPT-6 Astra (Medium)",
+     "time_per_task_s": 420.47,
+     "time_per_task_min": 7.008,
+     "output_tps": 42.93
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 11.458,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "GPT-6 Astra (Xhigh)",
+     "time_per_task_s": 687.5,
+     "time_per_task_min": 11.458,
+     "output_tps": 38.87
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 13.6,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "GPT-6 Astra (Max)",
+     "time_per_task_min": 13.6,
+     "output_tokens_per_task": 43300,
+     "output_tokens_per_min": 3183.8,
+     "sessions": 15520
     }
    ],
    "intelligence_index": [
@@ -3466,6 +4466,25 @@
      "reference": 0.5657
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (audio, file, image, text, video)",
+     "listed_as": "google/gemini-4-argon",
+     "input_modalities": [
+      "audio",
+      "file",
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -3503,6 +4522,7 @@
      "listed_as": "Gemini 4 Argon (High)",
      "cost_per_task_usd": 0.81,
      "time_per_task_min": 7.3,
+     "output_tokens_per_task": 28100,
      "sessions": 53301
     },
     {
@@ -3524,6 +4544,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 28.573,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Gemini 4 Argon (High)",
+     "time_per_task_s": 1714.35,
+     "time_per_task_min": 28.573,
+     "output_tps": 67.88
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 7.3,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "high",
+     "listed_as": "Gemini 4 Argon (High)",
+     "time_per_task_min": 7.3,
+     "output_tokens_per_task": 28100,
+     "output_tokens_per_min": 3849.3,
+     "sessions": 53301
     }
    ],
    "intelligence_index": [
@@ -3672,6 +4723,33 @@
      "listed_as": "Claude Sonnet 5.5",
      "raw": 0.5943,
      "reference": 0.6321
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Claude Sonnet 5.5 (xHigh)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-sonnet-5.5",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
     }
    ],
    "global_rigor": [
@@ -3847,6 +4925,7 @@
      "listed_as": "Claude Sonnet 5.5 (Max)",
      "cost_per_task_usd": 3.42,
      "time_per_task_min": 16.0,
+     "output_tokens_per_task": 146300,
      "sessions": 8670
     },
     {
@@ -3948,6 +5027,93 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 7.109,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Claude Sonnet 5.5 (High, Default Fallback)",
+     "time_per_task_s": 426.52,
+     "time_per_task_min": 7.109,
+     "output_tps": 136.97
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 2.65,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Claude Sonnet 5.5 (Low, Default Fallback)",
+     "time_per_task_s": 159.02,
+     "time_per_task_min": 2.65,
+     "output_tps": 131.16
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 31.098,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "Claude Sonnet 5.5 (Max, Default Fallback)",
+     "time_per_task_s": 1865.9,
+     "time_per_task_min": 31.098,
+     "output_tps": 152.95
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.615,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Claude Sonnet 5.5 (Medium, Default Fallback)",
+     "time_per_task_s": 216.88,
+     "time_per_task_min": 3.615,
+     "output_tps": 141.77
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 15.097,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Claude Sonnet 5.5 (Xhigh, Default Fallback)",
+     "time_per_task_s": 905.82,
+     "time_per_task_min": 15.097,
+     "output_tps": 134.91
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 16.0,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "Claude Sonnet 5.5 (Max)",
+     "time_per_task_min": 16.0,
+     "output_tokens_per_task": 146300,
+     "output_tokens_per_min": 9143.8,
+     "sessions": 8670
     }
    ],
    "intelligence_index": [
@@ -4111,6 +5277,33 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Grok 4.7 (xHigh)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "x-ai/grok-4.7",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -4258,6 +5451,7 @@
      "listed_as": "Grok 4.7 (xHigh)",
      "cost_per_task_usd": 2.91,
      "time_per_task_min": 16.2,
+     "output_tokens_per_task": 79500,
      "sessions": 18848
     },
     {
@@ -4319,6 +5513,65 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 21.846,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Grok 4.7 (High)",
+     "time_per_task_s": 1310.76,
+     "time_per_task_min": 21.846,
+     "output_tps": 68.0
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 10.635,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Grok 4.7 (Low)",
+     "time_per_task_s": 638.09,
+     "time_per_task_min": 10.635,
+     "output_tps": 66.87
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 25.974,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Grok 4.7 (Xhigh)",
+     "time_per_task_s": 1558.43,
+     "time_per_task_min": 25.974,
+     "output_tps": 67.07
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 16.2,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "xhigh",
+     "listed_as": "Grok 4.7 (xHigh)",
+     "time_per_task_min": 16.2,
+     "output_tokens_per_task": 79500,
+     "output_tokens_per_min": 4907.4,
+     "sessions": 18848
     }
    ],
    "intelligence_index": [
@@ -4493,6 +5746,45 @@
      "listed_as": "Gemini 3.8 Flash",
      "raw": 0.5993,
      "reference": 0.6321
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Gemini 3.8 Flash (High)"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "Gemini 3.8 Flash"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video, file, audio)",
+     "listed_as": "google/gemini-3.8-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "file",
+      "audio"
+     ]
     }
    ],
    "global_rigor": [
@@ -4677,6 +5969,7 @@
      "listed_as": "Gemini 3.8 Flash (High)",
      "cost_per_task_usd": 0.71,
      "time_per_task_min": 8.6,
+     "output_tokens_per_task": 53300,
      "sessions": 52722
     },
     {
@@ -4738,6 +6031,65 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 14.908,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Gemini 3.8 Flash (High)",
+     "time_per_task_s": 894.48,
+     "time_per_task_min": 14.908,
+     "output_tps": 110.61
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Gemini 3.8 Flash (Low)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 99.33
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 11.947,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Gemini 3.8 Flash (Medium)",
+     "time_per_task_s": 716.84,
+     "time_per_task_min": 11.947,
+     "output_tps": 114.49
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 8.6,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "high",
+     "listed_as": "Gemini 3.8 Flash (High)",
+     "time_per_task_min": 8.6,
+     "output_tokens_per_task": 53300,
+     "output_tokens_per_min": 6197.7,
+     "sessions": 52722
     }
    ],
    "intelligence_index": [
@@ -4976,6 +6328,23 @@
      "reference": 0.5657
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-haiku-5.5",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -5054,6 +6423,7 @@
      "listed_as": "Claude Haiku 5.5 (High)",
      "cost_per_task_usd": 0.08,
      "time_per_task_min": 1.8,
+     "output_tokens_per_task": 25000,
      "sessions": 31731
     },
     {
@@ -5155,6 +6525,93 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 6.474,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Claude Haiku 5.5 (High)",
+     "time_per_task_s": 388.47,
+     "time_per_task_min": 6.474,
+     "output_tps": 226.7
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 2.18,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Claude Haiku 5.5 (Low)",
+     "time_per_task_s": 130.78,
+     "time_per_task_min": 2.18,
+     "output_tps": 215.33
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 16.175,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "Claude Haiku 5.5 (Max)",
+     "time_per_task_s": 970.51,
+     "time_per_task_min": 16.175,
+     "output_tps": 232.83
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 4.12,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Claude Haiku 5.5 (Medium)",
+     "time_per_task_s": 247.17,
+     "time_per_task_min": 4.12,
+     "output_tps": 215.78
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 9.736,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Claude Haiku 5.5 (Xhigh)",
+     "time_per_task_s": 584.16,
+     "time_per_task_min": 9.736,
+     "output_tps": 233.12
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.8,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "high",
+     "listed_as": "Claude Haiku 5.5 (High)",
+     "time_per_task_min": 1.8,
+     "output_tokens_per_task": 25000,
+     "output_tokens_per_min": 13888.9,
+     "sessions": 31731
     }
    ],
    "intelligence_index": [
@@ -5353,6 +6810,33 @@
      "reference": 0.5657
     }
    ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "GPT-6.1 Terra"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-6.1-terra",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -5444,6 +6928,7 @@
      "listed_as": "GPT-6.1 Terra (Max)",
      "cost_per_task_usd": 0.8,
      "time_per_task_min": 8.9,
+     "output_tokens_per_task": 43700,
      "sessions": 23276
     },
     {
@@ -5565,6 +7050,107 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 4.015,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "GPT-6.1 Terra (High)",
+     "time_per_task_s": 240.87,
+     "time_per_task_min": 4.015,
+     "output_tps": 69.52
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 1.09,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "GPT-6.1 Terra (Low)",
+     "time_per_task_s": 65.39,
+     "time_per_task_min": 1.09,
+     "output_tps": 67.63
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 13.469,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Terra (Max)",
+     "time_per_task_s": 808.14,
+     "time_per_task_min": 13.469,
+     "output_tps": 74.1
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 2.602,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "GPT-6.1 Terra (Medium)",
+     "time_per_task_s": 156.12,
+     "time_per_task_min": 2.602,
+     "output_tps": 69.66
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 2.253,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "GPT-6.1 Terra (Non-reasoning)",
+     "time_per_task_s": 135.19,
+     "time_per_task_min": 2.253,
+     "output_tps": 70.18
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 6.032,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "GPT-6.1 Terra (Xhigh)",
+     "time_per_task_s": 361.92,
+     "time_per_task_min": 6.032,
+     "output_tps": 72.39
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 8.9,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "GPT-6.1 Terra (Max)",
+     "time_per_task_min": 8.9,
+     "output_tokens_per_task": 43700,
+     "output_tokens_per_min": 4910.1,
+     "sessions": 23276
     }
    ],
    "intelligence_index": [
@@ -5724,6 +7310,33 @@
      "reference": 0.5968
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GPT-6 Sol (Max)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-6-sol",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -5796,6 +7409,23 @@
      "listed_as": "openai/gpt-6-sol"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 6.2,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "GPT-6 Sol (Max)",
+     "time_per_task_min": 6.2,
+     "output_tokens_per_task": 40300,
+     "output_tokens_per_min": 6500.0,
+     "sessions": 12836
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -5809,6 +7439,7 @@
      "listed_as": "GPT-6 Sol (Max)",
      "cost_per_task_usd": 1.78,
      "time_per_task_min": 6.2,
+     "output_tokens_per_task": 40300,
      "sessions": 12836
     }
    ]
@@ -5953,6 +7584,43 @@
      "listed_as": "GPT-6 Luna",
      "raw": 0.4782,
      "reference": 0.6321
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GPT-6 Luna (Max)"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "GPT-6 Luna"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-6-luna",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
     }
    ],
    "global_rigor": [
@@ -6143,6 +7811,7 @@
      "listed_as": "GPT-6 Luna (Max)",
      "cost_per_task_usd": 0.09,
      "time_per_task_min": 6.1,
+     "output_tokens_per_task": 40700,
      "sessions": 228261
     },
     {
@@ -6157,6 +7826,7 @@
      "listed_as": "GPT-6 Luna (Medium)",
      "cost_per_task_usd": 0.03,
      "time_per_task_min": 1.7,
+     "output_tokens_per_task": 9600,
      "sessions": 76341
     },
     {
@@ -6171,6 +7841,7 @@
      "listed_as": "GPT-6 Luna (Low)",
      "cost_per_task_usd": 0.01,
      "time_per_task_min": 0.78,
+     "output_tokens_per_task": 3800,
      "sessions": 43861
     },
     {
@@ -6292,6 +7963,137 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 5.698,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "GPT-6 Luna (High)",
+     "time_per_task_s": 341.9,
+     "time_per_task_min": 5.698,
+     "output_tps": 96.05
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 0.623,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "GPT-6 Luna (Low)",
+     "time_per_task_s": 37.37,
+     "time_per_task_min": 0.623,
+     "output_tps": 88.2
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 12.415,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "GPT-6 Luna (Max)",
+     "time_per_task_s": 744.89,
+     "time_per_task_min": 12.415,
+     "output_tps": 101.08
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.446,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "GPT-6 Luna (Medium)",
+     "time_per_task_s": 206.76,
+     "time_per_task_min": 3.446,
+     "output_tps": 95.87
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 2.061,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "GPT-6 Luna (Non-reasoning)",
+     "time_per_task_s": 123.66,
+     "time_per_task_min": 2.061,
+     "output_tps": 81.34
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 7.26,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "GPT-6 Luna (Xhigh)",
+     "time_per_task_s": 435.59,
+     "time_per_task_min": 7.26,
+     "output_tps": 100.77
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 6.1,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "GPT-6 Luna (Max)",
+     "time_per_task_min": 6.1,
+     "output_tokens_per_task": 40700,
+     "output_tokens_per_min": 6672.1,
+     "sessions": 228261
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.7,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "medium",
+     "listed_as": "GPT-6 Luna (Medium)",
+     "time_per_task_min": 1.7,
+     "output_tokens_per_task": 9600,
+     "output_tokens_per_min": 5647.1,
+     "sessions": 76341
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 0.78,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "low",
+     "listed_as": "GPT-6 Luna (Low)",
+     "time_per_task_min": 0.78,
+     "output_tokens_per_task": 3800,
+     "output_tokens_per_min": 4851.1,
+     "sessions": 43861
     }
    ],
    "intelligence_index": [
@@ -6451,6 +8253,33 @@
      "reference": 0.5968
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GPT-5.6 Sol (xHigh)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-5.6-sol",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -6549,6 +8378,23 @@
      "listed_as": "openai/gpt-5.6-sol"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.0,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "xhigh",
+     "listed_as": "GPT-5.6 Sol (xHigh)",
+     "time_per_task_min": 4.0,
+     "output_tokens_per_task": 23300,
+     "output_tokens_per_min": 5825.0,
+     "sessions": 45371
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -6562,6 +8408,7 @@
      "listed_as": "GPT-5.6 Sol (xHigh)",
      "cost_per_task_usd": 1.73,
      "time_per_task_min": 4.0,
+     "output_tokens_per_task": 23300,
      "sessions": 45371
     }
    ]
@@ -6680,6 +8527,33 @@
      "reference": 0.5968
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GPT-5.6 Terra (xHigh)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-5.6-terra",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -6739,6 +8613,23 @@
      "listed_as": "openai/gpt-5.6-terra"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 2.8,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "xhigh",
+     "listed_as": "GPT-5.6 Terra (xHigh)",
+     "time_per_task_min": 2.8,
+     "output_tokens_per_task": 17400,
+     "output_tokens_per_min": 6214.3,
+     "sessions": 44425
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -6752,6 +8643,7 @@
      "listed_as": "GPT-5.6 Terra (xHigh)",
      "cost_per_task_usd": 0.65,
      "time_per_task_min": 2.8,
+     "output_tokens_per_task": 17400,
      "sessions": 44425
     }
    ]
@@ -6841,6 +8733,33 @@
      "listed_as": "GPT-5.6 Luna (xHigh)",
      "raw": 1255.8322,
      "reference": 1323.6515
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GPT-5.6 Luna (xHigh)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-5.6-luna",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
     }
    ],
    "global_rigor": [
@@ -7060,6 +8979,21 @@
      "reference": 1.3049
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "deepseek/deepseek-v4-pro",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -7148,6 +9082,36 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 24.306,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "DeepSeek V4 Pro 0813 (Max)",
+     "time_per_task_s": 1458.36,
+     "time_per_task_min": 24.306,
+     "output_tps": 67.7
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 16.567,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "DeepSeek V4 Pro 0813 (Non-reasoning)",
+     "time_per_task_s": 994.03,
+     "time_per_task_min": 16.567,
+     "output_tps": 72.02
     }
    ],
    "intelligence_index": [
@@ -7428,6 +9392,21 @@
      "reference": 1.3049
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-5.3",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -7489,6 +9468,7 @@
      "listed_as": "GLM-5.3 (Max)",
      "cost_per_task_usd": 1.08,
      "time_per_task_min": 14.8,
+     "output_tokens_per_task": 65100,
      "sessions": 95597
     },
     {
@@ -7530,6 +9510,51 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 16.148,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "GLM-5.3 (Low)",
+     "time_per_task_s": 968.88,
+     "time_per_task_min": 16.148,
+     "output_tps": 53.66
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 29.44,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "GLM-5.3 (Max)",
+     "time_per_task_s": 1766.42,
+     "time_per_task_min": 29.44,
+     "output_tps": 67.36
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 14.8,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "GLM-5.3 (Max)",
+     "time_per_task_min": 14.8,
+     "output_tokens_per_task": 65100,
+     "output_tokens_per_min": 4398.6,
+     "sessions": 95597
     }
    ],
    "intelligence_index": [
@@ -7689,6 +9714,33 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "GLM-5.3-Flash"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "z-ai/glm-5.3-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -7808,6 +9860,7 @@
      "listed_as": "GLM-5.3-Flash",
      "cost_per_task_usd": 0.17,
      "time_per_task_min": 6.8,
+     "output_tokens_per_task": 49800,
      "sessions": 95526
     },
     {
@@ -7829,6 +9882,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 44.662,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "GLM-5.3-Flash",
+     "time_per_task_s": 2679.71,
+     "time_per_task_min": 44.662,
+     "output_tps": 50.08
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 6.8,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "GLM-5.3-Flash",
+     "time_per_task_min": 6.8,
+     "output_tokens_per_task": 49800,
+     "output_tokens_per_min": 7323.5,
+     "sessions": 95526
     }
    ],
    "intelligence_index": [
@@ -7954,6 +10038,37 @@
      "listed_as": "Qwen3 Coder Next",
      "raw": 0.7953,
      "reference": 2.3278
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "qwen/qwen3-coder-next",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Qwen3 Coder Next",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 71.89
     }
    ],
    "price": [
@@ -8136,6 +10251,43 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Qwen3.8-Max"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "Qwen3.8 Max"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.8-max-0902",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -8283,6 +10435,7 @@
      "listed_as": "Qwen3.8-Max",
      "cost_per_task_usd": 1.22,
      "time_per_task_min": 14.9,
+     "output_tokens_per_task": 51000,
      "sessions": 80457
     },
     {
@@ -8304,6 +10457,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 61.773,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Qwen3.8 Max (0902)",
+     "time_per_task_s": 3706.41,
+     "time_per_task_min": 61.773,
+     "output_tps": 46.08
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 14.9,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "Qwen3.8-Max",
+     "time_per_task_min": 14.9,
+     "output_tokens_per_task": 51000,
+     "output_tokens_per_min": 3422.8,
+     "sessions": 80457
     }
    ],
    "intelligence_index": [
@@ -8506,6 +10690,33 @@
      "reference": 0.5657
     }
    ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "Kimi K3.1 Pro"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "moonshotai/kimi-k3.1-pro",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -8532,6 +10743,7 @@
      "listed_as": "Kimi K3.1 Pro (Max)",
      "cost_per_task_usd": 1.3,
      "time_per_task_min": 8.0,
+     "output_tokens_per_task": 36200,
      "sessions": 22581
     },
     {
@@ -8553,6 +10765,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 38.168,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Kimi K3.1 Pro",
+     "time_per_task_s": 2290.08,
+     "time_per_task_min": 38.168,
+     "output_tps": 31.54
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 8.0,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "Kimi K3.1 Pro (Max)",
+     "time_per_task_min": 8.0,
+     "output_tokens_per_task": 36200,
+     "output_tokens_per_min": 4525.0,
+     "sessions": 22581
     }
    ],
    "intelligence_index": [
@@ -8781,6 +11024,23 @@
      "reference": 1.3049
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "moonshotai/kimi-k3",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
    "price": [
     {
      "source": "openrouter.price",
@@ -8797,6 +11057,23 @@
      "listed_as": "moonshotai/kimi-k3"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 9.3,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "Kimi K3 (Max)",
+     "time_per_task_min": 9.3,
+     "output_tokens_per_task": 25600,
+     "output_tokens_per_min": 2752.7,
+     "sessions": 160495
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -8810,6 +11087,7 @@
      "listed_as": "Kimi K3 (Max)",
      "cost_per_task_usd": 0.89,
      "time_per_task_min": 9.3,
+     "output_tokens_per_task": 25600,
      "sessions": 160495
     }
    ]
@@ -8965,6 +11243,53 @@
      "listed_as": "MiniMax-M3",
      "raw": 0.8889,
      "reference": 2.3278
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "MiniMax-M3"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "MiniMax-M3"
+    },
+    {
+     "source": "osworld.verified",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:53+00:00",
+     "url": "https://os-world.github.io/static/data/osworld_verified_results.xlsx",
+     "method": "OSWorld-Verified success rate, general models without an agent framework, best max-steps run: measured on image/screenshot input",
+     "listed_as": "MiniMax M3"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "minimax/minimax-m3",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
     }
    ],
    "global_rigor": [
@@ -9127,6 +11452,7 @@
      "listed_as": "MiniMax-M3",
      "cost_per_task_usd": 0.34,
      "time_per_task_min": 3.5,
+     "output_tokens_per_task": 24900,
      "sessions": 44355
     },
     {
@@ -9148,6 +11474,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 11.944,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "MiniMax-M3",
+     "time_per_task_s": 716.64,
+     "time_per_task_min": 11.944,
+     "output_tps": 127.61
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 3.5,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "MiniMax-M3",
+     "time_per_task_min": 3.5,
+     "output_tokens_per_task": 24900,
+     "output_tokens_per_min": 7114.3,
+     "sessions": 44355
     }
    ],
    "intelligence_index": [
@@ -9335,6 +11692,33 @@
      "reference": 0.5657
     }
    ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "MiniMax-M3.1-Flash"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "minimax/minimax-m3.1-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -9361,6 +11745,7 @@
      "listed_as": "MiniMax-M3.1-Flash",
      "cost_per_task_usd": 0.24,
      "time_per_task_min": 9.1,
+     "output_tokens_per_task": 75100,
      "sessions": 13089
     },
     {
@@ -9382,6 +11767,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 14.205,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "MiniMax-M3.1-Flash",
+     "time_per_task_s": 852.28,
+     "time_per_task_min": 14.205,
+     "output_tps": 162.13
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 9.1,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "MiniMax-M3.1-Flash",
+     "time_per_task_min": 9.1,
+     "output_tokens_per_task": 75100,
+     "output_tokens_per_min": 8252.7,
+     "sessions": 13089
     }
    ],
    "intelligence_index": [
@@ -9575,6 +11991,34 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "MiMo-V2.6-Pro"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video, audio)",
+     "listed_as": "xiaomi/mimo-v2.6-pro",
+     "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "audio"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -9696,6 +12140,7 @@
      "listed_as": "MiMo-V2.6-Pro",
      "cost_per_task_usd": 0.17,
      "time_per_task_min": 16.2,
+     "output_tokens_per_task": 49600,
      "sessions": 49297
     },
     {
@@ -9717,6 +12162,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 39.763,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Pro",
+     "time_per_task_s": 2385.79,
+     "time_per_task_min": 39.763,
+     "output_tps": 50.75
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 16.2,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Pro",
+     "time_per_task_min": 16.2,
+     "output_tokens_per_task": 49600,
+     "output_tokens_per_min": 3061.7,
+     "sessions": 49297
     }
    ],
    "intelligence_index": [
@@ -9889,6 +12365,44 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "MiMo-V2.6-Flash"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "MiMo-V2.6-Flash"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video, audio)",
+     "listed_as": "xiaomi/mimo-v2.6-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "audio"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -9971,6 +12485,7 @@
      "listed_as": "MiMo-V2.6-Flash",
      "cost_per_task_usd": 0.07,
      "time_per_task_min": 15.3,
+     "output_tokens_per_task": 45000,
      "sessions": 32025
     },
     {
@@ -9992,6 +12507,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 62.135,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Flash",
+     "time_per_task_s": 3728.09,
+     "time_per_task_min": 62.135,
+     "output_tps": 35.35
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 15.3,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "MiMo-V2.6-Flash",
+     "time_per_task_min": 15.3,
+     "output_tokens_per_task": 45000,
+     "output_tokens_per_min": 2941.2,
+     "sessions": 32025
     }
    ],
    "intelligence_index": [
@@ -10126,6 +12672,23 @@
      "reference": 1.3049
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.0,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "Nemotron 3 Ultra",
+     "time_per_task_min": 4.0,
+     "output_tokens_per_task": 7800,
+     "output_tokens_per_min": 1950.0,
+     "sessions": 13691
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -10139,6 +12702,7 @@
      "listed_as": "Nemotron 3 Ultra",
      "cost_per_task_usd": 0.12,
      "time_per_task_min": 4.0,
+     "output_tokens_per_task": 7800,
      "sessions": 13691
     }
    ]
@@ -10257,6 +12821,33 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "nvidia/nemotron-3.5-super-vl:free",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -10346,6 +12937,37 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 5.932,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Nemotron 3.5 Super VL",
+     "time_per_task_s": 355.9,
+     "time_per_task_min": 5.932,
+     "output_tps": 228.81
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 2.7,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "time_per_task_min": 2.7,
+     "output_tokens_per_task": 14600,
+     "output_tokens_per_min": 5407.4,
+     "sessions": 29893
     }
    ],
    "intelligence_index": [
@@ -10523,6 +13145,21 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "nvidia/nemotron-3.5-lightning:free",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -10556,6 +13193,22 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 4.151,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Nemotron 3.5 Lightning",
+     "time_per_task_s": 249.07,
+     "time_per_task_min": 4.151,
+     "output_tps": 261.07
     }
    ],
    "intelligence_index": [
@@ -10714,6 +13367,18 @@
      "reference": 0.6321
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Mistral Large 4"
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -10796,6 +13461,7 @@
      "listed_as": "Mistral Large 4",
      "cost_per_task_usd": 0.32,
      "time_per_task_min": 4.4,
+     "output_tokens_per_task": 25900,
      "sessions": 5559
     },
     {
@@ -10837,6 +13503,51 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 12.389,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Mistral Large 4 (High)",
+     "time_per_task_s": 743.35,
+     "time_per_task_min": 12.389,
+     "output_tps": 110.25
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 9.079,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Mistral Large 4 (Medium)",
+     "time_per_task_s": 544.75,
+     "time_per_task_min": 9.079,
+     "output_tps": 103.39
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.4,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "Mistral Large 4",
+     "time_per_task_min": 4.4,
+     "output_tokens_per_task": 25900,
+     "output_tokens_per_min": 5886.4,
+     "sessions": 5559
     }
    ],
    "intelligence_index": [
@@ -11077,6 +13788,35 @@
      "reference": 0.5657
     }
    ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "Muse Wonder"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video, file, audio)",
+     "listed_as": "meta/muse-wonder",
+     "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "file",
+      "audio"
+     ]
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "aa.cost_time",
@@ -11116,6 +13856,7 @@
      "listed_as": "Muse Wonder (Max)",
      "cost_per_task_usd": 1.27,
      "time_per_task_min": 3.5,
+     "output_tokens_per_task": 24500,
      "sessions": 13921
     },
     {
@@ -11157,6 +13898,51 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 9.006,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Muse Wonder (High)",
+     "time_per_task_s": 540.38,
+     "time_per_task_min": 9.006,
+     "output_tps": 125.7
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 12.834,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "Muse Wonder (Max)",
+     "time_per_task_s": 770.02,
+     "time_per_task_min": 12.834,
+     "output_tps": 124.75
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 3.5,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "Muse Wonder (Max)",
+     "time_per_task_min": 3.5,
+     "output_tokens_per_task": 24500,
+     "output_tokens_per_min": 7000.0,
+     "sessions": 13921
     }
    ],
    "intelligence_index": [
@@ -11345,6 +14131,23 @@
      "raw": 0.753,
      "reference": 0.832
     }
+   ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.5,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "Beam 1.0 501B A23B",
+     "time_per_task_min": 1.5,
+     "output_tokens_per_task": 13800,
+     "output_tokens_per_min": 9200.0,
+     "sessions": 12257
+    }
    ]
   },
   "flint-40b-free": {},
@@ -11452,6 +14255,23 @@
      "reference": 1.0621
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-haiku-4.5",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
    "price": [
     {
      "source": "openrouter.price",
@@ -11554,6 +14374,33 @@
      "listed_as": "Claude Opus 4.6 (High)",
      "raw": 1315.478,
      "reference": 1323.6515
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Claude Opus 4.6 (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-opus-4.6",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
     }
    ],
    "global_rigor": [
@@ -11714,6 +14561,43 @@
      "listed_as": "claude-sonnet-4-6",
      "raw": 0.7211,
      "reference": 1.2121
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Claude Sonnet 4.6"
+    },
+    {
+     "source": "osworld.verified",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:53+00:00",
+     "url": "https://os-world.github.io/static/data/osworld_verified_results.xlsx",
+     "method": "OSWorld-Verified success rate, general models without an agent framework, best max-steps run: measured on image/screenshot input",
+     "listed_as": "claude-sonnet-4-6"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-sonnet-4.6",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
     }
    ],
    "global_rigor": [
@@ -11920,6 +14804,21 @@
      "reference": 1.3049
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-5.2",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
    "price": [
     {
      "source": "openrouter.price",
@@ -11936,6 +14835,23 @@
      "listed_as": "z-ai/glm-5.2"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 12.0,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "max",
+     "listed_as": "GLM-5.2 (Max)",
+     "time_per_task_min": 12.0,
+     "output_tokens_per_task": 57200,
+     "output_tokens_per_min": 4766.7,
+     "sessions": 98965
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -11949,6 +14865,7 @@
      "listed_as": "GLM-5.2 (Max)",
      "cost_per_task_usd": 0.91,
      "time_per_task_min": 12.0,
+     "output_tokens_per_task": 57200,
      "sessions": 98965
     }
    ]
@@ -11958,18 +14875,20 @@
     {
      "source": "secondary.tier_fit",
      "kind": "benchmark",
-     "value": 1.0,
+     "value": 1.16,
      "as_of": "2026-09-01",
      "fetched_at": "2026-11-09T03:43:48+00:00",
      "url": "https://www.vals.ai/benchmarks/swebench",
      "method": "tiers.py secondary fit",
      "fits": {
       "swe": 1.0,
-      "tb2": 1.0
+      "tb2": 1.0,
+      "aa": 1.48
      },
      "listed_as": {
       "swe": "GPT OSS 120B",
-      "tb2": "GPT OSS 120B"
+      "tb2": "GPT OSS 120B",
+      "aa": "gpt-oss-120b"
      },
      "vendor_reported": {}
     }
@@ -12110,6 +15029,51 @@
      "listed_as": "gpt-oss-120b",
      "raw": 0.6579,
      "reference": 2.3278
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "openai/gpt-oss-120b",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "gpt-oss-120b (High)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 147.93
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "gpt-oss-120b (Low)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 161.86
     }
    ],
    "price": [
@@ -12257,6 +15221,35 @@
      "listed_as": "Gemini 3.1 Flash-Lite Preview",
      "raw": 1240.226,
      "reference": 1323.6515
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Gemini 3.1 Flash-Lite Preview"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video, file, audio)",
+     "listed_as": "google/gemini-3.1-flash-lite",
+     "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "file",
+      "audio"
+     ]
     }
    ],
    "global_rigor": [
@@ -12434,6 +15427,38 @@
      "reference": 1.3049
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "moonshotai/kimi-k2.7-code",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Kimi K2.7 Code",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 56.28
+    }
+   ],
    "price": [
     {
      "source": "aa.price",
@@ -12591,6 +15616,23 @@
      "reference": 1.0621
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.6-plus",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
    "price": [
     {
      "source": "openrouter.price",
@@ -12692,6 +15734,33 @@
      "listed_as": "Claude Opus 4.7",
      "raw": 1318.459,
      "reference": 1323.6515
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Claude Opus 4.7"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-opus-4.7",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
     }
    ],
    "global_rigor": [
@@ -12839,6 +15908,33 @@
      "listed_as": "Claude Opus 4.8 (High)",
      "raw": 1294.7794,
      "reference": 1323.6515
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Claude Opus 4.8 (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "anthropic/claude-opus-4.8",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
     }
    ],
    "module_precision": [
@@ -13027,6 +16123,33 @@
      "reference": 1323.6515
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Grok 4.5"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "x-ai/grok-4.5",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "vals.swebench_1_4h",
@@ -13175,6 +16298,33 @@
      "reference": 0.5968
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Grok 4.6 (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "x-ai/grok-4.6",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -13273,6 +16423,23 @@
      "listed_as": "x-ai/grok-4.6"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 6.8,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "xhigh",
+     "listed_as": "Grok 4.6 (xHigh)",
+     "time_per_task_min": 6.8,
+     "output_tokens_per_task": 35000,
+     "output_tokens_per_min": 5147.1,
+     "sessions": 30247
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -13286,6 +16453,7 @@
      "listed_as": "Grok 4.6 (xHigh)",
      "cost_per_task_usd": 1.47,
      "time_per_task_min": 6.8,
+     "output_tokens_per_task": 35000,
      "sessions": 30247
     }
    ]
@@ -13443,6 +16611,45 @@
      "reference": 2.3278
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Gemini 3.1 Pro Preview"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro` at the High variant (else the only listing): measured on image/screenshot input",
+     "listed_as": "Gemini 3.1 Pro Preview"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (audio, file, image, text, video)",
+     "listed_as": "google/gemini-3.1-pro-preview",
+     "input_modalities": [
+      "audio",
+      "file",
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -13525,6 +16732,37 @@
      "reference": 1.0621
     }
    ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Gemini 3.1 Pro Preview",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 108.46
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 2.7,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "Gemini 3.1 Pro Preview",
+     "time_per_task_min": 2.7,
+     "output_tokens_per_task": 13200,
+     "output_tokens_per_min": 4888.9,
+     "sessions": 87553
+    }
+   ],
    "price": [
     {
      "source": "aa.price",
@@ -13568,6 +16806,7 @@
      "listed_as": "Gemini 3.1 Pro Preview",
      "cost_per_task_usd": 0.55,
      "time_per_task_min": 2.7,
+     "output_tokens_per_task": 13200,
      "sessions": 87553
     },
     {
@@ -13706,6 +16945,35 @@
      "reference": 0.5968
     }
    ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Gemini 3.7 Flash (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video, file, audio)",
+     "listed_as": "google/gemini-3.7-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "file",
+      "audio"
+     ]
+    }
+   ],
    "global_rigor": [
     {
      "source": "arena.agent_code",
@@ -13804,6 +17072,23 @@
      "listed_as": "google/gemini-3.7-flash"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 5.4,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "high",
+     "listed_as": "Gemini 3.7 Flash (High)",
+     "time_per_task_min": 5.4,
+     "output_tokens_per_task": 44700,
+     "output_tokens_per_min": 8277.8,
+     "sessions": 63336
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -13817,6 +17102,7 @@
      "listed_as": "Gemini 3.7 Flash (High)",
      "cost_per_task_usd": 0.53,
      "time_per_task_min": 5.4,
+     "output_tokens_per_task": 44700,
      "sessions": 63336
     }
    ]
@@ -13919,6 +17205,42 @@
      "listed_as": "Kimi K2.6",
      "raw": 0.7306,
      "reference": 1.2121
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:40+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall, best listed variant: measured on image/screenshot input",
+     "listed_as": "Kimi K2.6"
+    },
+    {
+     "source": "osworld.verified",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:53+00:00",
+     "url": "https://os-world.github.io/static/data/osworld_verified_results.xlsx",
+     "method": "OSWorld-Verified success rate, general models without an agent framework, best max-steps run: measured on image/screenshot input",
+     "listed_as": "Kimi K2.6"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "moonshotai/kimi-k2.6",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
     }
    ],
    "global_rigor": [
@@ -14160,6 +17482,21 @@
      "reference": 1.0621
     }
    ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:50+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "qwen/qwen3.7-max",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
    "price": [
     {
      "source": "openrouter.price",
@@ -14176,6 +17513,23 @@
      "listed_as": "qwen/qwen3.7-max"
     }
    ],
+   "throughput": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 1.9,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "Qwen3.7-Max",
+     "time_per_task_min": 1.9,
+     "output_tokens_per_task": 15700,
+     "output_tokens_per_min": 8263.2,
+     "sessions": 43146
+    }
+   ],
    "usd_per_hour": [
     {
      "source": "arena.agent_sessions",
@@ -14189,6 +17543,7 @@
      "listed_as": "Qwen3.7-Max",
      "cost_per_task_usd": 0.35,
      "time_per_task_min": 1.9,
+     "output_tokens_per_task": 15700,
      "sessions": 43146
     }
    ]
@@ -14418,6 +17773,7 @@
      "listed_as": "Gemini 4 Carbon (High)",
      "cost_per_task_usd": 1.53,
      "time_per_task_min": 10.6,
+     "output_tokens_per_task": 50700,
      "sessions": 53721
     },
     {
@@ -14479,6 +17835,65 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 28.727,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Gemini 4 Carbon (High)",
+     "time_per_task_s": 1723.64,
+     "time_per_task_min": 28.727,
+     "output_tps": 71.23
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 23.922,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Gemini 4 Carbon (Low)",
+     "time_per_task_s": 1435.3,
+     "time_per_task_min": 23.922,
+     "output_tps": 60.03
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 25.432,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Gemini 4 Carbon (Medium)",
+     "time_per_task_s": 1525.89,
+     "time_per_task_min": 25.432,
+     "output_tps": 67.51
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 10.6,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:23:07+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "high",
+     "listed_as": "Gemini 4 Carbon (High)",
+     "time_per_task_min": 10.6,
+     "output_tokens_per_task": 50700,
+     "output_tokens_per_min": 4783.0,
+     "sessions": 53721
     }
    ],
    "intelligence_index": [

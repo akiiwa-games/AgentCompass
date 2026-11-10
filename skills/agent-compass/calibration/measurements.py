@@ -153,7 +153,29 @@ HIGH_CORRECTED = ('lmarena.', 'arena.agent_code', 'arena.agent_work_')
 SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark', 'derived.community_mix': 'derived',
                'secondary.tier_fit': 'benchmark', 'user': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
                'openrouter.cost_time': 'vendor', 'arena.agent_sessions': 'community',
-               'aa.price': 'vendor', 'openrouter.price': 'vendor', 'aa.index': 'benchmark'}
+               'aa.price': 'vendor', 'openrouter.price': 'vendor', 'openrouter.modality': 'vendor',
+               'vendor.fast_mode': 'vendor', 'aa.index': 'benchmark'}
+IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro', 'osworld.verified')
+# Public vendor fast-mode specifications (round 11, user 2026-11-10): only models with a cited vendor price and speed
+# multiplier get a fast_mode measurement; other fast-capable models have no public multiplier (surfaced gap).
+VENDOR_FAST_MODE = {
+    'claude-opus-5-5': {
+        'price_multiplier': 2.0, 'speed_multiplier': 2.5,
+        'fast_price': {'input': 8.0, 'output': 40.0}, 'standard_price': {'input': 4.0, 'output': 20.0},
+        'as_of': '2026-11-10', 'url': 'https://code.claude.com/docs/en/fast-mode',
+        'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
+        'statement': 'Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is '
+                     '$8/$40 per MTok (2x standard $4/$20) with up to 2.5x output tokens per second.',
+    },
+    'claude-fable-5-2': {
+        'price_multiplier': 2.0, 'speed_multiplier': 2.5,
+        'fast_price': {'input': 16.0, 'output': 80.0}, 'standard_price': {'input': 8.0, 'output': 40.0},
+        'as_of': '2026-11-10', 'url': 'https://code.claude.com/docs/en/fast-mode',
+        'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
+        'statement': 'Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is '
+                     '$16/$80 per MTok (2x standard $8/$40) with up to 2.5x output tokens per second.',
+    },
+}
 AXES = {'divergence': ('chat', 'creative'),
         'global_rigor': ('agentic', 'long_horizon', 'long_context', 'anti_hallucination'),
         'module_precision': ('coding', 'terminal', 'alignment'),
@@ -433,11 +455,21 @@ class Builder:
                 self.add(model, axis, src, value, f'{method}; {ANCHOR_VALUE:g} x s / s_anchor ({refs[src]["how"]}), capped at 1'
                          + ('; x High/best-variant tier ratio' if extra else ''), component=comp,
                          listed_as=listed.get(name, name), raw=round(raw[src][model], 4), reference=refs[src]['reference'], **extra)
+                if src in IMAGE_BENCHMARKS:
+                    self.add(model, 'image_input', src, True, f'{method}: measured on image/screenshot input',
+                             listed_as=listed.get(name, name))
         self.conflicts = []
         for model, info in self.models.items():
             stated = info.get('text_only_source')
             if not (isinstance(stated, dict) and stated.get('url')):
                 continue        # the local visual / text_only flags are routing data, not a source (review F1)
+            bench_img = [e['source'] for e in self.out[model].get('image_input', []) if e.get('kind') == 'benchmark']
+            if not bench_img:
+                self.out[model].setdefault('image_input', []).append(
+                    {'source': 'vendor.text_only', 'kind': 'vendor', 'value': False,
+                     'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated['url'],
+                     'statement': stated.get('statement'),
+                     'method': 'vendor statement that the model takes no image input'})
             for comp in ('vision', 'gui'):
                 listed = [e['source'] for e in self.out[model].get('vision_tools', []) if e.get('component') == comp]
                 if listed:      # a board measured image input on a model a vendor statement calls text-only
@@ -449,6 +481,25 @@ class Builder:
                     {'source': 'vendor.text_only', 'kind': 'vendor', 'value': 0.0, 'component': comp,
                      'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated['url'], 'statement': stated.get('statement'),
                      'method': 'vendor statement that the model takes no image input: vision and GUI are 0, not unknown'})
+        if self.ok('openrouter-models.json'):
+            mods_table = sources.openrouter_modalities(self.target)
+            self.register('openrouter.modality', 'openrouter-models.json', None,
+                          'OpenRouter /api/v1/models architecture.input_modalities', len(mods_table))
+            match = Matcher(mods_table, lambda n: n.split('/')[-1])
+            for model in self.models:
+                name = match.find(model)
+                if not name:
+                    continue
+                mods = mods_table[name]
+                has_img = 'image' in mods
+                bench_img = [e['source'] for e in self.out[model].get('image_input', []) if e.get('kind') == 'benchmark']
+                if not has_img and bench_img:
+                    self.conflicts.append({'model': model, 'field': 'image_input', 'reason': 'sources_disagree',
+                                           'detail': f'OpenRouter lists input_modalities={mods}, but {", ".join(bench_img)} measured image input',
+                                           'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
+                self.add(model, 'image_input', 'openrouter.modality', has_img,
+                         f'OpenRouter architecture.input_modalities ({", ".join(mods)})',
+                         listed_as=name, input_modalities=mods)
 
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
@@ -522,9 +573,17 @@ class Builder:
             self.names[model]['aa.cost_time'] = base
             for eff, rec in sorted(variants[base].items()):
                 c, t = rec.get('intelligenceIndexCostPerTask'), rec.get('intelligenceIndexTimePerTask')
+                speed = rec.get('outputSpeed')
                 if c and t:
                     self.add(model, 'usd_per_hour', 'aa.cost_time', round(c * 3600 / t, 3), 'cost per task x 3600 / time per task',
                              effort=eff or 'default', listed_as=rec['name'], cost_per_task=round(c, 5), time_per_task_s=round(t, 2))
+                if t or (isinstance(speed, (int, float)) and speed > 0):
+                    self.add(model, 'throughput', 'aa.cost_time', round(t / 60.0, 3) if t else None,
+                             'AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)',
+                             effort=eff or 'default', listed_as=rec['name'],
+                             time_per_task_s=round(t, 2) if t else None,
+                             time_per_task_min=round(t / 60.0, 3) if t else None,
+                             output_tps=round(speed, 2) if isinstance(speed, (int, float)) and speed > 0 else None)
             rec = variants[base].get('high') or next(iter(variants[base].values()))
             if isinstance(rec.get('intelligenceIndex'), (int, float)):
                 self.add(model, 'intelligence_index', 'aa.index', round(rec['intelligenceIndex'], 2), 'AA Intelligence Index',
@@ -582,6 +641,17 @@ class Builder:
             if not base:
                 continue
             self.names[model]['arena.agent_sessions'] = base
+            for r in by_base[base]:
+                t = r.get('time_per_task_min')
+                tok = r.get('output_tokens_per_task')
+                if isinstance(t, (int, float)) and t > 0:
+                    eff = sources.aa_effort(r['name']) or 'default'
+                    self.add(model, 'throughput', 'arena.agent_sessions', round(t, 2),
+                             'arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)',
+                             effort=eff, listed_as=r['name'], time_per_task_min=round(t, 2),
+                             output_tokens_per_task=round(tok) if isinstance(tok, (int, float)) else None,
+                             output_tokens_per_min=round(tok / t, 1) if isinstance(tok, (int, float)) and t > 0 else None,
+                             sessions=r.get('sessions'))
             if not priced[base]:
                 r0 = by_base[base][0]
                 missing_cols = [col for col, key_ in (('Cost/Task', 'cost_per_task_usd'), ('Time/Task', 'time_per_task_min'))
@@ -591,11 +661,14 @@ class Builder:
                 continue
             for r in priced[base]:
                 c, t = r['cost_per_task_usd'], r['time_per_task_min']
+                tok = r.get('output_tokens_per_task')
                 eff = sources.aa_effort(r['name']) or 'default'
                 self.add(model, 'usd_per_hour', 'arena.agent_sessions', round(c * 60.0 / t, 3),
                          'arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60',
                          effort=eff, listed_as=r['name'], cost_per_task_usd=round(c, 4),
-                         time_per_task_min=round(t, 2), sessions=r.get('sessions'))
+                         time_per_task_min=round(t, 2),
+                         output_tokens_per_task=round(tok) if isinstance(tok, (int, float)) else None,
+                         sessions=r.get('sessions'))
         if unpriced:
             self.source_rows['arena.agent_sessions']['unpriced'] = unpriced
 
@@ -658,10 +731,28 @@ class Builder:
                          prices={'output': p_out, 'input': p_in, 'cache_read': p_cr}, mix_source=mix['source'],
                          mix_as_of=mix['as_of'])
 
+    def fast_mode(self):
+        """Cited vendor fast-mode price and speed multipliers (round 11, user 2026-11-10)."""
+        self.source_rows['vendor.fast_mode'] = {
+            'file': None, 'url': 'https://code.claude.com/docs/en/fast-mode', 'fetched_at': None, 'sha256': None,
+            'as_of': '2026-11-10', 'as_of_kind': 'data date',
+            'method': 'Anthropic Claude Code fast-mode and API pricing documentation (read 2026-11-10)',
+            'models_listed': len(VENDOR_FAST_MODE), 'kind': 'vendor',
+            'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
+        }
+        for model, spec in VENDOR_FAST_MODE.items():
+            if model not in self.models:
+                continue
+            self.add(model, 'fast_mode', 'vendor.fast_mode',
+                     {'price_multiplier': spec['price_multiplier'], 'speed_multiplier': spec['speed_multiplier']},
+                     spec['statement'], fast_price=spec['fast_price'], standard_price=spec['standard_price'],
+                     pricing_url=spec['pricing_url'])
+
     def build(self):
         self.tier()
         self.capabilities()
         self.usd()
+        self.fast_mode()
         capacity = self.capacity()
         self.community_mix()
         missing_sources = {**self.missing}
