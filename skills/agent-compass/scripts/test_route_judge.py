@@ -316,6 +316,39 @@ class RoutingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'disabled'):
                 router.record_constraint(args)
 
+    def test_ledger_rows_name_the_writing_session_not_its_parent(self):
+        """The spawn gate binds Workflow records and schedule plans to `session_ids`; parent_id stays the parent link."""
+        import roll
+        import worker_context
+        session_vars = [*worker_context.HOST_SESSION_ID_VARS, 'PASEO_AGENT_ID']
+        cases = (
+            # A roll-launched CLI worker: roll hands it the parent link, its own host sets its session.
+            ({'ROUTER_WORKER': '1', 'ROUTER_PARENT_AGENT_ID': 'P', 'CLAUDE_CODE_SESSION_ID': 'W'}, ['W']),
+            # A main Claude session under Paseo: its host session and its own Paseo agent.
+            ({'CLAUDE_CODE_SESSION_ID': 'S1', 'PASEO_AGENT_ID': 'A1'}, ['S1', 'A1']),
+            ({'ROUTER_PARENT_AGENT_ID': 'P'}, None),     # only a parent link: no writer identity at all
+        )
+        for env, expected in cases:
+            with self.subTest(env=env), tempfile.TemporaryDirectory() as directory, \
+                    patch.dict('os.environ', {var: '' for var in session_vars}), \
+                    patch.object(router, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'):
+                import os
+                for var in session_vars:
+                    os.environ.pop(var, None)
+                os.environ.update(env)
+                self.assertEqual(worker_context.own_session_ids(), expected or [])
+                for stage in ('plan', 'record'):
+                    router.finalize({'stage': stage, 'choice': 'x', 'source': 's', 'selected_bundle': {}},
+                                    {'stage': stage}, None, time.monotonic(), {'parent_agent_id': 'P'}, [])
+                rows = [json.loads(line) for line in
+                        (Path(directory) / 'ledger.jsonl').read_text(encoding='utf-8').splitlines()]
+                self.assertEqual([row['stage'] for row in rows], ['plan', 'record'])
+                for row in rows:
+                    self.assertEqual(row.get('session_ids'), expected)
+        # roll never passes the parent's own session identity on to a CLI worker.
+        for var in worker_context.OWN_SESSION_ID_VARS + ('PASEO_AGENT_ID',):
+            self.assertTrue(var.startswith(roll.HOST_SESSION_ENV), var)
+
     def test_constraint_record_cannot_bypass_local_account_pause_with_an_unknown_model(self):
         args = router.argparse.Namespace(basis='Synthetic explicit model request', provider='codex', account='codex',
             model='new-model', effort='high', input=None, usage_cache=None,

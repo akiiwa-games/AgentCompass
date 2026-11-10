@@ -1325,14 +1325,19 @@ class RouterGateHookTests(unittest.TestCase):
                 "agentId": wid, "prompt": "x", "notifyOnFinish": False}}, now=T0)
         self.assertIn("notifyOnFinish", result["reason"])
 
-    # --- Workflow and schedules: their own authorization, matched to the call ---
+    # --- Workflow and schedules: their own authorization, matched to the call and to the calling session ---
 
     def workflow_record(self, **fields):
+        """A record row as route_judge writes it: parent_id/host_session_id are the parent link, session_ids the writer."""
         return {"at": (T0 - dt.timedelta(minutes=2)).isoformat(), "stage": "record", "choice": "constraint",
                 "source": "constraint_record", "constraint": "user_override", "trigger": "workflow",
-                "parent_id": "paseo-parent", "host_session_id": "claude-session",
+                "parent_id": "paseo-parent", "host_session_id": "parent-claude-session",
+                "session_ids": ["claude-session", "paseo-agent"],
                 "selected_bundle": {"provider": "claude", "account": "claude", "model": "claude-opus-5-5",
                                     "effort": "high"}, **fields}
+
+    def session_plan(self, provider="codex", model="gpt-6-astra", effort="high", **fields):
+        return dict(self.route(provider, model, effort), session_ids=["claude-session"], **fields)
 
     def test_workflow_needs_this_sessions_workflow_record(self):
         call = {"tool_input": {"script": "export const meta = {name: 'x', description: 'y'}"}}
@@ -1340,16 +1345,23 @@ class RouterGateHookTests(unittest.TestCase):
         cases = (
             ("no ledger", [], {"session_id": "claude-session"}, "--trigger workflow"),
             ("unrelated record", [unrelated_review], {"session_id": "claude-session"}, "--trigger workflow"),
-            ("worker plan", [self.route("claude", "claude-opus-5-5", "high", parent_id="paseo-parent")],
+            ("worker plan", [self.session_plan("claude", "claude-opus-5-5")],
              {"session_id": "claude-session"}, "--trigger workflow"),
             ("hard constraint", [self.workflow_record(constraint="hard_constraint")],
              {"session_id": "claude-session"}, "--trigger workflow"),
             ("other session", [self.workflow_record()], {"session_id": "another-session"}, "--trigger workflow"),
+            # R3: the parent link names the parent; it never authorizes the parent's Workflow.
+            ("parent of the writer", [self.workflow_record()], {"session_id": "parent-claude-session"},
+             "--trigger workflow"),
+            ("parent agent of the writer", [self.workflow_record()], {"parent_agent_id": "paseo-parent"},
+             "--trigger workflow"),
+            ("row without session_ids", [self.workflow_record(session_ids=None)], {"session_id": "claude-session"},
+             "--trigger workflow"),
             ("no session id", [self.workflow_record()], {}, "会话 ID"),
             ("expired", [self.workflow_record(at=(T0 - dt.timedelta(minutes=20)).isoformat())],
              {"session_id": "claude-session"}, "--trigger workflow"),
             ("same Claude session", [self.workflow_record()], {"session_id": "claude-session"}, None),
-            ("same Paseo parent", [self.workflow_record()], {"parent_agent_id": "paseo-parent"}, None),
+            ("same Paseo agent", [self.workflow_record()], {"parent_agent_id": "paseo-agent"}, None),
         )
         for label, rows, identity, blocked_on in cases:
             ledger = self.write_ledger(str(self.state), rows) if rows else self.state / "missing.jsonl"
@@ -1361,13 +1373,15 @@ class RouterGateHookTests(unittest.TestCase):
                         self.assertNotIn("roll --brief", result["reason"].split("不要调用")[0])
                     else:
                         self.assertEqual(result, {})
-        # Under Paseo the calling agent's ID identifies the session too.
+        # Under Paseo the calling agent's own ID identifies the session too; the parent's ID does not.
         ledger = self.write_ledger(str(self.state), [self.workflow_record()])
-        with mock.patch.dict(os.environ, {"PASEO_AGENT_ID": "paseo-parent"}):
-            self.assertEqual(gate.evaluate_payload({"tool_name": "Workflow", **call}, ledger_path=ledger, now=T0), {})
+        for agent_id, allowed in (("paseo-agent", True), ("paseo-parent", False)):
+            with self.subTest(paseo_agent=agent_id), mock.patch.dict(os.environ, {"PASEO_AGENT_ID": agent_id}):
+                result = gate.evaluate_payload({"tool_name": "Workflow", **call}, ledger_path=ledger, now=T0)
+                self.assertEqual(result == {}, allowed)
 
-    def test_schedule_needs_a_recent_plan_with_its_provider_and_model(self):
-        plan = self.route("codex", "gpt-6-astra", "high")
+    def test_schedule_needs_this_sessions_recent_plan_with_its_provider_and_model(self):
+        plan = self.session_plan()
         review_record = self.workflow_record(trigger=None)
         same_as_plan_record = dict(plan, stage="record", choice="constraint", constraint="user_override")
         mcp_cases = (
@@ -1377,6 +1391,11 @@ class RouterGateHookTests(unittest.TestCase):
              "没有 plan 记录"),
             ("record is not a plan", [same_as_plan_record],
              {"prompt": "x", "cron": "7 * * * *", "provider": "codex/gpt-6-astra"}, "没有 plan 记录"),
+            # R2: a plan another session made, or one that names no writer, is not this session's.
+            ("other session's plan", [dict(plan, session_ids=["session-a"])],
+             {"prompt": "x", "cron": "7 * * * *", "provider": "codex/gpt-6-astra"}, "本会话没有 plan 记录"),
+            ("plan without session_ids", [self.route("codex", "gpt-6-astra", "high")],
+             {"prompt": "x", "cron": "7 * * * *", "provider": "codex/gpt-6-astra"}, "本会话没有 plan 记录"),
             ("other model", [plan], {"prompt": "x", "cron": "7 * * * *", "provider": "codex/gpt-6.1-sol"},
              "model: requested='gpt-6.1-sol'"),
             ("matching plan", [plan], {"prompt": "x", "cron": "7 * * * *", "provider": "codex/gpt-6-astra"}, None),
@@ -1385,7 +1404,8 @@ class RouterGateHookTests(unittest.TestCase):
             ledger = self.write_ledger(str(self.state), rows)
             for name in ("create_schedule", "mcp__paseo__create_schedule", "mcp__magpie__mcp__paseo__create_schedule"):
                 with self.subTest(case=label, name=name):
-                    result = gate.evaluate_payload({"tool_name": name, "tool_input": args}, ledger_path=ledger, now=T0)
+                    result = gate.evaluate_payload({"tool_name": name, "tool_input": args, "session_id": "claude-session"},
+                                                   ledger_path=ledger, now=T0)
                     if blocked_on:
                         self.assertIn(blocked_on, result["reason"])
                         self.assertIn("plan --input", result["reason"])
@@ -1393,18 +1413,21 @@ class RouterGateHookTests(unittest.TestCase):
                     else:
                         self.assertEqual(result, {})
         ledger = self.write_ledger(str(self.state), [plan])
+        with mock.patch.dict(os.environ, {"PASEO_AGENT_ID": ""}):
+            anonymous = gate.evaluate_payload({"tool_name": "create_schedule", "tool_input": {
+                "prompt": "x", "cron": "7 * * * *", "provider": "codex/gpt-6-astra"}}, ledger_path=ledger, now=T0)
+        self.assertIn("会话 ID", anonymous["reason"])
         for args, blocked in (({"id": "s1", "provider": "codex", "model": "gpt-6-astra"}, False),
                               ({"id": "s1", "provider": "codex", "model": "gpt-6.1-sol"}, True),
                               ({"id": "s1", "model": "gpt-6-astra"}, True),
                               ({"id": "s1", "cron": "9 * * * *"}, False)):
             with self.subTest(update=args):
-                result = gate.evaluate_payload({"tool_name": "mcp__paseo__update_schedule", "tool_input": args},
-                                               ledger_path=ledger, now=T0)
+                result = gate.evaluate_payload({"tool_name": "mcp__paseo__update_schedule", "tool_input": args,
+                                                "session_id": "claude-session"}, ledger_path=ledger, now=T0)
                 self.assertEqual("reason" in result, blocked)
 
     def test_paseo_schedule_cli_is_the_same_launch_as_the_mcp_tool(self):
-        plan = self.route("codex", "gpt-6-astra", "high")
-        routed = self.write_ledger(str(self.state), [plan])
+        routed = self.write_ledger(str(self.state), [self.session_plan()])
         missing = self.state / "missing.jsonl"
         script = ("import subprocess; subprocess.run(['paseo', 'schedule', 'create', '--cron', '7 * * * *', "
                   "'--provider', 'codex/gpt-6-astra', 'work'])")
@@ -1431,13 +1454,58 @@ class RouterGateHookTests(unittest.TestCase):
             ('echo "paseo schedule create --provider codex x"', missing, False),
         )
         for command, ledger, blocked in cases:
-            for payload in ({"tool_name": "Bash", "tool_input": {"command": command}},
-                            {"tool_name": "mcp__magpie__PowerShell", "tool_input": {"command": command}}):
+            for payload in ({"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "claude-session"},
+                            {"tool_name": "mcp__magpie__PowerShell", "tool_input": {"command": command},
+                             "session_id": "claude-session"}):
                 with self.subTest(command=command, tool=payload["tool_name"]):
                     result = gate.evaluate_payload(payload, ledger_path=ledger, now=T0)
                     self.assertEqual("reason" in result, blocked)
                     if blocked:
                         self.assertIn("plan --input", result["reason"])
+
+    def test_paseo_cli_global_options_and_wrappers_do_not_hide_a_launch(self):
+        """R1: commander takes global options before and between command words; wrappers run the same argv."""
+        missing = self.state / "missing.jsonl"
+        schedule = "schedule create --provider codex/gpt-6-astra --run-now x"
+        launches = [
+            f"paseo --json {schedule}", f"paseo -q {schedule}", f"paseo --quiet {schedule}",
+            f"paseo --host localhost:6767 {schedule}", f"paseo --host=localhost:6767 {schedule}",
+            f"paseo -o json {schedule}", f"paseo --home C:/h --no-color --no-headers {schedule}",
+            "paseo schedule --json create --provider codex/gpt-6-astra --run-now x",
+            "paseo schedule --host h:1 create --provider codex/gpt-6-astra x",
+            "paseo --json schedule update s1 --provider codex/gpt-6-astra",
+            f'bash -c "paseo {schedule}"', f"sh -c 'paseo --json {schedule}'", f'/usr/bin/bash -c "paseo {schedule}"',
+            f'pwsh -Command "paseo {schedule}"', f'cmd /c paseo {schedule}', f'cmd.exe /c "paseo {schedule}"',
+            f"npx paseo {schedule}", f"npx -y paseo --json {schedule}", f"pnpm dlx paseo {schedule}",
+            f"paseo.ps1 {schedule}", rf"& C:\tools\paseo.ps1 --json {schedule}",
+            'Start-Process paseo -ArgumentList "schedule","create","--provider","codex/gpt-6-astra","x"',
+            'Start-Process -FilePath paseo.cmd -ArgumentList "--json schedule create --provider codex/gpt-6-astra x"',
+            "Start-Process paseo -ArgumentList 'schedule','--json','create','--provider','codex/gpt-6-astra','x' -NoNewWindow",
+            # The same rule for the other Paseo launch commands.
+            "paseo --json run --provider codex x", "paseo -q agent run --provider codex x",
+            "paseo agent --json run --provider codex x", 'bash -c "paseo --json run --provider codex x"',
+            'Start-Process paseo -ArgumentList "run","--provider","codex","x"',
+            "python -c \"import subprocess; subprocess.run(['paseo', '--json', 'schedule', 'create', '--provider', 'codex/gpt-6-astra', 'x'])\"",
+        ]
+        reads = [
+            "paseo --json schedule ls", "paseo schedule --json ls", "paseo -q schedule inspect s1",
+            "paseo --json schedule logs s1", "paseo --json schedule run-once s1", "paseo --json schedule create --help",
+            "paseo schedule create -h", 'bash -c "paseo --json schedule ls"', "npx paseo --json ls",
+            "paseo --json ls", "paseo --host h:1 inspect 11111111-1111-4111-8111-111111111111",
+            'Start-Process paseo -ArgumentList "schedule","ls"', "paseo --json start", "paseo -q status",
+            'echo "paseo --json schedule create --provider codex x"',
+        ]
+        for command in launches + reads:
+            with self.subTest(command=command):
+                result = gate.evaluate_payload({"tool_name": "Bash", "tool_input": {"command": command},
+                                                "session_id": "claude-session"}, ledger_path=missing, now=T0)
+                self.assertEqual("reason" in result, command in launches)
+        # A send behind global options is still a turn to that worker (target checks apply).
+        wid = self.existing_agent()
+        calls = gate.cli_turn_calls("Bash", {"command": f"paseo --json send --no-wait {wid} 'go'"})
+        self.assertEqual(calls, [("run_turn", {"agentId": wid})])
+        calls = gate.cli_turn_calls("Bash", {"command": f"paseo -q agent --host h:1 send {wid} go"})
+        self.assertEqual(calls, [("run_turn", {"agentId": wid})])
 
     def test_matcher_and_gate_classify_every_name_alike(self):
         """The installed matcher sends a name to the hook exactly when the gate treats it as a hooked tool."""
@@ -1446,13 +1514,45 @@ class RouterGateHookTests(unittest.TestCase):
         questions = re.compile("|".join(gate.WORKER_QUESTION_TOOLS))
         bases = sorted(gate.HOOKED_TOOLS) + ["TaskStop", "ListAgents", "get_agent_status", "batch", "AgentX"]
         prefixes = ("", "mcp__paseo__", "mcp__magpie__mcp__paseo__", "mcp__paseo___", "mcp__my__srv__",
-                    "mcp__a_-b__", "mcp___", "mcp__", "xmcp__paseo__", "mcp__paseo__x")
+                    "mcp__a_-b__", "mcp___", "mcp__", "xmcp__paseo__", "mcp__paseo__x", "mcp____", "mcp__-__")
         for base in bases:
             for prefix in prefixes:
                 name = prefix + base
                 with self.subTest(name=name):
                     hooked = bool(matcher.search(name)) and not questions.search(name)
                     self.assertEqual(hooked, gate.base_tool_name(name) in gate.HOOKED_TOOLS)
+
+    def test_single_prefix_pattern_equals_the_repeated_one_on_random_names(self):
+        """R4: one optional `mcp__<server>__` accepts exactly the names (and base) the repeated form did."""
+        import random
+        import re
+        names = "|".join(sorted(gate.HOOKED_TOOLS))
+        repeated = re.compile(r"(?:mcp__[A-Za-z0-9_-]+?__)*(" + names + ")")
+        alphabet = ["mcp__", "__", "_", "-", "a", "Z", "9", "mcp", "m", "x", "é", " "]
+        rng = random.Random(20261110)
+        bases = sorted(gate.HOOKED_TOOLS) + ["Agen", "TaskStop", ""]
+        for _ in range(20000):
+            name = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 7))) + rng.choice(bases)
+            old = repeated.fullmatch(name)
+            with self.subTest(name=name):
+                self.assertEqual(gate.base_tool_name(name), old.group(1) if old else name)
+
+    def test_adversarial_names_classify_in_linear_time(self):
+        """R4: the repeated form took over 60 s on this 10k-character name; the gate and the matcher must not."""
+        script = (
+            "import re, sys, time; sys.path.insert(0, sys.argv[1]); import router_gate_hook as g\n"
+            "names = ['mcp__a__' * 1250 + 'zz', 'mcp__' + '_' * 10000 + 'zz', 'mcp__a' * 2000 + '__zz',\n"
+            "         'mcp__a__' * 1250 + 'Agent', 'mcp__a__' * 1250 + 'run_turn(']\n"
+            "matcher = re.compile(g.hook_matcher())\n"
+            "start = time.perf_counter()\n"
+            "for name in names:\n"
+            "    g.base_tool_name(name); matcher.search(name); g.CODEMODE_TURN_AGENT_RE.search(name)\n"
+            "    g.WRAPPED_AGENT_CALL_RE.search(name)\n"
+            "print(time.perf_counter() - start)\n")
+        out = subprocess.run([sys.executable, "-c", script, str(Path(gate.__file__).parent)],
+                             capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertLess(float(out.stdout), 2.0)
 
     def test_hook_matcher_routes_exactly_the_gated_names(self):
         """Claude Code tests a non-plain matcher with `new RegExp(matcher).test(name)`; Python's search is the same."""

@@ -27,6 +27,7 @@ import roll
 import stage_help
 import usage_cache
 import window_scope
+from worker_context import own_session_ids
 import sqlite3
 import hashlib
 import platform
@@ -711,6 +712,9 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **({'request_hash': task.get('request_hash') or _task_request_hash(task)} if isinstance(task, dict) else {}),
         **{k: result[k] for k in ('decision_id', 'task_id', 'parent_id', 'task_hash', 'bound') if k in result},
         **({'host_session_id': task['host_session_id']} if task.get('host_session_id') else {}),
+        # Who wrote the row (parent_id is only the parent link): the spawn gate binds Workflow and schedule
+        # authorization to these, so a plan or record made in one session never authorizes another.
+        **({'session_ids': ids} if (ids := own_session_ids()) else {}),
         'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
         **({'trigger': result['trigger']} if result.get('trigger') else {}),
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),

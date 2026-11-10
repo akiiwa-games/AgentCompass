@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import sqlite3
+import warnings
 from pathlib import Path
 
 HOME = Path.home()
@@ -89,12 +90,15 @@ SHELL_TOOLS = frozenset({
     "shell",
 })
 
-# `mcp__<server>__`, repeated when a proxy re-exports another server's tools. Server names are the host's
-# normalized identifiers (letters, digits, `_`, `-`), so one may itself hold `__` or end in `_`.
-MCP_PREFIX = r"mcp__[A-Za-z0-9_-]+?__"
-CODEMODE_TURN_AGENT_RE = re.compile(r"\b(?:mcp__\w+?__)*(?:run_turn|send_message|send_agent_prompt)\s*\(")
+# `mcp__<server>__`, nested when a proxy re-exports another server's tools (`mcp__magpie__mcp__paseo__x`). Server
+# names are the host's normalized identifiers (letters, digits, `_`, `-`), so one may itself hold `__` or end in `_`.
+# Because the class holds `_`, nested prefixes are also one prefix whose server name is `magpie__mcp__paseo`: one
+# optional prefix accepts exactly the names a repeated one does, and its single greedy run keeps a match linear in
+# the name's length, where a repeated `(?:mcp__[...]+?__)*` backtracks exponentially on a name that fails.
+MCP_PREFIX = r"mcp__[A-Za-z0-9_-]+__"
+CODEMODE_TURN_AGENT_RE = re.compile(r"\b(?:mcp__\w+__)?(?:run_turn|send_message|send_agent_prompt)\s*\(")
 WRAPPED_AGENT_CALL_RE = re.compile(
-    r"\b((?:mcp__\w+?__)*(?:create_agent|spawn_agent|run_turn|send_message|send_agent_prompt))\s*\("
+    r"\b((?:mcp__\w+__)?(?:create_agent|spawn_agent|run_turn|send_message|send_agent_prompt))\s*\("
 )
 # Literal-only extraction: never evaluate wrapper code. Dynamic JS remains a
 # legacy presence check; it cannot supply a trustworthy structured launch spec.
@@ -137,10 +141,10 @@ READ_ONLY_CMD_PREFIX_RE = re.compile(
 HOOKED_TOOLS = DIRECT_SUBAGENT_TOOLS | SCHEDULE_RETARGET_TOOLS | PASEO_TURN_TOOLS | CODEMODE_TOOLS | SHELL_TOOLS
 
 # One pattern classifies a name here and, anchored, is the installed matcher (and the Pi extension's test), so the
-# hook and the gate cannot disagree: a whole name is a hooked base tool behind any number of MCP server prefixes,
-# with the regex backtracking over where each server name ends (`mcp__paseo___create_agent`, `mcp__my__srv__Agent`).
+# hook and the gate cannot disagree: a whole name is a hooked base tool behind any number of MCP server prefixes
+# (see MCP_PREFIX), wherever each server name ends (`mcp__paseo___create_agent`, `mcp__my__srv__Agent`).
 # The syntax is the subset Python and JavaScript share (no named groups, no lookbehind).
-TOOL_NAME_PATTERN = (f"(?:{MCP_PREFIX})*("
+TOOL_NAME_PATTERN = (f"(?:{MCP_PREFIX})?("
                      + "|".join(sorted(HOOKED_TOOLS, key=lambda n: (n.lower(), n))) + ")")
 TOOL_NAME_RE = re.compile(TOOL_NAME_PATTERN)
 
@@ -305,6 +309,47 @@ PASEO_SCHEDULE_OPTIONS = {"--provider": "provider", "--model": "model", "--think
 
 UNKNOWN_CLI_VALUE = "<not a literal>"
 
+# The Paseo CLI (commander): global options are accepted before and between command words, on the root and on
+# `schedule`/`agent` alike (`paseo --json schedule create`, `paseo schedule --json create`).
+PASEO_EXES = frozenset({"paseo", "paseo.cmd", "paseo.exe", "paseo.ps1"})
+PASEO_VALUE_OPTIONS = frozenset({"-o", "--format", "--host", "--home"})
+PASEO_GROUP_COMMANDS = frozenset({"agent", "schedule"})
+# Commands that create and start an agent. A schedule launch is judged as the MCP schedule tools.
+PASEO_LAUNCH_COMMANDS = frozenset({("run",), ("agent", "run"), ("agent", "create"), ("agent", "start"),
+                                   ("agent", "spawn"), ("create_agent",)})
+PASEO_SCHEDULE_COMMANDS = {("schedule", "create"): "create_schedule", ("schedule", "update"): "update_schedule"}
+PASEO_CLI_LAUNCH = "paseo_cli_launch"   # a cli_turn_calls entry for PASEO_LAUNCH_COMMANDS; judged on the shell call
+# Programs that run another command line: shells take it after -c / -Command / /c, package runners as their argv.
+SHELL_PROGRAMS = frozenset({"bash", "sh", "zsh", "dash", "pwsh", "powershell", "cmd"})
+SHELL_COMMAND_FLAGS = frozenset({"-c", "-command", "/c", "/k"})
+PACKAGE_RUNNERS = {"npx": (), "bunx": (), "pnpm": ("dlx", "exec"), "yarn": ("dlx", "exec")}
+START_PROCESS = frozenset({"start-process", "saps"})
+
+
+def program_name(word: str) -> str:
+    """`C:\\x\\Paseo.CMD` -> `paseo.cmd`; the program a command word runs, lower-cased."""
+    return word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+
+
+def paseo_command(args: list) -> tuple[tuple[str, ...], list] | None:
+    """(command words, the words after them) of a `paseo` argv, skipping global options as commander does.
+
+    None when a command word is not a literal: what it runs is unknown.
+    """
+    path, i = [], 0
+    while i < len(args) and len(path) < 2:
+        word = args[i]
+        if not isinstance(word, str):
+            return None
+        if word.startswith("-"):
+            i += 2 if word in PASEO_VALUE_OPTIONS else 1
+            continue
+        path.append(word)
+        i += 1
+        if path[0] not in PASEO_GROUP_COMMANDS:
+            break
+    return tuple(path), args[i:]
+
 
 def paseo_cli_options(words: list) -> dict[str, str]:
     """The launch options of a parsed `paseo schedule` argv (`--opt value` or `--opt=value`); other words are ignored.
@@ -337,29 +382,89 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
     def argv(words: list, depth: int):
         if not words or not isinstance(words[0], str) or depth > 4:
             return
-        exe = words[0].replace('\\', '/').rsplit('/', 1)[-1].lower()
-        if exe in ('paseo', 'paseo.cmd', 'paseo.exe'):
-            args = words[1:]
-            if '--help' in args or '-h' in args:
-                return
-            if args[:2] in (['schedule', 'create'], ['schedule', 'update']):
-                # Same launch as MCP create_schedule / update_schedule: the provider settings become its arguments.
-                targets.append(({'create': 'create_schedule', 'update': 'update_schedule'}[args[1]],
-                                paseo_cli_options(args[2:])))
-                return
-            if args[:1] == ['agent']:
-                args = args[1:]
-            if (len(args) >= 2 and args[0] == 'send' and isinstance(args[1], str)
-                    and UUID_RE.fullmatch(args[1])):
-                targets.append(('run_turn', {'agentId': args[1]}))
-        elif exe in ('python', 'python.exe', 'python3', 'py', 'py.exe') and '-c' in words:
+        if re.search(r"\s", program_name(words[0].strip())):
+            # A quoted command line left by a stripped wrapper (`bash -c "..."`), not a program path with spaces
+            # (`C:\Program Files\Paseo\paseo.cmd`).
+            shell(words[0], depth + 1)
+            return
+        exe = program_name(words[0])
+        stem = exe.rsplit(".", 1)[0] if exe.endswith((".exe", ".cmd", ".ps1")) else exe
+        if exe in PASEO_EXES:
+            paseo(words[1:])
+        elif stem in SHELL_PROGRAMS:
+            flags = [i for i, w in enumerate(words) if isinstance(w, str) and w.lower() in SHELL_COMMAND_FLAGS]
+            if flags:
+                rest = [w for w in words[flags[0] + 1:] if isinstance(w, str)]
+                shell(rest[0] if len(rest) == 1 else " ".join(rest), depth + 1)
+        elif stem in PACKAGE_RUNNERS:
+            rest = words[1:]
+            if PACKAGE_RUNNERS[stem]:
+                if not rest or rest[0] not in PACKAGE_RUNNERS[stem]:
+                    return
+                rest = rest[1:]
+            while rest and isinstance(rest[0], str) and rest[0].startswith("-"):
+                rest = rest[2:] if rest[0] in ("-p", "--package") else rest[1:]
+            argv(rest, depth + 1)
+        elif exe in START_PROCESS:
+            start_process(words[1:], depth)
+        elif stem in ('python', 'python3', 'py') and '-c' in words:
             index = words.index('-c') + 1
             if index < len(words) and isinstance(words[index], str):
                 python(words[index], depth + 1)
 
+    def paseo(args: list):
+        if '--help' in args or '-h' in args:
+            return
+        parsed = paseo_command(args)
+        if parsed is None:
+            return
+        path, rest = parsed
+        if path in PASEO_SCHEDULE_COMMANDS:
+            # Same launch as MCP create_schedule / update_schedule: the provider settings become its arguments.
+            targets.append((PASEO_SCHEDULE_COMMANDS[path], paseo_cli_options(rest)))
+        elif path in PASEO_LAUNCH_COMMANDS:
+            targets.append((PASEO_CLI_LAUNCH, paseo_cli_options(rest)))
+        elif path in (('send',), ('agent', 'send')):
+            ids = [w for w in rest if not (isinstance(w, str) and w.startswith('-'))]
+            if ids and isinstance(ids[0], str) and UUID_RE.fullmatch(ids[0]):
+                targets.append(('run_turn', {'agentId': ids[0]}))
+
+    def start_process(args: list, depth: int):
+        """PowerShell `Start-Process <file> [-ArgumentList] a,b,...`: the program and its literal arguments."""
+        program, listed, i = None, [], 0
+        while i < len(args):
+            word = args[i] if isinstance(args[i], str) else ''
+            lower = word.lower()
+            if lower == '-filepath' and i + 1 < len(args):
+                program, i = args[i + 1], i + 2
+            elif lower in ('-argumentlist', '-args'):
+                i += 1
+                while i < len(args) and not (isinstance(args[i], str) and re.fullmatch(r'-[A-Za-z]+', args[i])
+                                              and args[i].lower() not in ('-c', '-q', '-o', '-h', '-y', '-p')):
+                    listed.append(args[i] if isinstance(args[i], str) else '')
+                    i += 1
+            elif re.fullmatch(r'-[A-Za-z]+', word):
+                i += 2 if lower in ('-workingdirectory', '-verb', '-windowstyle', '-redirectstandardoutput',
+                                    '-redirectstandarderror', '-redirectstandardinput', '-credential') else 1
+            else:
+                if program is None:
+                    program = word
+                else:
+                    listed.append(word)
+                i += 1
+        if not isinstance(program, str) or not program:
+            return
+        items = []
+        for match in re.finditer(r'"([^"]*)"|\'([^\']*)\'|([^\s,]+)', " ".join(listed)):
+            item = next(group for group in match.groups() if group is not None)
+            items.extend(item.split() if match.group(3) is None and re.search(r'\s', item) else [item])
+        argv([program, *items], depth + 1)
+
     def python(code: str, depth: int):
         try:
-            tree = ast.parse(code)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')   # shell text read as Python: its escapes are not ours to judge
+                tree = ast.parse(code)
         except (SyntaxError, ValueError):
             return
         bindings = {}
@@ -426,6 +531,8 @@ def detect_subagent_launch(tool_name: str, tool_input: dict) -> str | None:
     if tool_name in SHELL_TOOLS:
         if any(name in DIRECT_SUBAGENT_TOOLS for name, _ in wrapped_agent_calls(tool_name, tool_input)):
             return f"{tool_name}:create_agent"
+        if any(name == PASEO_CLI_LAUNCH for name, _ in cli_turn_calls(tool_name, tool_input)):
+            return "shell:paseo agent create"
         for command in extract_shell_commands(tool_input):
             if not command:
                 continue
@@ -958,7 +1065,7 @@ def schedule_deny_reason(trigger: str, cause: str) -> str:
         f"  {ROUTER_CMD} plan --input <task.json>\n"
         "再用返回 bundle 的 provider 与 model 创建：create_schedule 传 provider=\"<provider>/<model>\"，"
         "或 `paseo schedule create --provider <provider>/<model> ...`（update_schedule 同时给出 provider 与 model）。"
-        "gate 只接受最近 15 分钟内 provider/model 一致的 plan 记录。"
+        "gate 只接受本会话最近 15 分钟内 provider/model 一致的 plan 记录（plan 须在本会话中运行）。"
     )
 
 
@@ -968,30 +1075,36 @@ def caller_identities(payload: dict, caller_id: str | None) -> set[str]:
                              payload.get("callerAgentId"), caller_id) if v}
 
 
+def written_by(row: dict, identities: set[str]) -> bool:
+    """The row was written by the calling session: its `session_ids` (the writer's own IDs, never the parent link
+    in parent_id/host_session_id, which a worker's rows carry for its parent) name one of the caller's IDs."""
+    ids = row.get("session_ids")
+    return isinstance(ids, list) and bool(identities & {str(v) for v in ids if v})
+
+
 def check_workflow_record(rows: list[dict], identities: set[str]) -> str | None:
     """A Workflow passes only on this session's `record --constraint user_override --trigger workflow`."""
     if not identities:
         return workflow_deny_reason("hook 输入里没有会话 ID，无法确认授权记录属于本会话")
     for row in rows:
-        task = row.get("task") if isinstance(row.get("task"), dict) else {}
-        owners = {str(v) for v in (row.get("parent_id"), row.get("host_session_id"), task.get("parent_agent_id"),
-                                   task.get("host_session_id")) if v}
         if (row.get("stage") == "record" and row.get("constraint") == "user_override"
-                and row.get("trigger") == "workflow" and owners & identities):
+                and row.get("trigger") == "workflow" and written_by(row, identities)):
             return None
     return workflow_deny_reason("最近 15 分钟内本会话没有 `--trigger workflow` 的 user_override 记录")
 
 
 def check_schedule_plan(rows: list[dict], args: dict, context: dict, trigger: str,
-                        accounts: dict | None) -> str | None:
-    """A schedule passes only when its provider and model are those of a recent plan (records do not count)."""
+                        accounts: dict | None, identities: set[str]) -> str | None:
+    """A schedule passes only on this session's recent plan with its provider and model (records do not count)."""
     requested = normalize_launch(args)
     missing = [key for key in ("provider", "model") if not requested.get(key)]
     if missing:
         return schedule_deny_reason(trigger, f"未指定 {'/'.join(missing)}，无法与路由比对")
-    plans = [row for row in rows if row.get("stage") in ("plan", "select")]
+    if not identities:
+        return schedule_deny_reason(trigger, "hook 输入里没有会话 ID，无法确认 plan 属于本会话")
+    plans = [row for row in rows if row.get("stage") in ("plan", "select") and written_by(row, identities)]
     if not plans:
-        return schedule_deny_reason(trigger, "最近 15 分钟内没有 plan 记录")
+        return schedule_deny_reason(trigger, "最近 15 分钟内本会话没有 plan 记录")
     row, diagnostic = match_route(plans, requested, context, trigger, accounts=accounts)
     return None if row else schedule_deny_reason(trigger, f"与最近的 plan 不一致：{diagnostic}")
 
@@ -1126,7 +1239,8 @@ def evaluate_payload(
                 rows = recent_routes(ledger, now=now, window_seconds=win)
             reason = (check_workflow_record(rows, caller_identities(payload, caller_id))
                       if trigger == WORKFLOW_TRIGGER else
-                      check_schedule_plan(rows, args, correlation_fields(payload, tool_input, args), trigger, accounts))
+                      check_schedule_plan(rows, args, correlation_fields(payload, tool_input, args), trigger, accounts,
+                                          caller_identities(payload, caller_id)))
             if reason:
                 return format_response(False, harness_kind, reason)
             continue
