@@ -33,34 +33,25 @@ def catalog(provider, ids, ok=True, checked=NOW):
 
 
 class DefaultProfile(unittest.TestCase):
-    def test_default_profile_uses_calibration_family_size_or_generic_baseline(self):
-        for model, source, canonical, tier in (
-            ('claude-opus-5-5-high', 'calibrated', 'claude-opus-5-5', None),
-            ('qwen3.7-max', 'calibrated', 'qwen3.7-max', None),
-            ('qwen3.5-max', 'family', None, None),
-            # Alibaba documents `qwen-flash` as the Qwen3 Flash 2025-07-28 snapshot: an alias to its (unmeasured) row
-            ('qwen-flash', 'calibrated', 'qwen3-flash-2025-07-28', REAL['unmeasured_models']['generic']['tier']),
-            ('deepseek-flash', 'calibrated', 'deepseek-v4.1-flash-free', None),
-            ('zzz-unknown-9', 'generic', None, REAL['unmeasured_models']['generic']['tier']),
+    def test_a_name_resolves_to_a_calibrated_row_a_series_or_nothing(self):
+        for model, source, canonical, target in (
+            ('claude-opus-5-5-high', 'calibrated', 'claude-opus-5-5', 'claude-opus-5-5'),
+            ('qwen3.7-max', 'calibrated', 'qwen3.7-max', 'qwen3.7-max'),
+            ('qwen3.5-max', 'family', 'qwen3.5-max', 'qwen3.8-max'),
+            # Alibaba documents `qwen-flash` as the Qwen3 Flash 2025-07-28 snapshot: an alias to its row
+            ('qwen-flash', 'calibrated', 'qwen3-flash-2025-07-28', 'qwen3-flash-2025-07-28'),
+            ('deepseek-flash', 'calibrated', 'deepseek-v4.1-flash-free', 'deepseek-v4.1-flash-free'),
+            ('zzz-unknown-9', 'unmeasured', 'zzz-unknown-9', None),
         ):
             with self.subTest(model=model):
                 profile = ab.default_profile(model, REAL)
-                if source:
-                    self.assertEqual(profile['source'], source)
-                if canonical:
-                    self.assertEqual(profile['model'], canonical)
-                if tier is not None:
-                    self.assertEqual(profile['spec']['tier'], tier)
-                if source == 'family':          # round 058 round 4: the series conversion, no shrunk default
-                    for field in ('tier', 'capabilities', 'subjective', 'usd_per_hour'):
-                        self.assertEqual(profile['spec'][field], REAL['models']['qwen3.8-max'][field], field)
+                self.assertEqual((profile['source'], profile['model'], profile['target']), (source, canonical, target))
+                self.assertNotIn('spec', profile)       # no score row is supplied for a name the data does not carry
 
-    def test_an_unmeasured_model_takes_routine_work_only(self):
-        # The unmeasured default is data (unmeasured_models), placed between the routine and the hard floors.
-        floors = REAL['scoring']['ability_floor']
-        for spec in (ab.default_profile('opencode/big-pickle', REAL)['spec'], ab.default_profile('pulse-alpha-free', REAL)['spec']):
-            self.assertGreaterEqual(spec['tier'], floors['routine'])
-            self.assertLess(spec['tier'], floors['hard'])
+    def test_a_name_without_a_row_or_a_series_has_no_scores(self):
+        for name in ('opencode/big-pickle', 'pulse-alpha-free'):
+            profile = ab.default_profile(name, REAL)
+            self.assertEqual((profile['source'], profile['target']), ('unmeasured', None), name)
 
     def test_split_effort(self):
         self.assertEqual(ab.split_effort('claude-opus-5-5-xhigh'), ('claude-opus-5-5', 'xhigh'))
@@ -79,7 +70,7 @@ class Derive(unittest.TestCase):
         self.assertEqual([e['model'] for e in out['excluded']], ['gemini-embedding-001'])
         # `qwen-flash` resolves (alias) to the Qwen3 Flash snapshot row it serves
         self.assertEqual(rows['auto:llmproxy:codex:qwen3-flash-2025-07-28@high']['draws'], ['spend'])
-        self.assertTrue(rows['auto:llmproxy:codex:zzz-proxy-model@high']['cost_estimated'])
+        self.assertEqual(rows['auto:llmproxy:codex:zzz-proxy-model@high']['score_source'], 'unmeasured')
 
     def test_user_checkbox_overrides_default_both_ways(self):
         latest, old = 'auto:llmproxy:codex:gpt-6.1-sol@high', 'auto:llmproxy:codex:gpt-5.6-sol@high'
@@ -150,7 +141,7 @@ class Derive(unittest.TestCase):
         bid = 'auto:llmproxy:codex:zzz-unknown-9@high'
         self.assertIn(bid, flat)
         self.assertEqual(allocator.bundle_pools(flat[bid], merged), ['spend'])
-        self.assertIn('zzz-unknown-9', merged['models'])
+        self.assertNotIn('zzz-unknown-9', merged['models'])     # no row is invented for an unmeasured name
 
 
 class Migration(unittest.TestCase):
@@ -204,7 +195,7 @@ class SharedHooks(unittest.TestCase):
         merged = json.loads(json.dumps(REAL))
         owner, bid = next((o, b) for o, s in merged['accounts'].items() for b in (s.get('bundles') or {}))
         merged['accounts'][owner]['bundles'][bid].update(disabled='Legacy explanation', discovery_unavailable=True)
-        task = {'work_kind': 'implementation', 'difficulty': 'routine', 'needs': {'local_only': True}}
+        task = {'work_kind': 'general_implementation', 'difficulty': 'routine', 'needs': {'local_only': True}}
         row = next(c for c in allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
                                              accounts=merged)['ranking'] if c['id'] == bid)
         self.assertIn('unchecked in model management', row['excluded'])

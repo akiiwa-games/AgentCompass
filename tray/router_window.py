@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import component_launch
 import plugins
 import radar_chart
-import ability_floor_chart
 import page_stack
 import decision_theatre
 import decision_summary
@@ -40,15 +39,11 @@ _process = None
 SHOW_EVENT = "Local\\AgentCompassWindowShow"  # created by the window process; open_window() sets it to show it
 PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "模型设置", "⚙"), ("plugins", "外部集成", "▦"))
 PAGES = LocalizedSequence(PAGES)
-SETTINGS = (("models", "模型与加权"), ("strategy", "评分与能力"), ("system", "系统选项"))
-SETTING_ALIASES = {"accounts": "models", "boost": "models", "cli": "models", "tuning": "strategy", "dna": "strategy"}
+SETTINGS = (("models", "模型与加权"), ("strategy", "额度阈值"), ("system", "系统选项"))
+SETTING_ALIASES = {"accounts": "models", "boost": "models", "cli": "models", "tuning": "strategy"}
 SETTINGS = LocalizedSequence(SETTINGS)
-DNA_KEYS = (("divergence", "发散创新"), ("global_rigor", "全局严密"), ("module_precision", "模块精准"),
-            ("capability", "视觉与工具"))
-DNA_KEYS = LocalizedSequence(DNA_KEYS)
 TRACK = "#E2E8F0"  # segmented switch track on the page background
 STRATEGY_PAD = 14    # card padding on the strategy settings page
-STRATEGY_GAP = 12    # space between its cards
 STRATEGY_FIELD = 10  # entry and spinbox text size there, matching the 10pt labels beside them
 AUTO_REPLAY_ROWS = 5  # newest ledger rows tried for the opening decision; legacy rows replan, so keep it small
 
@@ -161,9 +156,6 @@ def verdict_summary(result: dict, pair: list[dict]) -> tuple[list[tuple[str, str
         lead = (first.get("score") or 0.0) - (second.get("score") or 0.0)
         gap = _tr("并列") if abs(lead) < 0.00005 else _tr("领先 {0}").format(fmt(lead, 4))
         rows.append((_tr("次选"), f"{decision_summary.candidate_label(second)}  {fmt(second['score'])} · {gap}"))
-    task = decision.get("task") or {}
-    hours = task.get("hours")
-    hours_text = f"{hours:g}h" if isinstance(hours, (int, float)) else "—"
     rows.append((_tr("任务"), decision_summary.task_label(result)))
     candidate = next((c for c in (result or {}).get("ranking") or [] if c.get("id") == first["id"]), {})
     capacity = candidate.get("capacity") if isinstance(candidate.get("capacity"), dict) else {}
@@ -718,7 +710,7 @@ class Panel:
         with freeze_redraw(self.root):
             self.shell.destroy()
             # These caches refer to destroyed widgets, not the underlying account/model data.
-            for name in ("quota_shape", "account_shape", "dna_picker", "dna_labels", "_cards_cache", "model_shape", "model_widgets", "model_inventory"):
+            for name in ("quota_shape", "account_shape", "_cards_cache", "model_shape", "model_widgets", "model_inventory"):
                 self.__dict__.pop(name, None)
             self._dna_redraw_pending = False
             self._initial_setting = setting
@@ -1200,7 +1192,6 @@ class Panel:
         self.pick_b.pack(side="left", padx=(3, 0))
         self.pick_a.bind("<<ComboboxSelected>>", lambda e: self.render_radar())
         self.pick_b.bind("<<ComboboxSelected>>", lambda e: self.render_radar())
-        self.tune_link = ttk.Button(picks, text=_tr("微调"), style="Tiny.TButton", command=self.open_dna_settings)
         self.verdict = tk.StringVar(value="")  # plain-text mirror of the verdict grid
         # Label/value rows instead of one dense paragraph; the full router reason is the grid's hover tooltip.
         self.verdict_box = ttk.Frame(radar_card, style="Card.TFrame")
@@ -1259,8 +1250,8 @@ class Panel:
         self.ledger_table.bind("<<TreeviewSelect>>", lambda e: self.replay_selected())
         self.attach_row_tooltip(self.ledger_table, self.ledger_row_tip)
         self.breakdown_frame, self.breakdown = self.tree(stack, (
-            ("id", _tr("候选"), 108, "w"), ("score", _tr("总分"), 48, "e"), ("fit", _tr("契合"), 44, "e"), ("ability", _tr("能力"), 44, "e"),
-            ("opp", _tr("机会"), 50, "e"), ("net", _tr("加减"), 50, "e"), ("note", _tr("状态"), 44, "w")), 8)
+            ("id", _tr("候选"), 108, "w"), ("score", _tr("总分"), 48, "e"), ("fit", _tr("契合"), 50, "e"),
+            ("opp", _tr("额度成本"), 62, "e"), ("boost", _tr("加成"), 50, "e"), ("note", _tr("状态"), 44, "w")), 8)
         self.breakdown.bind("<<TreeviewSelect>>", lambda e: self.pick_from_breakdown())
         self.attach_row_tooltip(self.breakdown, self.breakdown_row_tip)
         # The quota-line view of the same decision; it fills in on the film's clock while the film plays.
@@ -1312,9 +1303,6 @@ class Panel:
                     self.models = self.data_module().model_table()
                 except Exception as exc:
                     log_error(exc)
-            self.tune_link.pack(side="right")
-        else:
-            self.tune_link.pack_forget()
         self.fill_pickers()
         self.render_radar()
 
@@ -1322,8 +1310,6 @@ class Panel:
         self.models = models or {}
         if "scoring" in self.built and not self.plan_result:
             self.set_mode("dna")
-        if getattr(self, "dna_picker", None) is not None:
-            self.fill_dna_models()
 
     def fill_pickers(self):
         self.pick_ids = {}
@@ -1469,13 +1455,6 @@ class Panel:
             widget.pack(in_=self._option_rows[layout[index]], side="left", padx=(0 if first else gap, 0))
             widget.lift()  # the row frames are created later, so they would otherwise stack above the widgets
 
-    def open_dna_settings(self):
-        model = self.picked(self.pick_a)
-        self.show("policy")
-        self.show_setting("dna")
-        if model:
-            self.select_dna_model(model)
-
     def simulate(self):
         objective = self.objective.get("1.0", "end").strip()
         if not objective:
@@ -1540,8 +1519,8 @@ class Panel:
             winner = row["id"] == self.plan_result.get("choice")
             note = _tr("拦截") if excluded else _tr("胜出") if winner else _tr("可选")
             self.breakdown.insert("", "end", iid=str(index), tags=("muted",) if excluded else ("win",) if winner else (),
-                                  values=(self.breakdown_labels[index], fmt(row["score"]), fmt(row["fit"], 2), fmt(row["ability"], 2),
-                                          fmt(row["opportunity_cost"], 3), fmt(row["bonus"] - row["penalty"], 2, True),
+                                  values=(self.breakdown_labels[index], fmt(row["score"]), fmt(row["fit"], 2),
+                                          fmt(row["opportunity_cost"], 3), fmt(row["boost"], 2, True),
                                           note))
         if self.mode.get() != "score":
             self.set_mode("score")
@@ -2111,7 +2090,7 @@ class Panel:
             getattr(self, f"load_{key}")()
 
     def build_setting_models(self, frame):
-        tk, ttk = self.tk, self.ttk
+        ttk = self.ttk
         self.build_cli_toolbar(frame)
         # The priority strip owns its one line; the table scrolls inside the remaining space.
         strip = theme.card(frame, padding=(12, 8), fill="x", side="bottom", pady=(8, 0))
@@ -2539,7 +2518,7 @@ class Panel:
         self.run(lambda: router_priority.cancel(rule["id"], rule["revision"]), self.say(self.load_boost))
 
     def build_setting_boost(self, frame):
-        tk, ttk = self.tk, self.ttk
+        ttk = self.ttk
         box = theme.card(frame, padding=14, fill="both", expand=True)
         quick = ttk.Frame(box, style="Card.TFrame")
         quick.pack(fill="x")
@@ -2558,11 +2537,10 @@ class Panel:
         bottom = ttk.Frame(box, style="Card.TFrame")
         bottom.pack(side="bottom", fill="x", pady=(8, 0))
         ttk.Button(bottom, text=_tr("取消所选规则"), style="Small.TButton", command=self.cancel_rule).pack(side="right")
-        table, self.rule_table = self.tree(box, (("label", _tr("账号 / 模型"), 180, "w"), ("boost", _tr("动态加成（越近越高）"), 160, "e"),
+        table, self.rule_table = self.tree(box, (("label", _tr("账号 / 模型"), 180, "w"), ("boost", _tr("加成"), 160, "e"),
                                                  ("until", _tr("预期重置 / 倒计时"), 240, "w"), ("reset", _tr("重置撤销"), 70, "w"),
                                                  ("intent", _tr("来源"), 160, "w")), 6)
         table.pack(fill="both", expand=True)
-        ttk.Label(box, text=_tr("动态加成按当前富余额度估算；派工时会扣除任务用量再计算。"), style="CardTiny.TLabel").pack(fill="x")
         data = self.data_module()
         self.prefill(lambda: (data.overrides(), data.boost_targets()), self.boost_loaded)
 
@@ -2580,8 +2558,8 @@ class Panel:
                 child.destroy()
             for rule in rules[:2]:
                 label = data.model_label(rule.get("model")) if rule.get("model") else data.account_label(rule.get("account"))
-                detail = (f" {rule.get('remaining_hours', 0):.1f}h +{rule['dynamic_boost']:.2f}"
-                          if rule.get('dynamic_boost') is not None else "")
+                detail = (f" {rule.get('remaining_hours', 0):.1f}h +{(rule.get('boost') or 0):.2f}"
+                          if rule.get('remaining_hours') is not None else "")
                 self.ttk.Button(self.boost_chips, text=f"{clip(label, 10)}{detail} ×", style="Tiny.TButton",
                                 command=lambda item=rule: self.cancel_boost(item)).pack(side="left", padx=(0, 3))
             if len(rules) > 2:
@@ -2592,7 +2570,7 @@ class Panel:
         self.rule_table.delete(*self.rule_table.get_children())
         for index, rule in enumerate(rules):
             self.rule_table.insert("", "end", iid=str(index), values=(
-                rule["label"], fmt(rule.get("dynamic_boost") if rule.get("dynamic_boost") is not None else rule["boost"], 2, True),
+                rule["label"], fmt(rule["boost"], 2, True),
                 f"{rule['until']} · {rule.get('countdown', '')}",
                 _tr("是") if rule["stop_on_reset"] else _tr("否"), rule["intent"]))
         if not rules:
@@ -2655,58 +2633,16 @@ class Panel:
     def build_setting_strategy(self, frame):
         footer = self.ttk.Frame(frame)
         footer.pack(side="bottom", fill="x", pady=(10, 0))
-        self.strategy_save = self.ttk.Button(footer, text=_tr("保存策略与画像"), style="SmallAccent.TButton", command=self.save_strategy)
+        self.strategy_save = self.ttk.Button(footer, text=_tr("保存额度阈值"), style="SmallAccent.TButton", command=self.save_tuning)
         self.strategy_save.pack(side="right")
         self.ttk.Button(footer, text=_tr("恢复默认参数"), style="Small.TButton", command=self.restore_tuning).pack(side="left")
         scroll = ScrollFrame(frame)
         self.strategy_scroll = scroll
         self.build_setting_tuning(scroll.body)
-        self.build_setting_ability_floors(scroll.body)
-        self.build_setting_value(scroll.body)
-        self.build_setting_dna(scroll.body)
-        if not getattr(self, "_value_ready", False):
-            self.load_strategy()
-
-    def load_strategy(self):
-        self.load_tuning()
-        self.load_ability_floors()
-        self.load_value()
-        self.load_dna()
-
-    def save_strategy(self):
-        values = {key: var.get().strip() for key, var in self.tuning_vars.items() if var.get().strip()}
-        model, draft = self.dna_model, dict(self.dna_draft)
-        ready = getattr(self, "_value_ready", False)
-        if ready and not self.harness_factors_valid():
-            low, high = self.data_module().HARNESS_FACTOR_RANGE
-            self.status.set(_tr("{0} 需在 {1} ~ {2} 之间").format(_tr("系数"), f"{low:g}", f"{high:g}"))
-            return
-        factors = self.collect_harness_factors() if ready else None
-        exchange = self.collect_opportunity_exchange() if ready else None
-        floors, route_floors = self.collect_ability_floors()
-        def work():
-            kwargs = {}
-            if factors is not None:
-                kwargs["harness_factors"] = factors
-            if exchange is not None:
-                kwargs["opportunity_exchange"] = exchange
-            if floors is not None:
-                kwargs["ability_floors"] = floors
-            if route_floors is not None:
-                kwargs["route_ability_floors"] = route_floors
-            return self.data_module().save_strategy(values, model, draft, **kwargs)
-        def done(message):
-            self.status.set(message)
-            if model and model in self.models:
-                self.models[model]["subjective"] = draft
-            self.render_dna_preview()
-            self.load_ability_floors()
-            self._remember_value_snapshots()
-        self.run(work, done)
 
     def build_setting_tuning(self, frame):
         tk, ttk = self.tk, self.ttk
-        from router_data import STRATEGY_PRESETS, TUNING_DEFAULTS
+        from router_data import STRATEGY_PRESETS
 
         box = theme.card(frame, padding=STRATEGY_PAD, fill="x")
         ttk.Label(box, text=_tr("策略与阈值"), style="CardH2.TLabel").pack(anchor="w", pady=(0, 8))
@@ -2720,38 +2656,12 @@ class Panel:
             button.pack(side="left", padx=(0, 6))
             self.preset_buttons[name] = button
         tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=12)
-        cols = ttk.Frame(box, style="Card.TFrame")
-        cols.pack(fill="x")
-        cols.columnconfigure(0, weight=1, uniform="tune")
-        cols.columnconfigure(1, weight=1, uniform="tune")
-
-        weights = ttk.Frame(cols, style="Card.TFrame")
-        weights.grid(row=0, column=0, sticky="nsew", padx=(0, 28))
-        ttk.Label(weights, text=_tr("任务匹配权重（和为 1）"), style="CardH3.TLabel").grid(row=0, column=0, columnspan=3,
-                                                                          sticky="w", pady=(0, 8))
-        self.tuning_vars = {}
-        self.weight_scales = {}
-        for row, (key, label) in enumerate((("subjective.weight", _tr("三项能力匹配")), ("subjective.vector_weight", _tr("能力向量")),
-                                            ("subjective.route_weight", _tr("路由顺位"))), start=1):
-            ttk.Label(weights, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=7)
-            s_var = tk.DoubleVar(value=TUNING_DEFAULTS[key])
-            ttk.Scale(weights, from_=0.0, to=1.0, variable=s_var, style="Card.Horizontal.TScale",
-                      command=lambda _v, k=key: self.on_weight_slide(k)).grid(row=row, column=1, sticky="ew", padx=10)
-            t_var = tk.StringVar(value=f"{TUNING_DEFAULTS[key]:.2f}")
-            ttk.Label(weights, textvariable=t_var, style="Mono.TLabel", width=5).grid(row=row, column=2, sticky="e")
-            self.weight_scales[key] = s_var
-            self.tuning_vars[key] = t_var
-        weights.columnconfigure(1, weight=1)
-        ttk.Label(weights, text=_tr("权重用于任务匹配；雷达展示四项能力与额度经济。"),
-                  style="CardSub.TLabel", wraplength=theme.px(340)).grid(
-                      row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
-
-        numbers = ttk.Frame(cols, style="Card.TFrame")
-        numbers.grid(row=0, column=1, sticky="nsew")
+        numbers = ttk.Frame(box, style="Card.TFrame")
+        numbers.pack(fill="x")
         ttk.Label(numbers, text=_tr("额度阈值"), style="CardH3.TLabel").grid(row=0, column=0, columnspan=2, sticky="w",
                                                                     pady=(0, 8))
+        self.tuning_vars = {}
         for row, (key, label) in enumerate((("safety_margin_pct", _tr("周安全余量 %")), ("short_window_floor_pct", _tr("短窗底线 %")),
-                                            ("reset_horizon_hours", _tr("临期消纳窗口 h")), ("reset_bonus_max", _tr("临期最大加成")),
                                             ("rotate_after_carried_tokens", _tr("上下文轮换阈值"))), start=1):
             ttk.Label(numbers, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=4)
             var = tk.StringVar()
@@ -2762,39 +2672,18 @@ class Panel:
 
         self.prefill(lambda: self.data_module().read_tuning(), self.tuning_loaded)
 
-    def load_tuning(self):
+    def load_strategy(self):
         self.run(lambda: self.data_module().read_tuning(), self.tuning_loaded)
 
     def tuning_loaded(self, tuning):
         from router_data import STRATEGY_PRESETS
 
-        self._syncing_weights = True
-        try:
-            for key, var in self.tuning_vars.items():
-                val = tuning.get(key)
-                if key in self.weight_scales and val is not None:
-                    self.weight_scales[key].set(float(val))
-                    var.set(f"{float(val):.2f}")
-                else:
-                    var.set("" if val is None else str(val))
-        finally:
-            self._syncing_weights = False
+        for key, var in self.tuning_vars.items():
+            val = tuning.get(key)
+            var.set("" if val is None else str(val))
         active = matching_preset(tuning, STRATEGY_PRESETS)
         for name, button in self.preset_buttons.items():
             button.configure(style="SmallAccent.TButton" if name == active else "Small.TButton")
-
-    def on_weight_slide(self, changed_key):
-        if getattr(self, "_syncing_weights", False):
-            return
-        current = {k: float(self.tuning_vars[k].get() or 0) for k in self.weight_scales}
-        balanced = self.data_module().normalize_weights(changed_key, self.weight_scales[changed_key].get(), current)
-        self._syncing_weights = True
-        try:
-            for k, val in balanced.items():
-                self.weight_scales[k].set(val)
-                self.tuning_vars[k].set(f"{val:.2f}")
-        finally:
-            self._syncing_weights = False
 
     def apply_strategy_preset(self, name):
         from router_data import STRATEGY_PRESETS
@@ -2808,603 +2697,13 @@ class Panel:
 
     def save_tuning(self):
         values = {key: var.get().strip() for key, var in self.tuning_vars.items() if var.get().strip()}
-        self.run(lambda: self.data_module().save_tuning(values), self.say(self.load_tuning))
+        self.run(lambda: self.data_module().save_tuning(values), self.say(self.load_strategy))
 
     def restore_tuning(self):
         from tkinter import messagebox
 
         if messagebox.askyesno(TITLE, _tr("恢复默认路由参数？"), parent=self.root):
-            self.run(lambda: self.data_module().restore_tuning(), self.say(self.reload_strategy_figures))
-
-    def reload_strategy_figures(self):
-        self.load_tuning()
-        self.load_ability_floors()
-        self.load_value()
-
-    def build_setting_ability_floors(self, frame):
-        tk, ttk = self.tk, self.ttk
-        from router_data import ABILITY_FLOOR_KEYS, ABILITY_FLOOR_LABELS
-
-        box = theme.card(frame, padding=STRATEGY_PAD, fill="x", pady=(STRATEGY_GAP, 0))
-        self.ability_floor_card = box
-
-        head = ttk.Frame(box, style="Card.TFrame")
-        head.pack(fill="x")
-        title_col = ttk.Frame(head, style="Card.TFrame")
-        title_col.pack(side="left", fill="x", expand=True)
-        ttk.Label(title_col, text=_tr("能力门槛与模型分布"), style="CardH2.TLabel").pack(anchor="w")
-        ttk.Label(
-            title_col,
-            text=_tr("展示各模型在不同思考档位下的有效能力区间，以及四个难度门槛、路由专属门槛与关键任务余量。"),
-            style="CardSub.TLabel",
-            wraplength=theme.px(560),
-        ).pack(anchor="w", pady=(4, 0))
-
-        actions = ttk.Frame(head, style="Card.TFrame")
-        actions.pack(side="right", anchor="ne")
-        ttk.Button(
-            actions,
-            text=_tr("恢复默认门槛"),
-            style="Small.TButton",
-            command=self.restore_ability_floors,
-        ).pack(side="right", padx=(6, 0))
-        ttk.Button(
-            actions,
-            text=_tr("保存门槛"),
-            style="SmallAccent.TButton",
-            command=self.save_ability_floors,
-        ).pack(side="right")
-
-        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=12)
-
-        controls = ttk.Frame(box, style="Card.TFrame")
-        controls.pack(fill="x", pady=(0, 6))
-        self.ability_floor_vars = {}
-        self.ability_floor_entries = {}
-        self.route_floor_vars = {}
-        self.route_floor_entries = {}
-        self._syncing_floors = False
-
-        for idx, key in enumerate(ABILITY_FLOOR_KEYS):
-            lbl = _tr(ABILITY_FLOOR_LABELS.get(key, key))
-            cell = ttk.Frame(controls, style="Card.TFrame")
-            cell.pack(side="left", padx=(0, 14))
-            ttk.Label(cell, text=lbl, style="Card.TLabel").pack(side="left", padx=(0, 6))
-            var = tk.StringVar(value="")
-            spin = ttk.Spinbox(
-                cell,
-                from_=1.0,
-                to=5.5,
-                increment=0.05,
-                textvariable=var,
-                width=6,
-                font=(self.mono, STRATEGY_FIELD),
-                command=lambda k=key: self.on_floor_entry_change(k),
-            )
-            spin.pack(side="left")
-            spin.bind("<Return>", lambda _e, k=key: self.on_floor_entry_commit(k))
-            spin.bind("<FocusOut>", lambda _e, k=key: self.on_floor_entry_change(k))
-            var.trace_add("write", lambda *_a, k=key: self.on_floor_entry_change(k))
-            self.ability_floor_vars[key] = var
-            self.ability_floor_entries[key] = spin
-            if idx < len(ABILITY_FLOOR_KEYS) - 1:
-                ttk.Label(cell, text="≤", style="CardSub.TLabel").pack(side="left", padx=(10, 0))
-
-        self.route_floor_bar = ttk.Frame(controls, style="Card.TFrame")
-        self.route_floor_bar.pack(side="right")
-
-        self.floor_preview_var = tk.StringVar(value=_tr("拖动门槛线或调整数值可实时预览准入模型变化"))
-        self.floor_preview_label = ttk.Label(
-            box,
-            textvariable=self.floor_preview_var,
-            style="CardSub.TLabel",
-            wraplength=theme.px(820),
-        )
-        self.floor_preview_label.pack(anchor="w", pady=(4, 8))
-
-        self.ability_floor_chart = ability_floor_chart.AbilityFloorChartCanvas(
-            box,
-            data_loader=lambda: self.data_module().ability_floor_chart_data(),
-            on_floor_drag=self._on_floor_chart_drag,
-            on_floor_commit=self._on_floor_chart_commit,
-            width=theme.px(860),
-            height=theme.px(440),
-        )
-        self.ability_floor_chart.pack(fill="x", expand=True)
-        self.prefill(lambda: self.data_module().ability_floor_chart_data(), self.ability_floors_loaded)
-
-    def load_ability_floors(self):
-        self.run(lambda: self.data_module().ability_floor_chart_data(), self.ability_floors_loaded)
-
-    def _ensure_route_floor_widgets(self, route_floors: dict):
-        tk, ttk = self.tk, self.ttk
-        from router_data import ABILITY_FLOOR_LABELS
-        for rk in sorted(route_floors):
-            if rk in self.route_floor_vars:
-                continue
-            r_name, diff = rk.split(".", 1) if "." in rk else (rk, "hard")
-            r_label = f"{display_names.kind_label(r_name)}·{_tr(ABILITY_FLOOR_LABELS.get(diff, diff))}"
-            cell = ttk.Frame(self.route_floor_bar, style="Card.TFrame")
-            cell.pack(side="left", padx=(8, 0))
-            ttk.Label(cell, text=r_label, style="CardSub.TLabel").pack(side="left", padx=(0, 6))
-            var = tk.StringVar(value="")
-            spin = ttk.Spinbox(
-                cell,
-                from_=1.0,
-                to=5.5,
-                increment=0.05,
-                textvariable=var,
-                width=6,
-                font=(self.mono, STRATEGY_FIELD),
-                command=lambda k=rk: self.on_floor_entry_change(k),
-            )
-            spin.pack(side="left")
-            spin.bind("<Return>", lambda _e, k=rk: self.on_floor_entry_commit(k))
-            spin.bind("<FocusOut>", lambda _e, k=rk: self.on_floor_entry_change(k))
-            var.trace_add("write", lambda *_a, k=rk: self.on_floor_entry_change(k))
-            self.route_floor_vars[rk] = var
-            self.route_floor_entries[rk] = spin
-
-    def ability_floors_loaded(self, chart_data: dict):
-        if not isinstance(chart_data, dict):
-            return
-        floors = chart_data.get("floors") or {}
-        route_floors = chart_data.get("route_floors") or {}
-        self._ensure_route_floor_widgets(route_floors)
-        self._syncing_floors = True
-        try:
-            for k, var in self.ability_floor_vars.items():
-                if k in floors:
-                    var.set(f"{float(floors[k]):.2f}")
-                entry = self.ability_floor_entries.get(k)
-                if entry is not None and entry.winfo_exists():
-                    entry.configure(style="TSpinbox")
-            for rk, var in self.route_floor_vars.items():
-                if rk in route_floors:
-                    var.set(f"{float(route_floors[rk]):.2f}")
-                entry = self.route_floor_entries.get(rk)
-                if entry is not None and entry.winfo_exists():
-                    entry.configure(style="TSpinbox")
-        finally:
-            self._syncing_floors = False
-        self.floor_preview_var.set(_tr("拖动门槛线或调整数值可实时预览准入模型变化"))
-        if hasattr(self, "ability_floor_chart"):
-            self.ability_floor_chart.set_data(chart_data, preview_diff=None)
-        self._refresh_strategy_scroll()
-
-    def collect_ability_floors(self) -> tuple[dict | None, dict | None]:
-        if not hasattr(self, "ability_floor_vars") or not self.ability_floor_vars:
-            return None, None
-        floors = {k: var.get().strip() for k, var in self.ability_floor_vars.items() if var.get().strip()}
-        routes = {rk: var.get().strip() for rk, var in getattr(self, "route_floor_vars", {}).items() if var.get().strip()}
-        return (floors or None), (routes or None)
-
-    def on_floor_entry_change(self, _changed_key: str | None = None):
-        if getattr(self, "_syncing_floors", False):
-            return
-        floors_raw, routes_raw = self.collect_ability_floors()
-        if not floors_raw:
-            return
-        data = self.data_module()
-        try:
-            clean_floors, clean_routes = data.validate_ability_floors(floors_raw, routes_raw)
-        except ValueError as exc:
-            self.floor_preview_var.set(str(exc))
-            return
-        preview = data.preview_ability_floor_change(
-            floors_override=clean_floors,
-            route_floors_override=clean_routes,
-        )
-        self.floor_preview_var.set(preview["summary"])
-        if hasattr(self, "ability_floor_chart"):
-            self.ability_floor_chart.set_data(preview["candidate"], preview_diff=preview)
-
-    def on_floor_entry_commit(self, _changed_key: str | None = None):
-        self.on_floor_entry_change(_changed_key)
-        self.save_ability_floors()
-
-    def _on_floor_chart_drag(self, draft_floors: dict, draft_routes: dict, preview_diff: dict | None):
-        self._syncing_floors = True
-        try:
-            for k, val in draft_floors.items():
-                if k in self.ability_floor_vars:
-                    self.ability_floor_vars[k].set(f"{float(val):.2f}")
-            for rk, val in draft_routes.items():
-                if rk in self.route_floor_vars:
-                    self.route_floor_vars[rk].set(f"{float(val):.2f}")
-        finally:
-            self._syncing_floors = False
-        if preview_diff and "summary" in preview_diff:
-            self.floor_preview_var.set(preview_diff["summary"])
-
-    def _on_floor_chart_commit(self, draft_floors: dict, draft_routes: dict):
-        self.run(
-            lambda: self.data_module().save_ability_floors(draft_floors, draft_routes),
-            self.say(self.load_ability_floors),
-        )
-
-    def save_ability_floors(self):
-        floors, routes = self.collect_ability_floors()
-        if not floors:
-            return
-        self.run(
-            lambda: self.data_module().save_ability_floors(floors, routes),
-            self.say(self.load_ability_floors),
-        )
-
-    def restore_ability_floors(self):
-        self.run(
-            lambda: self.data_module().restore_ability_floor_defaults(),
-            self.say(self.load_ability_floors),
-        )
-
-    def build_setting_value(self, frame):
-        tk, ttk = self.tk, self.ttk
-        box = theme.card(frame, padding=STRATEGY_PAD, fill="x", pady=(STRATEGY_GAP, 0))
-        self.value_card = box
-        head = ttk.Frame(box, style="Card.TFrame")
-        head.pack(fill="x")
-        self.harness_title = ttk.Label(head, text=_tr("Harness 系数"), style="CardH2.TLabel")
-        self.harness_title.pack(side="left")
-        default_box = ttk.Frame(head, style="Card.TFrame")
-        default_box.pack(side="right")
-        ttk.Label(default_box, text=_tr("默认系数"), style="Card.TLabel").pack(side="left", padx=(0, 6))
-        self.harness_default = tk.StringVar(value="1")
-        self.harness_default_entry = ttk.Entry(default_box, textvariable=self.harness_default, width=6,
-                                               font=(self.mono, STRATEGY_FIELD))
-        self.harness_default_entry.pack(side="left")
-        self.harness_default.trace_add("write", self._paint_default_factor)
-        ttk.Style(self.root).configure("Invalid.TEntry", fieldbackground=theme.RED_SOFT, foreground=theme.RED,
-                                       bordercolor=theme.RED, lightcolor=theme.RED, darkcolor=theme.RED)
-        ttk.Label(box, text=_tr("乘在加权适配与能力上。选「（任意）」的列不参与匹配，列表也可以手改。"),
-                  style="CardSub.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 10))
-        self._harness_columns = (("harness", "通道"), ("work_kind", "工作类型"), ("model", "模型"),
-                                 ("model_prefix", "模型前缀"), ("factor", "系数"))
-        self._factor_choices = {}
-        self.harness_table = ttk.Frame(box, style="Card.TFrame")
-        self.harness_table.pack(fill="x")
-        widths = (186, 110, 120, 92, 58)
-        self.harness_headers = {}
-        for column, ((key, label), width) in enumerate(zip(self._harness_columns, widths)):
-            self.harness_table.columnconfigure(column, weight=width, minsize=theme.px(width))
-            header = ttk.Label(self.harness_table, text=_tr(label), style="CardColumn.TLabel", anchor="w")
-            header.grid(row=0, column=column, sticky="ew", padx=(0, 8), pady=(0, 4))
-            self.harness_headers[key] = header
-        self.harness_table.columnconfigure(len(self._harness_columns), weight=0)
-        self.harness_rule_rows = []
-        ttk.Button(box, text=_tr("添加一行"), style="Small.TButton", command=self.add_harness_rule).pack(anchor="w", pady=(8, 12))
-        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=(0, 12))
-        self.exchange_title = ttk.Label(box, text=_tr("机会成本汇率"), style="CardH2.TLabel")
-        self.exchange_title.pack(anchor="w")
-        ttk.Label(box, text=_tr("1 分大约兑换这些被挤占额度；没有美元容量的窗口用每工时。"),
-                  style="CardSub.TLabel", wraplength=theme.px(640)).pack(anchor="w", pady=(4, 10))
-        rates = ttk.Frame(box, style="Card.TFrame")
-        rates.pack(fill="x")
-        self.exchange_vars = {}
-        for key, label in (("score_per_displaced_usd", "每美元分数"), ("score_per_displaced_worker_hour", "每工时分数")):
-            ttk.Label(rates, text=_tr(label), style="Card.TLabel").pack(side="left", padx=(0, 6))
-            var = tk.StringVar()
-            ttk.Entry(rates, textvariable=var, width=8, font=(self.mono, STRATEGY_FIELD)).pack(side="left", padx=(0, 24))
-            self.exchange_vars[key] = var
-        self._value_ready = False
-        self.prefill(self._read_value_form, self.value_loaded)
-
-    def _read_value_form(self):
-        data = self.data_module()
-        return data.read_harness_factors(), data.read_opportunity_exchange(), data.strategy_factor_choices()
-
-    def load_value(self):
-        self.run(self._read_value_form, self.value_loaded)
-
-    def value_loaded(self, payload):
-        factors, exchange = payload[0], payload[1]
-        if len(payload) > 2 and isinstance(payload[2], dict):
-            self._factor_choices = payload[2]
-        default = factors.get("default", 1.0)
-        self.harness_default.set(f"{float(default):g}")
-        with freeze_redraw(self.harness_table):
-            for holder in list(self.harness_rule_rows):
-                self.remove_harness_rule(holder, _batch=True)
-            for rule in factors.get("rules") or []:
-                self.add_harness_rule(rule, _batch=True)
-            self._place_harness_rows()
-        for key, var in self.exchange_vars.items():
-            value = exchange.get(key)
-            var.set("" if value is None else f"{float(value):g}")
-        self._paint_default_factor()
-        self._value_ready = True
-        self._refresh_strategy_scroll()
-
-    def _harness_text(self, key, raw):
-        if raw in ("", None):
-            return ""
-        if key == "factor" and isinstance(raw, (int, float)) and not isinstance(raw, bool):
-            return f"{float(raw):g}"
-        return str(raw)
-
-    def _show_choice(self, key, raw):
-        text = self._harness_text(key, raw)
-        if key != "factor" and not self.data_module().blank_choice(text):
-            return _tr("（任意）")
-        return text
-
-    def _choice_values(self, key, current=""):
-        label = _tr("（任意）")
-        values = [label]
-        for item in self._factor_choices.get(key) or []:
-            text = str(item or "").strip()
-            if text and text not in values:
-                values.append(text)
-        current = str(current or "").strip()
-        if current and current not in values:
-            values.insert(1, current)
-        return values
-
-    def _apply_choice_lists(self):
-        for holder in self.harness_rule_rows:
-            for key in ("harness", "work_kind", "model"):
-                widget = holder["widgets"].get(key)
-                if widget is not None and widget.winfo_exists():
-                    widget.configure(values=self._choice_values(key, holder[key].get()))
-
-    def _factor_in_range(self, text) -> bool:
-        text = str(text or "").strip()
-        if not text:
-            return False
-        try:
-            number = float(text)
-        except ValueError:
-            return False
-        if number != number or number in (float("inf"), float("-inf")):
-            return False
-        low, high = self.data_module().HARNESS_FACTOR_RANGE
-        return low <= number <= high
-
-    def _paint_factor_widget(self, widget, text, required):
-        if widget is None or not widget.winfo_exists():
-            return
-        widget.configure(style="Invalid.TEntry" if required and not self._factor_in_range(text) else "TEntry")
-
-    def _paint_default_factor(self, *_args):
-        self._paint_factor_widget(getattr(self, "harness_default_entry", None),
-                                  getattr(self, "harness_default", self.tk.StringVar()).get(), True)
-
-    def _paint_row_factor(self, holder):
-        current = self._row_current(holder)
-        required = any(current.values())
-        self._paint_factor_widget(holder["widgets"].get("factor"), current["factor"], required)
-
-    def harness_factors_valid(self) -> bool:
-        self._paint_default_factor()
-        if not self._factor_in_range(self.harness_default.get()):
-            return False
-        for holder in self.harness_rule_rows:
-            self._paint_row_factor(holder)
-            current = self._row_current(holder)
-            if any(current.values()) and not self._factor_in_range(current["factor"]):
-                return False
-        return True
-
-    def _row_current(self, holder) -> dict:
-        blank = self.data_module().blank_choice
-        current = {}
-        for key, _label in self._harness_columns:
-            text = holder[key].get().strip()
-            current[key] = text if key == "factor" else blank(text)
-        return current
-
-    def add_harness_rule(self, rule=None, _batch: bool = False):
-        rule = rule or {}
-        tk, ttk = self.tk, self.ttk
-        holder = {"basis": rule.get("basis") or "", "widgets": {}}
-        for key, _label in self._harness_columns:
-            shown = self._show_choice(key, rule.get(key, ""))
-            var = tk.StringVar(value=shown)
-            if key in ("harness", "work_kind", "model"):
-                widget = ttk.Combobox(self.harness_table, textvariable=var, font=(self.mono, STRATEGY_FIELD),
-                                       width={"harness": 20, "work_kind": 8, "model": 10}[key],
-                                       values=self._choice_values(key, shown))
-            else:
-                widget = ttk.Entry(self.harness_table, textvariable=var, font=(self.mono, STRATEGY_FIELD),
-                                    width=5 if key == "factor" else 8)
-            holder[key] = var
-            holder["widgets"][key] = widget
-        holder["delete"] = ttk.Button(self.harness_table, text=_tr("删除"), style="Tiny.TButton",
-                                      command=lambda holder=holder: self.remove_harness_rule(holder))
-        holder["factor"].trace_add("write", lambda *_args, holder=holder: self._paint_row_factor(holder))
-        for key in ("harness", "work_kind", "model", "model_prefix"):
-            holder[key].trace_add("write", lambda *_args, holder=holder: self._paint_row_factor(holder))
-        holder["snapshot"] = self._row_current(holder)
-        self.harness_rule_rows.append(holder)
-        self._paint_row_factor(holder)
-        if not _batch:
-            self._place_harness_rows()
-            self._refresh_strategy_scroll()
-        return holder
-
-    def _place_harness_rows(self):
-        keys = [key for key, _label in self._harness_columns]
-        for index, holder in enumerate(self.harness_rule_rows, start=1):
-            for column, key in enumerate(keys):
-                holder["widgets"][key].grid(row=index, column=column, sticky="ew", padx=(0, 8), pady=3)
-            holder["delete"].grid(row=index, column=len(keys), sticky="w", pady=3)
-
-    def remove_harness_rule(self, holder, _batch: bool = False):
-        if holder in self.harness_rule_rows:
-            self.harness_rule_rows.remove(holder)
-        widgets = list(holder.get("widgets", {}).values())
-        delete = holder.get("delete")
-        if delete is not None:
-            widgets.append(delete)
-        for widget in widgets:
-            if widget is not None and widget.winfo_exists():
-                widget.destroy()
-        if not _batch:
-            self._place_harness_rows()
-            self._refresh_strategy_scroll()
-
-    def _refresh_strategy_scroll(self):
-        scroll = getattr(self, "strategy_scroll", None)
-        if scroll is None:
-            return
-        try:
-            scroll.body_changed(None)
-        except Exception:
-            pass
-
-    def collect_harness_factors(self):
-        rules = []
-        for holder in self.harness_rule_rows:
-            current = self._row_current(holder)
-            if not any(current.values()):
-                continue
-            item = {key: value for key, value in current.items() if value}
-            if holder.get("basis") and current == holder.get("snapshot"):
-                item["basis"] = holder["basis"]
-            rules.append(item)
-        return {"default": self.harness_default.get().strip(), "rules": rules}
-
-    def collect_opportunity_exchange(self):
-        return {key: var.get().strip() for key, var in self.exchange_vars.items()}
-
-    def _remember_value_snapshots(self):
-        """After a successful save, unchanged rows keep their basis on the next edit."""
-        for holder in getattr(self, "harness_rule_rows", ()):
-            holder["snapshot"] = self._row_current(holder)
-
-    # model DNA
-
-    def build_setting_dna(self, frame):
-        tk, ttk = self.tk, self.ttk
-        box = theme.card(frame, padding=STRATEGY_PAD, fill="x", pady=(STRATEGY_GAP, 0))
-        box.columnconfigure(1, weight=1)
-        box.rowconfigure(2, weight=1)
-        ttk.Label(box, text=_tr("模型画像"), style="CardH2.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
-        tk.Frame(box, bg=theme.BORDER, height=1).grid(row=1, column=0, columnspan=2, sticky="ew", pady=12)
-        left = ttk.Frame(box, style="Card.TFrame")
-        left.grid(row=2, column=0, sticky="nsw", padx=(0, 24))
-        ttk.Label(left, text=_tr("模型"), style="CardH3.TLabel").grid(row=0, column=0, sticky="w")
-        self.dna_picker = ttk.Combobox(left, state="readonly", width=26)
-        self.dna_picker.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 8))
-        self.dna_picker.bind("<<ComboboxSelected>>", lambda e: self.dna_model_changed())
-        self.dna_model = None
-        self.dna_draft = {}
-        self.dna_vars, self.dna_texts = {}, {}
-        for row, (key, label) in enumerate(DNA_KEYS, start=2):
-            ttk.Label(left, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=7)
-            var = tk.DoubleVar(value=0.5)
-            ttk.Scale(left, from_=0.0, to=1.0, variable=var, length=theme.px(150), style="Card.Horizontal.TScale",
-                      command=lambda _v, k=key: self.on_dna_slide(k)).grid(row=row, column=1, sticky="ew", padx=10)
-            text = tk.StringVar(value="0.50")
-            ttk.Label(left, textvariable=text, style="Mono.TLabel", width=5).grid(row=row, column=2, sticky="e")
-            self.dna_vars[key], self.dna_texts[key] = var, text
-        buttons = ttk.Frame(left, style="Card.TFrame")
-        buttons.grid(row=2 + len(DNA_KEYS), column=0, columnspan=3, sticky="w", pady=(10, 0))
-        ttk.Button(buttons, text=_tr("还原画像"), style="Small.TButton", command=self.revert_dna).pack(side="left")
-        self.dna_radar = radar_chart.RadarChartCanvas(box, size=theme.px(220), bg=theme.CARD)
-        self.dna_radar.grid(row=2, column=1, sticky="nsew")
-        ttk.Label(box, text=_tr("4 项能力可手动微调；额度经济由模型价格或实时窗口余量自动计算，不可手动调节。"),
-                  style="CardSub.TLabel", wraplength=theme.px(640)).grid(
-                      row=3, column=0, columnspan=2, sticky="w", pady=(12, 0))
-        if self.models:
-            self.fill_dna_models()
-        else:
-            self.prefill(lambda: self.data_module().model_table(), self.models_loaded)
-
-    def load_dna(self):
-        if self.models:
-            self.fill_dna_models()
-        self.run(lambda: self.data_module().model_table(), self.models_loaded)
-
-    def fill_dna_models(self):
-        data = self.data_module()
-        self.dna_labels = {f"{data.model_label(m)} · {m}": m for m in self.models}
-        self.dna_picker.configure(values=list(self.dna_labels))
-        wanted = self.dna_model if self.dna_model in self.models else next(iter(self.models), None)
-        if wanted:
-            self.select_dna_model(wanted)
-
-    def select_dna_model(self, model):
-        if not getattr(self, "dna_labels", None) or model not in self.models:
-            self.dna_model = model
-            return
-        label = next(label for label, m in self.dna_labels.items() if m == model)
-        self.dna_picker.set(label)
-        self.dna_model_changed()
-
-    def saved_dna(self, model):
-        values = radar_chart.dna_dimensions(self.models.get(model) or {})
-        return {key: round(values[key], 2) for key, _ in DNA_KEYS}
-
-    def dna_model_changed(self):
-        self.dna_model = self.dna_labels.get(self.dna_picker.get())
-        self.dna_draft = self.saved_dna(self.dna_model) if self.dna_model else {}
-        self.sync_dna_sliders()
-
-    def sync_dna_sliders(self):
-        self._syncing_dna = True
-        try:
-            for key, _ in DNA_KEYS:
-                value = self.dna_draft.get(key, 0.5)
-                self.dna_vars[key].set(value)
-                self.dna_texts[key].set(f"{value:.2f}")
-        finally:
-            self._syncing_dna = False
-        self.render_dna_preview()
-
-    def on_dna_slide(self, key):
-        if getattr(self, "_syncing_dna", False) or not self.dna_model:
-            return
-        value = round(float(self.dna_vars[key].get()), 2)
-        self.dna_draft[key] = value
-        self.dna_texts[key].set(f"{value:.2f}")
-        if not getattr(self, "_dna_redraw_pending", False):
-            self._dna_redraw_pending = True
-            generation = self._generation
-            self.root.after_idle(lambda: self.render_dna_preview() if generation == self._generation else None)
-
-    def render_dna_preview(self):
-        self._dna_redraw_pending = False
-        if self.closing:
-            return
-        model = self.dna_model
-        if not model or model not in self.models:
-            self.dna_radar.show((), [])
-            return
-        info = self.models[model]
-        label = self.data_module().model_label(model)
-        draft = {**info, "subjective": dict(self.dna_draft)}
-        series = [{"label": label, "values": radar_chart.dna_dimensions(draft)}]
-        raw = [radar_chart.dna_raw(draft)]
-        if self.dna_draft != self.saved_dna(model):
-            series[0]["label"] = _tr('{0} · 调整后').format(f'{label}')
-            series.append({"label": _tr("已保存"), "values": radar_chart.dna_dimensions(info)})
-            raw.append(radar_chart.dna_raw(info))
-        self.dna_radar.show(radar_chart.DNA_AXES, series, raw)
-
-    def revert_dna(self):
-        if self.dna_model:
-            info = self.models.get(self.dna_model) or {}
-            baseline = {**info, "subjective": info.get("default_subjective", {})}
-            values = radar_chart.dna_dimensions(baseline)
-            self.dna_draft = {key: round(values[key], 2) for key, _ in DNA_KEYS}
-            self.sync_dna_sliders()
-
-    def save_dna(self):
-        model = self.dna_model
-        if not model:
-            return
-        draft = dict(self.dna_draft)
-
-        def done(message):
-            self.status.set(message)
-            self.models[model]["subjective"] = {**(self.models[model].get("subjective") or {}), **draft}
-            self.render_dna_preview()
-            if "scoring" in self.built and self.mode.get() == "dna":
-                self.render_radar()
-        self.run(lambda: self.data_module().save_model_subjective(
-            model, draft["divergence"], draft["global_rigor"], draft["module_precision"],
-            capability=draft["capability"]), done)
+            self.run(lambda: self.data_module().restore_tuning(), self.say(self.load_strategy))
 
     # system
 

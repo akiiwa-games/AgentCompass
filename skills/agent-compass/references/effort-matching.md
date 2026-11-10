@@ -1,46 +1,48 @@
-# Effort matching and the decision ledger
+# Effort and the decision ledger
 
-Effort is not a function of reasoning depth. The router matches what the task **asks for** against what a model **delivers at an effort**, and pays for the burn.
+The router picks an effort by scoring each effort bundle like any other candidate: the fit of the model's four category scores at
+that effort to the task's demand, minus the quota economy's price for the spend at that effort. Effort is not a function of
+reasoning depth, and no gate or floor decides it.
 
-## Task side: `required_ability`
+## Model side: effort curves
 
-`allocator.task_demand` (`decision.task.demand`) is continuous:
-
-```
-required = floor + critical_headroom + precision_headroom
-         + property_span * (reasoning_depth / 4) * property_load
-```
-
-- `floor` is the hard gate for the work (a bundle below `floor + critical_headroom` is excluded; `scoring.critical_headroom_by_difficulty` overrides the headroom for a difficulty, e.g. frontier 0.7 keeps the critical frontier gate at 4.9). It is `scoring.ability_floor[difficulty]`, unless the route declares its own `ability_floor` for that difficulty in `capability_policy.routes`. Floors are measured, not judged. Each is the tier where expected success reaches 90% of the best model's, from public benchmarks mapped onto the tier scale. `scoring.ability_floor_basis` and each route's `ability_floor_basis` record the sources and dates.
-- The floor is only the gate. Graded ability on work that is not minimum-sufficient counts from `scoring.ability_score_origin[difficulty]`, so lowering a measured floor does not flatten the difference between the models above it.
-- An advertised model without a measured row takes `unmeasured_models.generic`: the median measured tier, below the hard floor, so it gets routine work only.
-- `property_load` is the weighted mean of `code_complexity`, `context_scale`, `divergence`, `hallucination_risk`, `error_cost` (`scoring.demand.property_weights`). Depth multiplies it, so the same heavy properties ask more of a deep task than a shallow one.
-- Work with no profile uses the difficulty index as depth and `default_load`.
-- Tunables live under `scoring.demand` (`property_span`, `default_load`, `depth_coupling`, `shortfall_weight`, `sprint_effort_weight`, `precision_headroom`, `property_weights`).
-
-## Model side: ability x effort curve
-
-`effort_curves[model][effort]` per model:
+`effort_curves[model]` per model, written by `calibration/efforts.py` from the Artificial Analysis effort variants:
 
 | Field | Meaning |
 | :--- | :--- |
-| `ability` | tier delta from High (additive) |
-| `ability_mult` | tier multiplier (replaces `ability` when present) |
-| `burn` | burn relative to the 0.7 = High convention |
-| `burn_mult` | burn multiplier over High (replaces `burn`) |
+| `ability_mult` | the model's Intelligence Index at that effort over its index at High; `allocator.five_axis_effort_ratio` scales the thinking categories (divergence, global rigor, module precision) by it, capped at 1 |
 | `calibration_source` | where the numbers came from; every shipped curve names one |
 
-Effective ability is `tier` shaped by the curve; quota cost is `unit_rate x burn_scale`. A tier means ability at High. Curves are Artificial Analysis effort variants at 0.0495 tier per index point (`calibration/efforts.py`). Opus Max costs about 2.9x High for about 8% more ability, so it is chosen only when the requirement is not met below it. A measured row whose LMArena listing is a higher-effort variant is moved to High when it is written (`calibration/apply_rows.py`), so the curve is not counted twice. Collect data per model and edit the curve; nothing else needs to change.
+A model whose index is not listed by effort has no measured response: its categories are not scaled. Opus Max takes about 2.6x
+the time of High (Artificial Analysis Time/Task, 25.3 vs 9.6 min) for about 13% more index points, so it wins only when the
+demand is not met below it and the economy lets it. `vision_tools` does not scale with effort.
+
+The time and spend of an effort are not an effort curve: the hours a task takes at an effort are the Artificial Analysis Time/Task
+at that effort (`five-axis-scores.json` `duration_multiplier.by_effort`, as a multiple of the anchor's at High), and the spend is
+those hours at the model's `usd_per_hour`. A model Artificial Analysis lacks takes its arena.ai Agent Time/Task moved onto that
+scale by a cited fit; a model with no time of its own takes its nearest same-series measured sibling's per-effort time
+(`series`); an effort between two of the model's own efforts takes the fleet's median position between them on the log-time scale,
+t_lower x (t_upper / t_lower)^p (`fleet_effort_position`, over the models that list all three efforts, with its n and IQR; the
+model's endpoints are kept, p is held to [0, 1] and marked if that binds); an effort outside its listed range takes the nearest
+same-series sibling's ratio, else the fleet's median ratio from the nearest listed effort (`fleet_effort_ratio`, n and IQR cited),
+never faster than a lower listed effort (`bounded_by` when that binds). Under 3 fleet models the effort has no time.
+`basis_by_effort` names which. A model
+with no sibling and no time, or an effort with no time, is out of automatic routing (a named dispatch still runs).
 
 ## The match
 
-- Effort bundles are never tied to a depth: `when.max_reasoning_depth` and the binary effort lock are gone (a custom `when` rule is still honoured).
-- `shortfall` penalises effective ability under `required_ability`; ability above it earns nothing and, past `target + span`, is charged as overqualification.
-- `effort_penalty = extra_effort_penalty x (burn_scale - 1) x (1 - sunk_weight)`: near a reset with surplus quota the extra burn is waived, so effort rises (`sprint_quality`).
-- Result: light work lands on medium/high, demanding work on xhigh/max, expiring surplus pushes effort up. `decision.task.max_recommended_effort` is the lowest effort that saturates the requirement for the chosen model.
+- A task that demands little of the thinking categories is met at a low effort and pays less quota; a task that demands a lot
+  needs the effort whose scaled score reaches the target (`0.8 x demand / 3`) or accepts the shortfall penalty.
+- Expiring quota makes the extra spend cheap (the economy prices it near zero close to the reset), so effort rises.
+- `decision.task.max_recommended_effort` is the effort of the chosen bundle.
 
 ## Ledger snapshot
 
-Every non-dry-run `plan` line in `router-ledger.jsonl` carries `decision_snapshot` (`allocator.decision_snapshot`): the task demand, scoring weights and opportunity-exchange numbers, and the ranking. The best 6 eligible rows keep every component, `expected_pct`, `expected_usd`, capacity summary and notes; the next 8 eligible and 16 excluded rows are compact. A plan line stays under about 24 KB so the gate's 1 MiB tail read (and `read_ledger`'s 8 MB tail) still reaches recent routes.
+Every non-dry-run `plan` line in `router-ledger.jsonl` carries `decision_snapshot` (`allocator.decision_snapshot`): the task
+demand, the scoring weights and the ranking. The best 6 eligible rows keep every component, `expected_pct`, `expected_usd`,
+capacity summary and notes; the next 8 eligible and 16 excluded rows are compact. A plan line stays under about 24 KB so the
+gate's 1 MiB tail read (and `read_ledger`'s 8 MB tail) still reaches recent routes.
 
-The tray replays that snapshot (`router_data.replay`, `theatre_source == "snapshot"`) and never calls `allocator.plan()` for it. Only legacy rows without a snapshot are recomputed against current quota (`theatre_source == "recomputed"`), and the UI says so.
+The tray replays that snapshot (`router_data.replay`, `theatre_source == "snapshot"`) and never calls `allocator.plan()` for it.
+A ledger row without a snapshot is recomputed against current quota (`theatre_source == "recomputed"`) when its task is still
+valid, otherwise shown as unreplayable; the UI says which.

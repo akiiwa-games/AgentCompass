@@ -22,8 +22,8 @@ class ApplicableQuotaTests(unittest.TestCase):
         self.now=datetime.now(timezone.utc)
         self.accounts=allocator.load_accounts(allocator.REFERENCES/'accounts.json')
         self.accounts['accounts']={'codex':self.accounts['accounts']['codex']}
-        self.accounts['accounts']['codex']['verified']=True
-        self.accounts['accounts']['codex']['bundles']={'sol_high':{'model':'gpt-6.1-sol','effort':'high'}}
+        self.accounts['accounts']['codex'].update(verified=True,plan='Plus')
+        self.accounts['accounts']['codex']['bundles']={'sol_high':{'provider':'codex','harness':'codex','model':'gpt-6.1-sol','effort':'high'}}
         self.accounts['_discovery']={'accounts':{},'launchers':{}}
         self.assertEqual(list(self.accounts['accounts']['codex']['windows']),['usage'])
         self.bundle={**allocator.bundles(self.accounts)['sol_high'],'bundle_id':'sol_high'}
@@ -38,6 +38,11 @@ class ApplicableQuotaTests(unittest.TestCase):
                         'resets_at':(self.now+timedelta(hours=100)).isoformat()},
                        {'id':'five_hour','remaining_pct_before_reset':remaining,
                         'observed_remaining_pct':remaining,'resets_at':(self.now+timedelta(hours=3)).isoformat(),**window}]}}}
+
+    def declare_five_hour(self):
+        """An observed window the account does not declare binds launches but has no capacity, so automatic routing needs it
+        declared (the plan's community capacity then prices it)."""
+        self.accounts['accounts']['codex']['windows']['five_hour']={'hours':5,'launch_min_remaining_pct':5}
 
     def plan(self, usage):
         return allocator.plan(self.task,usage,self.now,accounts=self.accounts,overrides=[],host_policy_config=None)
@@ -56,6 +61,7 @@ class ApplicableQuotaTests(unittest.TestCase):
         self.assertIn(denied['choice'],(None,'none'))
         recovered=self.usage(80)
         self.assertFalse(self.rejected(recovered))
+        self.declare_five_hour()
         self.assertEqual(self.plan(recovered)['selected_bundle']['account'],'codex')
         alternative=copy.deepcopy(self.accounts['accounts']['codex'])
         alternative['bundles']={'other_sol_high':{'provider':'codex','harness':'codex',
@@ -94,6 +100,7 @@ class ApplicableQuotaTests(unittest.TestCase):
         self.assertIn(self.plan(usage)['choice'],(None,'none'))
         usage['accounts']['shared-subscription']=self.usage(80)['accounts']['codex']
         self.assertFalse(self.rejected(usage))
+        self.declare_five_hour()
         self.assertEqual(self.plan(usage)['selected_bundle']['account'],'codex')
 
     def test_uncertain_or_inactive_telemetry_retains_existing_non_exhaustion_policy(self):

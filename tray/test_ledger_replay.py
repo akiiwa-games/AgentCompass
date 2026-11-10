@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 import router_data
 import router_priority as priority
-from router_test_support import isolated_router_state
+from router_test_support import isolated_router_state, profile
 
 
 class LedgerReplayTests(unittest.TestCase):
@@ -44,10 +44,7 @@ class LedgerReplayTests(unittest.TestCase):
         self.task.write_text(json.dumps({'task': {
             'objective': 'Fix the pagination bug', 'work_kind': 'general_implementation', 'expected_hours': 1,
             'needs': {'local_only': True},
-            'profile': {'reasoning_depth': 3, 'code_complexity': 2, 'context_scale': 2, 'hallucination_risk': 2, 'error_cost': 2,
-                        'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
-                        'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering',
-                        'reason': 'test'}}}), encoding='utf-8')
+            'profile': profile(reasoning_depth=3, local_only=True, reason='test')}}), encoding='utf-8')
         argv = ['route_judge.py', 'plan', '--input', str(self.task), '--usage-cache', str(self.cache)]
         with patch('sys.argv', argv), patch('builtins.print') as shown:
             self.assertEqual(self.router.main(), 0)
@@ -56,7 +53,7 @@ class LedgerReplayTests(unittest.TestCase):
 
     def test_replay_returns_the_stored_ranking_even_after_config_and_quota_change(self):
         accounts = self.allocator.load_accounts()
-        accounts['models']['claude-opus-5-5']['tier'] = 1.0
+        accounts['scoring']['safety_margin_pct'] = 50
         with patch.object(router_data, 'plan_task', side_effect=AssertionError('replay must not re-plan')), \
                 patch.object(self.allocator, 'plan', side_effect=AssertionError('replay must not re-plan')), \
                 patch.object(self.allocator, 'load_accounts', return_value=accounts):
@@ -77,14 +74,14 @@ class LedgerReplayTests(unittest.TestCase):
         router_data.replay(self.row)
         self.assertEqual(self.row, before)
 
-    def test_legacy_row_without_a_snapshot_is_recomputed_and_labelled(self):
-        legacy = {k: v for k, v in self.row.items() if k != 'decision_snapshot'}
-        legacy.update(objective='Fix the pagination bug', hours=1, local_only=True, kind='general_implementation')
+    def test_row_without_a_snapshot_is_recomputed(self):
+        older = {k: v for k, v in self.row.items() if k != 'decision_snapshot'}
+        older.update(objective='Fix the pagination bug', hours=1, local_only=True, kind='general_implementation')
         calls = []
         sentinel = {'choice': 'x', 'ranking': [], 'task': {}}
         with patch.object(router_data, 'modules', return_value=(self.allocator, self.router)), \
                 patch.object(router_data, 'plan_task', side_effect=lambda task: calls.append(task) or dict(sentinel)):
-            replayed = router_data.replay(legacy)
+            replayed = router_data.replay(older)
         self.assertEqual(len(calls), 1)
         self.assertEqual(replayed['theatre_source'], 'recomputed')
 

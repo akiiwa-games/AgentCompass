@@ -21,7 +21,7 @@ class QuotaLatchCardTests(unittest.TestCase):
         allocator.host_policy.load_policy.return_value = None
         allocator.host_policy.account_allowed.return_value = True
         allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-        allocator.window_capacity_usd.return_value = None
+        allocator.capacity_usd.return_value = None
         reset = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
         router.usage_snapshot.return_value = {'accounts': {'antigravity': {'status': 'fresh', 'windows': [
             {'id': 'gemini-5h', 'observed_remaining_pct': 99, 'resets_at': reset, 'seconds_until_reset': 10800},

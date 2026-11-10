@@ -18,15 +18,13 @@ Provider feature state confirms requested configuration, not actual backend spee
 Inspect response usage.speed for Claude, where available. Fallback/cooldown/account
 restrictions can return standard speed even with the requested feature enabled.
 
-Automatic `--fast` preference and pre-reset sprints apply only to Codex. Public
-subscription fast burn defaults to 2x (the shipped `scoring.fast_burn_multiplier`, calibrated
-on a measured fleet); purchased credits use 2x. An override still wins for subscription accounting.
-API billing follows API pricing rather than the ChatGPT credit multiplier; the
-router's API-equivalent estimates are not an invoice.
+A fast variant is its own candidate (`<bundle>+fast`), priced and timed from the model's cited fast-mode price and speed
+multipliers (public data; only models with both are offered). It competes on the same fit and quota economy as the normal
+variant. API billing follows API pricing rather than the ChatGPT credit multiplier; the router's API-equivalent estimates are
+not an invoice.
 
 Claude fast requires an explicit provider/model override with `--fast`. It uses
-paid usage credits outside subscription limits, never a subscription surplus or
-reset bonus. The router marks subscription fast as `fast_billing: usage_credits` (Console API as
+paid usage credits outside subscription limits, never a subscription surplus. The router marks subscription fast as `fast_billing: usage_credits` (Console API as
 `api`, unknown billing as `unknown_paid`), leaves dollar/percent
 budget and credit balance unknown, and creates no fictitious subscription budget
 reservation. Existing account/launch protections remain conservative and can

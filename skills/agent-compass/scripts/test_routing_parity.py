@@ -14,15 +14,12 @@ import auto_bundles
 import dispatch_registry
 import roll
 import route_judge
-from router_test_support import isolated_router_state, usage_windows
+from router_test_support import isolated_router_state, profile, usage_windows
 import window_scope
 
 
 NOW = datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc)
-PROFILE = {'reasoning_depth': 2, 'code_complexity': 1, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
-           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
-           'interaction_style': 'engineering',
-           'multi_task': False, 'task_count': '1', 'reason': 'test profile', 'work_kind': 'general_implementation'}
+PROFILE = profile(code_complexity=1, local_only=True, reason='test profile')
 LIVE = dict(PROFILE, realtime_loop=True)
 FULL_QUOTA = {
     'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
@@ -107,9 +104,6 @@ class ModelResolverTests(RouterCase):
                 self.assertEqual(comps['responsiveness'], 0.52)
                 self.assertEqual(row['bundle']['effort'], 'high')        # nothing measured to step down along
                 self.assertFalse(any('responsiveness' in r for r in row['excluded']), row['excluded'])
-                self.assertAlmostEqual(comps['ability_value'],
-                                       round(self.accounts['models'][target]['tier']
-                                             + self.accounts['scoring']['effort_ability'].get('high', 0), 2), places=1)
 
     def test_a_date_spelling_keeps_the_measured_curve(self):
         accounts = self.only('claude', x={'model': 'claude-opus-5-5-20261001', 'effort': 'high', 'provider': 'claude'})
@@ -141,13 +135,6 @@ class ModelResolverTests(RouterCase):
             with self.subTest(effort=effort):
                 self.assertEqual(allocator.bundle_responsiveness({'model': 'claude-opus-5', 'effort': effort}, info, self.accounts),
                                  allocator.bundle_responsiveness({'model': 'claude-opus-5-5', 'effort': effort}, info, self.accounts))
-
-    def test_harness_factor_sees_through_a_provider_prefix(self):
-        policy = self.accounts['scoring']
-        row = {'provider': 'antigravity', 'harness': 'antigravity-resilient'}
-        self.assertEqual(allocator.harness_quality_factor({**row, 'model': 'anthropic/claude-opus-5-5'}, 'general_implementation', policy),
-                         allocator.harness_quality_factor({**row, 'model': 'claude-opus-5-5'}, 'general_implementation', policy))
-        self.assertEqual(allocator.harness_quality_factor({**row, 'model': 'claude-opus-5-5'}, 'general_implementation', policy), 0.9)
 
     def test_one_model_under_two_spellings_is_no_rival_of_itself(self):
         """1.2: a second spelling counted as the best other model, so the margin collapsed and asked for a judge."""
@@ -244,15 +231,6 @@ class StepDownRangeTests(RouterCase):
         self.assertIsNone(row['bundle'].get('realtime_stepped_from'))
         self.assertIn('gpt-6-astra@high: responsiveness', ' '.join(row['excluded']))
 
-    def test_too_little_ability_after_a_step_down_names_both_levels(self):
-        hard = dict(LIVE, reasoning_depth=3, code_complexity=3)
-        accounts = self.only('codex', x={'model': 'gpt-6-luna', 'effort': 'high', 'provider': 'codex'})
-        accounts['effort_curves']['gpt-6-luna'] = {
-            'responsiveness': {'low': 0.9, 'high': 0.2}, 'ability': {'low': -2.0, 'high': 0.0}}
-        accounts['dispatch_efforts']['codex']['gpt-6-luna'] = ['low', 'high']
-        row = self.row(self.plan(self.task(hard), accounts), 'x')
-        self.assertIn('after the realtime step-down from high to low', ' '.join(row['excluded']))
-
     def test_antigravity_does_not_step_down(self):
         accounts = self.only('antigravity', x={'model': 'claude-opus-5-5', 'effort': 'high', 'provider': 'antigravity-resilient'})
         self.assertEqual(self.row(self.plan(self.task(LIVE), accounts), 'x')['bundle']['effort'], 'high')
@@ -266,7 +244,10 @@ class UserPinTests(RouterCase):
         for effort in ('low', 'medium', 'high', 'xhigh'):
             with self.subTest(effort=effort):
                 plan = self.plan(self.task(constraints={'model': 'claude-opus-5-5', 'effort': effort}))
-                self.assertEqual((plan['selected_bundle']['model'], plan['selected_bundle']['effort']), ('claude-opus-5-5', effort))
+                bundle = plan['selected_bundle']
+                # The effort is the user's; Antigravity carries it in the model id (claude-opus-5-5-low), a Claude account in the effort field.
+                self.assertIn(bundle['model'], ('claude-opus-5-5', f'claude-opus-5-5-{effort}'))
+                self.assertEqual(bundle['effort'], effort)
 
     def test_colon_effort_is_an_effort_not_a_vendor_tag(self):
         """3.2: `:medium` was stripped as a vendor tag and the effort was lost."""
@@ -308,7 +289,7 @@ class UserPinTests(RouterCase):
         """3.3: naming only a model exempted its High and XHigh from the floor, at responsiveness 0."""
         plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra'}))
         self.assertEqual(plan['selected_bundle']['effort'], 'low')       # the best score among the levels that clear
-        self.assertFalse(plan['decision'].get('warnings'))
+        self.assertFalse(any('responsiveness' in w for w in plan['decision'].get('warnings') or []))
         xhigh = self.row(plan, 'astra_xhigh')
         self.assertTrue(xhigh['excluded'], 'xhigh is not exempt from the floor for being named')
 

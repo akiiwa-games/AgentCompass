@@ -13,27 +13,29 @@ import route_judge
 class CatalogueTests(unittest.TestCase):
     def setUp(self):
         self.accounts = {
-            'models': {'custom-model': {'tier': 3.8, 'capabilities': {'coding': .8}}},
-            'capability_policy': {'routes': {'custom-route': {'preferred': ['custom-model']}}},
+            'models': {'custom-model': {}},
+            'capability_policy': {'routes': {'custom-route': {'implies': {'visual': True}}}},
         }
+        self.five = {'models': {'custom-model': {
+            'tier': {'value': 3.8, 'method': 'arena_overall'}, 'usd_per_hour': {'value': 12.5},
+            'image_input': {'status': 'ok'},
+            'axes': {'divergence': {'value': 0.7, 'status': 'estimated'}, 'global_rigor': {'value': 0.8, 'status': 'measured'},
+                     'module_precision': {'value': 0.6, 'status': 'partial'}, 'vision_tools': {'status': 'missing'}}}}}
 
-    def test_effective_models_and_routes_have_one_authority(self):
+    def test_the_route_policy_is_the_accounts_policy(self):
         before = deepcopy(self.accounts)
         policy = allocator.load_capabilities(accounts=self.accounts)
         self.assertEqual(policy['routes'], self.accounts['capability_policy']['routes'])
-        self.assertEqual(policy['mainstream_defaults']['models'], self.accounts['models'])
-        policy['mainstream_defaults']['models']['custom-model']['tier'] = 1
+        policy['routes']['custom-route']['implies'] = {}
         self.assertEqual(self.accounts, before)
-        self.accounts['models']['custom-model']['tier'] = 4.5
-        self.assertEqual(allocator.load_capabilities(accounts=self.accounts)
-                         ['mainstream_defaults']['models']['custom-model']['tier'], 4.5)
 
     def test_generated_views_follow_the_same_synthetic_source(self):
         views = capability_catalog.generated(self.accounts)
-        self.assertIn('custom-model', views['model-capabilities.json'])
         self.assertIn('custom-route', views['model-capabilities.json'])
-        self.assertIn('custom-model', views['model-capabilities.md'])
-        self.assertIn('3.8', views['model-capabilities.md'])
+        md = capability_catalog.markdown(self.accounts, self.five)
+        row = next(line for line in md.splitlines() if '`custom-model`' in line)
+        self.assertIn('3.80', row)
+        self.assertIn('12.5', row)
 
     def test_shipped_views_match_the_shipped_accounts(self):
         """Round 058 review F6: a merge can leave model-capabilities.json/.md behind accounts.json without a conflict;
@@ -44,30 +46,16 @@ class CatalogueTests(unittest.TestCase):
             shipped = (capability_catalog.REFERENCES / name).read_text(encoding='utf-8')
             self.assertEqual(shipped, content, f'{name} is stale: run `python -X utf8 capability_catalog.py`')
 
-    def test_estimated_scores_are_marked_in_the_markdown_view(self):
-        self.accounts['models']['custom-model'] = {
-            'tier': 3.8, 'capabilities': {'reasoning': .7, 'coding': .8},
-            'score_estimates': {'capabilities.reasoning': {'value': .7, 'predictor': 'aa.index'}}}
-        md = capability_catalog.generated(self.accounts)['model-capabilities.md']
+    def test_estimated_and_partial_categories_are_marked_in_the_markdown_view(self):
+        md = capability_catalog.markdown(self.accounts, self.five)
         row = next(line for line in md.splitlines() if '`custom-model`' in line)
-        self.assertIn('0.70~ / 0.80 /', row)
+        self.assertIn('0.70~ | 0.80 | 0.60! | missing |', row)
 
-    def test_only_explicit_state_restricts_route_models(self):
-        route = {'preferred': ['another-model'], 'basis': 'Standing user order: old prose'}
-        policy = {'routes': {'custom-route': route}}
+    def test_dot_takes_every_route_unless_the_work_is_local_or_visual(self):
+        policy = {'routes': {'custom-route': {}}}
         self.assertTrue(allocator.dot_may_take('custom-route', {}, policy))
-        route['restrict_models'] = True
-        self.assertFalse(allocator.dot_may_take('custom-route', {}, policy))
-        route['restrict_models'] = False
-        self.assertTrue(allocator.dot_may_take('custom-route', {}, policy))
-
-    def test_route_peer_alignment_requires_explicit_configuration(self):
-        accounts = {'models': {}, 'scoring': {}}
-        policy = {'routes': {'custom-route': {'preferred': ['anchor', 'peer', 'other']}}}
-        first = allocator.fit_score('custom-route', 'anchor', policy, accounts)
-        self.assertLess(allocator.fit_score('custom-route', 'peer', policy, accounts), first)
-        policy['route_fit_peers'] = {'peer': 'anchor'}
-        self.assertEqual(allocator.fit_score('custom-route', 'peer', policy, accounts), first)
+        self.assertFalse(allocator.dot_may_take('custom-route', {'local_only': True}, policy))
+        self.assertFalse(allocator.dot_may_take('custom-route', {'visual': True}, policy))
 
     def test_dispatch_cadence_uses_configured_account_and_threshold(self):
         now = datetime(2026, 10, 29, tzinfo=timezone.utc)

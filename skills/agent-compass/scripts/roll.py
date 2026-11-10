@@ -88,8 +88,8 @@ def build_task(args, text, parent):
     task = {'objective': text,  # the classifier and the worker both get the whole text
             'task_id': args.task_id or 'roll-' + hashlib.sha256(text.encode()).hexdigest()[:16]}
     if hours is None:
-        # No extra model call: the allocator budgets the classifier's own difficulty -> default_hours.
-        task['hours_source'] = 'classifier_difficulty'
+        # No extra model call: the allocator budgets the classifier's own expected_hours.
+        task['hours_source'] = 'classifier_estimate'
     else:
         task['expected_hours'] = float(hours)
     if parent:
@@ -229,9 +229,6 @@ def summary(decision):
                       (decision.get('decision') or {}).get('reason') or '')[:300] or None,
            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn'],
            **({'warnings': warnings} if (warnings := decision.get('warnings') or (decision.get('decision') or {}).get('warnings')) else {})}
-    if decision.get('unclassified'):
-        out['unclassified'] = True
-        out['unclassified_reason'] = decision.get('unclassified_reason')
     return out
 
 
@@ -860,9 +857,6 @@ def compact(result, status, detail_path):
         out['assumptions'] = result['assumptions']
     if result.get('warnings'):
         out['warnings'] = [*out.get('warnings', []), *result['warnings']]
-    if result.get('unclassified'):
-        out['unclassified'] = True
-        out['unclassified_reason'] = result.get('unclassified_reason')
     out['details'] = detail_path
     return {k: v for k, v in out.items() if v is not None}
 
@@ -997,9 +991,6 @@ def _run(args, judge):
                 )
     out = {'stage': 'roll', 'route': summary(decision), 'parent_id': parent,
            'parent_host': parent_host, 'parent_address': parent_address}
-    if decision.get('unclassified'):
-        out['unclassified'] = True
-        out['unclassified_reason'] = decision.get('unclassified_reason')
     if decision.get('choice') == 'split':
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
@@ -1012,10 +1003,11 @@ def _run(args, judge):
                     scorer=decision.get('scorer'), next=decision.get('next')), 2
     if getattr(args, 'hours', None) is None:
         est = decision.get('hours_estimate') or {}
-        origin = ('the classifier estimate' if est.get('source') == 'classifier_estimate'
-                  else 'the policy default for the classified difficulty (no usable classifier estimate)')
-        out['assumptions'] = [f"--hours not given: budgeted {est.get('hours')}h from {origin}, confidence {est.get('confidence')}; "
-                              'an estimate, not a measurement. Pass --hours for a large or unusually small task.']
+        origin = {'classifier_estimate': 'the classifier estimate',
+                  'caller_profile': "the caller's task profile (its expected_hours)"}.get(est.get('source'))
+        if origin:       # a decision that budgeted no estimate has no origin to name
+            out['assumptions'] = [f"--hours not given: budgeted {est.get('hours')}h from {origin}, confidence {est.get('confidence')}; "
+                                  'an estimate, not a measurement. Pass --hours for a large or unusually small task.']
     if (decision.get('task_profile') or {}).get('urgency') == 'high' and not (decision.get('task_profile') or {}).get('wants_fast'):
         out.setdefault('assumptions', []).append(
             'The task profile notes high urgency without wants_fast: fast mode uses task_profile.wants_fast or --fast, '

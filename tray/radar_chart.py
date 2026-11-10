@@ -28,20 +28,20 @@ def clamp(value, low=0.0, high=1.0) -> float:
 
 # (key, label, formula shown on hover)
 SCORE_AXES = (
-    ("divergence", "发散创新", "divergence：模型的开放探索与方案创新能力；旧记录回退到 vector_fit / fit"),
-    ("global_rigor", "全局严密", "global_rigor：模型的系统级推理与架构严密性；旧记录回退到 vector_fit / fit"),
-    ("module_precision", "模块精准", "module_precision：模型的局部实现精度与指令遵循；旧记录回退到 vector_fit / fit"),
-    ("capability", "视觉与工具", "capability：手动覆写值或 max(visual, gui)；旧记录回退到 vector_fit / fit"),
-    ("economy", "额度经济", "clamp(1 − 5×opportunity_cost + reset_bonus + free_usage + boost − overqualification − effort_penalty)：额度与档位消耗合并计分"),
+    ("divergence", "发散创新", "divergence：该模型在发散创新类型分上的类别分（公开榜单类型分的均值）"),
+    ("global_rigor", "全局严密", "global_rigor：该模型在全局严密类型分上的类别分（公开榜单类型分的均值）"),
+    ("module_precision", "模块精准", "module_precision：该模型在模块精准类型分上的类别分（公开榜单类型分的均值）"),
+    ("vision_tools", "视觉与工具", "vision_tools：该模型在视觉与工具类型分上的类别分（公开榜单类型分的均值）"),
+    ("economy", "额度经济", "clamp(1 − opportunity_cost + boost)：本次额度成本（额度价格 × 消耗）与临时加成"),
 )
 SCORE_AXES = LocalizedSequence(SCORE_AXES)
 
 DNA_AXES = (
-    ("divergence", "发散创新", "subjective.divergence：发散思维、方案创新"),
-    ("global_rigor", "全局严密", "subjective.global_rigor：架构落地严密度与全局思考"),
-    ("module_precision", "模块精准", "subjective.module_precision：具体模块实现精度"),
-    ("capability", "视觉与工具", "subjective.capability 优先，否则 max(capabilities.visual, capabilities.gui)；结果限制在 0..1"),
-    ("economy", "额度经济", "1 / (1 + usd_per_hour / 15)：静态价格经济性，免费为 1，未知为 0.75；不代表实时剩余额度"),
+    ("divergence", "发散创新", "divergence：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
+    ("global_rigor", "全局严密", "global_rigor：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
+    ("module_precision", "模块精准", "module_precision：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
+    ("vision_tools", "视觉与工具", "vision_tools：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
+    ("economy", "额度经济", "1 − usd_per_hour / 模型表中最高的 usd_per_hour：静态价格经济性，免费为 1，未知为 0；不代表实时剩余额度"),
 )
 DNA_AXES = LocalizedSequence(DNA_AXES)
 
@@ -50,64 +50,67 @@ def axis_title(mode: str = "score") -> str:
     return tr("能力与额度五维", "Capabilities & Quota")
 
 
-ABILITY_AXES = ("divergence", "global_rigor", "module_precision", "capability")
-
-def _score_ability_raw(c, key):
-    for source in (key, "vector_fit", "fit"):
-        if c.get(source) is not None:
-            return {source: c[source]}
-    return {}
+ABILITY_AXES = ("divergence", "global_rigor", "module_precision", "vision_tools")
 
 
 def score_dimensions(components: dict) -> dict:
-    """Five 0..1 values from an allocator candidate's `components`."""
+    """Five 0..1 values from an allocator candidate's `components`: the four category scores and the economy."""
     c = components or {}
     return {
-        **{key: clamp(next(iter(_score_ability_raw(c, key).values()), 0)) for key in ABILITY_AXES},
-        "economy": clamp(1.0 - (c.get("opportunity_cost") or 0) * 5.0 + (c.get("reset_bonus") or 0)
-                         + (c.get("free_usage") or 0) + (c.get("boost") or 0)
-                         - (c.get("overqualification") or 0) - (c.get("effort_penalty") or 0)),
+        **{key: clamp(c.get(key, 0)) for key in ABILITY_AXES},
+        "economy": clamp(1.0 - (c.get("opportunity_cost") or 0) + (c.get("boost") or 0)),
     }
 
 
 def score_raw(components: dict) -> dict:
     """The raw component values each score axis is built from, for the hover text."""
     c = components or {}
-    pick = lambda *keys: {k: c[k] for k in keys if k in c}
-    return {**{key: _score_ability_raw(c, key) for key in ABILITY_AXES},
-            "capability": (pick("capability_override") if c.get("capability_override") is not None else
-                           pick("visual", "gui") or _score_ability_raw(c, "capability")),
-            "economy": pick("opportunity_cost", "reset_bonus", "free_usage", "boost",
-                            "overqualification", "effort_penalty")}
+    return {**{key: ({key: c[key]} if key in c else {}) for key in ABILITY_AXES},
+            "economy": {k: c[k] for k in ("opportunity_cost", "boost") if k in c}}
 
 
-def dna_dimensions(info: dict) -> dict:
-    """Five 0..1 values from a model's entry in accounts.json `models`."""
+def estimate_note(estimates: dict, axis: str) -> str:
+    """The hover line for an axis with estimated type scores: `{'axis.type': provenance}` of the model's record."""
+    parts = []
+    for name, est in sorted((estimates or {}).items()):
+        if not name.startswith(axis + "."):
+            continue
+        how = est.get("method")
+        text = name.split(".", 1)[1]
+        if how == "sibling_shift":
+            text += f": {est.get('base_model')} {est.get('base_value')} + fit shift {est.get('shift', 0):+g} (tier {est.get('tier')} vs {est.get('base_tier')})"
+        else:
+            text += f": fit on tier {est.get('tier')} (r {est.get('r')}, n {est.get('n')})"
+        parts.append(text)
+    return "; ".join(parts)
+
+
+def dna_dimensions(info: dict, ceiling: float | None = None) -> dict:
+    """Five 0..1 values from a model row of the router's model table (`five_axis` scores and usd_per_hour); the economy is
+    1 - usd_per_hour / `ceiling`, the highest usd_per_hour of the table (0 when the price or the ceiling is unknown)."""
     info = info or {}
-    subjective = info.get("subjective") or {}
-    caps = info.get("capabilities") or {}
+    scores = (info.get("five_axis") or {}).get("scores") or {}
     price = info.get("usd_per_hour")
     return {
-        "divergence": clamp(subjective.get("divergence", 0.5)),
-        "global_rigor": clamp(subjective.get("global_rigor", 0.5)),
-        "module_precision": clamp(subjective.get("module_precision", 0.5)),
-        "capability": clamp(subjective["capability"]) if subjective.get("capability") is not None
-                      else round(max(clamp(caps.get("visual")), clamp(caps.get("gui"))), 2),
-        "economy": clamp(1 / (1 + max(0.0, float(price)) / 15)) if price is not None else 0.75,
+        **{key: clamp(scores.get(key, 0)) for key in ABILITY_AXES},
+        "economy": clamp(1 - float(price) / ceiling) if price is not None and ceiling else 0.0,
     }
 
 
 def dna_raw(info: dict) -> dict:
     info = info or {}
-    subjective = info.get("subjective") or {}
-    caps = info.get("capabilities") or {}
-    return {"divergence": {"divergence": subjective.get("divergence")},
-            "global_rigor": {"global_rigor": subjective.get("global_rigor")},
-            "module_precision": {"module_precision": subjective.get("module_precision")},
-            "capability": {"subjective.capability": subjective["capability"]}
-                          if subjective.get("capability") is not None else
-                          {k: caps.get(k, 0) for k in ("visual", "gui")},
+    five = info.get("five_axis") or {}
+    tier = (five.get("tier") or {}).get("value")
+    return {**{key: {key: (five.get("scores") or {}).get(key), **({"tier": tier} if tier is not None else {})}
+               for key in ABILITY_AXES},
             "economy": {"usd_per_hour": info.get("usd_per_hour")}}
+
+
+def dna_estimated(info: dict) -> dict:
+    """{axis: provenance text} for the categories that contain a type score estimated through the tier."""
+    five = (info or {}).get("five_axis") or {}
+    estimates = five.get("estimates") or {}
+    return {axis: estimate_note(estimates, axis) for axis in ABILITY_AXES if any(k.startswith(axis + ".") for k in estimates)}
 
 
 def axis_angle(index: int, count: int) -> float:
@@ -268,8 +271,8 @@ class RadarRenderer:
         return [(x * self.supersample, y * self.supersample)
                 for x, y in polygon(values, self.center, self.center, self.radius)]
 
-    def render(self, values):
-        """values: one list per series, primary first."""
+    def render(self, values, hollow=()):
+        """values: one list per series, primary first; `hollow`: per series the axis indexes whose value is estimated."""
         image = self.grid.copy()
         unit = self.scale * self.supersample
         centre = (self.center * self.supersample,) * 2
@@ -292,10 +295,14 @@ class RadarRenderer:
             points = shapes[order]
             closed = points + points[:2]      # past the seam, so the first corner is joined like the others
             draw.line(closed, fill=color, width=max(1, round(style["weight"] * unit)), joint="curve")
-            for x, y in points:
+            for index, (x, y) in enumerate(points):
+                estimated = order < len(hollow) and index in hollow[order]
                 for size, fill in zip(style["dot"], ("#FFFFFF", color)):
                     r = size * unit
-                    draw.ellipse((x - r, y - r, x + r, y + r), fill=fill)
+                    if estimated and fill == color:          # an estimated value is a ring, not a solid dot
+                        draw.ellipse((x - r, y - r, x + r, y + r), fill="#FFFFFF", outline=color, width=max(1, round(unit * 1.2)))
+                    else:
+                        draw.ellipse((x - r, y - r, x + r, y + r), fill=fill)
         return image.reduce(self.supersample).convert("RGBA")
 
 
@@ -362,6 +369,10 @@ class RadarChartCanvas:
 
     def target_values(self):
         return [[clamp(s["values"].get(key, 0)) for key, _, _ in self.axes] for s in self.series]
+
+    def hollow(self):
+        """Per series the indexes of the axes whose value is estimated (series key `estimated`: {axis key: provenance})."""
+        return [{i for i, (key, _, _) in enumerate(self.axes) if key in (s.get("estimated") or {})} for s in self.series]
 
     def cancel_animation(self):
         if self._animation_id is not None:
@@ -443,7 +454,7 @@ class RadarChartCanvas:
 
     def draw_series(self) -> None:
         c = self.canvas
-        self._photo = ImageTk.PhotoImage(self._renderer.render(self._display_values), master=c)
+        self._photo = ImageTk.PhotoImage(self._renderer.render(self._display_values, self.hollow()), master=c)
         c.itemconfigure(self._image_item, image=self._photo)
         cx, cy, radius = self.geometry()
         for order, values in enumerate(self._display_values):
@@ -484,7 +495,8 @@ class RadarChartCanvas:
                     c.move(text_item, canvas_w - px(4) - box[2], 0)
             parts = []
             for order, series in enumerate(self.series):
-                parts.append((f"{series['values'].get(key, 0) * 100:.0f}", SERIES_STYLES[order]["color"]))
+                mark = "~" if key in (series.get("estimated") or {}) else ""
+                parts.append((f"{mark}{series['values'].get(key, 0) * 100:.0f}", SERIES_STYLES[order]["color"]))
             offset = 0
             widths = [px(len(text) * 8 + 14) for text, _ in parts]
             total = sum(widths) + px(4) * (len(parts) - 1)
@@ -579,8 +591,11 @@ class RadarChartCanvas:
         for order, series in enumerate(self.series):
             raw = self.raw[order].get(key) if order < len(self.raw) else None
             detail = tr("，", ", ").join(f"{k}={v}" for k, v in (raw or {}).items() if v is not None)
-            lines.append(f"{series['label']}{tr('：', ': ')}{series['values'].get(key, 0):.2f}"
+            estimated = (series.get("estimated") or {}).get(key)
+            lines.append(f"{series['label']}{tr('：', ': ')}{'~' if estimated is not None else ''}{series['values'].get(key, 0):.2f}"
                          + (tr("（{0}）", " ({0})").format(detail) if detail else ""))
+            if estimated is not None:
+                lines.append(tr("~ 含按档位估算的类型分：", "~ includes type scores estimated through the tier: ") + estimated)
         self.show_tip(event.x, event.y, "\n".join(lines))
 
     def show_tip(self, x: float, y: float, text: str) -> None:

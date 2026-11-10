@@ -96,12 +96,6 @@ def migrate(document, baseline):
         scoring = _delta(document['scoring'], baseline.get('scoring', {}))
         if scoring:
             result['scoring'] = scoring
-    for name, spec in (document.get('models') or {}).items():
-        if isinstance(spec, dict) and isinstance(spec.get('subjective'), dict):
-            old = ((baseline.get('models') or {}).get(name) or {}).get('subjective', {})
-            delta = _delta(spec['subjective'], old)
-            if delta:
-                result.setdefault('models', {})[name] = {'subjective': delta}
     ambiguous = []
     for account, spec in (document.get('accounts') or {}).items():
         if not isinstance(spec, dict):

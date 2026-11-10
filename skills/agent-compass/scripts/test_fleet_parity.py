@@ -47,6 +47,15 @@ def snapshot():
     return {'accounts': rows, 'launchers': launchers}
 
 
+def priced(accounts):
+    """The accounts as the router prices them: capacity from the community data by plan."""
+    return allocator.five_axis_overlay(accounts, allocator.load_five_axis())['accounts']
+
+
+def community(family, plan, window):
+    return allocator.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
+
+
 class CleanInstallParityTests(unittest.TestCase):
     def setUp(self):
         self.accounts = inventory.apply(shipped_template(), snapshot())
@@ -54,26 +63,26 @@ class CleanInstallParityTests(unittest.TestCase):
 
     def test_subscription_capacity_comes_from_the_discovered_plan(self):
         claude, codex = self.specs['claude'], self.specs['codex']
-        self.assertEqual(claude['capacity_usd'], {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190})
-        self.assertEqual(claude['burn_pct_per_worker_hour']['seven_day'], 0.27)
-        self.assertEqual(claude['burn_pct_per_worker_hour']['weekly_fable'], 0.27)
-        self.assertEqual(codex['capacity_usd'], {'usage': 325})
-        self.assertEqual(codex['burn_pct_per_worker_hour'], {'usage': 3.48})
+        priced_specs = priced(self.accounts)
+        self.assertEqual(priced_specs['claude']['capacity_usd'],
+                         {w: community('claude', 'max20', w) for w in ('five_hour', 'seven_day', 'weekly_fable')})
+        self.assertEqual(priced_specs['codex']['capacity_usd'], {'usage': community('codex', 'pro', 'usage')})
         self.assertTrue(claude['verified'] and codex['verified'])
 
     def test_antigravity_without_a_reported_tier_routes_on_the_documented_default(self):
         agy = self.specs['antigravity']
-        # The smallest paid tier with a warning, never the largest.
-        self.assertEqual(agy['capacity_usd'], {'gemini-weekly': 31, 'gemini-5h': 9.1, '3p-weekly': 4.4, '3p-5h': 0.9})
+        # The smallest paid tier's windows with a warning, never the largest; its capacity is unknown, not borrowed.
         self.assertEqual(agy['plan_priced_as'], 'pro')
+        self.assertEqual(set(agy['windows']), {'gemini-weekly', 'gemini-5h', '3p-weekly', '3p-5h'})
         self.assertTrue(agy['verified'])  # a quota reading is the sign-in proof
-        self.assertTrue(all(allocator.capacity_usd(agy, wid, datetime.now(timezone.utc)) for wid in agy['windows']))
+        self.assertEqual(priced(self.accounts)['antigravity']['capacity_usd'], {})
 
     def test_a_named_antigravity_plan_beats_the_default(self):
         template = shipped_template()
         template['accounts']['antigravity']['plan'] = 'Google AI Ultra'
-        agy = inventory.apply(template, snapshot())['accounts']['antigravity']
-        self.assertEqual(agy['capacity_usd']['gemini-weekly'], 625)
+        applied = inventory.apply(template, snapshot())
+        self.assertEqual(priced(applied)['antigravity']['capacity_usd']['gemini-weekly'], community('antigravity', 'ultra', 'gemini-weekly'))
+        agy = applied['accounts']['antigravity']
         self.assertNotIn('plan_priced_as', agy)
 
     def test_intrinsic_unmetered_accounts_and_the_pro_web_cadence(self):
@@ -83,11 +92,11 @@ class CleanInstallParityTests(unittest.TestCase):
         web = self.specs['chatgpt-web']
         self.assertEqual(web['cadence'], {'window_seconds': 43200, 'limit': 5})
         self.assertTrue(web['unmetered'])
-        self.assertEqual(web['bundles']['pro_max']['when'], {'min_difficulty': 'frontier'})
 
     def test_second_account_comes_from_discovery(self):
         second = self.specs['claude-2']
-        self.assertEqual(second['capacity_usd'], {'seven_day': 156, 'five_hour': 18})
+        self.assertEqual(priced(self.accounts)['claude-2']['capacity_usd'],
+                         {w: community('claude', 'pro', w) for w in ('five_hour', 'seven_day')})
         self.assertTrue(second['verified'])
         self.assertEqual(self.accounts['dispatch_efforts']['claude-2'], self.accounts['dispatch_efforts']['claude'])
         self.assertTrue(second['bundles'])
@@ -98,27 +107,17 @@ class CleanInstallParityTests(unittest.TestCase):
         self.assertEqual(self.specs['grok-bot']['quota_source'], 'grok')
         self.assertIsNone(accounts_override.manual_only_billing('grok-bot', self.accounts))
 
-    def test_calibrated_scoring_and_route_policy_are_the_public_defaults(self):
+    def test_scoring_and_route_policy_are_the_public_defaults(self):
         scoring = self.accounts['scoring']
-        self.assertEqual(scoring['profile']['subjective'], {'weight': 0.49, 'vector_weight': 0.34, 'route_weight': 0.17})
         self.assertEqual(scoring['harness_order'], ['codex', 'pi'])
         self.assertEqual(scoring['profile']['harness_by_style'], {'engineering': ['codex', 'pi'], 'exploration': ['pi', 'codex']})
-        self.assertEqual({(r['harness'], r['factor']) for r in scoring['harness_factors']['rules']},
-                         {('antigravity', 0.9), ('antigravity-resilient', 0.9)})
-        self.assertEqual((scoring['unlimited_bonus'], scoring['fast_burn_multiplier']), (0.18, 2.0))
         policy = allocator.load_capabilities(accounts=self.accounts)
         self.assertEqual(policy['remote_reroute_guard'], {'enabled': True, 'bundle_id': 'dot_text', 'window_seconds': 600})
-        self.assertEqual(policy['route_fit_peers'], {'grok-bot': 'claude-opus-5-5', 'claude-haiku-5-5': 'gemini-3.8-flash-high',
-                                                  'gpt-6-luna': 'gemini-3.8-flash-high'})
-        self.assertEqual(policy['routes']['dot_execution']['preferred'], ['dot'])
-        self.assertTrue(policy['routes']['complex_build_plan']['restrict_models'])
-        self.assertEqual(policy['routes']['computer_use']['preferred'], ['gpt-6-astra', 'gpt-6.1-sol'])
         self.assertEqual([t['label'] for t in self.accounts['priority_targets']], ['Astra', 'Argon', 'Opus 5.5'])
 
-    def test_a_sparse_scoring_override_keeps_the_new_defaults(self):
+    def test_a_sparse_scoring_override_keeps_the_defaults(self):
         merged = accounts_override.merge(self.accounts['scoring'], {'safety_margin_pct': 7})
-        self.assertEqual((merged['safety_margin_pct'], merged['unlimited_bonus']), (7, 0.18))
-        self.assertEqual(merged['profile']['subjective']['weight'], 0.49)
+        self.assertEqual((merged['safety_margin_pct'], merged['harness_order']), (7, ['codex', 'pi']))
 
     def test_discovered_models_default_from_public_data_alone(self):
         snap = snapshot()
@@ -138,42 +137,6 @@ class CleanInstallParityTests(unittest.TestCase):
         self.assertEqual({m for (_, m), off in auto.items() if off},
                          {'claude-opus-4-8', 'claude-haiku-4-5', 'gpt-6-sol', 'gpt-5.6-terra', 'grok-4.6'})
         self.assertFalse(auto['claude', 'claude-opus-9-1'])  # newer than the data: checked
-
-    def test_free_usage_bonus_needs_a_calibrated_sufficient_model(self):
-        snap = snapshot()
-        # Unknown to the data (generic prior) and an estimated public row: both checked, neither earns the bonus.
-        snap['accounts']['opencode']['models'] = ['opencode/zzz-new-free', 'opencode/flint-40b-free']
-        accounts = inventory.apply(shipped_template(), snap)
-        self.assertTrue(accounts['models']['flint-40b-free']['score_estimated'])
-        task = {'objective': 'Fix a failing unit test', 'work_kind': 'general_implementation', 'difficulty': 'routine',
-                'hours': 1, 'needs': {'local_only': True}}
-        decision = allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
-                                  accounts=accounts, overrides=[], host_policy_config=None)
-        for bid in ('auto:opencode:opencode:zzz-new-free', 'auto:opencode:opencode:flint-40b-free'):
-            free = next(c for c in decision['ranking'] if c['id'] == bid)
-            self.assertFalse(free['excluded'], bid)
-            self.assertNotIn('free_usage', free['components'], bid)
-            self.assertNotEqual(decision['choice'], bid)
-
-    def test_free_usage_bonus_is_declared_per_account_in_public_data(self):
-        snap = snapshot()
-        snap['accounts']['opencode']['models'] = ['opencode/mimo-v2.6-flash-free']  # measured row, unlimited account
-        accounts = inventory.apply(shipped_template(), snap)
-        specs = accounts['accounts']
-        self.assertTrue(specs['opencode']['unlimited'] and specs['dot']['unlimited'])
-        self.assertNotIn('free_usage_bonus', specs['opencode'])
-        self.assertTrue(specs['dot']['free_usage_bonus'])
-        self.assertNotIn('score_estimated', accounts['models']['mimo-v2.6-flash-free'])
-        task = {'objective': 'Summarize public release notes', 'work_kind': 'web_research', 'difficulty': 'routine',
-                'hours': 1, 'needs': {'local_only': False}}
-        decision = allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
-                                  accounts=accounts, overrides=[], host_policy_config=None)
-        rows = {c['id']: c for c in decision['ranking']}
-        free = rows['auto:opencode:opencode:mimo-v2.6-flash-free']
-        self.assertFalse(free['excluded'])
-        self.assertNotIn('free_usage', free['components'])  # unlimited without the flag: zero cost only
-        self.assertFalse(rows['dot_text']['excluded'])
-        self.assertEqual(rows['dot_text']['components']['free_usage'], accounts['scoring']['unlimited_bonus'])
 
     def test_template_stays_free_of_personal_choices(self):
         document = shipped_template()

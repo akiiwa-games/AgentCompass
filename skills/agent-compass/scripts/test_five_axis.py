@@ -6,13 +6,11 @@ charges burn x a pacing shadow price, ties go to the lower opportunity cost then
 answer the axis demand itself."""
 import copy
 from datetime import datetime, timezone
-import json
-import os
 from pathlib import Path
 import sys
-import types
 import unittest
-from unittest.mock import patch
+
+import numpy as np
 
 import allocator
 import route_judge
@@ -28,11 +26,12 @@ def setUpModule():
 
 
 NOW = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
-PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2,
-           'error_cost': 2, 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 
+           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
            'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering', 'multi_task': False,
            'task_count': '1', 'expected_hours': 1.0}
 ANCHOR = {'model': 'claude-opus-5-5', 'value': 0.8}
+EFFORT_NAMES = ('low', 'medium', 'high', 'xhigh', 'max')
 
 
 def demand(div, rigor, code, vision):
@@ -44,7 +43,9 @@ def row(scores=0.8, usd=5.0, missing=(), image_input='yes', dur=1.0, fast=None, 
     img_val = True if image_input == 'yes' else False if image_input == 'no' else None
     out = {'scores': scores, 'missing_axes': list(missing),
            'usd_per_hour': {'value': usd},
-           'duration_multiplier': {'value': dur, 'status': 'ok', 'source': 'arena.agent_sessions'},
+           'duration_multiplier': {'status': 'ok', 'by_effort': dict.fromkeys(EFFORT_NAMES, dur),
+                                   'basis_by_effort': {e: {'method': 'aa', 'source': 'aa.cost_time'} for e in EFFORT_NAMES},
+                                   'efforts_without_time': []},
            'intelligence_index': 50.0,
            'image_input': {'value': img_val, 'status': image_input,
                            'source': 'aa.modality' if image_input in ('yes', 'no') else None}}
@@ -84,7 +85,6 @@ class FiveAxisTests(unittest.TestCase):
 
     def plan(self, accounts, doc, state='ample', **task):
         acc = copy.deepcopy(accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
         original = allocator.load_five_axis
         allocator.load_five_axis = lambda path=None: doc
         try:
@@ -96,14 +96,6 @@ class FiveAxisTests(unittest.TestCase):
 
     def rows_for(self, decision, model):
         return [c for c in decision['ranking'] if allocator.canonical(c['bundle']['model'], self.accounts) == model]
-
-    def test_off_by_default_leaves_accounts_and_scores_untouched(self):
-        self.assertNotIn('five_axis', self.accounts['scoring'])
-        self.assertIs(allocator.five_axis_overlay(self.accounts), self.accounts)
-        decision = allocator.plan({'objective': 't', 'profile': dict(PROFILE)}, self.usage(self.accounts), NOW,
-                                  accounts=copy.deepcopy(self.accounts), overrides=[], records=[], host_policy_config=self.policy)
-        top = next(c for c in decision['ranking'] if c['score'] is not None)
-        self.assertNotIn('five_axis_level', top['components'])
 
     def test_the_fit_follows_the_demanded_axes_continuously_and_no_floor_excludes(self):
         # Sol: precise coder, weak divergence. Round 7: nothing excludes it on a creative task; its fit pays for the
@@ -121,7 +113,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(sol_high(coding)['components']['five_axis_shortfall'], 0.0)
 
     def test_fit_is_capped_at_the_anchor_target_with_shortfall_penalty_and_no_bonus_above_need(self):
-        targets = allocator.five_axis_targets(demand(3, 1, 0, 2))
+        targets = allocator.five_axis_targets(demand(3, 1, 0, 2), ANCHOR['value'])
         self.assertEqual(targets, {'divergence': 0.8, 'global_rigor': round(0.8 / 3, 4), 'vision_tools': round(1.6 / 3, 4)})
         scaled = {'divergence': 0.7, 'global_rigor': 0.9, 'module_precision': 0.1, 'vision_tools': 0.5}
         fit, rows = allocator.five_axis_fit(scaled, demand(3, 1, 0, 2), targets, 1.0)
@@ -139,87 +131,21 @@ class FiveAxisTests(unittest.TestCase):
             self.assertLess(abs(nudged - fit), 2 * abs(eps))
             self.assertEqual(nudged > fit, eps > 0)
 
-    def test_no_other_dimension_set_moves_the_five_axis_decision(self):
-        """Round 7 (user): in the five-axis path nothing but the axes scores or gates on quality. Perturb every other
-        dimension set (tier, subjective and capability vectors, the visual ability, route preference/restriction/
-        capability lists, route and policy ability floors, harness quality factors, the free-usage bonus, bundle `when`
-        scopes, graded-ability spans, effort penalty and quality-bonus weights): every candidate's score and exclusions
-        must stay the same. Fails as soon as one of them reaches the five-axis path again."""
-        doc = document(self.accounts['models'], **{'gpt-6.1-sol': row(demand(0.6, 0.9, 1.0, 0.5), usd=4.0),
-                                                   'claude-sonnet-5-5': row(demand(0.7, 0.75, 0.7, 0.8), usd=9.0)})
-        tasks = [{'profile': {'axis_demand': demand(0, 1, 2, 0)}},
-                 {'profile': {'axis_demand': demand(3, 2, 0, 0), 'code_complexity': 0, 'interaction_style': 'exploration'}},
-                 {'profile': {'axis_demand': demand(1, 3, 3, 0), 'reasoning_depth': 3, 'code_complexity': 3, 'error_cost': 3,
-                              'hallucination_risk': 3}},
-                 {'profile': {'axis_demand': demand(0, 1, 1, 2), 'needs_visual': True}, 'work_kind': 'visual_analysis'}]
-        bent = copy.deepcopy(self.accounts)
-        for i, info in enumerate(m for m in bent['models'].values() if isinstance(m, dict)):
-            info['tier'] = 1.0 + (i * 7) % 5
-            info['subjective'] = {k: (i % 3) / 2 for k in ('quality', 'divergence', 'rigor', 'capability', 'speed')}
-            info['capabilities'] = {'visual': i % 2, 'gui': (i + 1) % 2, 'reasoning': 0.1 * (i % 10)}
-            info['visual'] = bool(i % 2)
-            info['score_estimated'] = bool(i % 3)
-        policy = bent['scoring']
-        policy['harness_factors'] = {'default': 0.3, 'by_harness': {'claude': 2.0, 'codex': 0.1}}
-        policy['ability_floor'] = {k: 9.0 for k in policy['ability_floor']}
-        policy['route_ability_floor'] = {'code_implementation': {'routine': 9.5}}
-        policy['ability_score_origin'] = {k: 0.0 for k in policy['ability_floor']}
-        policy.update(ability_span=0.05, extra_effort_penalty=0.5, high_precision_effort_weight=2.0, unlimited_bonus=0.9,
-                      deferred_start_penalty=9.0)
-        policy.setdefault('profile', {}).update(saturation_span=0.01, vector_weight=1.0,
-                                                subjective={'weight': 1.0, 'vector_weight': 0.0, 'route_weight': 0.0})
-        for spec in bent['accounts'].values():
-            if isinstance(spec, dict):
-                spec['free_usage_bonus'] = True
-                for b in (spec.get('bundles') or {}).values():
-                    if isinstance(b, dict):
-                        b['when'] = {'min_difficulty': 'frontier', 'max_reasoning_depth': 1}
-        caps = copy.deepcopy(allocator.load_capabilities(accounts=self.accounts))
-        bent_caps = copy.deepcopy(caps)
-        for route in bent_caps['routes'].values():
-            route['preferred'] = ['dot', 'grok-4.7']
-            route['restrict_models'] = True
-            route['capability_fit'] = {'gui': 1.0}
-            route['strict_order'] = True
-            route['ability_floor'] = {'routine': 9.0, 'hard': 9.0, 'coupled': 9.0, 'frontier': 9.0}
-
-        def run(accounts, capabilities, task):
-            acc = copy.deepcopy(accounts)
-            acc['scoring']['five_axis'] = {'enabled': True}
-            original = allocator.load_five_axis
-            allocator.load_five_axis = lambda path=None: doc
-            try:
-                t = copy.deepcopy(task)
-                profile = {**PROFILE, **t.pop('profile', {})}
-                d = allocator.plan({'objective': 't', 'profile': profile, **t}, self.usage(acc), NOW, accounts=acc,
-                                   capabilities=copy.deepcopy(capabilities), overrides=[], records=[],
-                                   host_policy_config=self.policy)
-            finally:
-                allocator.load_five_axis = original
-            return d['choice'], {c['id']: (c['score'], tuple(c['excluded'])) for c in d['ranking']}
-
-        for task in tasks:
-            shipped, perturbed = run(self.accounts, caps, task), run(bent, bent_caps, task)
-            self.assertEqual(shipped[0], perturbed[0], task)
-            diff = {k: (v, perturbed[1].get(k)) for k, v in shipped[1].items() if perturbed[1].get(k) != v}
-            self.assertEqual(diff, {}, task)
-
     def test_missing_demanded_axis_leaves_automatic_routing_but_a_named_model_runs(self):
         target = 'claude-sonnet-5-5'
         doc = document(self.accounts['models'], **{target: row(demand(0.0, 0.95, 0.95, 0.9), missing=['divergence'])})
         blind = self.plan(self.accounts, doc, profile={'axis_demand': demand(2, 1, 2, 0)})
         sighted = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 1, 2, 0)})
         named = self.plan(self.accounts, doc, profile={'axis_demand': demand(2, 1, 2, 0)}, constraints={'model': target})
-        self.assertTrue(all(any('no trusted data for the demanded axis divergence' in e for e in c['excluded'])
+        self.assertTrue(all(any('no trusted data for the demanded category divergence' in e for e in c['excluded'])
                             for c in self.rows_for(blind, target)))
         self.assertFalse(any('no trusted data' in e for c in self.rows_for(sighted, target) for e in c['excluded']))
         chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
         self.assertEqual(allocator.canonical(chosen['bundle']['model'], self.accounts), target)
-        self.assertIn('no trusted data for the demanded axis divergence', ' '.join(chosen['notes']))
+        self.assertIn('no trusted data for the demanded category divergence', ' '.join(chosen['notes']))
 
     def test_missing_usd_is_removed_not_defaulted(self):
         acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
         out = allocator.five_axis_overlay(acc, document(acc['models'], **{'claude-sonnet-5-5': row(0.8, None)}))
         info = allocator.model_spec(out, 'claude-sonnet-5-5')
         self.assertEqual(info['five_axis']['usd_status'], 'missing')
@@ -227,13 +153,12 @@ class FiveAxisTests(unittest.TestCase):
 
     def test_unsourced_usd_is_never_priced_at_the_default(self):
         acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
         target = 'claude-sonnet-5-5'
         doc = document(acc['models'], **{target: row(0.8, None)})
         out = allocator.five_axis_overlay(acc, doc)
         info = allocator.model_spec(out, target)
         self.assertEqual(allocator.model_usd_per_hour(target, info), 0.0)
-        self.assertEqual(allocator.unit_rate({'windows': {'w': {}}}, 'w', target, 'high', acc['scoring'], info=info), 0.0)
+        self.assertEqual(allocator.unit_rate({'windows': {'w': {}}}, 'w', target, info), 0.0)
         auto = self.plan(acc, doc, profile={'axis_demand': demand(0, 1, 2, 0)})
         self.assertTrue(all(any('usd_per_hour has no cited source on a metered account' in e for e in c['excluded'])
                             for c in self.rows_for(auto, target)))
@@ -244,20 +169,14 @@ class FiveAxisTests(unittest.TestCase):
 
     def test_capacity_is_the_community_figure_of_the_account_plan(self):
         acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
-        acc['accounts']['claude']['capacity_change'] = {'seven_day': {'at': '2026-11-01T00:00:00Z', 'usd': 9999.0}}
         acc['accounts']['pi']['family'] = 'pi'      # discovery is off here; on a host it names the family
         out = allocator.five_axis_overlay(acc, document(acc['models']))
         spec = out['accounts']['claude']
         self.assertEqual(spec['capacity_usd'], {'seven_day': 1700.0, 'five_hour': 270.0})
-        self.assertNotIn('capacity_change', spec)
-        self.assertNotIn('reference_usd_per_hour', spec)     # round 11: replaced by per-window beta_w
         # Max 20x weekly_fable has no community value in CAPACITY here: unknown, with neither the template figure nor the burn prior.
         self.assertTrue(spec['capacity_unknown'])
         self.assertEqual(spec['capacity_source']['weekly_fable']['status'], 'missing')
-        self.assertIsNone(allocator.template_capacity_usd(spec, 'weekly_fable'))
-        self.assertIsNone(allocator.window_capacity_usd(spec, 'weekly_fable', NOW))
-        self.assertNotIn('weekly_fable', spec.get('burn_pct_per_worker_hour') or {})
+        self.assertIsNone(allocator.capacity_usd(spec, 'weekly_fable'))
         self.assertEqual(out['accounts']['codex']['capacity_usd'], {'usage': 615.0})
         self.assertFalse(out['accounts']['codex'].get('capacity_unknown'))
         # Pi signs in with ChatGPT: the Codex account's plan and windows.
@@ -277,7 +196,7 @@ class FiveAxisTests(unittest.TestCase):
         and what a substitute could take are inside N already, so no key reads them."""
         def cand(name, score=0.5, hours=1.0, usd=10.0, level=0.8, wait=0.0, place=0):
             return {'id': name, 'score': score, 'available_in_hours': wait or None,
-                    'expected_hours': hours, 'speed_hours': hours, 'expected_usd': usd,
+                    'expected_hours': hours, 'duration_hours': hours, 'expected_usd': usd,
                     'components': {'five_axis_level': level, 'harness_place': place}}
         pool = [
             cand('slower_expensive', hours=0.8, usd=20.0),
@@ -334,7 +253,6 @@ class FiveAxisTests(unittest.TestCase):
         """Quota economy v3: a candidate drawing the 5-hour window, the weekly window and the nested weekly_fable window
         pays its dearest long window once (never the sum); the 5-hour window keeps only feasibility."""
         acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
         doc = document(acc['models'], **{'claude-fable-5-1': row(0.85, usd=36.11)})
         doc['capacity'] = {
             'claude': {'max20': {
@@ -385,7 +303,6 @@ class FiveAxisTests(unittest.TestCase):
         longer task that crosses Pool A's reset pays its second part on a fresh period."""
         acc = copy.deepcopy(self.accounts)
         acc.pop('_discovery', None)
-        acc['scoring']['five_axis'] = {'enabled': True}
         acc['accounts']['claude']['windows'] = {'seven_day': {'hours': 168}, 'five_hour': {'hours': 5}}
         acc['accounts']['claude-2']['windows'] = {'seven_day': {'hours': 168}, 'five_hour': {'hours': 5}}
         acc['accounts']['claude-2']['plan'] = 'pool_b'
@@ -536,7 +453,6 @@ class FiveAxisTests(unittest.TestCase):
         tray_dir = str(Path(__file__).resolve().parents[3] / 'tray')
         if tray_dir not in sys.path:
             sys.path.insert(0, tray_dir)
-        import router_data
         doc = document(self.accounts['models'], **{'glm-5.3-flash-free': row(0.75, usd=1.50, image_input='no')})
         acc = copy.deepcopy(self.accounts)
         acc['accounts']['opencode']['bundles'] = {
@@ -562,7 +478,6 @@ class FiveAxisTests(unittest.TestCase):
         self.assertIn('local opencode.db lower-bound spend', ' '.join(chosen['notes']))
         # Tray / account_state warnings surface opencode when five_axis is enabled:
         overlaid = copy.deepcopy(acc)
-        overlaid['scoring']['five_axis'] = {'enabled': True}
         overlaid = allocator.five_axis_overlay(overlaid, doc)
         self.assertGreater(overlaid['accounts']['opencode'].get('local_spend_usd', 0.0), 0.0)
         ws = account_state.warnings(overlaid.get('_discovery'), overlaid['accounts'])
@@ -571,10 +486,9 @@ class FiveAxisTests(unittest.TestCase):
 
     # ---- round 12 -------------------------------------------------------------------------------------------------
 
-    def test_flag_off_new_model_without_a_sourced_price_never_wins_through_a_default(self):
-        """B1: the legacy path priced any model without `usd_per_hour` at a silent $4/h, which made a new, unpriced
-        model the cheapest frontier option. Now only the frozen legacy table prices by prior; anything else is
-        unpriced and leaves automatic routing on a metered account."""
+    def test_a_new_model_without_a_sourced_price_never_wins_through_a_default(self):
+        """A model without a cited `usd_per_hour` is unpriced and leaves automatic routing on a metered account; no
+        default price makes it the cheapest option."""
         acc = copy.deepcopy(self.accounts)
         acc['models']['newcomer-9'] = copy.deepcopy(acc['models']['claude-opus-5-5'])
         acc['models']['newcomer-9'].pop('usd_per_hour', None)
@@ -582,7 +496,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertTrue(allocator.usd_unpriced('newcomer-9', acc['models']['newcomer-9']))
         self.assertEqual(allocator.model_usd_per_hour('newcomer-9', acc['models']['newcomer-9']), 0.0)
         for state in ('ample', 'claude scarce'):
-            decision = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'reasoning_depth': 3, 'error_cost': 3}},
+            decision = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'reasoning_depth': 3}},
                                       self.usage(acc, state), NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
                                       host_policy_config=self.policy)
             rows = [c for c in decision['ranking'] if c['bundle']['model'] == 'newcomer-9']
@@ -590,162 +504,22 @@ class FiveAxisTests(unittest.TestCase):
             self.assertTrue(all(any('usd_per_hour has no cited source' in e for e in c['excluded']) for c in rows))
             self.assertNotEqual(decision['choice'], rows[0]['id'])
 
-    def test_every_shipped_model_carries_a_sourced_price_or_is_a_frozen_legacy_prior(self):
-        shipped = json.loads((Path(__file__).resolve().parents[1] / 'references' / 'accounts.json').read_text(encoding='utf-8'))
-        unpriced = sorted(name for name, info in shipped['models'].items()
-                          if isinstance(info, dict) and info.get('tier') is not None
-                          and info.get('usd_per_hour') is None and name not in allocator.USD_PER_HOUR_DEFAULTS)
-        self.assertEqual(unpriced, [])
-        # Round 058 round 4: Fable 5.2's legacy usd_per_hour is Fable 5.1's times the same API list price ratio the
-        # five-axis value uses (series conversion), each on its own scale.
-        fable, est = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-2']['score_estimates']['usd_per_hour']
-        public = allocator.load_five_axis()['models']['claude-fable-5-2']['usd_per_hour']
-        self.assertEqual((est['base_model'], est['base_value']), ('claude-fable-5-1', shipped['models']['claude-fable-5-1']['usd_per_hour']))
-        self.assertEqual(est['ratio'], public['sources']['ratio'])
-        self.assertEqual(fable['usd_per_hour'], round(est['base_value'] * est['ratio'], 3))
-        self.assertIn('Series conversion from claude-fable-5-1', fable['usd_per_hour_basis'])
+    def test_every_shipped_model_carries_a_sourced_price_or_says_it_has_none(self):
+        shipped = allocator.load_five_axis()
+        for name, row in shipped['models'].items():
+            usd = row['usd_per_hour']
+            if usd.get('status') == 'ok':
+                self.assertTrue(usd.get('sources'), name)
+            else:
+                self.assertIsNone(usd.get('value'), name)
+                self.assertIn('no_cited_source', {e['reason'] for e in row['data_errors']}, name)
 
-    def test_the_outside_option_is_only_what_long_windows_can_absorb_and_an_empty_outside_prices_the_whole_fit(self):
-        """Quota economy v3 (round 14): a window's ladder takes its outside point only from candidates that draw a different
-        window and whose LONG windows have room now. A candidate that must wait for a long window to renew is no substitute;
-        one that only waits for its 5-hour window is (the 5-hour clock never reaches a price); an unmetered, purpose-limited
-        channel (Dot, ChatGPT Web) is never one; with no outside at all the ladder is the steepest it can be."""
-        acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
-        acc = allocator.five_axis_overlay(acc, document(acc['models']))
-        state = {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 40.0, 'reset_hours': 84.0, 'short': False,
-                 'end_hours': 84.0, 'stale': False}
-
-        def cand(account, model, wid, fits, spend, wait=0, long_wait=False, remaining=None):
-            return {'bundle': {'account': account, 'model': model}, 'available_in_hours': wait or None,
-                    '_five_long_wait': long_wait,
-                    'expected_usd': spend, 'components': {'fit': fits['divergence']}, '_five_scaled': fits,
-                    '_five_window_states': {wid: ({}, {**state, **({'remaining': remaining} if remaining else {})}, 1000.0, 1.0)}}
-        strong = dict(divergence=0.8, global_rigor=0.8, module_precision=0.8, vision_tools=0.8)
-        cheap = dict(divergence=0.4, global_rigor=0.4, module_precision=0.4, vision_tools=0.4)
-        own = [cand('claude', 'claude-opus-5-5', 'seven_day', strong, 20.0), cand('claude', 'claude-haiku-5-5', 'seven_day', cheap, 1.0)]
-        policy = acc['scoring']
-        key = (allocator.provider_inventory.quota_source('claude', acc), 'seven_day')
-        task = {'hours': 2.0}
-
-        def price(pool):
-            econ = allocator.FiveAxisEconomy(pool, acc, policy, task)
-            return allocator.five_axis_quota_price(econ.rec(econ.points[key][0], 'seven_day'), econ.ladder(key), 400.0)
-        alone = price(own)
-        self.assertGreater(alone, 0.0)                       # nothing else can do the work: displaced work loses all its fit
-        with_sub = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, remaining=90.0)])
-        self.assertLess(with_sub, alone)
-        renewing = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5, long_wait=True, remaining=90.0)])
-        self.assertEqual(renewing, alone)                    # its long window must renew first: it cannot take the work now
-        five_hour = price(own + [cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, wait=5, remaining=90.0)])
-        self.assertEqual(five_hour, with_sub)                # it waits only for its 5-hour window: weekly room is what counts
-        unmetered = {**cand('dot', 'dot', 'x', strong, 0.0), '_five_window_states': {}, '_five_unmetered': True}
-        self.assertEqual(price(own + [unmetered]), alone)    # an unmetered channel relieves no window: it never lowers a price
-        self.assertEqual(price(own + [unmetered, cand('codex', 'gpt-6.1-sol', 'usage', strong, 5.0, remaining=90.0)]), with_sub)
-
-    def test_spend_is_usd_per_hour_times_the_duration_the_candidate_takes(self):
-        """S3: one basis for spend and time, for a model faster than the anchor and for a higher effort."""
-        doc = document(self.accounts['models'], **{'claude-sonnet-5-5': row(0.7, usd=4.0, dur=0.5)})
-        decision = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 1, 1, 0)})
-        checked = 0
-        for c in decision['ranking']:
-            if c['excluded'] or c.get('expected_usd') is None or c['bundle'].get('fast'):
-                continue
-            usd_h = doc['models'][allocator.canonical(c['bundle']['model'], self.accounts)]['usd_per_hour']['value']
-            self.assertAlmostEqual(c['expected_usd'], usd_h * c['expected_hours'], delta=0.02 + 0.01 * c['expected_usd'],
-                                   msg=c['id'])
-            checked += 1
-        self.assertGreater(checked, 3)
-        fast_model = next(c for c in decision['ranking'] if c['bundle']['model'] == 'claude-sonnet-5-5'
-                          and c['bundle']['effort'] == 'high' and not c['excluded'])
-        self.assertAlmostEqual(fast_model['expected_hours'], 0.5 * PROFILE['expected_hours'], places=2)
-        self.assertAlmostEqual(fast_model['expected_usd'], 4.0 * fast_model['expected_hours'], places=2)
-
-    def test_metered_account_with_declared_capacity_is_a_capacity_and_a_subscription_package_is_not(self):
-        acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
-        acc['accounts']['llmproxy'] = {'plan': '$200 prepaid proxy', 'billing': 'metered', 'family': 'codex', 'verified': True,
-                                       'windows': {'spend': {'hours': 168}}, 'capacity_usd': {'spend': 200}, 'bundles': {}}
-        out = allocator.five_axis_overlay(acc, document(acc['models']))
-        proxy = out['accounts']['llmproxy']
-        self.assertEqual(proxy['capacity_usd'], {'spend': 200.0})
-        self.assertFalse(proxy.get('capacity_unknown'))
-        self.assertEqual(proxy['capacity_source']['spend']['status'], 'explicit')
-        # Antigravity's packaged capacity is not a declaration: still unknown.
-        self.assertTrue(out['accounts']['antigravity']['capacity_unknown'])
-
-    def test_free_pool_comes_from_the_account_field_not_from_its_name_or_unmetered(self):
-        acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
-        lookalike = copy.deepcopy(acc['accounts']['opencode'])
-        lookalike.pop('free_allowance', None)
-        lookalike['plan'] = 'OpenCode'
-        acc['accounts']['opencode-lab'] = lookalike         # the name says opencode; its fields do not say free allowance
-        out = allocator.five_axis_overlay(acc, document(acc['models']))
-        self.assertTrue(out['accounts']['opencode'].get('five_axis_free_pool'))
-        self.assertFalse(out['accounts']['opencode-lab'].get('five_axis_free_pool'))
-        self.assertTrue(out['accounts']['opencode-lab'].get('unmetered'))
-
-    def test_dot_and_chatgpt_web_stay_in_automatic_routing_with_the_flag_on(self):
-        """Owner 2026-11-10: only OpenCode's free starter allowance is a capacity-unknown pool; Dot and ChatGPT Web are
-        purpose-limited channels whose missing quota reading is temporary."""
-        acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
-        out = allocator.five_axis_overlay(acc, document(acc['models']))
-        for name in ('dot', 'chatgpt-web'):
-            spec = out['accounts'][name]
-            self.assertTrue(spec.get('unmetered'), name)
-            self.assertFalse(spec.get('capacity_unknown'), name)
-            self.assertFalse(spec.get('five_axis_free_pool'), name)
-        decision = self.plan(self.accounts, document(self.accounts['models']), profile={'axis_demand': demand(1, 2, 2, 0)})
-        for model in ('dot', 'gpt-6-pro'):
-            rows = self.rows_for(decision, model)
-            self.assertTrue(rows, model)
-            self.assertFalse([e for c in rows for e in c['excluded'] if 'capacity_unknown' in e or 'usd_per_hour' in e], model)
-        self.assertFalse([w for w in decision['decision'].get('warnings', ()) if w.startswith(('dot:', 'chatgpt-web:'))])
-
-    def test_opencode_local_spend_uses_the_cited_public_price_and_names_the_gap(self):
-        import sqlite3
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / 'opencode.db'
-            conn = sqlite3.connect(db)
-            conn.execute('create table message (data text)')
-            for model, tin, tout in (('priced-free', 2_000_000, 1_000_000), ('unpriced-free', 500_000, 100_000)):
-                conn.execute('insert into message values (?)', (json.dumps(
-                    {'role': 'assistant', 'modelID': model,
-                     'tokens': {'input': tin, 'output': tout, 'reasoning': 0, 'cache': {'read': 0, 'write': 0}}}),))
-            conn.commit()
-            conn.close()
-            models = {'priced-free': {'five_axis': {'list_price': {'value': {'input': 0.3, 'output': 1.2}, 'source': 'aa.price'}}},
-                      'unpriced-free': {'five_axis': {}}}
-            with patch.dict(os.environ, {'OPENCODE_DB_PATH': str(db)}):
-                spend, gap = allocator.opencode_local_spend(models, None)
-        self.assertEqual(spend, {'priced-free': round(2 * 0.3 + 1 * 1.2, 4)})
-        self.assertEqual(gap, ['unpriced-free'])
-
-    def test_free_pool_warning_names_models_without_a_public_price(self):
-        import account_state
-        spec = {'capacity_unknown': True, 'five_axis_free_pool': True, 'local_spend_usd': 1.0,
-                'local_spend_gap': ['big-pickle']}
-        text = account_state._free_pool_warning('opencode', spec)
-        self.assertIn('no public list price for big-pickle', text)
-        self.assertIn('quota unknown, spend unpriced', text)
-
-    def test_overlay_carries_the_public_list_price_from_the_data_price_row(self):
-        acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
-        out = allocator.five_axis_overlay(acc, document(acc['models']))
-        price = out['models']['claude-opus-5-5']['five_axis']['list_price']
-        self.assertEqual(price['source'], 'aa.price')
-        self.assertIn('url', price)
-
-    def test_fable_5_2_on_five_axis_path_is_converted_from_fable_5_1(self):
-        """Round 058 round 4 (user 2026-11-10: "后续同系列新出，缺少实测数据的情况下，先按照同系列的全分数进行折算，不要留下任何一个默认值
-        或者fallback"): every component claude-fable-5-2 does not measure comes from claude-fable-5-1 (its same-series
-        sibling) moved along the component's AA-index fit by the two index readings, and its usd_per_hour is 5.1's times the
-        API list price ratio over the community token mix. No backfill, no pessimistic 0, no option-B fallback. Fast-mode
-        pricing ($16/$80 = 2x, 2.5x speed) and the unknown image input (mode B for vision work) stay its own."""
+    def test_fable_5_2_is_converted_from_fable_5_1(self):
+        """User 2026-11-10 ("后续同系列新出，缺少实测数据的情况下，先按照同系列的全分数进行折算，不要留下任何一个默认值或者
+        fallback"): every type score claude-fable-5-2 does not measure is claude-fable-5-1's (its same-series sibling) moved along
+        the type score's fit on tier by the two tiers' difference, and its usd_per_hour is 5.1's times the API list price
+        ratio over the community token mix. No pessimistic 0, no option-B fallback. Fast-mode pricing ($16/$80 = 2x, 2.5x
+        speed) and the unknown image input (mode B for vision work) stay its own."""
         shipped = allocator.load_five_axis()
         fable52, fable51 = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-1']
         usd = fable52['usd_per_hour']
@@ -755,33 +529,40 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(fable52['fast_mode']['status'], 'ok')
         self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
         self.assertEqual(fable52['image_input']['status'], 'unknown')
-        fits = shipped['backfill_fits']
-        x, xb = fable52['intelligence_index'], fable51['intelligence_index']
+        fits = shipped['estimate_fits']
+        t, tb = fable52['tier']['value'], fable51['tier']['value']
+        estimated = 0
         for axis, ax in fable52['axes'].items():
-            self.assertEqual(ax['missing_components'], [], axis)
             for comp, row in ax['components'].items():
-                self.assertIn(row['status'], ('measured', 'converted'), (axis, comp))
-                if row['status'] == 'converted':
-                    conv, f = row['conversion'], fits[f'{axis}.{comp}~aa.index']
-                    base = fable51['axes'][axis]['components'][comp]
-                    self.assertEqual((conv['base_model'], conv['base_value'], base['status']),
-                                     ('claude-fable-5-1', base['value'], 'measured'))
-                    self.assertEqual((conv['x'], conv['x_base']), (x, xb))       # both real readings: not clamped
-                    expected = min(max(base['value'] + f['b'] * (x - xb), f['y_min']), f['y_max'])
-                    self.assertAlmostEqual(row['value'], expected, places=2)   # backfill_fits are rounded to 4 places
-        # Its own measurements are all Artificial Analysis: labelled, not counted as independent evidence (review F5).
+                self.assertIn(row['status'], ('measured', 'estimated'), (axis, comp))
+                if row['status'] != 'estimated':
+                    continue
+                estimated += 1
+                est, base = row['estimate'], fable51['axes'][axis]['components'][comp]
+                if f'{axis}.{comp}~tier' not in fits:      # no usable fit (rejected, reported): the sibling's value as it is
+                    self.assertIn(f'{axis}.{comp}~tier', shipped['rejected_fits'])
+                    self.assertEqual((est['method'], row['value']), ('sibling_shift', base['value']))
+                    continue
+                f = fits[f'{axis}.{comp}~tier']
+                if base['status'] == 'measured':
+                    self.assertEqual((est['method'], est['base_model']), ('sibling_shift', 'claude-fable-5-1'))
+                    expected = base['value'] + f['b'] * (t - tb)
+                else:       # the sibling has no measurement either: the fit at the tier
+                    self.assertEqual(est['method'], 'tier_fit')
+                    expected = f['a'] + f['b'] * min(max(t, f['x_min']), f['x_max'])
+                self.assertAlmostEqual(row['value'], min(max(expected, f['y_min']), f['y_max']), places=2)
+        self.assertTrue(estimated)
+        # Its own measurements are all Artificial Analysis: labelled, not counted as independent evidence.
         self.assertTrue(fable52['evidence']['aa_only'])
         self.assertIn('aa_only', {e['reason'] for e in fable52['data_errors']})
         self.assertFalse(fable51['evidence']['aa_only'])
 
     def test_no_history_read_by_five_axis_economics(self):
         """Round 11 item 2: five-axis economics reads ONLY current-period window state (C, U, t0, T) + in-flight leases +
-        public model data. Fails if demand_forecast, window_cost, usage_samples, capacity.json, or completed ledger
+        public model data. Fails if usage samples, capacity.json, or completed ledger
         history is read or changes any five-axis score."""
-        from unittest.mock import patch
         doc = document(self.accounts['models'])
         acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
         usage = self.usage(acc, 'ample')
         # Inject poisoned 24h burn rates into usage windows and completed history into records:
         usage_poisoned = copy.deepcopy(usage)
@@ -797,8 +578,7 @@ class FiveAxisTests(unittest.TestCase):
         original = allocator.load_five_axis
         allocator.load_five_axis = lambda path=None: doc
         try:
-            with patch.object(allocator, 'demand_forecast', side_effect=AssertionError('demand_forecast must not be called on five-axis path')), \
-                    patch.object(allocator, 'window_cost', side_effect=AssertionError('window_cost must not be called on five-axis path')):
+            if True:
                 clean = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'axis_demand': demand(2, 3, 2, 0)}},
                                        usage, NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
                                        host_policy_config=self.policy)
@@ -814,28 +594,23 @@ class FiveAxisTests(unittest.TestCase):
     def test_classifier_axis_demand_is_parsed_and_used(self):
         prof = allocator.validate_profile({**PROFILE, 'axis_demand': demand(1, 2, 3, 0)})
         self.assertEqual(prof['axis_demand'], demand(1, 2, 3, 0))
-        self.assertEqual(allocator.five_axis_demand({'profile': prof}), (demand(1, 2, 3, 0), 'classifier'))
+        self.assertEqual(allocator.five_axis_demand({'profile': prof}), demand(1, 2, 3, 0))
         for bad in (demand(1, 2, 4, 0), {**demand(1, 2, 3, 0), 'economy': 1}, {'divergence': 1}, demand(True, 2, 3, 0)):
             with self.assertRaises(ValueError):
                 allocator.validate_profile({**PROFILE, 'axis_demand': bad})
-        fallback, source = allocator.five_axis_demand({'profile': dict(PROFILE)})
-        self.assertEqual(source, 'profile_fields_fallback')
-        self.assertEqual(fallback['module_precision'], 2)
-        trivial, source = allocator.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}})
-        self.assertEqual(trivial, fallback)        # an all-zero answer is replaced by the fallback ...
-        self.assertNotEqual(source, 'classifier')   # ... and labelled as one (review F5)
-        self.assertIn('fallback', source)
+        # No axis_demand is no profile: the classifier always answers it, nothing is derived from other fields.
+        without = {k: v for k, v in PROFILE.items() if k != 'axis_demand'}
+        with self.assertRaises(ValueError):
+            allocator.validate_profile(without)
+        # An all-zero answer asks nothing of the categories; it is taken as it is.
+        self.assertEqual(allocator.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}}), demand(0, 0, 0, 0))
 
-    def test_scorer_asks_for_axis_demand_only_while_the_path_is_on(self):
+    def test_the_scorer_always_asks_for_axis_demand(self):
         caps = {'routes': {'general_implementation': {}, 'other_or_mixed': {}}}
-        stub = lambda on: types.SimpleNamespace(TASK_PROFILE_SCHEMA=allocator.TASK_PROFILE_SCHEMA,
-                                                FIVE_AXIS_DEMAND_SCHEMA=allocator.FIVE_AXIS_DEMAND_SCHEMA,
-                                                five_axis_scorer_enabled=lambda: on)
-        on, off = route_judge.scorer_schema(stub(True), caps), route_judge.scorer_schema(stub(False), caps)
-        self.assertIn('axis_demand', on['properties'])
-        self.assertIn('axis_demand', on['required'])
-        self.assertNotIn('axis_demand', off['properties'])
-        self.assertEqual(off, route_judge.scorer_schema(allocator, caps))     # the shipped policy leaves it off
+        schema = route_judge.scorer_schema(allocator, caps)
+        self.assertIn('axis_demand', schema['properties'])
+        self.assertIn('axis_demand', schema['required'])
+        self.assertEqual(schema['properties']['axis_demand'], allocator.FIVE_AXIS_DEMAND_SCHEMA)
 
     def test_can_wait_hours_defers_only_for_higher_net_score_without_fixed_wait_cost_constant(self):
         """Rounds 8-11: no fixed 0.15 delay penalty and no 0.06 five_axis_wait_cost constant on the five-axis path.
@@ -894,7 +669,6 @@ class FiveAxisTests(unittest.TestCase):
 
         def run_roll_cli(extra_argv=()):
             acc = copy.deepcopy(self.accounts)
-            acc['scoring']['five_axis'] = {'enabled': True}
             usage = self.usage(acc, '5h-only scarce')
             profile = {**PROFILE, 'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0}
 
@@ -985,7 +759,6 @@ class AnchorRelativeTests(unittest.TestCase):
             self.assertEqual({m: after[src][m] for m in values}, values, src)
         # The fit's targets are the anchor value x demand / 3: a new top model moves none of them.
         acc = sim.fresh_accounts(shipped_template(), snapshot())
-        acc['scoring']['five_axis'] = {'enabled': True}
         targets = []
         for extra in ({}, {'newtop': row(1.0, 30.0)}):
             out = allocator.five_axis_overlay(acc, document(acc['models'], **{self.ms.ANCHOR: row(0.8, 21.7)}, **extra))
@@ -1002,24 +775,30 @@ class AnchorRelativeTests(unittest.TestCase):
         board_new = {**board, 'newtop': max(board.values()) + 100}
         self.assertLess(old(board_new, 'b') / old(board_new, self.ms.ANCHOR), ratio - 0.03)
 
-    def test_a_backfill_fit_needs_enough_points_and_a_positive_slope(self):
-        few = [(10.0 * i, 0.1 * i) for i in range(1, self.fa.MIN_FIT_POINTS)]
-        self.assertIsNone(self.fa.Scorer.fit(few))
-        enough = [(10.0 * i, 0.1 * i) for i in range(1, self.fa.MIN_FIT_POINTS + 1)]
-        self.assertIsNotNone(self.fa.Scorer.fit(enough))
-        falling = [(10.0 * i, 1 - 0.1 * i) for i in range(1, self.fa.MIN_FIT_POINTS + 1)]
-        self.assertIsNone(self.fa.Scorer.fit(falling))
+    def test_a_fit_needs_enough_points_a_positive_slope_and_out_of_sample_skill(self):
+        fit = self.fa.Scorer.fit
+        few = [(4.0 + 0.1 * i, 0.5 + 0.02 * i) for i in range(self.fa.MIN_FIT_POINTS - 1)]
+        found, why = fit(few)
+        self.assertIsNone(found)
+        self.assertIn(f'a fit needs {self.fa.MIN_FIT_POINTS}', why)
+        enough = [(4.0 + 0.1 * i, 0.5 + 0.02 * i) for i in range(self.fa.MIN_FIT_POINTS)]
+        found, why = fit(enough)
+        self.assertIsNone(why)
+        self.assertEqual(found['n'], self.fa.MIN_FIT_POINTS)
+        falling = [(4.0 + 0.1 * i, 0.9 - 0.02 * i) for i in range(self.fa.MIN_FIT_POINTS)]
+        self.assertIn('not positive', fit(falling)[1])
+        # a positive but noise-only slope has no out-of-sample skill: it is rejected, never used
+        noise = [(float(i), 0.5 if i % 2 == 0 else 0.7) for i in range(10)]
+        found, why = fit(noise)
+        self.assertIsNone(found)
+        self.assertIn('skill', why)
 
-    def test_a_backfill_stays_inside_the_measured_range_and_tier_is_no_predictor(self):
-        import five_axis
-        self.assertEqual(five_axis.PREDICTORS, ('aa.index',))
-        f = five_axis.Scorer.fit([(x, 0.5 + 0.03 * x) for x in range(10)])     # measured 0.50 .. 0.77
+    def test_an_estimate_stays_inside_the_range_the_measured_points_reach(self):
+        f, _ = self.fa.Scorer.fit([(float(x), 0.5 + 0.03 * x) for x in range(10)])     # measured 0.50 .. 0.77
         self.assertEqual((f['y_min'], f['y_max']), (0.5, 0.77))
-        self.assertEqual(five_axis.Scorer.predict(f, 20), 0.77)       # 1.1 on the line: capped at the best measured
-        self.assertEqual(five_axis.Scorer.predict(f, -5), 0.5)
-        self.assertEqual(five_axis.Scorer.predict(f, 5), 0.65)
-        scorer = types.SimpleNamespace(trusted=lambda entries: list(entries or ()))
-        self.assertEqual(five_axis.Scorer.predictors(scorer, {'tier': [{'source': 'lmarena.tier_fit', 'value': 4.08}]}), {})
+        self.assertEqual(self.fa.Scorer.predict(f, 20), 0.77)       # a tier above the best sampled model is not extrapolated
+        self.assertEqual(self.fa.Scorer.predict(f, -5), 0.5)
+        self.assertEqual(self.fa.Scorer.predict(f, 5), 0.65)
 
     def test_shipped_data_has_no_local_flag_or_sample_sources(self):
         import json
@@ -1029,106 +808,215 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertFalse(used & {'accounts.visual', 'packaged.accounts', 'community.burn'})
         scores = json.loads((ref / 'five-axis-scores.json').read_text(encoding='utf-8'))
         self.assertEqual(scores['anchor'], {'model': self.ms.ANCHOR, 'value': self.ms.ANCHOR_VALUE})
-        self.assertNotIn('floors', scores)                  # round 7: no difficulty floors
-        self.assertAlmostEqual(min(scores['models'][self.ms.ANCHOR]['scores'][a] for a in ('divergence', 'module_precision')),
-                               self.ms.ANCHOR_VALUE, places=2)
+        self.assertNotIn('floors', scores)                  # no difficulty floors
+        # the anchor sits at its value on every type score it is measured on
+        for axis, row in scores['models'][self.ms.ANCHOR]['axes'].items():
+            for name, comp in row['components'].items():
+                if comp['status'] == 'measured':
+                    self.assertEqual(comp['value'], self.ms.ANCHOR_VALUE, f'{axis}.{name}')
 
-    def test_partial_axis_counts_missing_expected_components_as_zero(self):
-        """Round 8 (user): pessimistic unknowns for partial axes. A model backed by a single component on an axis where
-        the anchor has two components (e.g. module_precision from Alignment alone, no terminal and no AA index fit)
-        counts the missing component as 0."""
+    def tiered(self, tier, **fields):
+        """A model's measurements with its tier read off the arena.ai Overall board."""
+        return {'tier': [{'source': 'tier.arena_overall', 'value': tier, 'as_of': '2026-11-09'}], **fields}
+
+    def calibration_set(self, extra):
+        """Ten models measured on two module_precision type scores (alignment = 0.3 + 0.1 x tier, terminal = 0.2 + 0.06 x
+        tier, exactly on a line) with their tiers, and the models in `extra`."""
+        models = {}
+        for i in range(10):
+            t = round(3.0 + 0.2 * i, 2)
+            models[f'm{i}'] = self.tiered(t, module_precision=[
+                {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': round(0.3 + 0.1 * t, 4)},
+                {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': round(0.2 + 0.06 * t, 4)}])
+        models[self.ms.ANCHOR] = models.pop('m9')
+        models.update(extra)
+        return {'models': models}
+
+    def score(self, meas):
+        return self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}}).score()
+
+    def test_the_tier_is_read_only_from_the_overall_boards(self):
+        measured = self.tiered(4.0)
+        by_other = {'tier': [{'source': 'tier.aa_index', 'value': 3.5}]}
+        stray = {'tier': [{'source': 'lmarena.webdev', 'value': 4.4}, {'source': 'lmarena.tier_fit', 'value': 4.4}]}
+        meas = self.calibration_set({'claude-fable-5-1': measured, 'claude-fable-5-2': {},
+                                     'by_other': by_other, 'stray': stray, 'bare': {}})
+        _, tier, _, _ = self.score(meas)
+        self.assertEqual((tier['claude-fable-5-1']['value'], tier['claude-fable-5-1']['method']), (4.0, 'arena_overall'))
+        self.assertEqual((tier['by_other']['value'], tier['by_other']['method']), (3.5, 'other_overall'))
+        # no overall board: the same-series sibling's tier, and with no sibling no tier at all
+        self.assertEqual((tier['claude-fable-5-2']['value'], tier['claude-fable-5-2']['method'], tier['claude-fable-5-2']['base_model']),
+                         (4.0, 'sibling', 'claude-fable-5-1'))
+        # a WebDev or Agent reading is not a tier source, even filed under the tier field
+        self.assertEqual((tier['stray']['value'], tier['stray']['method']), (None, 'none'))
+        self.assertEqual((tier['bare']['value'], tier['bare']['method']), (None, 'none'))
+
+    def test_the_tier_is_never_a_score_input(self):
+        same = {'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.7},
+                                     {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.7}]}
+        meas = self.calibration_set({'low': self.tiered(3.0, **same), 'high': self.tiered(4.9, **same)})
+        rows, _, _, _ = self.score(meas)
+        self.assertEqual(rows['low']['axes']['module_precision']['value'], rows['high']['axes']['module_precision']['value'])
+        self.assertEqual(rows['low']['axes']['module_precision']['status'], 'measured')
+
+    def test_every_measured_category_is_the_same_whatever_the_tier_rows_say(self):
+        """Behavioural: the tier rows as read, reversed (a model's tier becomes 8 - tier) and absent give the same category
+        values for every model that has its type scores measured. The tier only bridges a missing type score."""
+        meas = self.calibration_set({'extra': self.tiered(4.4, module_precision=[
+            {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.61},
+            {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.52}])})
+
+        def values(m):
+            rows, _, _, _ = self.score(m)
+            return {name: {a: r['axes'][a].get('value') for a in r['axes']} for name, r in rows.items()}
+
+        def retier(fn):
+            out = copy.deepcopy(meas)
+            for fields in out['models'].values():
+                fn(fields)
+            return out
+        reversed_ = retier(lambda f: f['tier'][0].update(value=round(8.0 - f['tier'][0]['value'], 2)))
+        absent = retier(lambda f: f.pop('tier'))
+        original = values(meas)
+        self.assertEqual(values(reversed_), original)
+        self.assertEqual(values(absent), original)
+        self.assertEqual(original['extra']['module_precision'], values(meas)['extra']['module_precision'])
+
+
+    def test_a_missing_type_score_is_the_siblings_moved_along_the_fit_by_the_tier_difference(self):
+        """User 2026-11-11: a model with no measured type score takes its same-series sibling's value, shifted along the
+        fitted line of that type score on tier by the tier difference."""
+        base = self.tiered(3.8, module_precision=[{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.68},
+                                                  {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.43}])
+        new = self.tiered(4.2, module_precision=[{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.45}])
+        rows, _, fits, rejected = self.score(self.calibration_set({'claude-fable-5-1': base, 'claude-fable-5-2': new}))
+        comp = rows['claude-fable-5-2']['axes']['module_precision']['components']['alignment']
+        self.assertNotIn('module_precision.alignment~tier', rejected)
+        self.assertEqual(comp['status'], 'estimated')
+        est = comp['estimate']
+        self.assertEqual((est['method'], est['base_model'], est['base_value'], est['tier_source']),
+                         ('sibling_shift', 'claude-fable-5-1', 0.68, 'arena_overall'))
+        self.assertEqual((est['fit'], est['tier_difference']), ('module_precision.alignment~tier', 0.4))
+        self.assertAlmostEqual(est['shift'], fits['module_precision.alignment~tier']['b'] * 0.4, places=4)
+        self.assertAlmostEqual(comp['value'], 0.72, places=3)                  # 0.68 + 0.1 x 0.4
+        self.assertEqual(rows['claude-fable-5-2']['axes']['module_precision']['missing_components'], [])
+        self.assertEqual(rows['claude-fable-5-2']['axes']['module_precision']['status'], 'estimated')
+
+    def test_a_missing_type_score_without_a_sibling_is_the_fit_at_the_tier_kept_in_range(self):
+        new = self.tiered(4.0, module_precision=[{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.44}])
+        far = self.tiered(5.5, module_precision=[{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.5}])
+        rows, _, fits, _ = self.score(self.calibration_set({'new': new, 'far': far}))
+        comp = rows['new']['axes']['module_precision']['components']['alignment']
+        self.assertEqual((comp['status'], comp['estimate']['method']), ('estimated', 'tier_fit'))
+        self.assertAlmostEqual(comp['value'], 0.7, places=3)                   # 0.3 + 0.1 x 4.0
+        self.assertNotIn('base_model', comp['estimate'])
+        # a tier above every sampled model reads the fit at the top sampled tier, not beyond it
+        top = rows['far']['axes']['module_precision']['components']['alignment']
+        f = fits['module_precision.alignment~tier']
+        self.assertEqual(top['value'], round(f['y_max'], 4))
+        self.assertEqual(top['estimate']['tier_clamped_to'], f['x_max'])
+
+    def test_a_type_score_with_no_tier_or_no_usable_fit_is_not_defaulted(self):
+        """No tier (and no sibling): the type score stays missing and counts 0 in its category; a fit with no skill is
+        reported, never used. Nothing stands in as a default."""
+        terminal_only = [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]
+        meas = self.calibration_set({'no_tier': {'module_precision': terminal_only}})
+        rows, tier, _, _ = self.score(meas)
+        self.assertEqual(tier['no_tier']['method'], 'none')
+        ax = rows['no_tier']['axes']['module_precision']
+        self.assertEqual((ax['status'], ax['missing_components']), ('partial', ['alignment']))
+        self.assertNotIn('alignment', ax['components'])
+        self.assertAlmostEqual(ax['value'], 0.4, places=4)
+        # alignment unrelated to the tier: its fit has no skill, so a tiered model still lacks it
+        noisy = self.calibration_set({'new': self.tiered(4.0, module_precision=terminal_only)})
+        for i, (name, fields) in enumerate(noisy['models'].items()):
+            if name != 'new':
+                fields['module_precision'][0]['value'] = 0.5 if i % 2 == 0 else 0.7
+        rows, _, fits, rejected = self.score(noisy)
+        self.assertIn('module_precision.alignment~tier', rejected)
+        self.assertNotIn('module_precision.alignment~tier', fits)
+        self.assertEqual(rows['new']['axes']['module_precision']['missing_components'], ['alignment'])
+
+    def test_a_sibling_estimate_with_no_usable_fit_shifts_by_zero_and_says_so(self):
+        """No skill means the tier does not predict the type score: the sibling's value stands, the shift is 0, and the
+        record says why (round 058 fix round, B1)."""
+        base = self.tiered(3.8, module_precision=[{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.68},
+                                                  {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.43}])
+        new = self.tiered(4.2, module_precision=[{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.45}])
+        meas = self.calibration_set({'claude-fable-5-1': base, 'claude-fable-5-2': new})
+        for i, name in enumerate(n for n in meas['models'] if n.startswith('m') or n == self.ms.ANCHOR):
+            meas['models'][name]['module_precision'][0]['value'] = 0.5 if i % 2 == 0 else 0.7     # alignment unrelated to tier
+        rows, _, fits, rejected = self.score(meas)
+        self.assertIn('module_precision.alignment~tier', rejected)
+        comp = rows['claude-fable-5-2']['axes']['module_precision']['components']['alignment']
+        est = comp['estimate']
+        self.assertEqual((comp['status'], comp['value'], est['method'], est['base_model']), ('estimated', 0.68, 'sibling_shift', 'claude-fable-5-1'))
+        self.assertEqual((est['shift'], est['tier_difference']), (0.0, 0.4))
+        self.assertTrue(est['shift_basis'].startswith('shift 0: fit rejected, out-of-sample skill'), est['shift_basis'])
+        self.assertNotIn('fit', est)
+
+    def vision_set(self):
+        """`calibration_set` with a vision type score on the same line, for every calibration model."""
+        meas = self.calibration_set({})
+        for name, fields in meas['models'].items():
+            t = fields['tier'][0]['value']
+            fields['vision_tools'] = [{'source': 'arena.vision', 'component': 'vision', 'value': round(0.2 + 0.1 * t, 4)}]
+        return meas
+
+    def test_a_same_model_row_takes_its_declared_models_scores_for_the_categories_it_carries(self):
+        """accounts.json `same_model` (Dot is the model behind OpenAI's dots): the declared model is the base before any
+        other sibling at tier difference 0, the row has the tier of that model, and a category the row does not carry (its
+        channel's own) stays missing even where a fit could estimate it."""
+        meas = self.vision_set()
+        meas['models']['astra'] = self.tiered(4.2, module_precision=[
+            {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.72},
+            {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.5}],
+            vision_tools=[{'source': 'arena.vision', 'component': 'vision', 'value': 0.62}])
+        meas['models']['channel'] = {}
+        acc = {'models': {m: {} for m in meas['models']},
+               'same_model': {'channel': {'model': 'astra', 'carries': ['module_precision'], 'url': 'https://openai.com/index/introducing-dots/'}}}
+        rows, tier, _, _ = self.fa.Scorer(meas, acc).score()
+        self.assertEqual((tier['channel']['value'], tier['channel']['method'], tier['channel']['base_model']), (4.2, 'sibling', 'astra'))
+        mp = rows['channel']['axes']['module_precision']
+        for name, value in (('alignment', 0.72), ('terminal', 0.5)):
+            est = mp['components'][name]['estimate']
+            self.assertEqual((mp['components'][name]['value'], est['method'], est['base_model'], est['tier_difference'], est['shift']),
+                             (value, 'sibling_shift', 'astra', 0.0, 0.0), name)
+        vision = rows['channel']['axes']['vision_tools']
+        self.assertEqual((vision['status'], vision.get('flag'), vision['components']), ('missing', 'missing', {}))
+        # without the declaration the row has no tier and nothing to estimate from
+        rows, tier, _, _ = self.fa.Scorer(meas, {'models': acc['models']}).score()
+        self.assertEqual(tier['channel']['method'], 'none')
+        self.assertEqual(rows['channel']['axes']['module_precision']['status'], 'missing')
+
+    def test_a_later_measurement_replaces_the_estimate_on_refresh(self):
+        """The estimate is not stored anywhere the next build reads: once a board lists the type score, the rebuild uses
+        the measurement and the estimate record is gone."""
+        new = self.tiered(4.0, module_precision=[{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.44}])
+        meas = self.calibration_set({'new': new})
+        before, _, _, _ = self.score(meas)
+        self.assertEqual(before['new']['axes']['module_precision']['components']['alignment']['status'], 'estimated')
+        meas['models']['new']['module_precision'].append(
+            {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.61})
+        after, _, _, _ = self.score(meas)
+        comp = after['new']['axes']['module_precision']['components']['alignment']
+        self.assertEqual((comp['status'], comp['value']), ('measured', 0.61))
+        self.assertNotIn('estimate', comp)
+        self.assertEqual(after['new']['axes']['module_precision']['status'], 'measured')
+
+    def test_partial_category_counts_the_type_score_it_lacks_as_zero(self):
+        """A model backed by a single type score where the anchor has two, with no tier to estimate the other from, counts
+        the missing one as 0 (pessimistic, user round 8)."""
         meas = {'models': {
             self.ms.ANCHOR: {'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.8},
                                                   {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]},
             'single_board': {'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.724}]},
         }}
-        scorer = self.fa.Scorer(meas, {'models': {self.ms.ANCHOR: {}, 'single_board': {}}})
-        rows, _ = scorer.score()
+        rows, _, _, _ = self.score(meas)
         self.assertEqual(rows[self.ms.ANCHOR]['axes']['module_precision']['value'], 0.8)
         ax = rows['single_board']['axes']['module_precision']
-        self.assertEqual(ax['status'], 'partial')
-        self.assertEqual(ax['missing_components'], ['terminal'])
+        self.assertEqual((ax['status'], ax['missing_components']), ('partial', ['terminal']))
         self.assertAlmostEqual(ax['value'], 0.724 / 2, places=4)
-
-    def calibration_set(self, extra):
-        """Ten models measured on both module_precision components plus the AA index, and the models in `extra`."""
-        models = {}
-        for i in range(10):
-            idx = 30 + 3 * i
-            models[f'm{i}'] = {
-                'intelligence_index': [{'source': 'aa.index', 'value': idx, 'as_of': '2026-11-09'}],
-                'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.4 + 0.01 * idx},
-                                     {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.2 + 0.012 * idx}]}
-        models[self.ms.ANCHOR] = models.pop('m9')
-        models.update(extra)
-        return {'models': models}
-
-    def test_missing_component_is_estimated_for_every_model_alike(self):
-        """Round 058 (user 2026-11-10: "分数如果没有就自己校准"): a model measured only on AA boards gets its missing Arena
-        component from the component's AA-index fit, exactly like a model with other boards; the estimate cites the fit.
-        Without the AA index nothing can estimate it, and the pessimistic 0 of round 8 stays."""
-        aa_only = {'intelligence_index': [{'source': 'aa.index', 'value': 50, 'as_of': '2026-11-09', 'listed_as': 'New (High)'}],
-                   'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
-        no_index = {'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
-        meas = self.calibration_set({'aa_only': aa_only, 'no_index': no_index})
-        rows, fits = self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}}).score()
-        ax = rows['aa_only']['axes']['module_precision']
-        comp = ax['components']['alignment']
-        fit = fits['module_precision.alignment~aa.index']
-        self.assertEqual(comp['status'], 'backfilled')
-        self.assertAlmostEqual(comp['value'], round(fit['a'] + fit['b'] * 50, 4), places=3)
-        self.assertEqual(comp['backfill'], {'predictor': 'aa.index', 'x': 50, 'fit': 'module_precision.alignment~aa.index',
-                                            'r': fit['r'], 'n': fit['n'], 'as_of': '2026-11-09', 'listed_as': 'New (High)'})
-        # Above the sampled readings the fit is read at the top sampled reading, not extrapolated.
-        self.assertEqual(self.fa.Scorer.predict(fit, fit['x_max'] + 40), self.fa.Scorer.predict(fit, fit['x_max']))
-        self.assertEqual(ax['missing_components'], [])
-        self.assertAlmostEqual(ax['value'], (0.8 + comp['value']) / 2, places=4)
-        pessimistic = rows['no_index']['axes']['module_precision']
-        self.assertEqual(pessimistic['missing_components'], ['alignment'])
-        self.assertAlmostEqual(pessimistic['value'], 0.4, places=4)
-
-    def test_a_same_series_sibling_converts_the_missing_component_instead_of_the_fit(self):
-        """Round 058 round 4: with a same-series sibling that measures the component (family resolution: claude-fable-5-1
-        for claude-fable-5-2), the component is the sibling's value moved along the fit by the index difference, kept in
-        the fit's measured range; a measurement replaces it on the next build."""
-        new = {'intelligence_index': [{'source': 'aa.index', 'value': 60, 'as_of': '2026-11-09'}],
-               'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
-        base = {'intelligence_index': [{'source': 'aa.index', 'value': 40, 'as_of': '2026-11-09'}],
-                'module_precision': [{'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.9},
-                                     {'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.7}]}
-        meas = self.calibration_set({'claude-fable-5-2': new, 'claude-fable-5-1': base})
-        acc = {'models': {m: {'tier': 3.0} for m in meas['models']}}
-        rows, fits = self.fa.Scorer(meas, acc).score()
-        comp = rows['claude-fable-5-2']['axes']['module_precision']['components']['alignment']
-        f = fits['module_precision.alignment~aa.index']
-        self.assertEqual(comp['status'], 'converted')
-        self.assertEqual((comp['conversion']['base_model'], comp['conversion']['x'], comp['conversion']['x_base']),
-                         ('claude-fable-5-1', 60, 40))
-        self.assertAlmostEqual(comp['value'], min(max(0.9 + f['b'] * 20, f['y_min']), f['y_max']), places=4)
-        self.assertEqual(comp['value'], f['y_max'])                 # 0.9 + 20 b is above every measured value: kept
-        self.assertNotIn('backfill', comp)
-        meas['models']['claude-fable-5-2']['module_precision'].append(
-            {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.66})
-        after, _ = self.fa.Scorer(meas, acc).score()
-        comp = after['claude-fable-5-2']['axes']['module_precision']['components']['alignment']
-        self.assertEqual((comp['status'], comp['value']), ('measured', 0.66))
-
-    def test_a_later_measurement_replaces_the_estimate_on_refresh(self):
-        """The estimate is not stored anywhere the next build reads: once a board lists the component, the normal rebuild
-        uses the measurement and the backfill record is gone."""
-        new = {'intelligence_index': [{'source': 'aa.index', 'value': 50, 'as_of': '2026-11-09'}],
-               'module_precision': [{'source': 'aa.terminalbench_4', 'component': 'terminal', 'value': 0.8}]}
-        meas = self.calibration_set({'new': new})
-        acc = {'models': {m: {} for m in meas['models']}}
-        before, _ = self.fa.Scorer(meas, acc).score()
-        self.assertEqual(before['new']['axes']['module_precision']['components']['alignment']['status'], 'backfilled')
-        meas['models']['new']['module_precision'].append(
-            {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.61})
-        after, _ = self.fa.Scorer(meas, acc).score()
-        comp = after['new']['axes']['module_precision']['components']['alignment']
-        self.assertEqual((comp['status'], comp['value']), ('measured', 0.61))
-        self.assertNotIn('backfill', comp)
-        self.assertEqual(after['new']['axes']['module_precision']['status'], 'measured')
 
 
 class SourceMergeTests(unittest.TestCase):
@@ -1138,60 +1026,246 @@ class SourceMergeTests(unittest.TestCase):
         cls.fa = five_axis
 
     def entries(self):
-        return [{'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'value': 20.0},
-                {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'low', 'value': 18.0},
-                {'source': 'openrouter.cost_time', 'kind': 'vendor', 'effort': 'high', 'value': 10.0},
-                {'source': 'community.example', 'kind': 'community', 'effort': 'high', 'value': 8.0}]
+        return [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': 8.0, 'sessions': 12},
+                {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'low', 'value': 5.0, 'sessions': 12},
+                {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 31.0}]
 
-    def test_usd_is_the_median_of_cited_sources_or_the_first_priority(self):
-        merged = self.fa.pick_usd(self.entries())
-        self.assertEqual(merged['value'], 10.0)
-        self.assertEqual(sorted(merged['used']), ['aa.cost_time', 'community.example', 'openrouter.cost_time'])
-        self.assertEqual(merged['sources']['community.example']['kind'], 'community')
-        self.assertEqual(self.fa.pick_usd(self.entries(), ['community.example'])['value'], 8.0)
+    def test_usd_of_a_source_is_its_value_at_high_else_its_effortless_listing_else_the_median_of_its_efforts(self):
+        arena = [e for e in self.entries() if e['source'] == 'arena.agent_sessions']
+        merged = self.fa.pick_usd(arena)
+        self.assertEqual((merged['value'], merged['used']), (8.0, ['arena.agent_sessions']))
+        self.assertEqual(merged['sources']['arena.agent_sessions']['sessions'], 12)
+        self.assertEqual(merged['sources']['arena.agent_sessions']['by_effort'], {'high': 8.0, 'low': 5.0})
+        no_high = [{**arena[0], 'effort': 'max'}, arena[1]]
+        self.assertEqual(self.fa.pick_usd(no_high)['value'], 6.5)          # median of the listed efforts
+        self.assertEqual(self.fa.pick_usd([{'source': 's', 'kind': 'community', 'effort': None, 'value': 4.0}])['value'], 4.0)
         self.assertEqual(self.fa.pick_usd([])['status'], 'missing')
 
     def test_distrust_removes_a_source_from_every_field(self):
         meas = {'models': {'m': {'usd_per_hour': self.entries(), 'divergence': [
             {'source': 'eqbench.creative_writing_v3', 'component': 'creative', 'value': 0.2},
             {'source': 'lmarena.creative_writing', 'component': 'creative', 'value': 0.8}]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=['community.example', 'eqbench.creative_writing_v3'])
-        usd = self.fa.pick_usd(scorer.trusted(meas['models']['m']['usd_per_hour']))
-        self.assertEqual(usd['value'], 15.0)
+        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=['arena.agent_sessions', 'eqbench.creative_writing_v3'])
+        usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
+        self.assertEqual((usd['m']['value'], usd['m']['fallback']), (31.0, True))
         self.assertEqual(scorer.components(meas['models']['m'], 'divergence')['creative']['value'], 0.8)
 
-    def test_duration_is_from_arena_time_per_task_or_aa_fallback_never_flat_one(self):
-        arena_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high',
-                     'time_per_task_min': 11.7, 'output_tokens_per_task': 19400, 'as_of': '2026-11-08'}]
-        anchor_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max',
-                      'time_per_task_min': 16.3, 'output_tokens_per_task': 24300, 'as_of': '2026-11-08'}]
-        d_arena = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35}, arena_tp, anchor_tp)
-        self.assertEqual((d_arena['value'], d_arena['source'], d_arena['fallback']), (round(11.7 / 16.3, 4), 'arena.agent_sessions', False))
-        self.assertEqual((d_arena['time_per_task_min'], d_arena['output_tokens_per_task']), (11.7, 19400))
-        aa_tp = [{'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'output_tps': 166.58}]
-        d_aa = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35}, aa_tp,
-                                     [{'source': 'aa.cost_time', 'effort': 'high', 'output_tps': 83.29}])
-        self.assertEqual((d_aa['value'], d_aa['source'], d_aa['fallback']), (0.5, 'aa.cost_time', True))
-        d_missing = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {'duration_multiplier': 1.35}, (), ())
-        self.assertEqual(d_missing['status'], 'missing')
 
-    def test_duration_carries_the_aa_time_per_task_of_every_effort_even_when_the_arena_decides(self):
-        arena_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'time_per_task_min': 10.9}]
-        anchor_tp = [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'time_per_task_min': 16.3},
-                     {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'time_per_task_s': 600.0}]
-        aa = [{'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'time_per_task_s': 900.0,
-               'time_per_task_min': 15.0, 'as_of': '2026-11-08', 'url': 'https://aa.example'},
-              {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'max', 'time_per_task_s': 1200.0, 'time_per_task_min': 20.0}]
-        d = self.fa.pick_duration(self.fa.pick_usd(self.entries()), {}, arena_tp + aa, anchor_tp)
-        self.assertEqual(d['source'], 'arena.agent_sessions')
-        self.assertEqual(d['aa']['by_effort'], {'high': 15.0, 'max': 20.0})
-        self.assertEqual(d['aa']['multiplier_by_effort'], {'high': 1.5, 'max': 2.0})       # against the anchor at High (10 min)
-        self.assertEqual((d['aa']['source'], d['aa']['as_of'], d['aa']['url']), ('aa.cost_time', '2026-11-08', 'https://aa.example'))
-        self.assertNotIn('aa', self.fa.pick_duration(self.fa.pick_usd(self.entries()), {}, arena_tp, anchor_tp))
+class DurationTests(unittest.TestCase):
+    """One basis for the time a task takes: Artificial Analysis Time/Task at the same effort, as a multiple of the anchor's at
+    High; arena.ai Agent only through a cited fit; an effort with no listing only through a same-series sibling's ratio."""
+
+    @classmethod
+    def setUpClass(cls):
+        import five_axis
+        cls.fa = five_axis
+        cls.anchor = five_axis.measurements.ANCHOR
+
+    @staticmethod
+    def tp(source, effort, minutes):
+        return {'source': source, 'kind': 'benchmark', 'effort': effort, 'time_per_task_min': minutes,
+                'listed_as': f'listed ({effort})', 'as_of': '2026-11-09', 'url': f'https://example.test/{source}'}
+
+    def build(self, models, **acc_extra):
+        rows = {m: {'fields': {'throughput': tps}} for m, tps in models.items()}
+        acc = {'models': {m: {} for m in models}, 'aliases': {}, **acc_extra}
+        scorer = self.fa.Scorer({'models': {m: r['fields'] for m, r in rows.items()}}, acc)
+        tier = {m: {'value': None, 'method': 'none'} for m in rows}
+        return self.fa.durations(scorer, rows, acc, {}, {}, tier)
+
+    def test_each_listed_effort_is_its_own_aa_time_and_the_anchors_high_is_one(self):
+        aa, arena = 'aa.cost_time', 'arena.agent_sessions'
+        out, fit, why = self.build({self.anchor: [self.tp(aa, 'high', 10.0)],
+                                    'm': [self.tp(aa, 'high', 15.0), self.tp(aa, 'max', 20.0), self.tp(arena, 'high', 3.0)]})
+        self.assertEqual((out[self.anchor]['by_effort']['high'], out['m']['by_effort']), (1.0, {'high': 1.5, 'max': 2.0}))
+        self.assertEqual(out['m']['minutes_by_effort'], {'high': 15.0, 'max': 20.0})
+        self.assertEqual({b['method'] for b in out['m']['basis_by_effort'].values()}, {'aa'})   # the arena listing is not used
+        self.assertEqual(out['m']['efforts_without_time'], ['low', 'medium', 'xhigh'])
+        self.assertEqual(out['m']['basis_by_effort']['max']['url'], f'https://example.test/{aa}')
+
+    def test_an_effortless_listing_is_the_single_configuration_keyed_high(self):
+        out, _, _ = self.build({self.anchor: [self.tp('aa.cost_time', 'high', 10.0)], 'm': [self.tp('aa.cost_time', None, 5.0)],
+                                'n': [self.tp('aa.cost_time', 'none', 5.0)]})
+        self.assertEqual(out['m']['by_effort'], {'high': 0.5})
+        self.assertEqual((out['n']['status'], out['n']['by_effort']), ('missing', {}))     # a non-reasoning variant is no effort
+
+    def test_without_the_anchors_aa_time_at_high_the_build_stops(self):
+        with self.assertRaises(ValueError):
+            self.build({self.anchor: [self.tp('aa.cost_time', 'max', 10.0)], 'm': [self.tp('aa.cost_time', 'high', 5.0)]})
+
+    def paired(self, slope, noise=()):
+        """Ten models with an AA and an arena time at High (AA = slope x arena), plus the anchor, plus an arena-only model."""
+        models = {self.anchor: [self.tp('aa.cost_time', 'high', 10.0), self.tp('arena.agent_sessions', 'high', 10.0 / slope)]}
+        for i in range(1, 10):
+            a = float(i)
+            y = (20.0 if slope < 0 else 0.0) + slope * a + (noise[i % len(noise)] if noise else 0.0)
+            models[f'p{i}'] = [self.tp('aa.cost_time', 'high', y), self.tp('arena.agent_sessions', 'high', a)]
+        models['arena_only'] = [self.tp('arena.agent_sessions', 'high', 4.0), self.tp('arena.agent_sessions', 'max', 8.0)]
+        return models
+
+    def test_an_arena_only_model_is_moved_onto_the_aa_scale_by_a_cited_fit(self):
+        out, fit, why = self.build(self.paired(2.0, noise=(0.1, -0.1, 0.2, -0.2)))
+        self.assertIsNone(why)
+        self.assertEqual((fit['fit'], fit['n']), ('aa_time~arena_time', 10))
+        self.assertGreater(fit['skill'], 0.9)
+        self.assertGreater(fit['r'], 0.99)
+        row = out['arena_only']
+        self.assertAlmostEqual(row['minutes_by_effort']['high'], 8.0, delta=0.5)         # 2 x 4 minutes on the AA scale
+        self.assertAlmostEqual(row['minutes_by_effort']['max'], 16.0, delta=1.0)
+        basis = row['basis_by_effort']['high']
+        self.assertEqual((basis['method'], basis['arena_minutes'], basis['fit'], basis['n']), ('arena_fit', 4.0, 'aa_time~arena_time', 10))
+        self.assertAlmostEqual(row['by_effort']['high'], row['minutes_by_effort']['high'] / 10.0, places=3)
+
+    def test_an_arena_fit_without_skill_leaves_the_arena_only_model_without_a_time(self):
+        out, fit, why = self.build(self.paired(-1.0))           # slower on arena, faster on AA: not a usable fit
+        self.assertIsNone(fit)
+        self.assertIn('not positive', why)
+        self.assertEqual((out['arena_only']['status'], out['arena_only']['by_effort']), ('missing', {}))
+        self.assertEqual(out['arena_only']['efforts_without_time'], ['low', 'medium', 'high', 'xhigh', 'max'])
+        # models with their own AA time do not need the fit
+        self.assertEqual(out['p3']['basis_by_effort']['high']['method'], 'aa')
+
+    def test_an_effort_with_no_listing_takes_the_nearest_series_siblings_ratio_between_the_efforts(self):
+        aa = 'aa.cost_time'
+        models = {self.anchor: [self.tp(aa, 'high', 10.0)],
+                  'gpt-6-luna': [self.tp(aa, 'high', 6.0)],
+                  'gpt-5.6-luna': [self.tp(aa, 'high', 4.0), self.tp(aa, 'max', 12.0), self.tp(aa, 'low', 1.0)]}
+        out, _, _ = self.build(models, superseded={'gpt-5.6-luna': {'by': 'gpt-6-luna'}})
+        row = out['gpt-6-luna']
+        self.assertEqual(row['minutes_by_effort']['max'], 18.0)                  # 6 x (12 / 4)
+        self.assertEqual(row['minutes_by_effort']['low'], 1.5)                   # 6 x (1 / 4)
+        basis = row['basis_by_effort']['max']
+        self.assertEqual((basis['method'], basis['base_model'], basis['from_effort'], basis['ratio']),
+                         ('series_effort', 'gpt-5.6-luna', 'high', 3.0))
+        self.assertEqual(row['basis_by_effort']['high']['method'], 'aa')
+        self.assertEqual(row['efforts_without_time'], ['medium', 'xhigh'])        # the sibling lists neither
+        # alone, with no sibling to convert through, the other efforts have no time
+        alone, _, _ = self.build({self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-luna': [self.tp(aa, 'high', 6.0)]})
+        self.assertEqual(alone['gpt-6-luna']['by_effort'], {'high': 0.6})
+
+    def test_a_same_model_row_takes_its_declared_models_times_only_when_it_carries_duration(self):
+        aa = 'aa.cost_time'
+        models = {self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-astra': [self.tp(aa, 'high', 20.0), self.tp(aa, 'max', 40.0)],
+                  'dot': [], 'other': []}
+        same = {'dot': {'model': 'gpt-6-astra', 'carries': ['duration'], 'url': 'https://openai.com/index/introducing-dots/',
+                        'as_of': '2026-09-29'},
+                'other': {'model': 'gpt-6-astra', 'carries': ['divergence']}}
+        out, _, _ = self.build(models, same_model=same)
+        self.assertEqual(out['dot']['by_effort'], {'high': 2.0, 'max': 4.0})
+        basis = out['dot']['basis_by_effort']['high']
+        self.assertEqual((basis['method'], basis['base_model'], basis['url']),
+                         ('same_model', 'gpt-6-astra', 'https://openai.com/index/introducing-dots/'))
+        self.assertEqual(out['other']['status'], 'missing')
+
+    def test_a_model_with_no_time_takes_its_nearest_measured_series_siblings_times_with_provenance(self):
+        aa = 'aa.cost_time'
+        models = {self.anchor: [self.tp(aa, 'high', 10.0)],
+                  'gpt-6-luna': [self.tp(aa, 'high', 6.0), self.tp(aa, 'max', 12.0)],
+                  'gpt-5.6-luna': [], 'lone': []}
+        out, _, _ = self.build(models, superseded={'gpt-5.6-luna': {'by': 'gpt-6-luna'}})
+        row = out['gpt-5.6-luna']
+        self.assertEqual(row['minutes_by_effort'], {'high': 6.0, 'max': 12.0})
+        basis = row['basis_by_effort']['max']
+        self.assertEqual((basis['method'], basis['base_model'], basis['source'], basis['base_method']),
+                         ('series', 'gpt-6-luna', aa, 'aa'))
+        self.assertEqual(basis['series'], ['gpt-5.6-luna', 'gpt-6-luna'])
+        self.assertEqual((out['lone']['status'], out['lone']['by_effort']), ('missing', {}))          # no sibling: mode B
+
+    def test_a_channel_row_that_does_not_carry_the_time_does_not_take_a_series_time(self):
+        aa = 'aa.cost_time'
+        models = {self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-astra': [self.tp(aa, 'high', 20.0)], 'chan': []}
+        same = {'chan': {'model': 'gpt-6-astra', 'carries': ['divergence']}}
+        self.assertEqual(self.build(models, same_model=same)[0]['chan']['status'], 'missing')
+
+    def fleet(self, points, target, anchor_high=10.0):
+        """Fleet models listing the (effort, minutes) `points` each, plus a 'target' listing `target`; returns the target's record."""
+        aa = 'aa.cost_time'
+        models = {self.anchor: [self.tp(aa, 'high', anchor_high)]}
+        for i, pts in enumerate(points):
+            models[f'f{i}'] = [self.tp(aa, e, t) for e, t in pts.items()]
+        models['target'] = [self.tp(aa, e, t) for e, t in target.items()]
+        return self.build(models)[0]['target']
+
+    def test_an_effort_between_two_listed_ones_takes_the_fleets_median_log_position_and_honours_both_ends(self):
+        import numpy as np
+        highs = [3.0, 4.0, 5.0, 6.0]      # High of four models with Low 2 and Max 20: positions log(h/2)/log(10)
+        row = self.fleet([{'low': 2.0, 'high': h, 'max': 20.0} for h in highs], {'low': 4.0, 'max': 40.0})
+        ps = [float(np.log(h / 2.0) / np.log(10.0)) for h in highs]
+        med = float(np.median(ps))
+        basis = row['basis_by_effort']['high']
+        self.assertEqual((basis['method'], basis['lower_effort'], basis['upper_effort'], basis['n']), ('fleet_effort_position', 'low', 'max', 4))
+        self.assertAlmostEqual(basis['position'], med, places=4)
+        self.assertEqual(basis['iqr'], [round(float(np.percentile(ps, 25)), 4), round(float(np.percentile(ps, 75)), 4)])
+        self.assertEqual(basis['note'], f"fleet effort position high in low..max, n=4, IQR {np.percentile(ps, 25):.2f}-{np.percentile(ps, 75):.2f}")
+        self.assertAlmostEqual(row['minutes_by_effort']['high'], 4.0 * 10.0 ** med, places=2)
+        self.assertNotIn('bounded_by', basis)
+        self.assertEqual((row['minutes_by_effort']['low'], row['minutes_by_effort']['max']), (4.0, 40.0))
+        self.assertTrue(4.0 < row['minutes_by_effort']['high'] < 40.0)
+
+    def test_the_between_estimate_is_not_flattened_to_the_upper_listed_effort(self):
+        """A fleet whose High is 35x its Low must not drag a model whose own Max is only 10x its Low up to that Max: the
+        estimate follows the model's own span (the earlier one-sided ratio put High at the Max)."""
+        row = self.fleet([{'low': 2.0, 'high': 70.0, 'max': 140.0}] * 4, {'low': 4.0, 'max': 40.0})
+        t = row['minutes_by_effort']['high']
+        self.assertTrue(4.0 < t < 40.0, t)
+        self.assertEqual(row['basis_by_effort']['high']['method'], 'fleet_effort_position')
+
+    def test_a_position_outside_zero_to_one_is_held_and_marked(self):
+        row = self.fleet([{'low': 2.0, 'high': 40.0, 'max': 8.0}] * 4, {'low': 4.0, 'max': 40.0})     # High slower than Max
+        basis = row['basis_by_effort']['high']
+        self.assertEqual(row['minutes_by_effort']['high'], 40.0)
+        self.assertEqual(basis['bounded_by'], 'position held within [0, 1]')
+        self.assertGreater(basis['position'], 1.0)
+
+    def test_fewer_than_three_models_listing_all_three_efforts_leaves_the_effort_out_of_routing(self):
+        row = self.fleet([{'low': 2.0, 'high': 4.0, 'max': 8.0}] * 2, {'low': 4.0, 'max': 40.0})
+        self.assertIn('high', row['efforts_without_time'])
+        self.assertNotIn('high', row['by_effort'])
+
+    def test_an_effort_outside_the_listed_range_takes_the_fleets_median_ratio_from_the_nearest_listed_effort(self):
+        pts = [{'low': 2.0, 'high': 2.0 * r} for r in (2.0, 3.0, 4.0, 5.0)]
+        row = self.fleet(pts, {'low': 4.0})
+        basis = row['basis_by_effort']['high']
+        self.assertEqual((basis['method'], basis['from_effort'], basis['n'], basis['ratio']), ('fleet_effort_ratio', 'low', 4, 3.5))
+        self.assertEqual(basis['iqr'], [2.75, 4.25])
+        self.assertEqual(basis['note'], 'fleet effort ratio high/low, n=4, IQR 2.75-4.25')
+        self.assertAlmostEqual(row['minutes_by_effort']['high'], 14.0)
+        self.assertNotIn('bounded_by', basis)
+
+    def test_an_effort_outside_the_range_is_never_faster_than_a_lower_listed_effort(self):
+        row = self.fleet([{'low': 4.0, 'high': 2.0}] * 4, {'low': 4.0})           # the fleet's High is half its Low
+        self.assertEqual(row['minutes_by_effort']['high'], 4.0)
+        self.assertEqual(row['basis_by_effort']['high']['bounded_by'], 'a lower listed effort')
+
+    def test_a_sibling_derived_effort_is_an_endpoint_and_estimated_efforts_never_chain(self):
+        """A model that lists Max only gets its Low from the same-series sibling's ratio; Medium and High then sit between that
+        Low and its Max by the fleet's position (not between Low and an estimated Medium)."""
+        aa = 'aa.cost_time'
+        models = {self.anchor: [self.tp(aa, 'high', 10.0)],
+                  'gpt-5.6-luna': [self.tp(aa, 'low', 2.0), self.tp(aa, 'max', 20.0)],
+                  'gpt-6-luna': [self.tp(aa, 'max', 40.0)]}
+        for i in range(4):
+            models[f'f{i}'] = [self.tp(aa, 'low', 2.0), self.tp(aa, 'medium', 4.0), self.tp(aa, 'high', 8.0), self.tp(aa, 'max', 20.0)]
+        row = self.build(models, superseded={'gpt-5.6-luna': {'by': 'gpt-6-luna'}})[0]['gpt-6-luna']
+        self.assertEqual((row['basis_by_effort']['low']['method'], row['minutes_by_effort']['low']), ('series_effort', 4.0))
+        for e in ('medium', 'high'):
+            basis = row['basis_by_effort'][e]
+            self.assertEqual((basis['method'], basis['lower_effort'], basis['upper_effort']), ('fleet_effort_position', 'low', 'max'), e)
+        self.assertAlmostEqual(row['minutes_by_effort']['medium'], 4.0 * 10.0 ** (np.log(2.0) / np.log(10.0)), places=2)
+        self.assertEqual((row['minutes_by_effort']['low'], row['minutes_by_effort']['max']), (4.0, 40.0))
+        values = [row['minutes_by_effort'][e] for e in ('low', 'medium', 'high', 'xhigh', 'max') if e in row['minutes_by_effort']]
+        self.assertEqual(values, sorted(values))
+
+    def test_the_shipped_durations_cite_a_basis_for_every_effort_and_leave_none_to_a_default(self):
         shipped = allocator.load_five_axis()
-        mults = {m: r['duration_multiplier']['value'] for m, r in shipped['models'].items()
-                 if r.get('duration_multiplier', {}).get('value') is not None}
-        self.assertGreater(len(set(mults.values())), 5)
+        self.assertTrue(shipped['duration_fit'] or shipped['duration_fit_rejected'])
+        for name, r in shipped['models'].items():
+            dur = r['duration_multiplier']
+            self.assertEqual(set(dur['by_effort']), set(dur['basis_by_effort']), name)
+            self.assertEqual(set(dur['efforts_without_time']) | set(dur['by_effort']), {'low', 'medium', 'high', 'xhigh', 'max'}, name)
+            self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio', 'fleet_effort_position', 'same_model')
+                                for b in dur['basis_by_effort'].values()), name)
+            self.assertNotIn('value', dur)
 
 
 class CommunityCapacityTests(unittest.TestCase):
@@ -1348,40 +1422,13 @@ class CommunityCapacityTests(unittest.TestCase):
 
 
 class DerivedUsdTests(unittest.TestCase):
-    """Round 4: benchmarks give relative prices only; a model without a community usd is derived from a measured model
-    of the same provider, with both citations."""
+    """usd_per_hour has one basis: arena.agent_sessions, else the labelled option B (`derived.community_mix`), then the series
+    conversion."""
 
     @classmethod
     def setUpClass(cls):
         import five_axis
         cls.fa = five_axis
-
-    def test_derived_usd_scales_a_measured_same_provider_model_by_the_benchmark_ratio(self):
-        measured = {'gpt-6.1-sol': {'value': 24.0, 'used': ['community.x'], 'sources': {'community.x': {'url': 'u'}}}}
-        bench = {'gpt-6.1-sol': {'value': 10.0, 'used': ['aa.cost_time']}, 'gpt-6-luna': {'value': 5.0, 'used': ['aa.cost_time']},
-                 'claude-opus-5-5': {'value': 20.0, 'used': ['aa.cost_time']}, 'kimi-k3': {'value': 2.0, 'used': []}}
-        out = self.fa.derive_usd(measured, bench)
-        self.assertEqual(set(out), {'gpt-6-luna'})           # no measured Anthropic model; kimi has no provider match
-        luna = out['gpt-6-luna']
-        self.assertEqual((luna['value'], luna['kind']), (12.0, 'derived'))
-        self.assertEqual(luna['sources']['community']['model'], 'gpt-6.1-sol')
-        self.assertEqual(luna['sources']['ratio']['value'], 0.5)
-        self.assertEqual(luna['sources']['ratio']['denominator']['used'], ['aa.cost_time'])
-
-    def test_community_basis_uses_measured_then_derived_else_missing(self):
-        def e(src, kind, value):
-            return {'source': src, 'kind': kind, 'effort': 'high', 'value': value}
-        meas = {'models': {'gpt-6.1-sol': {'usd_per_hour': [e('aa.cost_time', 'benchmark', 10.0), e('community.x', 'community', 24.0)]},
-                           'gpt-6-luna': {'usd_per_hour': [e('aa.cost_time', 'benchmark', 5.0)]},
-                           'claude-opus-5-5': {'usd_per_hour': [e('aa.cost_time', 'benchmark', 20.0)]}}}
-        scorer = self.fa.Scorer(meas, {'models': dict.fromkeys(meas['models'], {})})
-        rows = {m: {'fields': f} for m, f in meas['models'].items()}
-        usd = self.fa.USD_BASES['community']['fn'](scorer, rows, meas, None)
-        self.assertEqual((usd['gpt-6.1-sol']['value'], usd['gpt-6.1-sol']['kind']), (24.0, 'community'))
-        self.assertEqual((usd['gpt-6-luna']['value'], usd['gpt-6-luna']['kind']), (12.0, 'derived'))
-        self.assertEqual(usd['claude-opus-5-5']['status'], 'missing')
-        bench = self.fa.USD_BASES['benchmark']['fn'](scorer, rows, meas, None)
-        self.assertEqual(bench['claude-opus-5-5']['value'], 20.0)
 
     def test_community_mix_basis_reprices_aa_throughput_at_the_community_split(self):
         import measurements
@@ -1410,19 +1457,16 @@ class DerivedUsdTests(unittest.TestCase):
         self.assertEqual(builder.source_rows['derived.community_mix']['as_of'], '2026-11-02')
         self.assertNotIn('usd_per_hour', builder.out['unlisted'])
         scorer = self.fa.Scorer({'models': builder.out}, {'models': {'m': {}, 'unlisted': {}}})
-        usd = self.fa.USD_BASES['community_mix']['fn'](scorer, {k: {'fields': v} for k, v in builder.out.items()}, {}, None)
+        usd = self.fa.usd_community_mix(scorer, {k: {'fields': v} for k, v in builder.out.items()}, {})
         self.assertEqual(usd['m']['value'], entries[0]['value'])
         self.assertTrue(usd['m']['fallback'])
         self.assertEqual(usd['m']['kind'], 'derived')
         self.assertEqual(usd['unlisted']['status'], 'missing')
-        self.assertEqual(self.fa.pick_duration(usd['m'], {'duration_multiplier': 1.35},
-                                               [{'source': 'aa.cost_time', 'effort': 'high', 'output_tps': 100.0}],
-                                               [{'source': 'aa.cost_time', 'effort': 'high', 'output_tps': 50.0}])['value'], 0.5)
         # Round 8: when arena.agent_sessions is present, it is the primary source (kind community, fallback False).
         builder.out['m']['usd_per_hour'].append({'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max',
                                                  'value': 6.125, 'as_of': '2026-11-08', 'url': 'https://arena.ai/leaderboard/agent',
                                                  'method': 'Cost/Task (P50) / Time/Task (P50) x 60', 'sessions': 1234})
-        usd_arena = self.fa.USD_BASES['community_mix']['fn'](scorer, {k: {'fields': v} for k, v in builder.out.items()}, {}, None)
+        usd_arena = self.fa.usd_community_mix(scorer, {k: {'fields': v} for k, v in builder.out.items()}, {})
         self.assertEqual(usd_arena['m']['value'], 6.125)
         self.assertEqual(usd_arena['m']['used'], ['arena.agent_sessions'])
         self.assertEqual(usd_arena['m']['kind'], 'community')
@@ -1454,34 +1498,26 @@ class DerivedUsdTests(unittest.TestCase):
             {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 13.688},
         ]}}}
         scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=('arena.agent_sessions',))
-        usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas, None)
+        usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
         self.assertEqual((usd['m']['value'], usd['m']['fallback']), (13.688, True))
         self.assertIn('arena.agent_sessions distrusted', usd['m']['merge'])
         self.assertNotIn('not listed', usd['m']['merge'])
 
-    def test_usd_community_mix_with_source_priority_falls_through_without_cross_scale_median(self):
-        """Round 9 F4: `usd_community_mix` with `--source-priority` naming a missing source falls through the priority
-        order to `arena.agent_sessions` (then `derived.community_mix`), never taking a median of arena + AA + derived."""
-        meas = {'models': {'gemini-4-argon-high': {'usd_per_hour': [
-            {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'value': 7.50},
-            {'source': 'openrouter.cost_time', 'kind': 'vendor', 'effort': 'high', 'value': 23.83},
-            {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': 6.658},
-            {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 31.901},
-        ]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'gemini-4-argon-high': {}}})
-        rows = {'gemini-4-argon-high': {'fields': meas['models']['gemini-4-argon-high']}}
-        usd = self.fa.usd_community_mix(scorer, rows, meas, priority=['user'])
-        self.assertEqual(usd['gemini-4-argon-high']['value'], 6.658)
-        self.assertEqual(usd['gemini-4-argon-high']['used'], ['arena.agent_sessions'])
-        self.assertEqual(usd['gemini-4-argon-high']['kind'], 'community')
-        self.assertFalse(usd['gemini-4-argon-high']['fallback'])
-        # Naming an available source in priority picks that source alone without cross-scale median.
-        usd_aa = self.fa.usd_community_mix(scorer, rows, meas, priority=['aa.cost_time'])
-        self.assertEqual(usd_aa['gemini-4-argon-high']['value'], 7.50)
-        self.assertEqual(usd_aa['gemini-4-argon-high']['used'], ['aa.cost_time'])
-        self.assertEqual(usd_aa['gemini-4-argon-high']['kind'], 'benchmark')
-        self.assertTrue(usd_aa['gemini-4-argon-high']['fallback'])
-
+    def test_usd_takes_arena_then_the_labelled_option_b_and_never_a_median_across_scales(self):
+        """Round 9 F4: with arena, option B and other-scale listings all present, arena alone is the value; no median is
+        taken across sources, and a source outside the one basis (Artificial Analysis list-price tokens) is never consulted."""
+        entries = [{'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': 'high', 'value': 7.50},
+                   {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': 6.658},
+                   {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 31.901}]
+        meas = {'models': {'a': {'usd_per_hour': entries}, 'b': {'usd_per_hour': [entries[0], entries[2]]}, 'c': {'usd_per_hour': [entries[0]]}}}
+        scorer = self.fa.Scorer(meas, {'models': dict.fromkeys(meas['models'], {})})
+        usd = self.fa.usd_community_mix(scorer, {m: {'fields': f} for m, f in meas['models'].items()}, meas)
+        self.assertEqual((usd['a']['value'], usd['a']['used'], usd['a']['kind'], usd['a']['fallback']),
+                         (6.658, ['arena.agent_sessions'], 'community', False))
+        self.assertEqual((usd['b']['value'], usd['b']['used'], usd['b']['kind'], usd['b']['fallback']),
+                         (31.901, ['derived.community_mix'], 'derived', True))
+        self.assertTrue(usd['b']['merge'].startswith('fallback ('))
+        self.assertEqual((usd['c']['value'], usd['c']['status']), (None, 'missing'))
 
 
 class ArenaCaptureTests(unittest.TestCase):

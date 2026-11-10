@@ -32,12 +32,5 @@ def validate(harness, model, model_info=None):
         raise ValueError(f'Model {model!r} has fast_capable=false in effective policy; use normal mode.')
 
 
-def codex_burn_multiplier(policy, account):
-    # Keep explicit local calibration. Credits/API are not subscription limits.
-    if account.get('billing') == 'subscription':
-        return float(policy.get('fast_burn_multiplier', 2.0))
-    return float(policy.get('fast_credit_multiplier', 2.0))
-
-
 def claude_billing(account):
     return {'subscription': 'usage_credits', 'metered': 'api'}.get(account.get('billing'), 'unknown_paid')

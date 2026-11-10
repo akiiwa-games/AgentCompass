@@ -958,8 +958,8 @@ class RouterGateHookTests(unittest.TestCase):
         self.assertNotIn("provider", unknown)
 
     def test_quota_gate_counts_other_inflight_reservations_like_routing(self):
-        # Antigravity 3p-weekly ($88 on default Ultra 20x) at 93% used has 7% left (> 5% safety margin).
-        # An active $2.64 reservation (~3%) from another dispatch brings remaining to 4% (<= 5% margin).
+        # Antigravity 3p-weekly (the public community capacity of the Ultra 20x plan) at 93% used has 7% left (> 5% safety
+        # margin). An active reservation of 3% of that capacity from another dispatch brings remaining to 4% (<= 5% margin).
         cache = self.quota_cache({"antigravity": {"windows": [
             self.window("gemini-weekly", 10, 100),
             self.window("gemini-5h", 10, 4),
@@ -968,6 +968,8 @@ class RouterGateHookTests(unittest.TestCase):
         ]}})
         accounts, _ = gate.load_dispatch_settings()
         _, candidates = gate.resolve_target({"bundle_id": "agy_opus55_high"}, accounts)
+        allocator = gate.router_module("allocator")
+        capacity = allocator.five_axis_overlay(accounts)["accounts"]["antigravity"]["capacity_usd"]["3p-weekly"]
         other_record = {
             "stage": "dispatch",
             "dispatch_id": "other-dispatch",
@@ -976,7 +978,7 @@ class RouterGateHookTests(unittest.TestCase):
             "lease_until": (T0 + dt.timedelta(minutes=10)).isoformat(),
             "choice": "agy_opus55_high",
             "bundle": {"account": "antigravity", "provider": "antigravity-resilient", "model": "claude-opus-5-5", "effort": "high"},
-            "expected_usd": 2.64,
+            "expected_usd": round(0.03 * capacity, 2),
         }
         # Without the in-flight reservation, 7% > 5% safety margin is allowed.
         self.assertIsNone(gate.check_account_quota_exhausted(
@@ -1600,13 +1602,21 @@ class BoundDispatchGateTests(unittest.TestCase):
         accounts = allocator.load_accounts(allocator.reference_fleet_path())
         bundle = dict(allocator.bundles(accounts)['argon_high'], bundle_id='argon_high')
         self.task = {'parent_agent_id': 'parent-fixture', 'task_id': 'task-fixture',
-                     'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 0.5,
-                     'needs': {'local_only': True}}
+                     'work_kind': 'general_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
+                     'profile': {'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 1,
+                                 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+                                 'wants_fast': False, 'read_only_review': False, 'access': 'write', 'expected_hours': 0.5,
+                                 'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
+                                 'multi_task': False, 'task_count': '1',
+                                 'axis_demand': {'divergence': 0, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0}}}
         self.now = dt.datetime.now(UTC)
         decision = dispatch_registry.issue({'choice': 'argon_high', 'selected_bundle': bundle}, self.task, self.now)
         self.row = dispatch_registry.prepare(decision['decision_id'], self.task,
             {'title': 'fixture', 'initialPrompt': 'do fixture work', 'workspaceId': 'workspace'},
-            {'accounts': {}}, accounts, self.now)
+            {'read_ok': True, 'accounts': {'antigravity': {'windows': [
+                {'id': wid, 'remaining_pct_before_reset': 80, 'observed_remaining_pct': 80, 'seconds_until_reset': hours * 3600,
+                 'resets_at': (self.now + dt.timedelta(hours=hours)).isoformat()}
+                for wid, hours in (('gemini-5h', 3), ('gemini-weekly', 100))]}}}, accounts, self.now)
 
     def payload(self, request=None, **changes):
         return dict({'tool_name': 'mcp__paseo__create_agent',

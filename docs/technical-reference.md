@@ -19,7 +19,7 @@ Back to [README.md](../README.md).
 
 ```mermaid
 flowchart LR
-  B[task.md + hours] --> C[Task classifier<br/>work kind & difficulty]
+  B[task.md + hours] --> C[Task classifier<br/>work kind, category demands & hours]
   C --> A[Score & quota check<br/>gates → fit → quota cost]
   Q[(live quota windows<br/>5h / 7d, in USD)] --> A
   A --> L[(ledger)]
@@ -28,22 +28,24 @@ flowchart LR
 ```
 
 ```text
-score = harness_factor × (w_fit·fit + w_ability·ability) + w_continuity·continuity
-      + reset_bonus + free_usage + boost + quality_bonus
-      − opportunity_cost − effort_penalty − overqualification
-
-fit              = w_route·route_fit + w_capability·capability_fit + w_subjective·model_dna_fit
-expected_usd     = usd_per_hour × hours × burn / 0.70
-opportunity_cost = sum over windows of displaced_usd × score_per_displaced_usd (0.012)
+fit     = demand-weighted mean over the demanded categories of min(score, target) - shortfall x max(0, target - score)
+target  = 0.8 x demand / 3                      (0.8 is the anchor model's score; demand is the classifier's 0..3)
+score N = fit + w_continuity x continuity + boost - quota_cost
 ```
 
+The classifier states how much the task needs (0-3) of divergence, global rigor, module precision and vision & tools. A
+model's four category scores come from public cited boards; a type score a model lacks is estimated through its tier (see
+[`calibration/README.md`](../skills/agent-compass/calibration/README.md)). `quota_cost` is the quota economy: the part of the
+task's spend that lands over the recovery line of the account's quota window, priced in score units. Equal scores go to the
+candidate on the earliest-expiring quota, then faster completion, then fewer USD.
+
 Hard gates run first: sign-in and credential health, host policy, modality (text-only models never get visual work),
-`local_only`, ability floor by difficulty, and per-window safety reserves net of in-flight work. A bundle that draws from
-several pools must clear every window; costs add across windows and the tightest window binds. The same model on a different
-harness keeps its score unless `harness_factor` differs (Codex vs Pi is a `0.03` step for read-heavy vs. edit-heavy work).
-Public defaults give personal subjective ratings zero weight; unknown capacity stays unknown.
-Weights and capability priors live in [`skills/agent-compass/references/accounts.json`](../skills/agent-compass/references/accounts.json),
-and plan capacity defaults live in [`skills/agent-compass/references/plan-templates.json`](../skills/agent-compass/references/plan-templates.json).
+`local_only`, a demanded category with no data, and per-window safety reserves net of in-flight work. A bundle that draws from
+several pools must clear every window; the tightest window binds. The same model on a different harness keeps its score
+(Codex vs Pi is only a tie-break step for read-heavy vs. edit-heavy work). Unknown capacity stays unknown: the account stays
+out of automatic routing until public data has it.
+Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),
+and plan window structure in [`skills/agent-compass/references/plan-templates.json`](../skills/agent-compass/references/plan-templates.json).
 
 | Layer | What it is | Required? |
 |---|---|---|

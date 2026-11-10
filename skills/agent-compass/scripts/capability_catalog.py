@@ -1,6 +1,7 @@
-"""Build capability views from the effective accounts catalogue.
+"""Build capability views from the effective accounts catalogue and the public five-axis scores.
 
-accounts.json (shipped, or the newer fetched public copy) is the only source.
+accounts.json (shipped, or the newer fetched public copy) holds the routes and the model rows' routing flags;
+`five-axis-scores.json` holds the four category scores and the economy's usd (calibration/five_axis.py).
 Generated JSON/Markdown views are documentation, never another runtime authority.
 """
 import argparse
@@ -13,37 +14,36 @@ REFERENCES = Path(__file__).resolve().parents[1] / 'references'
 
 
 def compose(accounts):
-    """Return the route policy and model data from one effective configuration."""
-    policy = accounts.get('capability_policy')
-    if not isinstance(policy, dict):
-        # Older full local fleets predate the policy field. They inherit public
-        # route definitions until their owner supplies an explicit policy.
-        policy = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))['capability_policy']
-    result = deepcopy(policy)
-    result['mainstream_defaults'] = {
-        'models': {name: deepcopy(spec) for name, spec in (accounts.get('models') or {}).items()
-                   if isinstance(spec, dict)}}
-    return result
+    """Return the route policy from one effective configuration."""
+    return deepcopy(accounts['capability_policy'])
 
 
-def markdown(accounts):
+def markdown(accounts, five=None):
+    if five is None:
+        five = json.loads((REFERENCES / 'five-axis-scores.json').read_text(encoding='utf-8'))
     rows = ['# Model capability catalogue', '',
-            'Generated from `accounts.json` by `scripts/capability_catalog.py`; do not edit this view.', '',
-            'Public scores are conservative, low-confidence routing priors, not measured benchmarks or a vendor ranking. '
-            'Tier and text-capability values are the checked-in calibrated baseline; modality flags describe admission only. '
+            'Generated from `accounts.json` and `five-axis-scores.json` by `scripts/capability_catalog.py`; do not edit this view.', '',
+            'Each model is scored on four categories (divergence, global rigor, module precision, vision and tools) that '
+            'gather the type scores of the public boards, and on the quota economy; nothing else scores a model. '
             'Known catalogue IDs do not prove sign-in, plan capacity, current price, or live model availability.', '',
-            'Route order, scoring weights and plan capacity ship as calibrated public defaults; plan capacity '
+            'Route order and plan capacity ship as calibrated public defaults; plan capacity '
             'follows the discovered plan (`plan-templates.json`). Disabled models and bundles are personal '
             'settings in `accounts-override.json`. Unknown hourly cost remains unknown; it does not mean unlimited.', '',
-            '| Model | Tier prior | R / C / E / A / V / G priors | Responsiveness | Visual admission |',
-            '| :--- | ---: | :--- | :--- | :--- |']
+            '| Model | Tier | Divergence | Global rigor | Module precision | Vision and tools | USD per hour | Responsiveness | Image input |',
+            '| :--- | ---: | ---: | ---: | ---: | ---: | ---: | :--- | :--- |']
+    scored = five.get('models') or {}
     for name, spec in sorted((accounts.get('models') or {}).items()):
         if not isinstance(spec, dict):
             continue
-        caps = spec.get('capabilities') or {}
-        est = spec.get('score_estimates') or {}
-        vector = ' / '.join(f'{caps.get(k, 0):.2f}' + ('~' if f'capabilities.{k}' in est else '') for k in
-                            ('reasoning', 'coding', 'exploration', 'anti_hallucination', 'visual', 'gui'))
+        row = scored.get(name) or {}
+        axes = row.get('axes') or {}
+        cells = []
+        for axis in ('divergence', 'global_rigor', 'module_precision', 'vision_tools'):
+            cell = axes.get(axis) or {}
+            mark = {'estimated': '~', 'partial': '!', 'missing': '!'}.get(cell.get('status'), '')
+            cells.append(f"{cell['value']:.2f}{mark}" if cell.get('value') is not None and cell.get('status') != 'missing' else 'missing')
+        tier = (row.get('tier') or {}).get('value')
+        usd = (row.get('usd_per_hour') or {}).get('value')
         resp = spec.get('responsiveness')
         if resp == 'not_applicable' or spec.get('responsiveness_status') == 'not_applicable':
             resp_str = 'n/a'
@@ -51,10 +51,14 @@ def markdown(accounts):
             resp_str = f'{float(resp):.2f}'
         else:
             resp_str = 'default'
-        rows.append(f'| `{name}` | {spec.get("tier", "unknown")} | {vector} | {resp_str} | {bool(spec.get("visual"))} |')
-    rows += ['', 'R/C/E/A/V/G = reasoning, coding, exploration, anti-hallucination, visual and GUI. A value marked `~` has no direct '
-             'measurement: a series conversion from a same-series sibling, or a public-data estimate for a model with no '
-             'sibling (`score_estimates` in accounts.json names the base or fit and the value it replaced).',
+        image = (row.get('image_input') or {}).get('status', 'unknown')
+        rows.append(f'| `{name}` | {"-" if tier is None else f"{tier:.2f}"} | ' + ' | '.join(cells)
+                    + f' | {"-" if usd is None else usd} | {resp_str} | {image} |')
+    rows += ['', 'Tier is the arena.ai Overall position on the user scale (or its interpolation from another overall board, or '
+             'its same-series sibling tier); it is not a score and only estimates type scores a model lacks. A value marked `~` is '
+             'such an estimate (through the tier, from a same-series sibling shifted by the tier difference or from the fit '
+             'of that type score on tier); `!` marks a category with a missing type score counted as 0 (mode B when the task '
+             'demands it). The record of each estimate is in `five-axis-scores.json` (`estimate`).',
              'Responsiveness (`0..1`, per-effort in `effort_curves.<model>.responsiveness`) measures per-turn '
              'live-loop speed (`T_turn = (ttft_s + 400 / output_tps) * harness_overhead`, where AA `ttft_s` is '
              '`headline.timeToFirstAnswerToken` including single-turn thinking time; mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` '
@@ -64,9 +68,9 @@ def markdown(accounts):
              '[Model names, efforts and pins](router-internals.md#model-names-efforts-and-pins)); models without community speed data use the '
              'conservative policy `default` (`0.52`, `responsiveness: default`), and packet/web channels (`dot`, `grok-bot`) are `n/a` (`not_applicable`).', '',
              '## Effective policy', '',
-             'Routes describe task scope and modality requirements and ship a calibrated `preferred` order. '
-             '`capability_policy` in a local fleet can replace `preferred`, `strict_order` and `restrict_models`. '
-             'A restriction is state, not an explanation string. The judge receives this effective policy and its model data.', '',
+             'Routes describe task scope and modality requirements and ship a calibrated harness order. '
+             'A route can fix the harness order or imply a modality flag; it does not rank models. '
+             'The judge receives this effective policy.', '',
              '## Regeneration', '',
              'Run `python -X utf8 skills/agent-compass/scripts/capability_catalog.py` from the repository root. '
              'Use `--check` to verify both generated views without writing them.', '']

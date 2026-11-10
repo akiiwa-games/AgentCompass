@@ -7,13 +7,14 @@ does not list a model, adds nothing: there are no defaults here. The file is the
 does not read it.
 
 Fields
-- `tier`: the tier fits of `tiers.py` (LMArena WebDev/Agent through the six anchors; SWE-bench, Terminal-Bench 2.0 and
-  the AA index as secondary fits), plus the user's anchor and judgment tiers (source `user`). Kept for the old-to-new
-  comparison only: the router no longer gates on a scalar tier (round 047 round 2 folds the tier into the axes).
-- `usd_per_hour`, one entry per (source, effort), every entry with its `kind` (`benchmark` / `vendor` / `community`):
-  - `aa.cost_time` (benchmark): Artificial Analysis cost per task x 3600 / time per task (round 046, section 2.3, method A).
-  - `openrouter.cost_time` (vendor price on benchmark tokens): the AA figure repriced at the OpenRouter output price,
-    only where that price differs from AA's (an equal price adds no independent evidence).
+- `tier`: the model's overall level on the user's scale (`tiers.py`), never a score. One entry per source: the six
+  anchor rows' own tiers (`user.anchor_tier`); the arena.ai Overall board mapped through the anchors
+  (`tier.arena_overall`); and, only for a model arena Overall does not list, its relative position on another
+  non-arena overall board interpolated onto the tier scale through the models both list (`tier.aa_index`, the
+  Artificial Analysis Intelligence Index), with the two neighbours and the overlap n. five_axis.py combines them and
+  uses the tier for one thing: estimating a type score the model lacks.
+- `usd_per_hour`, one entry per (source, effort), every entry with its `kind` (`community` / `derived`):
+  - `arena.agent_sessions` (community): arena.ai Agent / Overall real sessions, Cost/Task P50 / Time/Task P50 x 60.
   - `derived.community_mix` (derived, round 4 option B): AA's measured output speed per hour priced at the community
     real-traffic token mix (wokey's fixed split, about 92% cache reads; community.py) and AA's list prices, so usd per
     worker-hour is on the scale the community capacities are valued on. Cites AA and the wokey mix.
@@ -37,10 +38,11 @@ Fields
     local `visual` / `text_only` routing flags are not a source (review F1, 2026-11-09), so without a statement and
     without a board the component is missing. A public board that lists the model wins over a statement.
 
-Where the old tier came from: its primary fit is LMArena WebDev and Agent through the anchors, moved from the best
-listed variant to High by the AA effort gain (efforts.high_tier). The High correction scales every LMArena component
-and the arena.ai Agent category values of the model by High tier / best-variant tier (both list each model at its best
-variant), so the axes are read at High as the tier was; the Alignment Index names no variant and is not corrected.
+High correction: LMArena and the arena.ai Agent tables list each model at its best variant ("GPT-6 Luna (Max)"). The
+values of those sources are moved to High by the Artificial Analysis Intelligence Index at High over its index at the
+listed variant (efforts.high_ratio), relative to the same ratio of the anchor model so the anchor stays at its value;
+the Alignment Index names no variant and is not corrected. The tier is read as listed (it is the arena.ai Overall
+position), not corrected.
 
 One conversion for every capability source, relative to the anchor model (ANCHOR, Opus 5.5) rather than to the board's
 best, so a new model at the top of a board moves no other model's value (review F3, 2026-11-09; round 2 divided by the
@@ -62,9 +64,9 @@ sits at ANCHOR_VALUE (0.8) on every component it is measured on, so 1.0 is 1.25 
 observation with its source, url, data date and fetch time; stated ratios between windows (`rules`); `errors` (a page
 not fetched or no longer carrying its sentence gives no value); `not_found`.
 
-usd_per_hour comes only from public sources (review F2, 2026-11-09): AA cost per task over time per task, and the same
-repriced at the OpenRouter output price. The shipped accounts values (a local 14-day calibration sample) and the
-community burn figures (measured locally, no external citation) are not sources.
+usd_per_hour comes only from public sources (review F2, 2026-11-09): the arena.ai Agent sessions, and AA's measured output
+speed at the community token mix. The shipped accounts values (a local 14-day calibration sample) and the community burn
+figures (measured locally, no external citation) are not sources.
 """
 import argparse
 import json
@@ -99,13 +101,6 @@ EXTRA_NAMES = {
     'nemotron-3.5-super-vl-free': {'arena': 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B', 'aa': 'Nemotron 3.5 Super VL'},
     'qwen3.8-max': {'aa': 'Qwen3.8 Max'},
 }
-# Tiers the user set (README: the anchors; accounts basis: the rest). Kept as source `user`, with the row's own basis.
-USER_TIERS = {**{k: 'anchor tier (calibration/README.md)' for k in tiers.ANCHORS},
-              'gemini-4-argon-high': 'hand-set tier (accounts basis cites AA v4.3.2; not a tiers.py fit)',
-              'grok-bot': 'aligned with Opus by the user (accounts basis)',
-              'dot': 'vendor statement that Dot runs on Astra (accounts basis)',
-              'gpt-6-pro': 'ceiling anchor 5.0 (accounts basis)'}
-USER_TIER_DATE = '2026-11-04'
 # Labels for the provenance `source` of each capability measurement: (axis, component, kind).
 CAPABILITY_SOURCES = {
     'lmarena.text_overall': ('divergence', 'chat', 'elo'),
@@ -150,9 +145,9 @@ ARENA_CAPTURES = {
 HIGH_CORRECTED = ('lmarena.', 'arena.agent_code', 'arena.agent_work_')
 # The kind of each source (decision 2, 2026-11-09): vendor = the vendor's own statement or price list, benchmark = a
 # third-party measurement, community = a community or packaged estimate with a stated basis.
-SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'lmarena.tier_fit': 'benchmark', 'derived.community_mix': 'derived',
-               'secondary.tier_fit': 'benchmark', 'user': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
-               'openrouter.cost_time': 'vendor', 'arena.agent_sessions': 'community',
+SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'derived.community_mix': 'derived',
+               'tier.arena_overall': 'benchmark', 'tier.aa_index': 'benchmark', 'user.anchor_tier': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
+               'arena.agent_sessions': 'community',
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'openrouter.modality': 'vendor',
                'vendor.fast_mode': 'vendor', 'aa.index': 'benchmark'}
 IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro', 'osworld.verified')
@@ -447,13 +442,13 @@ class Builder:
                 extra = {}
                 ratio = self.high_ratio.get(model) if src.startswith(HIGH_CORRECTED) else None
                 if ratio is not None and ratio != 1.0:
-                    # LMArena and the arena.ai Agent tables list the best variant; read it at High as the tier fit does.
+                    # LMArena and the arena.ai Agent tables list the best variant; read it at High (efforts.high_ratio).
                     extra = {'best_variant_value': value, 'high_ratio': ratio}
                     value = round(min(1.0, value * ratio), 4)
                 name = names[src][model]
                 self.names[model][src] = name
                 self.add(model, axis, src, value, f'{method}; {ANCHOR_VALUE:g} x s / s_anchor ({refs[src]["how"]}), capped at 1'
-                         + ('; x High/best-variant tier ratio' if extra else ''), component=comp,
+                         + ('; x High/best-variant AA index ratio' if extra else ''), component=comp,
                          listed_as=listed.get(name, name), raw=round(raw[src][model], 4), reference=refs[src]['reference'], **extra)
                 if src in IMAGE_BENCHMARKS:
                     self.add(model, 'image_input', src, True, f'{method}: measured on image/screenshot input',
@@ -503,55 +498,57 @@ class Builder:
 
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
-        ef = efforts.Efforts(self.target, self.acc)
+        """The tier entries (module docstring) and the High ratio of each model's arena listing."""
+        fitter = tiers.Fitter(self.target)
         self.high_ratio = {}
-        fitter = ef.fitter
-        webdev = self.manifest.get('webdev.parquet') or {}
-        self.register('lmarena.tier_fit', 'webdev.parquet', next(iter(fitter.boards['webdev'].values()))[4],
-                      'tiers.py: LMArena WebDev/Agent mapped through the six anchor rows, mean of the boards', len(fitter.boards['webdev']))
-        self.register('secondary.tier_fit', 'swebench.html', vals_date(self.target, 'swebench.html'),
-                      'tiers.py secondary: SWE-bench Verified, Terminal-Bench 2.0 and the AA index regressed on the primary tiers', None)
-        arena = Matcher(set(fitter.boards['webdev']) | set(fitter.boards['agent']))
-        swe, tb2, aa = Matcher(fitter.swe), Matcher(fitter.tb2), Matcher(fitter.aa)
-        for model, info in self.models.items():
+        overall = fitter.overall
+        as_of = max(r[4] for r in overall.values())
+        self.register('user.anchor_tier', 'text_style_control.parquet', tiers.ANCHOR_TIER_DATE,
+                      "the user's judgment of the six anchor rows (calibration/README.md): the tier scale itself", len(tiers.ANCHORS))
+        self.register('tier.arena_overall', 'text_style_control.parquet', as_of,
+                      'tiers.py: arena.ai Overall (Text, style control) mapped through the six anchor rows at their best listed '
+                      'variant, piecewise linear, floor 1.0', len(overall))
+        self.register('tier.aa_index', 'aa-models.html', None,
+                      'tiers.py: Artificial Analysis Intelligence Index position interpolated onto the tier scale through the '
+                      'models listed on both it and arena.ai Overall; only for a model arena Overall does not list',
+                      len(fitter.aa))
+        arena, aa = Matcher(overall), Matcher(fitter.aa)
+        aa_by_effort = sources.artificial_analysis(self.target)
+        match_aa = Matcher(aa_by_effort)
+        anchor_ratio = None
+        for model in self.models:
+            extra_names = EXTRA_NAMES.get(model) or {}
+            names = tiers.NAMES.get(model) or {}
             if model in tiers.ANCHORS:
-                pass
+                self.add(model, 'tier', 'user.anchor_tier', tiers.ANCHOR_TIERS[model], 'anchor tier (calibration/README.md)')
+            explicit = extra_names.get('arena') or names.get('arena') or tiers.ANCHORS.get(model)
+            found = arena.find(model, explicit) or (arena.find(model) if explicit else None)
+            if found:
+                row = overall[found]
+                if model not in tiers.ANCHORS:
+                    t = fitter.arena_overall_tier(found)
+                    self.add(model, 'tier', 'tier.arena_overall', round(t, 3), tiers.basis_arena(row, t), listed_as=row[3],
+                             arena_value=round(row[0], 1))
+                # arena.ai lists the best variant; the AA index at High over the index at that variant moves it to High.
+                aa_explicit = extra_names.get('aa') or names.get('aa') or tiers.ANCHORS.get(model)
+                aa_name = match_aa.find(model, aa_explicit) or (match_aa.find(model) if aa_explicit else None)
+                ratio = efforts.high_ratio(aa_by_effort.get(aa_name) or {}, row[3]) if aa_name else None
+                if model == ANCHOR:
+                    anchor_ratio = ratio
+                if ratio is not None:
+                    self.high_ratio[model] = ratio
             else:
-                names = dict(tiers.NAMES.get(model) or {})
-                for k, m in (('arena', arena), ('swe', swe), ('tb2', tb2), ('aa', aa)):
-                    explicit = (EXTRA_NAMES.get(model) or {}).get(k) or names.get(k)
-                    found = m.find(model, explicit) or (m.find(model) if not explicit else None)
-                    if found:
-                        names[k] = found
-                    else:
-                        names.pop(k, None)
-                saved = tiers.NAMES.get(model)
-                tiers.NAMES[model] = names
-                try:
-                    e = fitter.fit(model)
-                finally:
-                    if saved is None:
-                        tiers.NAMES.pop(model, None)
-                    else:
-                        tiers.NAMES[model] = saved
-                if e['method'] == 'primary':
-                    high, corr = ef.high_tier(model, e['tier'])     # apply_rows.py: a best-variant (Max) fit moved to High
-                    if corr and e['tier']:
-                        self.high_ratio[model] = round(high / e['tier'], 4)
-                    self.add(model, 'tier', 'lmarena.tier_fit', high,
-                             'tiers.py primary fit' + (', moved to High by the AA effort gain (efforts.high_tier)' if corr else ''),
-                             fits=e['fits'], best_variant_tier=e['tier'], high_correction=corr, listed_as=names.get('arena'))
-                elif e['method'] == 'same_as':
-                    self.add(model, 'tier', 'secondary.tier_fit', e['tier'], f"tiers.py SAME_AS {e['same_as']}: {e['why']}",
-                             same_as=e['same_as'])
-                elif e['method'] == 'secondary':
-                    self.add(model, 'tier', 'secondary.tier_fit', e['tier'], 'tiers.py secondary fit',
-                             fits={k: v[1] for k, v in e['secondary'].items()},
-                             listed_as={k: names.get(k) for k in e['secondary']},
-                             vendor_reported={k: v[4] for k, v in e['secondary'].items() if v[4]})
-            if model in USER_TIERS:
-                self.out[model].setdefault('tier', []).append(
-                    {'source': 'user', 'value': info.get('tier'), 'as_of': USER_TIER_DATE, 'url': None, 'method': USER_TIERS[model]})
+                explicit = extra_names.get('aa') or names.get('aa')
+                aa_found = aa.find(model, explicit) or (aa.find(model) if explicit else None)
+                if aa_found:
+                    for board, r in fitter.other_overall({'aa.index': aa_found}).items():
+                        self.add(model, 'tier', 'tier.aa_index', r['tier'],
+                                 f"{r['board']} {r['value']:g} interpolated onto the tier scale between {r['neighbours']['below']['models']} "
+                                 f"and {r['neighbours']['above']['models']} of the {r['n']} models listed on both it and arena.ai Overall",
+                                 listed_as=r['listed_as'], board_value=r['value'], neighbours=r['neighbours'], n=r['n'])
+        # Relative to the anchor's own correction, so the anchor model stays at its value on every component.
+        ref = anchor_ratio or 1.0
+        self.high_ratio = {m: round(r / ref, 4) for m, r in self.high_ratio.items()}
 
     # --- price and usd per hour ------------------------------------------------------------------
     def usd(self):
@@ -560,7 +557,7 @@ class Builder:
             return
         variants = self.aa_variants()
         self.register('aa.cost_time', 'aa-models.html', None,
-                      'intelligenceIndexCostPerTask * 3600 / intelligenceIndexTimePerTask (audit round 046 section 2.3, method A)',
+                      'AA Intelligence Index Time/Task (s) and outputSpeed (tok/s) per effort variant',
                       len(variants))
         self.register('aa.price', 'aa-models.html', None, 'AA listed price1mInputTokens / price1mOutputTokens / cacheHitPrice', len(variants))
         self.register('aa.index', 'aa-models.html', None, 'AA Intelligence Index at the High variant (else the only listing)', len(variants))
@@ -572,11 +569,8 @@ class Builder:
                 continue
             self.names[model]['aa.cost_time'] = base
             for eff, rec in sorted(variants[base].items()):
-                c, t = rec.get('intelligenceIndexCostPerTask'), rec.get('intelligenceIndexTimePerTask')
+                t = rec.get('intelligenceIndexTimePerTask')
                 speed = rec.get('outputSpeed')
-                if c and t:
-                    self.add(model, 'usd_per_hour', 'aa.cost_time', round(c * 3600 / t, 3), 'cost per task x 3600 / time per task',
-                             effort=eff or 'default', listed_as=rec['name'], cost_per_task=round(c, 5), time_per_task_s=round(t, 2))
                 if t or (isinstance(speed, (int, float)) and speed > 0):
                     self.add(model, 'throughput', 'aa.cost_time', round(t / 60.0, 3) if t else None,
                              'AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)',
@@ -595,15 +589,12 @@ class Builder:
         if self.ok('openrouter-models.json'):
             table = sources.openrouter(self.target)
             self.register('openrouter.price', 'openrouter-models.json', None, 'OpenRouter /api/v1/models pricing (USD per million tokens)', len(table))
-            self.register('openrouter.cost_time', 'openrouter-models.json', None,
-                          'AA cost per task x (OpenRouter output price / AA output price) x 3600 / AA time per task', len(table))
             match = Matcher(table, lambda n: n.split('/')[-1])
             for model in self.models:
                 name = match.find(model)
                 if name:
                     self.add(model, 'price', 'openrouter.price', {k: round(v, 4) for k, v in table[name].items()},
                              'USD per million tokens', listed_as=name)
-                    self.repriced(model, table[name], name)
         else:
             self.miss('openrouter.price', 'openrouter-models.json', 'not fetched')
         self.arena_usd()
@@ -671,17 +662,6 @@ class Builder:
                          sessions=r.get('sessions'))
         if unpriced:
             self.source_rows['arena.agent_sessions']['unpriced'] = unpriced
-
-    def repriced(self, model, price, listed):
-        """`openrouter.cost_time`: each AA cost/time entry at the OpenRouter output price, where that price differs."""
-        aa_price = next((e['value'] for e in self.out[model].get('price', []) if e['source'] == 'aa.price'), None) or {}
-        ours, theirs = price.get('output'), aa_price.get('output')
-        if not ours or not theirs or abs(ours / theirs - 1) < 0.01:
-            return
-        for e in [e for e in self.out[model].get('usd_per_hour', []) if e['source'] == 'aa.cost_time']:
-            self.add(model, 'usd_per_hour', 'openrouter.cost_time', round(e['value'] * ours / theirs, 3),
-                     f'AA cost/time repriced at the OpenRouter output price {ours:g} (AA lists {theirs:g}) per million tokens',
-                     effort=e['effort'], listed_as=listed)
 
     # --- window capacity (community real usage) ---------------------------------------------------
     def capacity(self):

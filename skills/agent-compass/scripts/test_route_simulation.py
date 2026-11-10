@@ -46,11 +46,13 @@ class UsageAwareSimulationTests(unittest.TestCase):
         self.assertGreater(self.share(ample, opus), 0.1)
         self.assertLess(self.share(scarce, opus), self.share(ample, opus) / 2)
 
-    def test_codex_scarcity_moves_work_off_sol_and_astra(self):
-        ample, scarce = self.wins('ample'), self.wins('codex scarce')
-        codex = [label for label in ample | scarce if label.endswith('@codex')]
-        self.assertGreater(self.share(ample, *codex), 0.05)
-        self.assertLess(self.share(scarce, *codex), self.share(ample, *codex) / 2)
+    def test_work_follows_the_account_with_quota_to_spare(self):
+        ample, claude_scarce, codex_scarce, both = (self.wins(s) for s in (
+            'ample', 'claude scarce', 'codex scarce', 'claude+codex scarce'))
+        codex = [label for label in ample | claude_scarce | codex_scarce | both if label.endswith('@codex')]
+        self.assertGreater(self.share(claude_scarce, *codex), self.share(ample, *codex))
+        self.assertLess(self.share(codex_scarce, *codex), self.share(claude_scarce, *codex))
+        self.assertEqual(self.share(both, *codex), 0)
 
     def test_stale_readings_are_not_priced_as_scarce_or_ample(self):
         usage = sim.snapshot(sim.synthetic_document(self.accounts, NOW, 'stale'), self.accounts, NOW)
@@ -84,19 +86,13 @@ class UsageAwareSimulationTests(unittest.TestCase):
         usage = sim.snapshot(sim.ledger_document(old), self.accounts, at)    # old record, no live pool: one account
         self.assertEqual(allocator.pool_size(window(usage, 'claude', 'seven_day')), 1)
 
-    def test_legacy_ledger_row_missing_required_profile_fields_is_marked_unreplayable(self):
+    def test_a_ledger_row_whose_profile_is_not_valid_now_is_marked_unreplayable(self):
         import json
         from pathlib import Path
         import tempfile
-        current_profile = {
-            'work_kind': 'general_implementation', 'reasoning_depth': 3, 'code_complexity': 2,
-            'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2, 'error_cost': 2,
-            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-            'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering',
-            'expected_hours': 0.5, 'hours_confidence': 'high', 'urgency': 'unknown',
-            'multi_task': False, 'task_count': '1',
-        }
-        old_profile = {k: v for k, v in current_profile.items() if k not in ('wants_fast', 'read_only_review')}
+        from router_test_support import profile
+        current_profile = profile(local_only=True, expected_hours=0.5)
+        old_profile = {k: v for k, v in current_profile.items() if k != 'axis_demand'}
         base_row = {
             'stage': 'plan', 'at': NOW.isoformat(), 'choice': 'sol_high',
             'kind': 'general_implementation', 'difficulty': 'hard', 'hours': 1.0,
@@ -113,7 +109,7 @@ class UsageAwareSimulationTests(unittest.TestCase):
         self.assertEqual(len(out), 2)
         self.assertTrue(out[0].get('unreplayable'))
         self.assertIsNone(out[0]['choice'])
-        self.assertEqual(out[0]['replay_note'], sim.LEGACY_REPLAY_NOTE)
+        self.assertIn('not valid under the current schema', out[0]['replay_note'])
         self.assertFalse(out[1].get('unreplayable', False))
         self.assertIsNotNone(out[1]['choice'])
 

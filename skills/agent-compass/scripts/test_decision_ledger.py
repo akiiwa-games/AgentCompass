@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import allocator
 import route_judge as router
-from router_test_support import isolated_router_state
+from router_test_support import isolated_router_state, profile
 
 
 class DecisionLedgerTests(unittest.TestCase):
@@ -37,10 +37,7 @@ class DecisionLedgerTests(unittest.TestCase):
         self.task.write_text(json.dumps({'task': {
             'objective': 'Fix the pagination bug', 'work_kind': 'general_implementation', 'expected_hours': 1,
             'needs': {'local_only': True},
-            'profile': {'reasoning_depth': 3, 'code_complexity': 2, 'context_scale': 2, 'hallucination_risk': 2, 'error_cost': 2,
-                        'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
-                        'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering',
-                        'reason': 'private reasoning'}}}), encoding='utf-8')
+            'profile': profile(reasoning_depth=3, local_only=True, expected_hours=1.0, reason='private reasoning')}}), encoding='utf-8')
 
     def run_plan(self, *extra):
         argv = ['route_judge.py', 'plan', '--input', str(self.task), '--usage-cache', str(self.cache), *extra]
@@ -74,7 +71,7 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertEqual(winner['capacity']['window'], live['capacity']['window'])
         self.assertEqual((winner['expected_pct'], winner['expected_usd']), (round(live['expected_pct'], 4), round(live['expected_usd'], 4)))
         self.assertEqual(winner['action'], live['action'])
-        self.assertIn('required_ability', winner['components'])
+        self.assertTrue({'divergence', 'global_rigor', 'module_precision', 'vision_tools'} <= set(winner['components']))
         self.assertTrue(all('capacity' in row or row['expected_pct'] is None for row in full if 'expected_pct' in row))
         # Blocked candidates keep their reasons; the scoring system and the task demand are recorded with the decision.
         blocked = [row for row in ranking if row['excluded']]
@@ -82,8 +79,7 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertTrue(all(row['score'] is None or row['excluded'] for row in blocked))
         decision = snapshot['decision']
         self.assertEqual(decision['system']['weights'], result['decision']['system']['weights'])
-        self.assertEqual(decision['system']['shortage_loss_per_usd'], result['decision']['system']['shortage_loss_per_usd'])
-        self.assertEqual(decision['task']['demand']['required_ability'], result['decision']['task']['demand']['required_ability'])
+        self.assertEqual(decision['task']['axis_demand'], result['decision']['task']['axis_demand'])
         self.assertEqual(decision['action'], result['decision']['action'])
         self.assertNotIn('reason', decision['task']['profile'])                 # the classifier's free text is not copied
         self.assertNotIn('private reasoning', json.dumps(snapshot))
@@ -92,7 +88,8 @@ class DecisionLedgerTests(unittest.TestCase):
         self.run_plan()
         [line] = self.plan_rows()
         text = json.dumps(line)
-        self.assertLess(len(text), 24000, len(text))
+        # 6 full + 8 compact eligible rows and 16 blocked ones: the cap is the row limits, not a size tuned to one fixture.
+        self.assertLess(len(text), 40000, len(text))
         ranking = line['decision_snapshot']['ranking']
         eligible = [row for row in ranking if not row['excluded']]
         self.assertLessEqual(len(eligible), allocator.SNAPSHOT_FULL + allocator.SNAPSHOT_COMPACT)
@@ -101,7 +98,7 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertEqual(len(ranking) + omitted['eligible'] + omitted['excluded'], line['decision_snapshot']['ranking_total'])
         compact = eligible[allocator.SNAPSHOT_FULL:]
         self.assertTrue(all('capacity' not in row and 'notes' not in row for row in compact))
-        self.assertTrue(all({'fit', 'ability', 'opportunity_cost'} <= set(row['components']) for row in compact))
+        self.assertTrue(all({'fit', 'opportunity_cost'} <= set(row['components']) for row in compact))
 
     def test_dry_run_and_non_ranking_stages_write_no_snapshot(self):
         before = len(router.read_ledger())
@@ -114,9 +111,8 @@ class DecisionLedgerTests(unittest.TestCase):
         self.run_plan()
         [before] = self.plan_rows()
         accounts = allocator.load_accounts()
-        accounts['models']['claude-opus-5-5']['tier'] = 1.0           # the fleet is recalibrated afterwards
-        accounts['effort_curves']['claude-opus-5-5']['ability']['max'] = -5
-        later = allocator.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'needs': {'local_only': True}},
+        accounts['accounts']['codex']['verified'] = False             # the fleet is reconfigured afterwards
+        later = allocator.plan({'work_kind': 'general_implementation', 'needs': {'local_only': True}, 'profile': profile(local_only=True)},
                                {'read_ok': True, 'accounts': {}}, self.now + timedelta(days=3), accounts=accounts, overrides=[])
         self.assertNotEqual(later['choice'], before['choice'])
         [after] = self.plan_rows()

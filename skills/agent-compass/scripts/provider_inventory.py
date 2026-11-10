@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import sqlite3
 import tempfile
@@ -41,8 +40,8 @@ OMP_OAUTH_FAMILIES = {'openai-codex': 'codex', 'anthropic': 'claude'}
 
 
 PLAN_TEMPLATES = Path(__file__).resolve().parents[1] / 'references/plan-templates.json'
-TEMPLATE_KEYS = ('windows', 'capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour', 'cadence', 'unmetered')
-POOL_KEYS = ('windows', 'burn_pct_per_worker_hour', 'capacity_usd', 'capacity_change', 'observed', 'expires_at')
+TEMPLATE_KEYS = ('windows', 'cadence', 'unmetered')
+POOL_KEYS = ('windows', 'capacity_usd', 'observed', 'expires_at')
 _SHIPPED_PLAN_TEMPLATES = None
 _STDLIB_WHICH = shutil.which
 _WHICH_CACHE = {}
@@ -120,8 +119,8 @@ def plan_defaults(accounts, family, plan):
 
     The account document's `plan_templates` overrides the shipped references/plan-templates.json
     per family and plan. A template of `{"alias": "<plan>"}` resolves to that plan's template. Only
-    `windows`, `capacity_usd`, `capacity_change` and `burn_pct_per_worker_hour` are copied onto an
-    account; other keys (provenance, basis, price) are documentation.
+    `windows`, `cadence` and `unmetered` are copied onto an account; other keys (provenance, basis, price) are
+    documentation. A plan's capacity is not in the template: it comes from the community capacity data by plan.
     """
     global _SHIPPED_PLAN_TEMPLATES
     source = public_data.effective(PLAN_TEMPLATES)  # the fetched public copy when it is newer than the shipped one
@@ -1617,8 +1616,6 @@ def _apply_auto_bundles(accounts, inventory, live):
                 bundle['discovery_unavailable'] = reason
             if bundle.get('effort'):
                 accounts.setdefault('dispatch_efforts', {}).setdefault(account, {}).setdefault(bundle['model'], [bundle['effort']])
-    for name, spec in derived['models'].items():
-        accounts.setdefault('models', {}).setdefault(name, spec)
     for account, rows in derived['bundles'].items():
         target = accounts['accounts'][account].setdefault('bundles', {})
         for bid, bundle in rows.items():
@@ -1706,7 +1703,6 @@ def apply(accounts, inventory=None):
                     'verified': True,
                     'expires_at': None,
                     'windows': {'spend': {'hours': 168, 'launch_min_remaining_pct': 5}},
-                    'burn_pct_per_worker_hour': {'spend': 1.0},
                     'bundles': {},  # auto_bundles derives one bundle per advertised model below
                 }
                 if isinstance(row.get('budget_usd'), (int, float)) and row['budget_usd'] > 0:
@@ -1777,8 +1773,6 @@ def apply(accounts, inventory=None):
             if window_ids:
                 spec.setdefault('windows', {}).update({wid: {'hours': 168, 'launch_min_remaining_pct': 5}
                                                        for wid in window_ids if wid not in spec.get('windows', {})})
-                for wid in window_ids:
-                    spec.setdefault('burn_pct_per_worker_hour', {}).setdefault(wid, 1.0)
         if row.get('allowed_cwd') and 'allowed_cwd' not in spec:
             spec['allowed_cwd'] = row['allowed_cwd']
         if row.get('cwd_regex') and 'cwd_regex' not in spec:
@@ -1786,7 +1780,6 @@ def apply(accounts, inventory=None):
         if is_litellm or spec.get('backend_kind') in ('litellm', 'proxy'):
             spec['billing'] = 'metered'
             spec.setdefault('windows', {'spend': {'hours': 168, 'launch_min_remaining_pct': 5}})
-            spec.setdefault('burn_pct_per_worker_hour', {'spend': 1.0})
             if isinstance(row.get('budget_usd'), (int, float)) and row['budget_usd'] > 0:
                 spec.setdefault('capacity_usd', {})['spend'] = float(row['budget_usd'])
             spec.setdefault('bundles', {})
@@ -1820,17 +1813,12 @@ def apply(accounts, inventory=None):
                         spec[key] = copy.deepcopy(template[key])
                     else:
                         spec.pop(key, None)
-            elif family in ('claude', 'codex'):
-                for key in ('capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour'):
-                    spec.pop(key, None)
         if template and not (family in ('claude', 'codex') and not plan):
             fill_template_gaps(spec, template)
         if row.get('billing') and row['billing'] != 'unknown':
             spec['billing'] = row['billing']
         if family in ('claude', 'codex') and (not plan or row.get('billing') == 'metered'):
             spec['plan'] = 'API' if row.get('billing') == 'metered' else 'unknown'
-            for key in ('capacity_usd', 'capacity_change', 'burn_pct_per_worker_hour'):
-                spec.pop(key, None)
             if row.get('billing') == 'metered':
                 spec['windows'] = {}
             elif spec.get('plan_priced_as'):

@@ -23,7 +23,7 @@ import dispatch_flow as flow
 import dispatch_registry as registry
 import roll
 import route_judge as router
-from router_test_support import isolated_router_state, usage_windows
+from router_test_support import isolated_router_state, profile, usage_windows
 import router_data
 
 
@@ -252,7 +252,7 @@ ALLOWED_TAINT_SINK_STATEMENTS = {
     (
         'skills/agent-compass/scripts/route_judge.py',
         'plan_stage',
-        "or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)",
+        "or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict))",
     ): 'checks whether task has non-empty objective to invoke System-One classifier',
     (
         'skills/agent-compass/scripts/route_judge.py',
@@ -1127,7 +1127,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
     """Rule 7: Changing task text wording must never alter routing across allocator.plan, plan_stage, or roll.run."""
 
     def setUp(self):
-        self.now = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)
+        self.now = datetime.now(timezone.utc)       # the readings must be current for the plan to price anything
         self.accounts = allocator.load_accounts()
         self.capabilities = allocator.load_capabilities(accounts=self.accounts)
         self.policy = self.accounts['scoring']
@@ -1137,44 +1137,26 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
             'codex': [('usage', 80, 100)],
             'antigravity': [('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 80, 100)],
         })
+        # The collector's cache file: one current reading per account.
+        self.cache = {'providers': {name: {'fetched_at': self.now.isoformat(), 'stale': False, 'available': True,
+                                           'windows': [{**w, 'used_pct': 100 - w['remaining_pct_before_reset']} for w in row['windows']]}
+                                 for name, row in self.usage['accounts'].items()}}
 
     def make_profile(self, **overrides):
-        base = {
-            'work_kind': 'general_implementation',
-            'reasoning_depth': 2,
-            'code_complexity': 2,
-            'context_scale': 1,
-            'divergence': 1,
-            'hallucination_risk': 2,
-            'error_cost': 2,
-            'needs_visual': False,
-            'needs_gui': False,
-            'local_only': True,
-            'realtime_loop': False,
-            'wants_fast': False,
-            'read_only_review': False,
-            'interaction_style': 'engineering',
-            'expected_hours': 1.0,
-            'hours_confidence': 'high',
-            'urgency': 'unknown',
-            'multi_task': False,
-            'task_count': '1',
-        }
-        base.update(overrides)
-        return allocator.validate_profile(base)
+        access = {'access': 'read-only'} if overrides.get('read_only_review') else {}
+        return allocator.validate_profile(profile(**{'local_only': True, 'hours_confidence': 'high', 'urgency': 'unknown',
+                                                     **access, **overrides}))
 
     def test_allocator_plan_is_invariant_across_task_text_corpus(self):
         profiles = [
             self.make_profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2),
-            self.make_profile(work_kind='debug_review', reasoning_depth=2, code_complexity=0, hallucination_risk=3,
-                              read_only_review=True, interaction_style='exploration'),
+            self.make_profile(work_kind='debug_review', reasoning_depth=2, code_complexity=0, read_only_review=True, interaction_style='exploration'),
             self.make_profile(work_kind='debug_review', reasoning_depth=2, code_complexity=2, wants_fast=True),
-            self.make_profile(work_kind='web_research', reasoning_depth=2, code_complexity=0, divergence=3,
-                              local_only=False, interaction_style='exploration'),
+            self.make_profile(work_kind='web_research', reasoning_depth=2, code_complexity=0, local_only=False, interaction_style='exploration'),
             self.make_profile(work_kind='computer_use', reasoning_depth=1, code_complexity=0,
                               needs_visual=True, needs_gui=True, realtime_loop=True),
             self.make_profile(work_kind='direction_reasoning', reasoning_depth=4, code_complexity=0,
-                              divergence=3, local_only=False, interaction_style='advisory'),
+                              local_only=False, interaction_style='advisory'),
         ]
         for prof in profiles:
             baseline_norm = None
@@ -1192,7 +1174,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 plan = allocator.plan(task, self.usage, self.now, accounts=self.accounts, capabilities=self.capabilities)
                 scores = [(r['id'], r['score'], r['excluded']) for r in plan['ranking']]
                 norm_key = (
-                    norm['kind'], norm['difficulty'], norm['divergence'], norm['wants_fast'],
+                    norm['kind'], norm['difficulty'], norm['profile']['axis_demand'], norm['wants_fast'],
                     norm['read_only_review'], norm['local_only'], norm['needs_gui'],
                     norm['needs_visual'], norm['realtime_loop'],
                 )
@@ -1210,7 +1192,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
         prof = self.make_profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2, local_only=True)
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / 'usage.json'
-            cache.write_text(json.dumps(self.usage), encoding='utf-8')
+            cache.write_text(json.dumps(self.cache), encoding='utf-8')
             args = argparse.Namespace(
                 stage='plan', hours=1.0, demo=False, dry_run=False, usage_cache=cache,
                 fast=False, no_score=False, score=True, score_timeout=5, keep_whole=None,
@@ -1251,7 +1233,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / 'usage.json'
-            cache.write_text(json.dumps(self.usage), encoding='utf-8')
+            cache.write_text(json.dumps(self.cache), encoding='utf-8')
             idle_worker = {
                 'agent_id': 'w-idle-1',
                 'task_ids': ['other-task'],
@@ -1303,7 +1285,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
         for reason in ('', 'in-place edits of workspace files', 'modify local files', 'needs local pytest and sqlite'):
             with tempfile.TemporaryDirectory() as directory:
                 cache = Path(directory) / 'usage.json'
-                cache.write_text(json.dumps(self.usage), encoding='utf-8')
+                cache.write_text(json.dumps(self.cache), encoding='utf-8')
                 args = argparse.Namespace(
                     stage='plan', hours=1.0, demo=False, dry_run=True, usage_cache=cache,
                     fast=False, no_score=True, score=False, score_timeout=5, keep_whole=None,
@@ -1323,8 +1305,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 self.assertNotIn('local_only_ignored_without_reason', codes)
 
     def test_independent_reviewer_gate_depends_on_profile_not_title_keywords(self):
-        review_prof = self.make_profile(work_kind='debug_review', code_complexity=0, hallucination_risk=3,
-                                         read_only_review=True, interaction_style='exploration')
+        review_prof = self.make_profile(work_kind='debug_review', code_complexity=0, read_only_review=True, interaction_style='exploration')
         author_prof = self.make_profile(work_kind='debug_review', code_complexity=2, read_only_review=False)
         for title in TASK_TEXT_CORPUS:
             workers = [
@@ -1337,7 +1318,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
         for text in TASK_TEXT_CORPUS[:4]:
             with tempfile.TemporaryDirectory() as directory:
                 cache = Path(directory) / 'usage.json'
-                cache.write_text(json.dumps(self.usage), encoding='utf-8')
+                cache.write_text(json.dumps(self.cache), encoding='utf-8')
                 args = argparse.Namespace(
                     stage='plan', hours=1.0, demo=False, dry_run=False, usage_cache=cache,
                     fast=False, no_score=False, score=True, score_timeout=5, keep_whole=None,
@@ -1370,12 +1351,11 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 self.assertEqual(roll_res['status'], 'blocked')
                 self.assertEqual(roll_res['error'], 'scorer_unavailable')
 
-                # roll --dry-run marks unclassified: True
+                # roll --dry-run does not call the classifier either: no caller profile, no route
                 dry_ns = argparse.Namespace(**{**vars(roll_ns), 'dry_run': True, 'no_score': False})
                 dry_res, dry_code = roll.run(dry_ns, router)
-                self.assertEqual(dry_code, 0)
-                self.assertTrue(dry_res.get('unclassified'))
-                self.assertEqual(dry_res.get('unclassified_reason'), 'dry_run')
+                self.assertEqual(dry_code, 2)
+                self.assertEqual((dry_res['status'], dry_res['error']), ('blocked', 'scorer_unavailable'))
 
     def test_source_string_literals_are_invariant_in_normalize_task_and_plan(self):
         strings = set()
@@ -1401,7 +1381,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
             }
             norm = allocator.normalize_task(task, self.policy, self.capabilities, self.accounts)
             return (
-                norm['kind'], norm['difficulty'], norm['divergence'], norm['wants_fast'],
+                norm['kind'], norm['difficulty'], norm['profile']['axis_demand'], norm['wants_fast'],
                 norm['read_only_review'], norm['local_only'], norm['needs_gui'],
                 norm['needs_visual'], norm['realtime_loop'],
             )

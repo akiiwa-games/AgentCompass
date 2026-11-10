@@ -1,11 +1,7 @@
 """Public/gateway launch names score consistently without changing launch IDs."""
-from datetime import datetime, timezone
-import json
 import unittest
-from unittest.mock import patch
 
 import allocator
-import auto_bundles
 from model_resolution import resolve_canonical_model
 
 from router_test_support import isolated_router_state
@@ -78,24 +74,13 @@ class ModelResolutionTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(allocator.canonical(raw, self.accounts), expected)
                 resolved = allocator.resolve_model(raw, self.accounts)
-                row = self.accounts['models'][expected]
                 spec = allocator.model_spec(self.accounts, raw)
                 if resolved['source'] == 'family':
-                    # Round 058 round 4: a family name takes the series conversion of its same-series row (its scores
-                    # and usd_per_hour), marked estimated; a small-size name on a non-small row is not in its series.
-                    self.assertTrue(spec['score_estimated'])
-                    if auto_bundles.series_target(raw, self.accounts):
-                        for field in ('tier', 'capabilities', 'subjective'):
-                            self.assertEqual(spec.get(field), row.get(field), field)
-                        if isinstance(row.get('usd_per_hour'), (int, float)):
-                            self.assertEqual(spec['usd_per_hour'], row['usd_per_hour'])
-                            self.assertNotIn('usd_estimated', spec)
-                        else:                   # the series has no price either (gpt-6-pro is a web bridge)
-                            self.assertTrue(spec['usd_estimated'])
-                    else:
-                        self.assertEqual(spec['capabilities'], auto_bundles.small_model_spec(self.accounts)['capabilities'])
+                    # A family name carries no row of its own: its scores come from the series conversion in the shipped
+                    # five-axis data, never from a copied or default spec.
+                    self.assertEqual(spec, {})
                 else:
-                    self.assertEqual(spec, row)
+                    self.assertEqual(spec, self.accounts['models'][expected])
 
     def test_exact_custom_models_aliases_and_existing_calibrations_win(self):
         for name, spec in self.accounts['models'].items():
@@ -104,7 +89,7 @@ class ModelResolutionTests(unittest.TestCase):
                 self.assertIs(allocator.model_spec(self.accounts, name), spec)
         for alias, target in self.accounts['aliases'].items():
             self.assertEqual(allocator.canonical(alias, self.accounts), target)
-        self.accounts['models']['gpt-5-custom'] = {'tier': 4.9}
+        self.accounts['models']['gpt-5-custom'] = {'fast_capable': False}
         self.accounts['aliases']['openai/gpt-5-custom@20251001'] = 'gpt-6.1-sol'
         self.assertEqual(allocator.canonical('gpt-5-custom', self.accounts), 'gpt-5-custom')
         self.assertEqual(allocator.canonical('openai/gpt-5-custom@20251001', self.accounts), 'gpt-6.1-sol')
@@ -113,39 +98,10 @@ class ModelResolutionTests(unittest.TestCase):
         self.assertIsNone(resolve_canonical_model('loop', {}, {'loop': 'other', 'other': 'loop'}))
         self.assertIsNone(resolve_canonical_model('basis', self.accounts['models'], {}))
 
-    def test_unknown_models_use_independent_baseline_and_can_allocate(self):
-        spec = allocator.model_spec(self.accounts, 'new-vendor/unknown')
-        self.assertEqual((spec['tier'], spec['usd_per_hour'], spec['visual']),
-                         (self.accounts['unmeasured_models']['generic']['tier'], 1.5, False))
-        self.assertLess(spec['tier'], self.accounts['scoring']['ability_floor']['hard'])
-        spec['capabilities']['coding'] = 0
-        self.assertGreater(allocator.model_spec(self.accounts, 'another')['capabilities']['coding'], 0)
-        self.accounts['accounts'] = {'custom': {'billing': 'subscription', 'verified': True, 'unmetered': True, 'windows': {},
-            'bundles': {'unknown_high': {'model': 'new-vendor/unknown', 'provider': 'custom', 'effort': 'high'}}}}
-        with patch.object(allocator.host_policy, 'load_policy', return_value=None):
-            result = allocator.plan({'work_kind': 'web_research', 'difficulty': 'routine', 'expected_hours': .1},
-                                    {'accounts': {}}, datetime(2026, 10, 27, tzinfo=timezone.utc),
-                                    accounts=self.accounts, records=[], overrides=[])
-        row = result['ranking'][0]
-        self.assertEqual(row['id'], 'unknown_high')
-        self.assertEqual(row['excluded'], [])
-        self.assertGreater(row['score'], 0)
-
-    def test_mainstream_defaults_have_complete_bounded_vectors_and_matching_reference(self):
-        defaults = allocator.load_capabilities(accounts=self.accounts)['mainstream_defaults']['models']
-        scored = {k: v for k, v in self.accounts['models'].items() if isinstance(v, dict)}
-        self.assertEqual(set(defaults), set(scored))
-        for name, row in defaults.items():
-            with self.subTest(name=name):
-                self.assertEqual(row['capabilities'], self.accounts['models'][name]['capabilities'])
-                self.assertEqual(row['subjective'], self.accounts['models'][name]['subjective'])
-                self.assertTrue(all(0 <= x <= 1 for x in [*row['capabilities'].values(), *row['subjective'].values()]))
-                self.assertEqual(set(row['capabilities']), set(allocator.CAPABILITY_DIMENSIONS))
-                self.assertEqual(row['tier'], scored[name]['tier'])
-                self.assertEqual(row.get('usd_per_hour'), scored[name].get('usd_per_hour'))
-                if 'usd_per_hour' in row:
-                    self.assertGreaterEqual(row['usd_per_hour'], 0)
-        self.assertEqual(self.accounts['models']['grok-4.7']['usd_per_hour'], 1.5)
+    def test_unknown_models_have_no_row_score_or_price(self):
+        self.assertEqual(allocator.resolve_model('new-vendor/unknown', self.accounts)['source'], 'unknown')
+        self.assertEqual(allocator.model_spec(self.accounts, 'new-vendor/unknown'), {})
+        self.assertNotIn('unmeasured_models', self.accounts)
 
     def test_obsolete_defaults_are_removed_and_catalog_gaps_stay_explicit(self):
         obsolete = {
@@ -170,26 +126,19 @@ class ModelResolutionTests(unittest.TestCase):
         for name in ['llama-future', 'gpt-4-future', 'unknown-vendor']:
             self.assertIsNone(resolve_canonical_model(name, self.accounts['models'], self.accounts['aliases']))
 
-    def test_current_frontier_tiers_and_modality_contracts(self):
+    def test_current_frontier_tiers_and_context_windows(self):
+        shipped = allocator.load_five_axis()['models']
         for name, tier in {
-            # Fable 5.1, Haiku 5.5, Terra and Luna are measured on LMArena and moved to High with the AA effort curves
-            # (calibration/apply_rows.py); the six anchors are the user's.
-            'gpt-6-pro': 5.0, 'claude-opus-5-5': 4.6, 'claude-fable-5-1': 4.0,
-            'claude-sonnet-5-5': 3.9, 'claude-haiku-5-5': 2.94,
-            'gpt-6-astra': 4.2, 'gpt-6.1-sol': 3.6, 'gpt-6-sol': 3.48, 'gpt-6.1-terra': 3.2,
-            'gpt-6-luna': 2.61, 'gemini-4-argon-high': 4.0,
-            'gemini-3.8-flash-high': 3.0, 'grok-4.7': 3.4,
-            'grok-4.7-build-fast': 3.4, 'deepseek-v4-pro': 2.86,
-            'deepseek-v4.1-flash-free': 2.8, 'glm-5.3': 3.08,
-            'glm-5.3-flash-free': 2.85,
+            # The six anchors are the user's; every other tier is read off the arena.ai Overall board (or interpolated).
+            'claude-opus-5-5': 4.6, 'claude-sonnet-5-5': 3.9, 'gpt-6-astra': 4.2, 'gpt-6.1-sol': 3.6, 'grok-4.7': 3.4,
+            'gemini-3.8-flash-high': 3.0,
         }.items():
-            self.assertEqual(self.accounts['models'][name]['tier'], tier, name)
-        for name in ['grok-4.7-build-fast', 'deepseek-v4-pro', 'qwen3-coder-next',
-                     'nemotron-3-ultra-free', 'nemotron-3.5-lightning-free']:
-            self.assertFalse(self.accounts['models'][name]['visual'], name)
-            self.assertEqual(self.accounts['models'][name]['capabilities']['gui'], 0)
+            self.assertEqual(shipped[name]['tier']['value'], tier, name)
+            self.assertEqual(shipped[name]['tier']['method'], 'anchor', name)
+        for name in self.accounts['models']:
+            if isinstance(self.accounts['models'][name], dict):
+                self.assertIn(name, shipped, name)
         self.assertEqual(self.accounts['models']['gpt-6.1-terra']['context_window'], 500000)
-        self.assertGreater(self.accounts['models']['nemotron-3.5-super-vl-free']['capabilities']['visual'], 0)
 
 
 if __name__ == '__main__':

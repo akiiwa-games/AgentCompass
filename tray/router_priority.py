@@ -19,9 +19,7 @@ import uuid
 DURATIONS = (1, 3, 6, 12, 24)
 BOOST = 0.35
 INTENT = 'tray:anticipated-reset'
-# Quick reset-priority targets: the fleet document's `priority_targets` ([{account, model, label?}]) when set,
-# otherwise the strongest enabled model of each account with a weekly-or-longer window.
-QUICK_LIMIT = 3
+# Quick reset-priority targets: the fleet document's `priority_targets` ([{account, model, label?}]).
 DEFAULT_HOURS = 24
 RESET_BADGE_HOURS = 12
 
@@ -98,34 +96,13 @@ def active(row, now, allocator):
     return until is not None and until > now
 
 
-def dynamic_priority(row, allocator, accounts, usage, now):
-    """Current countdown and surplus bonus before a task's consumption is deducted."""
+def countdown(row, allocator, now):
+    """Hours left until the rule's expected reset, and its label; the boost itself is the rule's fixed `boost`."""
     reset = allocator.expected_reset_time(row)
     if reset is None:
-        return {'dynamic_boost': None, 'remaining_hours': None, 'countdown': ''}
+        return {'remaining_hours': None, 'countdown': ''}
     hours = max(0.0, (reset - now).total_seconds() / 3600)
-    account = row.get('account')
-    spec = accounts.get('accounts', {}).get(account) or {}
-    observed = usage.get('accounts', {}).get(account) or {}
-    policy = accounts['scoring']
-    model = allocator.canonical(row['model'], accounts) if row.get('model') else None
-    bonus = 0.0
-    if hours > 0 and not allocator.override_reset_landed(row, usage, accounts, now):
-        for wid, wspec, win in allocator.applicable_windows(spec, model, observed):
-            expected = allocator.window_reset_expectation([row], account, model, wid, spec, accounts, now)
-            if expected is None:
-                continue
-            state = allocator.window_state(wid, wspec, win, spec, now, policy['short_window_hours'],
-                                           account_stale=observed.get('status') == 'stale' or observed.get('stale') is True,
-                                           expected_reset_at=expected)
-            if not state['known']:
-                continue
-            forecast = allocator.demand_forecast(spec, wid, state, policy)
-            if forecast is not None:
-                cost = allocator.window_cost(spec, wid, state, 0, forecast, policy, {'notes': []}, now)
-                bonus = max(bonus, cost.get('reset_bonus', 0.0))
-    return {'dynamic_boost': bonus, 'remaining_hours': hours,
-            'countdown': _tr('预计 {0}h 后重置').format(f'{hours:.1f}')}
+    return {'remaining_hours': hours, 'countdown': _tr('预计 {0}h 后重置').format(f'{hours:.1f}')}
 
 
 def overlaps(row, account, model, now, allocator, accounts):
@@ -160,17 +137,8 @@ def _weekly_window(allocator, accounts, account, model):
 def targets(allocator, accounts):
     candidates = _candidates(allocator, accounts)
     configured = [t for t in accounts.get('priority_targets') or () if isinstance(t, dict)]
-    if configured:
-        wanted = [(t.get('account'), t.get('model')) for t in configured]
-        pairs = [pair for pair in wanted if pair in candidates]
-    else:
-        models = accounts.get('models') or {}
-        best = {}
-        for account, model in candidates:
-            tier = (models.get(model) or {}).get('tier') or 0
-            if _weekly_window(allocator, accounts, account, model) and tier > best.get(account, (None, -1))[1]:
-                best[account] = (model, tier)
-        pairs = sorted(((a, m) for a, (m, _) in best.items()), key=lambda pair: -best[pair[0]][1])[:QUICK_LIMIT]
+    wanted = [(t.get('account'), t.get('model')) for t in configured]
+    pairs = [pair for pair in wanted if pair in candidates]
     result = []
     for account, model in pairs:
         wid = _weekly_window(allocator, accounts, account, model)
@@ -303,10 +271,12 @@ def snapshot(now=None):
             and not allocator.override_reset_landed(r, None, accounts, now)]
     entries = [{'label': model_label(r['model'], accounts) if r.get('model') else account_label(r.get('account')) or _tr('其他'),
                 'id': r['id'], 'revision': revision(r),
-                **dynamic_priority(r, allocator, accounts, usage, now)} for r in rows]
+                'boost': r.get('boost'), **countdown(r, allocator, now)} for r in rows]
     for entry in entries:
-        if entry['dynamic_boost'] is not None:
-            entry['label'] += _tr(' · {0} · 动态加成 +{1}').format(entry['countdown'], f"{entry['dynamic_boost']:.2f}")
+        if entry['remaining_hours'] is not None:
+            entry['label'] += ' · ' + entry['countdown']
+        if entry['boost']:
+            entry['label'] += _tr(' · 加成 +{0}').format(f"{entry['boost']:.2f}")
     choices = targets(allocator, accounts)
     for t in choices:
         t['selected'] = any(overlaps(r, t['account'], t['model'], now, allocator, accounts) for r in rows)

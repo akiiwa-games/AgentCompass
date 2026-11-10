@@ -1,16 +1,15 @@
 """Keep the five-axis data current (round 047, round 4): fetch every public source again, rebuild
 `references/public-measurements.json` and `references/five-axis-scores.json`, and report each source's age.
 
-`python -X utf8 refresh.py [--data DIR] [--no-fetch] [--usd-basis NAME] [--report PATH]`
+`python -X utf8 refresh.py [--data DIR] [--no-fetch] [--report PATH]`
 
 - Fetch: `sources.fetch` downloads the benchmark boards and the community pages into DIR and writes the fetch
   manifest (url, fetched_at, sha256 per file). A source that fails is recorded missing and its old copy deleted, so a
   value is never carried over silently from an earlier download.
 - Rebuild: `measurements.py` then `five_axis.py` on that directory; every value keeps its data date (`as_of`) and the
-  fetch time of its file (`fetched_at`). Then `apply_rows.refresh_estimates` re-estimates, from the new AA readings, the
-  accounts.json scores that have no direct measurement (round 058): an estimate yields to any value it did not write,
-  and one that loses its out-of-sample skill reverts to its prior (`--no-estimates` skips this step).
-- Report: the community usd-per-hour check rows against the usd basis (community / option B), then per source its
+  fetch time of its file (`fetched_at`). A type score estimated through the tier is rebuilt each time: a direct
+  measurement that arrived replaces it, and a fit that lost its out-of-sample skill leaves the score missing.
+- Report: the community usd-per-hour check rows against the usd_per_hour in use, then per source its
   kind, data date, age in days and status: `ok`; `stale` (older than five_axis.STALE_DAYS, a
   yellow note: still used); `missing` (not fetched, or a community sentence no longer on the page: red, no value).
   Capacity windows with an empty capacity ladder are listed as red.
@@ -19,10 +18,7 @@ Exit status: 0 all fresh, 1 something stale (yellow), 2 something missing (red),
 
 Scheduling (nothing is installed by this script): run it weekly, after wokey.ai's Monday remeasurement, from the
 maintainer's checkout or a CI job, review the diff and the report, and commit the two references files. Installs pick
-the committed files up with the next release; once `scoring.five_axis.enabled` ships on, adding
-`five-axis-scores.json` to `public_data.FILES` (and reading it through `public_data.effective` in
-allocator.load_five_axis) lets installs receive a refresh between releases through the public-data channel, and the
-tray can show `source_ages` / `capacity_errors` from the same file.
+the committed files up with the next release.
 """
 import argparse
 import json
@@ -30,7 +26,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import apply_rows
 import five_axis
 import measurements
 import sources
@@ -38,13 +33,13 @@ import sources
 LEVEL = {'ok': 0, 'unused': 0, 'stale': 1, 'missing': 2}   # unused: fetched, left out by design (METR)
 
 
-def rebuild(target, usd_basis='community_mix', now=None, meas_out=measurements.OUT, scores_out=five_axis.OUT):
+def rebuild(target, now=None, meas_out=measurements.OUT, scores_out=five_axis.OUT):
     acc = sources.accounts()
     meas = measurements.Builder(target, acc).build()
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
     Path(meas_out).write_bytes(raw)
     plans = json.loads(five_axis.PLANS.read_text(encoding='utf-8'))
-    doc = five_axis.build(meas, acc, plans, meas_bytes=raw, usd_basis=usd_basis, now=now)
+    doc = five_axis.build(meas, acc, plans, meas_bytes=raw, now=now)
     Path(scores_out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     return meas, doc
 
@@ -74,10 +69,10 @@ def staleness(doc):
 def markdown(rows, generated_at, checks=()):
     out = []
     if checks:
-        out += ['Community usd per worker-hour / the usd basis (a check of option B; 1.0 = agreement)', '',
-                '| Model | Community $/h | Basis | Basis $/h | Community / basis | Source | Data date |',
-                '| :--- | ---: | :--- | ---: | ---: | :--- | :--- |']
-        out += [f"| {c['model']} | {c['value']} | {c['basis']} | {c['basis_value']} | {c['community_over_basis']} | {c['source']} "
+        out += ['Community usd per worker-hour / the usd_per_hour in use (1.0 = agreement)', '',
+                '| Model | Community $/h | usd_per_hour | Community / usd_per_hour | Source | Data date |',
+                '| :--- | ---: | ---: | ---: | :--- | :--- |']
+        out += [f"| {c['model']} | {c['value']} | {c['usd_per_hour']} | {c['community_over_usd']} | {c['source']} "
                 f"| {c['as_of']} |" for c in checks]
         out.append('')
     out += [f'Source ages at {generated_at} (stale after {five_axis.STALE_DAYS} days)', '',
@@ -92,17 +87,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--data')
     ap.add_argument('--no-fetch', action='store_true', help='rebuild from the downloads already in DIR')
-    ap.add_argument('--usd-basis', default='community_mix', choices=sorted(five_axis.USD_BASES))
     ap.add_argument('--report', help='also write the source-age table (markdown) here')
-    ap.add_argument('--no-estimates', action='store_true', help='leave the accounts.json estimates as they are')
     args = ap.parse_args()
     target = sources.data_dir(args.data)
     if not args.no_fetch:
         sources.fetch(target)
-    meas, doc = rebuild(target, args.usd_basis)
-    if not args.no_estimates:
-        _, _, touched = apply_rows.refresh_estimates(meas)
-        print(f'accounts.json estimates: {len(touched)} row(s) changed' + (f": {', '.join(sorted(touched))}" if touched else ''))
+    _, doc = rebuild(target)
     rows, worst = staleness(doc)
     text = markdown(rows, datetime.now(timezone.utc).isoformat(timespec='seconds'), doc.get('usd_checks') or ())
     print(text)

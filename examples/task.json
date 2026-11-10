@@ -6,6 +6,30 @@
     "needs": {
       "local_only": true,
       "local_only_reason": "Runs pytest against local repository fixtures on this machine."
+    },
+    "profile": {
+      "work_kind": "general_implementation",
+      "reasoning_depth": 2,
+      "code_complexity": 2,
+      "needs_visual": false,
+      "needs_gui": false,
+      "local_only": true,
+      "realtime_loop": false,
+      "wants_fast": false,
+      "read_only_review": false,
+      "access": "write",
+      "expected_hours": 1.5,
+      "hours_confidence": "medium",
+      "urgency": "normal",
+      "interaction_style": "engineering",
+      "multi_task": false,
+      "task_count": "1",
+      "axis_demand": {
+        "divergence": 1,
+        "global_rigor": 1,
+        "module_precision": 2,
+        "vision_tools": 0
+      }
     }
   }
 }

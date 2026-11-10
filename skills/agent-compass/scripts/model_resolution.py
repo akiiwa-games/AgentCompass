@@ -1,25 +1,9 @@
 """Local model-name normalization shared by discovery and allocation.
 
-Defaults are routing priors, not measured benchmarks or provider price quotes.
-Always preserve an exact calibrated model/alias before trying family fallbacks.
+Always preserve an exact calibrated model/alias before trying a family match. A name that is not a calibrated row has
+no scores (nothing here supplies a default row).
 """
-import copy
 import re
-
-
-GENERIC_MODEL_SPEC = {
-    'tier': 3.3, 'cost': 2, 'visual': False, 'usd_per_hour': 1.5,
-    'capabilities': {'reasoning': 0.55, 'coding': 0.55, 'exploration': 0.55,
-                     'anti_hallucination': 0.5, 'visual': 0.0, 'gui': 0.0},
-    'subjective': {'divergence': 0.5, 'global_rigor': 0.5, 'module_precision': 0.5},
-    'basis': 'Conservative provisional baseline for an unrecognized advertised model.',
-}
-
-
-def generic_model_spec(accounts=None):
-    """The default row for an unmeasured model: public data's `unmeasured_models.generic`, else the built-in baseline."""
-    row = ((accounts or {}).get('unmeasured_models') or {}).get('generic')
-    return copy.deepcopy(row if isinstance(row, dict) else GENERIC_MODEL_SPEC)
 
 
 # A `:effort` suffix names an effort, not a vendor tag: `claude-opus-5-5:medium` asks for Medium.

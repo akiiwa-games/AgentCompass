@@ -62,7 +62,7 @@ class PriorityTests(unittest.TestCase):
         self.assertEqual(self.rows()[0]['until'], (self.now+timedelta(hours=1)).isoformat())
         self.assertEqual(self.rows()[0]['baseline_windows'], row['baseline_windows'])
 
-    def test_countdown_and_bonus_follow_time_and_panel_defaults_are_dynamic(self):
+    def test_countdown_follows_time_and_a_rule_without_boost_shows_no_bonus(self):
         import router_data
         with patch.object(router_data, 'modules', return_value=(self.a, self.r)):
             router_data.add_boost('codex', 'gpt-6-astra', hours=12, now=self.now)
@@ -70,9 +70,9 @@ class PriorityTests(unittest.TestCase):
             first = router_data.overrides(self.now)[0]
             later = router_data.overrides(self.now + timedelta(hours=11))[0]
         self.assertEqual((first['remaining_hours'], later['remaining_hours']), (12, 1))
-        self.assertGreater(later['dynamic_boost'], first['dynamic_boost'])
-        self.assertIn('动态加成', priority.snapshot(self.now)['label'])
-        # A dynamic-only rule still retires at the existing quota safety margin.
+        self.assertIsNone(first['boost'])
+        self.assertNotIn('加成', priority.snapshot(self.now)['label'])
+        # A countdown-only rule still retires at the existing quota safety margin.
         self.usage['accounts']['codex']['windows'][0].update(used_pct=96, remaining_pct_before_reset=4)
         self.assertEqual(priority.snapshot(self.now)['entries'], [])
 

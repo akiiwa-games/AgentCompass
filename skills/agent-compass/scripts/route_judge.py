@@ -82,20 +82,18 @@ SCORER_PROMPT = (
     '1. `local_only`: `true` only when depending on un-inlined local files/repos/processes/GUI; `false` when inputs are '
     'inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, '
     '`complex_build_plan`), even if a local output path is named.\n'
-    '2. `code_complexity`: 0 (with `hallucination_risk` 3) for ANY read-only code/diff/release review, audit, or diagnosis '
+    '2. `code_complexity`: 0 for ANY read-only code/diff/release review, audit, or diagnosis '
     '(even if saving a review report file to a specified path).\n'
-    '3. `context_scale`: 1 = single module/script or self-contained task; 2 = 2..5 coupled modules; 3 = repo/system-wide.\n'
-    '4. `divergence`: 1 = convergent spec/fix/review; 2 = multi-hypothesis diagnosis/comparison; 3 = open-ended creative.\n'
-    '5. `realtime_loop`: `true` ONLY when the worker agent itself stays inside a live external system\'s continuous '
+    '3. `realtime_loop`: `true` ONLY when the worker agent itself stays inside a live external system\'s continuous '
     'observe-act loop across turns where turn latency hurts live results (personally playing/farming a game, live ticket/'
     'flash-sale/course/appointment sniping, live order-book/API watching & trading, polling a live page/app/API to act '
     'immediately, live-stream chat). `false` for ALL coding, UI design, bug fixing, optimization, diagnosis, or log '
     'analysis—even on real-time/polling/game/dashboard/flash-sale features—and for one-off GUI clicks. Set `needs_gui` '
     'by whether the worker operates a GUI (`true`) vs pure CLI/API/WebSocket (`false`).\n'
-    '6. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
+    '4. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
     'pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation (`do not use fast '
     'mode` -> `false`; runtime step adverbs like `click immediately` or ordinary quota mentions -> `false`).\n'
-    '7. `read_only_review` & `access`: `read_only_review: true` ONLY for read-only code/diff/branch/security/release '
+    '5. `read_only_review` & `access`: `read_only_review: true` ONLY for read-only code/diff/branch/security/release '
     'reviews or audits (`code_complexity` 0, `access`=`read-only`, even if saving a report file); `false` when writing/'
     'fixing code, running ops commands, or doing general exploration. Set `access` to `read-only` when the brief only '
     'reads/inspects/analyzes without modifying workspace files/state (`code_complexity` 0), else `write`.\n'
@@ -296,7 +294,7 @@ def window_state(window, now, observation_current=True):
     used = (100.0 if used > 100 else used) if finite_number(used, low=0, high=float('inf')) else None
     passed = reset <= now if reset else None
     # A Magpie pool of N same-plan subscriptions reports their mean usage; what is left is N accounts' worth, in
-    # percent of one account (the unit of burn_pct_per_worker_hour and capacity_usd), so two fresh accounts are 200%.
+    # percent of one account (the unit of capacity_usd), so two fresh accounts are 200%.
     count = window.get('accounts')
     count = count if isinstance(count, int) and not isinstance(count, bool) and count > 1 else 1
     left = count * (100 - used) if used is not None else None
@@ -670,20 +668,6 @@ def finalize(result, payload, requested, started, task=None, records=None):
     hours_val = (decision.get('task') or {}).get('hours') or task.get('expected_hours')
     diff_val = (decision.get('task') or {}).get('difficulty') or task.get('difficulty')
     expected_usd = result.get('expected_usd') if isinstance(result.get('expected_usd'), (int, float)) else bundle.get('expected_usd')
-    if expected_usd is None and bundle and bundle.get('account') and bundle.get('model'):
-        try:
-            alloc = load_allocator()
-            accts = alloc.load_accounts()
-            pol = accts['scoring']
-            spec = accts['accounts'].get(bundle['account']) or {}
-            c_model = alloc.canonical(bundle['model'], accts)
-            m_info = alloc.model_spec(accts, bundle['model'])
-            m_curves = alloc.model_curves(accts, bundle['model'])
-            eff_hours = float(hours_val or pol['default_hours'].get(diff_val if diff_val in pol['default_hours'] else 'hard', 1.5))
-            if spec.get('billing') != 'unknown':
-                expected_usd = round(alloc.bundle_task_usd(spec, c_model, bundle.get('effort') or 'high', eff_hours, pol, m_curves, m_info, fast=bool(bundle.get('fast'))), 2)
-        except Exception:
-            expected_usd = None
     if expected_usd is not None and isinstance(bundle, dict) and bundle:
         bundle.setdefault('expected_usd', expected_usd)
         result.setdefault('expected_usd', expected_usd)
@@ -820,12 +804,13 @@ def build_request(stage, document, cache=None, now=None):
         try:
             allocator = load_allocator()
             loaded_accounts = allocator.load_accounts()
+            priced_accounts = allocator.five_axis_overlay(loaded_accounts)      # once for every candidate probed below
             now_dt = allocator.parse_time((state['usage'] or {}).get('observed_at')) or now_dt
             merged_usage = provider_inventory.merge_usage(state['usage'], loaded_accounts, now_dt)
             records = dispatch_flow.reservation_records(read_only=True)
         except Exception:
             allocator = None
-            loaded_accounts = {}
+            priced_accounts = {}
 
         def _candidate_quota_exhausted(key, cand):
             if allocator is None:
@@ -839,7 +824,7 @@ def build_request(stage, document, cache=None, now=None):
                 'effort': cand.get('effort'),
                 **({'draws': list(cand['draws'])} if isinstance(cand.get('draws'), list) else {}),
             }
-            return bool(allocator.launch_blockers(probe, loaded_accounts, merged_usage, now_dt, records=records))
+            return bool(allocator.launch_blockers(probe, priced_accounts, merged_usage, now_dt, records=records))
 
         quota_excluded = [k for k, v in state['candidates'].items() if _candidate_quota_exhausted(k, v)]
         if quota_excluded:
@@ -969,11 +954,12 @@ def scorer_prefix():
 
 def _compact_schema_for_argv(schema):
     """Strip redundant prose `description` strings from `--json-schema` on the CLI argv (the prompt already carries the
-    full field definitions and dimension rubric), keeping ~6,000+ chars of Windows command-line headroom."""
+    full field definitions and dimension rubric, including the `axis_demand` levels), keeping Windows command-line
+    headroom. Nested objects (axis_demand) lose theirs too."""
     if not isinstance(schema, dict) or not isinstance(schema.get('properties'), dict):
         return schema
     props = {
-        k: {pk: pv for pk, pv in v.items() if pk != 'description'} if isinstance(v, dict) else v
+        k: _compact_schema_for_argv({pk: pv for pk, pv in v.items() if pk != 'description'}) if isinstance(v, dict) else v
         for k, v in schema['properties'].items()
     }
     return {**schema, 'properties': props}
@@ -1015,11 +1001,9 @@ def scorer_schema(allocator, capabilities):
     props = {'work_kind': {'type': 'string', 'enum': routes, 'description': 'Canonical route classification for the task.'},
              **base['properties']}
     required = ['work_kind'] + list(base['required'])
-    enabled = getattr(allocator, 'five_axis_scorer_enabled', None)
-    if enabled and enabled():
-        # The five-axis path (round 047, off by default) takes the task's axis demand from the classifier itself.
-        props['axis_demand'] = allocator.FIVE_AXIS_DEMAND_SCHEMA
-        required.append('axis_demand')
+    # The task's category demand always comes from the classifier itself.
+    props['axis_demand'] = allocator.FIVE_AXIS_DEMAND_SCHEMA
+    required.append('axis_demand')
     return {'type': 'object', 'properties': props, 'required': required}
 
 
@@ -1035,22 +1019,37 @@ def scorer_task_fields(task):
     return {k: task[k] for k in SCORER_TASK_FIELDS if task.get(k) not in (None, '', {}, [])}
 
 
+def _flat_profile(expected):
+    """A case's expected profile as one level: a nested dict (axis_demand) becomes `parent.child` columns, so the table
+    carries each value once and its names once."""
+    flat = {}
+    for key in expected:
+        if isinstance(expected[key], dict):
+            for inner in expected[key]:
+                flat[f'{key}.{inner}'] = expected[key][inner]
+        else:
+            flat[key] = expected[key]
+    return flat
+
+
 def _compact_rubric_for_prompt(rubric):
     if not isinstance(rubric, dict) or not isinstance(rubric.get('calibration_cases'), list):
         return rubric
     cases = rubric['calibration_cases']
     fields = []
     seen = set()
+    flats = {}
     for c in cases:
         if isinstance(c, dict) and isinstance(c.get('expected_profile'), dict):
-            for k in c['expected_profile']:
+            flats[id(c)] = _flat_profile(c['expected_profile'])
+            for k in flats[id(c)]:
                 if k not in seen:
                     seen.add(k)
                     fields.append(k)
     if not fields:
         return rubric
     compact_cases = [
-        [c.get('id'), c.get('task'), [c['expected_profile'].get(f) for f in fields]]
+        [c.get('id'), c.get('task'), [flats[id(c)].get(f) for f in fields]]
         if isinstance(c, dict) and isinstance(c.get('expected_profile'), dict) else c
         for c in cases
     ]
@@ -1265,22 +1264,6 @@ JEV_SCORE_QUESTIONS = {
         'Level 1 (Light): Trivial constant/config tweak, small helper script, or research-only packet script.',
         'Level 2 (Module): Standard production module or frontend component implementation/bugfix with unit tests.',
         'Level 3 (Systems): Complex cross-module systems, lock-free concurrency, or protocol refactoring.']),
-    'context_scale': ("Rate the functional code/system scope being modified or reasoned about (ignore boilerplate paths like AGENTS.md, role docs, output receipt paths, and a module's paired unit test file).", [
-        'Level 1 (Single module): One functional module/file (plus its paired unit test and any task-brief role/receipt boilerplate).',
-        'Level 2 (Multi-module): Multiple distinct functional modules, components, or datasets coupled together.',
-        'Level 3 (Repo/System-wide): Whole-repository architecture, cross-system refactor, or multi-stage orchestrator.']),
-    'divergence': ('Rate how open-ended or multi-hypothesis the problem is.', [
-        'Level 1 (Convergent): Known target, specification, runbook, diff review, or already-isolated bug fix.',
-        'Level 2 (Multi-hypothesis): Unknown root cause requiring testing multiple competing hypotheses (e.g. intermittent bug/CPU spike investigation) or comparing design alternatives.',
-        'Level 3 (Divergent/Creative): Open-ended creative ideation, formulating novel research schemes/hypotheses from scratch, or strategic brainstorming.']),
-    'hallucination_risk': ('Rate the factual/verification strictness required (how costly or hard to catch a fabricated claim or missed defect is).', [
-        'Level 1 (Low/Self-verifying): Deterministic compiler or unit-test pass/fail directly verifies the work.',
-        'Level 2 (Medium): Mixed engineering and diagnostic judgment.',
-        'Level 3 (High strictness): Read-only code review/audit, quantitative IS/OOS metric reporting, critical production release runbook, or external factual synthesis where no test runner catches fabrications.']),
-    'error_cost': ('Rate the blast radius or cost of an error in this task.', [
-        'Level 1 (Low): Read-only exploration, draft text, offline research packet, or easily reversible local tweak.',
-        'Level 2 (Standard): Normal repository code change, bug fix, or code review.',
-        'Level 3 (Critical): Live production release/deployment, irreversible state mutation, or security-critical gate.']),
 }
 # Jev has no number primitive, so expected_hours is a choice among bands, each with the hours the LLM scorers' schema
 # describes for the same band. Urgency is a choice too. Jev reports no confidence, so hours_confidence stays unset.
@@ -1324,9 +1307,12 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
                             'instructions': 'Does the task text itself state urgency?'}
     for name, (instructions, criteria) in JEV_SCORE_QUESTIONS.items():
         questions[name] = {'type': 'score', 'instructions': instructions, 'criteria': list(criteria)}
+    allocator = load_allocator()
+    for axis, (intro, levels) in allocator.FIVE_AXIS_DEMAND_LEVELS.items():
+        questions[f'demand_{axis}'] = {'type': 'score', 'instructions': 'How much does this task need: ' + intro,
+                                       'criteria': [f'Level {i}: {text}.' for i, text in enumerate(levels)]}
     for name, instructions in JEV_NOUL_QUESTIONS.items():
         questions[name] = {'type': 'noul', 'instructions': instructions}
-    allocator = load_allocator()
     questions['realtime_loop'] = {'type': 'noul', 'instructions': allocator.REALTIME_LOOP_QUESTION}
     questions['wants_fast'] = {'type': 'noul', 'instructions': allocator.WANTS_FAST_QUESTION}
     questions['read_only_review'] = {'type': 'noul', 'instructions': allocator.READ_ONLY_REVIEW_QUESTION}
@@ -1365,11 +1351,12 @@ def parse_jev_response(response, allocator):
     profile = {'work_kind': field('work_kind', 'choice'), 'interaction_style': field('interaction_style', 'choice')}
     for name, (low, high) in allocator.PROFILE_INTEGERS.items():
         profile[name] = level(name, low, high)
+    profile['axis_demand'] = {axis: level(f'demand_{axis}', 0, 3) for axis in allocator.FIVE_AXES}
     for name in JEV_NOUL_QUESTIONS:
         profile[name] = float(field(name, 'noul')) >= 0.5
     if profile['needs_gui']:
         profile['needs_visual'] = True
-    # Optional: an older Jev deployment that does not answer them leaves the allocator's difficulty default in force.
+    # Optional: without an hours band the difficulty comes from the profile's reasoning depth; urgency stays unset.
     for name, table in (('effort_band', JEV_EFFORT_BANDS), ('urgency', JEV_URGENCY_CRITERIA)):
         answer = answers.get(name)
         choice = answer.get('choice') if isinstance(answer, dict) else answer
@@ -1378,15 +1365,9 @@ def parse_jev_response(response, allocator):
                 profile['expected_hours'] = table[choice][0]
             else:
                 profile['urgency'] = choice
-    for opt_flag in ('realtime_loop', 'wants_fast', 'read_only_review', 'multi_task'):
-        ans = answers.get(opt_flag)
-        ans = ans.get('noul') if isinstance(ans, dict) else ans
-        if isinstance(ans, (int, float)) and not isinstance(ans, bool) and math.isfinite(ans):
-            profile[opt_flag] = float(ans) >= 0.5
-    count = answers.get('task_count')
-    count = count.get('choice') if isinstance(count, dict) else count
-    if count is not None:
-        profile['task_count'] = count
+    for name in ('realtime_loop', 'wants_fast', 'read_only_review', 'multi_task'):
+        profile[name] = float(field(name, 'noul')) >= 0.5
+    profile['task_count'] = field('task_count', 'choice')
     access_ans = answers.get('access')
     access_choice = access_ans.get('choice') if isinstance(access_ans, dict) else access_ans
     if access_choice is not None:
@@ -2211,8 +2192,7 @@ def record_constraint(args, task=None):
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
     overlaid_accounts = allocator.five_axis_overlay(accounts)
     overlaid_spec = (overlaid_accounts.get('accounts') or {}).get(args.account) or {}
-    five_on = bool(overlaid_accounts.get('_five_axis'))
-    if five_on and overlaid_spec.get('capacity_unknown') and overlaid_spec.get('five_axis_free_pool'):
+    if overlaid_spec.get('capacity_unknown') and overlaid_spec.get('five_axis_free_pool'):
         warnings = [f"{args.account}/{pin.model}: capacity_unknown (quota unknown, spend unpriced); dispatched because the user named it", *warnings]
     if retrying:
         warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
@@ -2227,24 +2207,25 @@ def record_constraint(args, task=None):
         result['host_policy_violation'] = {'account': args.account, 'dispatch_allowed': False,
                                            'policy_path': str(host_policy.policy_path()[0]),
                                            'reason': 'excluded by host policy; constraint recorded, not dispatch authorization'}
-    if task:
+    if task and not isinstance(task.get('profile'), dict):
+        # record / roll --provider never calls the classifier, and the router plans only a classified task: with no
+        # caller profile there is nothing to compare the user's choice with.
+        result.update({'router_choice': None, 'agrees': None, 'classifier_skipped': True})
+    elif task:
         try:
             plan_task = {**task, 'force_fast': True} if fast_requested else task
             plan_records = (records if records is not None else
-                            dispatch_flow.reservation_records(read_only=not LEDGER_WRITES) if five_on and not (task.get('chain') or {}).get('id') else
+                            dispatch_flow.reservation_records(read_only=not LEDGER_WRITES) if not (task.get('chain') or {}).get('id') else
                             read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
             plan = allocator.plan(plan_task, usage, now, records=plan_records)
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
             row = allocator.candidate_for_bundle(plan['ranking'], chosen, fast_requested)
-            # record / roll --provider never calls the classifier. agrees is a comparison only when
-            # the caller already supplied a profile; otherwise it is a marker, not a score.
-            skipped = not isinstance(plan_task.get('profile'), dict)
             result.update({'router_choice': plan['choice'],
-                           'agrees': None if skipped else chosen is not None and chosen == (plan.get('selected_bundle') or {}).get('bundle_id', plan['choice'])
+                           'agrees': chosen is not None and chosen == (plan.get('selected_bundle') or {}).get('bundle_id', plan['choice'])
                            and fast_requested == bool((plan.get('selected_bundle') or {}).get('fast')),
-                           'classifier_skipped': skipped,
+                           'classifier_skipped': False,
                            'router_reason': plan['decision'].get('reason'),
                            'override_cost': None if row is None else {'excluded': row['excluded'], 'score': row['score'],
                                                                       'notes': row['notes']}})
@@ -2535,8 +2516,8 @@ def plan_stage(document, args):
             raise ValueError('--can-wait-hours must be a non-negative number of hours.')
         task = {**task, 'can_wait_hours': float(cwh)}
     hours = task.get('expected_hours')
-    if hours is None and task.get('hours_source') == 'classifier_difficulty':
-        pass  # The allocator budgets default_hours[difficulty] from this same classification; roll reports it.
+    if hours is None and task.get('hours_source') == 'classifier_estimate':
+        pass  # The allocator budgets the classification's own expected_hours; roll reports it.
     elif not (isinstance(hours, (int, float)) and not isinstance(hours, bool) and math.isfinite(hours) and hours > 0):
         raise ValueError('Task requires expected_hours (positive number of active worker-hours, or pass --hours <n>).')
     if getattr(args, 'demo', False):
@@ -2565,40 +2546,40 @@ def plan_stage(document, args):
     capabilities = allocator.load_capabilities()
     loaded_accounts = allocator.load_accounts()
     policy = loaded_accounts['scoring']
-    five_axis_on = allocator.five_axis_config(policy) is not None
     guard_cfg = capabilities.get('remote_reroute_guard') or {}
-    need_ledger = (not five_axis_on
-                   or bool((task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else False)
+    need_ledger = (bool((task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else False)
                    or bool(guard_cfg.get('enabled') is True and isinstance(guard_cfg.get('bundle_id'), str)
                            and guard_cfg.get('bundle_id') in unavailable))
     records = ((read_ledger() if need_ledger else [])
                + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
     extra_alerts, scorer = [], None
     hours_estimate = None
-    live_disabled = os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1'
-    has_caller_spec = bool(task.get('work_kind') and task.get('difficulty'))
     fatal_gap = bool((readiness_gap(loaded_accounts, usage) or {}).get('fatal'))
     should_score = not args.no_score and not fatal_gap and (
         args.score or task.get('auto_score')
-        or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict)
-            and not (live_disabled and has_caller_spec))
+        or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict))
     )
-    if not fatal_gap and getattr(args, 'stage', None) == 'roll' and not args.dry_run and args.no_score and not isinstance(task.get('profile'), dict):
+    if not fatal_gap and not should_score and not isinstance(task.get('profile'), dict):
         return scorer_unavailable_result(
             task,
             {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
-             'fallback_detail': 'roll --no-score requires a complete caller-supplied task.profile.'},
+             'fallback_detail': 'This run does not call the classifier (--no-score, or a dry run without --score), so it '
+                                'requires a complete caller-supplied task.profile.'},
             started,
         ), 2
+    if fatal_gap and not isinstance(task.get('profile'), dict):
+        # No account can launch anything, so there is nothing to classify for: report that, with the way to set up.
+        planned = {'stage': 'plan', 'choice': 'none', 'ranking': [], 'usage': usage, '_unavailable': unavailable,
+                   'decision': {'action': 'none', 'needs_user_decision': True}}
+        apply_readiness_gap(planned, loaded_accounts, usage)
+        return finalize(planned, None, 'auto', started, reviewed_task), 2
     if should_score:
         profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
         if profile is None:
             return scorer_unavailable_result(task, scorer, started), 2
-        if 'realtime_loop' not in profile:
-            profile = {**profile, 'realtime_loop': False}
         classified_kind = allocator.profile_kind(profile, policy)
         derived = allocator.profile_difficulty(profile, policy)
-        order = list(policy['ability_floor'])
+        order = list(allocator.DIFFICULTY_ORDER)
         if task.get('difficulty') in order and order.index(task['difficulty']) > order.index(derived):
             extra_alerts.append({
                 'code': 'difficulty_above_profile', 'severity': 'info', 'account': None,
@@ -2626,7 +2607,7 @@ def plan_stage(document, args):
                 'reason': needs['local_only_reason'],
                 'message': 'The task profile requires local execution: ' + needs['local_only_reason']})
         task = {**task, 'profile': profile}
-        if task.get('hours_source') == 'classifier_difficulty' and task.get('expected_hours') is None:
+        if task.get('hours_source') == 'classifier_estimate' and task.get('expected_hours') is None:
             if scorer.get('source') == 'system_one' and profile.get('expected_hours'):
                 task['expected_hours'] = profile['expected_hours']
                 hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
@@ -2682,7 +2663,7 @@ def plan_stage(document, args):
             'code': 'worker_compaction_rotate', 'severity': 'warn', 'account': None,
             'message': f"The previous worker reached the compaction/context rotation limit; do not resume it. "
                        f"Start a fresh {planned.get('choice')} worker with a handoff summary."})
-    if planned.get('choice') == 'dot_text' and 'dot' not in (capabilities['routes'].get(kind) or {}).get('preferred', []):
+    if planned.get('choice') == 'dot_text':
         planned.setdefault('alerts', []).append({
             'code': 'dot_handoff', 'severity': 'info', 'account': 'dot',
             'message': 'Dot runs on its remote computer. One-command file workflow: '
@@ -2693,19 +2674,12 @@ def plan_stage(document, args):
             'code': 'unknown_work_kind', 'severity': 'warn', 'account': None,
             'message': f"work_kind {task['work_kind']!r} is not a route, so the plan treated it as other_or_mixed. "
                        'Use one of: ' + ', '.join(capabilities['routes']) + '.'})
-    if task.get('hours_source') == 'classifier_difficulty':
+    if task.get('hours_source') == 'classifier_estimate':
         planned['hours_estimate'] = hours_estimate or {
-            'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'difficulty_default',
-            'confidence': 'unknown', 'limit': 'no usable classifier estimate; the policy default for the difficulty was used'}
+            'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'caller_profile',
+            'confidence': task['profile'].get('hours_confidence', 'unknown')}
     if scorer is not None:
         planned['scorer'], planned['task_profile'] = scorer, task['profile']
-    if not isinstance(task.get('profile'), dict):
-        planned['unclassified'] = True
-        planned['unclassified_reason'] = (
-            'no_score_without_profile' if args.no_score else 'dry_run' if args.dry_run
-            else 'live_scorer_disabled' if (live_disabled and has_caller_spec)
-            else 'no_task_profile'
-        )
     planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
     result = finalize(planned, None, 'auto', started, reviewed_task)
     return result, 0 if result.get('choice') != 'none' else 2
@@ -2854,9 +2828,7 @@ def main():
             derived = allocator.profile_difficulty(profile, policy)
             result = {'stage': 'score', 'source': scorer['source'], 'task_profile': profile, 'scorer': scorer,
                       'derived': {'kind': allocator.task_kind({**task, 'profile': profile}, capabilities, policy),
-                                  'difficulty': task.get('difficulty') or derived, 'profile_difficulty': derived,
-                                  'critical': bool(isinstance(task.get('needs'), dict) and task['needs'].get('critical'))
-                                              or profile['error_cost'] >= 3}}
+                                  'difficulty': task.get('difficulty') or derived, 'profile_difficulty': derived}}
             print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
             return 0
         if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):

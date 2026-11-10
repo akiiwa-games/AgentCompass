@@ -4,7 +4,7 @@ Everything beyond the one-line `roll` path in SKILL.md: overview, when to self-e
 
 ## Overview & Quickstart
 
-- **Purpose**: task-level router for coding agents (Claude Code, Codex, Antigravity, Paseo). It scores a task's difficulty and kind, then allocates the best-fit model and effort across your subscribed accounts using live quota windows.
+- **Purpose**: task-level router for coding agents (Claude Code, Codex, Antigravity, Paseo). It classifies the task (kind, how much it needs of four categories, hours), then allocates the best-fit model and effort across your subscribed accounts using live quota windows.
 - **Credential-free demo** (any directory; synthetic quotas, no network, no ledger writes, no worker launched): `agentcompass plan --demo --dry-run`
 - **Dispatch**: `agentcompass roll --task "<what the worker should do>"` (`--task -` reads stdin, `--brief task.md` reads a file).
 - **Command**: `agentcompass` is the only entry. Installed package: `agentcompass <command>`. Source checkout without an install: `python -X utf8 <checkout>/agentcompass <command>`, the same commands from any directory. `agentcompass -h` lists them, `agentcompass <command> -h` shows one. Do not run files under `scripts/` yourself.
@@ -82,7 +82,7 @@ without a launcher are listed without changing the user's active account. See
 [provider discovery and quota sources](provider-usage.md).
 
 The sole machine-readable public catalogue is [`accounts.json`](accounts.json).
-Its model rows and `capability_policy` define public capability priors and route scopes.
+Its model rows and `capability_policy` define model settings and route scopes.
 [`model-capabilities.json`](model-capabilities.json) and
 [`model-capabilities.md`](model-capabilities.md) are generated views; regenerate
 with `python -X utf8 skills/agent-compass/scripts/capability_catalog.py` (`--check` verifies them).
@@ -97,9 +97,9 @@ There is no machine-local fleet document: a clean install reaches the same routi
 discovery plus public data alone. Keep explanations in `~/.agent-compass/host-rules/*.md`.
 
 The allocator first checks discovered availability, explicit disablement, host policy,
-expiry, required tools and modalities, configured route restrictions and ability floors.
-It then scores eligible candidates using the effective scoring weights, model capability
-priors, optional personal preference vectors, continuity and available quota evidence.
+expiry, required tools and modalities, configured route restrictions and whether the model has data for every
+category the task demands. It then scores eligible candidates: the fit of the model's four category scores to the task's
+demand, continuity, and the quota economy's price for the spend.
 On `realtime_loop: true` tasks (where the worker itself stays inside a live external
 system's observe-act loop across turns), the allocator also evaluates each bundle's
 per-turn `responsiveness` (`0..1`, per-effort in `effort_curves.<model>.responsiveness`,
@@ -108,24 +108,20 @@ computed offline by `scripts/refresh_speed_data.py` from Artificial Analysis `tt
 `output_tps` benchmarks — with OpenRouter `p50_latency`/`p50_throughput` as fallback only
 when AA speed is absent — via `T_turn = (ttft_s + 400 / output_tps) * harness_overhead`,
 mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` in `scoring.responsiveness`):
-- The floor `scoring.responsiveness.floor` (`0.50`, `T_turn <= 24.5s`) is evaluated per `(model, effort)`. If a bundle's configured effort is below `floor`, an unnamed row steps down to the nearest faster effort in `effort_curves.<model>.responsiveness` that clears both `floor` and the task ability gate (when no lower-effort sibling bundle on the same account/harness/model already clears `floor`), then competes with the other rows by score. A model named alone chooses its level by score instead; see [Pins](#model-names-efforts-and-pins). Models with no supported effort clearing `floor` (such as `gemini-4-argon-high` at `46.2s -> 0.000`) or marked `not_applicable` (`grok-bot`, `dot`) are excluded with `"too slow per turn for a live loop"`.
-- `responsiveness` shares `scoring.responsiveness.weight` (`0.35`) of `fit`, and when `needs_gui: true` (determined by the classifier or explicit caller input; never auto-promoted by `realtime_loop`), `computer_use`'s `gui` capability fit is blended in.
-- Models without community speed benchmarks receive the conservative `scoring.responsiveness.default` (`0.52`, above the floor so not excluded, below fast measured models so ranked behind them) and record `responsiveness: default` in the decision. Optional local telemetry (`speed-telemetry.json` in the state dir) shrinks toward observed local turn latency only after `min_samples` is reached, bounded by `max_blend` and `max_shift`. Non-`realtime_loop` tasks are completely unaffected.
-Public routes ship a calibrated model order and public scoring gives preference vectors
-weight 0.49. A route restricts models only with `restrict_models: true` and a nonempty
-`preferred` list. A dynamically discovered bundle starts checked unless public data lists
+- The floor `scoring.responsiveness.floor` (`0.50`, `T_turn <= 24.5s`) is evaluated per `(model, effort)`. If a bundle's configured effort is below `floor`, an unnamed row steps down to the nearest faster effort in `effort_curves.<model>.responsiveness` that clears `floor` (when no lower-effort sibling bundle on the same account/harness/model already clears `floor`), then competes with the other rows by score. A model named alone chooses its level by score instead; see [Pins](#model-names-efforts-and-pins). Models with no supported effort clearing `floor` (such as `gemini-4-argon-high` at `46.2s -> 0.000`) or marked `not_applicable` (`grok-bot`, `dot`) are excluded with `"too slow per turn for a live loop"`.
+- `responsiveness` is a gate and a step-down rule only; it adds nothing to the score.
+- Models without community speed benchmarks take `scoring.responsiveness.default` (`0.52`, above the floor so not excluded) and record `responsiveness: default` in the decision. Optional local telemetry (`speed-telemetry.json` in the state dir) shrinks toward observed local turn latency only after `min_samples` is reached, bounded by `max_blend` and `max_shift`. Non-`realtime_loop` tasks are completely unaffected.
+A dynamically discovered bundle starts checked unless public data lists
 its model in `superseded` (`{old id: {by: newer id, basis}}`); efforts and harnesses of one
 model share the entry, and a model unknown to the data starts checked. The user's
 model-management checkbox (`disabled` in accounts-override.json) overrides that default.
 Checked metered bundles stay a last resort: explicit selection, `metered_ok`, or no eligible
-subscription bundle. The free-usage bonus is declared per account in public data
-(`free_usage_bonus: true`, shipped on Dot only) and needs a measured model row (no
-`score_estimated`) whose ability meets the task's required ability; other free accounts
-(OpenCode free models) compete on their zero opportunity cost alone.
+subscription bundle. A free pool (a free plan or a declared free allowance) is an ordinary quota pool priced by the quota economy like any other; a model with no data for a demanded category is out of automatic routing there too. Purpose-limited unmetered services (Dot, ChatGPT Web) have no quota to relieve.
 
-A discovered plan supplies capacity and burn priors; a family whose product does not
-report its tier locally uses the documented `<family>.default` plan (Antigravity: Pro,
-the smallest paid tier), never no capacity. A plan no template names, or a Claude/Codex
+A discovered plan supplies its window structure; its capacity comes only from community real-usage data per plan and window
+(`five-axis-scores.json`). A plan or window without a cited capacity is unknown, and its account stays out of automatic
+routing until the data has it. A family whose product does not report its tier locally uses the documented `<family>.default`
+plan's windows (Antigravity: Pro). A plan no template names, or a Claude/Codex
 account with no plan, is priced at the family's smallest paid plan with a warning
 (`plan_unknown`, `plan_priced_as`). Unknown quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
 free models, Dot, the ChatGPT Pro web bridge) are marked so in the template; observed
@@ -143,16 +139,16 @@ under the communication contract below.
 
 ### Model names, efforts and pins
 
-The same rules hold in the other repositories that port this router; `audit/gen_routing_parity.py` writes the data they compare against from a fixed commit.
+The same rules hold in the other repositories that port this router.
 
 **One resolver.** `model_resolution.resolve_model` is the only place a provider's spelling becomes a model. It returns `{key, source, effort, bare}`:
 
-| `source` | Meaning | Tier and abilities | Responsiveness |
+| `source` | Meaning | Category scores | Responsiveness |
 |---|---|---|---|
 | `exact` | the calibrated id itself | its own row | its measured curve |
 | `alias` | another spelling of it: prefix, date, `-latest`, `-preview`, `[1m]`, letter case, a listed alias | its own row | its measured curve |
 | `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the same-series target's scores and usd_per_hour (series conversion; a small-size name on a non-small target is not in its series and gets the small row), marked estimated | `0.52`, `source: default`; no local telemetry and no step-down |
-| `unknown` | no match | the generic text-only baseline | `0.52`, `source: default` |
+| `unknown` | no match | no scores: a demanded category is a data error and the model leaves automatic routing | `0.52`, `source: default` |
 
 A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry or curve.
 
@@ -179,11 +175,11 @@ A ledger row with no saved snapshot and no split answer cannot be replayed: its 
 
 ### No eligible bundle
 
-When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. The floor (`scoring.ability_floor`, or a route's own) is a hard gate at every difficulty, so a lower tier is never offered instead. If no bundle on the usable accounts clears the floor at all, the reason says so first. If a bundle that clears it is held back only by its own account's quota windows (`allocator.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise. Frontier work (floor = Astra's anchor tier, the lowest top tier a vendor subscription ships) relies on this: when every model at or above it is out of quota, it waits rather than downgrading.
+When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. If a bundle is held back only by its own account's quota windows (`allocator.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise.
 
 ### Calibration data
 
-`calibration/` refits model rows, effort curves and floors from LMArena, vals.ai and Artificial Analysis. See [`../calibration/README.md`](../calibration/README.md). Raw downloads stay outside git.
+`calibration/` refits model scores and effort curves from LMArena, vals.ai and Artificial Analysis. See [`../calibration/README.md`](../calibration/README.md). Raw downloads stay outside git.
 
 ### Distribution simulation and ledger replay
 
@@ -192,11 +188,11 @@ When nothing clears the gate, `plan` returns `choice: none` with `decision.actio
 ```bash
 python -X utf8 scripts/route_simulation.py grid [--mode machine|fresh|both] [--state NAME ...] [--json out.json]
 python -X utf8 scripts/route_simulation.py grid --accounts "claude pro" --accounts "opencode free" [--state NAME ...]
-python -X utf8 scripts/route_simulation.py explain --kind general_implementation [--difficulty hard] [--local] [--state "claude scarce"] [--bundle grok47_high]
+python -X utf8 scripts/route_simulation.py explain [--divergence N] [--global-rigor N] [--module-precision N] [--vision-tools N] [--local] [--state "claude scarce"] [--bundle grok47_high]
 python -X utf8 scripts/route_simulation.py replay [--last N] [--json out.json]
 ```
 
-- `grid` plans every route x difficulty x local/remote under each usage state, then reports wins per bundle and per `model@account`. It also lists the enabled models that win nowhere, each with its median score gap to the winner and its most common exclusions.
+- `grid` plans every point of the category demand space (`allocator.FIVE_AXIS_DEMAND_GRID`) x local/remote under each usage state, then reports wins per bundle and per `model@account`. It also lists the enabled models that win nowhere, each with its median score gap to the winner and its most common exclusions.
 - States:
   - `live`: the current collector cache.
   - `ample`: 10% used everywhere.
@@ -254,7 +250,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 - [`model-capabilities.json`](model-capabilities.json) — Generated policy/model view; runtime derives its policy from effective accounts.
 - [`dispatch-lifecycle.md`](dispatch-lifecycle.md) — Reservation state machine (`planned` -> `started` -> `completed`) and in-flight quota deduction.
 - [`judge-workflow.md`](judge-workflow.md) — System-One `TaskProfile` schema (`score`) and low-effort judge stages (`delegate`, `select`).
-- [`effort-matching.md`](effort-matching.md) — Task demand (depth x property difficulty) vs model ability x per-model effort curve, and the ledger `decision_snapshot` the tray replays.
+- [`effort-matching.md`](effort-matching.md) — Per-model effort curves and the ledger `decision_snapshot` the tray replays.
 - [`provider-usage.md`](provider-usage.md) — Live usage snapshot precedence, `capacity.json` overlay, host policy, and temporary overrides.
 - [`public-data.json`](public-data.json) — Manifest of the public reference data (sha256 per file, data schema, publish time); see Public reference data below.
 - [`scripts/route_judge.py`](../scripts/route_judge.py) · [`scripts/allocator.py`](../scripts/allocator.py) · [`scripts/host_policy.py`](../scripts/host_policy.py) · [`scripts/check_router_contract.py`](../scripts/check_router_contract.py)

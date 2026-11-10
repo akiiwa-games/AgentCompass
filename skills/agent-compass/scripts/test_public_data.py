@@ -58,12 +58,12 @@ class ChannelCase(unittest.TestCase):
         write_json(self.bundled / public_data.MANIFEST, public_data.build_manifest(self.bundled, now=T0))
         self.env = {'ROUTER_STATE_DIR': str(self.state), 'AGENTCOMPASS_PUBLIC_DATA': 'on',
                     'AGENTCOMPASS_PUBLIC_DATA_URL': URL}
-        self.publish(demand_cv=0.5, at=T0 + timedelta(days=1))
+        self.publish(safety_margin_pct=0.5, at=T0 + timedelta(days=1))
         self.remote = FakeRemote(self.remote_dir)
 
-    def publish(self, demand_cv, at, schema=None):
+    def publish(self, safety_margin_pct, at, schema=None):
         accounts = json.loads((self.remote_dir / 'accounts.json').read_text(encoding='utf-8-sig'))
-        accounts['scoring']['demand_cv'] = demand_cv
+        accounts['scoring']['safety_margin_pct'] = safety_margin_pct
         write_json(self.remote_dir / 'accounts.json', accounts)
         manifest = public_data.build_manifest(self.remote_dir, now=at)
         if schema is not None:
@@ -112,18 +112,18 @@ class FetchTests(ChannelCase):
         self.assertEqual(outcome['downloaded'], ['accounts.json'])  # unchanged files are copied from the install
         chosen = self.chosen()
         self.assertEqual((chosen['source'], chosen['published_at']), ('fetched', '2026-11-02T00:00:00Z'))
-        self.assertEqual(self.effective_accounts()['scoring']['demand_cv'], 0.5)
+        self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 0.5)
         state = public_data.read_state(self.env)
         self.assertEqual((state['fetched_at'], state['last_error']), ('2026-11-03T00:00:00Z', None))
         self.assertTrue(all(call.startswith(URL) for call in self.remote.calls))
 
     def test_hash_mismatch_is_rejected_and_nothing_is_applied(self):
-        self.remote.overrides['accounts.json'] = b'{"scoring": {"demand_cv": 9}}\n'
+        self.remote.overrides['accounts.json'] = b'{"scoring": {"safety_margin_pct": 9}}\n'
         outcome = self.refresh()
         self.assertEqual(outcome['status'], 'failed')
         self.assertIn('sha256', outcome['error'])
         self.assertEqual(self.chosen()['source'], 'bundled')
-        self.assertNotEqual(self.effective_accounts()['scoring']['demand_cv'], 9)
+        self.assertNotEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 9)
         self.assertEqual(list((self.state / 'public-data' / 'sets').iterdir()), [])
         self.assertIn('sha256', public_data.read_state(self.env)['last_error'])
 
@@ -137,12 +137,12 @@ class FetchTests(ChannelCase):
 
     def test_newer_schema_is_ignored_and_the_last_good_set_stays(self):
         self.refresh()
-        self.publish(demand_cv=0.7, at=T0 + timedelta(days=3), schema=public_data.SCHEMA_VERSION + 1)
+        self.publish(safety_margin_pct=0.7, at=T0 + timedelta(days=3), schema=public_data.SCHEMA_VERSION + 1)
         self.remote.calls.clear()
         outcome = self.refresh(force=True, now=T0 + timedelta(days=4))
         self.assertEqual(outcome['status'], 'schema_too_new')
         self.assertEqual(self.remote.calls, [URL + public_data.MANIFEST])  # no data file was fetched
-        self.assertEqual(self.effective_accounts()['scoring']['demand_cv'], 0.5)
+        self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 0.5)
         self.assertIn('schema', public_data.status(self.env, self.bundled)['note'])
 
     def test_offline_falls_back_to_the_cache_then_to_the_shipped_copy(self):
@@ -150,11 +150,11 @@ class FetchTests(ChannelCase):
         self.remote.offline = True
         outcome = self.refresh(force=True, now=T0 + timedelta(days=3))
         self.assertEqual(outcome['status'], 'failed')
-        self.assertEqual(self.effective_accounts()['scoring']['demand_cv'], 0.5)
+        self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 0.5)
         shutil.rmtree(self.state / 'public-data' / 'sets')
         self.assertEqual(self.chosen()['source'], 'bundled')
-        self.assertEqual(self.effective_accounts()['scoring']['demand_cv'],
-                         json.loads((self.bundled / 'accounts.json').read_text(encoding='utf-8-sig'))['scoring']['demand_cv'])
+        self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'],
+                         json.loads((self.bundled / 'accounts.json').read_text(encoding='utf-8-sig'))['scoring']['safety_margin_pct'])
 
     def test_refresh_interval_and_retry_are_honoured(self):
         self.refresh(now=T0 + timedelta(days=2))
@@ -169,7 +169,7 @@ class FetchTests(ChannelCase):
         self.assertEqual(self.refresh(now=T0 + timedelta(days=3, minutes=40))['status'], 'failed')
 
     def test_fetched_data_older_than_the_shipped_copy_is_not_read(self):
-        self.publish(demand_cv=0.5, at=T0 - timedelta(days=1))
+        self.publish(safety_margin_pct=0.5, at=T0 - timedelta(days=1))
         self.assertEqual(self.refresh()['status'], 'updated')
         chosen = self.chosen()
         self.assertEqual(chosen['source'], 'bundled')
@@ -178,12 +178,12 @@ class FetchTests(ChannelCase):
     def test_shipped_references_with_local_edits_win(self):
         self.refresh()
         accounts = json.loads((self.bundled / 'accounts.json').read_text(encoding='utf-8-sig'))
-        accounts['scoring']['demand_cv'] = 0.123
+        accounts['scoring']['safety_margin_pct'] = 0.123
         write_json(self.bundled / 'accounts.json', accounts)
         chosen = self.chosen()
         self.assertEqual(chosen['source'], 'bundled')
         self.assertIn('local edits', chosen['note'])
-        self.assertEqual(self.effective_accounts()['scoring']['demand_cv'], 0.123)
+        self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 0.123)
 
 
 class SwitchTests(ChannelCase):
@@ -236,7 +236,7 @@ class LoaderPrecedenceTests(ChannelCase):
         cases = json.loads((self.remote_dir / 'classifier-cases.json').read_text(encoding='utf-8-sig'))
         cases['calibration_cases'] = [{'marker': 'fetched'}]
         write_json(self.remote_dir / 'classifier-cases.json', cases)
-        self.publish(demand_cv=0.5, at=T0 + timedelta(days=2))
+        self.publish(safety_margin_pct=0.5, at=T0 + timedelta(days=2))
         self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'updated')
         with patch.object(allocator, 'REFERENCES', self.bundled):
             self.assertEqual(allocator.fleet_document_path().parent.parent.name, 'sets')
@@ -248,16 +248,16 @@ class LoaderPrecedenceTests(ChannelCase):
 
     def test_user_override_beats_fetched_data(self):
         with patch.object(allocator, 'REFERENCES', self.bundled):
-            self.assertEqual(allocator.load_accounts()['scoring']['demand_cv'], 0.5)
-            write_json(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']), {'schema_version': 2, 'scoring': {'demand_cv': 0.9}})
-            self.assertEqual(allocator.load_accounts()['scoring']['demand_cv'], 0.9)
+            self.assertEqual(allocator.load_accounts()['scoring']['safety_margin_pct'], 0.5)
+            write_json(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']), {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})
+            self.assertEqual(allocator.load_accounts()['scoring']['safety_margin_pct'], 0.9)
             before = (self.bundled / 'accounts.json').read_bytes()
             local = self.state / 'accounts.local.json'
             write_json(local, json.loads(before.decode('utf-8-sig')))
             self.assertNotEqual(allocator.fleet_document_path(), local)  # no machine-local fleet replaces public data
         self.assertEqual((self.bundled / 'accounts.json').read_bytes(), before)  # fetched data never writes user files
         self.assertEqual(json.loads(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']).read_text(encoding='utf-8')),
-                         {'schema_version': 2, 'scoring': {'demand_cv': 0.9}})
+                         {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})
 
 
 if __name__ == '__main__':

@@ -11,6 +11,7 @@ import cwd_policy
 import router_data
 from test_router_data_models import settings
 import pytest
+from router_test_support import profile
 
 
 def test_regex_normalizes_slashes_and_case_and_fails_closed_for_invalid_config():
@@ -48,13 +49,13 @@ def test_regex_and_legacy_prefix_intersect_in_allocator():
 
 def test_plan_explains_regex_exclusion_and_legacy_intersection():
     scoring = json.loads(allocator.reference_fleet_path().read_text(encoding='utf-8'))['scoring']
-    accounts = {'scoring': scoring, 'models': {'fixture-model': {'ability': 4}}, 'accounts': {
+    accounts = {'scoring': scoring, 'models': {'fixture-model': {}}, 'accounts': {
         'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)', 'allowed_cwd': ['E:/P4'],
                             'bundles': {'fixture-bundle': {'model': 'fixture-model', 'effort': 'high'}}}}}
     plan = allocator.plan({'objective': 'Implement a parser', 'work_kind': 'general_implementation',
-                           'expected_hours': .1, 'cwd': 'E:/PROJECTS/AgentCompass'},
+                           'expected_hours': .1, 'cwd': 'E:/PROJECTS/AgentCompass', 'profile': profile()},
                           {'accounts': {}}, datetime(2026, 10, 28, tzinfo=timezone.utc),
-                          accounts=accounts, capabilities={}, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
+                          accounts=accounts, capabilities={'routes': {'general_implementation': {}, 'other_or_mixed': {}}}, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
     row = next(row for row in plan['ranking'] if row['id'] == 'fixture-bundle')
     assert 'outside account cwd restriction (^E:/P4(/|$))' in row['excluded']
     assert any('cwd_regex and legacy allowed_cwd' in warning for warning in plan['decision']['warnings'])

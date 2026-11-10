@@ -4,7 +4,7 @@ Values are made up to show the UI: not benchmark claims, not live allocation inp
 
 The headline decision follows the quota-line economy: N = F − β·X/h, where F is the fit capped at what the
 task needs (demand-weighted mean of min(score, target) per axis), X the spend that lands over the window's
-recovery line ℓ(t) = C·(t − t0)/L, h the task hours and β the window's exchange rate. Ties on N go to the
+recovery line ℓ(t) = C·(t − t0)/L, h the task hours and β the window's quota price. Ties on N go to the
 earliest-expiring under-line quota, then the faster completion, then the fewer USD.
 """
 from __future__ import annotations
@@ -110,7 +110,7 @@ def ranking(specs=HEADLINE_SPECS, winner=None, hours=HOURS, windows=WINDOWS):
         _, capacity, used, reset_in, beta = windows[window]
         over = over_line(windows[window], spend, task_hours)
         cost = beta * over / hours
-        components = dict(zip(("divergence", "global_rigor", "module_precision", "capability"), scores))
+        components = dict(zip(AXES, scores))
         components.update(fit=round(fit, 4), opportunity_cost=round(cost, 4))
         rows.append({
             "id": bundle_id, "bundle": {"model": model, "effort": effort, "account": window, **({"fast": True} if fast else {})},

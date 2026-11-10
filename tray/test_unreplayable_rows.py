@@ -1,4 +1,4 @@
-"""A ledger row written before the classifier answered the split question has no profile that can be replayed honestly."""
+"""A ledger row whose profile the classifier's current schema rejects (an older row without the split answer or the category demand) cannot be replayed honestly."""
 import os
 from pathlib import Path
 import sys
@@ -10,11 +10,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/agent-compa
 import router_data
 from router_test_support import isolated_router_state
 
-LEGACY = {"reasoning_depth": 4, "code_complexity": 3, "context_scale": 3, "hallucination_risk": 3, "error_cost": 3,
+OLD = {"reasoning_depth": 4, "code_complexity": 3, 
           "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering",
           "work_kind": "debug_review"}
-CURRENT = dict(LEGACY, multi_task=False, task_count="1", wants_fast=False, read_only_review=False)
-MISSING_NEW_FLAGS = {k: v for k, v in CURRENT.items() if k not in ("wants_fast", "read_only_review")}
+CURRENT = dict(OLD, multi_task=False, task_count="1", wants_fast=False, read_only_review=False, realtime_loop=False,
+               access="write", expected_hours=1.0, hours_confidence="medium", urgency="normal",
+               axis_demand={"divergence": 1, "global_rigor": 3, "module_precision": 2, "vision_tools": 0})
+MISSING_FLAGS = {k: v for k, v in CURRENT.items() if k not in ("wants_fast", "read_only_review")}
+MISSING_DEMAND = {k: v for k, v in CURRENT.items() if k != "axis_demand"}
 
 
 def row_of(profile, objective="fix the flaky lock in worker pool"):
@@ -22,7 +25,7 @@ def row_of(profile, objective="fix the flaky lock in worker pool"):
             "difficulty": "frontier", "choice": "opus55_xhigh", "profile": profile}
 
 
-class LegacyReplayTests(unittest.TestCase):
+class UnreplayableRowTests(unittest.TestCase):
     def setUp(self):
         isolated_router_state(self.addCleanup)
         # router_priority finds the skill under CODEX_HOME; this checkout's layout is the same.
@@ -33,11 +36,12 @@ class LegacyReplayTests(unittest.TestCase):
     def test_no_keyword_inference_and_no_invented_answer(self):
         allocator, _ = router_data.modules()
         for profile in (
-            LEGACY,
-            MISSING_NEW_FLAGS,
-            dict(LEGACY, multi_task=False),
-            dict(LEGACY, task_count="1"),
-            dict(LEGACY, multi_task="yes", task_count="2"),
+            OLD,
+            MISSING_FLAGS,
+            MISSING_DEMAND,
+            dict(OLD, multi_task=False),
+            dict(OLD, task_count="1"),
+            dict(OLD, multi_task="yes", task_count="2"),
         ):
             with self.subTest(profile=profile), \
                     mock.patch.object(allocator, "infer_task_profile", create=True) as infer, \
@@ -46,23 +50,24 @@ class LegacyReplayTests(unittest.TestCase):
                 infer.assert_not_called()
                 plan.assert_not_called()
                 self.assertEqual(result["theatre_source"], "unreplayable")
-                self.assertEqual(result["replay_note"], router_data.LEGACY_REPLAY_NOTE)
+                self.assertEqual(result["replay_note"], router_data.UNREPLAYABLE_NOTE)
                 self.assertFalse(result.get("choice"))
                 self.assertEqual(result["ranking"], [])
 
     def test_the_row_is_marked_in_the_ledger_list(self):
-        self.assertIn(router_data.LEGACY_REPLAY_NOTE, router_data.ledger_summary(row_of(LEGACY))["objective"])
-        self.assertTrue(router_data.ledger_summary(row_of(LEGACY))["unreplayable"])
-        self.assertTrue(router_data.ledger_summary(row_of(MISSING_NEW_FLAGS))["unreplayable"])
+        self.assertIn(router_data.UNREPLAYABLE_NOTE, router_data.ledger_summary(row_of(OLD))["objective"])
+        self.assertTrue(router_data.ledger_summary(row_of(OLD))["unreplayable"])
+        self.assertTrue(router_data.ledger_summary(row_of(MISSING_FLAGS))["unreplayable"])
+        self.assertTrue(router_data.ledger_summary(row_of(MISSING_DEMAND))["unreplayable"])
         self.assertFalse(router_data.ledger_summary(row_of(CURRENT))["unreplayable"])
 
     def test_build_task_refuses_rather_than_reclassifies(self):
         allocator, _ = router_data.modules()
-        for legacy_profile in (LEGACY, MISSING_NEW_FLAGS):
-            with self.subTest(profile=legacy_profile), \
+        for old_profile in (OLD, MISSING_FLAGS, MISSING_DEMAND):
+            with self.subTest(profile=old_profile), \
                     mock.patch.object(allocator, "infer_task_profile", create=True) as infer, \
-                    self.assertRaises(router_data.LegacyProfile):
-                router_data.build_task("open the GUI and click the button", 1.0, profile=legacy_profile)
+                    self.assertRaises(router_data.UnreplayableProfile):
+                router_data.build_task("open the GUI and click the button", 1.0, profile=old_profile)
             infer.assert_not_called()
 
     def test_a_row_that_answered_still_replays(self):
@@ -77,8 +82,8 @@ class LegacyReplayTests(unittest.TestCase):
 
     def test_a_row_with_a_saved_snapshot_is_shown_as_saved(self):
         with mock.patch("decision_theatre.snapshot_result", return_value={"choice": "saved", "theatre_source": "snapshot"}):
-            self.assertEqual(router_data.replay(row_of(LEGACY))["choice"], "saved")
-            self.assertFalse(router_data.ledger_summary(row_of(LEGACY))["unreplayable"])
+            self.assertEqual(router_data.replay(row_of(OLD))["choice"], "saved")
+            self.assertFalse(router_data.ledger_summary(row_of(OLD))["unreplayable"])
 
     def test_the_panel_says_so_and_plays_nothing(self):
         import router_window
@@ -89,9 +94,9 @@ class LegacyReplayTests(unittest.TestCase):
                 mock.patch.object(router_window.theme, "set_window_icon"):
             panel = router_window.Panel(root, "scoring")
         with mock.patch.object(panel.theatre, "play") as play:
-            panel.plan_loaded(router_data.replay(row_of(LEGACY)))
+            panel.plan_loaded(router_data.replay(row_of(OLD)))
         play.assert_not_called()
-        self.assertEqual(panel.status.get(), router_data.LEGACY_REPLAY_NOTE)
+        self.assertEqual(panel.status.get(), router_data.UNREPLAYABLE_NOTE)
         self.assertEqual(panel.breakdown.get_children(), ())
 
 

@@ -75,7 +75,12 @@ class Machine(unittest.TestCase):
         return inventory.discover(now=now or self.now)['accounts'][account]
 
     def spec(self, account='codex'):
-        return allocator.load_accounts()['accounts'][account]
+        """The account as the router prices it: capacity comes from the community data by plan."""
+        return allocator.five_axis_overlay(allocator.load_accounts(), allocator.load_five_axis())['accounts'][account]
+
+    @staticmethod
+    def community(family, plan, window):
+        return allocator.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
 
     def route(self, account='codex'):
         accounts = allocator.load_accounts()
@@ -168,7 +173,7 @@ class PlanSourceTests(Machine):
         row = self.row()
         self.assertEqual((row['plan'], row['plan_source']), ('plus', 'usage_api'))
         self.assertEqual(row['plan_conflict'], {'online': 'plus', 'credential': 'pro'})
-        self.assertEqual(self.spec()['capacity_usd']['usage'], 67)
+        self.assertEqual(self.spec()['capacity_usd']['usage'], self.community('codex', 'plus', 'usage'))
         _, warnings = self.route()
         self.assertTrue(any('usage API reports plan plus' in text for text in warnings), warnings)
 
@@ -549,24 +554,18 @@ class StateTests(Machine):
         spec_fail = self.spec('claude')
         self.assertEqual((spec_fail['billing'], spec_fail['verified']), ('subscription', False))
 
-    def test_tier_multipliers_match_before_pool_suffix_and_preserve_capacities(self):
+    def test_tier_multipliers_match_before_pool_suffix(self):
         base = allocator.load_accounts()
-        for family, label, expected_plan, expected_cap in (
-            ('antigravity', 'Ultra x5', 'ultra5', {'gemini-weekly': 156, 'gemini-5h': 45.5, '3p-weekly': 22, '3p-5h': 4.4}),
-            ('antigravity', 'ultra ×5', 'ultra5', {'gemini-weekly': 156, 'gemini-5h': 45.5, '3p-weekly': 22, '3p-5h': 4.4}),
-            ('antigravity', 'Google AI Ultra x5', 'ultra5', {'gemini-weekly': 156, 'gemini-5h': 45.5, '3p-weekly': 22, '3p-5h': 4.4}),
-            ('claude', 'Max x20', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
-            ('claude', 'Claude Max x20', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
-            ('claude', 'Claude Max ×20', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
-            ('claude', 'Max x5', 'max5', {'seven_day': 1400, 'five_hour': 94, 'weekly_fable': 700}),
-            ('claude', 'Max 20x ×2', 'max20', {'seven_day': 2380, 'five_hour': 376, 'weekly_fable': 1190}),
-            ('codex', 'Pro ×2', 'pro', {'usage': 325}),
+        for family, label, expected_plan in (
+            ('antigravity', 'Ultra x5', 'ultra5'), ('antigravity', 'ultra ×5', 'ultra5'),
+            ('antigravity', 'Google AI Ultra x5', 'ultra5'), ('claude', 'Max x20', 'max20'),
+            ('claude', 'Claude Max x20', 'max20'), ('claude', 'Claude Max ×20', 'max20'), ('claude', 'Max x5', 'max5'),
+            ('claude', 'Max 20x ×2', 'max20'), ('codex', 'Pro ×2', 'pro'),
         ):
             with self.subTest(family=family, label=label):
                 got = inventory.configured_plan(family, label)
                 self.assertEqual(got, expected_plan)
-                tpl = inventory.plan_defaults(base, family, got) or {}
-                self.assertEqual(tpl.get('capacity_usd'), expected_cap)
+                self.assertTrue(inventory.plan_defaults(base, family, got))
         self.assertTrue(account_state.plan_is_inactive('claude', 'free ×2'))
         self.assertEqual(inventory.configured_plan('claude', 'Max 5x x2'), 'max 5x x2')
 
@@ -757,22 +756,22 @@ class TemplateTests(Machine):
     def test_prolite_is_priced_as_the_100_dollar_tier(self):
         self.codex_login('prolite')
         self.cache(codex={'plan_label': 'prolite'})
-        self.assertEqual(self.spec()['capacity_usd'], {'usage': 175})
+        self.assertEqual(self.spec()['capacity_usd'], {'usage': self.community('codex', 'pro100', 'usage')})
 
-    def test_an_unknown_plan_is_priced_conservatively_and_warned_about(self):
+    def test_an_unknown_plan_has_unknown_capacity_and_is_warned_about(self):
         self.codex_login('business')
         self.cache(codex={})
         spec = self.spec()
-        self.assertEqual(spec['capacity_usd'], {'usage': 67, 'five_hour': 10})
+        self.assertEqual(spec['capacity_usd'], {})      # an unknown plan has no cited capacity
         self.assertEqual((spec['plan_unknown'], spec['plan_priced_as']), ('business', 'plus'))
         _, warnings = self.route()
         self.assertTrue(any("plan 'business' is not a known plan" in text for text in warnings), warnings)
 
-    def test_claude_with_no_plan_is_priced_conservatively(self):
+    def test_claude_with_no_plan_has_unknown_capacity(self):
         self.claude_login(None, None)
         self.cache(claude={'windows': self.windows(window='seven_day')})
         spec = self.spec('claude')
-        self.assertEqual((spec['plan_unknown'], spec['capacity_usd']['seven_day']), ('not reported', 156))
+        self.assertEqual((spec['plan_unknown'], spec['capacity_usd']), ('not reported', {}))
 
     def test_antigravity_free_tiers_are_inactive_not_ultra(self):
         for label in ('Free', 'Antigravity Free Tier', 'Google AI Free'):
@@ -787,21 +786,22 @@ class TemplateTests(Machine):
                                                  'plan': 'Gemini Code Assist Standard', 'billing': 'subscription',
                                                  'sources': ['native', 'usage-cache']}},
                     'launchers': {'antigravity-resilient': {'family': 'antigravity-resilient', 'status': 'ready'}}}
-        spec = inventory.apply(accounts, snapshot)['accounts']['antigravity']
-        self.assertEqual((spec['capacity_usd']['gemini-weekly'], spec['plan_priced_as']), (31, 'pro'))
+        spec = allocator.five_axis_overlay(inventory.apply(accounts, snapshot), allocator.load_five_axis())['accounts']['antigravity']
+        self.assertEqual((spec['capacity_usd'], spec['plan_priced_as']), ({}, 'pro'))
 
-    def test_the_plus_five_hour_window_is_priced(self):
+    def test_the_plus_five_hour_window_is_a_feasibility_limit(self):
         self.codex_login('plus')
         spec = self.spec()
-        self.assertEqual(spec['capacity_usd'], {'usage': 67, 'five_hour': 10})
-        self.assertEqual(spec['burn_pct_per_worker_hour']['five_hour'], 100.0)
-        scores = {}
-        for used in (0.0, 60.0):
+        self.assertEqual(spec['capacity_usd'], {w: self.community('codex', 'plus', w) for w in ('usage', 'five_hour')})
+        # The 5-hour window is feasibility only: it keeps work off an account that cannot finish it, and prices nothing.
+        eligible = {}
+        for used in (0.0, 99.0):
             self.cache(codex={'plan_label': 'plus', 'windows': self.windows(40.0) + [
                 {'id': 'five_hour', 'label': '5h', 'used_pct': used, 'resets_at': (self.now + timedelta(hours=4)).isoformat()}]})
             rows, _ = self.route()
-            scores[used] = max(c['score'] for c in rows if not c['excluded'])
-        self.assertNotEqual(scores[0.0], scores[60.0])
+            eligible[used] = [c for c in rows if not c['excluded']]
+        self.assertTrue(eligible[0.0])
+        self.assertFalse(eligible[99.0])
 
 
 class ResidueTests(Machine):

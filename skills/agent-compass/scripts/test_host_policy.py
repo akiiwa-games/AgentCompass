@@ -8,7 +8,7 @@ import allocator
 import host_policy
 import route_judge as router
 
-from router_test_support import isolated_router_state, temporary_root
+from router_test_support import isolated_router_state, profile, temporary_root
 
 
 def setUpModule():
@@ -140,20 +140,18 @@ class HostPolicyTests(unittest.TestCase):
 
     def test_record_keeps_constraint_and_flags_violation_in_ledger(self):
         task = self.directory/'task.json'
-        task.write_text(json.dumps({'task': {'work_kind': 'general_implementation', 'difficulty': 'hard'}}))
+        task.write_text(json.dumps({'task': {'work_kind': 'general_implementation', 'difficulty': 'hard', 'profile': profile()}}))
         args = router.argparse.Namespace(basis='User explicit retained owner', provider='claude', account='claude',
                 model='claude-opus-5-5', effort='high', input=task, usage_cache=None, accounts=None,
                 constraint='user_override', specialty=None)
         with patch.object(router, 'ledger_path', return_value=self.directory/'ledger.jsonl'), \
              patch.object(router, 'usage_snapshot', return_value={'accounts': {}}), \
-             patch.object(allocator, 'capacity_override_path', return_value=self.directory/'absent-capacity.json'), \
              patch.object(router, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
             result = router.record_constraint(args)
             ledger = router.read_ledger()
         self.assertFalse(result['host_policy_violation']['dispatch_allowed'])
         self.assertEqual(ledger[0]['host_policy_violation'], result['host_policy_violation'])
-        self.assertIsNone(result['agrees'])
-        self.assertTrue(result['classifier_skipped'])
+        self.assertFalse(result['classifier_skipped'])
         self.assertIn('excluded by host policy', result['override_cost']['excluded'])
 
     def test_same_policy_at_different_paths_has_identical_allocation(self):

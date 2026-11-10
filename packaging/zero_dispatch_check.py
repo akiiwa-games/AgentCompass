@@ -94,8 +94,9 @@ class ScorerServer:
                     return self._send(200, {"choices": [{"message": {"content": "I cannot classify this."}}]})
                 is_rt = "REALTIME-LOOP" in user
                 profile = {"multi_task": False, "task_count": "1", "work_kind": "computer_use" if is_rt else "general_implementation",
-                           "reasoning_depth": 2, "code_complexity": 0 if is_rt else 1, "context_scale": 1 if is_rt else 2,
-                           "divergence": 1, "hallucination_risk": 2, "error_cost": 2, "needs_visual": is_rt, "needs_gui": is_rt,
+                           "reasoning_depth": 2, "code_complexity": 0 if is_rt else 1,
+                           "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 0 if is_rt else 2, "vision_tools": 3 if is_rt else 0},
+                           "needs_visual": is_rt, "needs_gui": is_rt,
                            "local_only": is_rt, "realtime_loop": is_rt, "wants_fast": False, "read_only_review": False,
                            "access": "read-only" if is_rt else "write", "expected_hours": 0.5, "hours_confidence": "medium",
                            "urgency": "normal", "interaction_style": "engineering",

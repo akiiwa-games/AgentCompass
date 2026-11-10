@@ -340,7 +340,8 @@ class PinIdentityTests(RecordCase):
                 unnamed = self.plan(self.task(PROFILE), fleet)
         self.assertEqual(named['choice'], 'none')
         self.assertEqual(named['decision']['blocked'], 'named_model_unavailable')
-        self.assertEqual(unnamed['selected_bundle']['model'], FAMILY_9)
+        # The family row has no data of its own (mode B), so the unnamed plan does not take it either; the flagship stays refused.
+        self.assertEqual(unnamed['choice'], 'none')
 
     def test_unchecking_a_family_level_leaves_the_flagship_at_that_level(self):
         for label, own in (('listed', {'efforts': ['low', 'high']}), ('written', {'effort': 'high'}), ('no row', {'effort': 'medium'})):

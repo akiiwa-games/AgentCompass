@@ -852,8 +852,9 @@ def check_account_quota_exhausted(
             ]
         probes = [dict(b, id=b.get("bundle_id") or b.get("id")) for b in bundles or ()] or [
             {"account": account, "model": model or ""}]
+        priced = allocator.five_axis_overlay(accounts)      # once for every probe
         found = [(probe, refusal) for probe in probes
-                 for refusal in allocator.launch_blockers(probe, accounts, usage, now, records=records)]
+                 for refusal in allocator.launch_blockers(probe, priced, usage, now, records=records)]
     except Exception:
         return None
     if not found:

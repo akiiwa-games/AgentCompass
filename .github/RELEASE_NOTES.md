@@ -1,23 +1,22 @@
-AgentCompass v0.4.6 changes how a model without its own leaderboard data gets its routing scores. A model with a measured model in the same series now takes its scores and price from that model, converted by public data both of them have. No defaults or fallbacks are left for such a model. It builds on v0.4.5.
+AgentCompass v0.4.6 scores every model on four categories and on quota economy, and nothing else. It builds on v0.4.5.
 
-- **Same-series conversion is the one way an unmeasured model is scored.**
-  - The base is the same-series model that has a direct measurement for that score. Among several, the base is the one nearest on a public reading both models share: first the Artificial Analysis Intelligence Index, then the shared leaderboard readings. Tier is used only when they share no reading at all.
-  - Scores move from the base along the existing calibration fit, using the shared reading, and stay inside the measured range.
-  - The price per hour is the base's price times the ratio of their API list prices, weighted by the cited community token mix (cache reads included).
-  - Series membership comes from the existing model-family resolution. Models with no measured sibling keep a skill-checked public-data estimate, and only where one exists.
-  - A direct measurement replaces a converted value on the next data refresh. An edited value is never overwritten.
-  - Converted and estimated scores are marked in the capability catalog (`~`), in routing notes and in the tray data, and each one records its base, reading and fit.
-  - The old family shrink (tier −0.3, scores ×0.9) and the flat price for an unknown family member are removed.
-- **Claude Fable 5.2** now takes its scores and price from Fable 5.1.
-  - Its price per hour is 14.96 USD, down from a 72.92 fallback.
-  - With both Fable models enabled, it ranks above Fable 5.1 on reasoning work and level with it on coding.
-  - The v0.4.5 note that it was not routed automatically held only for the demo fleet.
-- **Other models whose scores changed:** Claude Opus 4.7/4.8, Gemini 4 Carbon, Gemini 3.1 Pro Preview, the Gemini Flash rows, Grok 4.5/4.6, Kimi K2.6/K2.7, Qwen3-Max, Qwen3.6-Plus, Qwen3.7-Max and gpt-oss-120b.
-  - Visual and GUI values only went up, because the sibling's value is no longer shrunk.
-  - Qwen3-Max's coding score now follows the measured Qwen3.6-Plus.
-- **Five-axis data** (still off by default) uses the same conversion for missing components and prices.
+- **One scoring.** The classifier states how much the task needs (0-3) of divergence, global rigor, module precision and vision & tools. The router fits each candidate's four category scores to that need and adds the quota economy: the part of the task's spend that lands over the recovery line of the account's quota window.
+  - The scoring on/off switch, the old per-model capability and preference rows, the per-model tier score, the ability and effort gates, the old exchange-rate pricing and the old demo output are removed. There is no second path.
+  - The classifier always returns `axis_demand`. The profile fields that only fed the old rows are gone.
+  - Hours come from the classifier's own `expected_hours`; there is no per-difficulty default.
+- **Tier only bridges missing type scores.** A model's tier is its position on the arena.ai Overall board, mapped onto the user's tier scale through six anchor rows. A model that board does not list takes its position on the Artificial Analysis Intelligence Index, interpolated through the models both list; a model on no overall board takes its nearest same-series sibling's tier. Routing never reads the tier.
+- **Missing type scores are estimated, not defaulted.**
+  - With a same-series sibling that measures the score, the estimate is the sibling's value moved along the fitted line of that score on tier by the two tiers' difference. Without one, it is the fit at the model's tier.
+  - A fit needs out-of-sample skill and enough points, and the value stays inside the measured range. Each estimate records its fit, tier, base and shift. Where a fit has no skill the tier does not predict that score, so the shift is 0 and the sibling's value stands (`shift 0: fit rejected, ...` in the record).
+  - A direct measurement replaces the estimate on the next data refresh.
+  - Estimated type scores and the categories built on them are marked in the capability catalog (`~`), in routing notes and in the tray.
+  - A category with some type scores missing is yellow: the missing ones count as 0 and the model stays in routing. A category with none leaves automatic routing for a task that demands it; naming the model still dispatches it, with the data error in the notes.
+- **One duration basis.** The hours a task takes, its spend and the window it needs all use Artificial Analysis Time/Task at the candidate's own effort. A model Artificial Analysis lacks uses its arena.ai Agent Time/Task, moved onto the Artificial Analysis scale by a fit over the models that have both (cited with its r and n); a model with no time of its own takes its nearest same-series measured sibling's per-effort time; an effort between two of the model's own efforts sits where the fleet puts it on the log-time scale between them (the median position over the models that list all three, with its n and IQR; the model's own endpoints are kept), and an effort outside its listed range takes the nearest same-series sibling's time ratio, or the fleet's median ratio from the nearest listed effort, never faster than a lower listed effort (under 3 fleet models the effort stays out; any bound that binds is named in the data). A model with no sibling and no time, or an effort left without a time, is out of automatic routing (a named dispatch still runs). USD per hour stays the arena.ai rate, so effort is in the hours and no packaged effort curve remains.
+- **Dot is Astra, as data.** `accounts.json` `same_model` declares that Dot is the model OpenAI's launch post names (GPT-6 Astra), with its url; Dot takes Astra's divergence, global rigor, module precision and Time/Task through the sibling path at tier difference 0. Vision and GUI stay its own and missing.
+- **Claude Fable 5.2** takes its scores and price from Fable 5.1 through the same conversion. Its fast-mode price (2x) and speed (2.5x) are its own.
+- **Quota capacity comes from public data only.** The packaged per-plan capacity figures and the packaged effort burn curve are removed. A plan or window without a cited capacity is unknown, and its account stays out of automatic routing until the data has it.
 - **Public data.** Installs that receive public routing data get the new scores from GitHub without updating. This release ships them in the installer as well.
 
 The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.4.6/packaging/SIGNING.md).
 
-Status: alpha. Customize the reference fleet and model calibration for your own subscriptions.
+Status: alpha. Customize the reference fleet for your own subscriptions.

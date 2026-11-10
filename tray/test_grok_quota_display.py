@@ -28,7 +28,7 @@ class GrokQuotaDisplayTests(unittest.TestCase):
                 allocator.host_policy.load_policy.return_value = {'allowed_accounts': allowed}
                 allocator.host_policy.account_allowed.side_effect = lambda policy, name: policy is None or name in policy['allowed_accounts']
                 allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-                allocator.window_capacity_usd.return_value = None
+                allocator.capacity_usd.return_value = None
                 window = {'id': 'credits', 'remaining_pct_before_reset': 44,
                           'observed_remaining_pct': 44, 'resets_at': reset,
                           'seconds_until_reset': 172800, 'reset_time_passed': False}

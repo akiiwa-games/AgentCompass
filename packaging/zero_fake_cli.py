@@ -40,7 +40,7 @@ def main() -> int:
         if os.environ.get("FIXTURE_SCORER") == "1":
             profile = {
                 "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
-                "context_scale": 1, "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
+                "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 2, "vision_tools": 0},
                 "needs_visual": False, "needs_gui": False, "local_only": False, "realtime_loop": False,
                 "wants_fast": False, "read_only_review": False, "expected_hours": 0.5,
                 "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",

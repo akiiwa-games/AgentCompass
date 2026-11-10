@@ -17,10 +17,13 @@ import dispatch_registry
 import host_policy
 import provider_inventory as inventory
 
-from router_test_support import isolated_router_state, temporary_root
+from router_test_support import isolated_router_state, temporary_root, usage_windows
 
 BUNDLE = 'venice_glm52_high'
 TASK = {'objective': 'Reply with exactly OK', 'hours': 0.1}
+NOW = datetime(2026, 11, 11, tzinfo=timezone.utc)
+# One current reading per window that can price spend: the subscription's own and the metered account's prepaid budget.
+USAGE = usage_windows(NOW, {'codex': [('usage', 90, 100)], 'omp': [('weekly', 90, 100)]})
 
 
 def setUpModule():
@@ -29,9 +32,14 @@ def setUpModule():
 
 def omp_accounts(billing='metered', subscription=True):
     accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
-    accounts['accounts']['codex']['verified'] = subscription  # one launchable subscription account
+    accounts['accounts']['codex'].update(verified=subscription, plan='Pro')  # one launchable subscription account
     spec = accounts['accounts']['omp']
-    spec.update(billing=billing, verified=True)
+    # A metered account states its own prepaid budget: community capacity data measures subscription plans only.
+    spec.update(billing=billing, verified=True, windows={'weekly': {'hours': 168}}, capacity_usd={'weekly': 200.0})
+    spec.pop('capacity_status', None)
+    # Artificial Analysis lists GLM-5.2 at Low and Max only: a bundle at an effort with no Time/Task is out of automatic routing,
+    # so the fixture runs the bundle at an effort the data times (its id is only a label).
+    spec['bundles'][BUNDLE]['effort'] = 'low'
     if billing is None:
         spec.pop('billing')  # an account entry alone is not consent to automatic routing
     return accounts
@@ -43,7 +51,7 @@ def omp_row(decision):
 
 class AutomaticRoutingTests(unittest.TestCase):
     def plan(self, accounts, constraints=None):
-        return allocator.plan({**TASK, 'constraints': constraints or {}}, {}, accounts=accounts, overrides=[],
+        return allocator.plan({**TASK, 'constraints': constraints or {}}, USAGE, NOW, accounts=accounts, overrides=[],
                               host_policy_config=None)
 
     def test_metered_and_unknown_billing_are_not_automatic(self):
@@ -85,7 +93,7 @@ class AutomaticRoutingTests(unittest.TestCase):
         self.assertEqual(self.plan(omp_accounts('unknown', subscription=False))['choice'], 'none')
 
     def test_task_metered_ok_admits_checked_metered_bundle(self):
-        decision = allocator.plan({**TASK, 'metered_ok': True}, {}, accounts=omp_accounts(), overrides=[],
+        decision = allocator.plan({**TASK, 'metered_ok': True}, USAGE, NOW, accounts=omp_accounts(), overrides=[],
                                   host_policy_config=None)
         self.assertFalse([r for r in omp_row(decision)['excluded'] if 'metered' in r])
 
@@ -96,10 +104,10 @@ class AutomaticRoutingTests(unittest.TestCase):
     def test_dispatch_recheck_keeps_explicit_selection_for_pinned_bundle(self):
         # dispatch_registry.prepare re-plans a user_override with pinned_bundle and no model
         # constraint; the explicit choice must survive that recheck end to end.
-        decision = allocator.plan({**TASK, 'pinned_bundle': BUNDLE}, {}, accounts=omp_accounts(), overrides=[],
+        decision = allocator.plan({**TASK, 'pinned_bundle': BUNDLE}, USAGE, NOW, accounts=omp_accounts(), overrides=[],
                                   host_policy_config=None)
         self.assertFalse([r for r in omp_row(decision)['excluded'] if 'metered' in r or 'billing' in r])
-        other = allocator.plan({**TASK, 'pinned_bundle': 'sol_high'}, {}, accounts=omp_accounts(), overrides=[],
+        other = allocator.plan({**TASK, 'pinned_bundle': 'sol_high'}, USAGE, NOW, accounts=omp_accounts(), overrides=[],
                                host_policy_config=None)
         self.assertIn('metered access is a last resort', omp_row(other)['excluded'])
 
@@ -109,7 +117,7 @@ class OmpLaunchTests(unittest.TestCase):
         bundle = omp_accounts()['accounts']['omp']['bundles'][BUNDLE]
         request = dispatch_registry.launch_request(bundle, {'title': 't', 'initialPrompt': 'p'})
         self.assertEqual(request['provider'], 'omp/venice-api/zai-org-glm-5-2')
-        self.assertEqual(request['settings'], {'modeId': 'full', 'thinkingOptionId': 'high'})
+        self.assertEqual(request['settings'], {'modeId': 'full', 'thinkingOptionId': bundle['effort']})
 
 
 class DiscoveryTests(unittest.TestCase):

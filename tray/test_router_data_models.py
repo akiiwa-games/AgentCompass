@@ -13,8 +13,7 @@ import router_data
 
 
 def document():
-    return {'scoring': {'safety_margin_pct': 5, 'profile': {'subjective': {'weight': .49, 'vector_weight': .34, 'route_weight': .17}}},
-            'models': {'gpt-6.1-sol': {'subjective': {'divergence': .5, 'global_rigor': .6}}},
+    return {'scoring': {'safety_margin_pct': 5},
             'accounts': {'codex': {'verified': False, 'bundles': {
                 'sol_medium': {'model': 'gpt-6.1-sol', 'effort': 'medium'},
                 'sol_high': {'model': 'gpt-6.1-sol', 'effort': 'high'},
@@ -29,10 +28,10 @@ def test_migration_preserves_explicit_choices_and_reports_ambiguity():
     legacy['accounts']['codex']['bundles']['sol_high']['disabled'] = 'User selected off'
     legacy['accounts']['codex']['bundles']['sol_medium']['disabled'] = False
     legacy['accounts']['codex']['bundles']['experimental'].pop('disabled')
-    legacy['scoring']['profile']['subjective']['weight'] = .7
+    legacy['scoring']['safety_margin_pct'] = 9
     migrated = accounts_override.migrate(legacy, base)
     assert migrated['schema_version'] == 2
-    assert migrated['scoring'] == {'profile': {'subjective': {'weight': .7}}}
+    assert migrated['scoring'] == {'safety_margin_pct': 9}
     assert migrated['accounts']['codex']['bundles'] == {
         'sol_medium': {'disabled': False}, 'sol_high': {'disabled': True}}
     assert migrated['migration_ambiguous_enabled'] == [{'account': 'codex', 'bundle': 'experimental'}]
@@ -94,25 +93,6 @@ def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_pa
     live = allocator.load_accounts()['accounts']['codex']['bundles']
     assert live['sol_medium']['disabled'] and live['sol_high']['disabled']
     assert not live['pi_sol_high'].get('disabled')
-
-
-def test_four_ability_ratings_roundtrip_and_economy_is_not_editable(tmp_path, monkeypatch):
-    target = settings(tmp_path, monkeypatch)
-    ratings = {'divergence': .8, 'global_rigor': .7, 'module_precision': .9, 'capability': .34}
-    router_data.save_strategy({}, 'gpt-6.1-sol', {**ratings, 'economy': 0})
-    saved = json.loads(target.read_text())['models']['gpt-6.1-sol']['subjective']
-    assert saved == ratings
-    info = router_data.model_table()['gpt-6.1-sol']
-    assert info['subjective'] == ratings
-    assert info['default_subjective'] == {'divergence': .5, 'global_rigor': .6}
-    assert router_data.radar_chart.dna_dimensions(info)['capability'] == .34
-    # Legacy three-field callers must not erase a saved fourth rating.
-    router_data.save_strategy({}, 'gpt-6.1-sol', {k: v for k, v in ratings.items() if k != 'capability'})
-    assert router_data.model_table()['gpt-6.1-sol']['subjective']['capability'] == .34
-    router_data.save_model_subjective('gpt-6.1-sol', .8, .7, .9, capability=0)
-    assert router_data.model_table()['gpt-6.1-sol']['subjective']['capability'] == 0
-    router_data.save_model_subjective('gpt-6.1-sol', .8, .7, .9)
-    assert router_data.model_table()['gpt-6.1-sol']['subjective']['capability'] == 0
 
 
 def test_legacy_disabled_strings_load_and_save_as_boolean_state(tmp_path, monkeypatch):
@@ -182,7 +162,7 @@ def test_enabling_one_harness_on_a_denied_account_keeps_its_siblings_off(tmp_pat
     assert preferences == {'codex': {'disabled': True}, 'pi': {'disabled': False}}
 
 
-def test_legacy_backup_precedes_migration_and_tuning_restore_preserves_choices(tmp_path, monkeypatch):
+def test_backup_precedes_migration_and_tuning_restore_preserves_choices(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     legacy = document()
     legacy['accounts']['codex']['bundles']['sol_medium']['disabled'] = True
@@ -192,7 +172,7 @@ def test_legacy_backup_precedes_migration_and_tuning_restore_preserves_choices(t
     assert any(path.read_bytes() == original for path in (target.parent / 'backups').iterdir())
     migrated = json.loads(target.read_text())
     assert migrated['schema_version'] == 2 and 'models' not in migrated
-    assert router_data.read_tuning()['subjective.vector_weight'] == .34
+    assert router_data.read_tuning()['safety_margin_pct'] == 7
     router_data.restore_tuning()
     assert router_data.read_tuning()['safety_margin_pct'] == 5
     assert json.loads(target.read_text())['accounts']['codex']['bundles']['sol_medium']['disabled']
@@ -206,27 +186,6 @@ def test_account_policy_toggle_does_not_set_unverified_account_ready(tmp_path, m
         router_data.toggle_account_host('codex')
     assert save.call_args.args[0] == ['dot']
     assert not target.exists()
-
-
-def test_sparse_subjective_merges_without_losing_unmodified_dimensions(tmp_path, monkeypatch):
-    target = settings(tmp_path, monkeypatch)
-    target.write_text(json.dumps({'schema_version': 2, 'models': {'gpt-6.1-sol': {'subjective': {'divergence': .9}}}}))
-    subjective = allocator.load_accounts()['models']['gpt-6.1-sol']['subjective']
-    assert subjective == {'divergence': .9, 'global_rigor': .6}
-
-
-def test_strategy_save_validates_everything_before_one_atomic_write(tmp_path, monkeypatch):
-    target = settings(tmp_path, monkeypatch)
-    ratings = {'divergence': .8, 'global_rigor': .7, 'module_precision': .9}
-    router_data.save_strategy({'safety_margin_pct': 8}, 'gpt-6.1-sol', ratings)
-    saved = json.loads(target.read_text())
-    assert saved['scoring'] == {'safety_margin_pct': 8}
-    assert saved['models']['gpt-6.1-sol']['subjective'] == ratings
-    before = target.read_bytes()
-    import pytest
-    with pytest.raises(ValueError):
-        router_data.save_strategy({'safety_margin_pct': 9}, 'gpt-6.1-sol', {'divergence': 'bad'})
-    assert target.read_bytes() == before
 
 
 def test_only_discovered_ready_execution_profiles_with_bundles_are_shown(tmp_path, monkeypatch):

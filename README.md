@@ -38,11 +38,12 @@ agentcompass roll --task "<what the worker should do>"
 
 ### How a task is routed
 
-1. **Profile.** The classifier returns the task's expected hours and a need level (0–3) on four ability axes: divergence, global rigor, module precision, vision & tools. Single-thread work is handed back to the main session, and a brief that holds several independent tasks is returned to be split.
-2. **Candidates.** Every model, effort and account that can start the task now. Per-axis model scores come from cited public sources.
-3. **Score.** `N = F − β × X / h`
-   - `F`, the fit: the need-weighted average of the model's axis scores, each capped at what the task needs. Ability above the need does not count, so a rename is not sent to the strongest model at maximum effort.
-   - `X`: the part of this task's spend, in USD, that lands over the recovery line of the account's quota window (next section). `h` is the task's hours; `β` is that window's exchange rate between over-line dollars and fit. This term is the fifth axis, quota economy.
+1. **Profile.** The classifier returns the task's expected hours and a need level (0–3) on four category axes: divergence, global rigor, module precision, vision & tools. Single-thread work is handed back to the main session, and a brief that holds several independent tasks is returned to be split.
+2. **Candidates.** Every model, effort and account that can start the task now. Each leaderboard gives a model a type score, and the type scores make up the four category scores; all of them come from cited public sources. A type score a model has no board for is estimated from the model's overall level (its arena.ai Overall position) and its same-series sibling, marked as estimated everywhere it is shown, and replaced by a direct measurement at the next data refresh. A category some of whose type scores are missing is yellow: it averages them as 0 and the model stays in routing. A category with no score at all keeps the model out of automatic routing for tasks that need it. Nothing routes on the overall level itself.
+3. **Score.** `N = F + continuity + boost − C`
+   - `F`, the fit: the need-weighted average, over the categories the task needs, of the model's score capped at what the task needs, minus the shortfall (a score below the need loses its gap again). Ability above the need does not count, so a rename is not sent to the strongest model at maximum effort.
+   - `C`: the quota economy, the part of this task's spend that lands over the recovery line of the account's quota window (next section), priced in score units. The spend is the model's USD per hour times the hours the task takes at that effort (Artificial Analysis Time/Task at the same effort).
+   - Continuity (resuming a worker that already holds the task's context) and a temporary boost from a user override add to `N`.
 4. **Ties.** Equal `N` goes to the candidate that uses the under-line quota expiring earliest, then to the one that finishes sooner, then to the cheaper one.
 5. **Launch.** The winner starts as a worker, and the ledger keeps every candidate's score.
 

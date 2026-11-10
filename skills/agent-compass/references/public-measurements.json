@@ -1,28 +1,39 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-10T04:03:36+00:00",
+ "generated_at": "2026-11-10T19:22:55+00:00",
  "conversion": "capability value = min(1, 0.8 x s / s_anchor), anchor claude-opus-5-5; see calibration/measurements.py",
  "sources": {
-  "lmarena.tier_fit": {
-   "file": "webdev.parquet",
-   "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-   "fetched_at": "2026-11-09T07:38:37+00:00",
-   "sha256": "ec5be7241d2338f1c0b465369e096a4e6c330468380428cc617384e72a05c731",
+  "user.anchor_tier": {
+   "file": "text_style_control.parquet",
+   "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+   "fetched_at": "2026-11-09T07:38:39+00:00",
+   "sha256": "499918d223d132ee8f14aea7b562a55f3700474b2ff9f1a79b895b52a1aec0fa",
+   "as_of": "2026-11-04",
+   "as_of_kind": "data date",
+   "method": "the user's judgment of the six anchor rows (calibration/README.md): the tier scale itself",
+   "models_listed": 6,
+   "kind": "user"
+  },
+  "tier.arena_overall": {
+   "file": "text_style_control.parquet",
+   "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+   "fetched_at": "2026-11-09T07:38:39+00:00",
+   "sha256": "499918d223d132ee8f14aea7b562a55f3700474b2ff9f1a79b895b52a1aec0fa",
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
-   "method": "tiers.py: LMArena WebDev/Agent mapped through the six anchor rows, mean of the boards",
-   "models_listed": 132,
+   "method": "tiers.py: arena.ai Overall (Text, style control) mapped through the six anchor rows at their best listed variant, piecewise linear, floor 1.0",
+   "models_listed": 365,
    "kind": "benchmark"
   },
-  "secondary.tier_fit": {
-   "file": "swebench.html",
-   "url": "https://www.vals.ai/benchmarks/swebench",
-   "fetched_at": "2026-11-09T03:43:48+00:00",
-   "sha256": "4aa862a3868c9ea049a3f2b55434de90667fa409156f338212d63c3540549e54",
-   "as_of": "2026-09-01",
-   "as_of_kind": "data date",
-   "method": "tiers.py secondary: SWE-bench Verified, Terminal-Bench 2.0 and the AA index regressed on the primary tiers",
-   "models_listed": null,
+  "tier.aa_index": {
+   "file": "aa-models.html",
+   "url": "https://artificialanalysis.ai/leaderboards/models",
+   "fetched_at": "2026-11-09T03:43:49+00:00",
+   "sha256": "6c2541f91db29b9250f04fe0baaf16fed2272845bc38ff697cf907effdc59c11",
+   "as_of": "2026-11-09",
+   "as_of_kind": "fetch date (the source publishes no data date)",
+   "method": "tiers.py: Artificial Analysis Intelligence Index position interpolated onto the tier scale through the models listed on both it and arena.ai Overall; only for a model arena Overall does not list",
+   "models_listed": 54,
    "kind": "benchmark"
   },
   "lmarena.text_overall": {
@@ -414,7 +425,7 @@
    "sha256": "6c2541f91db29b9250f04fe0baaf16fed2272845bc38ff697cf907effdc59c11",
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
-   "method": "intelligenceIndexCostPerTask * 3600 / intelligenceIndexTimePerTask (audit round 046 section 2.3, method A)",
+   "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s) per effort variant",
    "models_listed": 186,
    "kind": "benchmark"
   },
@@ -448,17 +459,6 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "method": "OpenRouter /api/v1/models pricing (USD per million tokens)",
-   "models_listed": 461,
-   "kind": "vendor"
-  },
-  "openrouter.cost_time": {
-   "file": "openrouter-models.json",
-   "url": "https://openrouter.ai/api/v1/models",
-   "fetched_at": "2026-11-09T03:43:50+00:00",
-   "sha256": "d94d8370997bb6a32c8265d0c5368d98c121355ebed0c51698539d81e32bdc13",
-   "as_of": "2026-11-09",
-   "as_of_kind": "fetch date (the source publishes no data date)",
-   "method": "AA cost per task x (OpenRouter output price / AA output price) x 3600 / AA time per task",
    "models_listed": 461,
    "kind": "vendor"
   },
@@ -1063,48 +1063,47 @@
   "deepseek-v4.1-flash-free": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.21,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.45,
-      "agent": 2.97
-     },
-     "best_variant_tier": 3.21,
-     "high_correction": {},
-     "listed_as": "DeepSeek-V4.1-Flash-20261017"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 DeepSeek-V4.1-Flash-20260910 (Max) 1475 [1469,1481] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
+     "arena_value": 1474.9
     }
    ],
    "divergence": [
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.7292,
+     "value": 0.6408,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "chat",
      "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
      "raw": 1474.8845,
-     "reference": 1505.7072
+     "reference": 1505.7072,
+     "best_variant_value": 0.7292,
+     "high_ratio": 0.8788
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.6275,
+     "value": 0.5514,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "creative",
      "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
      "raw": 1440.6822,
-     "reference": 1516.7994
+     "reference": 1516.7994,
+     "best_variant_value": 0.6275,
+     "high_ratio": 0.8788
     },
     {
      "source": "eqbench.creative_writing_v3",
@@ -1124,54 +1123,62 @@
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.467,
+     "value": 0.4104,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui_design",
      "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
      "raw": 1664.248,
-     "reference": 1818.1872
+     "reference": 1818.1872,
+     "best_variant_value": 0.467,
+     "high_ratio": 0.8788
     },
     {
      "source": "lmarena.vision",
      "kind": "benchmark",
-     "value": 0.6974,
+     "value": 0.6129,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:40+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
-     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "vision",
      "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
      "raw": 1278.8619,
-     "reference": 1323.6515
+     "reference": 1323.6515,
+     "best_variant_value": 0.6974,
+     "high_ratio": 0.8788
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.6888,
+     "value": 0.6053,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "tools",
      "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
      "raw": 2.77,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.6888,
+     "high_ratio": 0.8788
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.6888,
+     "value": 0.6053,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui",
      "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
      "raw": 2.77,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.6888,
+     "high_ratio": 0.8788
     },
     {
      "source": "aa.mmmu_pro",
@@ -1240,15 +1247,17 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.6724,
+     "value": 0.5909,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "agentic",
      "listed_as": "DeepSeek-V4.1-Flash-20261017 (Max)",
      "raw": 3.31,
-     "reference": 0.6146
+     "reference": 0.6146,
+     "best_variant_value": 0.6724,
+     "high_ratio": 0.8788
     },
     {
      "source": "arena.agent_alignment_false_attribution",
@@ -1319,78 +1328,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 2.209,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "DeepSeek V4.1 Flash 1017 (High)",
-     "cost_per_task": 0.45619,
-     "time_per_task_s": 743.53
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 2.264,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "DeepSeek V4.1 Flash 1017 (Max)",
-     "cost_per_task": 0.60211,
-     "time_per_task_s": 957.28
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 3.007,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "none",
-     "listed_as": "DeepSeek V4.1 Flash 1017 (Non-reasoning)",
-     "cost_per_task": 0.42542,
-     "time_per_task_s": 509.35
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 1.044,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 0.567 (AA lists 1.2) per million tokens",
-     "effort": "high",
-     "listed_as": "deepseek/deepseek-v4.1-flash"
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 1.07,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 0.567 (AA lists 1.2) per million tokens",
-     "effort": "max",
-     "listed_as": "deepseek/deepseek-v4.1-flash"
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 1.421,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 0.567 (AA lists 1.2) per million tokens",
-     "effort": "none",
-     "listed_as": "deepseek/deepseek-v4.1-flash"
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -1572,55 +1509,47 @@
   "claude-fable-5-1": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 4.21,
+     "value": 4.3,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
-     "fits": {
-      "webdev": 3.63,
-      "agent": 4.05
-     },
-     "best_variant_tier": 3.84,
-     "high_correction": {
-      "webdev": -0.27,
-      "agent": -0.47
-     },
-     "listed_as": "Claude Fable 5.1"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Claude Fable 5.1 (Max) 1503 [1497,1509] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.30",
+     "listed_as": "Claude Fable 5.1 (Max)",
+     "arena_value": 1503.1
     }
    ],
    "divergence": [
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.8704,
+     "value": 0.7615,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "chat",
      "listed_as": "Claude Fable 5.1 (Max)",
      "raw": 1503.0532,
      "reference": 1505.7072,
      "best_variant_value": 0.7939,
-     "high_ratio": 1.0964
+     "high_ratio": 0.9592
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.8091,
+     "value": 0.7079,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "creative",
      "listed_as": "Claude Fable 5.1 (Max)",
      "raw": 1489.7993,
      "reference": 1516.7994,
      "best_variant_value": 0.738,
-     "high_ratio": 1.0964
+     "high_ratio": 0.9592
     },
     {
      "source": "eqbench.creative_writing_v3",
@@ -1640,62 +1569,62 @@
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.6933,
+     "value": 0.6065,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui_design",
      "listed_as": "Claude Fable 5.1 (Max)",
      "raw": 1744.257,
      "reference": 1818.1872,
      "best_variant_value": 0.6323,
-     "high_ratio": 1.0964
+     "high_ratio": 0.9592
     },
     {
      "source": "lmarena.vision",
      "kind": "benchmark",
-     "value": 0.8717,
+     "value": 0.7627,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:40+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
-     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "vision",
      "listed_as": "Claude Fable 5.1 (Max)",
      "raw": 1321.5384,
      "reference": 1323.6515,
      "best_variant_value": 0.7951,
-     "high_ratio": 1.0964
+     "high_ratio": 0.9592
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.8485,
+     "value": 0.7423,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "tools",
      "listed_as": "Claude Fable 5.1 (Max)",
      "raw": 15.46,
      "reference": 0.5968,
      "best_variant_value": 0.7739,
-     "high_ratio": 1.0964
+     "high_ratio": 0.9592
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.8485,
+     "value": 0.7423,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui",
      "listed_as": "Claude Fable 5.1 (Max)",
      "raw": 15.46,
      "reference": 0.5968,
      "best_variant_value": 0.7739,
-     "high_ratio": 1.0964
+     "high_ratio": 0.9592
     },
     {
      "source": "aa.automationbench",
@@ -1742,17 +1671,17 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.8153,
+     "value": 0.7133,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "agentic",
      "listed_as": "Claude Fable 5.1 (Max)",
      "raw": 14.26,
      "reference": 0.6146,
      "best_variant_value": 0.7436,
-     "high_ratio": 1.0964
+     "high_ratio": 0.9592
     },
     {
      "source": "arena.agent_alignment_false_attribution",
@@ -1836,71 +1765,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 34.631,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Claude Fable 5.1 (High, Default Fallback)",
-     "cost_per_task": 7.53996,
-     "time_per_task_s": 783.8
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 35.996,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "Claude Fable 5.1 (Low, Default Fallback)",
-     "cost_per_task": 4.47114,
-     "time_per_task_s": 447.16
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 34.297,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "Claude Fable 5.1 (Max, Default Fallback)",
-     "cost_per_task": 12.994,
-     "time_per_task_s": 1363.94
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 34.729,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Claude Fable 5.1 (Medium, Default Fallback)",
-     "cost_per_task": 5.56426,
-     "time_per_task_s": 576.79
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 34.349,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "Claude Fable 5.1 (Xhigh, Default Fallback)",
-     "cost_per_task": 10.84747,
-     "time_per_task_s": 1136.88
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -2150,20 +2014,32 @@
   "claude-fable-5-2": {
    "tier": [
     {
-     "source": "secondary.tier_fit",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 4.52,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
-     "fits": {
-      "aa": 4.52
+     "value": 5.254,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 65 interpolated onto the tier scale between ['Claude Opus 5.5'] and ['Gemini 4 Carbon'] of the 32 models listed on both it and arena.ai Overall",
+     "listed_as": "Claude Fable 5.2",
+     "board_value": 65.0,
+     "neighbours": {
+      "below": {
+       "x": 59.0,
+       "tier": 4.6,
+       "models": [
+        "Claude Opus 5.5"
+       ]
+      },
+      "above": {
+       "x": 60.0,
+       "tier": 4.992,
+       "models": [
+        "Gemini 4 Carbon"
+       ]
+      }
      },
-     "listed_as": {
-      "aa": "Claude Fable 5.2"
-     },
-     "vendor_reported": {}
+     "n": 32
     }
    ],
    "global_rigor": [
@@ -2225,71 +2101,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 30.857,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Claude Fable 5.2 (High, Default Fallback)",
-     "cost_per_task": 9.07841,
-     "time_per_task_s": 1059.16
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 28.406,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "Claude Fable 5.2 (Low, Default Fallback)",
-     "cost_per_task": 3.09724,
-     "time_per_task_s": 392.53
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 34.297,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "Claude Fable 5.2 (Max, Default Fallback)",
-     "cost_per_task": 26.53856,
-     "time_per_task_s": 2785.67
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 27.383,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Claude Fable 5.2 (Medium, Default Fallback)",
-     "cost_per_task": 3.80261,
-     "time_per_task_s": 499.91
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 33.875,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "Claude Fable 5.2 (Xhigh, Default Fallback)",
-     "cost_per_task": 14.82859,
-     "time_per_task_s": 1575.87
-    },
     {
      "source": "derived.community_mix",
      "kind": "derived",
@@ -2518,10 +2329,12 @@
   "claude-opus-5-5": {
    "tier": [
     {
-     "source": "user",
+     "source": "user.anchor_tier",
+     "kind": "user",
      "value": 4.6,
      "as_of": "2026-11-04",
-     "url": null,
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "anchor tier (calibration/README.md)"
     }
    ],
@@ -2779,71 +2592,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 21.746,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Claude Opus 5.5 (High, Default Fallback)",
-     "cost_per_task": 3.46466,
-     "time_per_task_s": 573.58
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 19.097,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "Claude Opus 5.5 (Low, Default Fallback)",
-     "cost_per_task": 0.97553,
-     "time_per_task_s": 183.9
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 23.816,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "Claude Opus 5.5 (Max, Default Fallback)",
-     "cost_per_task": 10.03641,
-     "time_per_task_s": 1517.11
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 20.728,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Claude Opus 5.5 (Medium, Default Fallback)",
-     "cost_per_task": 2.45109,
-     "time_per_task_s": 425.7
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 22.685,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "Claude Opus 5.5 (Xhigh, Default Fallback)",
-     "cost_per_task": 6.04719,
-     "time_per_task_s": 959.64
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -3116,10 +2864,12 @@
   "gpt-6.1-sol": {
    "tier": [
     {
-     "source": "user",
+     "source": "user.anchor_tier",
+     "kind": "user",
      "value": 3.6,
      "as_of": "2026-11-04",
-     "url": null,
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "anchor tier (calibration/README.md)"
     }
    ],
@@ -3127,82 +2877,94 @@
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.7447,
+     "value": 0.677,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "chat",
      "listed_as": "GPT-6.1 Sol (Max)",
      "raw": 1481.6526,
-     "reference": 1505.7072
+     "reference": 1505.7072,
+     "best_variant_value": 0.7447,
+     "high_ratio": 0.9091
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.6467,
+     "value": 0.5879,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "creative",
      "listed_as": "GPT-6.1 Sol (Max)",
      "raw": 1449.3875,
-     "reference": 1516.7994
+     "reference": 1516.7994,
+     "best_variant_value": 0.6467,
+     "high_ratio": 0.9091
     }
    ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.6287,
+     "value": 0.5716,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui_design",
      "listed_as": "GPT-6.1 Sol (Max)",
      "raw": 1742.641,
-     "reference": 1818.1872
+     "reference": 1818.1872,
+     "best_variant_value": 0.6287,
+     "high_ratio": 0.9091
     },
     {
      "source": "lmarena.vision",
      "kind": "benchmark",
-     "value": 0.7132,
+     "value": 0.6484,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:40+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
-     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "vision",
      "listed_as": "GPT-6.1 Sol (Max)",
      "raw": 1285.8122,
-     "reference": 1323.6515
+     "reference": 1323.6515,
+     "best_variant_value": 0.7132,
+     "high_ratio": 0.9091
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.7543,
+     "value": 0.6857,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "tools",
      "listed_as": "GPT-6.1 Sol (Max)",
      "raw": 12.54,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.7543,
+     "high_ratio": 0.9091
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.7543,
+     "value": 0.6857,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui",
      "listed_as": "GPT-6.1 Sol (Max)",
      "raw": 12.54,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.7543,
+     "high_ratio": 0.9091
     },
     {
      "source": "aa.mmmu_pro",
@@ -3272,15 +3034,17 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.7323,
+     "value": 0.6657,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "agentic",
      "listed_as": "GPT-6.1 Sol (Max)",
      "raw": 12.52,
-     "reference": 0.6146
+     "reference": 0.6146,
+     "best_variant_value": 0.7323,
+     "high_ratio": 0.9091
     },
     {
      "source": "arena.agent_alignment_false_attribution",
@@ -3364,71 +3128,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 5.482,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "GPT-6.1 Sol (High)",
-     "cost_per_task": 0.59099,
-     "time_per_task_s": 388.09
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 5.351,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "GPT-6.1 Sol (Low)",
-     "cost_per_task": 0.16147,
-     "time_per_task_s": 108.63
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 3.842,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "GPT-6.1 Sol (Max)",
-     "cost_per_task": 1.27206,
-     "time_per_task_s": 1191.92
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 5.609,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "GPT-6.1 Sol (Medium)",
-     "cost_per_task": 0.35939,
-     "time_per_task_s": 230.67
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 5.006,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "GPT-6.1 Sol (Xhigh)",
-     "cost_per_task": 0.76399,
-     "time_per_task_s": 549.46
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -3678,10 +3377,12 @@
   "gpt-6-astra": {
    "tier": [
     {
-     "source": "user",
+     "source": "user.anchor_tier",
+     "kind": "user",
      "value": 4.2,
      "as_of": "2026-11-04",
-     "url": null,
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "anchor tier (calibration/README.md)"
     }
    ],
@@ -3689,28 +3390,32 @@
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.7283,
+     "value": 0.7027,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "chat",
      "listed_as": "GPT-6 Astra (Max)",
      "raw": 1474.4837,
-     "reference": 1505.7072
+     "reference": 1505.7072,
+     "best_variant_value": 0.7283,
+     "high_ratio": 0.9649
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.6487,
+     "value": 0.6259,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "creative",
      "listed_as": "GPT-6 Astra (Max)",
      "raw": 1450.2845,
-     "reference": 1516.7994
+     "reference": 1516.7994,
+     "best_variant_value": 0.6487,
+     "high_ratio": 0.9649
     },
     {
      "source": "eqbench.creative_writing_v3",
@@ -3730,54 +3435,62 @@
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.6828,
+     "value": 0.6588,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui_design",
      "listed_as": "GPT-6 Astra (Max)",
      "raw": 1766.9331,
-     "reference": 1818.1872
+     "reference": 1818.1872,
+     "best_variant_value": 0.6828,
+     "high_ratio": 0.9649
     },
     {
      "source": "lmarena.vision",
      "kind": "benchmark",
-     "value": 0.6977,
+     "value": 0.6732,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:40+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
-     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "vision",
      "listed_as": "GPT-6 Astra (Max)",
      "raw": 1278.9698,
-     "reference": 1323.6515
+     "reference": 1323.6515,
+     "best_variant_value": 0.6977,
+     "high_ratio": 0.9649
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.7586,
+     "value": 0.732,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "tools",
      "listed_as": "GPT-6 Astra (Max)",
      "raw": 13.18,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.7586,
+     "high_ratio": 0.9649
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.7586,
+     "value": 0.732,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui",
      "listed_as": "GPT-6 Astra (Max)",
      "raw": 13.18,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.7586,
+     "high_ratio": 0.9649
     },
     {
      "source": "aa.mmmu_pro",
@@ -3847,15 +3560,17 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.7439,
+     "value": 0.7178,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "agentic",
      "listed_as": "GPT-6 Astra (Max)",
      "raw": 14.3,
-     "reference": 0.6146
+     "reference": 0.6146,
+     "best_variant_value": 0.7439,
+     "high_ratio": 0.9649
     },
     {
      "source": "arena.agent_alignment_false_attribution",
@@ -3939,71 +3654,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 20.06,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "GPT-6 Astra (High)",
-     "cost_per_task": 3.23857,
-     "time_per_task_s": 581.19
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 22.992,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "GPT-6 Astra (Low)",
-     "cost_per_task": 1.42372,
-     "time_per_task_s": 222.92
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 16.569,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "GPT-6 Astra (Max)",
-     "cost_per_task": 6.24467,
-     "time_per_task_s": 1356.8
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 23.395,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "GPT-6 Astra (Medium)",
-     "cost_per_task": 2.73244,
-     "time_per_task_s": 420.47
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 19.159,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "GPT-6 Astra (Xhigh)",
-     "cost_per_task": 3.65893,
-     "time_per_task_s": 687.5
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -4253,27 +3903,15 @@
   "gemini-4-argon-high": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.52,
+     "value": 4.905,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.48,
-      "agent": 3.57
-     },
-     "best_variant_tier": 3.52,
-     "high_correction": {},
-     "listed_as": "Gemini 4 Argon"
-    },
-    {
-     "source": "user",
-     "value": 4.0,
-     "as_of": "2026-11-04",
-     "url": null,
-     "method": "hand-set tier (accounts basis cites AA v4.3.2; not a tiers.py fit)"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Gemini 4 Argon (High) 1522 [1516,1527] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.91",
+     "listed_as": "Gemini 4 Argon (High)",
+     "arena_value": 1522.0
     }
    ],
    "divergence": [
@@ -4487,30 +4125,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 20.887,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Gemini 4 Argon (High)",
-     "cost_per_task": 9.94661,
-     "time_per_task_s": 1714.35
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 10.444,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 10 (AA lists 20) per million tokens",
-     "effort": "high",
-     "listed_as": "google/gemini-4-argon"
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 6.658,
@@ -4623,10 +4237,12 @@
   "claude-sonnet-5-5": {
    "tier": [
     {
-     "source": "user",
+     "source": "user.anchor_tier",
+     "kind": "user",
      "value": 3.9,
      "as_of": "2026-11-04",
-     "url": null,
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "anchor tier (calibration/README.md)"
     }
    ],
@@ -4634,82 +4250,94 @@
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.7225,
+     "value": 0.6069,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "chat",
      "listed_as": "Claude Sonnet 5.5 (xHigh)",
      "raw": 1471.9437,
-     "reference": 1505.7072
+     "reference": 1505.7072,
+     "best_variant_value": 0.7225,
+     "high_ratio": 0.84
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.6824,
+     "value": 0.5732,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "creative",
      "listed_as": "Claude Sonnet 5.5 (xHigh)",
      "raw": 1465.3619,
-     "reference": 1516.7994
+     "reference": 1516.7994,
+     "best_variant_value": 0.6824,
+     "high_ratio": 0.84
     }
    ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.6976,
+     "value": 0.586,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui_design",
      "listed_as": "Claude Sonnet 5.5 (xHigh)",
      "raw": 1773.4591,
-     "reference": 1818.1872
+     "reference": 1818.1872,
+     "best_variant_value": 0.6976,
+     "high_ratio": 0.84
     },
     {
      "source": "lmarena.vision",
      "kind": "benchmark",
-     "value": 0.7101,
+     "value": 0.5965,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:40+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
-     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "vision",
      "listed_as": "Claude Sonnet 5.5 (xHigh)",
      "raw": 1284.4459,
-     "reference": 1323.6515
+     "reference": 1323.6515,
+     "best_variant_value": 0.7101,
+     "high_ratio": 0.84
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.7767,
+     "value": 0.6524,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "tools",
      "listed_as": "Claude Sonnet 5.5 (Max)",
      "raw": 15.88,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.7767,
+     "high_ratio": 0.84
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.7767,
+     "value": 0.6524,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui",
      "listed_as": "Claude Sonnet 5.5 (Max)",
      "raw": 15.88,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.7767,
+     "high_ratio": 0.84
     },
     {
      "source": "aa.automationbench",
@@ -4756,15 +4384,17 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.7614,
+     "value": 0.6396,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "agentic",
      "listed_as": "Claude Sonnet 5.5 (Max)",
      "raw": 16.99,
-     "reference": 0.6146
+     "reference": 0.6146,
+     "best_variant_value": 0.7614,
+     "high_ratio": 0.84
     },
     {
      "source": "arena.agent_alignment_false_attribution",
@@ -4848,71 +4478,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 13.81,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Claude Sonnet 5.5 (High, Default Fallback)",
-     "cost_per_task": 1.63613,
-     "time_per_task_s": 426.52
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 11.576,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "Claude Sonnet 5.5 (Low, Default Fallback)",
-     "cost_per_task": 0.51134,
-     "time_per_task_s": 159.02
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 19.333,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "Claude Sonnet 5.5 (Max, Default Fallback)",
-     "cost_per_task": 10.02062,
-     "time_per_task_s": 1865.9
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 12.958,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Claude Sonnet 5.5 (Medium, Default Fallback)",
-     "cost_per_task": 0.78066,
-     "time_per_task_s": 216.88
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 16.263,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "Claude Sonnet 5.5 (Xhigh, Default Fallback)",
-     "cost_per_task": 4.09198,
-     "time_per_task_s": 905.82
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -5162,10 +4727,12 @@
   "grok-4.7": {
    "tier": [
     {
-     "source": "user",
+     "source": "user.anchor_tier",
+     "kind": "user",
      "value": 3.4,
      "as_of": "2026-11-04",
-     "url": null,
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "anchor tier (calibration/README.md)"
     }
    ],
@@ -5401,45 +4968,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 16.983,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Grok 4.7 (High)",
-     "cost_per_task": 6.1836,
-     "time_per_task_s": 1310.76
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 16.487,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "Grok 4.7 (Low)",
-     "cost_per_task": 2.9222,
-     "time_per_task_s": 638.09
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 17.952,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "Grok 4.7 (Xhigh)",
-     "cost_per_task": 7.77154,
-     "time_per_task_s": 1558.43
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 10.778,
@@ -5620,10 +5148,12 @@
   "gemini-3.8-flash-high": {
    "tier": [
     {
-     "source": "user",
+     "source": "user.anchor_tier",
+     "kind": "user",
      "value": 3.0,
      "as_of": "2026-11-04",
-     "url": null,
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "anchor tier (calibration/README.md)"
     }
    ],
@@ -5910,54 +5440,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 31.256,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Gemini 3.8 Flash (High)",
-     "cost_per_task": 7.76601,
-     "time_per_task_s": 894.48
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 31.431,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Gemini 3.8 Flash (Medium)",
-     "cost_per_task": 6.25859,
-     "time_per_task_s": 716.84
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 34.382,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 4.125 (AA lists 3.75) per million tokens",
-     "effort": "high",
-     "listed_as": "google/gemini-3.8-flash"
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 34.574,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 4.125 (AA lists 3.75) per million tokens",
-     "effort": "medium",
-     "listed_as": "google/gemini-3.8-flash"
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 4.953,
@@ -6135,59 +5617,21 @@
     }
    ]
   },
-  "grok-bot": {
-   "tier": [
-    {
-     "source": "user",
-     "value": 4.6,
-     "as_of": "2026-11-04",
-     "url": null,
-     "method": "aligned with Opus by the user (accounts basis)"
-    }
-   ]
-  },
-  "dot": {
-   "tier": [
-    {
-     "source": "user",
-     "value": 4.2,
-     "as_of": "2026-11-04",
-     "url": null,
-     "method": "vendor statement that Dot runs on Astra (accounts basis)"
-    }
-   ]
-  },
-  "gpt-6-pro": {
-   "tier": [
-    {
-     "source": "user",
-     "value": 5.0,
-     "as_of": "2026-11-04",
-     "url": null,
-     "method": "ceiling anchor 5.0 (accounts basis)"
-    }
-   ]
-  },
+  "grok-bot": {},
+  "dot": {},
+  "gpt-6-pro": {},
   "claude-haiku-5-5": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.95,
+     "value": 3.042,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
-     "fits": {
-      "webdev": 3.08,
-      "agent": 2.82
-     },
-     "best_variant_tier": 2.95,
-     "high_correction": {
-      "webdev": 0.0,
-      "agent": 0.0
-     },
-     "listed_as": "Claude Haiku 5.5"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Claude Haiku 5.5 (High) 1423 [1416,1429] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.04",
+     "listed_as": "Claude Haiku 5.5 (High)",
+     "arena_value": 1422.6
     }
    ],
    "divergence": [
@@ -6346,71 +5790,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 1.469,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Claude Haiku 5.5 (High)",
-     "cost_per_task": 0.15856,
-     "time_per_task_s": 388.47
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 1.205,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "Claude Haiku 5.5 (Low)",
-     "cost_per_task": 0.04376,
-     "time_per_task_s": 130.78
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 1.525,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "Claude Haiku 5.5 (Max)",
-     "cost_per_task": 0.41101,
-     "time_per_task_s": 970.51
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 1.337,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Claude Haiku 5.5 (Medium)",
-     "cost_per_task": 0.09176,
-     "time_per_task_s": 247.17
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 1.531,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "Claude Haiku 5.5 (Xhigh)",
-     "cost_per_task": 0.24836,
-     "time_per_task_s": 584.16
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -6660,70 +6039,75 @@
   "gpt-6.1-terra": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 3.27,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
-     "fits": {
-      "webdev": 3.48,
-      "agent": 3.59
+     "value": 4.158,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 51 interpolated onto the tier scale between ['Gemini 4 Argon', 'Claude Fable 5.1'] and ['GPT-6.1 Sol', 'Claude Sonnet 5.5'] of the 32 models listed on both it and arena.ai Overall",
+     "listed_as": "GPT-6.1 Terra",
+     "board_value": 51.0,
+     "neighbours": {
+      "below": {
+       "x": 50.0,
+       "tier": 4.158,
+       "models": [
+        "Gemini 4 Argon",
+        "Claude Fable 5.1"
+       ]
+      },
+      "above": {
+       "x": 55.0,
+       "tier": 4.158,
+       "models": [
+        "GPT-6.1 Sol",
+        "Claude Sonnet 5.5"
+       ]
+      }
      },
-     "best_variant_tier": 3.54,
-     "high_correction": {
-      "webdev": 0.27,
-      "agent": 0.27
-     },
-     "listed_as": "GPT-6.1 Terra"
+     "n": 32
     }
    ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.4567,
+     "value": 0.4944,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "gui_design",
      "listed_as": "GPT-6.1 Terra (Max)",
      "raw": 1678.3649,
-     "reference": 1818.1872,
-     "best_variant_value": 0.4944,
-     "high_ratio": 0.9237
+     "reference": 1818.1872
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.6947,
+     "value": 0.7521,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "tools",
      "listed_as": "GPT-6.1 Terra (Max)",
      "raw": 12.21,
-     "reference": 0.5968,
-     "best_variant_value": 0.7521,
-     "high_ratio": 0.9237
+     "reference": 0.5968
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.6947,
+     "value": 0.7521,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "gui",
      "listed_as": "GPT-6.1 Terra (Max)",
      "raw": 12.21,
-     "reference": 0.5968,
-     "best_variant_value": 0.7521,
-     "high_ratio": 0.9237
+     "reference": 0.5968
     },
     {
      "source": "aa.mmmu_pro",
@@ -6756,17 +6140,15 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.6852,
+     "value": 0.7418,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "agentic",
      "listed_as": "GPT-6.1 Terra (Max)",
      "raw": 13.98,
-     "reference": 0.6146,
-     "best_variant_value": 0.7418,
-     "high_ratio": 0.9237
+     "reference": 0.6146
     },
     {
      "source": "aa.lcr",
@@ -6838,84 +6220,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 3.875,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "GPT-6.1 Terra (High)",
-     "cost_per_task": 0.25928,
-     "time_per_task_s": 240.87
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 3.928,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "GPT-6.1 Terra (Low)",
-     "cost_per_task": 0.07134,
-     "time_per_task_s": 65.39
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 4.281,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "GPT-6.1 Terra (Max)",
-     "cost_per_task": 0.96111,
-     "time_per_task_s": 808.14
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 3.892,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "GPT-6.1 Terra (Medium)",
-     "cost_per_task": 0.1688,
-     "time_per_task_s": 156.12
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 6.015,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "none",
-     "listed_as": "GPT-6.1 Terra (Non-reasoning)",
-     "cost_per_task": 0.2259,
-     "time_per_task_s": 135.19
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 3.986,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "GPT-6.1 Terra (Xhigh)",
-     "cost_per_task": 0.40069,
-     "time_per_task_s": 361.92
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -7199,20 +6503,15 @@
   "gpt-6-sol": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.48,
+     "value": 3.535,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.47,
-      "agent": 3.49
-     },
-     "best_variant_tier": 3.48,
-     "high_correction": {},
-     "listed_as": "GPT-6 Sol"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GPT-6 Sol (Max) 1457 [1451,1462] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.53",
+     "listed_as": "GPT-6 Sol (Max)",
+     "arena_value": 1456.6
     }
    ],
    "divergence": [
@@ -7447,117 +6746,109 @@
   "gpt-6-luna": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.59,
+     "value": 3.377,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
-     "fits": {
-      "webdev": 2.96,
-      "agent": 2.92
-     },
-     "best_variant_tier": 2.94,
-     "high_correction": {
-      "webdev": 0.35,
-      "agent": 0.35
-     },
-     "listed_as": "GPT-6 Luna"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GPT-6 Luna (Max) 1440 [1436,1445] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.38",
+     "listed_as": "GPT-6 Luna (Max)",
+     "arena_value": 1440.5
     }
    ],
    "divergence": [
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.574,
+     "value": 0.4886,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "chat",
      "listed_as": "GPT-6 Luna (Max)",
      "raw": 1440.4675,
      "reference": 1505.7072,
      "best_variant_value": 0.6515,
-     "high_ratio": 0.881
+     "high_ratio": 0.75
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.4893,
+     "value": 0.4165,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "creative",
      "listed_as": "GPT-6 Luna (Max)",
      "raw": 1407.0418,
      "reference": 1516.7994,
      "best_variant_value": 0.5554,
-     "high_ratio": 0.881
+     "high_ratio": 0.75
     }
    ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.2818,
+     "value": 0.2399,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui_design",
      "listed_as": "GPT-6 Luna (Max)",
      "raw": 1577.3041,
      "reference": 1818.1872,
      "best_variant_value": 0.3199,
-     "high_ratio": 0.881
+     "high_ratio": 0.75
     },
     {
      "source": "lmarena.vision",
      "kind": "benchmark",
-     "value": 0.4846,
+     "value": 0.4126,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:40+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
-     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena vision/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "vision",
      "listed_as": "GPT-6 Luna (Max)",
      "raw": 1211.3493,
      "reference": 1323.6515,
      "best_variant_value": 0.5501,
-     "high_ratio": 0.881
+     "high_ratio": 0.75
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.6013,
+     "value": 0.5119,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "tools",
      "listed_as": "GPT-6 Luna (Max)",
      "raw": 1.83,
      "reference": 0.5968,
      "best_variant_value": 0.6825,
-     "high_ratio": 0.881
+     "high_ratio": 0.75
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.6013,
+     "value": 0.5119,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui",
      "listed_as": "GPT-6 Luna (Max)",
      "raw": 1.83,
      "reference": 0.5968,
      "best_variant_value": 0.6825,
-     "high_ratio": 0.881
+     "high_ratio": 0.75
     },
     {
      "source": "aa.mmmu_pro",
@@ -7627,17 +6918,17 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.5875,
+     "value": 0.5002,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "agentic",
      "listed_as": "GPT-6 Luna (Max)",
      "raw": 2.47,
      "reference": 0.6146,
      "best_variant_value": 0.6669,
-     "high_ratio": 0.881
+     "high_ratio": 0.75
     },
     {
      "source": "arena.agent_alignment_false_attribution",
@@ -7721,84 +7012,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.768,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "GPT-6 Luna (High)",
-     "cost_per_task": 0.07295,
-     "time_per_task_s": 341.9
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.493,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "GPT-6 Luna (Low)",
-     "cost_per_task": 0.00512,
-     "time_per_task_s": 37.37
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.734,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "GPT-6 Luna (Max)",
-     "cost_per_task": 0.15196,
-     "time_per_task_s": 744.89
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.735,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "GPT-6 Luna (Medium)",
-     "cost_per_task": 0.0422,
-     "time_per_task_s": 206.76
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 2.079,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "none",
-     "listed_as": "GPT-6 Luna (Non-reasoning)",
-     "cost_per_task": 0.07142,
-     "time_per_task_s": 123.66
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.86,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "xhigh",
-     "listed_as": "GPT-6 Luna (Xhigh)",
-     "cost_per_task": 0.10409,
-     "time_per_task_s": 435.59
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -8142,20 +7355,15 @@
   "gpt-5.6-sol": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.33,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.23,
-      "agent": 3.44
-     },
-     "best_variant_tier": 3.33,
-     "high_correction": {},
-     "listed_as": "GPT-5.6 Sol"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GPT-5.6 Sol (xHigh) 1485 [1481,1489] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "GPT-5.6 Sol (xHigh)",
+     "arena_value": 1485.0
     }
    ],
    "divergence": [
@@ -8416,20 +7624,15 @@
   "gpt-5.6-terra": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.59,
+     "value": 3.638,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.57,
-      "agent": 2.61
-     },
-     "best_variant_tier": 2.59,
-     "high_correction": {},
-     "listed_as": "GPT-5.6 Terra"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GPT-5.6 Terra (xHigh) 1468 [1464,1472] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.64",
+     "listed_as": "GPT-5.6 Terra (xHigh)",
+     "arena_value": 1467.9
     }
    ],
    "divergence": [
@@ -8651,19 +7854,15 @@
   "gpt-5.6-luna": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.56,
+     "value": 3.505,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.56
-     },
-     "best_variant_tier": 2.56,
-     "high_correction": {},
-     "listed_as": "GPT-5.6 Luna"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GPT-5.6 Luna (xHigh) 1453 [1449,1458] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.50",
+     "listed_as": "GPT-5.6 Luna (xHigh)",
+     "arena_value": 1453.2
     }
    ],
    "divergence": [
@@ -8809,36 +8008,19 @@
     }
    ]
   },
-  "grok-4.7-build-fast": {
-   "tier": [
-    {
-     "source": "secondary.tier_fit",
-     "kind": "benchmark",
-     "value": 3.4,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py SAME_AS grok-4.7: Grok 4.7 on faster serving, available in Grok Build and Cursor (xAI launch coverage, 2026-09-21); no board lists it separately",
-     "same_as": "grok-4.7"
-    }
-   ]
-  },
+  "grok-4.7-build-fast": {},
   "deepseek-v4-pro": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.98,
+     "value": 3.602,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.98
-     },
-     "best_variant_tier": 2.98,
-     "high_correction": {},
-     "listed_as": "DeepSeek-V4-Pro"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 DeepSeek-V4-Pro (High, 20260813) 1464 [1457,1471] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.60",
+     "listed_as": "DeepSeek-V4-Pro (High, 20260813)",
+     "arena_value": 1463.9
     }
    ],
    "divergence": [
@@ -8996,54 +8178,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 4.367,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "DeepSeek V4 Pro 0813 (Max)",
-     "cost_per_task": 1.76913,
-     "time_per_task_s": 1458.36
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 3.538,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "none",
-     "listed_as": "DeepSeek V4 Pro 0813 (Non-reasoning)",
-     "cost_per_task": 0.97699,
-     "time_per_task_s": 994.03
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 2.107,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 1.91052 (AA lists 3.96) per million tokens",
-     "effort": "max",
-     "listed_as": "deepseek/deepseek-v4-pro"
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 1.707,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 1.91052 (AA lists 3.96) per million tokens",
-     "effort": "none",
-     "listed_as": "deepseek/deepseek-v4-pro"
-    },
-    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 8.735,
@@ -9160,20 +8294,15 @@
   "glm-5.3": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.08,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.28,
-      "agent": 2.87
-     },
-     "best_variant_tier": 3.08,
-     "high_correction": {},
-     "listed_as": "GLM-5.3"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GLM-5.3 (Max) 1483 [1478,1487] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "GLM-5.3 (Max)",
+     "arena_value": 1482.6
     }
    ],
    "divergence": [
@@ -9409,54 +8538,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 5.852,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "GLM-5.3 (Low)",
-     "cost_per_task": 1.57493,
-     "time_per_task_s": 968.88
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 10.209,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "GLM-5.3 (Max)",
-     "cost_per_task": 5.00926,
-     "time_per_task_s": 1766.42
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 1.862,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 1.4 (AA lists 4.4) per million tokens",
-     "effort": "low",
-     "listed_as": "z-ai/glm-5.3"
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 3.248,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 1.4 (AA lists 4.4) per million tokens",
-     "effort": "max",
-     "listed_as": "z-ai/glm-5.3"
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 4.378,
@@ -9603,20 +8684,15 @@
   "glm-5.3-flash-free": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.85,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.18,
-      "agent": 2.53
-     },
-     "best_variant_tier": 2.85,
-     "high_correction": {},
-     "listed_as": "GLM-5.3-Flash"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GLM-5.3-Flash 1475 [1470,1479] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "GLM-5.3-Flash",
+     "arena_value": 1474.6
     }
    ],
    "divergence": [
@@ -9825,30 +8901,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.784,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "GLM-5.3-Flash",
-     "cost_per_task": 0.58331,
-     "time_per_task_s": 2679.71
-    },
-    {
-     "source": "openrouter.cost_time",
-     "kind": "vendor",
-     "value": 0.13,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:50+00:00",
-     "url": "https://openrouter.ai/api/v1/models",
-     "method": "AA cost/time repriced at the OpenRouter output price 0.083 (AA lists 0.5) per million tokens",
-     "effort": "default",
-     "listed_as": "z-ai/glm-5.3-flash"
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 1.5,
@@ -9959,29 +9011,6 @@
    ]
   },
   "qwen3-coder-next": {
-   "tier": [
-    {
-     "source": "secondary.tier_fit",
-     "kind": "benchmark",
-     "value": 1.73,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
-     "fits": {
-      "swe": 1.92,
-      "tb2": 1.55
-     },
-     "listed_as": {
-      "swe": null,
-      "tb2": null
-     },
-     "vendor_reported": {
-      "swe": "Qwen3-Coder-Next technical report (arXiv 2603.00729), Mini-SWE-agent",
-      "tb2": "same report, Terminus 2 (json)"
-     }
-    }
-   ],
    "global_rigor": [
     {
      "source": "aa.lcr",
@@ -10127,20 +9156,15 @@
   "qwen3.8-max": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.14,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.47,
-      "agent": 2.81
-     },
-     "best_variant_tier": 3.14,
-     "high_correction": {},
-     "listed_as": "Qwen3.8-Max"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Qwen3.8-Max 1484 [1480,1489] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "Qwen3.8-Max",
+     "arena_value": 1484.2
     }
    ],
    "divergence": [
@@ -10411,19 +9435,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 9.736,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "Qwen3.8 Max (0902)",
-     "cost_per_task": 10.02389,
-     "time_per_task_s": 3706.41
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 4.913,
@@ -10536,20 +9547,33 @@
   "kimi-k3.1-pro": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 3.47,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.49,
-      "agent": 3.45
+     "value": 4.158,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 46 interpolated onto the tier scale between ['Muse Wonder'] and ['Gemini 4 Argon', 'Claude Fable 5.1'] of the 32 models listed on both it and arena.ai Overall",
+     "listed_as": "Kimi K3.1 Pro",
+     "board_value": 46.0,
+     "neighbours": {
+      "below": {
+       "x": 44.0,
+       "tier": 4.158,
+       "models": [
+        "Muse Wonder"
+       ]
+      },
+      "above": {
+       "x": 50.0,
+       "tier": 4.158,
+       "models": [
+        "Gemini 4 Argon",
+        "Claude Fable 5.1"
+       ]
+      }
      },
-     "best_variant_tier": 3.47,
-     "high_correction": {},
-     "listed_as": "Kimi K3.1 Pro"
+     "n": 32
     }
    ],
    "vision_tools": [
@@ -10719,19 +9743,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 5.787,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "Kimi K3.1 Pro",
-     "cost_per_task": 3.6812,
-     "time_per_task_s": 2290.08
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 9.75,
@@ -10844,20 +9855,15 @@
   "kimi-k3": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.13,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.43,
-      "agent": 2.83
-     },
-     "best_variant_tier": 3.13,
-     "high_correction": {},
-     "listed_as": "Kimi K3"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Kimi K3 (Max) 1487 [1483,1492] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "Kimi K3 (Max)",
+     "arena_value": 1487.3
     }
    ],
    "divergence": [
@@ -11095,20 +10101,15 @@
   "minimax-m3": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.08,
+     "value": 3.294,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.32,
-      "agent": 1.83
-     },
-     "best_variant_tier": 2.08,
-     "high_correction": {},
-     "listed_as": "MiniMax-M3"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 MiniMax-M3 1436 [1432,1440] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.29",
+     "listed_as": "MiniMax-M3",
+     "arena_value": 1436.1
     }
    ],
    "divergence": [
@@ -11428,19 +10429,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 6.456,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "MiniMax-M3",
-     "cost_per_task": 1.2851,
-     "time_per_task_s": 716.64
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 5.829,
@@ -11553,20 +10541,32 @@
   "minimax-m3.1-flash": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 2.76,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.99,
-      "agent": 2.53
+     "value": 3.45,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 29 interpolated onto the tier scale between ['Step 5 Preview'] and ['MiMo-V2.6-Pro'] of the 32 models listed on both it and arena.ai Overall",
+     "listed_as": "MiniMax-M3.1-Flash",
+     "board_value": 29.0,
+     "neighbours": {
+      "below": {
+       "x": 29.0,
+       "tier": 3.45,
+       "models": [
+        "Step 5 Preview"
+       ]
+      },
+      "above": {
+       "x": 30.0,
+       "tier": 3.45,
+       "models": [
+        "MiMo-V2.6-Pro"
+       ]
+      }
      },
-     "best_variant_tier": 2.76,
-     "high_correction": {},
-     "listed_as": "MiniMax-M3.1-Flash"
+     "n": 32
     }
    ],
    "vision_tools": [
@@ -11721,19 +10721,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 2.074,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "MiniMax-M3.1-Flash",
-     "cost_per_task": 0.49097,
-     "time_per_task_s": 852.28
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 1.582,
@@ -11844,23 +10831,6 @@
    ]
   },
   "doubao-seed-2-1-pro-260628": {
-   "tier": [
-    {
-     "source": "lmarena.tier_fit",
-     "kind": "benchmark",
-     "value": 2.56,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.56
-     },
-     "best_variant_tier": 2.56,
-     "high_correction": {},
-     "listed_as": "Seed2.1 Pro Preview"
-    }
-   ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
@@ -11880,20 +10850,15 @@
   "mimo-v2.6-pro": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.15,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.29,
-      "agent": 3.0
-     },
-     "best_variant_tier": 3.15,
-     "high_correction": {},
-     "listed_as": "MiMo-V2.6-Pro"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 MiMo-V2.6-Pro 1480 [1471,1490] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "MiMo-V2.6-Pro",
+     "arena_value": 1480.1
     }
    ],
    "divergence": [
@@ -12116,19 +11081,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.388,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "MiMo-V2.6-Pro",
-     "cost_per_task": 0.25718,
-     "time_per_task_s": 2385.79
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 0.63,
@@ -12241,20 +11193,15 @@
   "mimo-v2.6-flash-free": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.08,
+     "value": 3.457,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.37,
-      "agent": 2.79
-     },
-     "best_variant_tier": 3.08,
-     "high_correction": {},
-     "listed_as": "MiMo-V2.6-Flash"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 MiMo-V2.6-Flash 1448 [1443,1453] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.46",
+     "listed_as": "MiMo-V2.6-Flash",
+     "arena_value": 1448.0
     }
    ],
    "divergence": [
@@ -12461,19 +11408,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 0.124,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "MiMo-V2.6-Flash",
-     "cost_per_task": 0.12853,
-     "time_per_task_s": 3728.09
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 0.275,
@@ -12586,19 +11520,33 @@
   "nemotron-3-ultra-free": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 1.47,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "agent": 1.47
+     "value": 3.191,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 12 interpolated onto the tier scale between ['Inkling', 'Gemini 3.5 Flash-Lite'] and ['Inkling Small'] of the 32 models listed on both it and arena.ai Overall",
+     "listed_as": "Nemotron 3 Ultra",
+     "board_value": 12.0,
+     "neighbours": {
+      "below": {
+       "x": 12.0,
+       "tier": 3.191,
+       "models": [
+        "Inkling",
+        "Gemini 3.5 Flash-Lite"
+       ]
+      },
+      "above": {
+       "x": 13.0,
+       "tier": 3.191,
+       "models": [
+        "Inkling Small"
+       ]
+      }
      },
-     "best_variant_tier": 1.47,
-     "high_correction": {},
-     "listed_as": "Nemotron 3 Ultra"
+     "n": 32
     }
    ],
    "global_rigor": [
@@ -12710,20 +11658,15 @@
   "nemotron-3.5-super-vl-free": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 1.52,
+     "value": 2.896,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 1.74,
-      "agent": 1.3
-     },
-     "best_variant_tier": 1.52,
-     "high_correction": {},
-     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1415 [1405,1424] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 2.90",
+     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
+     "arena_value": 1414.8
     }
    ],
    "divergence": [
@@ -12906,19 +11849,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 5.256,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "Nemotron 3.5 Super VL",
-     "cost_per_task": 0.51963,
-     "time_per_task_s": 355.9
-    },
-    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 11.5,
@@ -13015,22 +11945,15 @@
   "nemotron-3.5-lightning-free": {
    "tier": [
     {
-     "source": "secondary.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 1.31,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
-     "fits": {
-      "swe": 1.03,
-      "aa": 1.58
-     },
-     "listed_as": {
-      "swe": "Nemotron 3.5 Lightning",
-      "aa": "Nemotron 3.5 Lightning"
-     },
-     "vendor_reported": {}
+     "value": 1.708,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4) 1352 [1346,1357] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 1.71",
+     "listed_as": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4)",
+     "arena_value": 1351.5
     }
    ],
    "divergence": [
@@ -13162,19 +12085,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 4.189,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "default",
-     "listed_as": "Nemotron 3.5 Lightning",
-     "cost_per_task": 0.28981,
-     "time_per_task_s": 249.07
-    },
-    {
      "source": "derived.community_mix",
      "kind": "derived",
      "value": 8.035,
@@ -13256,20 +12166,15 @@
   "mistral-large-4": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.54,
+     "value": 2.967,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.86,
-      "agent": 2.23
-     },
-     "best_variant_tier": 2.54,
-     "high_correction": {},
-     "listed_as": "Mistral Large 4"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Mistral Large 4 1419 [1409,1428] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 2.97",
+     "listed_as": "Mistral Large 4",
+     "arena_value": 1418.6
     }
    ],
    "divergence": [
@@ -13424,32 +12329,6 @@
    ],
    "usd_per_hour": [
     {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 9.985,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Mistral Large 4 (High)",
-     "cost_per_task": 2.06173,
-     "time_per_task_s": 743.35
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 9.332,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Mistral Large 4 (Medium)",
-     "cost_per_task": 1.4121,
-     "time_per_task_s": 544.75
-    },
-    {
      "source": "arena.agent_sessions",
      "kind": "community",
      "value": 4.364,
@@ -13582,48 +12461,47 @@
   "muse-wonder-1.0": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.19,
+     "value": 4.721,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.42,
-      "agent": 2.96
-     },
-     "best_variant_tier": 3.19,
-     "high_correction": {},
-     "listed_as": "Muse Wonder"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Muse Wonder (Max) 1512 [1506,1519] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.72",
+     "listed_as": "Muse Wonder (Max)",
+     "arena_value": 1512.1
     }
    ],
    "divergence": [
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.8148,
+     "value": 0.7592,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "chat",
      "listed_as": "Muse Wonder (Max)",
      "raw": 1512.1348,
-     "reference": 1505.7072
+     "reference": 1505.7072,
+     "best_variant_value": 0.8148,
+     "high_ratio": 0.9318
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.7464,
+     "value": 0.6955,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "creative",
      "listed_as": "Muse Wonder (Max)",
      "raw": 1493.5058,
-     "reference": 1516.7994
+     "reference": 1516.7994,
+     "best_variant_value": 0.7464,
+     "high_ratio": 0.9318
     },
     {
      "source": "eqbench.creative_writing_v3",
@@ -13643,41 +12521,47 @@
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.4398,
+     "value": 0.4098,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui_design",
      "listed_as": "Muse Wonder (Max)",
      "raw": 1649.6929,
-     "reference": 1818.1872
+     "reference": 1818.1872,
+     "best_variant_value": 0.4398,
+     "high_ratio": 0.9318
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.692,
+     "value": 0.6448,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "tools",
      "listed_as": "Muse Wonder (Max)",
      "raw": 3.24,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.692,
+     "high_ratio": 0.9318
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.692,
+     "value": 0.6448,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "gui",
      "listed_as": "Muse Wonder (Max)",
      "raw": 3.24,
-     "reference": 0.5968
+     "reference": 0.5968,
+     "best_variant_value": 0.692,
+     "high_ratio": 0.9318
     },
     {
      "source": "aa.mmmu_pro",
@@ -13710,15 +12594,17 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.6679,
+     "value": 0.6223,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant AA index ratio",
      "component": "agentic",
      "listed_as": "Muse Wonder (Max)",
      "raw": 2.62,
-     "reference": 0.6146
+     "reference": 0.6146,
+     "best_variant_value": 0.6679,
+     "high_ratio": 0.9318
     },
     {
      "source": "arena.agent_alignment_false_attribution",
@@ -13818,32 +12704,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 30.383,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Muse Wonder (High)",
-     "cost_per_task": 4.56055,
-     "time_per_task_s": 540.38
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 32.502,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "max",
-     "listed_as": "Muse Wonder (Max)",
-     "cost_per_task": 6.95204,
-     "time_per_task_s": 770.02
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",
@@ -13991,20 +12851,15 @@
   "beam-free": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.1,
+     "value": 3.269,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.0,
-      "agent": 2.2
-     },
-     "best_variant_tier": 2.1,
-     "high_correction": {},
-     "listed_as": "Beam 1.0 501B A23B"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Beam 1.0 501B A23B 1435 [1425,1444] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.27",
+     "listed_as": "Beam 1.0 501B A23B",
+     "arena_value": 1434.7
     }
    ],
    "divergence": [
@@ -14154,19 +13009,15 @@
   "claude-haiku-4-5": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 1.27,
+     "value": 2.88,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 1.27
-     },
-     "best_variant_tier": 1.27,
-     "high_correction": {},
-     "listed_as": "Claude Haiku 4.5"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Claude Haiku 4.5 (20251001) 1414 [1412,1416] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 2.88",
+     "listed_as": "Claude Haiku 4.5 (20251001)",
+     "arena_value": 1414.0
     }
    ],
    "divergence": [
@@ -14292,19 +13143,15 @@
   "claude-opus-4-6": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.75,
+     "value": 4.287,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.75
-     },
-     "best_variant_tier": 2.75,
-     "high_correction": {},
-     "listed_as": "Claude Opus 4.6"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.6 (High) 1503 [1500,1506] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.29",
+     "listed_as": "Claude Opus 4.6 (High)",
+     "arena_value": 1502.9
     }
    ],
    "divergence": [
@@ -14466,19 +13313,15 @@
   "claude-sonnet-4-6": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.58,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.58
-     },
-     "best_variant_tier": 2.58,
-     "high_correction": {},
-     "listed_as": "Claude Sonnet 4.6"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Claude Sonnet 4.6 1472 [1468,1476] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "Claude Sonnet 4.6",
+     "arena_value": 1472.0
     }
    ],
    "divergence": [
@@ -14663,20 +13506,15 @@
   "glm-5.2": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.0,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.17,
-      "agent": 2.82
-     },
-     "best_variant_tier": 3.0,
-     "high_correction": {},
-     "listed_as": "GLM-5.2"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 GLM-5.2 (Max) 1475 [1471,1479] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "GLM-5.2 (Max)",
+     "arena_value": 1475.0
     }
    ],
    "divergence": [
@@ -14873,24 +13711,15 @@
   "gpt-oss-120b": {
    "tier": [
     {
-     "source": "secondary.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 1.16,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
-     "fits": {
-      "swe": 1.0,
-      "tb2": 1.0,
-      "aa": 1.48
-     },
-     "listed_as": {
-      "swe": "GPT OSS 120B",
-      "tb2": "GPT OSS 120B",
-      "aa": "gpt-oss-120b"
-     },
-     "vendor_reported": {}
+     "value": 1.711,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 gpt-oss-120b 1352 [1347,1356] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 1.71",
+     "listed_as": "gpt-oss-120b",
+     "arena_value": 1351.6
     }
    ],
    "divergence": [
@@ -15152,19 +13981,15 @@
   "gemini-3.1-flash-lite": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 1.0,
+     "value": 3.238,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 1.0
-     },
-     "best_variant_tier": 1.0,
-     "high_correction": {},
-     "listed_as": "Gemini 3.1 Flash-Lite Preview"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Gemini 3.1 Flash-Lite Preview 1433 [1429,1437] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.24",
+     "listed_as": "Gemini 3.1 Flash-Lite Preview",
+     "arena_value": 1433.1
     }
    ],
    "divergence": [
@@ -15313,23 +14138,6 @@
    ]
   },
   "kimi-k2.7-code": {
-   "tier": [
-    {
-     "source": "lmarena.tier_fit",
-     "kind": "benchmark",
-     "value": 2.25,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.25
-     },
-     "best_variant_tier": 2.25,
-     "high_correction": {},
-     "listed_as": "Kimi K2.7 Code"
-    }
-   ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
@@ -15515,19 +14323,15 @@
   "qwen3.6-plus": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.17,
+     "value": 3.411,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.17
-     },
-     "best_variant_tier": 2.17,
-     "high_correction": {},
-     "listed_as": "Qwen3.6-Plus"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Qwen3.6-Plus 1443 [1439,1447] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.41",
+     "listed_as": "Qwen3.6-Plus",
+     "arena_value": 1442.9
     }
    ],
    "divergence": [
@@ -15652,19 +14456,15 @@
   "claude-opus-4-7": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.82,
+     "value": 4.066,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.82
-     },
-     "best_variant_tier": 2.82,
-     "high_correction": {},
-     "listed_as": "Claude Opus 4.7"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.7 (High) 1501 [1497,1505] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.07",
+     "listed_as": "Claude Opus 4.7 (High)",
+     "arena_value": 1501.0
     }
    ],
    "divergence": [
@@ -15826,19 +14626,15 @@
   "claude-opus-4-8": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.81,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.81
-     },
-     "best_variant_tier": 2.81,
-     "high_correction": {},
-     "listed_as": "Claude Opus 4.8"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.8 (High) 1482 [1478,1486] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "Claude Opus 4.8 (High)",
+     "arena_value": 1482.0
     }
    ],
    "divergence": [
@@ -16039,19 +14835,15 @@
   "grok-4.5": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.79,
+     "value": 3.619,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.79
-     },
-     "best_variant_tier": 2.79,
-     "high_correction": {},
-     "listed_as": "Grok 4.5"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Grok 4.5 1466 [1461,1470] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.62",
+     "listed_as": "Grok 4.5",
+     "arena_value": 1465.8
     }
    ],
    "divergence": [
@@ -16200,20 +14992,15 @@
   "grok-4.6": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.0,
+     "value": 3.534,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.24,
-      "agent": 2.77
-     },
-     "best_variant_tier": 3.0,
-     "high_correction": {},
-     "listed_as": "Grok 4.6"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Grok 4.6 (High) 1456 [1452,1461] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.53",
+     "listed_as": "Grok 4.6 (High)",
+     "arena_value": 1456.4
     }
    ],
    "divergence": [
@@ -16461,20 +15248,15 @@
   "gemini-3.1-pro-preview": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.23,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.06,
-      "agent": 2.39
-     },
-     "best_variant_tier": 2.23,
-     "high_correction": {},
-     "listed_as": "Gemini 3.1 Pro Preview"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Gemini 3.1 Pro Preview 1487 [1484,1490] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "Gemini 3.1 Pro Preview",
+     "arena_value": 1486.8
     }
    ],
    "divergence": [
@@ -16834,20 +15616,15 @@
   "gemini-3.7-flash": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.82,
+     "value": 3.675,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 3.03,
-      "agent": 2.61
-     },
-     "best_variant_tier": 2.82,
-     "high_correction": {},
-     "listed_as": "Gemini 3.7 Flash"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Gemini 3.7 Flash (High) 1489 [1485,1494] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "listed_as": "Gemini 3.7 Flash (High)",
+     "arena_value": 1489.3
     }
    ],
    "divergence": [
@@ -17110,19 +15887,15 @@
   "kimi-k2.6": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.49,
+     "value": 3.574,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.49
-     },
-     "best_variant_tier": 2.49,
-     "high_correction": {},
-     "listed_as": "Kimi K2.6"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Kimi K2.6 1461 [1456,1465] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.57",
+     "listed_as": "Kimi K2.6",
+     "arena_value": 1460.9
     }
    ],
    "divergence": [
@@ -17306,20 +16079,15 @@
   "qwen3-max": {
    "tier": [
     {
-     "source": "secondary.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 1.17,
-     "as_of": "2026-09-01",
-     "fetched_at": "2026-11-09T03:43:48+00:00",
-     "url": "https://www.vals.ai/benchmarks/swebench",
-     "method": "tiers.py secondary fit",
-     "fits": {
-      "tb2": 1.17
-     },
-     "listed_as": {
-      "tb2": "Qwen 3 Max"
-     },
-     "vendor_reported": {}
+     "value": 3.057,
+     "as_of": "2026-11-08",
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Qwen3-Max (2025-09-23) 1423 [1417,1430] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.06",
+     "listed_as": "Qwen3-Max (2025-09-23)",
+     "arena_value": 1423.4
     }
    ],
    "divergence": [
@@ -17367,24 +16135,6 @@
    ]
   },
   "qwen3.7-max": {
-   "tier": [
-    {
-     "source": "lmarena.tier_fit",
-     "kind": "benchmark",
-     "value": 2.33,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit",
-     "fits": {
-      "webdev": 2.53,
-      "agent": 2.13
-     },
-     "best_variant_tier": 2.33,
-     "high_correction": {},
-     "listed_as": "Qwen3.7-Max"
-    }
-   ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
@@ -17552,102 +16302,84 @@
   "gemini-4-carbon": {
    "tier": [
     {
-     "source": "lmarena.tier_fit",
+     "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 4.34,
+     "value": 4.992,
      "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:37+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "tiers.py primary fit, moved to High by the AA effort gain (efforts.high_tier)",
-     "fits": {
-      "webdev": 4.05,
-      "agent": 4.14
-     },
-     "best_variant_tier": 4.09,
-     "high_correction": {
-      "webdev": -0.21,
-      "agent": -0.3
-     },
-     "listed_as": "Gemini 4 Carbon"
+     "fetched_at": "2026-11-09T07:38:39+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-08 Gemini 4 Carbon (High) 1527 [1517,1536] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.99",
+     "listed_as": "Gemini 4 Carbon (High)",
+     "arena_value": 1526.6
     }
    ],
    "divergence": [
     {
      "source": "lmarena.text_overall",
      "kind": "benchmark",
-     "value": 0.8999,
+     "value": 0.8481,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena text_style_control/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "chat",
      "listed_as": "Gemini 4 Carbon (High)",
      "raw": 1526.617,
-     "reference": 1505.7072,
-     "best_variant_value": 0.8481,
-     "high_ratio": 1.0611
+     "reference": 1505.7072
     },
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
-     "value": 0.8527,
+     "value": 0.8036,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena text_style_control/creative_writing, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "creative",
      "listed_as": "Gemini 4 Carbon (High)",
      "raw": 1518.3555,
-     "reference": 1516.7994,
-     "best_variant_value": 0.8036,
-     "high_ratio": 1.0611
+     "reference": 1516.7994
     }
    ],
    "vision_tools": [
     {
      "source": "lmarena.webdev",
      "kind": "benchmark",
-     "value": 0.7273,
+     "value": 0.6854,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:37+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
-     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "LMArena webdev/overall, best listed variant; 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "gui_design",
      "listed_as": "Gemini 4 Carbon (High)",
      "raw": 1768.085,
-     "reference": 1818.1872,
-     "best_variant_value": 0.6854,
-     "high_ratio": 1.0611
+     "reference": 1818.1872
     },
     {
      "source": "arena.agent_work_tools",
      "kind": "benchmark",
-     "value": 0.8227,
+     "value": 0.7753,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "tools",
      "listed_as": "Gemini 4 Carbon (High)",
      "raw": 15.68,
-     "reference": 0.5968,
-     "best_variant_value": 0.7753,
-     "high_ratio": 1.0611
+     "reference": 0.5968
     },
     {
      "source": "arena.agent_work_gui",
      "kind": "benchmark",
-     "value": 0.8227,
+     "value": 0.7753,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 32..57 negative, row 31 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "gui",
      "listed_as": "Gemini 4 Carbon (High)",
      "raw": 15.68,
-     "reference": 0.5968,
-     "best_variant_value": 0.7753,
-     "high_ratio": 1.0611
+     "reference": 0.5968
     },
     {
      "source": "aa.automationbench",
@@ -17667,17 +16399,15 @@
     {
      "source": "arena.agent_code",
      "kind": "benchmark",
-     "value": 0.7982,
+     "value": 0.7522,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:23:07+00:00",
      "url": "https://arena.ai/leaderboard/agent",
-     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1; x High/best-variant tier ratio",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant; transcribed 2026-11-09 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 30..57 negative, row 29 ambiguous (kept positive); 0.8 x s / s_anchor (claude-opus-5-5 listed), capped at 1",
      "component": "agentic",
      "listed_as": "Gemini 4 Carbon (High)",
      "raw": 15.57,
-     "reference": 0.6146,
-     "best_variant_value": 0.7522,
-     "high_ratio": 1.0611
+     "reference": 0.6146
     },
     {
      "source": "aa.lcr",
@@ -17722,45 +16452,6 @@
     }
    ],
    "usd_per_hour": [
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 16.198,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "high",
-     "listed_as": "Gemini 4 Carbon (High)",
-     "cost_per_task": 7.75555,
-     "time_per_task_s": 1723.64
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 18.025,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "low",
-     "listed_as": "Gemini 4 Carbon (Low)",
-     "cost_per_task": 7.18658,
-     "time_per_task_s": 1435.3
-    },
-    {
-     "source": "aa.cost_time",
-     "kind": "benchmark",
-     "value": 15.538,
-     "as_of": "2026-11-09",
-     "fetched_at": "2026-11-09T03:43:49+00:00",
-     "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "cost per task x 3600 / time per task",
-     "effort": "medium",
-     "listed_as": "Gemini 4 Carbon (Medium)",
-     "cost_per_task": 6.58578,
-     "time_per_task_s": 1525.89
-    },
     {
      "source": "arena.agent_sessions",
      "kind": "community",

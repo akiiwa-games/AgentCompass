@@ -176,7 +176,9 @@ class GrokBotTests(unittest.TestCase):
                     providers['grok'] = grok
                 cache.write_text(json.dumps({'providers': providers}))
                 usage = route_judge.usage_snapshot(cache, accounts=['grok-bot'], now=now)
-                plan = allocator.plan({'work_kind': 'text_in_text_out', 'difficulty': 'routine', 'expected_hours': .2},
+                # No public source gives the credits window a capacity, so the bot runs only when it is named.
+                plan = allocator.plan({'work_kind': 'text_in_text_out', 'difficulty': 'routine', 'expected_hours': .2,
+                                       'constraints': {'model': 'grok-bot'}},
                                       usage, now, accounts=accounts, records=[], overrides=[],
                                       host_policy_config={'allowed_accounts': ['grok-bot']})
                 candidate = next(c for c in plan['ranking'] if c['id'] == 'grok_bot')
@@ -203,7 +205,7 @@ class GrokBotTests(unittest.TestCase):
         source['capacity_usd'] = {'credits': 200}
         provider_inventory.apply_shared_quota(accounts)
         bot = accounts['accounts']['grok-bot']
-        for key in ('windows', 'observed', 'capacity_usd', 'burn_pct_per_worker_hour'):
+        for key in ('windows', 'observed', 'capacity_usd'):
             self.assertEqual(bot[key], source[key])
         records = [{'stage': 'dispatch', 'dispatch_id': name, 'state': 'started',
                     'lease_until': (now + timedelta(hours=1)).isoformat(),
@@ -391,26 +393,31 @@ class GrokBotTests(unittest.TestCase):
                          ('grok-bot', 'grok-bot', 'grok-bot', None))
         task = {'objective': 'Rewrite this supplied paragraph as concise prose.', 'work_kind': 'text_in_text_out',
                 'difficulty': 'routine', 'expected_hours': 0.2}
-        def plan(needs=None, allowed=True, usage=None):
-            return allocator.plan({**task, 'needs': needs or {}}, usage or {'accounts': {}},
+        def plan(needs=None, allowed=True, usage=None, model=None):
+            return allocator.plan({**task, 'needs': needs or {}, **({'constraints': {'model': model}} if model else {})},
+                                  usage or {'accounts': {}},
                                   accounts=applied, records=[], overrides=[],
                                   host_policy_config={'allowed_accounts': ['grok-bot'] if allowed else []})
-        selected = plan()
-        self.assertEqual(selected['choice'], 'grok_bot')
-        candidate = next(c for c in selected['ranking'] if c['id'] == 'grok_bot')
+        # No public source gives the shared Grok credits window a capacity: the bot is out of automatic routing with a
+        # surfaced data error, and a named dispatch still reaches it.
+        unnamed = plan()
+        self.assertEqual(unnamed['choice'], 'none')
+        self.assertTrue(any('capacity_unknown' in r for c in unnamed['ranking'] if c['id'] == 'grok_bot' for r in c['excluded']))
+        named = plan(model='grok-bot')
+        self.assertEqual(named['choice'], 'grok_bot')
+        candidate = next(c for c in named['ranking'] if c['id'] == 'grok_bot')
         self.assertIsNone(candidate['expected_usd'])
         self.assertIsNone(candidate['expected_pct'])
-        self.assertNotIn('free_usage', candidate['components'])
-        self.assertGreater(candidate['components']['opportunity_cost'], 0)
+        self.assertIn('capacity_unknown', ' '.join(candidate['notes']))
         for needs, reason in [({'local_only': True}, 'local-only'), ({'file_transfer': True}, 'local files'),
-                              ({'visual': True}, 'visual input'), ({'outbound_ok': False}, 'outbound')]:
+                              ({'visual': True}, 'image_input modality'), ({'outbound_ok': False}, 'outbound')]:
             with self.subTest(needs=needs):
                 rejected = next(c for c in plan(needs)['ranking'] if c['id'] == 'grok_bot')
-                self.assertTrue(any(reason in r for r in rejected['excluded']))
+                self.assertTrue(any(reason in r for r in rejected['excluded']), rejected['excluded'])
         self.assertTrue(any('host policy' in r for c in plan(allowed=False)['ranking']
                             if c['id'] == 'grok_bot' for r in c['excluded']))
         applied['accounts']['grok-bot']['bundles']['grok_bot']['disabled'] = 'user disabled'
-        self.assertNotEqual(plan()['choice'], 'grok_bot')
+        self.assertNotEqual(plan(model='grok-bot')['choice'], 'grok_bot')      # the checkbox beats naming the model
         applied['accounts']['grok-bot']['bundles']['grok_bot'].pop('disabled')
         now = datetime.now(timezone.utc)
         weekly = {'id': 'credits', 'remaining_pct_before_reset': 1,
@@ -487,12 +494,10 @@ def fixture_which(name, *args, **kwargs):
 def accept(text, parent, task):
     return {'provider': 'grok-bot', 'task_id': 'a' * 32, 'state': 'accepted',
             'delivery': 'accepted', 'message_id': 'fixture-message', 'mocked_send': True}
-fixture_profile = {
-    'work_kind': 'web_research', 'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 1,
-    'divergence': 1, 'hallucination_risk': 2, 'error_cost': 1, 'needs_visual': False, 'needs_gui': False,
-    'local_only': False, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': False,
-    'interaction_style': 'exploration', 'multi_task': False, 'task_count': '1', 'reason': 'fixture',
-}
+from router_test_support import profile
+fixture_profile = profile(work_kind='web_research', reasoning_depth=2, code_complexity=0, interaction_style='exploration',
+                          reason='fixture', access='read-only', axis_demand={'divergence': 1, 'global_rigor': 1,
+                          'module_precision': 0, 'vision_tools': 0})
 with patch.object(runner, 'submit', side_effect=accept), patch.object(
         inventory, 'GROK_BOT_CLI', fake_cli), patch.object(runner.shutil, 'which', side_effect=fixture_which), patch.object(
         route_judge, 'score_task', return_value=(fixture_profile, {'source': 'system_one', 'model': 'fixture-scorer'})), patch.object(
@@ -537,19 +542,14 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
                                           capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
         self.assertEqual(blocked_no_score.returncode, 2, blocked_no_score.stdout + blocked_no_score.stderr)
         self.assertEqual(json.loads(blocked_no_score.stdout)['status'], 'blocked')
+        # No public source gives the Grok credits window a capacity, so the bot is out of automatic routing (a surfaced
+        # data error) and runs only when it is named.
         automatic += ['--task-id', 'fixture-automatic']
         proc = subprocess.run(automatic, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         auto_result = json.loads(proc.stdout)
-        self.assertEqual(auto_result['route']['choice'], 'grok_bot')
-        self.assertTrue(auto_result['worker']['mocked_send'])
-        with closing(sqlite3.connect(env['ROUTER_DISPATCH_DB'])) as connection:
-            decisions = [json.loads(row[0]) for row in connection.execute('SELECT data FROM decisions')]
-        auto_decision = next(d for d in decisions if d['task_id'] == 'fixture-automatic')
-        self.assertTrue(auto_decision['bound'] and auto_decision['dispatchable'])
-        self.assertIsNone(auto_decision['constraint'])
-        self.assertEqual(auto_decision['bundle']['bundle_id'], 'grok_bot')
-        self.assertIsNone(auto_decision['bundle'].get('expected_usd'))
+        self.assertEqual(auto_result['route']['choice'], 'none')
+        self.assertNotIn('mocked_send', proc.stdout)
         for incompatible in (['--file', str(brief)], ['--apply-to', str(self.root)],
                              ['--local-only', 'local git repository and pytest environment']):
             with self.subTest(incompatible=incompatible):
@@ -557,25 +557,21 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
                                       encoding='utf-8', env=env, timeout=30)
                 self.assertNotIn('mocked_send', proc.stdout)
                 self.assertFalse(json.loads(proc.stdout)['launched'])
-        # Shared Grok admission agrees for automatic and explicit record paths.
-        # The real transport remains mocked throughout.
-        for used, stale, blocked in ((100, False, True), (20, False, False),
-                                     (100, True, False), (None, False, False)):
+        # Shared Grok admission governs the explicit record path. The real transport remains mocked throughout.
+        for used, stale, blocked in ((100, False, True), (20, False, False), (100, True, False), (None, False, False)):
             usage.write_text(json.dumps({'providers': {'grok': {
                 'available': True, 'stale': stale, 'fetched_at': datetime.now(timezone.utc).isoformat(),
                 'windows': [{'id': 'credits', 'used_pct': used,
                              'resets_at': (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()}]}}}))
-            for entry in (automatic, command):
-                with self.subTest(explicit=entry is command, used=used, stale=stale):
-                    proc = subprocess.run(entry, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
-                    if blocked or (stale and entry is automatic):
-                        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                        self.assertNotIn('mocked_send', proc.stdout)
-                        if entry is command:
-                            self.assertIn('credits', proc.stdout)
-                    else:
-                        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                        self.assertTrue(json.loads(proc.stdout)['worker']['mocked_send'])
+            with self.subTest(used=used, stale=stale):
+                proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
+                if blocked:
+                    self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                    self.assertNotIn('mocked_send', proc.stdout)
+                    self.assertIn('credits', proc.stdout)
+                else:
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                    self.assertTrue(json.loads(proc.stdout)['worker']['mocked_send'])
         # The same production resolver must still reject unsupported identities/efforts.
         for flag, value in [('--model', 'grok-4.7'), ('--provider', 'unknown-bot'), ('--effort', 'high')]:
             args = list(command)

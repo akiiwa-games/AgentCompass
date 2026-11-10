@@ -20,27 +20,23 @@ Produced automatically by `score_task` (via the System-One scorer cascade ground
 - `work_kind`: Canonical route (`computer_use`, `visual_analysis`, `frontend_implementation`, `tool_execution`, `bounded_bulk_work`, `debug_review`, `general_implementation`, `self_contained_code`, `exploration_analysis`, `research_packet`, `web_research`, `text_in_text_out`, `dot_execution`, `complex_build_plan`, `direction_reasoning`)
 - `reasoning_depth` (`1..4`): `1=routine`, `2=hard`, `3=coupled`, `4=frontier`
 - `code_complexity` (`0..3`): `0=no code`, `1=script/single-file`, `2=multi-file module`, `3=cross-cutting architecture`
-- `context_scale` (`1..3`): `1=localized`, `2=multi-module`, `3=repo-wide/long-horizon`
-- `divergence` (`1..3`): `1=convergent execution against a defined spec/bug`, `2=comparative design/trade-off evaluation or multi-hypothesis root-cause diagnosis`, `3=divergent scheme formulation, creative research, or architectural innovation`
-- `hallucination_risk` (`1..3`): `1=verifiable by tests`, `2=moderate synthesis`, `3=strict factual/contractual accuracy`
-- `error_cost` (`1..3`): `3` sets `needs.critical = true` (`+0.3` ability floor headroom)
+- `axis_demand` (object, every key required, each `0..3`): how much the task needs of `divergence`, `global_rigor`, `module_precision` and `vision_tools`. The levels are stated in `allocator.FIVE_AXIS_DEMAND_LEVELS`, which is the one text the JSON classifiers' schema and the System-One (Jev) questions are built from. Economy is not a task demand: the router prices it from cost and live quota. No other field is turned into a demand; a profile without `axis_demand` is rejected.
 - `needs_visual` (`bool`), `needs_gui` (`bool`), `local_only` (`bool`), `realtime_loop` (`bool`)
 - `wants_fast` (`bool`): `true` only when the assignment affirmatively requests fast mode, priority tier, urgent/ASAP turnaround, or a pre-reset quota sprint (`"pre-reset sprint"`, `"before quota resets"`, `"重置前冲刺"`) for the task itself without negation (`"do not use fast mode"` or `"no rush"` -> `false`; runtime step adverbs such as `"click Save immediately"` -> `false`). Strictly required boolean in classifier outputs. Precedence in `normalize_task`: explicit caller `needs.fast` -> `task.fast` -> `task.wants_fast` -> `profile.wants_fast` -> `false`.
 - `read_only_review` (`bool`): `true` only when the assignment is a read-only code, diff, branch, security, or release review/audit that inspects existing material and reports findings without writing or modifying repository production/test code (`code_complexity = 0`, even if saving a review report file to a specified output path). `false` when the worker implements, fixes, or refactors code (including fixing issues found by a prior review), runs operational commands, or performs general exploration/research. Strictly required boolean in classifier outputs; `read_only_review = true` with `code_complexity != 0` is rejected as contradictory by `validate_profile`. Used by `roll` and `plan_stage` to enforce independent reviewer selection (preventing a worker that authored or modified code from reviewing its own work).
 - `multi_task` (`bool`) & `task_count` (`"1" | "2" | "3" | ">3"`): `multi_task: true` when the brief bundles 2+ separate deliverables that different workers could produce in parallel without waiting on each other; `false` (`task_count: "1"`) for a single deliverable with sequential steps.
 - `expected_hours` (`0.05..24.0`), `hours_confidence` (`"low" | "medium" | "high"`), `urgency` (`"unknown" | "low" | "normal" | "high"`)
 - `interaction_style`: `"engineering" | "exploration" | "advisory" | "text_only"`
-- `reason` (optional in legacy fixtures): One-sentence justification of the classification and scores.
+- `reason` (optional): One-sentence justification of the classification and scores.
 
 ### Cross-Repo Sync Notes (for Magpie & Cindy)
 
-| Field | Type | Default (when omitted in legacy fixtures) | Semantic Contract |
-| :--- | :--- | :--- | :--- |
-| `wants_fast` | `boolean` | `false` | Replaces `FAST_REQUEST_WORDS` / `infer_fast_preference(objective)`. Set by System-One classifier (`TASK_PROFILE_SCHEMA` boolean / Jev `noul` question) or explicit caller flag (`--fast`, `needs.fast`, `task.fast`, `task.wants_fast`). |
-| `read_only_review` | `boolean` | `false` (or `work_kind == "debug_review" and code_complexity == 0` for legacy profiles without the key) | Replaces `READONLY_REVIEW_PHRASES` / `is_readonly_review_task` and `roll.py` `_REVIEW_RE` / `_AUTHORING_RE` / `is_review_title`. Gates independent-reviewer worker reuse so authoring workers never self-review. |
-| `divergence` | `integer (1..3)` | `default_divergence(kind, style)` (`3` for `complex_build_plan` / `direction_reasoning` / `advisory`, else `1`) | Replaces `DIVERGENT_WORDS` / `infer_divergence(objective, ...)`. |
-| `local_only` | `boolean` | `resolve_modality_needs` (`needs.local_only` -> `profile.local_only` -> `route.implies.local_only` -> `false`) | Replaces `OBJECTIVE_LOCAL_RUNTIME_RE`, `LOCAL_MACHINE_RE`, `BOGUS_LOCAL_ONLY_RE`, and `valid_local_only_reason`. |
-| `multi_task`, `task_count` | `boolean`, `"1"\|"2"\|"3"\|">3"` | `false`, `"1"` | Replaces `MULTI_TASK_MARK_RE` / `multi_task_marks(objective)`. |
+| Field | Type | Semantic Contract |
+| :--- | :--- | :--- |
+| `wants_fast` | `boolean` | Replaces `FAST_REQUEST_WORDS` / `infer_fast_preference(objective)`. Set by System-One classifier (`TASK_PROFILE_SCHEMA` boolean / Jev `noul` question) or explicit caller flag (`--fast`, `needs.fast`, `task.fast`, `task.wants_fast`). |
+| `read_only_review` | `boolean` | Replaces `READONLY_REVIEW_PHRASES` / `is_readonly_review_task` and `roll.py` `_REVIEW_RE` / `_AUTHORING_RE` / `is_review_title`. Gates independent-reviewer worker reuse so authoring workers never self-review. |
+| `local_only` | `boolean` | Replaces `OBJECTIVE_LOCAL_RUNTIME_RE`, `LOCAL_MACHINE_RE`, `BOGUS_LOCAL_ONLY_RE`, and `valid_local_only_reason`. |
+| `multi_task`, `task_count` | `boolean`, `"1"\|"2"\|"3"\|">3"` | Replaces `MULTI_TASK_MARK_RE` / `multi_task_marks(objective)`. |
 
 When the System-One classifier runs on `plan`, its `work_kind` and `difficulty` (`reasoning_depth`) are authoritative and override any manual `work_kind` or `difficulty` supplied by the caller (`caller_classification_ignored`).
 
@@ -50,26 +46,23 @@ Route `implies` fill `local_only` and `visual` only when both the caller and the
 
 `needs_gui` adds the visual requirement. It rewrites `work_kind` to `computer_use` only when the profile did not name a real route and the caller kind is missing or generic (`general_implementation`, `tool_execution`, `debug_review`, `other_or_mixed`). A classifier route such as `general_implementation` stays that route.
 
-## 3. Value minus cost
+## 3. Fit minus quota cost
 
 Allocation has three layers. They do not mix.
 
 | Layer | What it decides | What it ignores |
 | :--- | :--- | :--- |
-| **Eligible set** | Model settings, account health, host policy, modality, ability floor, and per-window reserves. | Score weights and quota price. |
-| **Value** | How good this model is for this task on this harness and effort: weighted fit and ability, times `harness_factor`, plus continuity, reset bonus, free-usage, boost and quality bonus. | Which pool pays. |
-| **Cost** | Which pool pays, and what other work that spend displaces. | Model quality, except through the exchange rate below. |
+| **Eligible set** | Model settings, account health, host policy, modality, a demanded category with no data, and per-window reserves. | Fit and quota price. |
+| **Fit** | How well the model's four category scores meet the task's demand, per demanded category: `min(score, target) - shortfall x max(0, target - score)`, averaged by demand. `target = 0.8 x demand / 3`, the anchor model's score scaled by the demand. Thinking categories scale by the model's measured effort curve. | Which pool pays. |
+| **Quota economy** | Which window pays, and what other work that spend displaces: the part of the spend over the window's recovery line, priced in score units. 5-hour windows are feasibility only; long reset-period windows carry the price. | Model quality, except through the value ladder of the candidates that draw the window. |
 
 ```text
-value = harness_factor × (w_fit·fit + w_ability·ability) + w_continuity·continuity
-        + reset_bonus + free_usage + boost + quality_bonus + fast_bonus
-score = value − opportunity_cost − effort_penalty − overqualification − deferred_start_penalty
+score = fit + w_continuity x continuity + boost - quota_cost
 ```
 
-`harness_factor` defaults to `1.0` (`scoring.harness_factors`). The same model on two harnesses stays the same value unless a rule says the harness itself is worse. Antigravity Claude starts at `0.9` (200k context and a different tool surface). Codex versus Pi is not that rule.
+A temporary `boost` comes only from a user override. The order after the score is: wait before the start, earliest-expiring
+quota, completion time, fewer USD, demand-weighted category level, then the harness place among siblings (same account, model,
+effort and action; the best sibling keeps its score, a harness with no sibling is not penalized).
 
-`harness_order` still runs after the score, and only among siblings (same account, model, effort and action). The best sibling keeps its score. Each place behind subtracts `harness_step` (`0.03`). As a coefficient on the fit/ability value that subtraction is `harness_order_factor = 1 − harness_step × places / value`. The order flips by route and by interaction style, and a harness with no sibling is not penalized, so a single global coefficient cannot replace the list.
-
-`scoring.opportunity_exchange` is the only quality-versus-quota rate. `exchange_rate` reads `score_per_displaced_usd` (`0.012` score per USD of expected displaced subscription capacity) and `score_per_displaced_worker_hour` (`0.06` score per displaced worker-hour). One score point is about `$83.33` of displaced USD, or `16.67` worker-hours. The worker-hour rate is used only when a window has no USD capacity. Top-level `shortage_loss_per_usd` and `shortage_loss_per_worker_hour` are a deprecated fallback for a policy that has not set the named field. When both are set and differ, the named field wins and `decision.warnings` says the old key was ignored.
-
-A bundle that draws several pools is gated by the tightest one: every applicable window must clear its reserve. Opportunity cost is the sum of each window's shortage charge at this exchange. `capacity`, the expected percent and the reset bonus follow the binding window, the window with the highest opportunity cost. `decision.system.opportunity_exchange` on a plan repeats the rate and this rule.
+A bundle that draws several pools is gated by the tightest one: every applicable window must clear its reserve. `decision.system.quota_windows`
+on a plan reports each window's price, room and reset clock.

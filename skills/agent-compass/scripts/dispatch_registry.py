@@ -655,7 +655,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         if decision.get('constraint') == 'user_override':
             alloc_task['pinned_bundle'] = bundle['bundle_id']
         plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts)
-        candidate = next((c for c in plan['ranking'] if c['id'] == bundle['bundle_id']), None)
+        candidate = allocator.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])

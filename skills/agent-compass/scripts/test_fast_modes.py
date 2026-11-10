@@ -4,7 +4,7 @@ import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 import allocator
 import dispatch_registry as registry
@@ -36,10 +36,14 @@ class FastModesTests(unittest.TestCase):
                     else:
                         info['fast_capable'] = policy
                     for forced in (False, True):
-                        row = next(r for r in allocator.plan(dict(task, force_fast=forced), usage, now,
-                                   accounts=accounts)['ranking'] if r['id'] == bid)
-                        self.assertEqual(bool(row['bundle'].get('fast')),
-                                         policy is not False and (provider == 'codex' or forced))
+                        ranking = allocator.plan(dict(task, force_fast=forced), usage, now, accounts=accounts)['ranking']
+                        plain = allocator.candidate_for_bundle(ranking, bid, False)
+                        self.assertFalse(plain['bundle'].get('fast') if plain else False)
+                        if forced:
+                            # Only Claude Opus has cited fast-mode pricing and speed; Codex models have none, so forcing
+                            # fast on them is a data error, never a guessed variant.
+                            fast = allocator.candidate_for_bundle(ranking, bid, True)
+                            self.assertEqual(bool(fast and fast['bundle'].get('fast')), provider == 'claude' and policy is not False)
                     bundle = dict(allocator.bundles(accounts)[bid], fast=True)
                     args = SimpleNamespace(basis='Diagnostic fixture', provider=provider, account=provider,
                         model=model, effort='high', input=None, usage_cache=None, accounts=None,
@@ -100,43 +104,33 @@ class FastModesTests(unittest.TestCase):
             self.assertIn('service_tier="priority"' if fast else 'service_tier="default"', args)
             self.assertIn('features.fast_mode=' + str(fast).lower(), args)
 
-    def test_codex_public_subscription_rate_and_explicit_calibration(self):
-        self.assertEqual(fast_modes.codex_burn_multiplier({}, {'billing': 'subscription'}), 2.0)
-        self.assertEqual(fast_modes.codex_burn_multiplier({'fast_burn_multiplier': 2.5}, {'billing': 'subscription'}), 2.5)
-        self.assertEqual(fast_modes.codex_burn_multiplier({'fast_burn_multiplier': 2.5}, {'billing': 'credits'}), 2)
+    def test_claude_fast_billing_follows_the_account(self):
         self.assertEqual(fast_modes.claude_billing({'billing': 'subscription'}), 'usage_credits')
         self.assertEqual(fast_modes.claude_billing({'billing': 'metered'}), 'api')
         self.assertEqual(fast_modes.claude_billing({}), 'unknown_paid')
 
-    def test_claude_paid_fast_is_explicit_and_never_a_subscription_reservation(self):
+    def test_claude_fast_is_its_own_candidate_priced_at_the_cited_multiples(self):
         now = datetime.now(timezone.utc)
         accounts = allocator.load_accounts(allocator.reference_fleet_path())
         usage = usage_windows(now, {'claude': [('five_hour', 95, 3), ('seven_day', 95, 1)]})
         task = dict(work_kind='debug_review', difficulty='routine', expected_hours=0.01,
                     needs={'local_only': True, 'fast': True})
-        def opus(t):
-            return next(r for r in allocator.plan(t, usage, now, accounts=accounts)['ranking'] if r['id'] == 'opus55_high')
-        normal = opus(task)
-        self.assertFalse(normal['bundle'].get('fast'))  # --fast preference/reset never buys Claude credits
-        paid = opus(dict(task, force_fast=True))
-        self.assertTrue(paid['bundle']['fast'])
-        self.assertEqual(paid['bundle']['fast_billing'], 'usage_credits')
-        self.assertIsNone(paid['expected_usd'])
-        self.assertIsNone(paid['expected_pct'])
-        self.assertIsNone(paid['capacity'])
-        self.assertNotIn('reset_bonus', paid['components'])
-        self.assertNotIn('fast_bonus', paid['components'])
-        disabled = opus(dict(task, force_fast=True, disable_fast=True))
-        self.assertFalse(disabled['bundle'].get('fast'))
+        shipped = allocator.load_five_axis()['models']['claude-opus-5-5']['fast_mode']
+        def rows(t, load=accounts):
+            return allocator.plan(t, usage, now, accounts=load)['ranking']
+        plain = allocator.candidate_for_bundle(rows(task), 'opus55_high', False)
+        self.assertFalse(plain['bundle'].get('fast'))
+        paid = allocator.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', True)
+        self.assertEqual((paid['id'], paid['bundle']['fast']), ('opus55_high+fast', True))
+        self.assertEqual(paid['base_id'], 'opus55_high')
+        self.assertGreater(paid['expected_usd'], 0)
+        self.assertTrue(any(f"{shipped['price_multiplier']:g}x burn" in n for n in paid['notes']))
+        self.assertIsNone(allocator.candidate_for_bundle(rows(dict(task, force_fast=True, disable_fast=True)), 'opus55_high', True))
         accounts['accounts']['claude']['bundles']['opus55_high']['disabled'] = True
-        self.assertTrue(opus(dict(task, force_fast=True))['excluded'])
+        self.assertTrue(allocator.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', False)['excluded'])
         accounts['accounts']['claude']['bundles']['opus55_high']['disabled'] = False
         usage = usage_windows(now, {'claude': [('five_hour', 0, 3), ('seven_day', 0, 100)]})
-        self.assertTrue(opus(dict(task, force_fast=True))['excluded'])
-        record = dict(stage='dispatch', dispatch_id='paid', state='started',
-                      lease_until=(now + timedelta(minutes=5)).isoformat(), bundle=paid['bundle'], expected_usd=None)
-        self.assertEqual(allocator.inflight_reserved_usd('claude', accounts['accounts']['claude'], 'seven_day',
-                         {}, {}, 100, [record], accounts, accounts['scoring'], now), 0)
+        self.assertTrue(allocator.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', False)['excluded'])
 
 
 if __name__ == '__main__':

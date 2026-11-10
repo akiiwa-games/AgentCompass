@@ -109,7 +109,7 @@ class AccountStateCardTests(unittest.TestCase):
         allocator.host_policy.load_policy.return_value = None
         allocator.host_policy.account_allowed.return_value = True
         allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-        allocator.window_capacity_usd.return_value = None
+        allocator.capacity_usd.return_value = None
         router.usage_snapshot.return_value = {
             'accounts': {
                 'codex': {
@@ -144,7 +144,7 @@ class AccountStateCardTests(unittest.TestCase):
         allocator.host_policy.load_policy.return_value = None
         allocator.host_policy.account_allowed.return_value = True
         allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-        allocator.window_capacity_usd.return_value = None
+        allocator.capacity_usd.return_value = None
         # Case 1: Magpie gateway readAt > 10m sets stale=True, available=True, no error -> must stay ready ("就绪").
         router.usage_snapshot.return_value = {
             'accounts': {

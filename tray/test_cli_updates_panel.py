@@ -105,7 +105,7 @@ class PanelTests(unittest.TestCase):
         panel.change_language('en')
         self.assertEqual(panel.nav['policy'][2].cget('text'), 'Model Settings')
         self.assertEqual(panel.setting_switch.buttons['models'].cget('text'), 'Models & Boost')
-        self.assertEqual(panel.setting_switch.buttons['strategy'].cget('text'), 'Scoring & Capabilities')
+        self.assertEqual(panel.setting_switch.buttons['strategy'].cget('text'), 'Quota Thresholds')
         self.assertEqual(panel.cli_auto_check.cget('text'), 'Auto-update daily')
         panel.cli_loaded(CLI_ROWS)
         self.assertEqual(panel.cli_status.get(), 'CLIs: 1 installed · 1 updates')
@@ -188,90 +188,13 @@ class PanelTests(unittest.TestCase):
             panel.preset_buttons['省额度'].invoke()
             save.assert_not_called()
             self.assertEqual(float(panel.tuning_vars['safety_margin_pct'].get()), 12)
-        panel.models = {'gpt-6.1-sol': {'subjective': {'divergence': .5, 'global_rigor': .6, 'module_precision': .9}}}
-        panel.fill_dna_models()
         panel.run.reset_mock()
-        with mock.patch.object(router_data, 'save_strategy', return_value='saved') as save:
+        with mock.patch.object(router_data, 'save_tuning', return_value='saved') as save:
             panel.strategy_save.invoke()
             work, done = panel.run.call_args.args[:2]
             done(work())
-            self.assertEqual(save.call_args.args[1], 'gpt-6.1-sol')
+            self.assertEqual(save.call_args.args[0]['safety_margin_pct'], '12')
             self.assertEqual(panel.status.get(), 'saved')
-
-    def test_strategy_value_table_edits_rows_and_keeps_one_save(self):
-        panel = self.open()
-        panel.show_setting('strategy')
-        self.assertFalse(panel._value_ready)
-        self.assertEqual(panel.strategy_save.cget('text'), '保存策略与画像')
-        panel.value_loaded((
-            {'default': 1.0, 'rules': [
-                {'harness': 'antigravity', 'model_prefix': 'claude', 'factor': 0.9, 'basis': 'keep'}]},
-            {'score_per_displaced_usd': 0.012, 'score_per_displaced_worker_hour': 0.06}))
-        self.assertEqual(panel.collect_harness_factors()['rules'][0]['basis'], 'keep')
-        panel.harness_rule_rows[0]['factor'].set('0.85')
-        self.assertNotIn('basis', panel.collect_harness_factors()['rules'][0])
-        panel.add_harness_rule({'harness': 'codex', 'work_kind': 'debug', 'factor': 1})
-        panel.remove_harness_rule(panel.harness_rule_rows[0])
-        panel.exchange_vars['score_per_displaced_usd'].set('0.02')
-        with mock.patch.object(router_data, 'save_tuning') as tuning_save, \
-             mock.patch.object(router_data, 'save_strategy', return_value='saved') as save:
-            panel.preset_buttons['省额度'].invoke()
-            tuning_save.assert_not_called()
-            save.assert_not_called()
-            self.assertEqual(panel.harness_rule_rows[0]['harness'].get(), 'codex')
-            self.assertEqual(panel.exchange_vars['score_per_displaced_worker_hour'].get(), '0.06')
-            panel.run.reset_mock()
-            panel.strategy_save.invoke()
-            work, done = panel.run.call_args.args[:2]
-            done(work())
-        exchange = save.call_args.kwargs['opportunity_exchange']
-        self.assertEqual(exchange['score_per_displaced_usd'], '0.02')
-        self.assertEqual(exchange['score_per_displaced_worker_hour'], '0.06')
-        self.assertNotIn('shortage_loss_per_usd', exchange)
-        self.assertEqual(save.call_args.kwargs['harness_factors']['rules'], [
-            {'harness': 'codex', 'work_kind': 'debug', 'factor': '1'}])
-        self.assertEqual(panel.status.get(), 'saved')
-        panel.change_language('en')
-        self.assertEqual(panel.harness_title.cget('text'), 'Harness factor')
-        self.assertEqual(panel.exchange_title.cget('text'), 'Opportunity exchange')
-        self.assertEqual(panel.strategy_save.cget('text'), 'Save strategy & DNA')
-
-    def test_harness_columns_share_one_grid_and_invalid_factor_blocks_save(self):
-        panel = self.open()
-        panel.show_setting('strategy')
-        panel._factor_choices = {'harness': ['codex', 'pi'], 'work_kind': ['debug_review'],
-                                 'model': ['gpt-6.1-sol']}
-        panel.value_loaded((
-            {'default': 1.0, 'rules': [{'harness': 'codex', 'model_prefix': 'claude', 'factor': 0.9}]},
-            {'score_per_displaced_usd': 0.012, 'score_per_displaced_worker_hour': 0.06},
-            panel._factor_choices))
-        row = panel.harness_rule_rows[0]
-        for key, header in panel.harness_headers.items():
-            self.assertEqual(header.grid_info()['column'], row['widgets'][key].grid_info()['column'])
-            self.assertEqual(header.grid_info()['sticky'], row['widgets'][key].grid_info()['sticky'])
-            self.assertNotEqual(header.grid_info()['column'], row['delete'].grid_info()['column'])
-        self.assertEqual(row['delete'].grid_info()['column'], 5)
-        self.assertEqual(row['widgets']['harness'].winfo_class(), 'TCombobox')
-        self.assertEqual(row['widgets']['work_kind'].winfo_class(), 'TCombobox')
-        self.assertEqual(row['widgets']['model'].winfo_class(), 'TCombobox')
-        self.assertEqual(row['widgets']['model_prefix'].winfo_class(), 'TEntry')
-        self.assertEqual(row['widgets']['harness'].cget('values')[0], '（任意）')
-        self.assertIn('pi', row['widgets']['harness'].cget('values'))
-        self.assertEqual(row['work_kind'].get(), '（任意）')
-        row['factor'].set('3')
-        self.assertEqual(row['widgets']['factor'].cget('style'), 'Invalid.TEntry')
-        with mock.patch.object(router_data, 'save_strategy') as save:
-            panel.strategy_save.invoke()
-            save.assert_not_called()
-        self.assertIn('0', panel.status.get())
-        self.assertIn('2', panel.status.get())
-        row['factor'].set('2')
-        self.assertEqual(row['widgets']['factor'].cget('style'), 'TEntry')
-        panel.harness_default.set('9')
-        self.assertEqual(panel.harness_default_entry.cget('style'), 'Invalid.TEntry')
-        with mock.patch.object(router_data, 'save_strategy') as save:
-            panel.strategy_save.invoke()
-            save.assert_not_called()
 
     def test_latest_cli_read_wins_over_a_slower_read(self):
         panel = self.open()

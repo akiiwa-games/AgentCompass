@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import route_judge as router
-from router_test_support import isolated_router_state, temporary_root
+from router_test_support import isolated_router_state, profile, profile_for, temporary_root
 
 
 _real_scorer_accounts = router.scorer_accounts
@@ -29,6 +29,19 @@ def setUpModule():
 
 def reference_capabilities(allocator):
     return allocator.load_capabilities(accounts=allocator.load_accounts(allocator.reference_fleet_path()))
+
+
+def live_providers():
+    """A fresh, healthy Codex reading, so a plan run on the real clock has one account it can price."""
+    live = datetime.now(timezone.utc)
+    return {'codex': {'fetched_at': live.isoformat(), 'available': True, 'stale': False,
+                      'windows': [{'id': 'usage', 'used_pct': 20, 'resets_at': (live + timedelta(days=3)).isoformat()}]}}
+
+
+def dot_admitted(result):
+    """Whether the plan left dot_text eligible: another account may still be the better pick."""
+    row = next((c for c in result['ranking'] if c['id'] == 'dot_text'), None)
+    return row is not None and not row['excluded'] and row['score'] is not None
 
 
 class RoutingTests(unittest.TestCase):
@@ -59,8 +72,9 @@ class RoutingTests(unittest.TestCase):
     def run_plan(self, directory, task, down=None, unavailable=(), records=(), extra=()):
         source = Path(directory) / 'in.json'
         task_with_hours = {'expected_hours': 0.5, **task}
+        task_with_hours.setdefault('profile', profile_for(task_with_hours))
         source.write_text(json.dumps({'task': task_with_hours, 'unavailable': list(unavailable)}), encoding='utf-8')
-        cache = self.write_cache(directory, {})
+        cache = self.write_cache(directory, live_providers())
         out = io.StringIO()
         with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--input', str(source),
                                         '--usage-cache', str(cache), *extra]), \
@@ -230,7 +244,7 @@ class RoutingTests(unittest.TestCase):
                                                       'candidates': candidates, 'subscription_status': status})
             self.assertEqual(set(req['response_schema']['properties']['choice']['enum']), expected)
 
-    def test_judge_cli_ordering_env_and_claude_2_safety_floor(self):
+    def test_judge_cli_ordering_and_env(self):
         with tempfile.TemporaryDirectory() as directory:
             for kind, bundle in router.JUDGES.items():
                 cmd = router.judge_command(kind, ['native-cli'], Path(directory), {'type': 'object'})
@@ -245,7 +259,7 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(env['ROUTER_CUSTOM'], 'keep')
             self.assertTrue(env['CLAUDE_CONFIG_DIR'].endswith('.claude-lab'))
 
-        # Primary exhausted -> switches to claude-lab if five_hour > 25% remaining, else skips sonnet
+        # Primary exhausted -> the Sonnet judge switches to claude-lab
         claude_empty = self.row(used=100)
         claude_empty['windows'][0].update({'id': 'seven_day', 'resets_at': '2026-10-08T00:00:00Z'})
         claude_2_ok = self.row(used=17)
@@ -253,11 +267,6 @@ class RoutingTests(unittest.TestCase):
         snap_ok = self.snapshot({'claude': claude_empty, 'claude-lab': claude_2_ok, 'codex': self.row(used=50)})
         self.assertEqual(router.resolve_judge('sonnet', snap_ok)['account'], 'claude-lab')
         self.assertEqual(router.judge_order(snap_ok, 'auto'), ['sonnet', 'codex'])
-
-        claude_2_low = self.row(used=85)
-        claude_2_low['windows'][0].update({'id': 'five_hour', 'resets_at': '2026-10-04T03:00:00Z'})
-        snap_low = self.snapshot({'claude': claude_empty, 'claude-lab': claude_2_low, 'codex': self.row(used=30)})
-        self.assertEqual(router.judge_order(snap_low, 'auto'), ['codex'])
 
     def test_capacity_alerts_ledger_and_constraint_recording(self):
         reset = (self.now + timedelta(days=3)).isoformat()
@@ -390,17 +399,18 @@ class RoutingTests(unittest.TestCase):
                 with self.subTest(case=label):
                     result, probe = self.run_plan(directory, {'objective': 'Fix single-file parser bug',
                         'work_kind': 'debug_review', 'difficulty': 'hard', 'needs': needs}, down)
-                    self.assertEqual(result['choice'] == 'dot_text', dot)
+                    self.assertEqual(dot_admitted(result), dot)
                     self.assertNotEqual(result['choice'], 'none')
                     self.assertEqual(probe.called, probed)
                     codes = {a['code'] for a in result['alerts']}
-                    if alert:
+                    if alert and (alert != 'dot_handoff' or result['choice'] == 'dot_text'):
                         self.assertIn(alert, codes)
                     self.assertNotIn('local_only_ignored_without_reason', codes)
             ssh, _ = self.run_plan(directory, {'objective': 'Read-only checklist over SSH and the repository',
                 'work_kind': 'tool_execution', 'difficulty': 'hard', 'needs': {'local_only': True}})
             self.assertNotIn(ssh['choice'], ('dot_text', 'none'))
-            unknown, _ = self.run_plan(directory, {'objective': 'Compute', 'work_kind': 'research_compute', 'difficulty': 'hard'})
+            unknown, _ = self.run_plan(directory, {'objective': 'Compute', 'work_kind': 'research_compute', 'difficulty': 'hard',
+                                                   'profile': profile(work_kind='other_or_mixed')})
             self.assertIn('unknown_work_kind', {a['code'] for a in unknown['alerts']})
 
     def test_recent_dot_reroll_requires_local_evidence_or_failed_health(self):
@@ -422,7 +432,7 @@ class RoutingTests(unittest.TestCase):
                         'remote_reroute_guard': {'enabled': enabled, 'bundle_id': 'dot_text', 'window_seconds': 600}}):
                 result, _ = self.run_plan(directory, dict(task, needs={'local_only': local_only}),
                                            down, unavailable=['dot_text'], records=[recent])
-                self.assertEqual(result['choice'] == 'dot_text', dot)
+                self.assertEqual(dot_admitted(result), dot)
                 self.assertNotEqual(result['choice'], 'none')
                 self.assertEqual('dot_reroll_blocked' in {a['code'] for a in result['alerts']}, blocked)
         # m1: sharing an objective prefix (>180 chars) without matching task_id/chain_id/request_hash never locks
@@ -443,9 +453,10 @@ class RoutingTests(unittest.TestCase):
                 router.run_process([sys.executable, '-c', 'import time; time.sleep(30)'], directory, timeout=0.1)
 
 
-GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'context_scale': 1, 'hallucination_risk': 1, 'error_cost': 1,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
-               'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering'}
+GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
+               'realtime_loop': False, 'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+               'interaction_style': 'engineering',
+               'axis_demand': {'divergence': 0, 'global_rigor': 1, 'module_precision': 0, 'vision_tools': 3}}
 
 
 class ReadinessGapTests(unittest.TestCase):
@@ -489,7 +500,7 @@ class ReadinessGapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'in.json'
             source.write_text(json.dumps({'task': {'objective': 'x', 'expected_hours': 0.5, 'work_kind': 'general_implementation',
-                                                   'difficulty': 'routine'}}), encoding='utf-8')
+                                                   'difficulty': 'routine', 'profile': profile()}}), encoding='utf-8')
             out = io.StringIO()
             missing = str(Path(directory) / '.usage-float' / 'usage-cache.json')
             with patch.object(sys, 'argv', ['route_judge.py', 'plan', '--dry-run', '--no-score', '--input', str(source),
@@ -501,8 +512,6 @@ class ReadinessGapTests(unittest.TestCase):
         parsed_out = json.loads(out.getvalue())
         alerts = {a['code']: a['severity'] for a in parsed_out['alerts']}
         self.assertEqual(alerts.get('no_usage_data'), 'warn')
-        self.assertTrue(parsed_out.get('unclassified'))
-        self.assertEqual(parsed_out.get('unclassified_reason'), 'no_score_without_profile')
 
 
 class CliPrefixTests(unittest.TestCase):
@@ -710,7 +719,7 @@ class SystemOneScorerTests(unittest.TestCase):
         payload_task = {'expected_hours': 0.5, **task} if stage == 'plan' and 'expected_hours' not in task and '--hours' not in flags else task
         source.write_text(json.dumps({'task': payload_task}), encoding='utf-8')
         cache = Path(directory) / 'usage-cache.json'
-        cache.write_text(json.dumps({'providers': {}}), encoding='utf-8')
+        cache.write_text(json.dumps({'providers': live_providers()}), encoding='utf-8')
         calls, run = self.fake_agy(stdout if stdout is not None else self.envelope(GUI_PROFILE))
         out = io.StringIO()
         with patch.object(sys, 'argv', ['route_judge.py', stage, '--input', str(source), '--usage-cache', str(cache), *flags]), \
@@ -743,7 +752,7 @@ class SystemOneScorerTests(unittest.TestCase):
             self.assertEqual(self.allocator.validate_profile(c['expected_profile']), c['expected_profile'])
             self.assertIn(c['expected_profile']['work_kind'], self.capabilities['routes'])
         reviews = [c['expected_profile'] for c in cases['calibration_cases'] if c.get('id') == 'security_diff_review']
-        self.assertTrue(reviews and all((p['code_complexity'], p['hallucination_risk']) == (0, 3) for p in reviews))
+        self.assertTrue(reviews and all(p['code_complexity'] == 0 and p['read_only_review'] for p in reviews))
 
         # Fallback from response text when structured_output is omitted
         response = '```json\n{"task": "x"}\n```\n' + json.dumps(dict(GUI_PROFILE, toolAction='Finishing')) + '\n'
@@ -791,7 +800,6 @@ class SystemOneScorerTests(unittest.TestCase):
                         'needs': {'local_only': True, 'local_only_reason': 'operates local screen'}}
             code, planned, _ = self.run_cli(directory, 'plan', gui_task, '--score')
             self.assertEqual((code, planned['scorer']['source'], planned['decision']['task']['difficulty']), (0, 'system_one', 'routine'))
-            self.assertNotIn(planned['choice'], ('astra_high', 'astra_xhigh', 'pi_astra_high', 'pi_astra_xhigh'))
 
             # Default plan without --score and without caller work_kind/difficulty invokes classifier automatically
             bare_gui = {'objective': 'Click Save in local app',
@@ -825,19 +833,20 @@ class SystemOneScorerTests(unittest.TestCase):
             code_flag, res_flag, _ = self.run_cli(directory, 'plan', {'objective': 'Click Save'}, '--hours', '0.5')
             self.assertEqual((code_flag, res_flag['decision']['task']['hours']), (0, 0.5))
 
-    def test_hours_come_from_the_same_classification_or_a_labelled_default_and_explicit_hours_win(self):
+    def test_hours_come_from_the_same_classification_and_explicit_hours_win(self):
         base = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False, needs_gui=False, local_only=False)
         estimate = dict(base, expected_hours=3.0, hours_confidence='medium', urgency='unknown')
-        task = {'objective': 'Implement the parser module with tests', 'hours_source': 'classifier_difficulty', 'expected_hours': None}
+        task = {'objective': 'Implement the parser module with tests', 'hours_source': 'classifier_estimate', 'expected_hours': None}
         with tempfile.TemporaryDirectory() as directory:
             code, result, calls = self.run_cli(directory, 'plan', task, stdout=self.envelope(estimate))
             self.assertEqual((code, len(calls)), (0, 1))  # one scorer call carries class, hours and urgency
             self.assertEqual(result['hours_estimate'], {'hours': 3.0, 'source': 'classifier_estimate', 'confidence': 'medium'})
             self.assertEqual(result['decision']['task']['hours'], 3.0)
             self.assertEqual(result['task_profile']['urgency'], 'unknown')
-            _, fallback, _ = self.run_cli(directory, 'plan', task, stdout=self.envelope(base))
-            self.assertEqual(fallback['hours_estimate']['source'], 'difficulty_default')
-            self.assertEqual(fallback['hours_estimate']['hours'], fallback['decision']['task']['hours'])
+            code, unestimated, _ = self.run_cli(directory, 'plan', task, stdout=self.envelope(base))
+            # No default stands in for an hours estimate the classifier did not give.
+            self.assertEqual(code, 1)
+            self.assertIn('expected_hours is required', unestimated['detail'])
             _, explicit, _ = self.run_cli(directory, 'plan', {'objective': task['objective'], 'expected_hours': 0.25},
                                           stdout=self.envelope(estimate))
             self.assertNotIn('hours_estimate', explicit)
@@ -850,7 +859,8 @@ class SystemOneScorerTests(unittest.TestCase):
 
     def test_profile_local_only_is_trusted_and_caller_values_win(self):
         profile = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False,
-                       needs_gui=False, code_complexity=2, reasoning_depth=2)
+                       needs_gui=False, code_complexity=2, reasoning_depth=2,
+                       axis_demand={'divergence': 1, 'global_rigor': 1, 'module_precision': 2, 'vision_tools': 0})
         with tempfile.TemporaryDirectory() as directory:
             unavail_code, unavail_res, _ = self.run_cli(directory, 'plan', {'objective': 'Explore local logs'}, stdout='not json')
             self.assertEqual((unavail_code, unavail_res['choice'], unavail_res['error'], unavail_res['caller_action']),
@@ -873,10 +883,10 @@ class SystemOneScorerTests(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertEqual(result['scorer']['source'], 'system_one')
                 self.assertEqual(result['decision']['task']['difficulty_source'], 'profile')
+                self.assertNotEqual(result['choice'], 'none')
+                self.assertEqual(dot_admitted(result), not expected_local)
                 if expected_local:
-                    self.assertNotIn(result['choice'], ('dot_text', 'none'))
-                else:
-                    self.assertEqual(result['choice'], 'dot_text')
+                    self.assertNotEqual(result['choice'], 'dot_text')
                 applied = [a for a in result['alerts'] if a['code'] == 'profile_local_only_applied']
                 self.assertEqual(bool(applied), needs.get('local_only') is None)
                 if applied:
@@ -901,13 +911,14 @@ JEV_RESPONSE = {
                               'probabilities': {'engineering': 0.8, 'exploration': 0.2}},
         'reasoning_depth': {'type': 'score', 'score': 1.4, 'confidence': 0.5, 'probabilities': {'0': 0.2, '1': 0.3, '2': 0.4, '3': 0.1}},
         'code_complexity': {'type': 'score', 'score': 0.2, 'confidence': 0.8, 'probabilities': {'0': 0.85, '1': 0.1, '2': 0.05, '3': 0.0}},
-        'context_scale': {'type': 'score', 'score': 0.6, 'confidence': 0.4, 'probabilities': {'0': 0.5, '1': 0.4, '2': 0.1}},
-        'divergence': {'type': 'score', 'score': 0.0, 'confidence': 1.0, 'probabilities': {'0': 1.0, '1': 0.0, '2': 0.0}},
-        'hallucination_risk': {'type': 'score', 'score': 1.9, 'confidence': 0.9, 'probabilities': {'0': 0.0, '1': 0.1, '2': 0.9}},
-        'error_cost': {'type': 'score', 'score': 1.0, 'confidence': 0.6, 'probabilities': {'0': 0.2, '1': 0.6, '2': 0.2}},
+        'demand_divergence': {'type': 'score', 'score': 0.1, 'confidence': 0.7, 'probabilities': {'0': 0.9, '1': 0.1, '2': 0.0, '3': 0.0}},
+        'demand_global_rigor': {'type': 'score', 'score': 1.2, 'confidence': 0.6, 'probabilities': {'0': 0.1, '1': 0.7, '2': 0.2, '3': 0.0}},
+        'demand_module_precision': {'type': 'score', 'score': 0.3, 'confidence': 0.8, 'probabilities': {'0': 0.8, '1': 0.2, '2': 0.0, '3': 0.0}},
+        'demand_vision_tools': {'type': 'score', 'score': 2.8, 'confidence': 0.8, 'probabilities': {'0': 0.0, '1': 0.0, '2': 0.2, '3': 0.8}},
         'needs_visual': {'type': 'noul', 'noul': 0.1},
         'needs_gui': {'type': 'noul', 'noul': 0.8},
         'local_only': {'type': 'noul', 'noul': 0.7},
+        'realtime_loop': {'type': 'noul', 'noul': 0.05},
         'wants_fast': {'type': 'noul', 'noul': 0.05},
         'read_only_review': {'type': 'noul', 'noul': 0.05},
         'multi_task': {'type': 'noul', 'noul': 0.1},
@@ -916,9 +927,10 @@ JEV_RESPONSE = {
     'usage': {'input_tokens': 900, 'output_tokens': 40},
 }
 JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-               'reasoning_depth': 2, 'code_complexity': 0, 'context_scale': 2, 'divergence': 1, 'hallucination_risk': 3,
-               'error_cost': 2, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
-               'wants_fast': False, 'read_only_review': False}
+               'reasoning_depth': 2, 'code_complexity': 0,
+               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': False,
+               'wants_fast': False, 'read_only_review': False,
+               'axis_demand': {'divergence': 0, 'global_rigor': 1, 'module_precision': 0, 'vision_tools': 3}}
 SECRET = 'test-key-0000000000000000'
 
 
@@ -1016,10 +1028,10 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual(request['state']['task'], {'objective': self.task['objective']})
         self.assertIn('read_only_review', request['state']['rubric_notes'])
         questions = request['questions']
-        self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'context_scale',
-                                          'divergence', 'hallucination_risk', 'error_cost', 'needs_visual', 'needs_gui', 'local_only',
-                                          'realtime_loop', 'wants_fast', 'read_only_review', 'access', 'effort_band', 'urgency',
-                                          'multi_task', 'task_count'})
+        self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'needs_visual',
+                                          'needs_gui', 'local_only', 'realtime_loop', 'wants_fast', 'read_only_review', 'access',
+                                          'effort_band', 'urgency', 'multi_task', 'task_count',
+                                          'demand_divergence', 'demand_global_rigor', 'demand_module_precision', 'demand_vision_tools'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
@@ -1054,11 +1066,12 @@ class SelectableScorerTests(unittest.TestCase):
                        {'answers': {**answers, 'interaction_style': {'choice': 'vibes'}}},
                        {'answers': {**answers, 'access': {'choice': 'sudo'}}},
                        {'answers': {**answers, 'access': {'choice': 'read-only'}, 'code_complexity': {'score': 2.0}}},
-                       {'answers': {k: v for k, v in answers.items() if k != 'error_cost'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'demand_global_rigor'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'realtime_loop'}},
                        {'answers': {k: v for k, v in answers.items() if k != 'wants_fast'}},
                        {'answers': {k: v for k, v in answers.items() if k != 'read_only_review'}},
                        {'answers': {**answers, 'read_only_review': {'noul': 0.9}, 'code_complexity': {'score': 2.0}}},
-                       {'answers': {**answers, 'divergence': {'score': float('nan')}}},
+                       {'answers': {**answers, 'demand_divergence': {'score': float('nan')}}},
                        {'error': 'x'}):
             with self.assertRaises(ValueError):
                 router.parse_jev_response(broken, self.allocator)

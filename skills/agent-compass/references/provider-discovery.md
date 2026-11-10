@@ -106,8 +106,8 @@ it does not invent model benchmarks or quota capacity.
 `agentcompass providers`; a configured exact Bot ID plus the pinned local CLI
 and Node makes its launcher available. This is setup availability, not proof of
 current login: upstream performs a live read-only check before send. Billing and
-underlying model identity remain unknown. Public service scores are conservative
-priors; the shipped route order and `route_fit_peers` align it with Opus.
+underlying model identity remain unknown. It has no cited category scores, so it is
+dispatched only when named.
 Quota sharing is an explicit binding (shipped for Grok); the bound
 owner supplies observation freshness, reset and capacity policy. Execution
 enablement stays independent, and missing/stale quota never proves unlimited
@@ -149,7 +149,7 @@ instead of picking another install. `grok-bot` is separate.
 Normalization strips provider prefixes, dated/version tags and known suffixes,
 then tries longest known prefixes and family defaults; the result says which of these
 matched ([rules](router-internals.md#model-names-efforts-and-pins)). Scores never replace the
-advertised launch ID. Unknown model IDs get the generic 3.3-tier text-only baseline.
+advertised launch ID. A model ID with no scores stays out of automatic routing until public data has them; naming it still dispatches it.
 Saved CC Switch profiles remain metadata until bound to a real launcher; discovery
 never switches the active product account or contacts a gateway.
 

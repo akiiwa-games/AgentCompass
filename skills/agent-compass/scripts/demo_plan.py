@@ -6,18 +6,28 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-# The same bounded task as examples/task.json, so `plan --demo` needs no file from the repository.
+# The same bounded task as examples/task.json, so `plan --demo` needs no file from the repository. The profile is what the
+# classifier would answer, including the four category demands the router scores on.
 SAMPLE_DOCUMENT = {'task': {
     'objective': 'Add a missing timeout option to a Python command-line tool, update its help text, and run the existing pytest suite.',
     'context': 'A bounded coding task in an existing checkout, estimated at 1.5 active worker-hours. '
                'The local test fixtures are needed to verify the change.',
     'expected_hours': 1.5,
     'needs': {'local_only': True, 'local_only_reason': 'Runs pytest against local repository fixtures on this machine.'},
+    'profile': {
+        'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
+        'needs_visual': False, 'needs_gui': False,
+        'local_only': True, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': False, 'access': 'write',
+        'expected_hours': 1.5, 'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
+        'multi_task': False, 'task_count': '1',
+        'axis_demand': {'divergence': 1, 'global_rigor': 1, 'module_precision': 2, 'vision_tools': 0},
+    },
 }}
 
 
+# OPENCODE_DB_PATH names a file that does not exist: the local OpenCode usage database is host state too.
 NO_HOST_STATE_ENV = {'ROUTER_LAUNCH_FAILURES': 'off', 'ROUTER_PROVIDER_RETRY': 'off', 'ROUTER_MODEL_LATCH': 'off',
-                     'ROUTER_LIVE_MODELS': 'off'}
+                     'ROUTER_LIVE_MODELS': 'off', 'OPENCODE_DB_PATH': 'demo-no-opencode.db'}
 
 
 def reference_accounts(allocator):

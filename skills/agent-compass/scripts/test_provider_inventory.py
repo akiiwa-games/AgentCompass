@@ -23,6 +23,16 @@ def setUpModule():
     isolated_router_state(unittest.addModuleCleanup, discovery=False, policy=False)
 
 
+
+def community_capacity(family, plan, window):
+    """The cited community capacity of one plan window: the only capacity a subscription account has."""
+    return allocator.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
+
+
+def overlaid_capacity(accounts, name):
+    """The capacity the router prices an account's windows at (community data by plan)."""
+    return allocator.five_axis_overlay(accounts, allocator.load_five_axis())['accounts'][name].get('capacity_usd')
+
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.home = temporary_root(self.addCleanup)
@@ -378,11 +388,13 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(row['plan'], 'Google AI Pro')
         self.assertIn('account-tier', row['sources'])
         self.assertTrue(inventory.sign_in_proven(row))
-        spec = self.apply(self.discover())['accounts']['antigravity']
-        self.assertEqual(spec['capacity_usd']['gemini-weekly'], 31)  # Pro, not the Ultra 20x default
+        applied = self.apply(self.discover())
+        self.assertEqual(overlaid_capacity(applied, 'antigravity')['gemini-weekly'],
+                         community_capacity('antigravity', 'pro', 'gemini-weekly'))  # Pro, not the Ultra 20x default
         self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Ultra', 'tier_id': 'g1-ultra-tier', 'read_at': read_at})
-        spec = self.apply(self.discover())['accounts']['antigravity']
-        self.assertEqual(spec['capacity_usd']['gemini-weekly'], 625)
+        applied = self.apply(self.discover())
+        self.assertEqual(overlaid_capacity(applied, 'antigravity')['gemini-weekly'],
+                         community_capacity('antigravity', 'ultra', 'gemini-weekly'))
 
     def test_grok_no_usage_is_eligible_without_unlimited_bonus_and_launchable(self):
         self.paseo({'grok': {'extends': 'acp', 'enabled': True}})
@@ -450,7 +462,8 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual({b['model'] for b in bundles}, {'claude-haiku-4-5', 'claude-opus-4-6',
             'claude-sonnet-4-6', 'qwen3-coder-next', 'some-new-model', 'another-new-model', 'gpt-6.1-terra'})
         self.assertEqual({b['model'] for b in bundles if b['model'].startswith('gpt-')}, {'gpt-6.1-terra'})
-        self.assertTrue(all(allocator.model_spec(accounts, b['model'])['tier'] >= 1 for b in bundles))  # every bundle is scored
+        # A model with no public data has no row and no score; it stays out of automatic routing until the data has it.
+        self.assertEqual(allocator.model_spec(accounts, 'some-new-model'), {})
 
     def test_bound_cc_switch_api_models_get_native_bundles_without_changing_signin(self):
         config = {'env': {'ANTHROPIC_BASE_URL': 'https://example.invalid',
@@ -508,7 +521,7 @@ class DiscoveryTests(unittest.TestCase):
         accounts = self.apply(snapshot)
         spec = accounts['accounts']['claude-work']
         self.assertTrue(spec['verified'])
-        self.assertEqual(spec['capacity_usd']['seven_day'], 156)
+        self.assertEqual(overlaid_capacity(accounts, 'claude-work')['seven_day'], community_capacity('claude', 'pro', 'seven_day'))
         bundle = next(b for b in allocator.bundles(accounts).values() if b['account'] == 'claude-work' and not b.get('disabled'))
         self.assertEqual(bundle['provider'], 'claude-work')
         self.assertEqual(bundle['modeId'], 'bypassPermissions')
@@ -550,8 +563,8 @@ class DiscoveryTests(unittest.TestCase):
         accounts = self.apply(snapshot)
         merged = inventory.merge_usage({'accounts': {'codex': {'status': 'fresh', 'windows': [1]}}}, accounts, self.now)
         self.assertEqual(merged['accounts']['codex']['windows'], [])
-        # An unknown plan is priced conservatively, not at what the old credential's plan allowed.
-        self.assertEqual(accounts['accounts']['codex']['capacity_usd'], {'usage': 67, 'five_hour': 10})
+        # An unknown plan has no cited capacity: unknown, not what the old credential's plan allowed.
+        self.assertEqual(overlaid_capacity(accounts, 'codex'), {})
         self.assertEqual(accounts['accounts']['codex']['plan_unknown'], 'unknown-plan')
         self.assertIsNone(accounts['accounts']['codex']['expires_at'])
 
@@ -822,7 +835,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn('codex-work', accounts)
         magpie_spec = accounts['claude-magpie']
         self.assertTrue(magpie_spec['verified'])
-        self.assertEqual(magpie_spec['capacity_usd']['seven_day'], 156)
+        self.assertEqual(overlaid_capacity(applied, 'claude-magpie')['seven_day'], community_capacity('claude', 'pro', 'seven_day'))
         self.assertEqual(magpie_spec['windows']['five_hour']['launch_min_remaining_pct'], 25)
         # No implicit model reservation between plans; bundle switches are the user's.
         self.assertNotIn('disabled', magpie_spec['bundles']['claude-magpie__opus55_high'])
@@ -1171,11 +1184,8 @@ class PlanTemplateTests(unittest.TestCase):
                     self.assertIn(template['alias'], plans)
                     continue
                 self.assertIn('windows', template, (family, plan))
-                for pool, capacity in template.get('capacity_usd', {}).items():
-                    self.assertIn(pool, template['windows'], (family, plan, pool))
-                    self.assertGreater(template['burn_pct_per_worker_hour'][pool], 0, (family, plan, pool))
-                self.assertEqual(set(template.get('capacity_usd', {})), set(template.get('burn_pct_per_worker_hour', {})),
-                                 (family, plan))
+                self.assertNotIn('capacity_usd', template, (family, plan))      # capacity comes from community data by plan
+                self.assertNotIn('burn_pct_per_worker_hour', template, (family, plan))
 
     def test_plan_labels_resolve_to_templates(self):
         for family, label, expected in (
@@ -1187,33 +1197,28 @@ class PlanTemplateTests(unittest.TestCase):
                 plan = inventory.configured_plan(family, label)
                 self.assertEqual(plan, expected)
                 self.assertTrue(inventory.plan_defaults({}, family, plan))
-        self.assertEqual(inventory.plan_defaults({}, 'codex', 'team')['capacity_usd'], {'usage': 67, 'five_hour': 10})
-        self.assertEqual(inventory.plan_defaults({}, 'claude', 'max')['capacity_usd']['seven_day'], 1400)
+        self.assertEqual(set(inventory.plan_defaults({}, 'codex', 'team')['windows']), {'usage', 'five_hour'})
+        self.assertEqual(inventory.plan_defaults({}, 'claude', 'max'), inventory.plan_defaults({}, 'claude', 'max5'))
         self.assertNotIn('alias', inventory.plan_defaults({}, 'antigravity', 'ultra'))
 
-    def test_claude_max_plans_ship_a_five_hour_burn(self):
+    def test_claude_max_plans_ship_a_five_hour_window(self):
         for plan in ('max5', 'max20'):
-            self.assertIn('five_hour', inventory.plan_defaults({}, 'claude', plan)['burn_pct_per_worker_hour'])
+            self.assertIn('five_hour', inventory.plan_defaults({}, 'claude', plan)['windows'])
 
-    def test_configured_plan_seeds_capacity_when_discovery_reports_none(self):
+    def test_configured_plan_seeds_windows_when_discovery_reports_none(self):
         spec = self.apply({'plan': 'Google AI Ultra (5x)', 'billing': 'subscription', 'windows': {}, 'bundles': {}})
         self.assertEqual(spec['plan'], 'Google AI Ultra (5x)')
-        self.assertEqual(spec['capacity_usd']['gemini-weekly'], 156)
-        self.assertEqual(spec['burn_pct_per_worker_hour']['3p-5h'], 11.4)
         self.assertIn('gemini-5h', spec['windows'])
+        self.assertNotIn('capacity_usd', spec)
 
     def test_same_plan_fills_gaps_but_keeps_account_values(self):
-        spec = self.apply({'plan': 'pro', 'billing': 'subscription', 'windows': {'usage': {'hours': 168}},
+        spec = self.apply({'plan': 'pro', 'billing': 'subscription', 'windows': {'usage': {'hours': 168, 'launch_min_remaining_pct': 9}},
                            'capacity_usd': {'usage': 999}, 'bundles': {}}, family='codex', name='codex', plan='pro')
         self.assertEqual(spec['capacity_usd'], {'usage': 999})
-        self.assertEqual(spec['burn_pct_per_worker_hour'], {'usage': 3.48})
-        spec = self.apply({'plan': 'pro', 'billing': 'subscription', 'windows': {'usage': {'hours': 168}},
-                           'burn_pct_per_worker_hour': {'usage': 1.0}, 'bundles': {}}, family='codex', name='codex', plan='pro')
-        self.assertEqual(spec['burn_pct_per_worker_hour'], {'usage': 1.0})
-        self.assertEqual(spec['capacity_usd'], {'usage': 325})
+        self.assertEqual(spec['windows']['usage']['launch_min_remaining_pct'], 9)
 
     def test_account_plan_templates_override_shipped(self):
         spec = self.apply({'plan': 'x', 'billing': 'subscription', 'windows': {}, 'bundles': {}}, family='codex', name='codex',
                           plan='plus', accounts_extra={'plan_templates': {'codex': {'plus': {
-                              'windows': {'usage': {'hours': 168}}, 'capacity_usd': {'usage': 80}}}}})
-        self.assertEqual(spec['capacity_usd'], {'usage': 80})
+                              'windows': {'custom': {'hours': 24}}}}}})
+        self.assertEqual(list(spec['windows']), ['custom'])

@@ -81,6 +81,10 @@ class FallbackTests(unittest.TestCase):
 
     def setUp(self):
         self.setUp_dispatch()
+        # A second account that can take the work when the first attempt's model is refused or held.
+        self.usage['accounts']['codex'] = {'status': 'fresh', 'fetched_at': self.now.isoformat(), 'windows': [
+            {'id': 'usage', 'used_pct': 0, 'remaining_pct_before_reset': 100,
+             'resets_at': (self.now + timedelta(hours=100)).isoformat(), 'seconds_until_reset': 100 * 3600}]}
         self.retry_store = self.root / provider_retry.FILE
         env = patch.dict(os.environ, {'ROUTER_PROVIDER_RETRY': str(self.retry_store), 'ROUTER_STATE_DIR': str(self.root),
                                       'ROUTER_MODEL_LATCH': str(self.root / 'latch.json')})
@@ -126,7 +130,7 @@ class FallbackTests(unittest.TestCase):
         """The parent's dispatch: planned, prepared and launched as roll does."""
         task = task or self.task
         if decision is None:
-            planned = allocator.plan(dict(task), self.usage, self.now, accounts=self.accounts)
+            planned = allocator.plan(dict(task, pinned_bundle='lab_sonnet55_high'), self.usage, self.now, accounts=self.accounts)
             decision = dict(planned, **registry.issue(planned, task, self.now))
         row = registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts)
         flow.launch(row['dispatch_id'], 'parent-a', host=self.host, watch_seconds=0)
@@ -223,7 +227,9 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual((refused['action'], refused['result']), ('final', 'declined'))   # it may still be running
         self.assertEqual(self.host.creates, ['claude-lab/claude-sonnet-5-5'])
         self.assertIn('stop_failed', refused['lines'][0])
-        other = self.first(task=dict(self.task, task_id='stuck-2'))
+        other_task = dict(self.task, task_id='stuck-2')
+        sol = dict(allocator.bundles(self.accounts)['sol_high'], bundle_id='sol_high')
+        other = self.first(task=other_task, decision=self.issue(task=other_task, choice='sol_high', selected_bundle=sol))
         self.host.end(other['dispatch_id'], 'idle', terminal=dict(stuck, cancelled=True))
         out = self.handle(other['dispatch_id'])
         self.assertEqual(out['action'], 'relaunched')
@@ -690,7 +696,9 @@ class RollFallbackTests(unittest.TestCase):
         test = self
 
         def plan_stage(document, _):
-            planned = allocator.plan(dict(document['task']), test.usage, registry.utcnow(),
+            first = not document.get('unavailable')
+            planned = allocator.plan(dict(document['task'], **({'pinned_bundle': 'lab_sonnet55_high'} if first else {})),
+                                     test.usage, registry.utcnow(),
                                      unavailable=document.get('unavailable') or (), accounts=test.accounts)
             return dict(planned, **registry.issue(planned, document['task'])), 0
         judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),

@@ -56,3 +56,47 @@ def usage_windows(now, accounts):
         {'id': wid, 'remaining_pct_before_reset': rem, 'observed_remaining_pct': rem,
          'seconds_until_reset': hours * 3600, 'resets_at': (now + timedelta(hours=hours)).isoformat()}
         for wid, rem, hours in rows]} for name, rows in accounts.items()}}
+
+
+DEPTH = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 4}
+STYLE_OF_KIND = {'exploration_analysis': 'exploration', 'research_packet': 'exploration', 'visual_analysis': 'exploration',
+                 'text_in_text_out': 'text_only', 'web_research': 'text_only', 'dot_execution': 'text_only',
+                 'direction_reasoning': 'advisory', 'complex_build_plan': 'advisory'}
+
+
+def profile(**changes):
+    """A valid classifier profile for a bounded implementation task, with `changes` applied (`axis_demand` may be a
+    partial dict). Tests that need a task the router can plan start from this."""
+    base = {'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
+            'needs_visual': False, 'needs_gui': False,
+            'local_only': False, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': False,
+            'access': 'write', 'expected_hours': 1.0, 'hours_confidence': 'medium', 'urgency': 'normal',
+            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+            'axis_demand': {'divergence': 1, 'global_rigor': 1, 'module_precision': 2, 'vision_tools': 0}}
+    axis = {**base['axis_demand'], **(changes.pop('axis_demand', None) or {})}
+    return {**base, **changes, 'axis_demand': axis}
+
+
+def profile_for(task):
+    """The profile a classifier would give a task a test wrote with only a few fields (work_kind, difficulty, needs,
+    realtime_loop, expected_hours): the fields the test names are kept, the rest is `profile()`."""
+    needs = task.get('needs') or {}
+    kind = task.get('work_kind') or 'general_implementation'
+    depth = DEPTH.get(task.get('difficulty') or 'hard', 2)
+    visual = bool(needs.get('visual') or needs.get('gui') or task.get('needs_visual') or task.get('needs_gui'))
+    gui = bool(needs.get('gui') or task.get('needs_gui'))
+    style = STYLE_OF_KIND.get(kind, 'engineering')
+    hours = task.get('expected_hours') or task.get('hours')
+    return profile(
+        work_kind=kind, reasoning_depth=depth, needs_visual=visual, needs_gui=gui, interaction_style=style,
+        local_only=bool(needs.get('local_only') or task.get('local_only')),
+        realtime_loop=bool(needs.get('realtime_loop') or task.get('realtime_loop')),
+        **({'expected_hours': float(hours)} if hours else {}),
+        **({'code_complexity': 0, 'access': 'read-only'} if style in ('text_only', 'advisory') else {}),
+        axis_demand=demand_for(depth, style, visual))
+
+
+def demand_for(depth, style, visual):
+    """The category demand a test fixture gives a profile that names only its depth, style and visual need."""
+    return {'global_rigor': max(1, depth - 1), 'divergence': 2 if style in ('exploration', 'advisory') else 1,
+            'module_precision': 0 if style in ('text_only', 'advisory') else 2, 'vision_tools': 2 if visual else 0}

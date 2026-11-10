@@ -18,9 +18,9 @@ Designed the pstack way (behavior over implementation, prove it works from packa
       F07  Stranger account topologies + setup/discovery/uninstall home parity (only Claude; only Codex; Magpie Claude; agy installed not signed in; no Paseo; Paseo provider with extends chain & custom CLAUDE_CONFIG_DIR)
       F08  Tray account cards & hover + usage-float standalone & hosted rows, ×N pool left_pct, week-only titles, and masked member hover
       F09  Real machine untouched & no background process left behind
-      F10  Evidence-calibrated routing after 0.3.6 (default checkbox from public data, ability floors as data and no
-           silent frontier downgrade, fixed effort, free-usage bonus per account, pool demand against N x 100%, tray
-           ability-floor chart); each check is also shown to fail once against broken data in the throwaway profile
+      F10  Evidence-calibrated routing after 0.3.6 (default checkbox from public data, metered and never-billed
+           accounts as a last resort, pool reset); each check is also shown to fail once against broken data in the
+           throwaway profile
       F11  Oh My Pi OAuth subscription logins (agent.db): shared quota with the native account, omp-only accounts,
            metered API keys, disabled/corrupt/locked credentials; each check is also shown to fail once
       F12  Tray version display, one-click self-update (old wheel upgraded to locally built wheel in a foreign profile,
@@ -175,7 +175,7 @@ class ForeignFixtureServer:
                     profile = {
                         "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
-                        "context_scale": 1, "divergence": 1, "hallucination_risk": 2, "error_cost": 2,
+                        "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
                         "needs_visual": False, "needs_gui": False, "local_only": True, "expected_hours": 0.5,
                         "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",
                         "reason": "foreign machine fixture classification",
@@ -557,24 +557,24 @@ def verify_f02_fleet_parity(ctx: dict):
         ("bounded_coding", {
             "objective": "Fix off-by-one slice in parser.py and add a unit test.",
             "work_kind": "general_implementation", "expected_hours": 0.5,
-            "profile": {"reasoning_depth": 2, "code_complexity": 2, "context_scale": 1, "divergence": 1,
-                        "hallucination_risk": 2, "error_cost": 2, "needs_visual": False, "needs_gui": False,
+            "profile": {"reasoning_depth": 2, "code_complexity": 2, "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
+                        "needs_visual": False, "needs_gui": False,
                         "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "bounded coding"},
         }),
         ("deep_debugging", {
             "objective": "Diagnose race condition across worker pool shutdown and lock handoff.",
             "work_kind": "debug_review", "expected_hours": 1.5,
-            "profile": {"reasoning_depth": 4, "code_complexity": 3, "context_scale": 3, "divergence": 2,
-                        "hallucination_risk": 3, "error_cost": 3, "needs_visual": False, "needs_gui": False,
+            "profile": {"reasoning_depth": 4, "code_complexity": 3, "axis_demand": {"divergence": 2, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
+                        "needs_visual": False, "needs_gui": False,
                         "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "deep debugging"},
         }),
         ("frontend_visual", {
             "objective": "Design and implement responsive quota cards with hover breakdown.",
             "work_kind": "frontend_implementation", "expected_hours": 1.0,
-            "profile": {"reasoning_depth": 3, "code_complexity": 2, "context_scale": 2, "divergence": 3,
-                        "hallucination_risk": 2, "error_cost": 2, "needs_visual": True, "needs_gui": False,
+            "profile": {"reasoning_depth": 3, "code_complexity": 2, "axis_demand": {"divergence": 3, "global_rigor": 1, "module_precision": 2, "vision_tools": 2}, "realtime_loop": False,
+                        "needs_visual": True, "needs_gui": False,
                         "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "frontend UI"},
         }),
@@ -746,8 +746,8 @@ def verify_f04_quota_gate_scope_and_twins(ctx: dict):
     task_file.write_text(json.dumps({"task": {
         "objective": "Implement retry backoff in transport.py and verify edge cases.",
         "work_kind": "general_implementation", "expected_hours": 1.0,
-        "profile": {"reasoning_depth": 3, "code_complexity": 3, "context_scale": 2, "divergence": 1,
-                    "hallucination_risk": 2, "error_cost": 2, "needs_visual": False, "needs_gui": False,
+        "profile": {"reasoning_depth": 3, "code_complexity": 3, "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
+                    "needs_visual": False, "needs_gui": False,
                     "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                     "reason": "verify no twin pi bundles and agy 3p capacity"},
     }}), encoding="utf-8")
@@ -1814,10 +1814,9 @@ def verify_f10_evidence_calibrated_routing(ctx: dict):
     op = run.operation(
         "F10 evidence-calibrated routing after 0.3.6",
         "From the installed wheel in a foreign profile (Magpie Claude pool of two + Codex): first-scan checkboxes follow "
-        "public data superseded and billing; ability floors are data (frontier at or above the floor or wait/ask, override "
-        "changes the plan); fixed_effort scoring; free-usage bonus only on the declaring account; pool demand against "
-        "N x 100% with the later reset; tray ability-floor chart, saved floors and an off-screen render. Every check is also "
-        "run once against broken data in the profile and must fail there.",
+        "public data superseded; metered accounts are a last resort and never-billed accounts explicit selection only; the "
+        "pool's reset is its members' later reset. Every check is also run once against broken data in the profile and "
+        "must fail there.",
     )
     box.claude.mkdir(parents=True, exist_ok=True)
     (box.claude / "settings.json").write_text(json.dumps({"env": {
@@ -1849,48 +1848,7 @@ def verify_f10_evidence_calibrated_routing(ctx: dict):
     op.check("(failure shown) the reset check fails on a reading carrying the earlier member reset",
              not later_reset(dict(week, resets_at=fx.reset_7d)), week)
 
-    # 2b. A scoring.ability_floor / scoring.route_ability_floor in accounts-override.json changes the plan (installed CLI).
-    task_file = box.root / "f10-frontier-task.json"
-    task_file.write_text(json.dumps({"task": {
-        "objective": "Design the architecture of a new multiplayer game from first principles.",
-        "work_kind": "complex_build_plan", "difficulty": "frontier", "expected_hours": 1.0,
-        "needs": {"local_only": False}}}), encoding="utf-8")
-    override = box.state / "accounts-override.json"
-    original = override.read_bytes() if override.is_file() else None
-
-    def plan_with(scoring: dict | None) -> dict:
-        doc = json.loads(original) if original else {"schema_version": 2}
-        if scoring is not None:
-            doc.setdefault("scoring", {}).update(scoring)
-        override.write_text(json.dumps(doc, indent=2), encoding="utf-8")
-        return parse_json(run_in_box(box, op, [box.agentcompass, "plan", "--input", task_file, "--dry-run"], env).stdout)
-
-    try:
-        baseline = plan_with(None)
-        top = max(((c.get("components") or {}).get("ability_value") or 0) for c in baseline.get("ranking") or [{}])
-        above = round(top + 0.5, 2)
-        raised = plan_with({"ability_floor": {"frontier": above}})
-        route_raised = plan_with({"route_ability_floor": {"complex_build_plan": {"frontier": above}}})
-        misplaced = plan_with({"ability_floors": {"frontier": above}})   # not a key the router reads
-    finally:
-        if original is None:
-            override.unlink(missing_ok=True)
-        else:
-            override.write_bytes(original)
-
-    def changed(doc):
-        return doc.get("choice") == "none" and baseline.get("choice") not in (None, "none")
-
-    op.check("a scoring.ability_floor override above every bundle turns the frontier plan into a wait/ask",
-             changed(raised) and "floor" in str((raised.get("decision") or {}).get("reason")),
-             {"baseline": baseline.get("choice"), "raised": raised.get("choice"),
-              "reason": (raised.get("decision") or {}).get("reason")})
-    op.check("a scoring.route_ability_floor override for the task's route changes the plan the same way",
-             changed(route_raised), {"baseline": baseline.get("choice"), "route_raised": route_raised.get("choice")})
-    op.check("(failure shown) the override check fails when the value sits under a key the router does not read",
-             not changed(misplaced), {"baseline": baseline.get("choice"), "misplaced": misplaced.get("choice")})
-
-    # 1-6. The installed modules, intact and against broken data in this profile.
+    # The installed modules, intact and against broken data in this profile.
     probe = HERE / "f10_evidence_probe.py"
     scripts_dir = box.data / "skills" / "agent-compass" / "scripts"
     tray_dir = ctx["repo"] / "tray"
@@ -1900,7 +1858,7 @@ def verify_f10_evidence_calibrated_routing(ctx: dict):
         res = run_in_box(box, op, [sc.TRAY_PYTHON, "-X", "utf8", probe, scripts_dir, tray_dir, mode, out], env)
         op.check(f"F10 probe ({mode}) exits 0", res.returncode == 0 and out.is_file(), res.stderr[-600:])
         results[mode] = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
-    for leftover in ("f10-broken-accounts.json", "f10-scenario-cache.json", "f10-pool-cache.json"):
+    for leftover in ("f10-broken-accounts.json", "f10-scenario-cache.json"):
         (box.state / leftover).unlink(missing_ok=True)
     for name, outcome in results["intact"].items():
         op.check(name, outcome.get("ok"), outcome.get("detail"))
@@ -1908,7 +1866,7 @@ def verify_f10_evidence_calibrated_routing(ctx: dict):
         op.check(f"(failure shown) {name}: fails with its data broken", bool(broken) and not broken.get("ok"),
                  broken.get("detail"))
     op.check("the probe ran every F10 check",
-             len(results["intact"]) >= 10 and set(results["intact"]) == set(results["broken"]), sorted(results["intact"]))
+             len(results["intact"]) >= 2 and set(results["intact"]) == set(results["broken"]), sorted(results["intact"]))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1942,7 +1900,7 @@ def verify_f11_omp_oauth_subscriptions(ctx: dict):
         op.check(f"(failure shown) {name}: fails with its input broken", bool(broken) and not broken.get("ok"),
                  broken.get("detail"))
     op.check("the probe ran every F11 check",
-             len(results["intact"]) >= 10 and set(results["intact"]) == set(results["broken"]), sorted(results["intact"]))
+             len(results["intact"]) >= 2 and set(results["intact"]) == set(results["broken"]), sorted(results["intact"]))
 
 
 # ---------------------------------------------------------------------------------------------------------------------

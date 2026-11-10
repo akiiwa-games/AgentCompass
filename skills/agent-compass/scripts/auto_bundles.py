@@ -1,27 +1,27 @@
-"""Runtime-derived ("auto") bundles from detected models, with conservative default scores.
+"""Runtime-derived ("auto") bundles from detected models.
 
 Pure functions only: nothing here reads or writes ~/.agent-compass, calls a model, or edits
 references/accounts.json. Callers pass the merged accounts document, the model-catalog cache
 (tray/model_catalog.py format) and the sparse user overrides.
 
-Default score ("姒涙顓婚崚?) resolution, most specific first:
+A discovered name resolves, most specific first, to:
   1. calibrated   - the canonical model has a row in accounts['models'] (exact id or alias).
-  2. series       - the same-series row `series_target` names (model_resolution's family resolution): its full
-                    score set, usd_per_hour included, as the series conversion with no shared public reading (a
-                    discovered name has none here; calibration/apply_rows.py converts along a cited reading when
-                    both rows have one). A small-size name (flash/lite/mini/...) is not in the series of a
-                    non-small target.
-  3. generic      - only for a name with no same-series row: public data's `unmeasured_models.generic` (or
-                    `.small` for a small-size name); model_resolution.GENERIC_MODEL_SPEC and SMALL_DEFAULT only
-                    when the data has none.
-The generic rows are routing priors, not benchmarks. The harness factor (allocator.harness_quality_factor,
-scoring.harness_factors) is applied by the allocator on top; this module never applies it twice.
+  2. family       - the same-series row `series_target` names (model_resolution's family resolution). The name has no
+                    scores of its own: calibration (calibration/five_axis.py) converts them from that row when the model
+                    enters the public data, so until then it is out of automatic routing (rule B) and a named dispatch
+                    carries the data error.
+  3. unmeasured   - no row and no same-series row: the same, with no series to convert from.
+A small-size name (flash/lite/mini/...) is not in the series of a non-small target. No default row, score or price is
+supplied here.
 """
 import copy
 import hashlib
+import json
+import os
 import re
+from pathlib import Path
 
-from model_resolution import DIRECT_SOURCES, generic_model_spec, resolve_canonical_model, resolve_model
+from model_resolution import DIRECT_SOURCES, resolve_canonical_model, resolve_model
 
 AUTO_PREFIX = 'auto:'
 STALE_LIMIT_SECONDS = 7 * 24 * 3600
@@ -29,15 +29,6 @@ EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 EFFORT_SUFFIX = re.compile(r'^(?P<base>.+?)-(?P<effort>' + '|'.join(EFFORTS) + r')$')
 NON_CHAT = re.compile(r'embed|image|imagen|dall-?e|tts|speech|audio|whisper|transcri|rerank|moderation|veo|video', re.I)
 SMALL_NAME = re.compile(r'(?:^|[-_.])(flash|lite|mini|nano|air|small|tiny|haiku|luna)(?:$|[-_.])', re.I)
-SMALL_DEFAULT = {
-    'tier': 2.8, 'cost': 1, 'visual': False, 'usd_per_hour': 0.6,
-    'capabilities': {'reasoning': 0.45, 'coding': 0.45, 'exploration': 0.45,
-                     'anti_hallucination': 0.4, 'visual': 0.0, 'gui': 0.0},
-    'subjective': {'divergence': 0.4, 'global_rigor': 0.4, 'module_precision': 0.4},
-    'basis': 'Conservative small-model default: name says flash/lite/mini but no calibrated small row matched.',
-}
-# Conservative fallback price for metered models without any price data (USD per worker-hour).
-ESTIMATED_USD_PER_HOUR = 3.0
 HARNESS_DEFAULT_EFFORT = {'codex': 'high', 'pi': 'high', 'claude': 'high', 'opencode': None,
                           'antigravity-resilient': None, 'grok': 'high'}
 HARNESS_MODE = {'codex': 'full-access', 'claude': 'bypassPermissions',
@@ -66,15 +57,6 @@ def is_chat_model(raw):
     return not NON_CHAT.search(str(raw or ''))
 
 
-def _series_copy(spec):
-    """A same-series row's score set for another model: its speed, curve and provenance records are its own."""
-    out = copy.deepcopy(spec)
-    for key in ('responsiveness', 'responsiveness_basis', 'responsiveness_status', 'speed_metrics', 'score_estimates',
-                'basis', 'capabilities_basis', 'usd_per_hour_basis'):
-        out.pop(key, None)
-    return out
-
-
 def series_compatible(name, target):
     """False when one side is a small-size name and the other is not: not the same series."""
     return bool(SMALL_NAME.search(str(name))) == bool(SMALL_NAME.search(str(target)))
@@ -85,7 +67,7 @@ def series_target(raw_model, accounts):
     exactly and has none), or None."""
     raw_models = (accounts.get('models') if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict)
                   else (accounts if isinstance(accounts, dict) else {}))
-    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict) and ('tier' in v or 'capabilities' in v)}
+    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
     resolved = resolve_model(raw_model, known, aliases)
     target = resolved['key'] if resolved['source'] == 'family' else None
@@ -130,40 +112,23 @@ def superseded_by(raw_model, accounts):
     return None
 
 
-def small_model_spec(accounts):
-    """The default row for an unmeasured small-size name: public data's `unmeasured_models.small`, else SMALL_DEFAULT."""
-    row = ((accounts or {}).get('unmeasured_models') or {}).get('small')
-    return copy.deepcopy(row if isinstance(row, dict) else SMALL_DEFAULT)
-
-
 def default_profile(raw_model, accounts):
-    """Default score row for a model name, with its source. Never mutates accounts."""
+    """How a model name resolves, with its source: {'model', 'source', 'target', 'basis'}. Never mutates accounts."""
     raw_models = (accounts.get('models') if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict)
                   else (accounts if isinstance(accounts, dict) else {}))
-    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict) and ('tier' in v or 'capabilities' in v)}
+    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
     base = _name_candidates(raw_model, accounts)[0]
     resolved = resolve_model(raw_model, known, aliases)
     if resolved['source'] in DIRECT_SOURCES:
         return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
-                'spec': copy.deepcopy(known[resolved['key']]), 'basis': 'Calibrated row in accounts.models.'}
+                'basis': 'Calibrated row in accounts.models.'}
     target = series_target(raw_model, accounts)
     if target:
-        spec = _series_copy(known[target])
-        spec['basis'] = (f'Series conversion from {target} (same series by family resolution): its scores and '
-                         'usd_per_hour, with no shared public reading to move them along.')
-        return {'model': base, 'source': 'family', 'target': target, 'spec': spec, 'basis': spec['basis']}
-    spec = small_model_spec(accounts) if SMALL_NAME.search(base) else generic_model_spec(accounts)
-    return {'model': base, 'source': 'generic', 'target': None, 'spec': spec, 'basis': spec['basis']}
-
-
-def _discovered_row(profile):
-    """The score row of a discovered name that is not a row: the series conversion (scores and usd_per_hour of the
-    same-series row), else the generic row at the conservative price."""
-    row = {**profile['spec'], 'score_estimated': True}
-    if profile['source'] != 'family' or not isinstance(row.get('usd_per_hour'), (int, float)):
-        row.update(usd_per_hour=ESTIMATED_USD_PER_HOUR, usd_estimated=True)
-    return row
+        return {'model': base, 'source': 'family', 'target': target,
+                'basis': f'Same series as {target}; no scores of its own until calibration converts them from it.'}
+    return {'model': base, 'source': 'unmeasured', 'target': None,
+            'basis': 'No row and no same-series row: no scores (out of automatic routing).'}
 
 
 def harness_compatibility(harness, model, account_spec):
@@ -238,7 +203,7 @@ def auto_bundle_id(account, harness, model, effort=None):
 
 
 def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
-    """Return {'bundles': {account: {bid: bundle}}, 'models': {name: spec}, 'excluded': [...], 'seen': {...}}.
+    """Return {'bundles': {account: {bid: bundle}}, 'excluded': [...], 'seen': {...}}.
 
     overrides: sparse preferences document ({'accounts': {acc: {'bundles': {bid: {'disabled': bool}}}}}),
     the same shape tray router_data.toggle_harness_model writes.
@@ -248,9 +213,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
     providers = (catalog or {}).get('providers') or {}
     prefs = ((overrides or {}).get('accounts') or {})
     seen = dict(seen or {})
-    out = {'bundles': {}, 'models': {}, 'excluded': [], 'seen': seen}
-    known = accounts.get('models') or {}
-    aliases = accounts.get('aliases') or {}
+    out = {'bundles': {}, 'excluded': [], 'seen': seen}
 
     def base_key(model):
         # Only exact ids/aliases collapse; a family guess keeps its own advertised name.
@@ -295,11 +258,6 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                 if availability == 'detected':
                     seen[bid] = now
                 model_name = profile['model'] if profile['source'] != 'calibrated' else key
-                if profile['source'] != 'calibrated':
-                    out['models'].setdefault(model_name, _discovered_row(profile))
-                row = (known.get(key) if isinstance(known.get(key), dict) else None) or out['models'].get(model_name) or {}
-                price = None if row.get('usd_estimated') else row.get('usd_per_hour')
-                cost_estimated = metered and not isinstance(price, (int, float))
                 pref = ((prefs.get(account) or {}).get('bundles') or {}).get(bid) or {}
                 # The checkbox default is public data alone: checked unless superseded there. The user's
                 # model-management checkbox (pref) overrides it. Metered stays a last resort in routing.
@@ -318,7 +276,6 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                     'score_source': profile['source'], 'score_basis': profile['basis'],
                     'availability': availability, 'last_detected_at': last,
                     'compatibility': status, **({'compatibility_reason': reason} if reason else {}),
-                    **({'usd_per_hour': ESTIMATED_USD_PER_HOUR, 'cost_estimated': True} if cost_estimated else {}),
                 }
                 if availability == 'expired':
                     bundle['discovery_unavailable'] = True
@@ -332,11 +289,8 @@ def _harness_of(bundle, account, bid):
 
 
 def merge_into(accounts, derived):
-    """Copy of accounts with auto bundles and default model rows added. Manual rows are never replaced."""
+    """Copy of accounts with the auto bundles added. Manual bundles are never replaced."""
     merged = copy.deepcopy(accounts)
-    models = merged.setdefault('models', {})
-    for name, spec in derived['models'].items():
-        models.setdefault(name, spec)
     for account, rows in derived['bundles'].items():
         target = merged['accounts'].setdefault(account, {}).setdefault('bundles', {})
         for bid, bundle in rows.items():
@@ -345,12 +299,6 @@ def merge_into(accounts, derived):
 
 
 # --- Migration from provider_inventory._synthesize_proxy_bundles ids ------------------------------
-import hashlib
-import json
-import os
-from pathlib import Path
-
-
 def _legacy_digest(value):
     return hashlib.sha256(str(value or '').encode()).hexdigest()
 

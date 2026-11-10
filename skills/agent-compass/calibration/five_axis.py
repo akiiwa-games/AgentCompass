@@ -1,36 +1,47 @@
-"""Five-axis scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.
+"""Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.
 
-`python -X utf8 five_axis.py [--distrust SOURCE ...] [--source-priority A,B,...] [--user-overrides PATH] [--out PATH]`
+`python -X utf8 five_axis.py [--distrust SOURCE ...] [--user-overrides PATH] [--out PATH]`
 
-Writes `references/five-axis-scores.json`, which the router reads only when `scoring.five_axis.enabled` is set (off by
-default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of 2026-11-09):
+Writes `references/five-axis-scores.json`, the only model scoring the router reads (allocator.five_axis_overlay). The
+user's model of scoring (2026-11-11): every board gives a type score (a component), the type scores belong to the four
+categories (divergence, global_rigor, module_precision, vision_tools), and the router scores on the four categories and
+the quota economy together. Nothing else scores a model: the tier is not a score.
 
-- No scalar tier. The four capability axes (divergence, global_rigor, module_precision, vision_tools) are the only
-  model ability (round 7: the only dimension system; no difficulty floors, the router fits the scores to the task's
-  demand continuously against targets of the anchor value x demand / 3, written here as `anchor`).
-- Each axis is the mean of its components, each component the mean of its trusted sources (`measurements.py` converts
-  every source the same way, relative to the anchor model: 0.8 x s / s_anchor, so a new top model moves nothing). A
-  counted component a model does not measure comes from its nearest same-series sibling that does (series conversion,
-  calibration/series.py; round 058, user 2026-11-10): the sibling's value moved along the component's AA-index fit by
-  the two index readings, kept inside the fit's measured range, else the sibling's value. Only for a model with no
-  such sibling is the component backfilled from public data, a linear fit of the component on the AA
-  Intelligence Index over the models that have it; a fit needs MIN_FIT_POINTS measured points and a positive slope
-  (review F1: one public point is not a fit), and a backfilled value stays inside the range the measured points reach
-  (round 6: a fit extrapolated past the best measured model gave Fable long_horizon 1.0). The public tier fit is no
-  longer a predictor: tier is folded into the axes (round 2), so predicting an axis from it would count it twice.
-  Without a fit the component stays missing and the axis averages the components it has (a yellow data note). An
-  axis with no component at all is backfilled the same way on the axis; still empty, it scores 0 and is `missing`. A task that demands a missing axis
-  leaves automatic routing for that model (an explicit --model still dispatches it).
-- A model whose own boards are empty inherits another model's thinking axes only when a vendor statement names the
-  underlying model (`INHERIT`, cited); otherwise it is --model only.
+- Each category is the mean of its type scores (components), each type score the mean of its trusted sources
+  (`measurements.py` converts every source the same way, relative to the anchor model: 0.8 x s / s_anchor, so a new top
+  model moves nothing). The router fits the categories to the task's demand continuously against targets of the anchor
+  value x demand / 3, written here as `anchor`.
+- The tier (calibration/tiers.py) is the model's overall level: the arena.ai Overall board mapped onto the user's scale
+  through the six anchor rows. A model arena Overall does not list takes its relative position on another non-arena overall
+  board interpolated onto that scale (`tier.aa_index`; several boards would combine by the mean of their interpolated
+  tiers); a model on no overall board takes the tier of its nearest same-series sibling; with none it has no tier. The
+  tier has one use: bridging a type score the model lacks (`estimate` below).
+- A type score a model lacks is estimated through its tier: a linear fit of that type score on tier over the models that
+  have both (direct tiers only), kept to the positive slopes with out-of-sample skill (leave-one-out error below the
+  error of predicting the mean) over at least MIN_FIT_POINTS models, and its value kept inside the range the measured
+  points reach. With a same-series sibling that measures the type score (calibration/series.py, round 058, user
+  2026-11-10) the estimate is the nearest such sibling's value moved along the fit by the two tiers' difference; where
+  the fit has no skill the tier does not predict that type score, so the shift is 0 and the estimate is the sibling's
+  value (the record says `shift 0: fit rejected, ...`); without a sibling it is the fit at the model's tier. The record
+  keeps the fit (r, n, skill), the tier and its source, the base, the tier difference and the shift (`estimate`, status
+  `estimated`). A direct measurement replaces the estimate at the next refresh. Without a tier, or with neither a sibling
+  nor a fit with skill, the type score stays missing, and so does the category when it has none. A category with some
+  type scores measured or estimated and others missing is `partial` (a yellow note, owner 2026-11-09 "ranking-axis gaps
+  → yellow, scored 0"): it averages over the type scores the anchor model measures or a fit with skill covers, a missing one counting 0, and the
+  model stays in automatic routing. A category with none is `missing`, scores 0, and a task that demands it leaves
+  automatic routing for that model (an explicit --model still dispatches it).
+- A row that `accounts.json` `same_model` declares to be the very model another row names (a vendor statement with its
+  url) takes that model as its base before any other sibling, at tier difference 0, for the categories the row `carries`
+  and for its Time/Task; the other categories are the channel's own and stay missing.
 - A dated user override (`--user-overrides`, source `user`) replaces a public axis value; none is shipped.
-- usd_per_hour merges every cited public source (`measurements.py`: AA cost/time and its OpenRouter repricing; the
-  shipped local calibration-sample values are not a source, review F2): each source's value at High (else its
-  effort-less listing, else the median of its listed efforts), then the median over sources, or the first available
-  source of `--source-priority`. `--distrust` removes a source from every field. A model with no cited usd leaves
-  automatic routing on a metered account (billed or quota windows); a named dispatch runs with its cost unpriced.
-- duration_multiplier is 1.0 when a time-based source (AA cost/time, OpenRouter repricing of it) is in the merge, since
-  its hourly figure already prices the model's own pace; otherwise the shipped multiplier stays, cited as community.
+- usd_per_hour has one basis (rounds 8-9, user 2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall
+  real sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), each source's value at High (else its effort-less
+  listing, else the median of its listed efforts). For a model arena does not list with cost and time, the labelled
+  option B (`derived.community_mix`, `fallback: True`: AA's measured output speed per hour priced at the community token
+  mix at list prices); a model with a same-series sibling that has a direct value takes that sibling's times the ratio
+  of the two cited API list prices over the full community token mix (`convert_usd`, `converted`). A model with none of
+  these has no usd: out of automatic routing on a metered account (billed or quota windows), and a named dispatch runs
+  with its cost unpriced. `--distrust` removes a source from every field.
 - Plan capacity comes down a ladder (rounds 4-5, user 2026-11-09: "都用社区真实使用量 且保持最新"; capacity is never
   left unknown), per window of each plan in plan-templates.json, recording the rung: 1 the median of the cited community
   observations (`community.py`), or a window ratio a community source states (Fable weekly = half the weekly limit);
@@ -39,17 +50,8 @@ default; see allocator.five_axis_overlay). Round 047, round 2 (user decisions of
   routing notes (the live percentage still prices scarcity); the packaged template figure is never a fallback. A source
   older than STALE_DAYS (data date, else fetch date) is a yellow note; a source not fetched, or whose sentence is gone,
   contributes nothing (red).
-- usd_per_hour has a pluggable basis (`--usd-basis`, `USD_BASES`). Default `community_mix` (rounds 8-9, user
-  2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 / Time/Task P50
-  x 60, kind `community`) is the primary source; option B (`derived.community_mix`, AA's measured output speed per hour
-  priced at the community token mix at list prices) is a labelled fallback (`fallback: True`) only when arena does not
-  give cost and time for the model and no same-series sibling has a direct value: with one, the value is that sibling's
-  times the ratio of the two cited API list prices over the full community token mix (series conversion, `converted`).
-  A model with none of these is mode B. `benchmark` (the AA/OpenRouter merge above) and
-  `community` (measured community usd per worker-hour, else `derived` from a measured same-provider model x the benchmark
-  ratio, both citations; option A) stay for comparison. Each window's reference-model hours are its capacity over that
-  model's arena usd.
-- economy is priced by the router at run time; `economy_static` = 1 / (1 + usd / 15) is the tray's static view.
+- Each window's reference-model hours are its capacity over that model's usd_per_hour.
+- economy is priced by the router at run time from usd_per_hour, the duration and the window's capacity and recovery.
 """
 import argparse
 import hashlib
@@ -71,7 +73,6 @@ SCHEMA = 'agent-compass.five-axis-scores/2'
 AXES = measurements.AXES
 THINKING = ('divergence', 'global_rigor', 'module_precision')
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
-TIME_BASED = ('arena.agent_sessions', 'aa.cost_time', 'openrouter.cost_time', 'derived.community_mix')
 # Window -> the model whose hours count the window's capacity (the plan's own flagship on that pool).
 REFERENCE_MODELS = {
     'claude': {'five_hour': 'claude-opus-5-5', 'seven_day': 'claude-opus-5-5', 'weekly_fable': 'claude-fable-5-1'},
@@ -80,15 +81,9 @@ REFERENCE_MODELS = {
     'antigravity': {'gemini-weekly': 'gemini-4-argon-high', 'gemini-5h': 'gemini-4-argon-high',
                     '3p-weekly': 'claude-opus-5-5', '3p-5h': 'claude-opus-5-5'},
 }
-# A model whose own boards are empty inherits the thinking axes of the model a vendor statement names (decision 4).
-# Vision and GUI stay its own: they are properties of the channel, not of the underlying model.
-INHERIT = {
-    'dot': {'from': 'gpt-6-astra', 'kind': 'vendor', 'statement': 'OpenAI documents Dot as Astra-powered',
-            'cited_in': 'references/accounts.json scoring.basis (reviewed 2026-10-27)', 'url': None},
-}
-PUBLIC_TIER_SOURCES = ('lmarena.tier_fit', 'secondary.tier_fit')
-PREDICTORS = ('aa.index',)      # backfill predictors in order of preference (round 6: not the folded-away tier)
-MIN_FIT_POINTS = 8      # measured points a backfill regression needs (review F1)
+TIER_DIRECT = ('user.anchor_tier', 'tier.arena_overall')    # a tier read off arena.ai Overall (the anchors are rows of it)
+TIER_OTHER = ('tier.aa_index',)     # a non-arena overall board interpolated onto that scale; no other source is a tier
+MIN_FIT_POINTS = 8      # models a type-score-on-tier fit needs (review F1: one public point is not a fit)
 
 
 def mean(xs):
@@ -106,143 +101,24 @@ def source_value(entries):
     return round(statistics.median(listed.values()), 3), f'median of the listed efforts {sorted(listed)}'
 
 
-def pick_usd(entries, priority=None):
-    """Merge every cited usd_per_hour source: median over sources, or the first of `priority` that has a value."""
-    by_source = {}
-    for e in entries:
-        by_source.setdefault(e['source'], []).append(e)
-    if not by_source:
+def pick_usd(entries):
+    """usd_per_hour from one source's listings (`entries`, all of the first entry's source): its value at High, else its
+    effort-less listing, else the median of its listed efforts."""
+    if not entries:
         return {'value': None, 'status': 'missing', 'sources': {}, 'merge': None}
-    values = {}
-    for src, rows in by_source.items():
-        value, how = source_value(rows)
-        values[src] = {'value': value, 'how': how, 'kind': rows[0].get('kind'), 'as_of': rows[0].get('as_of'),
-                       'url': rows[0].get('url'), 'method': rows[0].get('method'),
-                       'by_effort': {r.get('effort') or 'default': r['value'] for r in rows}}
-        if rows[0].get('sessions') is not None:
-            values[src]['sessions'] = rows[0]['sessions']
-    chosen = next((s for s in priority or () if s in values), None)
-    if chosen:
-        value, merge = values[chosen]['value'], f'source priority: {chosen}'
-        used = [chosen]
-    else:
-        value = round(statistics.median(v['value'] for v in values.values()), 3)
-        merge, used = f'median of {len(values)} cited source(s)', sorted(values)
-    spread = (round(max(v['value'] for v in values.values()) / min(v['value'] for v in values.values()), 2)
-              if len(values) > 1 and min(v['value'] for v in values.values()) > 0 else None)
-    return {'value': value, 'status': 'ok', 'merge': merge, 'used': used, 'sources': values, 'max_over_min': spread}
+    src = entries[0]['source']
+    rows = [e for e in entries if e['source'] == src]
+    value, how = source_value(rows)
+    cited = {'value': value, 'how': how, 'kind': rows[0].get('kind'), 'as_of': rows[0].get('as_of'),
+             'url': rows[0].get('url'), 'method': rows[0].get('method'),
+             'by_effort': {r.get('effort') or 'default': r['value'] for r in rows}}
+    if rows[0].get('sessions') is not None:
+        cited['sessions'] = rows[0]['sessions']
+    return {'value': value, 'status': 'ok', 'merge': f'{src}: {how}', 'used': [src], 'sources': {src: cited}}
 
 
 FAST_CAPABLE_MODELS = frozenset(('gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna',
                                  'claude-opus-5-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-fable-5-2'))
-
-
-def _effort_pick(rows, field='value'):
-    """Pick High, else default, else median of listed efforts for `field` across `rows`."""
-    valid = [r for r in rows if isinstance(r.get(field), (int, float)) and r[field] > 0]
-    if not valid:
-        return None, None, None
-    by_eff = {r.get('effort') or 'default': r for r in valid}
-    if 'high' in by_eff:
-        return by_eff['high'][field], 'High listing', by_eff['high']
-    if 'default' in by_eff:
-        return by_eff['default'][field], 'the only listing (no effort named)', by_eff['default']
-    listed = {k: v for k, v in by_eff.items() if k in EFFORTS} or by_eff
-    val = round(statistics.median(r[field] for r in listed.values()), 3)
-    rep = next(iter(listed.values()))
-    return val, f'median of the listed efforts {sorted(listed)}', rep
-
-
-def pick_duration(usd, info=None, throughput=(), anchor_throughput=()):
-    """Completion-speed multiplier relative to the anchor model (`claude-opus-5-5`), from public sources only (round 11,
-    user 2026-11-10): primary = `arena.agent_sessions` Time/Task (P50) (storing Time/Task and Output Tokens/Task);
-    fallback = `aa.cost_time` Time/Task (or outputSpeed). Never returns a flat 1.0 across the fleet.
-
-    Whichever source decides `value`, the result also carries the Artificial Analysis Time/Task of every listed effort
-    (`aa`: minutes and the multiplier against the anchor at High) so the router's "faster" tie-break can compare two
-    candidates at the same effort from one source (round 14b); a model with no AA row has no `aa`."""
-    by_src, anchor_by_src = {}, {}
-    for e in throughput or ():
-        by_src.setdefault(e['source'], []).append(e)
-    for e in anchor_throughput or ():
-        anchor_by_src.setdefault(e['source'], []).append(e)
-    result = _pick_duration_value(by_src, anchor_by_src)
-    aa = _aa_time_by_effort(by_src.get('aa.cost_time'), anchor_by_src.get('aa.cost_time'))
-    if aa:
-        result['aa'] = aa
-    return result
-
-
-def _aa_time_by_effort(rows, anchor_rows):
-    """AA Time/Task per listed effort: {'by_effort': {effort: minutes}, 'multiplier_by_effort': {effort: minutes / the
-    anchor's minutes at High}, 'anchor_minutes', 'as_of', 'url', 'source'} or None without a usable row."""
-    times = {(r.get('effort') or 'default'): r['time_per_task_min'] for r in rows or ()
-             if isinstance(r.get('time_per_task_min'), (int, float)) and not isinstance(r.get('time_per_task_min'), bool)
-             and r['time_per_task_min'] > 0}
-    if not times:
-        return None
-    anc_s, _, _ = _effort_pick(anchor_rows or (), 'time_per_task_s')
-    anc_min = round((anc_s or 719.3) / 60.0, 3)
-    rep = next(r for r in rows if (r.get('effort') or 'default') in times)
-    return {'source': 'aa.cost_time', 'kind': 'benchmark', 'as_of': rep.get('as_of'), 'url': rep.get('url'),
-            'anchor_minutes': anc_min, 'by_effort': times,
-            'multiplier_by_effort': {e: round(t / anc_min, 4) for e, t in times.items()}}
-
-
-def _pick_duration_value(by_src, anchor_by_src):
-    if 'arena.agent_sessions' in by_src:
-        rows = by_src['arena.agent_sessions']
-        t_min, how, rep = _effort_pick(rows, 'time_per_task_min')
-        anc_rows = anchor_by_src.get('arena.agent_sessions') or ()
-        anc_min, _, _ = _effort_pick(anc_rows, 'time_per_task_min')
-        anc_min = anc_min or 16.3
-        if t_min and anc_min:
-            tok = rep.get('output_tokens_per_task') if rep else None
-            by_eff_mult = {r.get('effort') or 'default': round(r['time_per_task_min'] / anc_min, 4)
-                           for r in rows if isinstance(r.get('time_per_task_min'), (int, float)) and r['time_per_task_min'] > 0}
-            by_eff_time = {r.get('effort') or 'default': r['time_per_task_min']
-                           for r in rows if isinstance(r.get('time_per_task_min'), (int, float)) and r['time_per_task_min'] > 0}
-            by_eff_tok = {r.get('effort') or 'default': r['output_tokens_per_task']
-                          for r in rows if isinstance(r.get('output_tokens_per_task'), (int, float))}
-            return {
-                'value': round(t_min / anc_min, 4), 'status': 'ok', 'source': 'arena.agent_sessions',
-                'kind': 'community', 'fallback': False, 'as_of': rep.get('as_of'), 'url': rep.get('url'),
-                'method': f'arena.ai Agent / Overall Time/Task (P50) {t_min:g} min / anchor {anc_min:g} min ({how})',
-                'time_per_task_min': t_min, 'anchor_time_per_task_min': anc_min,
-                'output_tokens_per_task': tok,
-                'output_tokens_per_min': round(tok / t_min, 1) if isinstance(tok, (int, float)) and t_min > 0 else None,
-                'by_effort': by_eff_mult, 'time_per_task_min_by_effort': by_eff_time,
-                'output_tokens_per_task_by_effort': by_eff_tok,
-            }
-    if 'aa.cost_time' in by_src:
-        rows = by_src['aa.cost_time']
-        t_s, how, rep = _effort_pick(rows, 'time_per_task_s')
-        anc_rows = anchor_by_src.get('aa.cost_time') or ()
-        anc_s, _, _ = _effort_pick(anc_rows, 'time_per_task_s')
-        anc_s = anc_s or 719.3
-        if t_s and anc_s:
-            tps = rep.get('output_tps') if rep else None
-            by_eff_mult = {r.get('effort') or 'default': round(r['time_per_task_s'] / anc_s, 4)
-                           for r in rows if isinstance(r.get('time_per_task_s'), (int, float)) and r['time_per_task_s'] > 0}
-            return {
-                'value': round(t_s / anc_s, 4), 'status': 'ok', 'source': 'aa.cost_time',
-                'kind': 'benchmark', 'fallback': True, 'as_of': rep.get('as_of'), 'url': rep.get('url'),
-                'method': f'fallback (not on arena.ai Agent / Overall): AA Time/Task {t_s:g} s / anchor {anc_s:g} s ({how})',
-                'time_per_task_s': t_s, 'anchor_time_per_task_s': anc_s,
-                'time_per_task_min': round(t_s / 60.0, 3), 'output_tps': tps, 'by_effort': by_eff_mult,
-            }
-        tps, how_tps, rep_tps = _effort_pick(rows, 'output_tps')
-        anc_tps, _, _ = _effort_pick(anc_rows, 'output_tps')
-        anc_tps = anc_tps or 83.29
-        if tps and anc_tps:
-            return {
-                'value': round(anc_tps / tps, 4), 'status': 'ok', 'source': 'aa.cost_time',
-                'kind': 'benchmark', 'fallback': True, 'as_of': rep_tps.get('as_of'), 'url': rep_tps.get('url'),
-                'method': f'fallback (AA outputSpeed): anchor {anc_tps:g} tok/s / {tps:g} tok/s ({how_tps})',
-                'output_tps': tps,
-            }
-    return {'value': None, 'status': 'missing', 'source': None, 'kind': None,
-            'method': 'no cited public completion-speed source'}
 
 
 def pick_image_input(entries):
@@ -301,14 +177,6 @@ def pick_price(entries):
     return None
 
 
-def legacy_tier(entries):
-    public = [e for e in entries if e['source'] in PUBLIC_TIER_SOURCES]
-    user = [e for e in entries if e['source'] == 'user']
-    chosen = public[0] if public else (user[0] if user else None)
-    return {'value': chosen['value'] if chosen else None, 'source': chosen['source'] if chosen else None,
-            'note': 'comparison only; the router no longer gates on a scalar tier'}
-
-
 class Scorer:
     def __init__(self, meas, acc, distrust=(), overrides=()):
         self.meas, self.acc = meas, acc
@@ -325,113 +193,134 @@ class Scorer:
             comps.setdefault(e['component'], {})[e['source']] = e['value']
         return {c: {'value': mean(list(srcs.values())), 'sources': srcs, 'status': 'measured'} for c, srcs in comps.items()}
 
-    def predictors(self, fields):
-        """{predictor: x} for the public predictors the model has: the AA index."""
-        idx = self.trusted(fields.get('intelligence_index'))
-        return {'aa.index': idx[0]['value']} if idx else {}
-
-    @staticmethod
-    def backfill(fits, key, preds):
-        """(predictor, x, fit) for the first predictor the model has that has a usable fit."""
-        for name in PREDICTORS:
-            if name in preds and fits.get((*key, name)):
-                return name, preds[name], fits[(*key, name)]
-        return None, None, None
-
-    def provenance(self, target, name, x, f, row):
-        """Where an estimate comes from: the predictor and its reading, and the fit (id in `backfill_fits`, r, n)."""
-        entry = (self.trusted(row['fields'].get('intelligence_index')) or [{}])[0] if name == 'aa.index' else {}
-        out = {'predictor': name, 'x': x, 'fit': f'{target}~{name}', 'r': round(f['r'], 4), 'n': f['n'],
-               **{k: entry[k] for k in ('as_of', 'listed_as') if entry.get(k)}}
-        if not f['x_min'] <= x <= f['x_max']:      # predict() clamps the reading to the sampled range
-            out['x_clamped'] = f['x_min'] if x < f['x_min'] else f['x_max']
+    def tier_records(self, rows, index, board):
+        """{model: {'value', 'method', 'sources', ...}}: arena Overall, else the mean of the other overall boards'
+        interpolated tiers, else the nearest same-series sibling's tier, else value None."""
+        out = {}
+        for m, r in rows.items():
+            entries = self.trusted(r['fields'].get('tier'))
+            direct = [e for e in entries if e['source'] in TIER_DIRECT]
+            other = [e for e in entries if e['source'] in TIER_OTHER]
+            chosen, method = (direct, 'anchor' if direct and direct[0]['source'] == 'user.anchor_tier' else 'arena_overall') \
+                if direct else (other, 'other_overall')
+            if chosen:
+                cite = [{k: e.get(k) for k in ('source', 'value', 'as_of', 'url', 'listed_as', 'neighbours', 'n') if e.get(k) is not None}
+                        for e in chosen]
+                out[m] = {'value': round(float(np.mean([e['value'] for e in chosen])), 3), 'method': method, 'sources': cite}
+        direct_tier = {m: t['value'] for m, t in out.items()}
+        sibs, same = series.groups(self.acc), series.same_model(self.acc)
+        for m in rows:
+            if m in out:
+                continue
+            bases = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct_tier], index, board, direct_tier, same)
+            out[m] = ({'value': direct_tier[bases[0]], 'method': 'sibling', 'base_model': bases[0], 'sources': []} if bases
+                      else {'value': None, 'method': 'none', 'sources': []})
         return out
-
-    def convert(self, m, base, a, c, rows, fits):
-        """Component `c` of axis `a` for model `m` from the same-series `base` (see `score`)."""
-        vb = rows[base]['comps'][a][c]['value']
-        x, xb = rows[m]['preds'].get('aa.index'), rows[base]['preds'].get('aa.index')
-        f = fits.get((a, c, 'aa.index'))
-        conv = {'base_model': base, 'base_value': vb, 'method': 'series conversion'}
-        value = vb
-        if f and x is not None and xb is not None:
-            raw = vb + f['b'] * (x - xb)
-            value = round(float(np.clip(raw, f['y_min'], f['y_max'])), 4)
-            conv.update(predictor='aa.index', x=x, x_base=xb, shift=round(f['b'] * (x - xb), 4), fit=f'{a}.{c}~aa.index')
-            if not f['y_min'] <= raw <= f['y_max']:
-                conv['y_clamped'] = f['y_min'] if raw < f['y_min'] else f['y_max']
-        return {'value': value, 'sources': {}, 'status': 'converted', 'conversion': conv}
 
     @staticmethod
     def fit(points):
+        """Linear fit of a type score on tier, or (None, why) when it has no usable skill."""
         if len(points) < MIN_FIT_POINTS:
-            return None
+            return None, f'{len(points)} models with both (a fit needs {MIN_FIT_POINTS})'
         x, y = np.array([p[0] for p in points]), np.array([p[1] for p in points])
+        if float(np.ptp(x)) == 0.0:
+            return None, 'every model has the same tier'
         b, a = np.polyfit(x, y, 1)
-        if b <= 0:      # ability falling with the index is not a usable predictor
-            return None
-        return {'a': float(a), 'b': float(b), 'r': float(np.corrcoef(x, y)[0, 1]), 'n': len(points),
-                'x_min': float(x.min()), 'x_max': float(x.max()), 'y_min': float(y.min()), 'y_max': float(y.max())}
+        if b <= 0:      # ability falling with the tier is not a usable estimate
+            return None, f'slope {b:.3f} is not positive'
+        n = len(x)
+        err = base = 0.0
+        for i in range(n):
+            keep = np.arange(n) != i
+            if float(np.ptp(x[keep])) == 0.0:
+                return None, 'every other model has the same tier'
+            bi, ai = np.polyfit(x[keep], y[keep], 1)
+            err += (y[i] - (ai + bi * x[i])) ** 2
+            base += (y[i] - y[keep].mean()) ** 2
+        skill = 1.0 - err / base if base > 0 else 0.0
+        if skill <= 0:
+            return None, f'out-of-sample skill {skill:.3f} (leave-one-out error not below the mean predictor\'s)'
+        return {'a': float(a), 'b': float(b), 'r': float(np.corrcoef(x, y)[0, 1]), 'skill': float(skill), 'n': n,
+                'x_min': float(x.min()), 'x_max': float(x.max()), 'y_min': float(y.min()), 'y_max': float(y.max())}, None
 
     @staticmethod
     def predict(f, x):
-        """The fit at x, with x clamped to the range of the sampled predictor readings and the value kept inside the
-        range its measured points reach (round 6; round 058 review F2: a reading above the best sampled model is not
-        extrapolated, it gets the fit at that model's reading)."""
-        x = float(np.clip(x, f.get('x_min', x), f.get('x_max', x)))
+        """The fit at tier x, x clamped to the tiers the fit saw and the value kept inside the range its measured points
+        reach (round 6, round 058 review F2: a tier above the best sampled model is not extrapolated)."""
+        x = float(np.clip(x, f['x_min'], f['x_max']))
         return round(float(np.clip(f['a'] + f['b'] * x, f['y_min'], f['y_max'])), 4)
+
+    @staticmethod
+    def fit_record(fid, f):
+        return {'fit': fid, 'r': round(f['r'], 4), 'skill': round(f['skill'], 4), 'n': f['n']}
+
+    def estimate(self, m, base, a, c, rows, fits, rejected, tier):
+        """Type score `c` of category `a` for model `m` through its tier (module docstring)."""
+        fid = f'{a}.{c}~tier'
+        f = fits.get((a, c))
+        t = tier[m]['value']
+        est = {'method': 'tier_fit', 'tier': t, 'tier_source': tier[m]['method']}
+        if base is not None:
+            vb = rows[base]['comps'][a][c]['value']
+            est.update(method='sibling_shift', base_model=base, base_value=vb, base_tier=tier[base]['value'])
+            value = vb
+            if f and tier[base]['value'] is not None:
+                diff = t - tier[base]['value']
+                raw = vb + f['b'] * diff
+                value = round(float(np.clip(raw, f['y_min'], f['y_max'])), 4)
+                est.update(self.fit_record(fid, f), tier_difference=round(diff, 4), shift=round(f['b'] * diff, 4))
+                if not f['y_min'] <= raw <= f['y_max']:
+                    est['clamped_to'] = f['y_min'] if raw < f['y_min'] else f['y_max']
+            else:
+                # No skill: the tier does not predict this type score, so the tier difference moves nothing.
+                est.update(tier_difference=round(t - tier[base]['value'], 4), shift=0.0,
+                           shift_basis=f"shift 0: fit rejected, {rejected[fid]}")
+        else:
+            value = self.predict(f, t)
+            est.update(self.fit_record(fid, f))
+            if not f['x_min'] <= t <= f['x_max']:
+                est['tier_clamped_to'] = f['x_min'] if t < f['x_min'] else f['x_max']
+        return {'value': value, 'sources': {}, 'status': 'estimated', 'estimate': est}
 
     def score(self):
         rows = {}
         for m in self.models:
             fields = self.meas['models'].get(m) or {}
-            rows[m] = {'fields': fields, 'preds': self.predictors(fields),
-                       'comps': {a: self.components(fields, a) for a in AXES}}
-        fits = {}
+            rows[m] = {'fields': fields, 'comps': {a: self.components(fields, a) for a in AXES}}
+        index = {m: ((self.trusted(r['fields'].get('intelligence_index')) or [{}])[0]).get('value') for m, r in rows.items()}
+        board = series.boards(self.meas)
+        tier = self.tier_records(rows, index, board)
+        direct_tier = {m: t['value'] for m, t in tier.items() if t['method'] in ('anchor', 'arena_overall', 'other_overall')}
+        fits, rejected = {}, {}
         for a, comps in AXES.items():
             for c in comps:
-                for name in PREDICTORS:
-                    pts = [(r['preds'][name], r['comps'][a][c]['value']) for r in rows.values()
-                           if c in r['comps'][a] and r['comps'][a][c]['status'] == 'measured' and name in r['preds']]
-                    fits[(a, c, name)] = self.fit(pts)
-        # Series conversion (round 058, user 2026-11-10: "后续同系列新出，缺少实测数据的情况下，先按照同系列的全分数进行折算，
-        # 不要留下任何一个默认值或者fallback"): a component a model does not measure, that a same-series sibling does
-        # (calibration/series.py), is the nearest such sibling's value moved along the component's fit on the AA index
-        # by the two models' index difference (not clamped: both are readings), kept inside the fit's measured range;
-        # without a fit or a shared index reading it is the sibling's value. Only the components an axis counts for
-        # every model (`expected`: the anchor measures it or it has a fit) are filled, so a fully measured model's axes
-        # stay its own.
-        # Expected components of an axis: those the anchor model measures or that have a usable fit.
+                pts = [(direct_tier[m], r['comps'][a][c]['value']) for m, r in rows.items()
+                       if c in r['comps'][a] and r['comps'][a][c]['status'] == 'measured' and m in direct_tier]
+                fits[(a, c)], why = self.fit(pts)
+                if why:
+                    rejected[f'{a}.{c}~tier'] = why
+        # Expected type scores of a category: those the anchor model measures or that have a usable fit.
         anchor_comps = (rows.get(measurements.ANCHOR) or {}).get('comps') or {}
-        expected = {a: [c for c in comps if ((anchor_comps.get(a) or {}).get(c) or {}).get('status') == 'measured'
-                        or any(fits.get((a, c, n)) for n in PREDICTORS)] or list(comps)
-                    for a, comps in AXES.items()}
-        sibs = series.groups(self.acc)
-        index = {m: r['preds'].get('aa.index') for m, r in rows.items()}
-        tier = {m: (self.models.get(m) or {}).get('tier') for m in rows}
-        board = series.boards(self.meas)
+        expected = {a: [c for c in comps if ((anchor_comps.get(a) or {}).get(c) or {}).get('status') == 'measured' or fits.get((a, c))]
+                    or list(comps) for a, comps in AXES.items()}
+        sibs, same = series.groups(self.acc), series.same_model(self.acc)
         for m, r in rows.items():
+            if tier[m]['value'] is None:
+                continue
+            carries = (same.get(m) or {}).get('carries')
             for a, comps in AXES.items():
-                for c in expected[a]:
-                    if c in r['comps'][a]:
-                        continue
-                    bases = [b for b in series.nearest(m, sibs.get(m, ()), index, board, tier)
-                             if (rows[b]['comps'][a].get(c) or {}).get('status') == 'measured']
-                    if bases:
-                        r['comps'][a][c] = self.convert(m, bases[0], a, c, rows, fits)
-        # Component backfill, for a model no same-series sibling gives the component: the component's fit on the AA
-        # index over every model that measures it. A component stays missing only without a usable fit or without the
-        # model's predictor; the pessimistic zero below applies to exactly those.
-        for r in rows.values():
-            for a, comps in AXES.items():
+                if carries is not None and a not in carries:
+                    continue        # a category the row's channel does not share with the model behind it stays missing
                 for c in comps:
-                    name, x, f = self.backfill(fits, (a, c), r['preds'])
-                    if c not in r['comps'][a] and f:
-                        r['comps'][a][c] = {'value': self.predict(f, x), 'sources': {},
-                                            'status': 'backfilled', 'backfill': self.provenance(f'{a}.{c}', name, x, f, r)}
-        # Pessimistic unknowns for partial axes (round 8 & round 11, user): any expected component of the axis that
-        # remains neither measured nor estimated (no fit, or no AA index for the model) counts as 0, so a single board
-        # cannot carry the axis for a model nothing else can calibrate.
+                    if c in r['comps'][a] or not (c in expected[a] or fits.get((a, c))):
+                        continue
+                    bases = [b for b in series.nearest(m, sibs.get(m, ()), index, board, direct_tier, same)
+                             if (rows[b]['comps'][a].get(c) or {}).get('status') == 'measured' and tier[b]['value'] is not None]
+                    if bases or fits.get((a, c)):
+                        r['comps'][a][c] = self.estimate(m, bases[0] if bases else None, a, c, rows, fits, rejected, tier)
+        # Pessimistic unknowns for partial categories (round 8 & round 11, user): a type score that remains neither
+        # measured nor estimated counts as 0, so a single board cannot carry a category for a model nothing else
+        # can calibrate.
         for r in rows.values():
             r['axes'] = {}
             for a, comps in AXES.items():
@@ -439,44 +328,17 @@ class Scorer:
                 measured = [c for c in present if r['comps'][a][c]['status'] == 'measured']
                 denom = [c for c in comps if c in present or c in expected[a]]
                 missing = [c for c in denom if c not in present]
-                kinds = {r['comps'][a][c]['status'] for c in present}
-                status = ('missing' if not present else 'measured' if len(measured) == len(denom)
-                          else 'partial' if (measured or missing) else 'converted' if kinds == {'converted'}
-                          else 'backfilled')
+                status = ('missing' if not present else 'partial' if missing
+                          else 'measured' if len(measured) == len(denom) else 'estimated')
                 vals = [r['comps'][a][c]['value'] if c in r['comps'][a] else 0.0 for c in denom] if present else []
                 r['axes'][a] = {'value': mean(vals), 'status': status,
                                 'components': r['comps'][a], 'missing_components': missing}
-        # Axis backfill for a model with no component on the axis: the axis fit on the index.
-        for a in AXES:
-            for name in PREDICTORS:
-                pts = [(r['preds'][name], r['axes'][a]['value']) for r in rows.values()
-                       if r['axes'][a]['status'] in ('measured', 'partial') and not r['axes'][a]['missing_components']
-                       and name in r['preds']]
-                fits[(a, None, name)] = self.fit(pts)
-        for m, r in rows.items():
-            for a, ax in r['axes'].items():
-                if ax['status'] != 'missing':
-                    continue
-                name, x, f = self.backfill(fits, (a, None), r['preds'])
-                if f:
-                    ax.update(value=self.predict(f, x), status='backfilled',
-                              backfill={**self.provenance(a, name, x, f, r), 'level': 'axis'})
-                else:
-                    ax.update(value=0.0, flag='missing', reason='no trusted source and no public predictor to backfill from')
-        self.inherit(rows)
+                if status == 'missing':
+                    r['axes'][a].update(value=0.0, flag='missing',
+                                        reason='no trusted source and no tier to estimate its type scores from')
         self.apply_overrides(rows)
-        return rows, {f'{a}.{c}~{n}' if c else f'{a}~{n}': {k: round(v, 4) for k, v in f.items()}
-                      for (a, c, n), f in fits.items() if f}
-
-    def inherit(self, rows):
-        for m, rule in INHERIT.items():
-            if m not in rows or rule['from'] not in rows or rule['from'] in self.distrust:
-                continue
-            r, src = rows[m], rows[rule['from']]
-            for a in THINKING:
-                if r['axes'][a]['status'] == 'missing':
-                    r['axes'][a] = {'value': src['axes'][a]['value'], 'status': 'inherited', 'components': {},
-                                    'missing_components': [], 'inherited': {'from': rule['from'], **{k: v for k, v in rule.items() if k != 'from'}}}
+        fit_doc = {f'{a}.{c}~tier': {k: round(v, 4) for k, v in f.items()} for (a, c), f in fits.items() if f}
+        return rows, tier, fit_doc, rejected
 
     def apply_overrides(self, rows):
         for o in self.overrides:
@@ -485,6 +347,192 @@ class Scorer:
                 ax.update(public_value=ax['value'], value=float(o['value']), status='user_override',
                           override={'source': 'user', 'as_of': o['as_of'], 'note': o.get('note')})
                 ax.pop('flag', None)
+
+
+PAIR_EFFORTS = ('high', 'medium', 'xhigh', 'low', 'max')    # the effort a model's arena/AA pair is read at: nearest High first
+AA_TIME, ARENA_TIME = 'aa.cost_time', 'arena.agent_sessions'
+MIN_FLEET_RATIO_N = 3       # models that must list both efforts before their time ratio is cited for a model that lists neither
+
+
+def time_rows(entries, source):
+    """{effort: row} of `source`'s Time/Task listings (minutes > 0). An effort-less listing is the model's single
+    configuration and is keyed High, the basis of the anchor's own listing, unless High is also listed; efforts outside
+    EFFORTS (a non-reasoning variant) are not routable efforts and are left out."""
+    rows = {}
+    for e in entries or ():
+        t = e.get('time_per_task_min')
+        if e.get('source') == source and isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0:
+            rows[e.get('effort') or 'default'] = e
+    if 'default' in rows:
+        rows.setdefault('high', rows.pop('default'))
+    return {k: v for k, v in rows.items() if k in EFFORTS}
+
+
+def anchor_minutes(anchor_rows):
+    """The anchor model's Artificial Analysis Time/Task at High in minutes. Without that row every duration would be on a
+    scale nothing ties to a cited value, so the build stops."""
+    row = anchor_rows.get('high')
+    if not row:
+        raise ValueError(f'the anchor {measurements.ANCHOR} has no Artificial Analysis Time/Task at High in the public '
+                         'measurements: durations cannot be put on one cited scale')
+    return row['time_per_task_min']
+
+
+def nearest_effort(known, effort):
+    """The listed effort of `known` closest to `effort` on the effort ladder (the lower one on a tie)."""
+    at = EFFORTS.index(effort)
+    return min(known, key=lambda e: (abs(EFFORTS.index(e) - at), EFFORTS.index(e)))
+
+
+def durations(scorer, rows, acc, index, board, tier):
+    """({model: duration record}, fit or None, why the fit was rejected or None): one basis for the time a task takes,
+    Artificial Analysis Time/Task at the same effort, as a multiple of the anchor's at High (module docstring)."""
+    anchor = anchor_minutes(time_rows(scorer.trusted((rows.get(measurements.ANCHOR) or {}).get('fields', {}).get('throughput')),
+                                      AA_TIME))
+    aa = {m: time_rows(scorer.trusted(r['fields'].get('throughput')), AA_TIME) for m, r in rows.items()}
+    arena = {m: time_rows(scorer.trusted(r['fields'].get('throughput')), ARENA_TIME) for m, r in rows.items()}
+    pairs = []
+    for m in rows:
+        shared = next((e for e in PAIR_EFFORTS if e in aa[m] and e in arena[m]), None)
+        if shared:
+            pairs.append((arena[m][shared]['time_per_task_min'], aa[m][shared]['time_per_task_min']))
+    fit, why = Scorer.fit(pairs)
+    fit_rec = Scorer.fit_record('aa_time~arena_time', fit) if fit else None
+    minutes, basis = {}, {}
+    for m in rows:
+        minutes[m], basis[m] = {}, {}
+        if aa[m]:
+            for e, row in aa[m].items():
+                minutes[m][e] = row['time_per_task_min']
+                basis[m][e] = {'method': 'aa', 'source': AA_TIME, 'listed_as': row.get('listed_as'),
+                               'as_of': row.get('as_of'), 'url': row.get('url')}
+        elif arena[m] and fit:
+            for e, row in arena[m].items():
+                x = row['time_per_task_min']
+                minutes[m][e] = round(Scorer.predict(fit, x), 3)
+                basis[m][e] = {'method': 'arena_fit', 'source': ARENA_TIME, 'arena_minutes': x, **fit_rec,
+                               'listed_as': row.get('listed_as'), 'as_of': row.get('as_of'), 'url': row.get('url')}
+    same = series.same_model(acc)
+    for m, entry in same.items():
+        base = entry.get('model')
+        if m in rows and 'duration' in (entry.get('carries') or ()) and base in rows:
+            for e, t in list(minutes[base].items()):
+                if e not in minutes[m]:
+                    minutes[m][e] = t
+                    basis[m][e] = {'method': 'same_model', 'base_model': base, 'url': entry.get('url'), 'as_of': entry.get('as_of'),
+                                   'statement': entry.get('statement')}
+    sibs = series.groups(acc)
+    tiers = {m: t['value'] for m, t in tier.items()}
+    measured = {m for m in rows if minutes[m]}
+    for m in rows:
+        if minutes[m] or (m in same and 'duration' not in (same[m].get('carries') or ())):
+            continue        # a row declared to be another model's channel that does not carry its time keeps the channel's own
+        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in measured], index, board, tiers, same):
+            for e, t in minutes[b].items():
+                minutes[m][e] = t
+                basis[m][e] = {'method': 'series', 'base_model': b, 'source': basis[b][e].get('source'),
+                               'base_method': basis[b][e]['method'], 'series': sorted([m, *sibs.get(m, ())])}
+            break
+    fleet = {}
+
+    def fleet_ratio(e, e0):
+        """(median, n, q1, q3) of AA time[e] / time[e0] over the models that list both, or None under 3 models."""
+        if (e, e0) not in fleet:
+            xs = [t[e]['time_per_task_min'] / t[e0]['time_per_task_min'] for t in aa.values() if e in t and e0 in t]
+            fleet[(e, e0)] = None if len(xs) < MIN_FLEET_RATIO_N else (
+                float(np.median(xs)), len(xs), float(np.percentile(xs, 25)), float(np.percentile(xs, 75)))
+        return fleet[(e, e0)]
+
+    def fleet_position(e, lo, up):
+        """(median p, n, q1, q3) of the position of effort `e` between `lo` and `up` on the log-time scale,
+        p = log(t_e / t_lo) / log(t_up / t_lo), over the models whose Artificial Analysis listing has all three efforts
+        (and a lo that differs from up), or None under 3 models."""
+        if (e, lo, up) not in fleet:
+            ps = []
+            for t in aa.values():
+                if e in t and lo in t and up in t:
+                    span = float(np.log(t[up]['time_per_task_min'] / t[lo]['time_per_task_min']))
+                    if span != 0.0:
+                        ps.append(float(np.log(t[e]['time_per_task_min'] / t[lo]['time_per_task_min'])) / span)
+            fleet[(e, lo, up)] = None if len(ps) < MIN_FLEET_RATIO_N else (
+                float(np.median(ps)), len(ps), float(np.percentile(ps, 25)), float(np.percentile(ps, 75)))
+        return fleet[(e, lo, up)]
+    out = {}
+    for m, r in rows.items():
+        direct = dict(minutes[m])
+        if direct:
+            bases = series.nearest(m, sibs.get(m, ()), index, board, tiers, same)
+            known = dict(direct)
+
+            def side(effort, pool):
+                at = EFFORTS.index(effort)
+                return ([k for k in pool if EFFORTS.index(k) < at], [k for k in pool if EFFORTS.index(k) > at])
+
+            def hold(t, rec, effort, pool):
+                """An effort outside the range of `pool` is never faster than a lower effort of it (nor slower than a higher
+                one): held at that time, and marked, when the estimate would be."""
+                below, above = side(effort, pool)
+                if below:
+                    bound, label, hit = max(pool[k] for k in below), 'a lower listed effort', None
+                    hit = t < bound
+                else:
+                    bound, label = min(pool[k] for k in above), 'a higher listed effort'
+                    hit = t > bound
+                if hit:
+                    t = bound
+                    rec['bounded_by'] = label
+                    rec['note'] = (rec['note'] + '; ' if rec.get('note') else '') + f'held at the time of {label}'
+                return round(t, 3), rec
+            # 1. outside the listed range, the nearest same-series sibling's ratio from the nearest listed effort
+            for e in EFFORTS:
+                below, above = side(e, direct)
+                if e in direct or (below and above):
+                    continue
+                e0 = nearest_effort(direct, e)
+                for b in bases:
+                    if e in aa[b] and e0 in aa[b]:
+                        ratio = aa[b][e]['time_per_task_min'] / aa[b][e0]['time_per_task_min']
+                        known[e], basis[m][e] = hold(direct[e0] * ratio, {
+                            'method': 'series_effort', 'base_model': b, 'from_effort': e0, 'ratio': round(ratio, 4),
+                            'source': AA_TIME}, e, direct)
+                        break
+            # 2. the rest, with the model's own listed and sibling-derived efforts as the endpoints (an effort estimated in
+            # this step is never an endpoint of another)
+            anchors = dict(known)
+            for e in EFFORTS:
+                if e in anchors:
+                    continue
+                below, above = side(e, anchors)
+                if below and above:
+                    # between two efforts of its own: both endpoints are honoured, and the fleet says where on the log-time
+                    # scale between them the missing effort sits
+                    lo, up = max(below, key=EFFORTS.index), min(above, key=EFFORTS.index)
+                    got = fleet_position(e, lo, up)
+                    if got:
+                        med, n, q1, q3 = got
+                        p = min(max(med, 0.0), 1.0)
+                        known[e] = round(anchors[lo] * (anchors[up] / anchors[lo]) ** p, 3)
+                        basis[m][e] = {'method': 'fleet_effort_position', 'lower_effort': lo, 'upper_effort': up,
+                                       'position': round(med, 4), 'n': n, 'iqr': [round(q1, 4), round(q3, 4)], 'source': AA_TIME,
+                                       'note': f'fleet effort position {e} in {lo}..{up}, n={n}, IQR {q1:.2f}-{q3:.2f}'}
+                        if p != med:
+                            basis[m][e]['bounded_by'] = 'position held within [0, 1]'
+                            basis[m][e]['note'] += f'; the median position {med:.2f} is held at {p:.0f}'
+                    continue
+                e0 = nearest_effort(anchors, e)
+                got = fleet_ratio(e, e0)
+                if got:
+                    med, n, q1, q3 = got
+                    known[e], basis[m][e] = hold(anchors[e0] * med, {
+                        'method': 'fleet_effort_ratio', 'from_effort': e0, 'ratio': round(med, 4), 'n': n,
+                        'iqr': [round(q1, 4), round(q3, 4)], 'source': AA_TIME,
+                        'note': f'fleet effort ratio {e}/{e0}, n={n}, IQR {q1:.2f}-{q3:.2f}'}, e, anchors)
+            minutes[m].update({e: t for e, t in known.items() if e not in direct})
+        out[m] = {'status': 'ok' if minutes[m] else 'missing', 'anchor_minutes': anchor,
+                  'by_effort': {e: round(t / anchor, 4) for e, t in minutes[m].items()},
+                  'minutes_by_effort': dict(minutes[m]), 'basis_by_effort': basis[m],
+                  'efforts_without_time': [e for e in EFFORTS if e not in minutes[m]]}
+    return out, fit_rec, why
 
 
 STALE_DAYS = 21         # a community value older than this (data date, else fetch date) is a yellow note
@@ -526,7 +574,7 @@ def window_capacity(fam, plan, wid, ctx, rung_max=3):
             if rate:
                 entries.append(cite(r, now, rung=2, kind='derived', value=round(r['hours'] * rate, 2),
                                     method=f"{r['hours']:g} h of {r['model']} until the window ran out x its usd {rate:g}/h "
-                                           f"({ctx['basis']})", report=r.get('quote')))
+                                           "(usd_per_hour)", report=r.get('quote')))
         rung = 2
     mult = ctx['mults'].get((fam, plan))
     sibling = None
@@ -567,7 +615,7 @@ def resolve_plan(table, plan):
     return target, alias
 
 
-def capacity(meas, plans, usd, now=None, basis='community_mix'):
+def capacity(meas, plans, usd, now=None):
     """({family: {plan: {window: capacity row}}}, data errors) down the capacity ladder from `meas`."""
     now = now or datetime.now(timezone.utc)
     cap = meas.get('capacity') or {}
@@ -575,7 +623,7 @@ def capacity(meas, plans, usd, now=None, basis='community_mix'):
     for o in cap.get('observations') or ():
         obs.setdefault((o['family'], o['plan'], o['window']), []).append(o)
     rules = cap.get('rules') or ()
-    ctx = {'now': now, 'usd': usd, 'obs': obs, 'basis': basis,
+    ctx = {'now': now, 'usd': usd, 'obs': obs,
            'ratios': {(r['family'], r['window']): r for r in rules if r.get('type', 'window_ratio') == 'window_ratio'},
            'mults': {(r['family'], r['plan']): r for r in rules if r.get('type') == 'plan_multiplier'},
            'exhaust': {}}
@@ -626,55 +674,7 @@ def source_ages(meas, now=None):
     return out
 
 
-# --- usd per worker-hour bases ------------------------------------------------------------------------------------
-PROVIDER_PREFIX = (('claude-', 'anthropic'), ('gpt-', 'openai'), ('gemini-', 'google'), ('grok-', 'xai'))
-
-
-def provider(model):
-    return next((p for prefix, p in PROVIDER_PREFIX if str(model).startswith(prefix)), None)
-
-
-def derive_usd(measured, bench):
-    """`derived` usd for models with no measured community value: the community usd of a measured model of the same
-    provider times the benchmark usd ratio of the two (round 4: benchmarks give relative prices only). The measured
-    model is the one whose benchmark usd is closest (least extrapolation). Both citations are kept."""
-    out = {}
-    for m, b in bench.items():
-        if m in measured or (b or {}).get('value') is None or provider(m) is None:
-            continue
-        bases = [k for k in measured if provider(k) == provider(m) and (bench.get(k) or {}).get('value')]
-        if not bases:
-            continue
-        base = min(bases, key=lambda k: (abs(float(np.log(b['value'] / bench[k]['value']))), k))
-        ratio = b['value'] / bench[base]['value']
-        out[m] = {'value': round(measured[base]['value'] * ratio, 3), 'status': 'ok', 'kind': 'derived',
-                  'merge': f'derived: community usd of {base} x benchmark usd ratio {m} / {base} = {ratio:.3f}',
-                  'used': [], 'max_over_min': None,
-                  'sources': {'community': {**measured[base], 'model': base},
-                              'ratio': {'value': round(ratio, 4),
-                                        'numerator': {'model': m, 'value': b['value'], 'used': b.get('used')},
-                                        'denominator': {'model': base, 'value': bench[base]['value'],
-                                                        'used': bench[base].get('used')}}}}
-    return out
-
-
-def usd_benchmark(scorer, rows, meas, priority):
-    return {m: pick_usd([e for e in scorer.trusted(r['fields'].get('usd_per_hour'))
-                         if e.get('kind') in ('benchmark', 'vendor')], priority) for m, r in rows.items()}
-
-
-def usd_community(scorer, rows, meas, priority):
-    """Measured community usd per worker-hour (usd_per_hour entries of kind `community`), else `derived`, else missing."""
-    bench = usd_benchmark(scorer, rows, meas, priority)            # the ratio is benchmark against benchmark only
-    measured = {}
-    for m, r in rows.items():
-        entries = [e for e in scorer.trusted(r['fields'].get('usd_per_hour')) if e.get('kind') == 'community']
-        if entries:
-            measured[m] = {**pick_usd(entries), 'kind': 'community'}
-    derived = derive_usd({m: {'value': v['value'], 'used': v['used'], 'sources': v['sources']} for m, v in measured.items()},
-                         bench)
-    return {m: measured.get(m) or derived.get(m) or {'value': None, 'status': 'missing', 'sources': {}, 'merge': None}
-            for m in rows}
+# --- usd per worker-hour ------------------------------------------------------------------------------------------
 
 
 def arena_usd_miss_reason(scorer, model, raw_entries, meas):
@@ -691,63 +691,41 @@ def arena_usd_miss_reason(scorer, model, raw_entries, meas):
     return 'not listed on arena.ai Agent / Overall'
 
 
-def usd_community_mix(scorer, rows, meas, priority):
-    """Rounds 8-9 (user, 2026-11-09): `arena.agent_sessions` (arena.ai Agent / Overall real sessions, Cost/Task P50 ÷
-    Time/Task P50 × 60, kind `community`) is the primary source; option B (`derived.community_mix`, AA throughput ×
-    community token mix × list price) is a labelled fallback (`fallback: True`) for models arena does not list with cost
-    and time; `convert_usd` then replaces it for a model with a same-series sibling that has a direct value. When `--source-priority` is given, it falls through `[*priority, 'arena.agent_sessions', 'derived.community_mix']`
-    and never takes a median across mixed scales (review F4)."""
-    order = [*(priority or ()), 'arena.agent_sessions', 'derived.community_mix']
+USD_ORDER = ('arena.agent_sessions', 'derived.community_mix')
+
+
+def usd_community_mix(scorer, rows, meas):
+    """The one usd_per_hour basis (rounds 8-9, user 2026-11-09): `arena.agent_sessions` (arena.ai Agent / Overall real
+    sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), else the labelled option B (`derived.community_mix`,
+    AA throughput x community token mix x list price; `fallback: True`) for a model arena does not list with cost and
+    time; `convert_usd` then replaces that for a model with a same-series sibling that has a direct value. No median is
+    taken across sources on different scales."""
     out = {}
     for m, r in rows.items():
         raw = r['fields'].get('usd_per_hour') or ()
-        trusted = scorer.trusted(raw)
         by_src = {}
-        for e in trusted:
+        for e in scorer.trusted(raw):
             by_src.setdefault(e['source'], []).append(e)
-        chosen = next((s for s in order if s in by_src), None)
+        chosen = next((s for s in USD_ORDER if s in by_src), None)
         if not chosen:
-            why = arena_usd_miss_reason(scorer, m, raw, meas)
-            out[m] = {'value': None, 'status': 'missing', 'sources': {}, 'merge': None, 'reason': why}
+            out[m] = {'value': None, 'status': 'missing', 'sources': {}, 'merge': None,
+                      'reason': arena_usd_miss_reason(scorer, m, raw, meas)}
             continue
-        picked = pick_usd(by_src[chosen], [chosen])
+        picked = pick_usd(by_src[chosen])
         is_fb = chosen != 'arena.agent_sessions'
         kind = by_src[chosen][0].get('kind') or ('derived' if is_fb else 'community')
-        if chosen == 'derived.community_mix' and 'derived.community_mix' not in (priority or ()):
-            why = arena_usd_miss_reason(scorer, m, raw, meas)
-            merge = f"fallback ({why}): {picked.get('merge') or 'derived.community_mix'}"
-        elif chosen in (priority or ()) and chosen != 'arena.agent_sessions':
-            merge = f'source priority: {chosen}'
-        else:
-            merge = picked.get('merge')
+        merge = f"fallback ({arena_usd_miss_reason(scorer, m, raw, meas)}): {picked['merge']}" if is_fb else picked['merge']
         out[m] = {**picked, 'merge': merge, 'kind': kind, 'fallback': is_fb}
     return out
 
 
-USD_BASES = {
-    'community_mix': {'fn': usd_community_mix,
-                      'scale': 'arena.ai Agent / Overall real sessions (Cost/Task P50 / Time/Task P50 x 60, kind community); '
-                               'option B (AA output speed x community token mix at list prices) as labelled fallback',
-                      'note': 'round 8, user 2026-11-09: primary = arena.agent_sessions; fallback = derived.community_mix '
-                              '(fallback: True) when arena does not list the model with cost and time'},
-    'benchmark': {'fn': usd_benchmark, 'scale': 'AA benchmark tokens at list prices (AA cost/time; OpenRouter repricing)',
-                  'note': 'not the community real-usage scale of the capacities; kept for comparison'},
-    'community': {'fn': usd_community, 'scale': 'community real-usage measurements per worker-hour, else derived',
-                  'note': 'option A (not chosen): a model with no measured or derivable value is mode B'},
-}
-
-
 def axis_evidence(axes):
-    """Round 058 review F5: per axis, the measured sources that are not Artificial Analysis (AA boards and every value
-    backfilled from the AA index are one source); `aa_only` when no axis has any, though some axis has a value."""
+    """Round 058 review F5: per axis, the measured sources that are not Artificial Analysis (the AA boards are one
+    source); `aa_only` when no axis has any, though some axis has a value."""
     indep = {a: sorted({s for c in (ax.get('components') or {}).values() if c.get('status') == 'measured'
                         for s in (c.get('sources') or {}) if not s.startswith('aa.')}) for a, ax in axes.items()}
-    valued = any(ax.get('status') in ('measured', 'partial', 'backfilled', 'converted') for ax in axes.values())
+    valued = any(ax.get('status') in ('measured', 'partial', 'estimated') for ax in axes.values())
     return {'independent_sources': indep, 'aa_only': valued and not any(indep.values())}
-
-
-def legacy(info):
-    return {k: info.get(k) for k in ('tier', 'usd_per_hour', 'duration_multiplier', 'subjective', 'capabilities', 'visual')}
 
 
 def token_mix(meas):
@@ -767,37 +745,39 @@ def list_price_ratio(price_t, price_b, mix):
     return cost_t / cost_b if cost_b > 0 else None
 
 
-def convert_usd(usd, rows, scorer, meas, acc):
+def convert_usd(usd, rows, scorer, meas, acc, tier):
     """Series conversion of usd_per_hour: a model without a direct value (`derived` or missing) and with a same-series
     sibling that has one takes the nearest such sibling's value times the ratio of the two cited API list prices over
     the full community token mix."""
     direct = {m for m, u in usd.items() if u.get('value') is not None and u.get('kind') not in ('derived', 'converted')}
     sibs = series.groups(acc)
-    index = {m: r['preds'].get('aa.index') for m, r in rows.items()}
-    tier = {m: (scorer.models.get(m) or {}).get('tier') for m in rows}
+    index = {m: ((scorer.trusted(r['fields'].get('intelligence_index')) or [{}])[0]).get('value') for m, r in rows.items()}
+    tier = {m: t['value'] for m, t in tier.items()}
     mix = token_mix(meas)
     for m in rows:
         if m in direct:
             continue
-        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], index, series.boards(meas), tier):
+        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], index, series.boards(meas), tier,
+                                series.same_model(acc)):
             prices = {k: pick_price(scorer.trusted(rows[k]['fields'].get('price'))) for k in (m, b)}
             ratio = list_price_ratio(prices[m], prices[b], mix)
             if ratio is None:
                 continue
             usd[m] = {'value': round(usd[b]['value'] * ratio, 3), 'status': 'ok', 'kind': 'converted', 'fallback': False,
                       'merge': f'series conversion: usd of {b} x API list price ratio {ratio:.4f} over the community token mix',
-                      'used': [], 'max_over_min': None,
+                      'used': [],
                       'sources': {'base': {**usd[b], 'model': b}, 'ratio': round(ratio, 4), 'prices': prices, 'token_mix': mix}}
             break
 
 
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, overrides=(), usd_basis='community_mix', now=None):
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None):
     scorer = Scorer(meas, acc, distrust, overrides)
-    rows, fits = scorer.score()
-    usd = USD_BASES[usd_basis]['fn'](scorer, rows, meas, priority)
-    convert_usd(usd, rows, scorer, meas, acc)
-    caps, cap_errors = capacity(meas, plans, usd, now, usd_basis)
-    anchor_tp = scorer.trusted(((rows.get(measurements.ANCHOR) or {}).get('fields') or {}).get('throughput'))
+    rows, tier, fits, rejected = scorer.score()
+    usd = usd_community_mix(scorer, rows, meas)
+    convert_usd(usd, rows, scorer, meas, acc, tier)
+    caps, cap_errors = capacity(meas, plans, usd, now)
+    index = {m: ((scorer.trusted(r['fields'].get('intelligence_index')) or [{}])[0]).get('value') for m, r in rows.items()}
+    dur, dur_fit, dur_rejected = durations(scorer, rows, acc, index, series.boards(meas), tier)
     models, errors = {}, []
     for m, r in rows.items():
         model_errors = []
@@ -805,10 +785,16 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
             model_errors.append({'model': m, 'field': 'usd_per_hour', 'reason': 'no_cited_source', 'level': 'red_if_metered',
                                  'effect': 'out of automatic routing on any quota-pool or metered account; a named '
                                            'dispatch runs with its cost unpriced'})
-        dur = pick_duration(usd[m], acc['models'][m], scorer.trusted(r['fields'].get('throughput')), anchor_tp)
-        if dur['status'] == 'missing':
-            model_errors.append({'model': m, 'field': 'duration_multiplier', 'reason': 'no_cited_source', 'level': 'yellow',
-                                 'effect': 'no public completion-speed measurement'})
+        if dur[m]['status'] == 'missing':
+            model_errors.append({'model': m, 'field': 'duration_multiplier', 'reason': 'no_time_per_task', 'level': 'red',
+                                 'effect': 'no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has '
+                                           'skill: out of automatic routing at every effort; a named dispatch carries the '
+                                           'task\'s own hours estimate unscaled'})
+        elif dur[m]['efforts_without_time']:
+            model_errors.append({'model': m, 'field': 'duration_multiplier', 'reason': 'effort_without_time', 'level': 'yellow',
+                                 'effect': 'out of automatic routing at ' + ', '.join(dur[m]['efforts_without_time'])
+                                           + ' (no Time/Task at that effort and no same-series sibling to convert it); '
+                                             'the listed efforts still route'})
         img = pick_image_input(scorer.trusted(r['fields'].get('image_input')))
         if img['status'] == 'unknown':
             model_errors.append({'model': m, 'field': 'image_input', 'reason': 'no_cited_source',
@@ -823,7 +809,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
             if ax.get('flag') == 'missing':
                 model_errors.append({'model': m, 'field': a, 'reason': 'no_trusted_source', 'level': 'red_if_demanded',
                                      'effect': 'scores 0; a task that demands this axis leaves automatic routing for the model'})
-            elif ax.get('missing_components') and ax['status'] != 'inherited':
+            elif ax.get('missing_components'):
                 model_errors.append({'model': m, 'field': f"{a}.{','.join(ax['missing_components'])}",
                                      'reason': 'component_unmeasured_no_fit', 'level': 'yellow',
                                      'effect': 'missing components count as 0 in the axis mean (pessimistic partial axis)'})
@@ -832,30 +818,33 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', priority=None, override
             model_errors.append({'model': m, 'field': 'axes', 'reason': 'aa_only', 'level': 'yellow',
                                  'effect': 'every axis value comes from Artificial Analysis (the Intelligence Index and AA '
                                            'boards collinear with it): one source, not independent evidence'})
+        if tier[m]['method'] == 'none':
+            model_errors.append({'model': m, 'field': 'tier', 'reason': 'no_overall_board', 'level': 'yellow',
+                                 'effect': 'no arena.ai Overall reading, no other overall board and no same-series sibling: '
+                                           'its type scores that no board measures stay missing (mode B when demanded)'})
         errors += model_errors
         idx = scorer.trusted(r['fields'].get('intelligence_index'))
-        u = usd[m]['value']
         models[m] = {'axes': r['axes'], 'scores': {a: ax['value'] for a, ax in r['axes'].items()},
                      'missing_axes': [a for a, ax in r['axes'].items() if ax.get('flag') == 'missing'],
-                     'usd_per_hour': usd[m], 'duration_multiplier': dur,
+                     'usd_per_hour': usd[m], 'duration_multiplier': dur[m],
                      'image_input': img, 'fast_mode': fm,
                      'price': pick_price(scorer.trusted(r['fields'].get('price'))),
                      'intelligence_index': idx[0]['value'] if idx else None,
-                     'economy_static': round(1 / (1 + u / 15), 3) if u is not None else None,
-                     'legacy_public_tier': legacy_tier(scorer.trusted(r['fields'].get('tier'))),
-                     'evidence': evidence, 'data_errors': model_errors, 'legacy': legacy(acc['models'][m])}
+                     'tier': tier[m], 'evidence': evidence, 'data_errors': model_errors}
     doc = {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
-           'distrusted_sources': sorted(distrust), 'source_priority': list(priority or ()),
+           'distrusted_sources': sorted(distrust),
            'user_overrides': list(overrides),
            'method': __doc__.strip().splitlines()[0],
-           'backfill_fits': fits,
-           'usd_basis': {'name': usd_basis, 'scale': USD_BASES[usd_basis]['scale'], 'note': USD_BASES[usd_basis]['note']},
+           'estimate_fits': fits, 'rejected_fits': rejected,
+           'duration_fit': dur_fit, 'duration_fit_rejected': dur_rejected,
+           'tier_sources': {k: sum(1 for t in tier.values() if t['method'] == k)
+                            for k in ('anchor', 'arena_overall', 'other_overall', 'sibling', 'none')},
            'capacity': caps, 'capacity_stale_days': STALE_DAYS,
            'capacity_not_found': (meas.get('capacity') or {}).get('not_found') or {},
            'capacity_errors': cap_errors, 'source_ages': source_ages(meas, now),
-           'usd_checks': [{**h, 'basis': usd_basis, 'basis_value': (usd.get(h['model']) or {}).get('value'),
-                           'community_over_basis': (round(h['value'] / usd[h['model']]['value'], 2)
+           'usd_checks': [{**h, 'usd_per_hour': (usd.get(h['model']) or {}).get('value'),
+                           'community_over_usd': (round(h['value'] / usd[h['model']]['value'], 2)
                                                     if (usd.get(h['model']) or {}).get('value') else None)}
                           for h in (meas.get('capacity') or {}).get('hourly_checks') or ()],
            'anchor': {'model': measurements.ANCHOR, 'value': measurements.ANCHOR_VALUE},
@@ -867,26 +856,24 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--measurements', default=str(measurements.OUT))
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
-    ap.add_argument('--source-priority', default='', help='comma-separated usd sources; the first with a value wins over the median')
     ap.add_argument('--user-overrides', help='JSON list of dated {model, axis, value, as_of, note} overrides (source `user`)')
-    ap.add_argument('--usd-basis', default='community_mix', choices=sorted(USD_BASES))
     ap.add_argument('--out', default=str(OUT))
     args = ap.parse_args()
     raw = Path(args.measurements).read_bytes()
     overrides = json.loads(Path(args.user_overrides).read_text(encoding='utf-8')) if args.user_overrides else []
-    priority = [s.strip() for s in args.source_priority.split(',') if s.strip()]
     doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw,
-                priority, overrides, usd_basis=args.usd_basis)
+                overrides=overrides)
     Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(doc["models"])} models -> {args.out}')
     print(f'{"model":28s} {"usd/h":>7}  ' + ' '.join(f'{a[:10]:>10}' for a in AXES))
     for m, r in doc['models'].items():
         u = r['usd_per_hour']['value']
-        mark = {'backfilled': '*', 'converted': '~', 'inherited': '^', 'user_override': 'u'}
+        mark = {'estimated': '~', 'user_override': 'u'}
         cells = ' '.join(f"{r['scores'][a]:>9.2f}{mark.get(r['axes'][a]['status'], '!' if r['axes'][a].get('flag') else ' ')}"
                          for a in AXES)
         print(f"{m:28s} {u if u is not None else '-':>7}  {cells}")
-    print('* backfilled  ~ series conversion  ^ inherited (vendor statement)  u user override  ! missing (0)')
+    print('~ estimated through the tier  u user override  ! missing (0)')
+    print('tier sources:', doc['tier_sources'])
     for fam, plans in doc['capacity'].items():
         for plan, wins in plans.items():
             print(f'capacity {fam}/{plan}: ' + ', '.join(

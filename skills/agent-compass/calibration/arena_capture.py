@@ -160,17 +160,6 @@ def parse_alignment(text):
     return {'as_of': page_date(text), 'sessions': count(text, 'sessions'), 'rows': rows}
 
 
-def parse_scores(text, names):
-    """WebDev / Text (cross-check only): {listed name: score} for the given display names, read from the run-together
-    table (the name, its lab and licence, then a 4-digit score and its +x/-y or ±x interval)."""
-    out = {}
-    for name in names:
-        m = re.search(re.escape(name) + r'(?=[A-Z])[^+±]{0,80}?(\d{4})(?:\+\d+/-\d+|±\d+)', text)
-        if m:
-            out[name] = int(m.group(1))
-    return {'as_of': page_date(text), 'votes': count(text, 'votes'), 'scores': out}
-
-
 def load(path):
     raw = json.loads(Path(path).read_text(encoding='utf-8'))
     return json.loads(raw) if isinstance(raw, str) else raw

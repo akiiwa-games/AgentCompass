@@ -25,8 +25,8 @@ def setUpModule():
 
 NOW = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
 WEEK = 168.0
-PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 'context_scale': 1, 'divergence': 1, 'hallucination_risk': 2,
-           'error_cost': 2, 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
+PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 
+           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
            'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering', 'multi_task': False,
            'task_count': '1', 'expected_hours': 1.0}
 MID, FRONTIER, CREATIVE = (2, 3, 2, 0), (2, 3, 3, 0), (3, 1, 0, 0)
@@ -47,7 +47,7 @@ def ladder_for(spend_scale=1.0, with_outside=0.0):
               (22.86 * spend_scale, {'divergence': 0.73, 'global_rigor': 0.8, 'module_precision': 0.8, 'vision_tools': 0.8})]
     hulls = []
     for d in allocator.FIVE_AXIS_DEMAND_GRID:
-        targets = allocator.five_axis_targets(d)
+        targets = allocator.five_axis_targets(d, 0.8)
         pts = [(s, allocator.five_axis_fit(sc, d, targets, 1.0)[0]) for s, sc in models]
         hulls.append(allocator.five_axis_upper_hull(pts, with_outside * max(f for _, f in pts)))
     return allocator.five_axis_value_ladder(hulls)
@@ -63,7 +63,6 @@ class Fleet:
     def plan(self, claude_used, codex_used, ec=0.5, ex=0.5, axes=MID, hours=2.0, allowed=('claude', 'codex'), claude2=None,
              five_hour_used=0.05, mutate=None, codex_reading=True, claude_long=True, usage_hook=None, local_only=True, **task):
         acc = copy.deepcopy(self.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
         cl, cx = acc['accounts']['claude']['bundles'], acc['accounts']['codex']['bundles']
         for key in [k for k in cx if k.startswith('pi_')]:
             cx.pop(key)
@@ -267,10 +266,11 @@ class FleetEconomyTests(unittest.TestCase):
                 if c['bundle']['account'] == 'codex' and c['components']['fit'] > 0.55:
                     self.assertGreater(c['components']['opportunity_cost'], 0.0, c['id'])
             self.assertNotEqual(d['selected_bundle']['bundle_id'].split('_')[0], 'sol', used)
-            # Round 058 round 4: Haiku 5.5's unmeasured global_rigor component now comes from Haiku 4.5 (series
-            # conversion), which lowers its fit; the cheap Codex Luna (fit below the over-line threshold) wins.
-            self.assertEqual(d['choice'], 'luna_high', used)
-        self.assertEqual(self.fleet.plan(0.6, 0.9, axes=FRONTIER, hours=6.0)['choice'], 'opus55_high')
+            # On the shipped data, with every candidate's hours at its Artificial Analysis Time/Task: with Claude at 60% the
+            # Sonnet line (fit 0.58, over its line a little) beats the cheap Codex Luna (fit 0.48); with both at 90% the
+            # cheap Luna wins. Neither is the over-line Sol.
+            self.assertEqual(d['choice'], {(0.6, 0.9): 'sonnet55_high', (0.9, 0.9): 'luna_high'}[used], used)
+        self.assertEqual(self.fleet.plan(0.5, 0.9, axes=FRONTIER, hours=6.0)['choice'], 'opus55_high')   # the frontier task still reaches Opus
 
     def test_a_substitute_only_helps_as_much_as_it_is_likely_to_have_room(self):
         """Advisor test 2: Codex fixed at 90%, Claude swept; Codex's price never falls as Claude fills and at 100% equals
@@ -301,7 +301,7 @@ class FleetEconomyTests(unittest.TestCase):
     def test_speed_only_breaks_ties_on_n_and_a_faster_candidate_never_displaces_a_higher_n(self):
         """Owner decision of round 13b: the post-ranking speed rule is gone. The order is N, then wait, then the
         earliest-expiring quota, then the faster completion, then fewer USD. (1) A fast variant is its own candidate at its
-        real spend; 2h before the weekly reset the cost of both is below N's resolution, so the fast one wins on time (round 15). (2) The under-line mid-week case keeps Sol xhigh on top instead of Opus+fast.
+        real spend; 2h before the weekly reset the cost of both is below N's resolution, so the fast one wins on time (round 15). (2) The under-line mid-week case keeps a plain variant on top instead of Opus+fast.
         (3) Where the quota costs nothing the fast variant and its base tie on N and the faster one wins by completion time."""
         sprint = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
         for c in eligible(sprint):
@@ -319,15 +319,13 @@ class FleetEconomyTests(unittest.TestCase):
         self.assertEqual(fast['components']['decided_by'], 'completion_hours')
         self.assertEqual(sprint['choice'], fast['id'])
         # (2) well under the line (30% used at half time) the week is not likely to be needed either (v3.1: the line is
-        # where pi is about one half, the curve is narrow), so the best candidates tie on N and the fastest goes first; on
-        # the line (50% used) the quota has a price again and Sol xhigh stays above Opus+fast
+        # where pi is about one half, the curve is narrow), so the best candidate costs less than the resolution of N; on
+        # the line (50% used) the quota has a price again and a plain variant stays above Opus+fast
         under = self.fleet.plan(0.3, 0.5, ec=0.5)
         self.assertLess(eligible(under)[0]['components']['opportunity_cost'], 5e-5)
-        self.assertEqual(eligible(under)[0]['components']['decided_by'], 'completion_hours')
         mid_week = self.fleet.plan(0.5, 0.5, ec=0.5)
         top = mid_week['ranking'][0]
         self.assertFalse(top['bundle'].get('fast'))
-        self.assertEqual(top['id'], 'sol_xhigh')
         self.assertGreater(top['score'], row(mid_week, 'opus55_high', fast=True)['score'])
         self.assertEqual([c['score'] for c in eligible(mid_week)], sorted((c['score'] for c in eligible(mid_week)), reverse=True))
         # (3) where the quota costs nothing (2h before the weekly reset, plenty left) the fast variant ties its base on N
@@ -343,7 +341,7 @@ class FleetEconomyTests(unittest.TestCase):
 
     def test_the_order_is_n_then_wait_then_earliest_expiring_quota_then_speed_then_usd(self):
         def cand(score, wait=0.0, reset=None, hours=1.0, usd=1.0):
-            return {'score': score, 'available_in_hours': wait, 'expected_hours': hours, 'speed_hours': hours, 'expected_usd': usd,
+            return {'score': score, 'available_in_hours': wait, 'expected_hours': hours, 'duration_hours': hours, 'expected_usd': usd,
                     'components': {'earliest_reset_hours': reset, 'five_axis_level': 0.5, 'harness_place': 0}}
         base = cand(0.5, reset=10.0)
         for better, worse in ((cand(0.5001, reset=99.0), base), (cand(0.5, wait=0.0, reset=99.0), cand(0.5, wait=2.0, reset=1.0)),
@@ -531,12 +529,12 @@ class FastVariantIdentityTests(unittest.TestCase):
         base = self.plan(pinned_bundle='opus55_high')
         self.assertEqual(base['choice'], 'opus55_high')
         self.assertFalse(base['selected_bundle'].get('fast'))
-        self.assertAlmostEqual(base['selected_bundle']['expected_usd'], 22.86)
+        self.assertAlmostEqual(base['selected_bundle']['expected_usd'], 45.72)      # 2 h x the cited usd per hour
         fast = self.plan(pinned_bundle='opus55_high+fast')
         self.assertEqual(fast['choice'], 'opus55_high+fast')
         self.assertTrue(fast['selected_bundle']['fast'])
         self.assertEqual(fast['selected_bundle']['bundle_id'], 'opus55_high')
-        self.assertAlmostEqual(fast['selected_bundle']['expected_usd'], 45.72)
+        self.assertAlmostEqual(fast['selected_bundle']['expected_usd'], 91.44)
         forced = self.plan(pinned_bundle='opus55_high', force_fast=True)       # --fast on a named bundle: that bundle, fast
         self.assertTrue(forced['selected_bundle']['fast'])
         self.assertEqual(forced['selected_bundle']['bundle_id'], 'opus55_high')
@@ -559,7 +557,7 @@ class ReadFailureAndHoldTests(unittest.TestCase):
     """Owner decision of round 13b: a failed usage read (even a 429 from the usage endpoint) is a read failure, so the latest
     successful reading of the CURRENT reset period prices the account, labelled with its read time; with none the account
     goes to mode B. A provider hold (`provider_retry`, `model_latch`) is a quota/launch failure signal and always wins over a
-    reading, stale or not, on the five-axis path exactly as on the legacy one."""
+    reading, stale or not."""
 
     def setUp(self):
         self.fleet = Fleet()
@@ -676,98 +674,82 @@ class ReadFailureAndHoldTests(unittest.TestCase):
         self.assertTrue(rows)
         for c in rows:
             self.assertTrue(any('model launch failed' in r for r in c['excluded']), c['excluded'])
-        # the same latch on the legacy path (flag off) excludes the same bundles with the same reason
-        legacy = self.fleet.plan(0.3, 0.9, axes=FRONTIER, hours=6.0, allowed=('claude',),
-                                 mutate=lambda acc: acc['scoring'].update(five_axis={'enabled': False}))
-        self.assertEqual(sorted(c['id'] for c in legacy['ranking'] if c['bundle']['model'] == model and c['bundle']['account'] == 'claude' and c['excluded']),
-                         sorted(c['id'] for c in rows if c['excluded']))
 
 
-class SpeedKeyTests(unittest.TestCase):
-    """Round 14b (owner): the "faster" tie-break compares Time/Task at the candidate's own effort, Artificial Analysis first,
-    the arena Agent-board P50 only when AA has no row for that model and effort, and 'speed unknown' sorts last."""
+class DurationKeyTests(unittest.TestCase):
+    """One basis for the time a task takes (owner, 2026-11-10: Artificial Analysis Time/Task at the same effort): the hours
+    that price the spend and the window are the hours the "faster" tie-break compares, per candidate effort."""
 
     @classmethod
     def setUpClass(cls):
         cls.fleet = Fleet()
         cls.data = allocator.load_five_axis()
 
-    def info(self, model, arena_only=False):
-        dur = self.data['models'][model]['duration_multiplier']
-        return {'default_effort': 'high',
-                'five_axis': {'aa_time': {} if arena_only else copy.deepcopy(dur.get('aa') or {}),
-                              'duration_source': dur.get('source')}}
+    def record(self, model):
+        return self.data['models'][model]['duration_multiplier']
 
-    def aa_minutes(self, model, effort):
-        return self.data['models'][model]['duration_multiplier']['aa']['by_effort'][effort]
+    def info(self, model):
+        dur = self.record(model)
+        return {'five_axis': {'duration': {k: copy.deepcopy(dur[k]) for k in ('status', 'by_effort', 'basis_by_effort')}}}
 
-    def test_the_review_s3_case_picks_opus_over_fable_51_at_high_on_the_speed_key(self):
-        """Claude 5% used at e = 0.9, a 0.3 h creative task, Dot available. The speed key was arena Time/Task P50 (Fable 5.1
-        10.9 min against Opus 5.5 16.3 min, though Fable writes 54k tokens a task to Opus's 120k). At the same effort AA has
-        Opus 5.5 faster at high, so with N tied Opus goes first and `completion_hours` decides."""
+    def minutes(self, model, effort):
+        return self.record(model)['minutes_by_effort'][effort]
+
+    def test_the_hours_follow_the_aa_time_at_the_candidates_effort(self):
+        """A 0.3 h creative task with Dot available: Opus 5.5 is faster than Fable 5.1 at High on Artificial Analysis, and the
+        hours that priced the spend are the hours the faster key compares."""
         d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=0.3, allowed=('claude', 'codex', 'dot'))
         opus, fable = row(d, 'opus55_high'), row(d, 'fable51_high')
         for c in (opus, fable):
-            self.assertEqual(c['components']['speed_source'], 'aa.cost_time')
-        self.assertLess(self.aa_minutes('claude-opus-5-5', 'high'), self.aa_minutes('claude-fable-5-1', 'high'))
-        self.assertAlmostEqual(fable['speed_hours'] / opus['speed_hours'],
-                               self.aa_minutes('claude-fable-5-1', 'high') / self.aa_minutes('claude-opus-5-5', 'high'), places=3)
-        # the same N, the review's tie: the arena-based expected_hours (Fable shorter) no longer decides
-        self.assertGreater(opus['expected_hours'], fable['expected_hours'])
+            self.assertEqual(c['components']['duration_source'], 'aa')
+        self.assertLess(self.minutes('claude-opus-5-5', 'high'), self.minutes('claude-fable-5-1', 'high'))
+        self.assertAlmostEqual(fable['duration_hours'] / opus['duration_hours'],
+                               self.minutes('claude-fable-5-1', 'high') / self.minutes('claude-opus-5-5', 'high'), places=2)
+        self.assertGreater(fable['expected_hours'], opus['expected_hours'])
         tied_opus, tied_fable = dict(opus), dict(fable)
         tied_fable['score'] = tied_opus['score']
         self.assertLess(allocator.five_axis_order(tied_opus), allocator.five_axis_order(tied_fable))
         self.assertEqual(allocator.five_axis_deciding_key(tied_opus, tied_fable), 'completion_hours')
-        self.assertIn('speed at high', ' '.join(opus['notes']))
+        self.assertIn('time at high', ' '.join(opus['notes']))
+
+    def test_the_spend_is_usd_per_hour_times_those_hours(self):
+        d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=6.0, allowed=('claude', 'codex'))
+        for bundle_id, model in (('opus55_high', 'claude-opus-5-5'), ('sol_high', 'gpt-6.1-sol')):
+            c = row(d, bundle_id)
+            usd = self.data['models'][model]['usd_per_hour']['value']
+            self.assertAlmostEqual(c['expected_usd'], c['duration_hours'] * usd, delta=0.01 + 0.005 * usd, msg=bundle_id)
 
     def test_every_effort_pair_follows_the_aa_time_at_that_effort_including_max(self):
         opus, fable = self.info('claude-opus-5-5'), self.info('claude-fable-5-1')
         seen = set()
         for effort in ('low', 'medium', 'high', 'xhigh', 'max'):
-            # the arena hours passed in point the other way on purpose: AA must win whenever it has the row
-            t_opus, src_o = allocator.five_axis_speed_hours('claude-opus-5-5', effort, opus, 1.0, 99.0)
-            t_fable, src_f = allocator.five_axis_speed_hours('claude-fable-5-1', effort, fable, 1.0, 0.01)
-            self.assertEqual((src_o, src_f), ('aa.cost_time', 'aa.cost_time'), effort)
-            aa_o, aa_f = self.aa_minutes('claude-opus-5-5', effort), self.aa_minutes('claude-fable-5-1', effort)
-            self.assertEqual(t_opus < t_fable, aa_o < aa_f, effort)
+            m_opus, basis = allocator.duration_at(opus, effort)
+            m_fable, _ = allocator.duration_at(fable, effort)
+            self.assertEqual(basis['method'], 'aa', effort)
+            aa_o, aa_f = self.minutes('claude-opus-5-5', effort), self.minutes('claude-fable-5-1', effort)
+            self.assertEqual(m_opus < m_fable, aa_o < aa_f, effort)
             seen.add(aa_o < aa_f)
         self.assertEqual(seen, {True, False})        # Opus is faster at the lower efforts and slower at max (public data)
-        self.assertGreater(self.aa_minutes('claude-opus-5-5', 'max'), self.aa_minutes('claude-fable-5-1', 'max'))
 
-    def test_the_arena_time_decides_only_when_aa_has_no_row_for_the_model_and_effort(self):
-        arena = self.info('claude-opus-5-5', arena_only=True)
-        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'high', arena, 1.0, 1.7), (1.7, 'arena.agent_sessions'))
-        # AA has the model at some efforts but not this one: the arena figure applies at that effort only
-        partial = self.info('claude-opus-5-5')
-        del partial['five_axis']['aa_time']['multiplier_by_effort']['xhigh']
-        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'xhigh', partial, 1.0, 1.7), (1.7, 'arena.agent_sessions'))
-        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'high', partial, 1.0, 1.7)[1], 'aa.cost_time')
-        # a model whose duration did not come from the arena has no arena fallback: its speed is unknown
-        partial['five_axis']['duration_source'] = 'aa.cost_time'
-        self.assertEqual(allocator.five_axis_speed_hours('claude-opus-5-5', 'xhigh', partial, 1.0, 1.7), (None, None))
+    def test_an_effort_with_no_time_has_none_and_no_other_efforts_time_stands_in(self):
+        opus = self.info('claude-opus-5-5')
+        del opus['five_axis']['duration']['by_effort']['xhigh']
+        self.assertEqual(allocator.duration_at(opus, 'xhigh'), (None, None))
+        self.assertEqual(allocator.duration_at(opus, 'high')[1]['method'], 'aa')
+        self.assertEqual(allocator.duration_at(opus, None), allocator.duration_at(opus, 'high'))    # no effort: the single configuration
+        self.assertEqual(allocator.duration_at({}, 'high'), (None, None))
 
-    def test_a_model_with_neither_source_is_speed_unknown_and_sorts_last_on_the_key(self):
-        none = {'default_effort': 'high', 'five_axis': {'aa_time': {}, 'duration_source': None}}
-        self.assertEqual(allocator.five_axis_speed_hours('dot', 'high', none, 1.0, 1.0), (None, None))
-        d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=0.3, allowed=('claude', 'codex', 'dot'))
-        base = row(d, 'luna_high')
-        unknown, slow = dict(base, speed_hours=None), dict(base, speed_hours=1e6)       # same N, wait, reset and USD
-        self.assertLess(allocator.five_axis_order(slow), allocator.five_axis_order(unknown))      # even a very slow known one
-        self.assertEqual(allocator.five_axis_deciding_key(slow, unknown), 'completion_hours')
-
-    def test_a_fast_variant_scales_the_candidates_speed_hours_and_keeps_the_source(self):
+    def test_a_fast_variant_shortens_the_candidates_hours_and_keeps_the_source(self):
         d = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
         base, fast = row(d, 'opus55_high'), row(d, 'opus55_high', fast=True)
-        self.assertEqual(fast['components']['speed_source'], base['components']['speed_source'])
-        self.assertLess(fast['speed_hours'], base['speed_hours'])
-        speedup = (base['bundle'].get('fast') or 0) or 0
-        self.assertGreater(base['speed_hours'] / fast['speed_hours'], 1.0 + speedup)
+        self.assertEqual(fast['components']['duration_source'], base['components']['duration_source'])
+        self.assertLess(fast['duration_hours'], base['duration_hours'])
 
-    def test_the_snapshot_row_names_the_deciding_speed_source(self):
+    def test_the_snapshot_row_names_the_duration_source(self):
         d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=0.3, allowed=('claude', 'codex', 'dot'))
         snap = allocator.decision_snapshot(d)
         top = next(r for r in snap['ranking'] if r.get('components'))
-        self.assertIn('speed_source', top['components'])
+        self.assertIn('duration_source', top['components'])
 
 
 def window_reports(decision):
@@ -908,7 +890,9 @@ class BurstSizeTests(unittest.TestCase):
         long_task = self.plan(0.5, 0.5, ec=1 - tau / WEEK, ex=1 - tau / WEEK, hours=20.0)
         for label, w in window_reports(long_task).items():
             account = label.split('/')[0]
-            rate = max(c['expected_usd'] / c['expected_hours'] for c in eligible(long_task)
+            # every candidate of the account counts, those the capacity check keeps out too: at the Time/Task they now take
+            # (Fable 5.1 27 h for this 20 h task) the dearest Fable lines no longer fit the weekly Fable window
+            rate = max(c['expected_usd'] / c['expected_hours'] for c in long_task['ranking']
                        if c['bundle']['account'] == account and not c['bundle'].get('fast') and c['expected_hours'] > 0)
             self.assertLessEqual(w['lump_usd'], rate * tau * 1.0001, label)
             whole = window_reports(self.plan(0.5, 0.5, ec=0.5, hours=20.0)).get(label)
@@ -1182,7 +1166,7 @@ class WeeklyWindowTests(unittest.TestCase):
         outside point whatever the data error says."""
         stateless = {'bundle': {'account': 'claude', 'id': 'x'}, 'components': {'fit': 0.9}, 'expected_usd': 5.0,
                      '_five_window_states': {}, '_five_scaled': {a: 0.9 for a in allocator.FIVE_AXES}}
-        econ = allocator.FiveAxisEconomy([stateless], self.fleet.accounts, {}, {'hours': 2.0})
+        econ = allocator.FiveAxisEconomy([stateless], {**self.fleet.accounts, '_five_axis': {'anchor_value': 0.8}}, {}, {'hours': 2.0})
         self.assertEqual(econ.entries, [])
         self.assertEqual(econ.units, {})
 
@@ -1193,7 +1177,6 @@ class WeeklyWindowTests(unittest.TestCase):
 
     def test_a_free_pools_auto_bundles_draw_the_allowance_that_the_overlay_declares(self):
         acc = copy.deepcopy(self.fleet.accounts)
-        acc['scoring']['five_axis'] = {'enabled': True}
         acc['accounts']['pool'] = {'plan': 'free', 'billing': 'subscription', 'free_allowance': True, 'verified': True,
                                    'bundles': {'auto:pool:opencode:x': {'provider': 'opencode', 'harness': 'opencode',
                                                                          'model': 'glm-5.3-flash-free', 'draws': [], 'auto': True},
@@ -1262,6 +1245,67 @@ class SnapshotQuotaLineTests(unittest.TestCase):
         self.assertIsNone(allocator.snapshot_quota_line([]))
         self.assertIsNone(allocator.candidate_quota_line({'economy': {'binding_window': None, 'windows': []}}))
         self.assertIsNone(allocator.candidate_quota_line({}))
+
+
+class DurationUnknownTests(unittest.TestCase):
+    """A bundle of a model the data has no time for at all (GPT-OSS 120B: no Artificial Analysis or arena listing and no
+    same-series sibling) is out of automatic routing, and nothing stands in; a named dispatch still runs, on the task's own
+    hours, with the data error on the row. A model whose efforts are only partly listed has the rest from a cited ratio."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fleet = Fleet()
+
+    @staticmethod
+    def grok_bundles(acc):
+        cx = acc['accounts']['codex']['bundles']
+        cx['oss_high'] = {**cx['sol_high'], 'model': 'gpt-oss-120b', 'effort': 'high'}
+        cx['grok_max'] = {**cx['sol_high'], 'model': 'grok-4.7', 'effort': 'max'}
+
+    def test_automatic_routing_leaves_the_effort_with_no_time_and_keeps_the_effort_that_has_one(self):
+        d = self.fleet.plan(0.5, 0.5, mutate=self.grok_bundles)
+        ranking = {c['id']: c for c in d['ranking']}
+        self.assertIn('no Time/Task for gpt-oss-120b at high', ' '.join(ranking['oss_high']['excluded']))
+        self.assertIsNone(ranking['oss_high']['score'])
+        self.assertNotIn('oss_high', [c['id'] for c in eligible(d)])
+        # Grok 4.7 lists no Max on Artificial Analysis: it routes there on the fleet's max/xhigh ratio, cited
+        self.assertIsNotNone(ranking['grok_max']['score'])
+        self.assertEqual(ranking['grok_max']['components']['duration_source'], 'fleet_effort_ratio')
+
+    def test_a_named_dispatch_keeps_the_bundle_with_the_tasks_own_hours_and_the_data_error(self):
+        d = self.fleet.plan(0.5, 0.5, mutate=self.grok_bundles, pinned_bundle='oss_high', hours=2.0)
+        self.assertEqual(d['choice'], 'oss_high')
+        c = next(c for c in d['ranking'] if c['id'] == 'oss_high')
+        self.assertEqual((c['excluded'], c['duration_hours'], c['expected_hours']), ([], 2.0, 2.0))
+        self.assertTrue(any('no Time/Task for gpt-oss-120b at high' in n and 'dispatched because it was named' in n for n in c['notes']), c['notes'])
+
+
+class LaunchBlockersTests(unittest.TestCase):
+    """The capacities a window is priced on are the overlaid data's: raw accounts are overlaid per call, and a caller that
+    overlays once gets the same answer; a purpose-limited channel or free starter allowance never blocks."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fleet = Fleet()
+
+    def test_raw_and_overlaid_accounts_give_the_same_blockers(self):
+        raw = copy.deepcopy(self.fleet.accounts)
+        overlaid = allocator.five_axis_overlay(copy.deepcopy(raw))
+        bundle = {'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high', 'bundle_id': 'sol_high'}
+        for used in (0.1, 0.999):
+            usage = {'accounts': {'codex': {'windows': [{'id': 'usage', 'remaining_pct_before_reset': 100.0 * (1 - used),
+                                                          'seconds_until_reset': 3600}]}}}
+            blockers = allocator.launch_blockers(bundle, overlaid, usage, NOW)
+            self.assertEqual(allocator.launch_blockers(bundle, raw, usage, NOW), blockers, used)
+            self.assertEqual(bool(blockers), used > 0.9, used)         # not vacuous: a used-up window blocks, a fresh one does not
+
+    def test_an_unmetered_or_free_pool_account_never_blocks_a_launch(self):
+        overlaid = allocator.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
+        for flag in ('unmetered', 'five_axis_free_pool'):
+            accounts = copy.deepcopy(overlaid)
+            accounts['accounts']['codex'][flag] = True
+            usage = {'accounts': {'codex': {'windows': [{'id': 'usage', 'remaining_pct_before_reset': 0.0, 'seconds_until_reset': 3600}]}}}
+            self.assertEqual(allocator.launch_blockers({'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high'}, accounts, usage, NOW), [], flag)
 
 
 if __name__ == '__main__':

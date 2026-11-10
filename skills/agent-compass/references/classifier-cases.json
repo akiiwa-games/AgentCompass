@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-07",
+  "version": "2026-11-11",
   "route_definitions": {
     "computer_use": "Operate a live desktop, browser, or application GUI via screenshots, mouse clicks, keyboard input, or window automation.",
     "visual_analysis": "Read-only inspection or comparison of images, screenshots, UI mockups, or design frames without writing UI code or clicking a live GUI.",
@@ -17,15 +17,14 @@
     "direction_reasoning": "High-depth mathematical proof/derivation, formal critique, or first-principles strategic/architectural paradigm design."
   },
   "dimension_rubric": {
-    "anti_inflation_rule": "Score ONLY functional work the worker performs, never brief length or Markdown structure. Coordinator headers (`Parent session agent ID`, `工作目录`), role/AGENTS/SKILL docs, communication rules, and output/receipt paths are boilerplate—ignore them for `context_scale`, `reasoning_depth`, and `code_complexity`.",
+    "anti_inflation_rule": "Score ONLY functional work the worker performs, never brief length or Markdown structure. Coordinator headers (`Parent session agent ID`, `工作目录`), role/AGENTS/SKILL docs, communication rules, and output/receipt paths are boilerplate—ignore them for `reasoning_depth`, `code_complexity` and `axis_demand`.",
     "local_only_positive_vs_negative": "CONTRAST RULE for `local_only`: `true` when depending on un-inlined files/dirs/repos on THIS machine (reading, copying, searching, editing, building, or testing local files) or local processes/daemons/GUI/env. `false` when all required inputs are inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, `complex_build_plan`), even if a local output path is named.",
-    "read_only_review": "CONTRAST RULE for `read_only_review`: `true` ONLY for read-only code/PR/diff/branch/security/release reviews or independent audits that write NO repo production/test code (`code_complexity: 0`, `work_kind: debug_review`, `hallucination_risk: 3`, even when saving a review report file to a specified path). `false` when fixing issues from a prior review (`Fix the review findings`), implementing/modifying code, diagnosing live runtime/log symptoms without a diff/code audit, or running ops commands.",
+    "read_only_review": "CONTRAST RULE for `read_only_review`: `true` ONLY for read-only code/PR/diff/branch/security/release reviews or independent audits that write NO repo production/test code (`code_complexity: 0`, `work_kind: debug_review`, even when saving a review report file to a specified path). `false` when fixing issues from a prior review (`Fix the review findings`), implementing/modifying code, diagnosing live runtime/log symptoms without a diff/code audit, or running ops commands.",
     "wants_fast": "CONTRAST RULE for `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation. `false` when negated (`Do NOT use fast mode`, `no rush`, `不用开启fast`), when fast/immediate only describes an in-task runtime step (`click Save immediately`), when merely mentioning quota/reset without requesting fast execution, or when unmentioned.",
-    "context_scale": "Count coupled functional modules reasoned across, NOT paths mentioned: `1` = one module/script (+ paired test & boilerplate) or self-contained task; `2` = 2..5 coupled modules/datasets; `3` = repo/system-wide (>5 modules) or multi-stage orchestrator.",
-    "divergence": "`1` (Convergent): known target/spec/runbook/diff review/isolated bug fix; `2` (Multi-hypothesis): unknown root cause with 2+ competing hypotheses or comparing technical options; `3` (Divergent/Creative): open-ended creative ideation, motif/gameplay/narrative proposals, or first-principles architecture redesign.",
     "reasoning_depth": "`1` (Routine): explicit command/checklist/runbook, trivial config tweak, or mechanical bulk edit; `2` (Standard/Hard): single/multi-module feature, bug diagnosis/fix, read-only PR review, or structured research; `3` (Coupled): cross-module refactor with strict invariants, deep concurrency forensics, or migration plan in an existing system; `4` (Frontier): whole-product/system architecture or detailed game-system/economy/combat math from scratch, ultra-low-latency network design, or formal mathematical proof/critique.",
     "multi_task_vs_single_task": "`multi_task: true` ONLY when bundling 2+ independent deliverables assignable to separate workers in parallel. Sequential steps (`diagnose -> fix -> test -> report`) or one report covering sub-questions is ONE task (`multi_task: false, task_count: 1`).",
-    "realtime_loop": "`realtime_loop: true` ONLY when the worker agent itself stays inside a live external system continuous observe-act loop across turns where turn latency degrades live results (personally playing/farming a live game, live ticket/course/appointment/flash-sale sniping, live order-book/API watching & trading, polling a live page/App/API to act immediately, live-stream chat). Set `needs_gui` by whether the loop uses a GUI (`computer_use`) vs pure CLI/API (`tool_execution`). `realtime_loop: false` for ALL coding, frontend/backend work, bug fixes, UI design, optimization, diagnosis, log analysis, or one-shot GUI clicks—even on real-time/polling/game/dashboard/flash-sale features."
+    "realtime_loop": "`realtime_loop: true` ONLY when the worker agent itself stays inside a live external system continuous observe-act loop across turns where turn latency degrades live results (personally playing/farming a live game, live ticket/course/appointment/flash-sale sniping, live order-book/API watching & trading, polling a live page/App/API to act immediately, live-stream chat). Set `needs_gui` by whether the loop uses a GUI (`computer_use`) vs pure CLI/API (`tool_execution`). `realtime_loop: false` for ALL coding, frontend/backend work, bug fixes, UI design, optimization, diagnosis, log analysis, or one-shot GUI clicks—even on real-time/polling/game/dashboard/flash-sale features.",
+    "axis_demand": "Level 0..3 per category: how much THIS task needs it. divergence: 0 known spec or checklist, 1 small judgment calls, 2 several hypotheses or options to compare, 3 open-ended creative design. global_rigor: 0 trivial and mechanically checked, 1 one module or a test-verified result, 2 several coupled parts or claims no test checks (review, audit, metrics), 3 whole-system or long multi-stage work, or a costly irreversible defect. module_precision: production code the worker writes, 0 none .. 3 multi-module, concurrency, protocol. vision_tools: 0 text and code only, 1 heavy tool/API orchestration, 2 reads images or screenshots, 3 operates a GUI."
   },
   "calibration_cases": [
     {
@@ -36,10 +35,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -50,7 +45,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -61,10 +62,6 @@
         "interaction_style": "exploration",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 1,
         "needs_visual": true,
         "needs_gui": false,
         "local_only": true,
@@ -75,7 +72,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 2
+        }
       }
     },
     {
@@ -86,10 +89,6 @@
         "interaction_style": "exploration",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 3,
-        "hallucination_risk": 3,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -100,7 +99,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 3,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 1
+        }
       }
     },
     {
@@ -111,10 +116,6 @@
         "interaction_style": "text_only",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -125,7 +126,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 1
+        }
       }
     },
     {
@@ -136,10 +143,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -150,7 +153,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -161,10 +170,6 @@
         "interaction_style": "text_only",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 3,
-        "hallucination_risk": 2,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -175,7 +180,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 3,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -186,10 +197,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -200,7 +207,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -211,10 +224,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 1,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -225,7 +234,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 1,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -236,10 +251,6 @@
         "interaction_style": "exploration",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 2,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -250,7 +261,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": true
+        "read_only_review": true,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -261,10 +278,6 @@
         "interaction_style": "exploration",
         "reasoning_depth": 3,
         "code_complexity": 0,
-        "context_scale": 2,
-        "divergence": 2,
-        "hallucination_risk": 3,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -275,7 +288,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 2,
+          "global_rigor": 3,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -286,10 +305,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 3,
         "code_complexity": 3,
-        "context_scale": 3,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 3,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -300,7 +315,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 3,
+          "module_precision": 3,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -311,10 +332,6 @@
         "interaction_style": "advisory",
         "reasoning_depth": 4,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 3,
-        "hallucination_risk": 3,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -325,7 +342,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 3,
+          "global_rigor": 3,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -336,10 +359,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -350,7 +369,13 @@
         "task_count": "1",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 0,
+          "module_precision": 0,
+          "vision_tools": 1
+        }
       }
     },
     {
@@ -361,10 +386,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -375,7 +396,13 @@
         "task_count": "2",
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -384,8 +411,6 @@
       "expected_profile": {
         "interaction_style": "exploration",
         "code_complexity": 0,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -395,12 +420,16 @@
         "task_count": "1",
         "work_kind": "complex_build_plan",
         "reasoning_depth": 4,
-        "context_scale": 3,
-        "divergence": 3,
         "expected_hours": 2.5,
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 3,
+          "global_rigor": 3,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -409,8 +438,6 @@
       "expected_profile": {
         "interaction_style": "exploration",
         "code_complexity": 0,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -420,12 +447,16 @@
         "task_count": "1",
         "work_kind": "direction_reasoning",
         "reasoning_depth": 4,
-        "context_scale": 2,
-        "divergence": 3,
         "expected_hours": 2.0,
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 3,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -434,8 +465,6 @@
       "expected_profile": {
         "interaction_style": "exploration",
         "code_complexity": 0,
-        "hallucination_risk": 3,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": false,
@@ -445,12 +474,16 @@
         "task_count": "1",
         "work_kind": "complex_build_plan",
         "reasoning_depth": 4,
-        "context_scale": 3,
-        "divergence": 2,
         "expected_hours": 2.0,
         "realtime_loop": false,
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 2,
+          "global_rigor": 3,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -461,10 +494,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -475,7 +504,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -486,10 +521,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -500,7 +531,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -511,10 +548,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -525,7 +558,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -536,10 +575,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -550,7 +585,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -561,10 +602,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 3,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -575,7 +612,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 3,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -586,10 +629,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -600,7 +639,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -611,10 +656,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -625,7 +666,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -636,10 +683,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -650,7 +693,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -661,10 +710,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -675,7 +720,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -686,10 +737,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -700,7 +747,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -711,10 +764,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -725,7 +774,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -736,10 +791,6 @@
         "interaction_style": "exploration",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -750,7 +801,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -761,10 +818,6 @@
         "interaction_style": "exploration",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 2,
-        "hallucination_risk": 3,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -775,7 +828,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 2,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -786,10 +845,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -800,7 +855,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -811,10 +872,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 1,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -825,7 +882,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -836,10 +899,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -850,7 +909,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -861,10 +926,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 3,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -875,7 +936,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 3,
+          "module_precision": 0,
+          "vision_tools": 1
+        }
       }
     },
     {
@@ -886,10 +953,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -900,7 +963,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 1
+        }
       }
     },
     {
@@ -911,10 +980,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -925,7 +990,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -936,10 +1007,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -950,7 +1017,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -961,10 +1034,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 2,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -975,7 +1044,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 2,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -986,10 +1061,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1000,7 +1071,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1011,10 +1088,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 2,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1025,7 +1098,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 2,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1036,10 +1115,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 1,
-        "context_scale": 1,
-        "divergence": 2,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1050,7 +1125,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 2,
+          "global_rigor": 1,
+          "module_precision": 1,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1061,10 +1142,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 1,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -1075,7 +1152,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -1086,10 +1169,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 0,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 2,
-        "error_cost": 1,
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
@@ -1100,7 +1179,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 1,
+          "module_precision": 0,
+          "vision_tools": 3
+        }
       }
     },
     {
@@ -1111,10 +1196,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 1,
-        "context_scale": 1,
-        "divergence": 2,
-        "hallucination_risk": 2,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1125,7 +1206,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 2,
+          "global_rigor": 1,
+          "module_precision": 1,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1136,10 +1223,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1150,7 +1233,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1161,10 +1250,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1175,7 +1260,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1186,10 +1277,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1200,7 +1287,13 @@
         "multi_task": false,
         "task_count": "1",
         "wants_fast": false,
-        "read_only_review": false
+        "read_only_review": false,
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1211,10 +1304,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1225,7 +1314,13 @@
         "hours_confidence": "high",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1236,10 +1331,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1250,7 +1341,13 @@
         "hours_confidence": "high",
         "urgency": "low",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1261,10 +1358,6 @@
         "interaction_style": "exploration",
         "reasoning_depth": 2,
         "code_complexity": 0,
-        "context_scale": 2,
-        "divergence": 1,
-        "hallucination_risk": 3,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1275,7 +1368,13 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 2,
+          "module_precision": 0,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1286,10 +1385,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1300,7 +1395,13 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1311,10 +1412,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 2,
         "code_complexity": 2,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 2,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1325,7 +1422,13 @@
         "hours_confidence": "high",
         "urgency": "high",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "axis_demand": {
+          "divergence": 1,
+          "global_rigor": 1,
+          "module_precision": 2,
+          "vision_tools": 0
+        }
       }
     },
     {
@@ -1336,10 +1439,6 @@
         "interaction_style": "engineering",
         "reasoning_depth": 1,
         "code_complexity": 1,
-        "context_scale": 1,
-        "divergence": 1,
-        "hallucination_risk": 1,
-        "error_cost": 1,
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
@@ -1350,7 +1449,13 @@
         "hours_confidence": "high",
         "urgency": "unknown",
         "multi_task": false,
-        "task_count": "1"
+        "task_count": "1",
+        "axis_demand": {
+          "divergence": 0,
+          "global_rigor": 0,
+          "module_precision": 1,
+          "vision_tools": 0
+        }
       }
     }
   ]

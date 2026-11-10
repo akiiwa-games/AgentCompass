@@ -88,24 +88,14 @@ PRESETS = (
     ("回测研究包", "运行因子回测，计算样本外夏普并整理研究报告", 3.0, False, False),
 )
 PRESETS = LocalizedSequence(PRESETS)
-TUNING_DEFAULTS = {"safety_margin_pct": 5, "short_window_floor_pct": 10, "reset_horizon_hours": 36,
-                   "reset_bonus_max": 1.2, "rotate_after_carried_tokens": 2000000,
-                   "subjective.weight": 0.49, "subjective.vector_weight": 0.34, "subjective.route_weight": 0.17}
+TUNING_DEFAULTS = {"safety_margin_pct": 5, "short_window_floor_pct": 10, "rotate_after_carried_tokens": 2000000}
 STRATEGY_PRESETS = {
     "均衡默认": dict(TUNING_DEFAULTS),
-    "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "reset_horizon_hours": 24,
-               "reset_bonus_max": 0.8, "rotate_after_carried_tokens": 1500000,
-               "subjective.weight": 0.55, "subjective.vector_weight": 0.25, "subjective.route_weight": 0.2},
-    "消纳临期": {"safety_margin_pct": 3, "short_window_floor_pct": 8, "reset_horizon_hours": 72,
-                 "reset_bonus_max": 1.2, "rotate_after_carried_tokens": 2000000,
-                 "subjective.weight": 0.6, "subjective.vector_weight": 0.2, "subjective.route_weight": 0.2},
-    "能力优先": {"safety_margin_pct": 5, "short_window_floor_pct": 10, "reset_horizon_hours": 24,
-                 "reset_bonus_max": 0.8, "rotate_after_carried_tokens": 2000000,
-                 "subjective.weight": 0.75, "subjective.vector_weight": 0.2, "subjective.route_weight": 0.05},
+    "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "rotate_after_carried_tokens": 1500000},
+    "消纳临期": {"safety_margin_pct": 3, "short_window_floor_pct": 8, "rotate_after_carried_tokens": 2000000},
 }
-TUNING_LIMITS = {"safety_margin_pct": (0, 50), "short_window_floor_pct": (0, 50), "reset_horizon_hours": (1, 168),
-                 "reset_bonus_max": (0, 1.2), "rotate_after_carried_tokens": (100000, 10000000),
-                 "subjective.weight": (0, 1), "subjective.vector_weight": (0, 1), "subjective.route_weight": (0, 1)}
+TUNING_LIMITS = {"safety_margin_pct": (0, 50), "short_window_floor_pct": (0, 50),
+                 "rotate_after_carried_tokens": (100000, 10000000)}
 BOOST_RANGE = (0.10, 0.50)
 BOOST_HOURS = router_priority.DURATIONS
 PANEL_INTENT = "panel:boost"
@@ -204,33 +194,26 @@ def now_utc() -> datetime:
 
 # ---------- decisions ----------
 
-LEGACY_REPLAY_NOTE = "旧记录缺字段，无法重放"
+UNREPLAYABLE_NOTE = "旧记录缺字段，无法重放"
 
 
-class LegacyProfile(ValueError):
-    """A recorded profile that never answered the split question: it can be neither validated nor reclassified."""
+class UnreplayableProfile(ValueError):
+    """A recorded profile the classifier's current answer cannot be rebuilt from: it is neither validated nor reclassified."""
 
 
-def lacks_split_answer(profile) -> bool:
-    """Invalid only for its multi_task/task_count (or legacy flags). The filled-in copy is a test of that, never what gets replayed."""
+def profile_invalid(profile) -> bool:
+    """True when a recorded profile fails the classifier's current schema (a missing or invalid field of any kind)."""
     allocator, _ = modules()
-    if not isinstance(profile, dict):
-        return False
     try:
         allocator.validate_profile(profile)
         return False
     except ValueError:
-        pass
-    try:
-        allocator.validate_profile({"wants_fast": False, "read_only_review": False, **profile, "multi_task": False, "task_count": "1"})
         return True
-    except ValueError:
-        return False
 
 
 def unreplayable(row: dict) -> bool:
     from decision_theatre import snapshot_result
-    return snapshot_result(row) is None and lacks_split_answer(row.get("profile"))
+    return snapshot_result(row) is None and profile_invalid(row.get("profile"))
 
 
 def recent_ledger(limit: int = 30, path: Path | None = None) -> list[dict]:
@@ -250,11 +233,11 @@ def ledger_summary(row: dict) -> dict:
     objective = " ".join(str(row.get("objective") or row.get("task_id") or "").split())
     if objective.startswith("#"):
         objective = objective.lstrip("# ")
-    legacy = unreplayable(row)
-    return {"at": local, "objective": (f"{_tr(LEGACY_REPLAY_NOTE)} · {objective}" if legacy else objective)[:48],
+    stale = unreplayable(row)
+    return {"at": local, "objective": (f"{_tr(UNREPLAYABLE_NOTE)} · {objective}" if stale else objective)[:48],
             "kind": row.get("kind") or "—", "choice": row.get("choice") or "—",
             "kind_label": display_names.kind_label(row.get("kind")), "choice_label": display_names.choice_label(row),
-            "margin": row.get("margin"), "unreplayable": legacy}
+            "margin": row.get("margin"), "unreplayable": stale}
 
 
 def build_task(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
@@ -272,16 +255,10 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
         task["work_kind"] = work_kind
     if difficulty:
         task["difficulty"] = difficulty
-    valid = None
-    if lacks_split_answer(profile):
-        raise LegacyProfile(_tr(LEGACY_REPLAY_NOTE))
-    if isinstance(profile, dict):
-        try:
-            valid = allocator.validate_profile(profile)
-        except ValueError:
-            valid = None
-    if valid is not None:
-        task["profile"] = valid
+    if profile is not None:
+        if profile_invalid(profile):
+            raise UnreplayableProfile(_tr(UNREPLAYABLE_NOTE))
+        task["profile"] = allocator.validate_profile(profile)
     return task
 
 
@@ -337,13 +314,13 @@ def simulate(objective: str, hours: float, local_only: bool = False, needs_visua
 
 
 def replay(row: dict) -> dict:
-    """Use an immutable candidate snapshot when present; legacy records replan explicitly."""
+    """Use an immutable candidate snapshot when present; a row without one replans from its recorded profile."""
     from decision_theatre import snapshot_result
     snapshot = snapshot_result(row)
     if snapshot is not None:
         return with_usage_readings(snapshot, row.get("at"))
-    if lacks_split_answer(row.get("profile")):
-        return {"choice": None, "ranking": [], "theatre_source": "unreplayable", "replay_note": _tr(LEGACY_REPLAY_NOTE)}
+    if profile_invalid(row.get("profile")):
+        return {"choice": None, "ranking": [], "theatre_source": "unreplayable", "replay_note": _tr(UNREPLAYABLE_NOTE)}
     task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
                       bool((row.get("profile") or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
                       row.get("profile"), row.get("local_only_reason"))
@@ -406,9 +383,7 @@ def candidate_rows(result: dict) -> list[dict]:
         rows.append({
             "id": c.get("id"), "model": bundle.get("model"), "account": bundle.get("account"),
             "effort": bundle.get("effort"), "fast": bool(bundle.get("fast")), "score": c.get("score"), "fit": comp.get("fit"),
-            "ability": comp.get("ability"), "opportunity_cost": comp.get("opportunity_cost"),
-            "bonus": round((comp.get("reset_bonus") or 0) + (comp.get("boost") or 0) + (comp.get("free_usage") or 0), 4),
-            "penalty": round((comp.get("overqualification") or 0) + (comp.get("effort_penalty") or 0), 4),
+            "opportunity_cost": comp.get("opportunity_cost"), "boost": comp.get("boost") or 0,
             "excluded": list(c.get("excluded") or []), "components": comp})
     return rows
 
@@ -427,34 +402,31 @@ def decision_pair(result: dict, first: str | None = None, second: str | None = N
 
 
 def decision_series(pair: list[dict]) -> tuple[list[dict], list[dict]]:
-    series = [{"label": f"{display_names.candidate_label(r)} · {r['score']:.3f}", "values": radar_chart.score_dimensions(r["components"])}
-              for r in pair]
+    series = [{"label": f"{display_names.candidate_label(r)} · {r['score']:.3f}", "values": radar_chart.score_dimensions(r["components"]),
+               "estimated": _estimated_axes(r)} for r in pair]
     raw = [radar_chart.score_raw(r["components"]) for r in pair]
     return series, raw
 
 
+def _estimated_axes(candidate: dict) -> dict:
+    """{axis: provenance} for a decision candidate's categories with type scores estimated through the tier."""
+    note = "; ".join(n for n in candidate.get("notes") or [] if "estimated through the tier" in str(n))
+    return {axis: note for axis in candidate.get("estimated_axes") or []}
+
+
 def model_table() -> dict:
+    """The router's model rows with their category scores (`five_axis`), tier and cited usd per hour (absent when unpriced)."""
     allocator, _ = modules()
-    accounts = allocator.load_accounts(_public_accounts(allocator, allocator.REFERENCES))
-    models = {name: {**info, "usd_per_hour": allocator.model_usd_per_hour(name, info),
-                     "default_subjective": dict(info.get("subjective") or {})}
-              for name, info in allocator.models_table(accounts).items()}
-    override = STATE_DIR / "accounts-override.json"
-    if override.is_file():
-        try:
-            doc = json.loads(override.read_text(encoding="utf-8-sig"))
-            for name, spec in (doc.get("models") or {}).items():
-                if isinstance(spec, dict) and name in models and isinstance(spec.get("subjective"), dict):
-                    models[name]["subjective"] = allocator.accounts_override.merge(
-                        models[name].get("subjective", {}), spec["subjective"])
-        except (OSError, ValueError):
-            pass
-    return models
+    accounts = allocator.five_axis_overlay(allocator.load_accounts(_public_accounts(allocator, allocator.REFERENCES)))
+    return allocator.models_table(accounts)
 
 
 def dna_series(models: dict, first: str, second: str | None) -> tuple[list[dict], list[dict]]:
     picked = [m for m in (first, second) if m and m in models]
-    series = [{"label": model_label(m), "values": radar_chart.dna_dimensions(models[m])} for m in picked]
+    prices = [float(row["usd_per_hour"]) for row in models.values() if row.get("usd_per_hour") is not None]
+    ceiling = max(prices, default=None)
+    series = [{"label": model_label(m), "values": radar_chart.dna_dimensions(models[m], ceiling),
+               "estimated": radar_chart.dna_estimated(models[m])} for m in picked]
     raw = [radar_chart.dna_raw(models[m]) for m in picked]
     return series, raw
 
@@ -672,7 +644,7 @@ def account_cards() -> list[dict]:
                 remaining = window.get("observed_remaining_pct")
             if status == 'quota_exhausted' or wid in latched or c_wid in latched:
                 remaining = 0.0  # Explicit upstream exhaustion outranks an older positive cache.
-            cap = allocator.window_capacity_usd(spec, c_wid, now) if spec else None
+            cap = allocator.capacity_usd(spec, c_wid) if spec else None
             acct_obs = observed.get(name) or {}
             rates = acct_obs.get(wid) or acct_obs.get(c_wid) or {}
             res = reservations.get((name, wid)) or reservations.get((name, c_wid)) or {}
@@ -787,7 +759,7 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
             if not isinstance(wspec, dict):
                 continue
             c_wid = allocator.canonical_window_id(spec, wid)
-            cap_usd = allocator.window_capacity_usd(spec, c_wid, now)
+            cap_usd = allocator.capacity_usd(spec, c_wid)
             if not cap_usd or cap_usd <= 0:
                 continue
             pool_workers = []
@@ -1037,7 +1009,7 @@ def overrides(now: datetime | None = None) -> list[dict]:
                      "model": row.get("model"), "boost": row.get("boost"),
                      "until": router_priority.stamp(allocator.expected_reset_time(row) or row.get("until"), allocator),
                      "stop_on_reset": bool(row.get("stop_on_reset")), "intent": row.get("intent") or "",
-                     **router_priority.dynamic_priority(row, allocator, accounts, usage, now),
+                     **router_priority.countdown(row, allocator, now),
                      "label": f"{account_label(row.get('account'))}"
                               + (f" / {model_label(row['model'])}" if row.get("model") else "")})
     return rows
@@ -1100,7 +1072,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
                "created_at": now.isoformat(), "until": new_until,
                "basis": _tr('用户设置 {0}/{1} 预计 {2} 小时后重置，越近消耗优先级越高').format(account, model or _tr('全部模型'), hours)}
         if boost is not None:
-            row['boost'] = round(float(boost), 2)  # Preserve legacy API data, scoring uses the reset deadline.
+            row['boost'] = round(float(boost), 2)
         if model:
             row["model"] = model
         if stop_on_reset:
@@ -1209,19 +1181,13 @@ def _user_accounts_path(create: bool = False) -> Path:
     return _accounts_path()
 
 
-def _get(scoring: dict, key: str):
-    if key.startswith("subjective."):
-        return ((scoring.get("profile") or {}).get("subjective") or {}).get(key.split(".", 1)[1])
-    return scoring.get(key)
-
-
 def read_tuning(path: Path | None = None) -> dict:
     document = json.loads((path or _accounts_path()).read_text(encoding="utf-8-sig"))
     if path is None:
         allocator, _ = modules()
         document = allocator.accounts_override.merge(document, _read_json(STATE_DIR / "accounts-override.json"))
     scoring = document.get("scoring") or {}
-    return {key: _get(scoring, key) for key in TUNING_DEFAULTS}
+    return {key: scoring.get(key) for key in TUNING_DEFAULTS}
 
 
 def validate_tuning(values: dict) -> dict:
@@ -1234,10 +1200,6 @@ def validate_tuning(values: dict) -> dict:
         if not low <= number <= high:
             raise ValueError(_tr('{0} 需在 {1} ~ {2} 之间').format(f'{key}', f'{low}', f'{high}'))
         clean[key] = int(number) if isinstance(TUNING_DEFAULTS[key], int) else round(number, 4)
-    weights = [clean.get(k, TUNING_DEFAULTS[k]) for k in ("subjective.weight", "subjective.vector_weight",
-                                                          "subjective.route_weight")]
-    if abs(sum(weights) - 1.0) > 0.011:
-        raise ValueError(_tr("主观 / 能力 / 路由三项合成权重之和需为 1.0"))
     return clean
 
 
@@ -1295,10 +1257,7 @@ def save_tuning(values: dict | str, path: Path | None = None) -> str:
         def change(doc):
             scoring = doc.setdefault("scoring", {})
             for key in changed:
-                if key.startswith("subjective."):
-                    scoring.setdefault("profile", {}).setdefault("subjective", {})[key.split(".", 1)[1]] = clean[key]
-                else:
-                    scoring[key] = clean[key]
+                scoring[key] = clean[key]
         _edit_preferences(change)
         return _tr('已保存 {0} 项路由参数（已备份原文件）').format(len(changed))
     target = path or _user_accounts_path(create=True)
@@ -1308,20 +1267,13 @@ def save_tuning(values: dict | str, path: Path | None = None) -> str:
     text = raw.decode("utf-8-sig")  # bytes, not text mode: keep the file's own line endings
     expected = json.loads(text)
     scoring = expected["scoring"]
-    changed = [key for key, value in clean.items() if _get(scoring, key) != value]
+    changed = [key for key, value in clean.items() if scoring.get(key) != value]
     if not changed:
         return _tr("参数未变化")
     for key in changed:
         start, end = _object_span(text, "scoring")
-        if key.startswith("subjective."):
-            start, end = _object_span(text, "profile", start, end)
-            start, end = _object_span(text, "subjective", start, end)
-            name = key.split(".", 1)[1]
-            scoring["profile"]["subjective"][name] = clean[key]
-        else:
-            name = key
-            scoring[key] = clean[key]
-        text = _replace_number(text, name, clean[key], start, end)
+        scoring[key] = clean[key]
+        text = _replace_number(text, key, clean[key], start, end)
     if json.loads(text) != expected:
         raise ValueError(_tr("accounts.json 定位修改后内容不符，未保存"))
     _backup(target, "accounts-json")
@@ -1866,997 +1818,6 @@ def toggle_harness(harness: str, account: str, enabled: bool) -> str:
     return f"{HARNESS_LABELS.get(harness, harness)} · {account_label(account)} · {_tr('启用') if enabled else _tr('停用')}"
 
 
-def normalize_weights(changed_key: str, new_val: float, current: dict[str, float]) -> dict[str, float]:
-    """Keep subjective.weight + subjective.vector_weight + subjective.route_weight == 1.00 automatically."""
-    keys = ("subjective.weight", "subjective.vector_weight", "subjective.route_weight")
-    val = max(0.0, min(1.0, round(float(new_val), 2)))
-    others = [k for k in keys if k != changed_key]
-    rem = round(1.0 - val, 2)
-    other_sum = sum(max(0.0, float(current.get(k, TUNING_DEFAULTS[k]))) for k in others)
-    result = {changed_key: val}
-    if other_sum <= 1e-6:
-        first = round(rem / 2, 2)
-        result[others[0]] = first
-        result[others[1]] = round(rem - first, 2)
-    else:
-        first = round(rem * float(current.get(others[0], TUNING_DEFAULTS[others[0]])) / other_sum, 2)
-        result[others[0]] = first
-        result[others[1]] = round(rem - first, 2)
-    return result
-
-
-def save_model_subjective(model: str, divergence: float, global_rigor: float, module_precision: float,
-                          path: Path | None = None, *, capability: float | None = None) -> str:
-    """Save subjective DNA ratings for a model in accounts-override.json."""
-    if path is None:
-        if model not in model_table():
-            raise ValueError(_tr('未知模型 {0}').format(model))
-        ratings = dict(zip(("divergence", "global_rigor", "module_precision"),
-                           [round(max(0.0, min(1.0, float(v))), 2) for v in
-                            (divergence, global_rigor, module_precision)]))
-        if capability is not None:
-            ratings["capability"] = round(radar_chart.clamp(float(capability)), 2)
-        _edit_preferences(lambda doc: doc.setdefault("models", {}).setdefault(model, {}).setdefault(
-            "subjective", {}).update(ratings))
-        return _tr('已保存 {0} 主观基因评分').format(model_label(model))
-    target = path
-    doc = json.loads(target.read_text(encoding="utf-8-sig"))
-    models = doc.get("models") or {}
-    if model not in models or not isinstance(models[model], dict):
-        raise ValueError(_tr('未知模型 {0}').format(f'{model}'))
-    models[model].setdefault("subjective", {}).update({
-        "divergence": round(max(0.0, min(1.0, float(divergence))), 2),
-        "global_rigor": round(max(0.0, min(1.0, float(global_rigor))), 2),
-        "module_precision": round(max(0.0, min(1.0, float(module_precision))), 2),
-    })
-    if capability is not None:
-        models[model]["subjective"]["capability"] = round(radar_chart.clamp(float(capability)), 2)
-    _backup(target, "accounts-json")
-    _atomic_json(target, doc)
-    return _tr('已保存 {0} 主观基因评分').format(f'{model_label(model)}')
-
-
-HARNESS_RULE_FIELDS = ("harness", "work_kind", "model", "model_prefix")
-HARNESS_FIELD_LABELS = {"harness": "通道", "work_kind": "工作类型", "model": "模型", "model_prefix": "模型前缀"}
-HARNESS_FACTOR_RANGE = (0.0, 2.0)
-ANY_CHOICE = "（任意）"
-ANY_CHOICE_LABELS = {"（任意）", "(any)"}
-EXCHANGE_FIELDS = ("score_per_displaced_usd", "score_per_displaced_worker_hour")
-EXCHANGE_LEGACY = {"score_per_displaced_usd": "shortage_loss_per_usd",
-                   "score_per_displaced_worker_hour": "shortage_loss_per_worker_hour"}
-EXCHANGE_RANGE = (0.0, 10.0)
-EXCHANGE_DEFAULTS = {"score_per_displaced_usd": 0.012, "score_per_displaced_worker_hour": 0.06}
-
-
-def _merged_scoring(path: Path | None = None) -> dict:
-    document = json.loads((path or _accounts_path()).read_text(encoding="utf-8-sig"))
-    if path is None:
-        allocator, _ = modules()
-        document = allocator.accounts_override.merge(document, _read_json(STATE_DIR / "accounts-override.json"))
-    scoring = document.get("scoring") or {}
-    return scoring if isinstance(scoring, dict) else {}
-
-
-def _finite_number(value, label: str) -> float:
-    if isinstance(value, bool) or value is None or (isinstance(value, str) and not str(value).strip()):
-        raise ValueError(_tr('{0} 需为数字').format(label))
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        raise ValueError(_tr('{0} 需为数字').format(label)) from None
-    if number != number or number in (float("inf"), float("-inf")):
-        raise ValueError(_tr('{0} 需为数字').format(label))
-    return number
-
-
-def read_harness_factors(path: Path | None = None) -> dict:
-    """Merged harness-factor table: default plus the rules the strategy page edits."""
-    table = _merged_scoring(path).get("harness_factors")
-    table = table if isinstance(table, dict) else {}
-    default = table.get("default", 1.0)
-    if isinstance(default, bool) or not isinstance(default, (int, float)):
-        default = 1.0
-    rules = []
-    for rule in table.get("rules") or []:
-        if not isinstance(rule, dict):
-            continue
-        row = {key: "" if rule.get(key) in (None, "") else str(rule.get(key)) for key in HARNESS_RULE_FIELDS}
-        factor = rule.get("factor")
-        row["factor"] = factor
-        basis = rule.get("basis")
-        if isinstance(basis, str) and basis.strip():
-            row["basis"] = basis
-        rules.append(row)
-    return {"default": default, "rules": rules}
-
-
-def read_opportunity_exchange(path: Path | None = None) -> dict:
-    """Effective rate for the form. Named keys win; legacy shortage keys only fill a gap."""
-    scoring = _merged_scoring(path)
-    block = scoring.get("opportunity_exchange")
-    block = block if isinstance(block, dict) else {}
-    found = {}
-    for named, legacy in EXCHANGE_LEGACY.items():
-        if named in block:
-            value = block.get(named)
-        elif legacy in scoring:
-            value = scoring.get(legacy)
-        else:
-            value = EXCHANGE_DEFAULTS[named]
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            value = EXCHANGE_DEFAULTS[named]
-        found[named] = value
-    return found
-
-
-def blank_choice(text) -> str:
-    """Dropdown wildcard. The displayed any-label is stored as an empty constraint."""
-    text = str(text or "").strip()
-    if text in ANY_CHOICE_LABELS:
-        return ""
-    return text
-
-
-def _unique_texts(items) -> list[str]:
-    found, values = set(), []
-    for item in items:
-        text = str(item or "").strip()
-        if not text or text in found or text in ANY_CHOICE_LABELS:
-            continue
-        found.add(text)
-        values.append(text)
-    return values
-
-
-def strategy_factor_choices() -> dict:
-    """Harness, work-kind and model ids for the strategy dropdowns, in router order."""
-    allocator, _ = modules()
-    accounts = _cached_accounts(allocator)
-    harnesses = list(HARNESS_ORDER)
-    kinds = []
-    models = [name for name, spec in (accounts.get("models") or {}).items() if isinstance(spec, dict)]
-    try:
-        routes = _load_capabilities(allocator, accounts).get("routes") or {}
-        if isinstance(routes, dict):
-            kinds.extend(routes.keys())
-    except (OSError, ValueError):
-        pass
-    styles = ((accounts.get("scoring") or {}).get("profile") or {}).get("kind_by_style") or {}
-    if isinstance(styles, dict):
-        kinds.extend(styles.values())
-    for account, spec in (accounts.get("accounts") or {}).items():
-        if not isinstance(spec, dict):
-            continue
-        for bundle_id, bundle in (spec.get("bundles") or {}).items():
-            if not isinstance(bundle, dict):
-                continue
-            harnesses.append(allocator.bundle_harness(bundle, account, bundle_id))
-            models.append(bundle.get("model"))
-    for rule in read_harness_factors().get("rules") or []:
-        harnesses.append(rule.get("harness"))
-        kinds.append(rule.get("work_kind"))
-        models.append(rule.get("model"))
-    return {"harness": _unique_texts(harnesses), "work_kind": _unique_texts(kinds), "model": _unique_texts(models)}
-
-
-def validate_harness_factors(value: dict) -> dict:
-    if not isinstance(value, dict):
-        raise ValueError(_tr("Harness 系数需为表格"))
-    unknown = set(value) - {"default", "rules"}
-    if unknown:
-        raise ValueError(_tr('未知参数 {0}').format(", ".join(sorted(unknown))))
-    low, high = HARNESS_FACTOR_RANGE
-    default = _finite_number(value.get("default", 1.0), _tr("默认系数"))
-    if not low <= default <= high:
-        raise ValueError(_tr('默认系数需在 {0} ~ {1} 之间').format(low, high))
-    rules_in = value.get("rules") or []
-    if not isinstance(rules_in, list):
-        raise ValueError(_tr("Harness 系数行需为列表"))
-    rules = []
-    for index, rule in enumerate(rules_in, start=1):
-        if not isinstance(rule, dict):
-            raise ValueError(_tr("第 {0} 行无法识别").format(index))
-        extra = set(rule) - set(HARNESS_RULE_FIELDS) - {"factor", "basis"}
-        if extra:
-            raise ValueError(_tr('第 {0} 行含有未知字段 {1}').format(index, ", ".join(sorted(extra))))
-        item = {}
-        for key in HARNESS_RULE_FIELDS:
-            text = blank_choice(rule.get(key))
-            if not text:
-                continue
-            if len(text) > 120:
-                raise ValueError(_tr('第 {0} 行的 {1} 过长').format(index, _tr(HARNESS_FIELD_LABELS[key])))
-            item[key] = text
-        if "factor" not in rule or (isinstance(rule.get("factor"), str) and not str(rule.get("factor")).strip()):
-            raise ValueError(_tr("第 {0} 行缺少系数").format(index))
-        factor = _finite_number(rule.get("factor"), _tr("第 {0} 行的系数").format(index))
-        if not low <= factor <= high:
-            raise ValueError(_tr('第 {0} 行的系数需在 {1} ~ {2} 之间').format(index, low, high))
-        if not any(key in item for key in HARNESS_RULE_FIELDS):
-            raise ValueError(_tr("第 {0} 行至少要填写通道、工作类型、模型或模型前缀").format(index))
-        item["factor"] = round(factor, 4)
-        basis = rule.get("basis")
-        if isinstance(basis, str) and basis.strip():
-            if len(basis.strip()) > 4000:
-                raise ValueError(_tr('第 {0} 行的说明过长').format(index))
-            item["basis"] = basis.strip()
-        rules.append(item)
-    return {"default": round(default, 4), "rules": rules}
-
-
-def validate_opportunity_exchange(value: dict) -> dict:
-    """Accept only the named rate. Legacy shortage keys are rejected, not written."""
-    if not isinstance(value, dict):
-        raise ValueError(_tr("机会成本汇率需为数字"))
-    legacy = [key for key in ("shortage_loss_per_usd", "shortage_loss_per_worker_hour") if key in value]
-    if legacy:
-        raise ValueError(_tr('汇率只写入新键，不能包含 {0}').format(", ".join(legacy)))
-    unknown = set(value) - set(EXCHANGE_FIELDS)
-    if unknown:
-        raise ValueError(_tr('未知参数 {0}').format(", ".join(sorted(unknown))))
-    low, high = EXCHANGE_RANGE
-    clean = {}
-    for key in EXCHANGE_FIELDS:
-        if key not in value:
-            raise ValueError(_tr('机会成本汇率缺少 {0}').format(key))
-        number = _finite_number(value[key], key)
-        if not low <= number <= high:
-            raise ValueError(_tr('{0} 需在 {1} ~ {2} 之间').format(key, low, high))
-        clean[key] = round(number, 6)
-    return clean
-
-
-def save_strategy(values: dict, model: str | None, ratings: dict, harness_factors: dict | None = None,
-                  opportunity_exchange: dict | None = None, ability_floors: dict | None = None,
-                  route_ability_floors: dict | None = None) -> str:
-    """Validate the whole form before committing scoring and model ratings together.
-
-    harness_factors and opportunity_exchange are written only when the form supplies them.
-    The exchange object stores score_per_displaced_usd and score_per_displaced_worker_hour.
-    A legacy shortage key already in the override is removed so it cannot contradict that rate.
-    """
-    clean = validate_tuning(values)
-    factors = None if harness_factors is None else validate_harness_factors(harness_factors)
-    exchange = None if opportunity_exchange is None else validate_opportunity_exchange(opportunity_exchange)
-    floors_clean = None
-    routes_clean = None
-    if ability_floors is not None or route_ability_floors is not None:
-        current_f = read_ability_floors()
-        merged_f = dict(current_f["floors"])
-        if ability_floors:
-            merged_f.update(ability_floors)
-        merged_r = dict(current_f["route_floors"])
-        if route_ability_floors:
-            merged_r.update(_flatten_route_floors(route_ability_floors))
-        floors_clean, routes_clean = validate_ability_floors(merged_f, merged_r)
-    if model is not None and model not in model_table():
-        raise ValueError(_tr('未知模型 {0}').format(model))
-    subjective = {key: round(max(0.0, min(1.0, float(ratings[key]))), 2)
-                  for key in ("divergence", "global_rigor", "module_precision")} if model else {}
-    if model and "capability" in ratings:
-        subjective["capability"] = round(radar_chart.clamp(float(ratings["capability"])), 2)
-    defaults_f = default_ability_floors() if floors_clean is not None else None
-    def change(document):
-        scoring = document.setdefault("scoring", {})
-        for key, value in clean.items():
-            if key.startswith("subjective."):
-                scoring.setdefault("profile", {}).setdefault("subjective", {})[key.split(".", 1)[1]] = value
-            else:
-                scoring[key] = value
-        if factors is not None:
-            current = scoring.get("harness_factors")
-            table = dict(current) if isinstance(current, dict) else {}
-            table["default"] = factors["default"]
-            table["rules"] = factors["rules"]
-            scoring["harness_factors"] = table
-        if exchange is not None:
-            for legacy in EXCHANGE_LEGACY.values():
-                scoring.pop(legacy, None)
-            block = scoring.get("opportunity_exchange")
-            block = dict(block) if isinstance(block, dict) else {}
-            for legacy in EXCHANGE_LEGACY.values():
-                block.pop(legacy, None)
-            block.update(exchange)
-            scoring["opportunity_exchange"] = block
-        if floors_clean is not None and defaults_f is not None:
-            _apply_floor_overrides_to_doc(document, floors_clean, routes_clean or {}, defaults_f)
-        if model:
-            document.setdefault("models", {}).setdefault(model, {}).setdefault("subjective", {}).update(subjective)
-    _edit_preferences(change)
-    return _tr("已保存策略与模型画像")
-
-
-# ---------- Ability floors & chart data ----------
-
-ABILITY_FLOOR_KEYS = ("routine", "hard", "coupled", "frontier")
-ABILITY_FLOOR_LABELS = {
-    "routine": "常规",
-    "hard": "较难",
-    "coupled": "耦合",
-    "frontier": "前沿",
-}
-ABILITY_FLOOR_LIMITS = (1.0, 5.5)
-EFFORT_DISPLAY_ORDER = ("minimal", "low", "medium", "standard", "default", "high", "extended", "xhigh", "max", "ultra")
-
-
-def _flatten_route_floors(route_floors: dict | None) -> dict[str, float]:
-    if not isinstance(route_floors, dict):
-        return {}
-    flat: dict[str, float] = {}
-    for key, val in route_floors.items():
-        if isinstance(val, dict):
-            for diff, sub_val in val.items():
-                flat[f"{key}.{diff}"] = sub_val
-        else:
-            flat[str(key)] = val
-    return flat
-
-
-def _is_fleet_document(doc: dict) -> bool:
-    return isinstance(doc, dict) and isinstance(doc.get("accounts"), dict) and (
-        isinstance(doc.get("capability_policy"), dict) or "ability_floor" in (doc.get("scoring") or {})
-        and len(doc.get("models") or {}) > 3
-    )
-
-
-def default_ability_floors(path: Path | None = None) -> dict:
-    """Public baseline ability floors, route-specific floors, critical headroom and score origins."""
-    baseline_path = _accounts_path()
-    if path is not None and path.is_file():
-        probe = _read_json(path)
-        if _is_fleet_document(probe):
-            baseline_path = path
-    doc = _read_json(baseline_path)
-    scoring = doc.get("scoring") or {}
-    raw_floors = scoring.get("ability_floor") or {}
-    floors = {k: round(float(raw_floors.get(k, 0.0)), 2) for k in ABILITY_FLOOR_KEYS}
-    route_floors: dict[str, float] = {}
-    routes = ((doc.get("capability_policy") or {}).get("routes") or {})
-    for r_name, r_spec in routes.items():
-        if not isinstance(r_spec, dict):
-            continue
-        own = r_spec.get("ability_floor")
-        if isinstance(own, dict):
-            for diff, val in own.items():
-                if isinstance(val, (int, float)) and not isinstance(val, bool):
-                    route_floors[f"{r_name}.{diff}"] = round(float(val), 2)
-    origins_raw = scoring.get("ability_score_origin") or {}
-    origins = {k: round(float(origins_raw[k]), 2) for k in ABILITY_FLOOR_KEYS
-               if isinstance(origins_raw.get(k), (int, float))}
-    crit_base = float(scoring.get("critical_headroom", 0.3) or 0.3)
-    crit_by_diff = scoring.get("critical_headroom_by_difficulty") or {}
-    critical_headrooms = {
-        k: round(float(crit_by_diff.get(k, crit_base)), 2) for k in ABILITY_FLOOR_KEYS
-    }
-    return {
-        "floors": floors,
-        "route_floors": route_floors,
-        "origins": origins,
-        "critical_headroom": round(crit_base, 2),
-        "critical_headrooms": critical_headrooms,
-        "critical_gates": {k: round(floors[k] + critical_headrooms[k], 2) for k in ABILITY_FLOOR_KEYS},
-    }
-
-
-def _override_file_for(path: Path | None) -> Path:
-    if path is not None:
-        if path.is_file() and _is_fleet_document(_read_json(path)):
-            return STATE_DIR / "accounts-override.json"
-        return path
-    return STATE_DIR / "accounts-override.json"
-
-
-def read_ability_floors(path: Path | None = None, accounts: dict | None = None) -> dict:
-    """Effective ability floors, route-specific floors and critical gates from the router's own loaders."""
-    allocator, _ = modules()
-    defaults = default_ability_floors(path)
-    override_file = _override_file_for(path)
-    if accounts is None:
-        if path is not None and path.is_file() and _is_fleet_document(_read_json(path)):
-            base_doc = allocator.load_accounts(path)
-            if override_file.is_file():
-                user_doc = _read_json(override_file)
-                if isinstance(user_doc.get("scoring"), dict):
-                    base_doc["scoring"] = allocator.accounts_override.merge(
-                        base_doc.get("scoring") or {}, user_doc["scoring"])
-                r_ov = (base_doc.get("scoring") or {}).get("route_ability_floor")
-                if isinstance(r_ov, dict) and isinstance(base_doc.get("capability_policy"), dict):
-                    routes_tbl = base_doc["capability_policy"].setdefault("routes", {})
-                    for r_name, r_floors in r_ov.items():
-                        if isinstance(r_floors, dict) and isinstance(routes_tbl.get(r_name), dict):
-                            routes_tbl[r_name]["ability_floor"] = allocator.accounts_override.merge(
-                                routes_tbl[r_name].get("ability_floor") or {}, r_floors)
-            accounts = base_doc
-        elif path is not None and override_file == path:
-            base_doc = allocator.load_accounts(_accounts_path())
-            if override_file.is_file():
-                user_doc = _read_json(override_file)
-                if isinstance(user_doc.get("scoring"), dict):
-                    base_doc["scoring"] = allocator.accounts_override.merge(
-                        base_doc.get("scoring") or {}, user_doc["scoring"])
-                r_ov = (base_doc.get("scoring") or {}).get("route_ability_floor")
-                if isinstance(r_ov, dict) and isinstance(base_doc.get("capability_policy"), dict):
-                    routes_tbl = base_doc["capability_policy"].setdefault("routes", {})
-                    for r_name, r_floors in r_ov.items():
-                        if isinstance(r_floors, dict) and isinstance(routes_tbl.get(r_name), dict):
-                            routes_tbl[r_name]["ability_floor"] = allocator.accounts_override.merge(
-                                routes_tbl[r_name].get("ability_floor") or {}, r_floors)
-            accounts = base_doc
-        else:
-            accounts = _cached_accounts(allocator)
-    capabilities = _load_capabilities(allocator, accounts)
-    policy = accounts.get("scoring") or {}
-    floors = {k: round(float(allocator.ability_floor(policy, None, k)), 2) for k in ABILITY_FLOOR_KEYS}
-    routes = capabilities.get("routes") or {}
-    route_floors: dict[str, float] = {}
-    for rk in defaults["route_floors"]:
-        r_name, diff = rk.split(".", 1)
-        r_spec = routes.get(r_name) or {}
-        route_floors[rk] = round(float(allocator.ability_floor(policy, r_spec, diff)), 2)
-    for r_name, r_spec in routes.items():
-        own = (r_spec or {}).get("ability_floor") or {}
-        if isinstance(own, dict):
-            for diff in own:
-                rk = f"{r_name}.{diff}"
-                if rk not in route_floors and diff in ABILITY_FLOOR_KEYS:
-                    route_floors[rk] = round(float(allocator.ability_floor(policy, r_spec, diff)), 2)
-    critical_headrooms = {
-        k: round(float(allocator.critical_headroom(policy, k)), 2) for k in ABILITY_FLOOR_KEYS
-    }
-    critical_gates = {
-        k: round(floors[k] + critical_headrooms[k], 2) for k in ABILITY_FLOOR_KEYS
-    }
-    origins_raw = policy.get("ability_score_origin") or {}
-    origins = {k: round(float(origins_raw[k]), 2) for k in ABILITY_FLOOR_KEYS
-               if isinstance(origins_raw.get(k), (int, float))}
-    user_doc = _read_json(override_file) if override_file.is_file() else {}
-    user_scoring = (user_doc.get("scoring") or {}) if isinstance(user_doc, dict) else {}
-    has_overrides = bool(user_scoring.get("ability_floor") or user_scoring.get("route_ability_floor")) or (
-        floors != defaults["floors"] or route_floors != defaults["route_floors"]
-    )
-    return {
-        "floors": floors,
-        "route_floors": route_floors,
-        "defaults": defaults["floors"],
-        "default_route_floors": defaults["route_floors"],
-        "origins": origins,
-        "critical_headroom": round(float(policy.get("critical_headroom", 0.3) or 0.3), 2),
-        "critical_headrooms": critical_headrooms,
-        "critical_gates": critical_gates,
-        "has_overrides": has_overrides,
-    }
-
-
-def validate_ability_floors(floors: dict, route_floors: dict | None = None) -> tuple[dict[str, float], dict[str, float]]:
-    """Validate floor bounds and ordering: routine <= hard <= coupled <= frontier."""
-    if not isinstance(floors, dict):
-        raise ValueError(_tr("能力门槛需为数字"))
-    unknown = set(floors) - set(ABILITY_FLOOR_KEYS)
-    if unknown:
-        raise ValueError(_tr("未知参数 {0}").format(", ".join(sorted(unknown))))
-    low, high = ABILITY_FLOOR_LIMITS
-    clean: dict[str, float] = {}
-    for key in ABILITY_FLOOR_KEYS:
-        if key not in floors:
-            raise ValueError(_tr("能力门槛缺少 {0}").format(_tr(ABILITY_FLOOR_LABELS.get(key, key))))
-        label = _tr(ABILITY_FLOOR_LABELS.get(key, key))
-        number = _finite_number(floors[key], label)
-        if not low <= number <= high:
-            raise ValueError(_tr("{0} 需在 {1} ~ {2} 之间").format(label, f"{low:g}", f"{high:g}"))
-        clean[key] = round(number, 2)
-    for left, right in zip(ABILITY_FLOOR_KEYS, ABILITY_FLOOR_KEYS[1:]):
-        if clean[left] > clean[right] + 1e-9:
-            raise ValueError(_tr("能力门槛需满足：常规 ≤ 较难 ≤ 耦合 ≤ 前沿"))
-    clean_routes: dict[str, float] = {}
-    if route_floors is not None:
-        flat_routes = _flatten_route_floors(route_floors)
-        for rk, val in flat_routes.items():
-            if "." not in rk:
-                raise ValueError(_tr("未知参数 {0}").format(rk))
-            r_name, diff = rk.split(".", 1)
-            if not r_name or diff not in ABILITY_FLOOR_KEYS:
-                raise ValueError(_tr("未知参数 {0}").format(rk))
-            r_label = f"{display_names.kind_label(r_name)} · {_tr(ABILITY_FLOOR_LABELS.get(diff, diff))}"
-            num = _finite_number(val, r_label)
-            if not low <= num <= high:
-                raise ValueError(_tr("{0} 需在 {1} ~ {2} 之间").format(r_label, f"{low:g}", f"{high:g}"))
-            clean_routes[rk] = round(num, 2)
-    return clean, clean_routes
-
-
-def clamp_ability_floor_drag(key: str, value: float, current_floors: dict[str, float],
-                             current_route_floors: dict[str, float] | None = None) -> float:
-    """Clamp a dragged floor value to ABILITY_FLOOR_LIMITS and adjacent difficulty floors."""
-    low, high = ABILITY_FLOOR_LIMITS
-    val = max(low, min(high, float(value)))
-    if key in ABILITY_FLOOR_KEYS:
-        idx = ABILITY_FLOOR_KEYS.index(key)
-        if idx > 0:
-            prev_key = ABILITY_FLOOR_KEYS[idx - 1]
-            val = max(val, float(current_floors.get(prev_key, low)))
-        if idx < len(ABILITY_FLOOR_KEYS) - 1:
-            next_key = ABILITY_FLOOR_KEYS[idx + 1]
-            val = min(val, float(current_floors.get(next_key, high)))
-    return round(val, 2)
-
-
-def _apply_floor_overrides_to_doc(document: dict, clean_floors: dict[str, float],
-                                  clean_routes: dict[str, float], defaults: dict) -> int:
-    """Write only changed numbers (relative to public defaults) into document['scoring']; never write reasons."""
-    scoring = document.setdefault("scoring", {})
-    default_main = defaults["floors"]
-    default_routes = defaults["route_floors"]
-    changed_count = 0
-
-    floor_delta = {
-        k: round(float(v), 2)
-        for k, v in clean_floors.items()
-        if round(float(v), 2) != round(float(default_main.get(k, 0.0)), 2)
-    }
-    if floor_delta:
-        scoring["ability_floor"] = floor_delta
-        changed_count += len(floor_delta)
-    else:
-        scoring.pop("ability_floor", None)
-
-    route_delta: dict[str, dict[str, float]] = {}
-    for rk, rv in clean_routes.items():
-        if round(float(rv), 2) != round(float(default_routes.get(rk, 0.0)), 2):
-            r_name, diff = rk.split(".", 1)
-            route_delta.setdefault(r_name, {})[diff] = round(float(rv), 2)
-            changed_count += 1
-    if route_delta:
-        scoring["route_ability_floor"] = route_delta
-    else:
-        scoring.pop("route_ability_floor", None)
-
-    if not scoring:
-        document.pop("scoring", None)
-    return changed_count
-
-
-def save_ability_floors(floors: dict, route_floors: dict | None = None, path: Path | None = None) -> str:
-    """Save ability floors to accounts-override.json, writing only numbers that differ from public defaults."""
-    current = read_ability_floors(path)
-    merged_floors = dict(current["floors"])
-    if isinstance(floors, dict):
-        for k, v in floors.items():
-            if k in ABILITY_FLOOR_KEYS:
-                merged_floors[k] = v
-            elif "." in str(k):
-                route_floors = dict(_flatten_route_floors(route_floors))
-                route_floors[str(k)] = v
-    merged_routes = dict(current["route_floors"])
-    if route_floors is not None:
-        merged_routes.update(_flatten_route_floors(route_floors))
-    clean_floors, clean_routes = validate_ability_floors(merged_floors, merged_routes)
-    changed_keys = [k for k in ABILITY_FLOOR_KEYS if current["floors"].get(k) != clean_floors[k]]
-    changed_routes = [rk for rk, rv in clean_routes.items() if current["route_floors"].get(rk) != rv]
-    total_changed = len(changed_keys) + len(changed_routes)
-    defaults = default_ability_floors(path)
-    override_file = _override_file_for(path)
-
-    def change(document):
-        _apply_floor_overrides_to_doc(document, clean_floors, clean_routes, defaults)
-
-    if path is None or override_file == STATE_DIR / "accounts-override.json":
-        if total_changed == 0:
-            return _tr("参数未变化")
-        _edit_preferences(change)
-        return _tr("已保存 {0} 项能力门槛").format(total_changed)
-
-    import override_store
-    with override_store.locked(override_file):
-        if override_file.is_file():
-            doc = _read_json(override_file)
-            if not isinstance(doc, dict):
-                doc = {"schema_version": 2}
-        else:
-            doc = {"schema_version": 2}
-        if total_changed == 0 and "scoring" not in doc:
-            return _tr("参数未变化")
-        change(doc)
-        _backup(override_file, "accounts-json")
-        _atomic_json(override_file, doc)
-    return _tr("参数未变化") if total_changed == 0 else _tr("已保存 {0} 项能力门槛").format(total_changed)
-
-
-def restore_ability_floor_defaults(path: Path | None = None) -> str:
-    """Remove local ability_floor and route_ability_floor override keys so public defaults apply again."""
-    override_file = _override_file_for(path)
-    if not override_file.is_file():
-        return _tr("参数未变化")
-    doc = _read_json(override_file)
-    scoring = (doc.get("scoring") or {}) if isinstance(doc, dict) else {}
-    had_floors = "ability_floor" in scoring or "route_ability_floor" in scoring
-    if not had_floors:
-        return _tr("参数未变化")
-
-    def clean(document):
-        sc = document.get("scoring")
-        if isinstance(sc, dict):
-            sc.pop("ability_floor", None)
-            sc.pop("route_ability_floor", None)
-            if not sc:
-                document.pop("scoring", None)
-
-    if path is None or override_file == STATE_DIR / "accounts-override.json":
-        _edit_preferences(clean)
-    else:
-        import override_store
-        with override_store.locked(override_file):
-            document = _read_json(override_file)
-            if isinstance(document, dict):
-                clean(document)
-                _backup(override_file, "accounts-json")
-                _atomic_json(override_file, document)
-    return _tr("已恢复默认能力门槛")
-
-
-def _effort_sort_key(effort: str) -> tuple[int, str]:
-    e = str(effort or "high").lower()
-    if e in EFFORT_DISPLAY_ORDER:
-        return (EFFORT_DISPLAY_ORDER.index(e), e)
-    return (len(EFFORT_DISPLAY_ORDER), e)
-
-
-def ability_floor_chart_data(accounts: dict | None = None, floors_override: dict | None = None,
-                             route_floors_override: dict | None = None, include_superseded: bool = False,
-                             include_manual_billing: bool = False, path: Path | None = None) -> dict:
-    """Compute model positions, effort ranges, floors, route floors, critical gates and eligibility from allocator."""
-    allocator, _ = modules()
-    if accounts is None:
-        if path is not None and path.is_file() and _is_fleet_document(_read_json(path)):
-            accounts = allocator.load_accounts(path)
-        else:
-            accounts = _cached_accounts(allocator)
-    floor_state = read_ability_floors(path=path, accounts=accounts)
-    floors = dict(floor_state["floors"])
-    if floors_override:
-        for k, v in floors_override.items():
-            if k in ABILITY_FLOOR_KEYS and isinstance(v, (int, float)):
-                floors[k] = round(float(v), 2)
-    route_floors = dict(floor_state["route_floors"])
-    if route_floors_override:
-        for rk, rv in _flatten_route_floors(route_floors_override).items():
-            if isinstance(rv, (int, float)):
-                route_floors[rk] = round(float(rv), 2)
-    critical_headrooms = floor_state["critical_headrooms"]
-    critical_gates = {
-        k: round(floors[k] + critical_headrooms[k], 2) for k in ABILITY_FLOOR_KEYS
-    }
-
-    policy = accounts.get("scoring") or {}
-    curves_table = accounts.get("effort_curves") or {}
-    superseded = accounts.get("superseded") or {}
-    inventory_accounts = ((accounts.get("_discovery") or {}).get("accounts") or {})
-    try:
-        host_pol = allocator.host_policy.load_policy()
-    except Exception:
-        host_pol = None
-
-    all_bundles = allocator.bundles(accounts)
-    bundle_positions: dict[str, dict] = {}
-    groups_map: dict[tuple[str, str], dict] = {}
-
-    for bid, bspec in all_bundles.items():
-        account = bspec.get("account") or ""
-        provider = bspec.get("provider") or account
-        if provider == "pi" and account != "pi":
-            continue
-        if bspec.get("discovery_unavailable"):
-            continue
-        raw_model = bspec.get("model") or bid
-        model = allocator.row_key(raw_model, accounts)
-        info = allocator.model_spec(accounts, raw_model)
-        curves = allocator.model_curves(accounts, raw_model)
-        scored_effort = allocator.scoring_effort(bspec, info) if hasattr(allocator, "scoring_effort") else (
-            bspec.get("effort") or (info or {}).get("fixed_effort")
-        )
-        effort = scored_effort or "high"
-        is_fixed_effort = bool(not bspec.get("effort") and (info or {}).get("fixed_effort"))
-        raw_ability = float(allocator.effort_ability(policy, curves, info, scored_effort))
-        ability = round(raw_ability, 2)
-        host_ok = True if host_pol is None else bool(allocator.host_policy.account_allowed(host_pol, account))
-        b_enabled = not bool(bspec.get("disabled")) and host_ok
-        b_clears = {d: round(raw_ability, 6) >= round(floors[d], 6) for d in ABILITY_FLOOR_KEYS}
-        b_route_clears = {rk: round(raw_ability, 6) >= round(rv, 6) for rk, rv in route_floors.items()}
-        b_crit_clears = {d: round(raw_ability, 6) >= round(critical_gates[d], 6) for d in ABILITY_FLOOR_KEYS}
-
-        bundle_positions[bid] = {
-            "id": bid,
-            "account": account,
-            "provider": provider,
-            "harness": bspec.get("harness"),
-            "model": model,
-            "model_label": model_label(model),
-            "effort": effort,
-            "fixed_effort": (info or {}).get("fixed_effort") if is_fixed_effort else None,
-            "ability": ability,
-            "raw_ability": raw_ability,
-            "enabled": b_enabled,
-            "disabled": not b_enabled,
-            "clears": b_clears,
-            "route_clears": b_route_clears,
-            "critical_clears": b_crit_clears,
-        }
-
-        if not include_manual_billing and allocator.accounts_override.manual_only_billing(account, accounts):
-            continue
-        if not include_superseded and bspec.get("auto"):
-            if bspec.get("disabled"):
-                continue
-            if (raw_model in superseded or model in superseded):
-                continue
-            if bspec.get("availability") in ("stale", "expired"):
-                continue
-
-        g_key = (account, model)
-        group = groups_map.get(g_key)
-        if group is None:
-            acct_spec = (accounts.get("accounts") or {}).get(account) or {}
-            acct_lbl = acct_spec.get("label") or account_label(account, account_family(account, inventory_accounts.get(account)))
-            basis = str(info.get("basis") or bspec.get("score_basis") or "").strip()
-            estimated = bool(info.get("score_estimated")) or (bspec.get("score_source", "calibrated") != "calibrated")
-            high_ab = round(float(allocator.effort_ability(policy, curves, info, "high")), 2)
-            group = {
-                "key": f"{account}:{model}",
-                "account": account,
-                "account_label": acct_lbl,
-                "providers": [],
-                "harnesses": [],
-                "model": model,
-                "model_label": model_label(model),
-                "tier": round(float(info.get("tier", 0.0) or 0.0), 2),
-                "high_ability": high_ab,
-                "fixed_effort": (info or {}).get("fixed_effort") if is_fixed_effort else None,
-                "basis": basis,
-                "estimated": estimated,
-                # Round 058: scores of a row without a direct measurement (accounts.json score_estimates: series
-                # conversion or public-data estimate).
-                "estimated_scores": sorted(info.get("score_estimates") or ()),
-                "score_source": "estimated" if estimated else str(bspec.get("score_source") or "calibrated"),
-                "host_enabled": host_ok,
-                "efforts_map": {},
-                "bundle_ids": [],
-            }
-            groups_map[g_key] = group
-        else:
-            if not is_fixed_effort:
-                group["fixed_effort"] = None
-            if bool(info.get("score_estimated")) or (bspec.get("score_source", "calibrated") != "calibrated"):
-                group["estimated"] = True
-                group["score_source"] = "estimated"
-            if not group["basis"] and bspec.get("score_basis"):
-                group["basis"] = str(bspec.get("score_basis")).strip()
-
-        if provider not in group["providers"]:
-            group["providers"].append(provider)
-        harness = bspec.get("harness") or provider
-        if harness not in group["harnesses"]:
-            group["harnesses"].append(harness)
-        group["bundle_ids"].append(bid)
-
-        eff_entry = group["efforts_map"].get(effort)
-        if eff_entry is None:
-            group["efforts_map"][effort] = {
-                "effort": effort,
-                "fixed": is_fixed_effort,
-                "ability": ability,
-                "raw_ability": raw_ability,
-                "enabled": b_enabled,
-                "bundle_ids": [bid],
-            }
-        else:
-            eff_entry["enabled"] = eff_entry["enabled"] or b_enabled
-            eff_entry["fixed"] = eff_entry.get("fixed", False) and is_fixed_effort
-            eff_entry["bundle_ids"].append(bid)
-
-    model_counts: dict[str, int] = {}
-    for (_acct, mdl) in groups_map:
-        model_counts[mdl] = model_counts.get(mdl, 0) + 1
-
-    models_list: list[dict] = []
-    for (account, model), group in groups_map.items():
-        efforts = sorted(group.pop("efforts_map").values(), key=lambda item: (_effort_sort_key(item["effort"]), item["ability"]))
-        enabled_efforts = [e for e in efforts if e["enabled"]]
-        any_enabled = bool(enabled_efforts) and group["host_enabled"]
-        all_enabled = all(e["enabled"] for e in efforts) and group["host_enabled"]
-        min_ab = min(e["ability"] for e in efforts)
-        max_ab = max(e["ability"] for e in efforts)
-        ref_efforts = enabled_efforts if enabled_efforts else efforts
-        ref_max_raw = max(e["raw_ability"] for e in ref_efforts)
-        ref_max_ab = max(e["ability"] for e in ref_efforts)
-        clears = {d: round(ref_max_raw, 6) >= round(floors[d], 6) for d in ABILITY_FLOOR_KEYS}
-        eligible_clears = {d: any_enabled and clears[d] for d in ABILITY_FLOOR_KEYS}
-        route_clears = {rk: round(ref_max_raw, 6) >= round(rv, 6) for rk, rv in route_floors.items()}
-        eligible_route_clears = {rk: any_enabled and route_clears[rk] for rk in route_floors}
-        critical_clears = {d: round(ref_max_raw, 6) >= round(critical_gates[d], 6) for d in ABILITY_FLOOR_KEYS}
-        shared_model = model_counts.get(model, 0) > 1
-        display_label = f"{group['account_label']} · {group['model_label']}"
-        short_label = display_label if shared_model else f"{group['model_label']} ({group['account_label']})"
-
-        group.update({
-            "display_label": display_label,
-            "short_label": short_label,
-            "shared_model": shared_model,
-            "efforts": efforts,
-            "enabled": any_enabled,
-            "all_enabled": all_enabled,
-            "unchecked": not any_enabled,
-            "min_ability": min_ab,
-            "max_ability": max_ab,
-            "effective_max_ability": ref_max_ab,
-            "clears": clears,
-            "eligible_clears": eligible_clears,
-            "clears_list": [d for d in ABILITY_FLOOR_KEYS if clears[d]],
-            "route_clears": route_clears,
-            "eligible_route_clears": eligible_route_clears,
-            "critical_clears": critical_clears,
-        })
-        models_list.append(group)
-
-    models_list.sort(key=lambda m: (
-        round(m["max_ability"], 2),
-        round(m["min_ability"], 2),
-        1 if m["enabled"] else 0,
-        -FAMILY_ORDER.index(account_family(m["account"])) if account_family(m["account"]) in FAMILY_ORDER else -99,
-        m["display_label"],
-    ), reverse=True)
-
-    eligibility_by_difficulty = {
-        d: [m["key"] for m in models_list if m["eligible_clears"][d]]
-        for d in ABILITY_FLOOR_KEYS
-    }
-    eligibility_by_route = {
-        rk: [m["key"] for m in models_list if m["eligible_route_clears"][rk]]
-        for rk in route_floors
-    }
-
-    return {
-        "floors": floors,
-        "route_floors": route_floors,
-        "defaults": floor_state["defaults"],
-        "default_route_floors": floor_state["default_route_floors"],
-        "origins": floor_state["origins"],
-        "critical_headroom": floor_state["critical_headroom"],
-        "critical_headrooms": critical_headrooms,
-        "critical_gates": critical_gates,
-        "has_overrides": floor_state["has_overrides"],
-        "models": models_list,
-        "bundles": bundle_positions,
-        "eligibility": eligibility_by_difficulty,
-        "route_eligibility": eligibility_by_route,
-    }
-
-
-def preview_ability_floor_change(floors_override: dict | None = None, route_floors_override: dict | None = None,
-                                 accounts: dict | None = None, path: Path | None = None) -> dict:
-    """Compare candidate floor values against saved effective floors and report models/bundles gained or lost."""
-    baseline = ability_floor_chart_data(accounts=accounts, path=path)
-    candidate = ability_floor_chart_data(
-        accounts=accounts,
-        floors_override=floors_override,
-        route_floors_override=route_floors_override,
-        path=path,
-    )
-    base_models = {m["key"]: m for m in baseline["models"]}
-    cand_models = {m["key"]: m for m in candidate["models"]}
-    base_bundles = baseline["bundles"]
-    cand_bundles = candidate["bundles"]
-
-    changes: dict[str, dict] = {}
-    summary_parts: list[str] = []
-
-    for d in ABILITY_FLOOR_KEYS:
-        old_val = baseline["floors"][d]
-        new_val = candidate["floors"][d]
-        gained_models = [
-            cand_models[k]["display_label"]
-            for k in cand_models
-            if not base_models[k]["eligible_clears"][d] and cand_models[k]["eligible_clears"][d]
-        ]
-        lost_models = [
-            cand_models[k]["display_label"]
-            for k in cand_models
-            if base_models[k]["eligible_clears"][d] and not cand_models[k]["eligible_clears"][d]
-        ]
-        gained_bundles = [
-            bid for bid in cand_bundles
-            if cand_bundles[bid]["enabled"] and not base_bundles[bid]["clears"][d] and cand_bundles[bid]["clears"][d]
-        ]
-        lost_bundles = [
-            bid for bid in cand_bundles
-            if cand_bundles[bid]["enabled"] and base_bundles[bid]["clears"][d] and not cand_bundles[bid]["clears"][d]
-        ]
-        eligible_count = sum(1 for m in candidate["models"] if m["eligible_clears"][d])
-        changed = round(old_val, 2) != round(new_val, 2)
-        changes[d] = {
-            "key": d,
-            "label": _tr(ABILITY_FLOOR_LABELS.get(d, d)),
-            "old": old_val,
-            "new": new_val,
-            "changed": changed,
-            "gained_models": gained_models,
-            "lost_models": lost_models,
-            "gained_bundles": gained_bundles,
-            "lost_bundles": lost_bundles,
-            "eligible_count": eligible_count,
-        }
-        if changed:
-            d_label = _tr(ABILITY_FLOOR_LABELS.get(d, d))
-            details = []
-            if gained_models:
-                details.append(_tr("新增准入：{0}").format("、".join(gained_models[:4]) + ("…" if len(gained_models) > 4 else "")))
-            if lost_models:
-                details.append(_tr("失去准入：{0}").format("、".join(lost_models[:4]) + ("…" if len(lost_models) > 4 else "")))
-            if not details:
-                details.append(_tr("准入模型无变化（{0} 个达标）").format(eligible_count))
-            summary_parts.append(f"{d_label} {old_val:.2f} → {new_val:.2f}（{'；'.join(details)}）")
-
-    route_changes: dict[str, dict] = {}
-    for rk, new_val in candidate["route_floors"].items():
-        old_val = baseline["route_floors"].get(rk, new_val)
-        r_name, diff = rk.split(".", 1)
-        r_label = f"{display_names.kind_label(r_name)} · {_tr(ABILITY_FLOOR_LABELS.get(diff, diff))}"
-        gained_models = [
-            cand_models[k]["display_label"]
-            for k in cand_models
-            if not base_models[k]["eligible_route_clears"].get(rk, False)
-            and cand_models[k]["eligible_route_clears"].get(rk, False)
-        ]
-        lost_models = [
-            cand_models[k]["display_label"]
-            for k in cand_models
-            if base_models[k]["eligible_route_clears"].get(rk, False)
-            and not cand_models[k]["eligible_route_clears"].get(rk, False)
-        ]
-        gained_bundles = [
-            bid for bid in cand_bundles
-            if cand_bundles[bid]["enabled"]
-            and not base_bundles[bid]["route_clears"].get(rk, False)
-            and cand_bundles[bid]["route_clears"].get(rk, False)
-        ]
-        lost_bundles = [
-            bid for bid in cand_bundles
-            if cand_bundles[bid]["enabled"]
-            and base_bundles[bid]["route_clears"].get(rk, False)
-            and not cand_bundles[bid]["route_clears"].get(rk, False)
-        ]
-        eligible_count = sum(1 for m in candidate["models"] if m["eligible_route_clears"].get(rk, False))
-        changed = round(old_val, 2) != round(new_val, 2)
-        route_changes[rk] = {
-            "key": rk,
-            "label": r_label,
-            "old": old_val,
-            "new": new_val,
-            "changed": changed,
-            "gained_models": gained_models,
-            "lost_models": lost_models,
-            "gained_bundles": gained_bundles,
-            "lost_bundles": lost_bundles,
-            "eligible_count": eligible_count,
-        }
-        if changed:
-            details = []
-            if gained_models:
-                details.append(_tr("新增准入：{0}").format("、".join(gained_models[:4]) + ("…" if len(gained_models) > 4 else "")))
-            if lost_models:
-                details.append(_tr("失去准入：{0}").format("、".join(lost_models[:4]) + ("…" if len(lost_models) > 4 else "")))
-            if not details:
-                details.append(_tr("准入模型无变化（{0} 个达标）").format(eligible_count))
-            summary_parts.append(f"{r_label} {old_val:.2f} → {new_val:.2f}（{'；'.join(details)}）")
-
-    summary = "  |  ".join(summary_parts) if summary_parts else _tr("拖动门槛线或调整数值可实时预览准入模型变化")
-    return {
-        "has_changes": bool(summary_parts),
-        "summary": summary,
-        "difficulties": changes,
-        "routes": route_changes,
-        "candidate": candidate,
-    }
-
-
 def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str:
     """Toggle exactly one effort bundle; harnesses never change together."""
     if path is None:
@@ -3004,7 +1965,7 @@ def test_scorer_config(scorer_type: str | None = None, api_key: str | None = Non
     result = router.scorer_test(config, objective)
     label, meta, profile = _tr(SCORER_SHORT.get(chosen, chosen)), result["scorer"], result["task_profile"]
     if result["ok"]:
-        dims = f"D{profile['reasoning_depth']} C{profile['code_complexity']} S{profile['context_scale']}"
+        dims = f"D{profile['reasoning_depth']} C{profile['code_complexity']}"
         return _tr('测试成功（{0} · {1}ms）：{2} · {3}').format(f'{label}', f"{result['latency_ms']}", f"{result['derived_kind']}", f'{dims}')
     why = meta.get("fallback_detail") or meta.get("fallback_reason") or _tr("未知原因")
     return _tr('测试失败（{0} · {1}ms）：{2}；路由时将回退').format(f'{label}', f"{result['latency_ms']}", f'{why}')

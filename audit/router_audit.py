@@ -619,7 +619,7 @@ def build_findings(ctx: dict) -> list[dict]:
                 r.get("reason_category") or "未分类" for r in off).most_common()) + "。" if off else "")
             + ("最近的不一致:" + "; ".join(f"{local(r['at']):%m-%d %H:%M} 钉死 {(r.get('bundle') or {}).get('bundle_id') or (r.get('bundle') or {}).get('model')}"
                                        f" vs router {r.get('router_choice')}" for r in off[-3:]) if off else ""),
-            "逐条看 `override_cost`:router 排除的原因若站不住(能力表/消耗/账户状态错了),改 `accounts.json`;若钉死合理,补进表而不是继续钉。")
+            "逐条看 `override_cost`:router 排除的原因若站不住(类别分数/消耗/账户状态错了),改公开数据;若钉死合理,补进表而不是继续钉。")
     if planned:
         by_account = collections.defaultdict(float)
         for r in planned:
@@ -628,13 +628,13 @@ def build_findings(ctx: dict) -> list[dict]:
         add("info", "balance", "plan 派发的预计工时按账户分布",
             "; ".join(f"{a} {h:.1f}h" for a, h in sorted(by_account.items(), key=lambda kv: -kv[1]))
             + f"。其中 {waits} 次需要用户决定(owner 无法继续,或要等的时间超过 can_wait)。",
-            "对照各账户的短缺概率(plan 结果 `capacity.shortage_probability`):长期偏向某个本会短缺的账户,说明 `shortage_loss_per_worker_hour` 或消耗估计需要校准(见 capacity 相关发现)。")
+            "对照各账户的额度窗口(plan 结果 `decision.system.quota_windows`):长期偏向某个本会短缺的账户,说明该窗口的容量或消耗估计需要核对(见 capacity 相关发现)。")
     fixed = sum(v for k, v in kinds.items() if k not in ("open", "planned"))
     if selects and fixed / len(selects) >= FIXED_SHARE:
         add("warn", "fixed", "绝大多数分配由指令/路由表钉死,judge 不改变结果",
             f"{fixed}/{len(selects)} 次 select 的路由已固定({', '.join(f'{k} {v}' for k, v in kinds.most_common())});"
             f"真正做额度/质量权衡的只有 {kinds.get('open', 0)} 次。",
-            "路由本该由 `plan` 综合能力/适配/余量/消耗/连贯性来定;只有用户对本任务的明确指令才 `record --constraint user_override`。")
+            "路由本该由 `plan` 综合类别适配/额度经济/连贯性来定;只有用户对本任务的明确指令才 `record --constraint user_override`。")
     now_usage = ctx["usage_now"]
     accounts = now_usage.get("accounts", {})
     judge_calls = collections.Counter(r["judge"] for r in rows if r.get("judge"))

@@ -18,7 +18,6 @@ discovery inventory, so the Claude session-limit overlay (which may persist rate
   python route_simulation.py replay [--last N] [--json out.json]
 """
 import argparse
-import ast
 import copy
 import json
 import os
@@ -37,7 +36,6 @@ import provider_inventory  # noqa: E402
 import route_judge  # noqa: E402
 import usage_cache  # noqa: E402
 
-DIFFICULTIES = ('routine', 'hard', 'coupled', 'frontier')
 SHORT_HOURS = 24
 AMPLE_USED, SCARCE_USED, SHORT_SCARCE_USED = 10.0, 95.0, 98.0
 # Tight: a fifth left with most of the window to run, so a cheap model's burn still fits where a strong one's does not.
@@ -236,11 +234,23 @@ def usage_for(state, accounts, now, pools=None):
 
 
 # --- grid -----------------------------------------------------------------------------------------
-def grid_tasks(accounts):
-    kinds = sorted(allocator.load_capabilities(accounts=accounts)['routes'])
-    return [{'objective': f'{kind} task', 'work_kind': kind, 'difficulty': difficulty, 'hours': 2,
-             'needs': {'local_only': local}}
-            for kind in kinds for difficulty in DIFFICULTIES for local in (True, False)]
+def demand_task(demand, local, hours=2.0):
+    """A task whose classifier profile asks `demand` (one point of the category demand space) of the four categories.
+    The grid sweeps the whole space; no work kind or difficulty is assumed. `reasoning_depth` follows the strongest
+    reasoning demand so the profile is complete."""
+    reasoning = max(demand['global_rigor'], demand['divergence'])
+    return {'objective': 'demand ' + ' '.join(f'{a}={demand[a]}' for a in allocator.FIVE_AXES), 'expected_hours': hours,
+            'needs': {'local_only': local},
+            'profile': {'work_kind': 'general_implementation', 'reasoning_depth': min(4, 1 + reasoning),
+                        'code_complexity': 2 if demand['module_precision'] else 0, 'needs_visual': demand['vision_tools'] >= 2,
+                        'needs_gui': False, 'local_only': local, 'realtime_loop': False, 'wants_fast': False,
+                        'read_only_review': False, 'access': 'write', 'expected_hours': hours, 'hours_confidence': 'medium',
+                        'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                        'axis_demand': dict(demand)}}
+
+
+def grid_tasks(accounts=None):
+    return [demand_task(point, local) for point in allocator.FIVE_AXIS_DEMAND_GRID for local in (True, False)]
 
 
 def label(bundle):
@@ -337,33 +347,8 @@ def ledger_records(path=None, last=None):
     return rows[-last:] if last else rows
 
 
-LEGACY_REPLAY_NOTE = '旧记录缺字段，无法重放'
-
-
-def lacks_required_profile_fields(profile):
-    """Invalid only because a legacy record omitted required profile fields."""
-    if not isinstance(profile, dict):
-        return False
-    try:
-        allocator.validate_profile(profile)
-        return False
-    except ValueError:
-        pass
-    try:
-        allocator.validate_profile({'wants_fast': False, 'read_only_review': False, **profile,
-                                    'multi_task': False, 'task_count': '1'})
-        return True
-    except ValueError:
-        return False
-
-
 def replay_task(row):
     task = dict(row['decision_snapshot']['task'])
-    if isinstance(task.get('profile'), str):
-        try:
-            task['profile'] = ast.literal_eval(task['profile'])
-        except (ValueError, SyntaxError):
-            task.pop('profile')
     if row.get('hours'):
         task.setdefault('hours', row['hours'])
     return task
@@ -380,10 +365,12 @@ def replay(last=None, path=None, accounts=None):
     out = []
     for row in ledger_records(path, last):
         task = replay_task(row)
-        if lacks_required_profile_fields(task.get('profile')):
+        try:
+            allocator.validate_profile(task.get('profile') if isinstance(task.get('profile'), dict) else {})
+        except ValueError:
             out.append({'at': row['at'], 'kind': row.get('kind'), 'difficulty': row.get('difficulty'),
                         'ledger_choice': row.get('choice'), 'choice': None, 'model': None,
-                        'unreplayable': True, 'replay_note': LEGACY_REPLAY_NOTE})
+                        'unreplayable': True, 'replay_note': "the record's profile is not valid under the current schema"})
             continue
         now = datetime.fromisoformat(row['at'])
         usage = snapshot(ledger_document(row['usage'], pools), accounts, now)
@@ -432,8 +419,8 @@ def main(argv=None):
     e = sub.add_parser('explain')
     e.add_argument('--mode', choices=('machine', 'fresh'), default='fresh')
     e.add_argument('--state', choices=list(STATES), default='ample')
-    e.add_argument('--kind', required=True)
-    e.add_argument('--difficulty', choices=DIFFICULTIES, default='hard')
+    for axis in allocator.FIVE_AXES:
+        e.add_argument('--' + axis.replace('_', '-'), type=int, choices=range(4), default=0, help=f'demand level 0-3 on {axis}')
     e.add_argument('--local', action='store_true')
     e.add_argument('--bundle', action='append', default=[])
     e.add_argument('--top', type=int, default=5)
@@ -466,8 +453,7 @@ def run(args, ledger):
                 print(f'  {state:28s} {row["models"]}')
             print(f"  wins nowhere: {sorted(report['wins_nowhere'])}")
     elif args.command == 'explain':
-        task = {'objective': f'{args.kind} task', 'work_kind': args.kind, 'difficulty': args.difficulty, 'hours': 2,
-                'needs': {'local_only': args.local}}
+        task = demand_task({axis: getattr(args, axis) for axis in allocator.FIVE_AXES}, args.local)
         result = explain('fresh' if args.accounts else args.mode, args.state, task, args.bundle, args.top,
                          account_set=args.accounts)
         for row in result:

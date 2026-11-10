@@ -1,17 +1,25 @@
-"""Measured tiers for model rows, on the scale the user's six anchor rows define.
+"""Tier: a model's overall level, read off the arena.ai Overall board and mapped onto the user's tier scale.
 
 `python -X utf8 tiers.py [--data DIR] [--json OUT] [model-id ...]`
 
-Primary measurement (the rule every measured row follows): LMArena WebDev and Agent. Each board is mapped onto the tier
-scale by piecewise-linear interpolation through the anchor rows at their best listed variant (anchors a board orders
-against the user scale are pooled to one tier); outside the anchor range the Flash-Opus slope applies, floor 1.0. The
-tier is the mean of the boards a model is on.
+The tier is not a score. It equals the arena.ai Overall position of the model (the Text Arena overall leaderboard,
+`lmarena.text_overall`, the vote-based dataset: not the WebDev or Agent boards), and it has one use: estimating a type
+score a model lacks (`five_axis.py`, through the fitted line of that type score on tier). Nothing routes on it.
 
-Secondary, only for a model on neither board: vals.ai SWE-bench Verified, Terminal-Bench 2.0 and the Artificial Analysis
-Intelligence Index, each regressed on tier over the models that have a primary tier; the tier is the mean of the
-available secondary fits, and the basis names them and their r.
+Sources, in order (user decisions of 2026-11-11):
 
-The anchors are the user's judgment. They are inputs here, never outputs.
+1. arena.ai Overall. The board is mapped onto the tier scale by piecewise-linear interpolation through the user's six
+   anchor rows at their best listed variant (anchors a board orders against the user scale are pooled to one tier);
+   outside the anchor range the Flash-Opus slope applies, floor 1.0. The anchors are inputs, never outputs.
+2. A model that arena Overall does not list takes its relative position on another, non-arena overall (aggregate)
+   leaderboard, interpolated onto the tier scale through the models listed on both that board and arena Overall:
+   piecewise-linearly between the neighbouring common models (tied or inverted neighbours pooled, as the anchors are),
+   beyond the ends along the map's end-to-end slope, floor 1.0. The board used is the Artificial Analysis
+   Intelligence Index (`AA_INDEX`); a board enters only if it is a cited public aggregate board, never a single-skill
+   benchmark. When several such boards list a model its tier is the mean of the interpolated tiers. Each reading records
+   its board, date, the two neighbours used and the overlap n.
+3. A model on no overall board at all takes the tier of its nearest same-series sibling (`five_axis.py`, calibration/
+   series.py); with none it has no tier, and a type score it lacks is a data error (mode B), never a default.
 """
 import argparse
 import json
@@ -24,6 +32,10 @@ import sources
 
 ANCHORS = {'claude-opus-5-5': 'Claude Opus 5.5', 'gpt-6-astra': 'GPT-6 Astra', 'claude-sonnet-5-5': 'Claude Sonnet 5.5',
            'gpt-6.1-sol': 'GPT-6.1 Sol', 'grok-4.7': 'Grok 4.7', 'gemini-3.8-flash-high': 'Gemini 3.8 Flash'}
+# The user's judgment of the six anchor rows: the tier scale itself (calibration/README.md).
+ANCHOR_TIERS = {'claude-opus-5-5': 4.6, 'gpt-6-astra': 4.2, 'claude-sonnet-5-5': 3.9, 'gpt-6.1-sol': 3.6,
+                'grok-4.7': 3.4, 'gemini-3.8-flash-high': 3.0}
+ANCHOR_TIER_DATE = '2026-11-04'
 # accounts.json model id -> the name each public source lists it under (None: not listed there).
 NAMES = {
     'gpt-oss-120b': {'arena': 'gpt-oss-120b', 'swe': 'GPT OSS 120B', 'tb2': 'GPT OSS 120B', 'aa': 'gpt-oss-120b'},
@@ -54,139 +66,136 @@ NAMES = {
     'grok-4.7-build-fast': {},
     'flint-40b-free': {},
 }
-# Scores a vendor reports on the same harness as the vals.ai boards (used only when no independent board lists the model).
-VENDOR = {
-    'qwen3-coder-next': {'swe': (71.1, 'Qwen3-Coder-Next technical report (arXiv 2603.00729), Mini-SWE-agent'),
-                         'tb2': (36.2, 'same report, Terminus 2 (json)')},
-}
-# The same model served differently: it takes the named row's measured tier.
-SAME_AS = {
-    'grok-4.7-build-fast': ('grok-4.7', 'Grok 4.7 on faster serving, available in Grok Build and Cursor (xAI launch coverage, '
-                                        '2026-09-21); no board lists it separately'),
-}
-# Unmeasured on any comparable board (vendor scores on other benchmarks only): the data's unmeasured default applies.
-UNMEASURED = {
-    'flint-40b-free': 'Recursive Flint (39.8B MoE, released 2026-10-21) reports only SWE-bench Pro v2 itself; no '
-                      'independent board lists it',
-}
-LABEL = {'webdev': 'WebDev', 'agent': 'Agent', 'vision': 'Vision', 'hard': 'Text hard prompts (style control)',
-         'text': 'Text (style control)'}
+# Non-arena overall (aggregate) boards that may place a model on the tier scale: id -> (label, cited url).
+OVERALL_BOARDS = {'aa.index': ('Artificial Analysis Intelligence Index', 'https://artificialanalysis.ai/leaderboards/models')}
+
+
+def norm(name):
+    return ''.join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def pooled(xs, ys):
+    """Points (x ascending, tied x averaged) with y made non-decreasing by pooling adjacent violators."""
+    by_x = {}
+    for x, y in zip(xs, ys):
+        by_x.setdefault(float(x), []).append(float(y))
+    pts = sorted((x, float(np.mean(v)), len(v)) for x, v in by_x.items())
+    blocks = [[y * n, n, 1] for _, y, n in pts]       # [weighted sum, weight, points in the block]
+    i = 0
+    while i < len(blocks) - 1:
+        if blocks[i][0] / blocks[i][1] > blocks[i + 1][0] / blocks[i + 1][1]:
+            nxt = blocks.pop(i + 1)
+            blocks[i] = [blocks[i][0] + nxt[0], blocks[i][1] + nxt[1], blocks[i][2] + nxt[2]]
+            i = max(i - 1, 0)
+        else:
+            i += 1
+    flat = [s / w for s, w, k in blocks for _ in range(k)]
+    return [p[0] for p in pts], flat
+
+
+class Interpolation:
+    """x -> tier by piecewise-linear interpolation through (x, tier) points; beyond the ends the map's end-to-end slope
+    applies, floor 1.0. `neighbours(x)` names the two points a reading lies between (or the end segment it lies beyond)."""
+
+    def __init__(self, xs, ys, names=None):
+        order = sorted(range(len(xs)), key=lambda i: (xs[i], i))
+        self.names = [names[i] for i in order] if names else None
+        raw_x = [float(xs[i]) for i in order]
+        raw_y = [float(ys[i]) for i in order]
+        # Tied x keep one point (their mean); inverted neighbours are pooled so the map never decreases.
+        self.x, self.y = pooled(raw_x, raw_y)
+        self.who = None
+        if self.names:
+            grouped = {}
+            for n, x in zip(self.names, raw_x):
+                grouped.setdefault(x, []).append(n)
+            self.who = [grouped[x] for x in self.x]
+        self.n = len(raw_x)
+
+    def __call__(self, x):
+        xs, ys = self.x, self.y
+        if len(xs) < 2:
+            raise ValueError('an interpolation needs at least two distinct points')
+        if x <= xs[0]:
+            return max(1.0, ys[0] + self.slope * (x - xs[0]))
+        if x >= xs[-1]:
+            return max(1.0, ys[-1] + self.slope * (x - xs[-1]))
+        return max(1.0, float(np.interp(x, xs, ys)))
+
+    @property
+    def slope(self):
+        """End-to-end slope of the map (lowest to highest point), applied beyond the ends. The slope of the end segment
+        alone is not used: after pooling it can be a single steep step (Artificial Analysis 59 -> 60 is 2.4 tier per
+        point, which put a model five points above the top at tier 18.8)."""
+        return (self.y[-1] - self.y[0]) / (self.x[-1] - self.x[0])
+
+    def neighbours(self, x):
+        """(lower point, upper point) as {'x', 'tier', 'models'}; a reading beyond an end gets the end segment."""
+        xs = self.x
+        j = int(np.searchsorted(xs, x, side='right'))
+        j = min(max(j, 1), len(xs) - 1)
+        out = []
+        for k in (j - 1, j):
+            point = {'x': xs[k], 'tier': round(self.y[k], 3)}
+            if self.who:
+                point['models'] = self.who[k]
+            out.append(point)
+        return out[0], out[1]
 
 
 class Fitter:
-    def __init__(self, target, acc):
-        self.models = acc['models']
-        # The day the secondary boards were read, for the basis (file time of the AA download).
-        aa_file = target / 'aa-models.html'
-        self.read = (datetime.fromtimestamp(aa_file.stat().st_mtime, timezone.utc).date().isoformat()
-                     if aa_file.exists() else 'unknown date')
-        self.boards = {'webdev': sources.arena(target, 'webdev'), 'agent': sources.arena(target, 'agent'),
-                       'vision': sources.arena(target, 'vision'),
-                       'hard': sources.arena(target, 'text_style_control', 'hard_prompts'),
-                       'text': sources.arena(target, 'text_style_control')}
-        self.maps = {b: self.tier_map(b) for b in ('webdev', 'agent')}
-        self.swe, _ = sources.vals(target, 'swebench.html')
-        self.tb2, _ = sources.vals(target, 'terminal-bench-2.html')
+    def __init__(self, target):
+        read = datetime.fromtimestamp((target / 'aa-models.html').stat().st_mtime, timezone.utc).date().isoformat() \
+            if (target / 'aa-models.html').exists() else None
+        self.aa_read = read
+        self.overall = sources.arena(target, 'text_style_control')
+        self.overall_map = self.anchor_map(self.overall)
         aa = sources.artificial_analysis(target)
         self.aa = {k: max(v.values()) for k, v in aa.items()}
-        self.secondary = {name: self.regress(table) for name, table in (('swe', self.swe), ('tb2', self.tb2), ('aa', self.aa))}
+        self.maps = {'aa.index': self.board_map(self.aa)}
 
-    def tier_map(self, board):
-        pts = sorted((self.boards[board][n][0], self.models[k]['tier']) for k, n in ANCHORS.items())
-        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-        blocks = [[y, 1] for y in ys]
-        i = 0
-        while i < len(blocks) - 1:
-            if blocks[i][0] > blocks[i + 1][0]:
-                (a, n), (c, m) = blocks[i], blocks.pop(i + 1)
-                blocks[i] = [(a * n + c * m) / (n + m), n + m]
-                i = max(i - 1, 0)
-            else:
-                i += 1
-        ys = [v for v, n in blocks for _ in range(n)]
-        slope = (ys[-1] - ys[0]) / (xs[-1] - xs[0])
+    @staticmethod
+    def anchor_map(board):
+        pts = [(board[name][0], ANCHOR_TIERS[k], k) for k, name in ANCHORS.items()]
+        return Interpolation([p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts])
 
-        def f(x):
-            if x <= xs[0]:
-                return max(1.0, ys[0] + slope * (x - xs[0]))
-            if x >= xs[-1]:
-                return ys[-1] + slope * (x - xs[-1])
-            return float(np.interp(x, xs, ys))
-        return f
+    def arena_overall_tier(self, arena_name):
+        row = self.overall.get(arena_name)
+        return None if row is None else float(self.overall_map(row[0]))
 
-    def primary(self, arena_name):
-        fits = {b: self.maps[b](self.boards[b][arena_name][0]) for b in ('webdev', 'agent') if arena_name in self.boards[b]}
-        return fits
+    def common(self, board):
+        """[(board value, arena Overall tier, model name)] for the models listed on `board` and on arena Overall."""
+        arena = {norm(sources.base_name(n)): n for n in self.overall}
+        out = []
+        for name, value in board.items():
+            hit = arena.get(norm(sources.base_name(name)))
+            if hit is not None:
+                out.append((float(value), self.arena_overall_tier(hit), name))
+        return out
 
-    def primary_tier_by_base(self):
-        """Primary tier of every model on WebDev or Agent, keyed by its Arena base name."""
-        names = set(self.boards['webdev']) | set(self.boards['agent'])
-        return {n: float(np.mean(list(self.primary(n).values()))) for n in names}
+    def board_map(self, board):
+        pts = self.common(board)
+        return Interpolation([p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]) if len(pts) >= 3 else None
 
-    def regress(self, table):
-        """Linear fit tier ~ score over models listed both in `table` and on the primary boards (names normalised)."""
-        key = lambda s: ''.join(ch for ch in s.lower() if ch.isalnum())
-        prim = {key(n): t for n, t in self.primary_tier_by_base().items()}
-        pairs = [(v, prim[key(sources.base_name(m))]) for m, v in table.items() if key(sources.base_name(m)) in prim]
-        x, y = np.array([p[0] for p in pairs]), np.array([p[1] for p in pairs])
-        b, a = np.polyfit(x, y, 1)
-        return {'a': float(a), 'b': float(b), 'r': float(np.corrcoef(x, y)[0, 1]), 'n': len(pairs)}
-
-    def fit(self, key):
-        names = NAMES.get(key, {})
-        out = {'id': key, 'sources': [], 'fits': {}, 'read': self.read}
-        arena_name = names.get('arena')
-        if arena_name:
-            out['fits'] = {b: round(v, 2) for b, v in self.primary(arena_name).items()}
-            for b in ('webdev', 'agent', 'vision', 'hard', 'text'):
-                if arena_name in self.boards[b]:
-                    out['sources'].append((b, self.boards[b][arena_name]))
-        if out['fits']:
-            out['tier'] = round(max(1.0, float(np.mean(list(out['fits'].values())))), 2)
-            out['method'] = 'primary'
-            return out
-        if key in SAME_AS:
-            target, why = SAME_AS[key]
-            out.update(tier=self.models[target]['tier'], method='same_as', same_as=target, why=why)
-            return out
-        sec = {}
-        for name, table in (('swe', self.swe), ('tb2', self.tb2), ('aa', self.aa)):
-            listed = names.get(name)
-            value, note = (table[listed], None) if listed and listed in table else VENDOR.get(key, {}).get(name, (None, None))
-            if value is not None:
-                reg = self.secondary[name]
-                sec[name] = (value, round(max(1.0, reg['a'] + reg['b'] * value), 2), round(reg['r'], 2), reg['n'], note)
-        out['secondary'] = sec
-        if sec:
-            out['tier'] = round(max(1.0, float(np.mean([v[1] for v in sec.values()]))), 2)
-            out['method'] = 'secondary'
-        else:
-            out['method'] = 'unmeasured'
+    def other_overall(self, listed):
+        """{board id: reading} for the non-arena overall boards that list the model (`listed`: board id -> its name there)."""
+        out = {}
+        for board, mapping in self.maps.items():
+            name = listed.get(board)
+            if not name or mapping is None or name not in self.aa:
+                continue
+            x = self.aa[name]
+            low, high = mapping.neighbours(x)
+            out[board] = {'board': OVERALL_BOARDS[board][0], 'source': board, 'url': OVERALL_BOARDS[board][1],
+                          'as_of': self.aa_read, 'listed_as': name, 'value': x, 'tier': round(float(mapping(x)), 3),
+                          'neighbours': {'below': low, 'above': high}, 'n': mapping.n}
         return out
 
 
-def basis(entry):
-    if entry['method'] == 'unmeasured':
-        return None
-    if entry['method'] == 'same_as':
-        return f"{entry['why']}. tier {entry['tier']} = the measured {entry['same_as']} row (calibration/tiers.py SAME_AS)."
-
-    parts = []
-    for b, (val, lo, hi, name, date) in entry['sources']:
-        if b == 'agent':
-            parts.append(f'{LABEL[b]} {date} {name} score {val:.3f} [{lo:.3f},{hi:.3f}]')
-        else:
-            parts.append(f'{LABEL[b]} {date} {name} {val:.0f} [{lo:.0f},{hi:.0f}]')
-    if entry['method'] == 'primary':
-        return ('LMArena: ' + '; '.join(parts) + f". tier {entry['tier']} = mean of the per-board fits {entry['fits']}; "
-                'each board is mapped by piecewise-linear interpolation through the six anchor rows at their best listed '
-                'variant (calibration/tiers.py).')
-    board = {'swe': 'SWE-bench Verified', 'tb2': 'Terminal-Bench 2.0', 'aa': 'Artificial Analysis Intelligence Index'}
-    sec = '; '.join((f'{board[k]} {v[0]:g} as reported in {v[4]}' if v[4] else f'{board[k]} {v[0]:g} (vals.ai/AA board)')
-                    + f' -> tier {v[1]} (r {v[2]}, n {v[3]})' for k, v in entry['secondary'].items())
-    lead = ('LMArena (not on WebDev/Agent): ' + '; '.join(parts) + '. ') if parts else ''
-    return (lead + f'Secondary measurement, {entry.get("read", "unknown date")}: {sec}. tier {entry["tier"]} = mean of these fits (each floored at 1.0 like the board maps), each a linear '
-            'regression of tier on the score over the models that have an LMArena WebDev/Agent tier (calibration/tiers.py).')
+def basis_arena(row, tier):
+    value, lo, hi, listed, date = row
+    return (f'arena.ai Overall {date} {listed} {value:.0f} [{lo:.0f},{hi:.0f}] mapped through the six anchor rows at their '
+            f'best listed variant (piecewise linear, calibration/tiers.py): tier {tier:.2f}')
 
 
 def main():
@@ -195,15 +204,24 @@ def main():
     ap.add_argument('--data')
     ap.add_argument('--json')
     args = ap.parse_args()
-    fitter = Fitter(sources.data_dir(args.data), sources.accounts())
-    for name, reg in fitter.secondary.items():
-        print(f'secondary {name}: tier = {reg["a"]:.2f} + {reg["b"]:.4f} x score  r {reg["r"]:.2f} n {reg["n"]}')
+    fitter = Fitter(sources.data_dir(args.data))
+    for board, mapping in fitter.maps.items():
+        print(f'{board}: {mapping.n if mapping else 0} models common with arena Overall')
     result = {}
     for key in args.models or list(NAMES):
-        e = fitter.fit(key)
-        e['basis'] = basis(e)
-        result[key] = e
-        print(f"{key:30s} {e['method']:10s} tier {e.get('tier', '-'):>5}  {e.get('fits') or e.get('secondary') or ''}")
+        names = NAMES.get(key, {})
+        arena = fitter.overall.get(names.get('arena'))
+        entry = {'id': key}
+        if key in ANCHOR_TIERS:
+            entry.update(method='anchor', tier=ANCHOR_TIERS[key])
+        elif arena:
+            entry.update(method='arena_overall', tier=round(fitter.arena_overall_tier(names['arena']), 2))
+        else:
+            others = fitter.other_overall({'aa.index': names.get('aa')})
+            entry.update(method='other_overall' if others else 'none', boards=others,
+                         tier=round(float(np.mean([o['tier'] for o in others.values()])), 2) if others else None)
+        result[key] = entry
+        print(f"{key:30s} {entry['method']:14s} tier {entry['tier']}")
     if args.json:
         json.dump(result, open(args.json, 'w', encoding='utf-8'), indent=1, default=str)
 
