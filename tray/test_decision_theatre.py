@@ -550,8 +550,7 @@ def test_shapes_bloom_from_the_centre_without_overshoot_and_the_winner_lands_las
         assert path[-1] == pytest.approx(renderer.center)
 
 
-def test_ability_beyond_the_need_is_drawn_pale_and_the_need_is_a_tick_on_each_axis():
-    from PIL import ImageChops
+def test_the_need_is_a_dashed_line_and_ability_beyond_it_is_a_segment_along_its_axis():
     source = fitted(result())
     renderer = dt.TheatreRenderer(dt.scene_from_result(source), 630, 600, 1.5)
     whole = dt.TheatreRenderer(dt.scene_from_result(result() | {'ranking': [
@@ -559,26 +558,44 @@ def test_ability_beyond_the_need_is_drawn_pale_and_the_need_is_a_tick_on_each_ax
     frame, flat = renderer.frame(dt.DURATION), whole.frame(dt.DURATION)
     cam = dt.camera_position(dt.DURATION, renderer.w)
     cx, cy, radius = renderer.center[0] - cam, renderer.center[1], renderer.radius
-    at = lambda axis, level: tuple(round(v) for v in dt.radar.point(cx, cy, radius * level, axis, 5))
+    spot = lambda axis, level, side=0.: tuple(round(v) for v in dt.radar.axis_segment(
+        cx, cy, radius, axis, 5, level, level, side * renderer.s)[0])
     ink = lambda image, xy: sum(image.getpixel(xy))        # lower is more ink
-    # On the divergence axis the need is .3 and both models go far beyond it: inside the need the fill is
-    # deeper than beyond it, and beyond it the shape is still tinted (the ability is real, it just does not count).
     paper = sum(renderer.blank.reduce(renderer.k).getpixel((0, 0)))
-    inside, beyond = at(0, .2), at(0, .55)
-    inside, beyond = (inside[0] + 4, inside[1]), (beyond[0] + 4, beyond[1])   # beside the spoke, not on it
-    assert ink(frame, inside) < ink(frame, beyond) - 25 and ink(frame, beyond) < paper - 12
-    # Without a recorded need the same two spots are filled alike.
-    assert abs(ink(flat, inside) - ink(flat, beyond)) < 25
-    # The need is a tick across each axis that has a target, drawn only when one is recorded.
-    need = renderer.need[1]
-    x, y = dt.radar.point(cx, cy, radius * need, 1, 5)
-    ax, ay = dt.radar.point(0, 0, 1, 1, 5)
-    off = dt.radar.NEED_TICK * renderer.s * .6                 # on the tick, clear of the spoke
-    spot = (round(x - ay * off), round(y + ax * off))
-    box = (spot[0] - 2, spot[1] - 2, spot[0] + 3, spot[1] + 3)
-    darkest = lambda image: min(sum(p) for _, p in image.crop(box).getcolors(64))
-    assert darkest(frame) < darkest(flat) - 60
-    # Fills are flat: within one tint the colour does not change with the distance from the centre.
-    near, far = at(2, .2), at(2, .45)
-    near, far = (near[0] - 7, near[1]), (far[0] - 7, far[1])
-    assert frame.getpixel(near) == frame.getpixel(far)
+    # A shape is one flat, very light tint: the same near the centre and far from it, with or without a need.
+    for image in (frame, flat):
+        assert image.getpixel(spot(0, .2, 7)) == image.getpixel(spot(0, .55, 7))
+        assert ink(image, spot(0, .55, 7)) < paper - 6
+    # Divergence: the need is .3 and both models go beyond it. Each has its segment on its own side of the spoke,
+    # from the target outwards; inside the target, and without a recorded need, there is none.
+    for style in dt.radar.SERIES_STYLES:
+        side = dt.radar.MARK_SHIFT * style['side']
+        assert ink(frame, spot(0, .5, side)) < ink(flat, spot(0, .5, side)) - 25
+        assert frame.getpixel(spot(0, .15, side)) == flat.getpixel(spot(0, .15, side))
+    # The need itself: a dot on each axis that has a target, joined by a dashed line; none on quota economy.
+    darkest = lambda image, xy: min(sum(p) for _, p in image.crop((xy[0] - 2, xy[1] - 2, xy[0] + 3, xy[1] + 3)).getcolors(64))
+    for axis, target in enumerate(renderer.need[:4]):
+        assert darkest(frame, spot(axis, target)) < darkest(flat, spot(axis, target)) - 60, axis
+    a, b = (dt.radar.point(cx, cy, radius * renderer.need[axis], axis, 5) for axis in (1, 2))
+    along = [(round(a[0] + (b[0] - a[0]) * u / 60), round(a[1] + (b[1] - a[1]) * u / 60)) for u in range(8, 53)]
+    dark = [ink(frame, xy) < ink(flat, xy) - 60 for xy in along]
+    assert any(dark) and not all(dark)                       # dashes and gaps
+
+
+def test_quota_cost_is_a_red_segment_from_the_point_to_full_scale_on_the_economy_axis():
+    source = fitted(result())
+    for item in source['ranking']:
+        if item['bundle']['model'] == 'beta':
+            item['components']['opportunity_cost'] = .06        # quota economy 1 − 5 × .06 = .7
+    renderer = dt.TheatreRenderer(dt.scene_from_result(source), 630, 600, 1.5)
+    cam = dt.camera_position(dt.DURATION, renderer.w)
+    cx, cy, radius = renderer.center[0] - cam, renderer.center[1], renderer.radius
+    frame = renderer.frame(dt.DURATION)
+    for index, candidate in enumerate(renderer.scene.pair):
+        value = candidate.values[4]
+        side = dt.radar.MARK_SHIFT * dt.radar.SERIES_STYLES[index]['side'] * renderer.s
+        at = lambda level: tuple(round(v) for v in dt.radar.axis_segment(cx, cy, radius, 4, 5, level, level, side)[0])
+        if value < .9:
+            red, green, blue = frame.getpixel(at((value + 1) / 2 - .02))    # clear of the vertex markers
+            assert red > green + 50 and red > blue + 50, candidate.name
+    assert any(candidate.values[4] < .9 for candidate in renderer.scene.pair)

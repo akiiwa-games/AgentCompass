@@ -277,6 +277,8 @@ class DecisionBindingTests(unittest.TestCase):
             panel.plan_loaded({**PLAN, "ranking": ranking})
             panel.render_radar()
             self.assertEqual(panel.radar.need, [.3, .8, None, None, None])
+            # Decision scores: the quota-economy axis shows quota cost. Model DNA has no such axis.
+            self.assertEqual(panel.radar.cost_axis, [key for key, _, _ in panel.radar.axes].index("economy"))
 
     def test_opening_decision_skips_a_newest_row_that_replays_to_none(self):
         import router_window

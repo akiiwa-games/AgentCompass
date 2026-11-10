@@ -56,10 +56,10 @@ Treat a window's quota as recovering evenly over its period. A window with capac
 - **Usage over the line.** The window is being drained faster than it recovers. Each further dollar is borrowed from the rest of the period and is charged at `β`.
 
 <div align="center">
-<img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice, each quota window drawn as a track with its recovery line moving along it: first a window that has spent past its line is spared, then two hours before its reset the remaining quota is spent in fast mode">
+<img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice, each quota window drawn as a small chart of its forecast line against its actual usage line: first a window that is over its forecast is spared, then two hours before its reset the remaining quota is spent in fast mode">
 </div>
 
-The picture has no captions; this is how to read it. Each track is one quota window: its whole length is the period's quota and its right end is the reset. The grey fill is what the period has spent so far. The vertical marker is the recovery line, and it moves right as time passes. Pale green between the fill and the marker is quota that has recovered and is still unspent; fill that runs past the marker is pink. Under each track are the candidates that would run on that window. On the left a candidate lays its spend on the track's own scale, starting where the fill ends: left of the marker it is green and free, past the marker it turns red. On the right, in the same row, is its score; red spend takes the end of that bar away as it is laid, and the pale end of a bar is ability beyond what the task needs, which is not counted. When the task runs, the markers advance by its duration, bars that tied fill at their own speed, and unspent quota on a window that resets before the task ends goes grey.
+The picture has no captions; this is how to read it. Each small chart is one quota window on its own clock: left to right is this period, ending at the reset on the right edge; bottom to top is quota, with the whole period's quota at the top. The pale straight line is the subscription's forecast, the recovery line. The dark line is actual usage, and it ends at now. It is solid where usage readings were recorded and dotted where there are none and the line is fitted from the period's start to the current usage. The vertical gap between the two lines at now is the point: green is quota that has recovered and is unspent, which is lost at the reset if nobody spends it; pink is usage ahead of the forecast. Beside each chart are the candidates that would run on that window, each with its score bar. A candidate's spend continues the usage line upward from now: green while it stays under the forecast, red once it is over, and the red part takes the end of that candidate's score bar away as it is drawn. The pale end of a bar is ability beyond what the task needs, which is not counted. When the task runs, time passes on every window, bars that tied fill at their own speed, the winner's spend becomes usage, and a green gap that reaches the reset turns grey.
 
 The animation replays one 2-hour refactor at two moments. The task needs global rigor and module precision; Opus 5.5 meets the need, so its `F` is 0.667.
 
@@ -152,10 +152,10 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 - **用量在线上。** 这个窗口的消耗快于恢复。再花的每一美元都是向本期后面借的，按 `β` 计价。
 
 <div align="center">
-<img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次，每个额度窗口画成一条横轨，恢复线沿着它向右走：先是用量已经越过恢复线的窗口被留着不用，然后在重置前两小时用快速模式花掉剩余额度">
+<img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次，每个额度窗口画成一张小图，对比预测线和实际用量线：先是用量已经高于预测线的窗口被留着不用，然后在重置前两小时用快速模式花掉剩余额度">
 </div>
 
-画面里没有说明文字，读法如下。每条横轨是一个额度窗口：整条的长度是本周期的额度，右端是重置。灰色是本期已经花掉的额度。竖线是恢复线，随时间向右走。灰色和竖线之间的浅绿色是已经恢复、还没花的额度；灰色越过竖线的部分是粉色。每条横轨下面是会用到这个窗口的候选。左边，候选把自己的花费按同一把尺子画在横轨下面，从灰色的末端开始：竖线左边是绿色，不计成本；越过竖线变成红色。右边同一行是它的得分；红色花费画出多少，得分条的末端就被削掉多少。得分条末端的浅色部分是超出任务需要的能力，不计分。任务开始执行后，竖线按任务时长向右走，平分的得分条按各自的速度填满，任务结束前就要重置的窗口上，没花掉的额度变灰。
+画面里没有说明文字，读法如下。每张小图是一个额度窗口，各走各的时钟：从左到右是本周期，右端是重置；从下到上是额度，顶端是本周期的全部额度。浅色直线是订阅的预测线，也就是恢复线。深色线是实际用量，终点是现在；有用量读数的地方是实线，没有读数时按期初到当前用量拟合，画成点线。两条线在“现在”的竖直差距是重点：绿色是已经恢复、还没花的额度，到重置不花就没了；粉色是比预测多花的部分。每张小图右边是会用到这个窗口的候选和它们的得分条。候选的花费从“现在”接着实际用量线往上画：在预测线下面是绿色，越过预测线变红；红色画出多少，这个候选的得分条末端就被削掉多少。得分条末端的浅色部分是超出任务需要的能力，不计分。任务开始执行后，每个窗口的时间都向前走，平分的得分条按各自的速度填满，胜出者的花费变成实际用量，到重置还没花掉的绿色差距变灰。
 
 动画把同一个 2 小时的重构任务放在两个时刻各重放一次。任务需要全局严密和模块精准；Opus 5.5 满足需求，`F` 为 0.667。
 

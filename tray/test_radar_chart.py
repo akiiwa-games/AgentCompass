@@ -65,20 +65,35 @@ class RasterTests(unittest.TestCase):
                         {"divergence": {"target": True}}):
             self.assertEqual(radar.need_values(missing), {})
 
-    def test_ability_beyond_the_need_is_paler_than_ability_within_it(self):
+    def test_a_shape_is_one_flat_tint_and_marks_along_the_axes_carry_the_need_and_the_cost(self):
         renderer = radar.RadarRenderer(90, 5, 1.5, "#FFFFFF")
-        values = [[.9, .9, .9, .9, .9]]
+        values = [[.9, .9, .9, .9, .7]]
         need = [.3, .8, .8, .3, None]
-        capped, whole = renderer.render(values, need), renderer.render(values)
-        at = lambda axis, level: tuple(round(v) + 4 for v in radar.point(renderer.center, renderer.center,
-                                                                        renderer.radius * level, axis, 5))
+        marked, plain = renderer.render(values, need, 4), renderer.render(values)
+        centre, unit = renderer.center, renderer.scale
+        spot = lambda axis, level, side=0.: tuple(round(v) for v in radar.axis_segment(
+            centre, centre, renderer.radius, axis, 5, level, level, side * unit)[0])
         ink = lambda image, xy: sum(image.getpixel(xy)[:3])
-        self.assertLess(ink(capped, at(0, .15)), ink(capped, at(0, .6)) - 20)       # within the need: deeper
-        self.assertLess(ink(capped, at(0, .6)), 3 * 255 - 12)                      # beyond it: pale, not gone
-        self.assertLess(abs(ink(whole, at(0, .15)) - ink(whole, at(0, .6))), 8)    # no need recorded: one depth
+        beside = 6.                                           # clear of the spoke and of the marks along it
+        # One tint for the whole shape, with or without a need: the same colour near the centre and far from it.
+        for image in (marked, plain):
+            self.assertEqual(image.getpixel(spot(0, .15, beside)), image.getpixel(spot(0, .6, beside)))
+            self.assertLess(ink(image, spot(0, .6, beside)), 3 * 255 - 8)
+        shift = radar.MARK_SHIFT * radar.SERIES_STYLES[0]["side"]
+        # Divergence: the need is .3 and the model reaches .9. From the target to the model's point a pale segment
+        # in the model's colour lies beside the spoke; inside the target there is none.
+        self.assertLess(ink(marked, spot(0, .6, shift)), ink(plain, spot(0, .6, shift)) - 40)
+        self.assertEqual(marked.getpixel(spot(0, .15, shift)), plain.getpixel(spot(0, .15, shift)))
+        # Quota economy has no target. From the model's point (.7) to full scale a red segment is the quota cost.
+        red, green, blue, _ = marked.getpixel(spot(4, .85, shift))
+        self.assertGreater(red, green + 60)
+        self.assertGreater(red, blue + 60)
+        self.assertEqual(marked.getpixel(spot(4, .4, shift)), plain.getpixel(spot(4, .4, shift)))
+        # Without a cost axis (model DNA) that segment is not drawn.
+        self.assertEqual(renderer.render(values, need).getpixel(spot(4, .85, shift)), plain.getpixel(spot(4, .85, shift)))
         # A need on no axis, or of the wrong length, is the same as none.
         for ignored in ([None] * 5, [.3, .8], None):
-            self.assertEqual(renderer.render(values, ignored).tobytes(), whole.tobytes())
+            self.assertEqual(renderer.render(values, ignored).tobytes(), plain.tobytes())
 
 
 class AnimationTests(unittest.TestCase):
@@ -182,16 +197,27 @@ if __name__ == "__main__":
     unittest.main()
 
 
-def test_only_the_corner_beyond_the_need_is_cut_and_an_axis_without_a_need_keeps_its_vertex():
-    values, need = [.74, .86, .88, .70, 1.], [.35, .9, .9, .35, None]
-    points = radar.polygon(values, 0, 0, 100)
-    capped = radar.polygon([v if t is None else min(v, t) for v, t in zip(values, need)], 0, 0, 100)
-    shape = radar.counted_shape(points, capped)
-    # Divergence and vision exceed the need: each loses its tip between the midpoints of its two edges.
-    assert len(shape) == 3 + 1 + 1 + 3 + 1
-    middle = lambda a, b: ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-    assert shape[:3] == [middle(points[4], points[0]), capped[0], middle(points[0], points[1])]
-    # Rigor and precision are within the need, and quota economy has none: their vertices stay where they are,
-    # so no spike reaches for the economy axis between two cut neighbours.
-    assert shape[3:5] == points[1:3] and shape[-1] == points[4]
-    assert radar.counted_shape(points, points) == points
+def test_marks_are_quantities_spare_ability_from_the_target_and_cost_from_the_point_to_full_scale():
+    values, need = [.74, .86, .88, .70, .82], [.35, .9, .9, .35, None]
+    # Divergence and vision exceed the need; rigor and precision do not; quota economy has no need, only a cost.
+    assert radar.axis_marks(values, need, 4) == [("spare", 0, .35, .74), ("spare", 3, .35, .70), ("cost", 4, .82, 1.)]
+    assert radar.axis_marks(values, need) == [("spare", 0, .35, .74), ("spare", 3, .35, .70)]
+    assert radar.axis_marks(values, None, 4) == [("cost", 4, .82, 1.)]
+    assert radar.axis_marks([.35, .9, .9, .35, 1.], need, 4) == []          # exactly at the need, nothing lost
+    # A mark lies along its axis, beside the spoke.
+    (x0, y0), (x1, y1) = radar.axis_segment(0, 0, 100, 0, 5, .35, .74, 2.)
+    assert (round(x0, 6), round(x1, 6)) == (2., 2.) and (round(y0, 6), round(y1, 6)) == (-35., -74.)
+
+
+def test_the_need_line_stops_at_an_axis_without_a_need():
+    assert radar.need_runs([.3, .8, .8, .3, None]) == [[0, 1, 2, 3]]       # open: it does not cross quota economy
+    assert radar.need_runs([.3, None, .8, .3, .5]) == [[2, 3, 4, 0]]
+    assert radar.need_runs([None] * 5) == []
+
+
+def test_dashes_keep_their_pattern_around_corners_and_can_stop_part_way():
+    path = [(0, 0), (10, 0), (10, 10)]
+    whole = radar.dashes(path, 4, 3)
+    assert whole == [((0, 0), (4, 0)), ((7, 0), (10, 0)), ((10, 0), (10, 1)), ((10, 4), (10, 8))]
+    assert radar.dashes(path, 4, 3, reach=8.) == [((0, 0), (4, 0)), ((7, 0), (8, 0))]
+    assert radar.dashes(path, 4, 3, reach=0.) == []

@@ -1262,9 +1262,11 @@ class Panel:
         self.quota_line = quota_line.QuotaLineCanvas(self.quota_frame)
         self.quota_line.canvas.pack(fill="both", expand=True)
         self.attach_quota_tooltip(self.quota_line, _tr(
-            "每条横轨是一个额度窗口：整条是本周期的额度，右端是重置。灰色是本期已花的额度，竖线是恢复线，随时间向右走；"
-            "灰色和竖线之间的浅绿色是已恢复、还没花的额度。每个候选的花费画在它所用窗口的横轨下面：竖线左边不计成本，越过竖线的部分（"
-            "红色）按 N = F − β·X/h 从同一行右侧的得分条里扣掉。得分条末端的浅色部分是超出任务需要的能力，不计分。点击画面重播。"))
+            "每个小图是一个额度窗口：从左到右是本周期（右端是重置），从下到上是额度（顶端是全部额度）。浅色直线是订阅的预测线（恢复线"
+            "），深色线是实际用量，终点是现在；有读数时是实线，没有读数时按期初到当前拟合、画成点线。两条线在“现在”的竖直差距：绿色"
+            "是已恢复还没花的额度（到重置不花就没了），粉色是超前花掉的。每个候选的花费从“现在”接着实际用量线往上画：在预测线下面是"
+            "绿色，越过预测线变红，红色部分按 N = F − β·X/h 从右侧它那一行的得分条里扣掉。得分条末端的浅色部分是超出任"
+            "务需要的能力，不计分。点击画面重播。"))
         self.theatre.on_frame = self.quota_line.follow
         self.show_list("ledger")
         self.set_mode("score")
@@ -1378,7 +1380,7 @@ class Panel:
         # The task's need, as recorded for the first of the pair: ability beyond it is drawn pale.
         fit = next((row.get("five_axis_fit") for row in self.plan_result.get("ranking") or []
                     if pair and row.get("id") == pair[0]["id"]), None)
-        self.radar.show(radar_chart.SCORE_AXES, series, raw, radar_chart.need_values(fit))
+        self.radar.show(radar_chart.SCORE_AXES, series, raw, radar_chart.need_values(fit), cost_axis="economy")
         self.show_verdict(*verdict_summary(self.plan_result, pair))
 
     def verdict_text(self):

@@ -4,8 +4,9 @@ The scene carries no score or cost text: order, light and geometry carry the com
 and the only words are the task, its kind, the model names and the five axis names.
 It ends on the answer and its reason together: the winner's name under the radar of the
 winner and the best-ranked other model. The radar has no fixed backdrop: the task's need is a
-quiet outline, each model's shape blooms from the centre (the winner last), and ability beyond
-the need is drawn pale because it does not count. Full evidence remains in the candidate table.
+dashed line through its targets, each model's shape blooms from the centre (the winner last),
+ability beyond a target is a pale segment along that axis, and quota cost is a red segment on
+the quota-economy axis. Full evidence remains in the candidate table.
 """
 from __future__ import annotations
 
@@ -819,24 +820,40 @@ class TheatreRenderer:
                              (*ink, round(255*shown*quiet)))
 
     def need_outline(self, draw, t, cam):
-        """The task's need: a tick across each axis that has one, neighbouring ticks joined by a hairline."""
+        """The task's need: a dashed line drawn through its targets, with a dot on each axis that has one."""
         drawn = ease(window(t, "need"))
         if drawn <= 0 or not self.need:
             return
         cx, cy = self.center
-        rgb, unit = ImageColor.getrgb(radar.NEED_INK), self.s*self.k
+        ink, unit = (*ImageColor.getrgb(radar.NEED_INK), 235), self.s*self.k
         at = lambda index: radar.point(cx, cy, self.radius*self.need[index], index, 5)
         for run in radar.need_runs(self.need):
-            if len(run) > 1:
-                draw.line(self.screen([at(index) for index in run], cam), fill=(*rgb, round(64*drawn)),
-                          width=max(1, round(.9*unit)))
-        half = radar.NEED_TICK*self.s*drawn
-        for index, target in enumerate(self.need):
-            if target is None:
-                continue
-            (x, y), (ax, ay) = at(index), radar.point(0, 0, 1, index, 5)
-            draw.line(self.screen([(x - ay*half, y + ax*half), (x + ay*half, y - ax*half)], cam),
-                      fill=(*rgb, round(235*drawn)), width=max(1, round(1.7*unit)))
+            path = [at(index) for index in run]
+            length = sum(math.dist(a, b) for a, b in zip(path, path[1:]))
+            for dash in radar.dashes(path, radar.NEED_DASH[0]*self.s, radar.NEED_DASH[1]*self.s, length*drawn):
+                draw.line(self.screen(dash, cam), fill=ink, width=max(1, round(radar.NEED_WEIGHT*unit)))
+            travelled = 0.
+            for here, before in zip(path, [path[0]] + path):
+                travelled += math.dist(here, before)
+                if length*drawn >= travelled:        # the dot lands when the line reaches its axis
+                    self.dot(draw, here, cam, radar.NEED_DOT, ink)
+
+    def axis_marks(self, draw, values, index, opened, strength, t, cam):
+        """Ability beyond a target and quota cost: short segments along their axes, beside the spoke."""
+        style = radar.SERIES_STYLES[min(index, 1)]
+        known = ease(window(t, "need")) if self.need else 0.     # a target counts once its line is being drawn
+        need = self.need if known > 0 else None
+        grown = self.bloom(index, t)
+        cx, cy = self.center
+        for kind, axis, start, end in radar.axis_marks(values, need, len(values) - 1):
+            if kind == "cost":
+                if grown[axis] < 1:
+                    continue                         # the cost is read off the point once it has landed
+                ink = (*ImageColor.getrgb(radar.COST_INK), round(radar.COST_ALPHA*opened))    # a cost does not recede
+            else:
+                ink = (*ImageColor.getrgb(style["color"]), round(radar.SPARE_ALPHA*opened*strength*known))
+            segment = radar.axis_segment(cx, cy, self.radius, axis, 5, start, end, radar.MARK_SHIFT*self.s*style["side"])
+            draw.line(self.screen(segment, cam), fill=ink, width=max(1, round(radar.MARK_WIDTH*self.s*self.k)))
 
     def pen(self, candidate, t):
         path, lengths = self.pens[candidate.id]
@@ -931,20 +948,13 @@ class TheatreRenderer:
             values = [value*g for value, g in zip(candidate.values, grown)]
             points = radar.polygon(values, cx, cy, self.radius)
             opened = min(1., sum(grown)/2.5)
-            if self.need:
-                # Ability beyond the task's need is real, so it is drawn, but pale: it does not count.
-                counted = radar.counted_shape(points, radar.polygon(
-                    [value if target is None else min(value, target*g) for value, target, g in zip(values, self.need, grown)],
-                    cx, cy, self.radius))
-                draw.polygon(self.screen(points, cam), fill=(*rgb, round(style["spare"]*opened)))
-            else:
-                counted = points
-            # Flat tints with crisp edges; once settled the winner's deepens a little and the other's recedes.
-            depth = style["counted" if self.need else "fill"] + (10 if won else -6)*settled
-            draw.polygon(self.screen(counted, cam), fill=(*rgb, round(depth*opened)))
+            # One flat, very light tint; once settled the winner's deepens a little and the other's recedes.
+            depth = style["fill"] + (6 if won else -4)*settled
+            draw.polygon(self.screen(points, cam), fill=(*rgb, round(depth*opened)))
+            strength = 1 - (0 if won else .28)*settled
+            self.axis_marks(draw, values, index, opened, strength, t, cam)
             outline = self.screen(points + points[:2], cam)
             weight = style["weight"]*self.s*self.k
-            strength = 1 - (0 if won else .28)*settled
             draw.line(outline, fill=(*rgb, round(255*opened*strength)), width=max(1, round(weight)), joint="curve")
             for point, g in zip(points, grown):
                 self.vertex(draw, point, cam, rgb, index, g*strength)

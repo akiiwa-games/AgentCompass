@@ -72,10 +72,30 @@ def over_line(window, spend, hours):
     return max(0.0, spend - max(0.0, line_at_end - used))
 
 
+# How each account's usage rose over its period so far: (number of readings, bend). A bend above 1 is usage that
+# came late, below 1 early. Gemini has no recorded readings, so its usage line is fitted and drawn as such.
+READINGS = {"claude-a": (9, 1.5), "claude-b": (7, .75), "codex": (8, 1.25)}
+
+
+def readings(key, used, elapsed):
+    """Synthetic usage readings of one window inside its period: [[hours since its start, used USD], ...]."""
+    if key not in READINGS or elapsed <= 0:
+        return None
+    count, bend = READINGS[key]
+    # Uneven steps, as real work is: every third interval is a pause.
+    return [[round(elapsed * step / count, 2), round(used * ((step - (step % 3 == 0) * .45) / count) ** bend, 2)]
+            for step in range(1, count)]
+
+
 def quota_line_block(windows=WINDOWS):
-    return {"windows": {key: {"label": label, "capacity_usd": capacity, "used_usd": used,
-                              "elapsed_hours": WEEK - reset_in, "reset_in_hours": reset_in, "beta": beta}
-                        for key, (label, capacity, used, reset_in, beta) in windows.items()}}
+    block = {}
+    for key, (label, capacity, used, reset_in, beta) in windows.items():
+        block[key] = {"label": label, "capacity_usd": capacity, "used_usd": used,
+                      "elapsed_hours": WEEK - reset_in, "reset_in_hours": reset_in, "beta": beta}
+        samples = readings(key, used, WEEK - reset_in)
+        if samples:
+            block[key]["samples"] = samples
+    return {"windows": block}
 
 
 def ranking(specs=HEADLINE_SPECS, winner=None, hours=HOURS, windows=WINDOWS):
