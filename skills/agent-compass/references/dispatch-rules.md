@@ -11,7 +11,7 @@ The global rule block AgentCompass installs is a short pointer to this skill. Re
 ## 2. Model and effort belong to the router
 
 1. Never pick a model or effort, and never raise the effort the router returned.
-2. Only when the user named a model or effort in this request: add `--provider <p> --account <a> --model <m> --effort <e> --basis "<the user's words>"` to `roll` ([router internals, record an override](router-internals.md#b-record-an-explicit-usermodeleffort-override)).
+2. Only when the user named a model or effort in this request: add `--provider <p> --account <a> --model <m> --effort <e> --basis "<the user's words>"` to `roll` ([router internals, record an override](router-internals.md#b-record-an-explicit-user-modeleffort-override)).
 3. When an account or model becomes unavailable (subscription expired, account removed, quota exhausted, `named_model_unavailable`), roll again. Do not substitute a model that looks similar.
 
 ## 3. Continue a worker, or replace it
