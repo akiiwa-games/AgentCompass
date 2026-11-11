@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "version": "2286fe58beff",
-  "published_at": "2026-11-11T16:38:17Z",
+  "version": "0adeb073b77a",
+  "published_at": "2026-11-11T23:28:50Z",
   "files": {
     "accounts.json": {
       "sha256": "acffafdc29be4673522bde8f2565156154202917ab7ce0fe11ae0cd255fa369d",
@@ -20,8 +20,8 @@
       "bytes": 709475
     },
     "user-scores.json": {
-      "sha256": "9ae2593782dd23487151f935acb71eaf56831afe3080204838cec9be1215dd56",
-      "bytes": 6885
+      "sha256": "95f2811c7fe09021a42f84d9cb4efc4668b1d0657e6494f61ccf6445566f31d0",
+      "bytes": 7079
     }
   }
 }

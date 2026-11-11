@@ -33,6 +33,14 @@
         "kind": "maintainer"
       }
     },
+    "deepseek-v4-pro": {
+      "coding.faithfulness": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
     "dot": {
       "aesthetics": {
         "level": 2.8,
