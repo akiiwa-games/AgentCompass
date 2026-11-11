@@ -39,7 +39,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gpt-6-astra` | 0.10 | -2.03 | -0.05u | -0.24u | -1.04 | 28.853 | yes |
 | `gpt-6-luna` | -0.62 | -3.32 | -2.35u | -2.30 | -2.85u | 0.885 | yes |
 | `gpt-6-pro` | 0.10 | 0.00u | 0.05u | 0.00u | -2.59u | - | yes |
-| `gpt-6-sol` | -0.02 | -2.54u | -0.94u | -1.31 | -1.04u | 17.226 | yes |
+| `gpt-6-sol` | -0.02 | -2.54u | -0.94u | -1.31 | -0.73u | 17.226 | yes |
 | `gpt-6.1-sol` | 0.06 | -2.02 | -0.41u | -0.39 | -0.73 | 6.125 | yes |
 | `gpt-6.1-terra` | -0.02 | -2.36~ | -0.66u | -1.49 | -0.73 | 5.393 | yes |
 | `gpt-oss-120b` | -1.24 | -6.32 | missing! | -9.73 | -2.37~ | 12.827 | no |
@@ -47,7 +47,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `grok-4.6` | -0.40 | -1.97 | -2.01~ | -1.79 | -1.39~ | 12.971 | yes |
 | `grok-4.7` | -0.10 | -2.60 | -1.54 | -1.93 | -1.98~ | 10.778 | yes |
 | `grok-4.7-build-fast` | -0.32 | -1.73~ | -2.17~ | -2.18~ | -0.79~ | - | unknown |
-| `grok-bot` | 0.00 | 0.00~ | 0.00~ | 0.00~ | -1.04u | - | yes |
+| `grok-bot` | 0.00 | 0.00~ | 0.00~ | 0.00~ | -0.73u | - | yes |
 | `kimi-k2.6` | -0.36 | -2.24 | -3.13~ | -2.47 | -0.92~ | 4.6 | yes |
 | `kimi-k2.7-code` | -0.36 | -2.24~ | -3.13~ | -2.71 | -0.92~ | 6.012 | yes |
 | `kimi-k3` | 0.02 | -1.78~ | -2.44~ | -0.50 | -2.22~ | 5.742 | yes |

@@ -880,6 +880,31 @@ class HighFillTests(unittest.TestCase):
                                            'm': {key: self.facet({'max': -1.0})}}, ['p1'])
         self.assertEqual([(r['model'], r['n']) for r in refused], [('m', 1)])
 
+    def test_targets_read_measured_and_interpolated_high_only(self):
+        """User 2026-11-12: panel targets read measured High rows; own-curve interpolation counts, an estimate never does."""
+        import five_axis
+        import measurements
+        key = ('divergence', 'creative_writing')
+
+        def row(value, status):
+            facet = {'value': value, 'by_effort': {'high': value}, 'status': status}
+            axes = {a: {} for a in five_axis.AXES}
+            axes['divergence'] = {'value': value, 'status': status, 'facets': {'creative_writing': facet}}
+            return {'axes': axes}
+        rows = {measurements.ANCHOR: row(0.0, 'measured'), 'p1': row(-1.0, 'measured_partial'),
+                'p2': row(-2.0, 'interpolated'), 'p3': row(-9.0, 'estimated')}
+        targets = self.scorer().targets(rows, list(rows))['divergence']
+        self.assertEqual((targets['levels']['1']['target'], targets['levels']['2']['target'], targets['levels']['2']['n']),
+                         (-2.0, -1.0, 3))
+        self.assertEqual(targets['facets'][key[1]]['levels']['1']['n'], 3)
+
+    def test_shipped_targets_ignore_the_estimated_grok_4_7_image_recognition(self):
+        shipped = allocator.load_five_axis()
+        grok = shipped['models']['grok-4.7']['axes']['tool_operation']['facets']['image_recognition']
+        self.assertEqual(grok['estimate']['method'], 'panel_effort_step')
+        level2 = shipped['anchor']['targets']['tool_operation']['facets']['image_recognition']['levels']['2']
+        self.assertEqual((level2['target'], level2['n']), (-0.7322, 11))
+
     def test_shipped_glm_5_3_and_deepseek_v4_pro_have_high(self):
         models = allocator.load_five_axis()['models']
         glm = models['glm-5.3']['axes']

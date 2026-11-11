@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-11T16:23:08+00:00",
+ "generated_at": "2026-11-11T16:38:17+00:00",
  "measurements_sha256": "091353f41d70283fd37d4abf88f3819e7c42248c7cb61182e85a06bf60e1ecff",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
@@ -1917,7 +1917,7 @@
        "image_recognition": {
         "target": 0.0,
         "zero": -2.8509,
-        "n": 12,
+        "n": 11,
         "statistic": "anchor claude-opus-5-5"
        }
       }
@@ -1953,43 +1953,43 @@
         "target": -2.8509,
         "zero": -2.8509,
         "statistic": "panel minimum",
-        "n": 12
+        "n": 11
        },
        "2": {
-        "target": -1.0425,
+        "target": -0.7322,
         "zero": -2.8509,
         "statistic": "panel median",
-        "n": 12
+        "n": 11
        },
        "3": {
         "target": 0.0,
         "zero": -2.8509,
         "statistic": "anchor claude-opus-5-5",
-        "n": 12
+        "n": 11
        }
       }
      }
     },
-    "continuity": 1.0425
+    "continuity": 0.7322
    }
   }
  },
  "links": {
-  "divergence.creative_writing": {
+  "tool_operation.responsiveness": {
    "boards": [
-    "lmarena.creative_writing"
+    "aa.ttfa"
    ],
    "scales": {
-    "lmarena.creative_writing": 0.9394
+    "aa.ttfa": 1.0
    },
    "offsets": {
-    "lmarena.creative_writing": 0.0
+    "aa.ttfa": 0.0
    },
    "sd_at_high": {
-    "lmarena.creative_writing": 1.0
+    "aa.ttfa": 1.0
    },
    "full_panel_boards": [
-    "lmarena.creative_writing"
+    "aa.ttfa"
    ],
    "panel_n": 12
   },
@@ -2014,21 +2014,31 @@
    ],
    "panel_n": 12
   },
-  "tool_operation.responsiveness": {
+  "coding.execution": {
    "boards": [
-    "aa.ttfa"
+    "aa.frontiercode_2",
+    "aa.terminalbench_4",
+    "arena.agent_code"
    ],
    "scales": {
-    "aa.ttfa": 1.0
+    "aa.frontiercode_2": 1.0,
+    "aa.terminalbench_4": 1.0,
+    "arena.agent_code": 1.2784
    },
    "offsets": {
-    "aa.ttfa": 0.0
+    "aa.frontiercode_2": -0.1525,
+    "aa.terminalbench_4": -0.1707,
+    "arena.agent_code": 0.3232
    },
    "sd_at_high": {
-    "aa.ttfa": 1.0
+    "aa.frontiercode_2": 1.0,
+    "aa.terminalbench_4": 1.0,
+    "arena.agent_code": 1.0
    },
    "full_panel_boards": [
-    "aa.ttfa"
+    "aa.frontiercode_2",
+    "aa.terminalbench_4",
+    "arena.agent_code"
    ],
    "panel_n": 12
   },
@@ -2063,31 +2073,21 @@
    ],
    "panel_n": 12
   },
-  "coding.execution": {
+  "divergence.creative_writing": {
    "boards": [
-    "aa.frontiercode_2",
-    "aa.terminalbench_4",
-    "arena.agent_code"
+    "lmarena.creative_writing"
    ],
    "scales": {
-    "aa.frontiercode_2": 1.0,
-    "aa.terminalbench_4": 1.0,
-    "arena.agent_code": 1.2784
+    "lmarena.creative_writing": 0.9394
    },
    "offsets": {
-    "aa.frontiercode_2": -0.1525,
-    "aa.terminalbench_4": -0.1707,
-    "arena.agent_code": 0.3232
+    "lmarena.creative_writing": 0.0
    },
    "sd_at_high": {
-    "aa.frontiercode_2": 1.0,
-    "aa.terminalbench_4": 1.0,
-    "arena.agent_code": 1.0
+    "lmarena.creative_writing": 1.0
    },
    "full_panel_boards": [
-    "aa.frontiercode_2",
-    "aa.terminalbench_4",
-    "arena.agent_code"
+    "lmarena.creative_writing"
    ],
    "panel_n": 12
   },

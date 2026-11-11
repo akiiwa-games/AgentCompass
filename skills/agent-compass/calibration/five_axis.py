@@ -30,7 +30,8 @@ scores on the four categories and the quota economy together. Nothing else score
   ladder from accounts.json, else low < medium < high < xhigh < max) between the nearest measured efforts, status
   `interpolated`; measured on one side only, High is the nearest measured effort plus the panel's median own step between
   the two efforts on that facet (n >= 2), status `estimated`, method `panel_effort_step`. A step that does not lower ability
-  or speed up responsiveness relative to the effort above High is listed in `high_fill_refused` and not used.
+  or speed up responsiveness relative to the effort above High is listed in `high_fill_refused` and not used. Targets
+  read measured and `interpolated` High rows only; no estimate enters them.
 - tool_operation by level (TOOL_LEVEL_FACETS): level 1 asks no ability (the router's image-input check sits at level 3),
   level 2 responsiveness, level 3 min(responsiveness, image recognition); `by_level` holds both per effort.
 - A facet a model lacks is estimated: the nearest same-series sibling's value moved along the facet's fit on the tier by
@@ -95,6 +96,8 @@ REFERENCE_MODELS = {
 }
 TIER_DIRECT = ('tier.arena_overall',)
 TIER_OTHER = ('tier.aa_index',)     # a non-arena overall board interpolated onto that scale; no other source is a tier
+# The statuses whose High value enters the panel targets (user 2026-11-12): measured rows and own-curve interpolation.
+TARGET_STATUSES = ('measured', 'measured_partial', 'interpolated')
 MIN_FIT_POINTS = 8      # models a type-score-on-tier fit needs (review F1: one public point is not a fit)
 
 
@@ -885,8 +888,15 @@ class Scorer:
         and aesthetics read the category value. tool_operation reads its facets one by one (`by_facet`): each level asks
         for the facets TOOL_LEVEL_FACETS selects, its level 1 for nothing, and a level never asks less of a facet than the
         level below it (the anchor's responsiveness at High, 0, is below the panel median, so level 3 asks max(level 2,
-        anchor) of it). `continuity` is t3 - t2 (tool_operation: the largest positive t3 - t2 across its level-3 facets)."""
+        anchor) of it). `continuity` is t3 - t2 (tool_operation: the largest positive t3 - t2 across its level-3 facets).
+        Only measured High values enter (user 2026-11-12, `TARGET_STATUSES`): an own-curve interpolation lies between two
+        of the model's measurements and counts; an estimate (panel effort step, sibling, tier fit, same_model) is derived
+        from the panel and would move it, so it never does."""
         anchor = rows.get(measurements.ANCHOR, {}).get('axes') or {}
+
+        def measured(cell):
+            cell = cell or {}
+            return cell.get('value') if cell.get('status') in TARGET_STATUSES else None
 
         def stats(pick):
             vals = [v for m in panel if (v := pick(rows[m]['axes'])) is not None]
@@ -898,7 +908,7 @@ class Scorer:
         for a in AXES:
             facet_targets = {}
             for f in AXES[a]:
-                fst = stats(lambda ax, a=a, f=f: ((ax[a].get('facets') or {}).get(f) or {}).get('value'))
+                fst = stats(lambda ax, a=a, f=f: measured((ax[a].get('facets') or {}).get(f)))
                 if fst is not None:
                     t1_f, t2_f = fst['min'], max(fst['min'], fst['median'])
                     raw_t3 = fst['anchor'] if fst['anchor'] is not None else t2_f
@@ -908,7 +918,7 @@ class Scorer:
                                                    '3': {'target': t3_f, 'zero': t1_f, 'statistic': f'anchor {measurements.ANCHOR}', 'n': fst['n'],
                                                          **({'raised_to_level_below': t2_f} if t2_f > raw_t3 else {})}}}
             if a != 'tool_operation':
-                st = stats(lambda ax, a=a: ax[a].get('value'))
+                st = stats(lambda ax, a=a: measured(ax[a]))
                 levels = {str(level): ({'target': st[key], 'zero': st['min'], 'statistic': name, 'n': st['n']} if st else
                                        {'target': None, 'zero': None, 'reason': 'no panel model has a value'})
                           for level, key, name in ((1, 'min', 'panel minimum'), (2, 'median', 'panel median'),
@@ -918,7 +928,7 @@ class Scorer:
                 ) else None
                 out[a] = {'levels': levels, 'facets': facet_targets, 'continuity': None if gap is None else round(gap, 4)}
                 continue
-            per = {f: stats(lambda ax, f=f: ((ax['tool_operation'].get('facets') or {}).get(f) or {}).get('value'))
+            per = {f: stats(lambda ax, f=f: measured((ax['tool_operation'].get('facets') or {}).get(f)))
                    for f in AXES[a]}
             levels, prev = {}, {}
             for level in (1, 2, 3):
