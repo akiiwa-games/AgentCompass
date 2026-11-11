@@ -695,8 +695,9 @@ class HostedSingleReaderTests(unittest.TestCase):
             encoding="utf-8",
         )
         fleet = self.allocator.load_accounts(self.allocator.reference_fleet_path())
+        import router_test_support
         planned = self.allocator.plan(
-            {"work_kind": "general_implementation", "difficulty": "hard"},
+            {"work_kind": "general_implementation", "difficulty": "hard", "profile": router_test_support.profile()},
             {"accounts": {"codex": {"status": "fresh", "available": True, "stale": False, "windows": [
                 {"id": "usage", "remaining_pct_before_reset": 75.0, "observed_remaining_pct": 75.0, "seconds_until_reset": 86400}
             ]}}},
