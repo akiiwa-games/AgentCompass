@@ -311,6 +311,14 @@ def locate_default(spec: Spec, home: Path, environ) -> Install:
     return classify(spec, Path(found), home, environ) if found else Install(spec, None, "missing")
 
 
+def grok_sibling(spec: Spec, path: Path | None) -> Path | None:
+    """Grok's `agent` launcher stands for the `grok` executable beside it, when that exists."""
+    if path is None or spec.id != "grok" or path.stem.lower() != "agent":
+        return path
+    sibling = path.with_name("grok" + path.suffix)
+    return sibling if sibling.is_file() else path
+
+
 def locate_configured(spec: Spec, command: str, home: Path, environ, provider_env: dict | None = None) -> Install:
     """The executable a provider's Paseo command names; a configured command is never swapped for another install.
 
@@ -330,17 +338,13 @@ def locate_configured(spec: Spec, command: str, home: Path, environ, provider_en
         if orphaned is not None:
             install = orphaned
         else:
-            if resolved is not None and spec.id == "grok" and resolved.stem.lower() == "agent":
-                sibling = resolved.with_name("grok" + resolved.suffix)
-                resolved = sibling if sibling.is_file() else resolved
+            resolved = grok_sibling(spec, resolved)
             if resolved is None or not resolved.is_file():
                 install = manual(spec, resolved or configured, _tr("配置的 {0} 可执行文件不存在：{1}").format(spec.name, command))
             else:
                 install = classify(spec, resolved, home, launch)
     else:
-        if spec.id == "grok" and configured.stem.lower() == "agent":
-            sibling = configured.with_name("grok" + configured.suffix)
-            configured = sibling if sibling.is_file() else configured
+        configured = grok_sibling(spec, configured)
         if not configured.is_file():
             prefix = (configured.parent.parent if os.name != "nt" and configured.suffix == "" and configured.parent.name == "bin"
                       else configured.parent if configured.suffix.lower() in (".cmd", ".bat") else None)
@@ -371,9 +375,7 @@ def resolve_command(install: Install, *, fresh: bool = False) -> Path | None:
             resolved = Path(found) if found else None
         else:
             resolved = configured
-        if resolved is not None and install.spec.id == "grok" and resolved.stem.lower() == "agent":
-            sibling = resolved.with_name("grok" + resolved.suffix)
-            resolved = sibling if sibling.is_file() else resolved
+        resolved = grok_sibling(install.spec, resolved)
     else:
         found = _which(install.spec.command, environ.get("PATH"))
         if not found and install.spec.id == "grok" and install.path and install.path.is_file():
