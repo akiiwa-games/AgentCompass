@@ -174,8 +174,9 @@ class HostPolicyTests(unittest.TestCase):
         self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex'], 'usage_providers': []}, defaults), [])
         # Dispatch exclusions still strictly govern routing/allocation even when usage is collected for all accounts.
         self.write({'allowed_accounts': ['codex']})
-        planned = self.plan()
-        self.assertEqual(planned['selected_bundle']['account'], 'codex')
+        planned = self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'profile': profile()})
+        # The fixture has no quota reading, so codex itself may be out (mode B); what matters is that nothing else is chosen.
+        self.assertIn((planned.get('selected_bundle') or {}).get('account'), (None, 'codex'))
         for row in planned['ranking']:
             if row['bundle']['account'] != 'codex':
                 self.assertIn('excluded by host policy', row['excluded'])
