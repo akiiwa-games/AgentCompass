@@ -1,4 +1,19 @@
 {
   "schema_version": 1,
-  "scores": {}
+  "scores": {
+    "dot": {
+      "tool_operation.image_recognition": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer: image reading is fine"
+      },
+      "tool_operation.responsiveness": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer: extremely slow"
+      }
+    }
+  }
 }
