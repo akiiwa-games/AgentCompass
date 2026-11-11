@@ -582,7 +582,7 @@ class FiveAxisTests(unittest.TestCase):
         fallback"): every type score claude-fable-5-2 does not measure is claude-fable-5-1's (its same-series sibling) moved along
         the type score's fit on tier by the two tiers' difference, and its usd_per_hour is 5.1's times the API list price
         ratio over the community token mix. No pessimistic 0, no option-B fallback. Fast-mode pricing ($16/$80 = 2x, 2.5x
-        speed) and the unknown image input (mode B for vision work) stay its own."""
+        speed) and its maintainer image-input declaration (2026-11-12) stay its own."""
         shipped = allocator.load_five_axis()
         fable52, fable51 = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-1']
         usd = fable52['usd_per_hour']
@@ -591,7 +591,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertAlmostEqual(usd['sources']['ratio'], 0.8, places=4)      # $8/$40/$0.20 against $10/$50/$0.25
         self.assertEqual(fable52['fast_mode']['status'], 'ok')
         self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
-        self.assertEqual(fable52['image_input']['status'], 'unknown')
+        self.assertEqual((fable52['image_input']['status'], fable52['image_input']['source']), ('yes', 'maintainer.image_input'))
         fits = shipped['estimate_fits']
         rejected = shipped['rejected_fits']
         t, tb = fable52['tier']['value'], fable51['tier']['value']
@@ -821,6 +821,75 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(res_defer['worker']['account'], 'claude')
         self.assertEqual(res_defer['start_after_hours'], 3.0)
         self.assertEqual(launched_bundles, [])
+
+
+class HighFillTests(unittest.TestCase):
+    """High from one-sided effort data (user 2026-11-12, five_axis.fill_high)."""
+
+    @staticmethod
+    def scorer(bundle_efforts=()):
+        import five_axis
+        bundles = {f'b{i}': {'model': 'm', 'effort': e} for i, e in enumerate(bundle_efforts)}
+        return five_axis.Scorer({'models': {}}, {'models': {}, 'accounts': {'acct': {'bundles': bundles}}})
+
+    @staticmethod
+    def facet(by, status='measured'):
+        return {'value': by.get('high'), 'by_effort': dict(by), 'status': status, 'sources': {}}
+
+    def test_bracketed_high_interpolates_in_the_models_own_effort_rank(self):
+        key = ('divergence', 'creative_writing')
+        facets = {'m': {key: self.facet({'low': -2.0, 'max': -1.0}, 'measured_partial')}}
+        self.assertEqual(self.scorer().fill_high(facets, []), [])
+        rec = facets['m'][key]
+        self.assertEqual((rec['status'], rec['by_effort']['high'], rec['measured_efforts']), ('interpolated', -1.5, ['low', 'max']))
+        self.assertEqual((rec['interpolation']['from'], rec['interpolation']['to']), ({'low': -2.0}, {'max': -1.0}))
+        # On a ladder low < high < xhigh < max, High sits one third of the way from Low to Max.
+        facets = {'m': {key: self.facet({'low': 0.0, 'max': 3.0})}}
+        self.scorer(('low', 'high', 'xhigh', 'max')).fill_high(facets, [])
+        self.assertEqual(facets['m'][key]['by_effort']['high'], 1.0)
+        # A ladder lacking an endpoint falls back to low < medium < high < xhigh < max.
+        facets = {'m': {key: self.facet({'low': 0.0, 'max': 4.0})}}
+        self.scorer(('high', 'max')).fill_high(facets, [])
+        self.assertEqual(facets['m'][key]['by_effort']['high'], 2.0)
+
+    def test_one_sided_high_takes_the_panel_median_own_step_and_checks_its_sign(self):
+        ability, resp = ('coding', 'execution'), ('tool_operation', 'responsiveness')
+        facets = {'p1': {ability: self.facet({'high': 0.0, 'max': 0.2}), resp: self.facet({'high': 1.0, 'max': -1.0})},
+                  'p2': {ability: self.facet({'high': 0.0, 'max': 0.4}), resp: self.facet({'high': 2.0, 'max': -1.0})},
+                  'p3': {ability: self.facet({'high': 0.0, 'max': 0.3}), resp: self.facet({'high': 0.5, 'max': 0.0})},
+                  'm': {ability: self.facet({'max': -1.0}), resp: self.facet({'max': -2.0})}}
+        self.assertEqual(self.scorer().fill_high(facets, ['p1', 'p2', 'p3']), [])
+        rec = facets['m'][ability]
+        self.assertEqual((rec['status'], rec['by_effort'], rec['measured_efforts']), ('estimated', {'high': -1.3, 'max': -1.0}, ['max']))
+        self.assertEqual(rec['estimate'], {'method': 'panel_effort_step', 'from_effort': 'max', 'from_value': -1.0, 'step': -0.3, 'n': 3})
+        self.assertEqual(facets['m'][resp]['by_effort']['high'], 0.0)        # responsiveness: faster than Max (step 2.0)
+        for p in ('p1', 'p2', 'p3'):                                          # measured High is never overwritten
+            self.assertEqual(facets[p][ability]['status'], 'measured')
+
+    def test_one_sided_high_is_refused_with_a_wrong_sign_or_under_two_panel_models(self):
+        key = ('coding', 'execution')
+        facets = {'p1': {key: self.facet({'high': 0.5, 'max': 0.2})}, 'p2': {key: self.facet({'high': 0.4, 'max': 0.3})},
+                  'm': {key: self.facet({'max': -1.0}, 'measured_partial')}}
+        facets['m'][key]['flag'] = 'partial'
+        refused = self.scorer().fill_high(facets, ['p1', 'p2'])
+        self.assertEqual([(r['model'], r['reason'], r['n']) for r in refused],
+                         [('m', 'median panel step has the wrong sign', 2)])
+        self.assertNotIn('high', facets['m'][key]['by_effort'])
+        self.assertEqual(facets['m'][key]['flag'], 'partial')
+        refused = self.scorer().fill_high({'p1': {key: self.facet({'high': 0.0, 'max': 0.2})},
+                                           'm': {key: self.facet({'max': -1.0})}}, ['p1'])
+        self.assertEqual([(r['model'], r['n']) for r in refused], [('m', 1)])
+
+    def test_shipped_glm_5_3_and_deepseek_v4_pro_have_high(self):
+        models = allocator.load_five_axis()['models']
+        glm = models['glm-5.3']['axes']
+        self.assertEqual(glm['divergence']['facets']['creative_writing']['status'], 'interpolated')
+        self.assertEqual(glm['divergence']['by_effort']['high'], round((-1.9724 + -1.5955) / 2, 4))
+        ds = models['deepseek-v4-pro']['axes']['tool_operation']['facets']['responsiveness']
+        self.assertEqual((ds['status'], ds['estimate']['method']), ('estimated', 'panel_effort_step'))
+        self.assertGreater(ds['by_effort']['high'], ds['by_effort']['max'])
+        ex = models['deepseek-v4-pro']['axes']['coding']['facets']['execution']
+        self.assertLess(ex['by_effort']['high'], ex['by_effort']['max'])
 
 
 class AnchorRelativeTests(unittest.TestCase):

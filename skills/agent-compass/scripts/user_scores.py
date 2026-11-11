@@ -517,37 +517,60 @@ def _recompute_category_from_facets(category: str, cat_cell: dict, status: str) 
     return res
 
 
-def _reference_effort_deltas(five_state: dict, own_cell: dict | None = None) -> dict[str, float] | None:
-    """Return `{effort: delta_from_high}` from `own_cell` or another non-flat capability curve containing `high`."""
-    candidates = []
-    if isinstance(own_cell, dict):
-        candidates.append(own_cell)
-    cats = (five_state or {}).get('categories') or {}
-    for cat in ('coding', 'divergence', 'aesthetics'):
-        cell = cats.get(cat)
-        if isinstance(cell, dict):
-            candidates.append(cell)
-            for f_cell in (cell.get('facets') or {}).values():
-                if isinstance(f_cell, dict):
-                    candidates.append(f_cell)
-    for cell in candidates:
-        by = cell.get('by_effort') or {}
-        if len(by) >= 2 and by.get('high') is not None:
-            vals = [float(v) for v in by.values() if v is not None]
-            if vals and max(vals) - min(vals) > 1e-9:
-                base = float(by['high'])
-                return {e: float(v) - base for e, v in by.items() if v is not None and e in EFFORTS}
-    return None
+def _measured_efforts(cell: dict | None) -> list[str]:
+    """The efforts of a facet cell that hold a board measurement: every effort of a `measured*` cell, else the cell's own
+    `measured_efforts` (a High filled by five_axis.fill_high, or a lower manual layer), else none."""
+    if not isinstance(cell, dict):
+        return []
+    by = cell.get('by_effort') or {}
+    if str(cell.get('status') or '').startswith('measured'):
+        return [e for e in EFFORTS if by.get(e) is not None]
+    return [e for e in cell.get('measured_efforts') or () if by.get(e) is not None]
 
 
-def _manual_by_effort(z_val: float, deltas: dict[str, float] | None) -> dict[str, float]:
-    if deltas is None:
-        return {e: z_val for e in EFFORTS}
-    return {e: round(z_val + d, 4) for e, d in deltas.items()}
+def _pav(values: list[float]) -> list[float]:
+    """`values` made non-decreasing by pooling adjacent violators."""
+    blocks = [[v, 1] for v in values]
+    i = 0
+    while i < len(blocks) - 1:
+        if blocks[i][0] / blocks[i][1] > blocks[i + 1][0] / blocks[i + 1][1]:
+            blocks[i] = [blocks[i][0] + blocks[i + 1][0], blocks[i][1] + blocks[i + 1][1]]
+            blocks.pop(i + 1)
+            i = max(i - 1, 0)
+        else:
+            i += 1
+    return [s / n for s, n in blocks for _ in range(n)]
 
 
-def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict) -> None:
-    """Mutate `five_state` (`info['five_axis']`) in place with one layer (`maintainer` or `user`) of manual scores."""
+def _manual_by_effort(z_val: float, own_cell: dict | None, ability: bool,
+                      fixed_effort: str | None = None) -> tuple[dict[str, float], list[str]]:
+    """(`by_effort`, measured efforts) of a facet a manual score sets to `z_val` (user 2026-11-12). The score sets High,
+    and also the model's `fixed_effort` when it declares one (its only configuration, which the score judges). Efforts
+    the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High, and
+    stay missing when it has none. An ability facet is then made non-decreasing with the set efforts held at `z_val`
+    (isotonic below and above them, bounded by `z_val`); an effort that bound moves is no longer listed as measured."""
+    pinned = [e for e in EFFORTS if e in ('high', fixed_effort)]
+    by = {e: float(v) for e, v in ((own_cell or {}).get('by_effort') or {}).items() if e in EFFORTS and v is not None}
+    measured = [e for e in _measured_efforts(own_cell) if e not in pinned]
+    out = {e: by[e] for e in measured}
+    out.update(dict.fromkeys(pinned, z_val))
+    if 'high' in by:
+        out.update({e: z_val + v - by['high'] for e, v in by.items() if e not in out})
+    out = {e: out[e] for e in EFFORTS if e in out}
+    if ability:
+        lo, hi = EFFORTS.index(pinned[0]), EFFORTS.index(pinned[-1])
+        below = [e for e in out if EFFORTS.index(e) < lo]
+        above = [e for e in out if EFFORTS.index(e) > hi]
+        out.update({e: min(v, z_val) for e, v in zip(below, _pav([out[e] for e in below]))})
+        out.update({e: max(v, z_val) for e, v in zip(above, _pav([out[e] for e in above]))})
+        out.update({e: z_val for e in out if lo < EFFORTS.index(e) < hi})
+    out = {e: round(v, 4) for e, v in out.items()}
+    return out, [e for e in measured if out[e] == round(by[e], 4)]
+
+
+def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed_effort: str | None = None) -> None:
+    """Mutate `five_state` (`info['five_axis']`) in place with one layer (`maintainer` or `user`) of manual scores;
+    `fixed_effort` is the model's declared only effort, if any."""
     if not entries:
         return
     cats = five_state.setdefault('categories', {})
@@ -566,13 +589,12 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict) -> No
             for f in CATEGORY_FACETS[cat]:
                 zf = round(level_to_z(rec['level'], *target_triad(targets_table, cat, f)), 4)
                 z_map[f] = zf
-                deltas = (
-                    None if (cat == 'tool_operation' and f == 'responsiveness')
-                    else _reference_effort_deltas(five_state, facets.get(f))
-                )
+                by_eff, measured = _manual_by_effort(zf, facets.get(f), (cat, f) != ('tool_operation', 'responsiveness'),
+                                                     fixed_effort)
                 facets[f] = {
                     'value': zf,
-                    'by_effort': _manual_by_effort(zf, deltas),
+                    'by_effort': by_eff,
+                    'measured_efforts': measured,
                     'status': status,
                     'manual': {**rec, 'target': target, 'z': zf},
                 }
@@ -598,13 +620,12 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict) -> No
                             'status': cat_cell.get('status', 'measured'),
                         }
             z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, facet)), 4)
-            deltas = (
-                None if (cat == 'tool_operation' and facet == 'responsiveness')
-                else _reference_effort_deltas(five_state, facets.get(facet))
-            )
+            by_eff, measured = _manual_by_effort(z_val, facets.get(facet),
+                                                 (cat, facet) != ('tool_operation', 'responsiveness'), fixed_effort)
             facets[facet] = {
                 'value': z_val,
-                'by_effort': _manual_by_effort(z_val, deltas),
+                'by_effort': by_eff,
+                'measured_efforts': measured,
                 'status': status,
                 'manual': {**rec, 'target': target, 'z': z_val},
             }
@@ -664,7 +685,7 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
                 'usd_status': 'missing', 'image_input': {'status': 'missing'},
                 'fast_mode': {'status': 'not_offered'}, 'duration': {},
             })
-            _apply_one_layer(five_state, entries, targets_table)
+            _apply_one_layer(five_state, entries, targets_table, info.get('fixed_effort'))
 
 
 def cli_main(argv: list[str] | None = None) -> int:

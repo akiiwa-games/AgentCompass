@@ -523,7 +523,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             self.assertNotEqual(result['choice'], 'none')
             self.assertTrue(any(r.get('manual_scores') for r in result['ranking']))
 
-    def test_r2_f6_mode_b_score_set_makes_partial_and_max_only_models_routable(self):
+    def test_r2_f6_manual_scores_set_high_and_leave_unmeasured_efforts_missing(self):
         accounts = copy.deepcopy(self.accounts)
         accounts['accounts']['codex']['plan'] = 'pro'
         accounts['accounts']['codex']['verified'] = True
@@ -549,30 +549,57 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             },
         }
         empty_pub = {'schema_version': 1, 'scores': {}}
-        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
-            before = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
-                                    host_policy_config={'allowed_accounts': ['codex']})
-        rows_before = {c['id']: c for c in before['ranking']}
-        for bid in ('gpt6_sol_high', 'gpt6_sol_max', 'gpt56_sol_high', 'ds_v4_high', 'ds_v4_max'):
-            self.assertTrue(rows_before[bid]['excluded'], bid)
-            self.assertIn('agentcompass score set', rows_before[bid]['excluded'][0])
 
-        # Setting the missing targets per the Mode-B error lifts the capability exclusion at both High and Max:
+        def excluded():
+            with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+                d = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
+                                   host_policy_config={'allowed_accounts': ['codex']})
+            return {c['id']: c['excluded'] for c in d['ranking']}
+
+        # High filled from one-sided effort data (five_axis.fill_high) routes gpt-6-sol and gpt-5.6-sol at High; Max of
+        # gpt-6-sol (no faithfulness at Max) and deepseek-v4-pro (no faithfulness at all) stay in Mode B with the hint.
+        before = excluded()
+        self.assertEqual((before['gpt6_sol_high'], before['gpt56_sol_high']), ([], []))
+        for bid in ('gpt6_sol_max', 'ds_v4_high', 'ds_v4_max'):
+            self.assertIn('agentcompass score set', before[bid][0], bid)
+
         user_scores.set_score('gpt-6-sol', 'coding.faithfulness', 3.0, public=False, accounts=accounts)
         user_scores.set_score('gpt-6-sol', 'coding.execution', 2.4, public=False, accounts=accounts)
-        user_scores.set_score('gpt-5.6-sol', 'coding.execution', 2.0, public=False, accounts=accounts)
         user_scores.set_score('deepseek-v4-pro', 'coding.faithfulness', 2.5, public=False, accounts=accounts)
         user_scores.set_score('deepseek-v4-pro', 'coding.execution', 2.2, public=False, accounts=accounts)
-        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
-            after = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
-                                   host_policy_config={'allowed_accounts': ['codex']})
-        rows_after = {c['id']: c for c in after['ranking']}
-        self.assertEqual(rows_after['gpt6_sol_high']['excluded'], [])
-        self.assertEqual(rows_after['gpt6_sol_max']['excluded'], [])
-        self.assertEqual(rows_after['gpt56_sol_high']['excluded'], [])
-        self.assertEqual(rows_after['ds_v4_max']['excluded'], [])
-        for bid in ('ds_v4_high', 'ds_v4_max'):
-            self.assertFalse(any('no trusted data' in e for e in rows_after[bid]['excluded']), rows_after[bid]['excluded'])
+        after = excluded()
+        self.assertEqual((after['gpt6_sol_high'], after['ds_v4_high']), ([], []))
+        # A manual score sets High only: faithfulness has no Max of its own, so Max stays missing (no borrowed curve).
+        for bid in ('gpt6_sol_max', 'ds_v4_max'):
+            self.assertTrue(any('no trusted data' in e for e in after[bid]), after[bid])
+
+        overlay = allocator.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
+        shipped = allocator.load_five_axis()['models']['gpt-6-sol']['axes']['coding']['facets']['execution']
+        execution = overlay['models']['gpt-6-sol']['five_axis']['categories']['coding']['facets']['execution']
+        self.assertEqual(execution['by_effort']['max'], shipped['by_effort']['max'])    # the measured Max stands
+        self.assertEqual(execution['measured_efforts'], ['max'])
+        self.assertEqual(execution['by_effort']['high'], execution['value'])
+
+    def test_manual_by_effort_keeps_measured_efforts_follows_own_curve_and_never_borrows(self):
+        """User 2026-11-12: a manual score sets High; measured efforts stay; missing efforts follow the facet's own curve,
+        or stay missing; ability facets stay non-decreasing with High held."""
+        measured_partial = {'by_effort': {'low': -2.0, 'max': -1.0}, 'status': 'measured_partial'}
+        self.assertEqual(user_scores._manual_by_effort(-1.5, measured_partial, True),
+                         ({'low': -2.0, 'high': -1.5, 'max': -1.0}, ['low', 'max']))
+        # A measured effort contradicting the manual High is bounded by it and no longer listed as measured.
+        self.assertEqual(user_scores._manual_by_effort(-0.5, measured_partial, True),
+                         ({'low': -2.0, 'high': -0.5, 'max': -0.5}, ['low']))
+        # Responsiveness is not pooled.
+        self.assertEqual(user_scores._manual_by_effort(-0.5, measured_partial, False)[0], {'low': -2.0, 'high': -0.5, 'max': -1.0})
+        # An estimated curve is the facet's own curve: it moves to the manual High.
+        estimated = {'by_effort': {'low': -1.0, 'high': 0.0, 'max': 0.5}, 'status': 'estimated'}
+        self.assertEqual(user_scores._manual_by_effort(1.0, estimated, True), ({'low': 0.0, 'high': 1.0, 'max': 1.5}, []))
+        # A filled High (five_axis.fill_high) is replaced; the measured efforts it was filled from stay.
+        filled = {'by_effort': {'high': -1.3, 'max': -1.0}, 'status': 'estimated', 'measured_efforts': ['max']}
+        self.assertEqual(user_scores._manual_by_effort(-1.2, filled, True), ({'high': -1.2, 'max': -1.0}, ['max']))
+        # No own curve: only High, never another facet's curve; a declared fixed effort takes the score too.
+        self.assertEqual(user_scores._manual_by_effort(0.3, None, True), ({'high': 0.3}, []))
+        self.assertEqual(user_scores._manual_by_effort(0.3, None, False, 'medium'), ({'medium': 0.3, 'high': 0.3}, []))
 
     def test_r2_f7_named_model_without_effort_never_lets_unscored_effort_beat_scored_effort(self):
         accounts = copy.deepcopy(self.accounts)

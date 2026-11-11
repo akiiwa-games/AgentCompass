@@ -1031,13 +1031,19 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         base_accounts['accounts']['codex']['bundles']['deepseek_test'] = {
             'model': 'deepseek-v4-pro', 'effort': 'high', 'provider': 'codex',
         }
+        base_accounts['accounts']['codex']['bundles']['unknown_image_test'] = {
+            'model': 'grok-4.7-build-fast', 'effort': 'high', 'provider': 'codex',
+        }
         res = allocator.plan(gui_task, usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[])
         by_id = {c['id']: c for c in res['ranking']}
-        # Models with image_input == 'no' (deepseek-v4-pro) and 'unknown' (dot_text) are excluded when tool_operation >= 3
+        # Models with image_input == 'no' (deepseek-v4-pro) and 'unknown' (grok-4.7-build-fast) are excluded when
+        # tool_operation >= 3; dot carries a dated maintainer image-input declaration (2026-11-12).
         self.assertTrue(any('does not accept image input' in r for r in by_id['deepseek_test']['excluded']),
                         by_id['deepseek_test']['excluded'])
-        self.assertTrue(any('image_input modality has no cited source' in r for r in by_id['dot_text']['excluded']),
-                        by_id['dot_text']['excluded'])
+        self.assertTrue(any('image_input modality has no cited source' in r for r in by_id['unknown_image_test']['excluded']),
+                        by_id['unknown_image_test']['excluded'])
+        self.assertFalse(any('image input' in r or 'image_input' in r for r in by_id['dot_text']['excluded']),
+                         by_id['dot_text']['excluded'])
         # Named constraint overrides the exclusion with a surfaced note/decision alert
         pinned = allocator.plan(
             {**gui_task, 'constraints': {'model': 'claude-opus-5-5'}},
