@@ -106,6 +106,27 @@ def reread_targets(payload, source: Source, now: float, max_age: float, force: b
     return targets
 
 
+GENERAL_WINDOWS = {"5 hours": ("five_hour", "5h"), "7 days": ("seven_day", "7d")}
+SCOPED_WEEK_PREFIX = "7 days · "
+
+
+def window_name(name):
+    """(window id, label) for a Magpie window name, or None for one we do not show.
+
+    "7 days · Fable" is the account's model-scoped week. It gets the id Claude's own usage API gives it
+    (weekly_fable), so "<account>:fable" shows it like a direct Claude account's fable 7d row."""
+    if not isinstance(name, str):
+        return None
+    if name in GENERAL_WINDOWS:
+        return GENERAL_WINDOWS[name]
+    if name.startswith(SCOPED_WEEK_PREFIX):
+        model = name[len(SCOPED_WEEK_PREFIX):].strip()
+        slug = "".join(model.lower().split())
+        if slug.isalnum():
+            return f"weekly_{slug}", f"{slug} 7d"
+    return None
+
+
 def parse_quota(payload, source: Source):
     """Read the configured account; with none (or '*'), every subscription account of the provider."""
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
@@ -119,17 +140,19 @@ def parse_quota(payload, source: Source):
     quota = matches[0]
     if quota.get("error") or not quota.get("readAt"):
         raise ValueError("VPS 暂未取得有效用量")
-    names = {"5 hours": ("five_hour", "5h"), "7 days": ("seven_day", "7d")}
     windows = []
     for window in quota.get("windows") or []:
-        if not isinstance(window, dict) or window.get("name") not in names:
+        named = window_name(window.get("name")) if isinstance(window, dict) else None
+        if named is None:
             continue
         value = window.get("used")
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise ValueError("Magpie 用量窗口无效")
-        window_id, label = names[window["name"]]
+        window_id, label = named
         windows.append(dict(id=window_id, label=label, used_pct=float(value),
-                            resets_at=window.get("resetsAt")))
+                            resets_at=window.get("resetsAt"),
+                            **({"models": [window["name"][len(SCOPED_WEEK_PREFIX):].strip()]}
+                               if window_id not in ("five_hour", "seven_day") else {})))
     if not windows:
         raise ValueError("Magpie 未返回订阅用量窗口")
     windows.sort(key=lambda w: w["id"] != "seven_day")
@@ -195,18 +218,22 @@ def _parse_pool(matches, source):
     count = len(largest)
     for member in members:
         member["counted"] = plan_rank(member["plan"]) == top  # smaller plans are listed, not added up
-    ids = set(largest[0]["windows"])
-    if any(set(m["windows"]) != ids for m in largest):
+    general = {"five_hour", "seven_day"}
+    if any(set(m["windows"]) & general != set(largest[0]["windows"]) & general for m in largest):
         raise ValueError("Magpie 账户池用量窗口不完整")
+    # A model-scoped week (fable 7d) is pooled only when every counted account reports it; one an
+    # account does not list is left out rather than counted as free capacity.
+    ids = set.intersection(*(set(m["windows"]) for m in largest))
     suffix = f"×{count}" if count > 1 else ""
     combined = []
-    for window_id in sorted(ids, key=lambda i: i != "seven_day"):
+    for window_id in sorted(ids, key=lambda i: (i != "seven_day", i)):
         values = [m["windows"][window_id] for m in largest]
         # The latest reset is when every account has refilled; an earlier one refills only part of the pool.
         resets = [w["resets_at"] for w in values if w["resets_at"]]
         combined.append(dict(id=window_id, label=values[0]["label"] + suffix,
                              used_pct=sum(w["used_pct"] for w in values) / count,
-                             resets_at=max(resets, key=_timestamp) if resets else None, accounts=count))
+                             resets_at=max(resets, key=_timestamp) if resets else None, accounts=count,
+                             **({"models": values[0]["models"]} if values[0].get("models") else {})))
     fingerprint = hashlib.sha256("\0".join(sorted(seen)).encode()).hexdigest()
     plan = largest[0]["plan"] or "subscription"
     return {"readAt": min((m["read_at"] for m in largest), key=_timestamp),

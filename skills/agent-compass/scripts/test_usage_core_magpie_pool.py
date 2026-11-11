@@ -44,6 +44,26 @@ class MagpiePoolTests(unittest.TestCase):
         self.assertEqual(usage._provider_from_dict(usage._provider_to_dict(usage.ProviderUsage(
             provider_id='claude-2', display_name='claude-2', windows=[shown]))).windows[0].accounts, 2)
 
+    def fable_week(self, row, used):
+        row['windows'].append({'name': '7 days · Fable', 'used': used,
+                               'resetsAt': (self.now + timedelta(days=2)).isoformat()})
+        return row
+
+    def test_model_scoped_week_is_pooled_as_the_fable_row(self):
+        quota, windows = self.parse(self.fable_week(self.a, 40), self.fable_week(self.b, 10))
+        fable = next(w for w in windows if w['id'] == 'weekly_fable')
+        self.assertEqual((fable['label'], fable['used_pct'], fable['accounts'], fable['models']),
+                         ('fable 7d×2', 25, 2, ['Fable']))
+        self.assertEqual([w['id'] for w in windows], ['seven_day', 'five_hour', 'weekly_fable'])
+        shown = usage.UsageWindow(**fable)
+        self.assertEqual(shown.models, ['Fable'])
+        single, alone = magpie_usage.parse_quota({'data': [self.a]}, magpie_usage.Source('https://example.com', 'test-key', 'a'))
+        self.assertIn(('weekly_fable', 'fable 7d', 40.0), [(w['id'], w['label'], w['used_pct']) for w in alone])
+
+    def test_scoped_week_one_account_lacks_is_left_out_not_an_error(self):
+        _, windows = self.parse(self.fable_week(self.a, 40), self.b)
+        self.assertEqual([w['id'] for w in windows], ['seven_day', 'five_hour'])
+
     def test_largest_plan_wins_over_smaller_plans(self):
         self.a['plan'] = 'max'
         quota, windows = self.parse(self.a, self.b, self.account('c', 0, 0, 2))
