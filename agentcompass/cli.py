@@ -33,6 +33,7 @@ delegate work:
   usage       collect provider usage once into the router's cache (no Usage Float needed); `usage --show` prints what routing reads
   record      record a route the user forced (user-named model or effort)
   override    add, list or clear a temporary routing boost
+  score       set, list or clear manual capability scores (`score set <model> <category>[.<facet>] <1..3>`), or classify `--input <task.json>`
   hold        list accounts/models held after a provider failed a worker; `hold --clear ACCOUNT[/MODEL]` lifts one
 
 install and health:
@@ -137,6 +138,17 @@ def hold_command(args: list[str]) -> int:
         sys.stderr.write(f"provider_retry.py was not found ({script})\n")
         return 2
     return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), *args])
+
+
+def score_command(args: list[str]) -> int:
+    """Set, list or clear manual capability scores (`user_scores.py`), or pass `--input` task classification to `route_judge.py`."""
+    if args and args[0] in ("set", "list", "clear"):
+        script = locations.skill_root() / "agent-compass" / "scripts" / "user_scores.py"
+        if not script.is_file():
+            sys.stderr.write(f"user_scores.py was not found ({script})\n")
+            return 2
+        return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), *args])
+    return passthrough("score", args)
 
 
 def runner_command(name: str, args: list[str]) -> int:
@@ -253,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
             return data_command(rest)
         if command == "hold":
             return hold_command(rest)
+        if command == "score":
+            return score_command(rest)
         if command == "usage" and "--show" not in rest:
             return usage_command(rest)
         if command in RUNNERS:

@@ -202,10 +202,10 @@ class UnreplayableProfile(ValueError):
 
 
 def profile_invalid(profile) -> bool:
-    """True when a recorded profile fails the classifier's current schema (a missing or invalid field of any kind)."""
+    """True when a profile fails the classifier's current schema (a missing or invalid field of any kind)."""
     allocator, _ = modules()
     try:
-        allocator.validate_profile(allocator.ledger_profile(profile))
+        allocator.validate_profile(profile)
         return False
     except ValueError:
         return True
@@ -213,7 +213,8 @@ def profile_invalid(profile) -> bool:
 
 def unreplayable(row: dict) -> bool:
     from decision_theatre import snapshot_result
-    return snapshot_result(row) is None and profile_invalid(row.get("profile"))
+    allocator, _ = modules()
+    return snapshot_result(row) is None and profile_invalid(allocator.ledger_profile(row.get("profile")))
 
 
 def recent_ledger(limit: int = 30, path: Path | None = None) -> list[dict]:
@@ -258,7 +259,7 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
     if profile is not None:
         if profile_invalid(profile):
             raise UnreplayableProfile(_tr(UNREPLAYABLE_NOTE))
-        task["profile"] = allocator.validate_profile(allocator.ledger_profile(profile))
+        task["profile"] = allocator.validate_profile(profile)
     return task
 
 
@@ -319,11 +320,13 @@ def replay(row: dict) -> dict:
     snapshot = snapshot_result(row)
     if snapshot is not None:
         return with_usage_readings(snapshot, row.get("at"))
-    if profile_invalid(row.get("profile")):
+    allocator, _ = modules()
+    mapped_profile = allocator.ledger_profile(row.get("profile"))
+    if profile_invalid(mapped_profile):
         return {"choice": None, "ranking": [], "theatre_source": "unreplayable", "replay_note": _tr(UNREPLAYABLE_NOTE)}
     task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
-                      bool((row.get("profile") or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
-                      row.get("profile"), row.get("local_only_reason"))
+                      bool((mapped_profile or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
+                      mapped_profile, row.get("local_only_reason"))
     return {**plan_task(task), "theatre_source": "recomputed"}
 
 

@@ -108,7 +108,7 @@ AXES = {'divergence': ('creative_writing',), 'coding': ('execution', 'faithfulne
 # arena.ai boards transcribed from the user's browser (arena_capture.py): source -> (capture, category, value, method).
 ARENA_CAPTURES = {
     'arena.agent_code': ('agent', 'Code', lambda r: (r.get('net_improvement') or [None])[0],
-                         'arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant'),
+                         'arena.ai Agent / Code (Best Coding Agents), Net Improvement %, High row (else nearest effort)'),
     'arena.agent_alignment': ('alignment', None, lambda r: r['alignment_index'][0],
                               'arena.ai Agent Alignment Index (Best Aligned Agents), 0-100'),
 }
@@ -128,7 +128,7 @@ RAW_RANGE = {**dict.fromkeys(AA_SCORE, (0.0, 1.0)), 'arena.agent_code': (-100.0,
 SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'derived.community_mix': 'derived',
                'tier.arena_overall': 'benchmark', 'tier.aa_index': 'benchmark', 'user.anchor_tier': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
                'arena.agent_sessions': 'community',
-               'aa.price': 'vendor', 'openrouter.price': 'vendor', 'openrouter.modality': 'vendor',
+               'aa.price': 'vendor', 'openrouter.price': 'vendor', 'vendor.price': 'vendor', 'openrouter.modality': 'vendor',
                'vendor.fast_mode': 'vendor', 'aa.index': 'benchmark'}
 IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro')
 # Public vendor fast-mode specifications (round 11, user 2026-11-10): only models with a cited vendor price and speed
@@ -136,26 +136,32 @@ IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro')
 VENDOR_FAST_MODE = {
     'claude-opus-5-5': {
         'price_multiplier': 2.0, 'speed_multiplier': 2.5,
-        'fast_price': {'input': 8.0, 'output': 40.0}, 'standard_price': {'input': 4.0, 'output': 20.0},
+        'fast_price': {'input': 8.0, 'output': 40.0, 'cache_read': 0.4},
+        'standard_price': {'input': 4.0, 'output': 20.0, 'cache_read': 0.2},
         'as_of': '2026-11-10', 'url': 'https://code.claude.com/docs/en/fast-mode',
         'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
         'statement': 'Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is '
-                     '$8/$40 per MTok (2x standard $4/$20) with up to 2.5x output tokens per second.',
+                     '$8/$40 per MTok (2x standard $4/$20, cache read $0.20) with up to 2.5x output tokens per second.',
     },
     'claude-fable-5-2': {
         'price_multiplier': 2.0, 'speed_multiplier': 2.5,
-        'fast_price': {'input': 16.0, 'output': 80.0}, 'standard_price': {'input': 8.0, 'output': 40.0},
+        'fast_price': {'input': 16.0, 'output': 80.0, 'cache_read': 0.4},
+        'standard_price': {'input': 8.0, 'output': 40.0, 'cache_read': 0.2},
         'as_of': '2026-11-10', 'url': 'https://code.claude.com/docs/en/fast-mode',
         'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
         'statement': 'Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is '
-                     '$16/$80 per MTok (2x standard $8/$40) with up to 2.5x output tokens per second.',
+                     '$16/$80 per MTok (2x standard $8/$40, cache read $0.20) with up to 2.5x output tokens per second.',
     },
 }
 ARENA_FILE = {**{src: f'{board}.parquet' for src, (board, _) in LMARENA.items()},
               **{src: arena_capture.FILES[spec[0]] for src, spec in ARENA_CAPTURES.items()}, **DESIGN_ARENA,
               **dict.fromkeys([*AA_SCORE, AA_TTFA], 'aa-models.html')}
 EFFORT_RANK = {e: i for i, e in enumerate(('low', 'medium', 'high', 'xhigh', 'max'))}
-EFFORT_TAG = re.compile(r'^(max|xhigh|high|medium|low|minimal|non-reasoning|default fallback|with fallback|thinking|\d{4}|\d{8}|\d{4}-\d{2}-\d{2})$')  # an effort, or a release date
+EFFORT_TAG = re.compile(
+    r'^(max|xhigh|high|medium|low|minimal|non-reasoning|none|default|default fallback|with fallback|'
+    r'thinking|non-thinking|reasoning|instant|thinking\s+\d+k|\d+k|\d{2,4}|\d{6}|\d{8}|'
+    r'\d{2,4}-\d{2}(?:-\d{2})?|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4})$'
+)  # an effort, thinking mode, or release date
 
 
 def key(name):
@@ -225,19 +231,64 @@ class Builder:
         self.missing[source] = {'file': filename, 'reason': reason,
                                 'url': (self.manifest.get(filename) or {}).get('url') or sources.PAGES.get(filename)}
 
+    @staticmethod
+    def select_variants(items):
+        """Group `(listed_name, value, extra)` rows by base model name; select the model's own High row (never xHigh/Max
+        when High is listed; else an effort-less listing; else the effort nearest High) and keep multi-effort maps."""
+        grouped = {}
+        for listed_name, val, ext in items:
+            if val is None or not listed_name:
+                continue
+            grouped.setdefault(sources.base_name(listed_name), []).append((str(listed_name), float(val), dict(ext or {})))
+        board, listed, extra, by_effort = {}, {}, {}, {}
+        for base, rows in grouped.items():
+            valid, invalid = [], []
+            for ln, val, ext in rows:
+                bad = [p for p in (q.strip().lower() for q in sources.variant(ln).split(',')) if p and not EFFORT_TAG.match(p)]
+                (invalid if bad else valid).append((ln, val, ext))
+            if not valid:
+                ln, val, ext = max(invalid, key=lambda r: r[1])
+                board[base], listed[base], extra[base] = val, ln, ext
+                continue
+            vals = {}
+            for ln, val, ext in valid:
+                eff = sources.aa_effort(ln) or 'default'
+                tag = sources.variant(ln)
+                date_m = re.search(r'(\d{8}|\d{6}|\d{4}-\d{2}-\d{2}|\d{4})', tag)
+                date_key = date_m.group(1).replace('-', '') if date_m else ''
+                thinking = 1 if re.search(r'\b(thinking|reasoning)\b', tag, re.I) and not re.search(r'\bnon-thinking\b', tag, re.I) else 0
+                rank_key = (thinking, len(date_key), date_key, val)
+                if eff not in vals or rank_key > vals[eff][3]:
+                    vals[eff] = (val, ln, ext, rank_key)
+            routable = [e for e in vals if e in EFFORT_RANK]
+            pick = ('high' if 'high' in vals else
+                    'default' if 'default' in vals else
+                    min(routable, key=lambda e: (abs(EFFORT_RANK[e] - EFFORT_RANK['high']), -EFFORT_RANK[e])) if routable else
+                    next(iter(vals)))
+            board[base], listed[base], extra[base] = vals[pick][0], vals[pick][1], vals[pick][2]
+            eff_map = {e: round(vals[e][0], 6) for e in EFFORT_RANK if e in vals}
+            if 'default' in vals and 'high' not in eff_map and eff_map:
+                eff_map['high'] = round(vals['default'][0], 6)
+            if len(eff_map) >= 2:
+                by_effort[base] = eff_map
+        return board, listed, extra, by_effort
+
     # --- capability boards ----------------------------------------------------------------------
     def boards(self):
         """{source: {'board': {name: raw}, 'as_of', 'method', 'strip', 'listed': {name: listed variant}, 'extra': {name:
-        {...}}, and for Artificial Analysis 'by_effort': {name: {effort: raw}}}} of every scoring board fetched."""
+        {...}}, and 'by_effort': {name: {effort: raw}}}} of every scoring board fetched."""
         t, out = self.target, {}
         for src, (board, cat) in LMARENA.items():
             if not self.ok(ARENA_FILE[src]):
                 self.miss(src, ARENA_FILE[src], 'not fetched'); continue
-            rows = sources.arena(t, board, cat)
-            out[src] = {'board': {n: r[0] for n, r in rows.items()}, 'as_of': next(iter(rows.values()))[4] if rows else None,
-                        'method': f'LMArena {board}/{cat} rating, best listed variant', 'strip': None,
-                        'listed': {n: r[3] for n, r in rows.items()},
-                        'extra': {n: {'ci': [round(r[1], 1), round(r[2], 1)]} for n, r in rows.items()}}
+            rows = sources.arena_rows(t, board, cat)
+            brd, lst, ext, by_eff = self.select_variants(
+                (r[3], r[0], {'ci': [round(r[1], 1), round(r[2], 1)]}) for r in rows
+            )
+            out[src] = {'board': brd, 'as_of': rows[0][4] if rows else None,
+                        'method': f'LMArena {board}/{cat} rating, High row (else effort-less or nearest effort)',
+                        'strip': None, 'listed': lst, 'extra': ext,
+                        **({'by_effort': by_eff} if by_eff else {})}
         for src, (kind, category, value, method) in ARENA_CAPTURES.items():
             doc = arena_capture.read(t, kind) if self.ok(arena_capture.FILES[kind]) else None
             page = ((doc or {}).get('categories') or {}).get(category) if category else doc
@@ -245,23 +296,28 @@ class Builder:
                 self.miss(src, arena_capture.FILES[kind], f'not captured: transcribe {arena_capture.URLS[kind]}'
                           + (f' ({category})' if category else '') + ' in the browser and run arena_capture.py import')
                 continue
-            rows = arena_capture.best_variant(page['rows'], value)
-            out[src] = {'board': {n: v for n, (v, _) in rows.items()}, 'as_of': page['as_of'],
+            brd, lst, ext, by_eff = self.select_variants(
+                (r['name'], value(r), {}) for r in page['rows'] if r.get('name')
+            )
+            out[src] = {'board': brd, 'as_of': page['as_of'],
                         'method': f'{method}; transcribed {(doc or {}).get("captured_at", "")[:10]} by {(doc or {}).get("transcribed_by")}'
                                   + (f'; {page["sign_rule"]}' if page.get('sign_rule') else ''),
-                        'strip': (lambda n: re.sub(r'\s+(High|Max|xHigh|Medium|Low)$', '', n)) if kind == 'alignment' else None,
-                        'listed': {n: r['name'] for n, (_, r) in rows.items()}, 'extra': {}}
+                        'strip': None, 'listed': lst, 'extra': ext,
+                        **({'by_effort': by_eff} if by_eff else {})}
         for src, filename in DESIGN_ARENA.items():
             if not self.ok(filename):
                 self.miss(src, filename, 'not fetched'); continue
             rows = sources.designarena(t, filename)
             if not rows:
                 self.miss(src, filename, 'the page carries no main board rows'); continue
-            out[src] = {'board': {r['name']: r['rating'] for r in rows.values()}, 'as_of': None,
+            brd, lst, ext, by_eff = self.select_variants(
+                (r['name'], r['rating'], {'battles': r['battles'], 'designarena_id': mid}) for mid, r in rows.items()
+            )
+            out[src] = {'board': brd, 'as_of': None,
                         'method': (f'Design Arena {sources.DESIGN_ARENA[filename][1]} board (main public board): Bradley-Terry '
-                                   'rating of blind human pairwise votes; no standard error published'),
-                        'strip': None, 'listed': {r['name']: r['name'] for r in rows.values()},
-                        'extra': {r['name']: {'battles': r['battles'], 'designarena_id': mid} for mid, r in rows.items()}}
+                                   'rating of blind human pairwise votes, High row (else nearest effort); no standard error published'),
+                        'strip': None, 'listed': lst, 'extra': ext,
+                        **({'by_effort': by_eff} if by_eff else {})}
         if self.ok('aa-models.html'):
             variants = self.aa_variants()
             for src in [*AA_SCORE, AA_TTFA]:
@@ -271,8 +327,11 @@ class Builder:
                             if (v := self.aa_value(src, rec)) is not None}
                     if not vals:
                         continue
-                    pick = next((e for e in ('high', 'default') if e in vals), None) or \
-                        min(vals, key=lambda e: abs(EFFORT_RANK.get(e, 2) - EFFORT_RANK['high']))
+                    routable = [e for e in vals if e in EFFORT_RANK]
+                    pick = ('high' if 'high' in vals else
+                            'default' if 'default' in vals else
+                            min(routable, key=lambda e: (abs(EFFORT_RANK[e] - EFFORT_RANK['high']), -EFFORT_RANK[e])) if routable else
+                            next(iter(vals)))
                     board[base], listed[base] = vals[pick][0], vals[pick][1]
                     by_effort[base] = {e: round(v, 6) for e, (v, _) in vals.items()}
                 what = ('time to first answer token, read as -ln(seconds)' if src == AA_TTFA else f'`{AA_SCORE[src]}`')
@@ -349,10 +408,10 @@ class Builder:
                 name = names[src][model]
                 listed = b['listed'].get(name, name)
                 extra = dict(b['extra'].get(name) or {})
-                if 'by_effort' in b:
+                if 'by_effort' in b and name in b['by_effort']:
                     extra['z_by_effort'] = {e: round((v - sc['anchor_raw']) / sc['sd'], 4) for e, v in b['by_effort'][name].items()}
                     extra['raw_by_effort'] = b['by_effort'][name]
-                else:
+                if not src.startswith('aa.'):
                     extra['listed_effort'] = sources.aa_effort(listed) or None
                 self.names[model][src] = name
                 self.add(model, axis, src, round((x - sc['anchor_raw']) / sc['sd'], 4), f"{b['method']}; {how}",
@@ -511,6 +570,7 @@ class Builder:
         self.register('aa.price', 'aa-models.html', None, 'AA listed price1mInputTokens / price1mOutputTokens / cacheHitPrice', len(variants))
         self.register('aa.index', 'aa-models.html', None, 'AA Intelligence Index at the High variant (else the only listing)', len(variants))
         match = Matcher(variants)
+        idx_high, idx_efforts, idx_recs = {}, {}, {}
         for model in self.models:
             exp = (EXTRA_NAMES.get(model) or {}).get('aa') or (tiers.NAMES.get(model) or {}).get('aa') or tiers.ANCHORS.get(model)
             base = match.find(model, exp) or (match.find(model) if exp else None)
@@ -527,14 +587,36 @@ class Builder:
                              time_per_task_s=round(t, 2) if t else None,
                              time_per_task_min=round(t / 60.0, 3) if t else None,
                              output_tps=round(speed, 2) if isinstance(speed, (int, float)) and speed > 0 else None)
-            rec = variants[base].get('high') or next(iter(variants[base].values()))
-            if isinstance(rec.get('intelligenceIndex'), (int, float)):
-                self.add(model, 'intelligence_index', 'aa.index', round(rec['intelligenceIndex'], 2), 'AA Intelligence Index',
-                         listed_as=rec['name'])
+            vals = {(eff or 'default'): float(rec['intelligenceIndex']) for eff, rec in variants[base].items()
+                    if isinstance(rec.get('intelligenceIndex'), (int, float)) and not isinstance(rec.get('intelligenceIndex'), bool)
+                    and rec['intelligenceIndex'] > 0}
+            rec = variants[base].get('high') or variants[base].get('') or next(iter(variants[base].values()))
+            if vals:
+                routable = [e for e in vals if e in EFFORT_RANK]
+                pick = ('high' if 'high' in vals else
+                        'default' if 'default' in vals else
+                        min(routable, key=lambda e: (abs(EFFORT_RANK[e] - EFFORT_RANK['high']), -EFFORT_RANK[e])) if routable else
+                        next(iter(vals)))
+                idx_high[model], idx_efforts[model], idx_recs[model] = vals[pick], vals, rec
             price = {k: rec.get(src) for k, src in (('input', 'price1mInputTokens'), ('output', 'price1mOutputTokens'),
                                                     ('cache_read', 'cacheHitPrice')) if isinstance(rec.get(src), (int, float))}
             if price:
                 self.add(model, 'price', 'aa.price', price, 'USD per million tokens', listed_as=rec['name'])
+        panel_models = (getattr(self, 'panel_doc', None) or {}).get('models') or []
+        idx_panel = [m for m in panel_models if m in idx_high]
+        idx_scale = None
+        if ANCHOR in idx_high and len(idx_panel) >= MIN_PANEL and statistics.stdev(idx_high[m] for m in idx_panel) > 0:
+            idx_scale = {'anchor_raw': idx_high[ANCHOR], 'sd': statistics.stdev(idx_high[m] for m in idx_panel), 'n': len(idx_panel)}
+            self.source_rows['aa.index']['scale'] = {'anchor': ANCHOR, 'anchor_raw': round(idx_scale['anchor_raw'], 6),
+                                                     'sd_panel': round(idx_scale['sd'], 6), 'n_panel': idx_scale['n']}
+        for model, val in idx_high.items():
+            rec, vals = idx_recs[model], idx_efforts[model]
+            extra_idx = {'raw_by_effort': {e: round(v, 4) for e, v in vals.items()}}
+            if idx_scale:
+                extra_idx['z_by_effort'] = {e: round((v - idx_scale['anchor_raw']) / idx_scale['sd'], 4) for e, v in vals.items()}
+                extra_idx['z'] = round((val - idx_scale['anchor_raw']) / idx_scale['sd'], 4)
+            self.add(model, 'intelligence_index', 'aa.index', round(val, 2), 'AA Intelligence Index, every listed effort',
+                     listed_as=rec['name'], **extra_idx)
         if self.ok('openrouter-models.json'):
             table = sources.openrouter(self.target)
             self.register('openrouter.price', 'openrouter-models.json', None, 'OpenRouter /api/v1/models pricing (USD per million tokens)', len(table))
@@ -661,13 +743,19 @@ class Builder:
                          mix_as_of=mix['as_of'])
 
     def fast_mode(self):
-        """Cited vendor fast-mode price and speed multipliers (round 11, user 2026-11-10)."""
+        """Cited vendor fast-mode price and speed multipliers and vendor API pricing (round 11, user 2026-11-10)."""
         self.source_rows['vendor.fast_mode'] = {
             'file': None, 'url': 'https://code.claude.com/docs/en/fast-mode', 'fetched_at': None, 'sha256': None,
             'as_of': '2026-11-10', 'as_of_kind': 'data date',
             'method': 'Anthropic Claude Code fast-mode and API pricing documentation (read 2026-11-10)',
             'models_listed': len(VENDOR_FAST_MODE), 'kind': 'vendor',
             'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
+        }
+        self.source_rows['vendor.price'] = {
+            'file': None, 'url': 'https://platform.claude.com/docs/en/about-claude/pricing', 'fetched_at': None, 'sha256': None,
+            'as_of': '2026-11-10', 'as_of_kind': 'data date',
+            'method': 'Anthropic API pricing documentation (read 2026-11-10): USD per million tokens',
+            'models_listed': len(VENDOR_FAST_MODE), 'kind': 'vendor',
         }
         for model, spec in VENDOR_FAST_MODE.items():
             if model not in self.models:
@@ -676,6 +764,8 @@ class Builder:
                      {'price_multiplier': spec['price_multiplier'], 'speed_multiplier': spec['speed_multiplier']},
                      spec['statement'], fast_price=spec['fast_price'], standard_price=spec['standard_price'],
                      pricing_url=spec['pricing_url'])
+            self.add(model, 'price', 'vendor.price', dict(spec['standard_price']),
+                     'USD per million tokens (Anthropic API pricing documentation)', listed_as=model)
 
     def build(self):
         self.tier()

@@ -279,7 +279,7 @@ class AllocatorTests(unittest.TestCase):
         self.assertTrue(any('$3.08' in n and 'reserved by in-flight' in n for n in s2['notes']), s2['notes'])
 
         # Unstarted 5h window (used_pct=0, resets_at=None) still enforces 5h wall against oversized or burst tasks
-        unstarted_5h = copy.deepcopy(normal_claude2)
+        unstarted_5h = copy.deepcopy(all_big_empty)
         unstarted_5h['accounts']['claude-lab']['status'] = 'fresh'
         unstarted_5h['accounts']['claude-lab']['windows'][0] = {
             'id': 'five_hour', 'used_pct': 0.0, 'resets_at': None, 'seconds_until_reset': None,
@@ -1055,12 +1055,13 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
 
     def test_high_coupling_continuity_keeps_close_worker_and_switches_past_one_demand_level(self):
         accounts = copy.deepcopy(allocator.load_accounts())
+        accounts['accounts']['claude']['bundles']['fable52_high']['disabled'] = False
         capabilities = allocator.load_capabilities(accounts=accounts)
         usage = self.healthy_usage()
-        # High-divergence task (divergence=3, continuity = t3 - t2 = 1.8903 SD):
-        # 1. `sonnet55_high` (divergence -0.78, within 1.89 SD of Opus 0.0) stays when continuing (`coupling='high'`).
+        # High-divergence task (divergence=3, continuity = t3 - t2 = 1.19 SD):
+        # 1. `fable52_high` (divergence -0.93, within 1.19 SD of Argon +0.25 / Opus 0.0) stays when continuing (`coupling='high'`).
         close_chain = {'id': 'c-close', 'coupling': 'high', 'total_hours': 2,
-                       'worker': {'bundle': 'sonnet55_high', 'context_tokens': 100000}}
+                       'worker': {'bundle': 'fable52_high', 'context_tokens': 100000}}
         div_task = {
             'objective': 'Continue deep research synthesis',
             'expected_hours': 0.5,
@@ -1070,7 +1071,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         }
         kept = allocator.plan({**div_task, 'chain': close_chain}, usage, now=self.now,
                               accounts=accounts, capabilities=capabilities, overrides=[])
-        self.assertEqual((kept['choice'], kept['decision']['action']), ('sonnet55_high', 'resume'))
+        self.assertEqual((kept['choice'], kept['decision']['action']), ('fable52_high', 'resume'))
 
         # 2. A worker whose deficit exceeds continuity + rival cost (e.g. `sol_medium` with divergence ~ -2.1 vs `argon_high` +0.25)
         # switches to the stronger candidate instead of forcing a bad continuation.

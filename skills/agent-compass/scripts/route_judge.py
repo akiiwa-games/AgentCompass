@@ -2740,6 +2740,9 @@ def scorer_cli(args):
 
 
 def main():
+    if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear'):
+        import user_scores
+        return user_scores.cli_main(sys.argv[2:])
     parser = argparse.ArgumentParser(prog='agentcompass', description=__doc__, add_help=False)
     parser.add_argument('stage', nargs='?', choices=tuple(stage_help.STAGES))
     parser.add_argument('-h', '--help', action='store_true', help='Show the options of this stage.')

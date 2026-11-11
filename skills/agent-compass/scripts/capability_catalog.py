@@ -42,8 +42,11 @@ def markdown(accounts, five=None):
         cells = []
         for axis in ('divergence', 'coding', 'aesthetics', 'tool_operation'):
             cell = axes.get(axis) or {}
-            mark = '~' if cell.get('status') == 'estimated' else ('!' if cell.get('missing_facets') else '')
-            cells.append(f"{cell['value']:.2f}{mark}" if cell.get('value') is not None else 'missing')
+            status = cell.get('status')
+            mark = ('u' if status in ('user', 'maintainer')
+                    else '~' if status == 'estimated'
+                    else '!' if cell.get('missing_facets') else '')
+            cells.append(f"{cell['value']:.2f}{mark}" if cell.get('value') is not None else f"missing{mark}")
         tier = (row.get('tier') or {}).get('value')
         usd = (row.get('usd_per_hour') or {}).get('value')
         image = (row.get('image_input') or {}).get('status', 'unknown')
@@ -51,9 +54,11 @@ def markdown(accounts, five=None):
                     + f' | {"-" if usd is None else usd} | {image} |')
     rows += ['', 'Tier is the arena.ai Overall position on the user scale (or its interpolation from another overall board, or '
              'its same-series sibling tier); it is not a score and only estimates facets a model lacks. A value marked `~` '
-             'holds such an estimate (a same-series sibling, else the fit of that facet on the tier); `!` marks a category '
-             'computed from only the facets that have values; `missing` is a category with no value at all (mode B when the '
-             'task demands it). The record of each estimate is in `five-axis-scores.json` (`estimate`).', '',
+             'holds such an estimate (a same-series sibling, else the fit of that facet on the tier); `u` marks a manual '
+             'score (`user-scores.json`); `!` marks a category with one or more missing facets (`tool_operation` keeps its '
+             'level-2 responsiveness when `image_recognition` is missing; `coding` stays `missing!` so a missing facet is '
+             'never silently skipped); `missing` excludes the model under mode B when a demanded level requires that facet. '
+             'The record of each estimate is in `five-axis-scores.json` (`estimate`).', '',
              '## Effective policy', '',
              'Routes describe task scope and modality requirements and ship a calibrated harness order. '
              'A route can fix the harness order or imply a modality flag; it does not rank models. '
@@ -74,7 +79,7 @@ def write_default_files(accounts=None):
     if accounts is None:
         accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
     for name, content in generated(accounts).items():
-        (REFERENCES / name).write_text(content, encoding='utf-8')
+        (REFERENCES / name).write_text(content, encoding='utf-8', newline='\n')
 
 
 def main():
@@ -89,7 +94,7 @@ def main():
             if not target.exists() or target.read_text(encoding='utf-8') != content:
                 stale.append(name)
         else:
-            target.write_text(content, encoding='utf-8')
+            target.write_text(content, encoding='utf-8', newline='\n')
     if stale:
         print('Stale generated views: ' + ', '.join(stale))
         return 1

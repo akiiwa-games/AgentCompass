@@ -196,8 +196,8 @@ class ForeignFixtureServer:
             "sha256": hashlib.sha256(self.updated_accounts_bytes).hexdigest(),
             "bytes": len(self.updated_accounts_bytes),
         }
-        schema_ver = int(manifest.get("schema_version") or 2)
-        public_files_order = ("accounts.json", "plan-templates.json", "classifier-cases.json")
+        schema_ver = int(manifest.get("schema_version") or 3)
+        public_files_order = tuple(files.keys())
         lines = [f"schema {schema_ver}"] + [f"{name} {files[name]['sha256']}" for name in public_files_order]
         self.updated_version = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:12]
         manifest = {
@@ -511,10 +511,10 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
     )
     res_v035 = run_in_box(box, op, [box.python, "-X", "utf8", "-c", v035_probe], env)
     doc_v035 = parse_json(res_v035.stdout)
-    op.check("a 0.3.5 install fetching schema-2 public data returns schema_too_new and keeps its bundled set without error",
+    op.check("a 0.3.5 install fetching newer-schema public data returns schema_too_new and keeps its bundled set without error",
              res_v035.returncode == 0
              and (doc_v035.get("outcome") or {}).get("status") == "schema_too_new"
-             and (doc_v035.get("outcome") or {}).get("remote_schema_version") == 2
+             and (doc_v035.get("outcome") or {}).get("remote_schema_version") == 3
              and (doc_v035.get("status") or {}).get("source") == "bundled"
              and (doc_v035.get("status") or {}).get("version") == "v035bundled1"
              and (doc_v035.get("status") or {}).get("last_error") is None,

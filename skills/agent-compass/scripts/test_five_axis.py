@@ -249,31 +249,33 @@ class FiveAxisTests(unittest.TestCase):
         self.assertFalse(out['accounts']['opencode'].get('unlimited'))
         self.assertTrue(out['accounts']['opencode']['capacity_unknown'])
 
-    def test_tie_break_order_net_score_then_wait_then_faster_then_fewer_usd_then_level(self):
-        """Quota economy v3 (advisor report v3 §1.6): order is N, then the wait before the start, then completion time
-        (throughput / fast mode), then fewer USD, then axis level, then the sibling harness place. How soon quota lapses
-        and what a substitute could take are inside N already, so no key reads them."""
-        def cand(name, score=0.5, hours=1.0, usd=10.0, level=0.8, wait=0.0, place=0):
+    def test_tie_break_order_net_score_then_wait_then_reset_then_faster_then_fewer_usd_then_level(self):
+        """Quota economy v3 + F3: N = F - C is never rounded; C carries billed vs free, pool used share, and +fast burn.
+        `earliest_reset_hours` breaks only exact ties in N and wait, never overriding a strictly higher N."""
+        def cand(name, score=0.5, hours=1.0, usd=10.0, level=0.8, wait=0.0, place=0, reset=48.0):
             return {'id': name, 'score': score, 'available_in_hours': wait or None,
                     'expected_hours': hours, 'duration_hours': hours, 'expected_usd': usd,
-                    'components': {'five_axis_level': level, 'harness_place': place}}
+                    'components': {'five_axis_level': level, 'harness_place': place, 'earliest_reset_hours': reset}}
         pool = [
             cand('slower_expensive', hours=0.8, usd=20.0),
             cand('faster_dear', hours=0.2, usd=20.0),
             cand('faster_cheap', hours=0.2, usd=5.0),
-            cand('higher_n', score=0.6, hours=2.0, usd=50.0),
-            cand('waits_but_quick', hours=0.1, usd=1.0, wait=3.0),
+            cand('higher_n', score=0.50001, hours=2.0, usd=50.0, reset=160.0),
+            cand('sooner_reset_same_n', score=0.5, hours=1.5, usd=30.0, reset=2.0),
+            cand('waits_but_quick', hours=0.1, usd=1.0, wait=3.0, reset=1.0),
             cand('faster_cheap_higher_level', hours=0.2, usd=5.0, level=0.9),
             cand('faster_cheap_later_harness', hours=0.2, usd=5.0, level=0.9, place=1),
         ]
         self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
-                         ['higher_n', 'faster_cheap_higher_level', 'faster_cheap_later_harness', 'faster_cheap',
+                         ['higher_n', 'sooner_reset_same_n', 'faster_cheap_higher_level',
+                          'faster_cheap_later_harness', 'faster_cheap',
                           'faster_dear', 'slower_expensive', 'waits_but_quick'])
+        self.assertEqual(allocator.five_axis_deciding_key(pool[3], pool[4]), 'net_score')
+        self.assertEqual(allocator.five_axis_deciding_key(pool[4], pool[2]), 'earliest_reset_hours')
         self.assertEqual(allocator.five_axis_deciding_key(pool[2], pool[1]), 'usd')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[3], pool[2]), 'net_score')
         self.assertEqual(allocator.five_axis_deciding_key(pool[1], pool[0]), 'completion_hours')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[5], pool[2]), 'axis_level')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[5], pool[6]), 'harness_place')
+        self.assertEqual(allocator.five_axis_deciding_key(pool[6], pool[2]), 'axis_level')
+        self.assertEqual(allocator.five_axis_deciding_key(pool[6], pool[7]), 'harness_place')
         self.assertEqual(allocator.FIVE_AXIS_DEFAULTS['weights']['fit'], 1.0)
         for gone in ('overqualification_weight', 'strong_level', 'pace', 'pace_smoothing'):
             self.assertNotIn(gone, allocator.FIVE_AXIS_DEFAULTS, gone)
@@ -686,12 +688,11 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(schema['properties']['axis_demand'], allocator.FIVE_AXIS_DEMAND_SCHEMA)
 
     def test_can_wait_hours_defers_only_for_higher_net_score_without_fixed_wait_cost_constant(self):
-        """Rounds 8-11: no fixed 0.15 delay penalty and no 0.06 five_axis_wait_cost constant on the five-axis path.
+        """Rounds 8-13b + F3: no fixed 0.15 delay penalty and no 0.06 five_axis_wait_cost constant on the five-axis path.
         Without `can_wait_hours`, `plan()` starts the best ready-now candidate immediately; when `can_wait_hours` is given,
-        routine tasks (already reaching the capped fit on a ready-now owner) still start now while frontier tasks prefer
-        waiting for the higher-N model's short-window reset (round 13b: the same holds for a routine task whose waiting
-        candidate has the higher N, since a faster candidate no longer displaces a higher one; in round 15 no routine
-        candidate has the higher N any more)."""
+        a task defers when and only when a waiting candidate has a strictly higher unrounded net score `N = F - C` than the
+        best ready-now candidate (so a local routine task where Claude's $1,700 pool costs less per dollar than Codex's $615
+        pool defers, while an outbound routine task where free `dot` has `C = 0` starts immediately)."""
         self.assertFalse(hasattr(allocator, 'five_axis_wait_cost'))
         base = {name: row(0.55, usd=5.0) for name, info in self.accounts['models'].items() if isinstance(info, dict)}
         doc = document(self.accounts['models'],
@@ -705,21 +706,21 @@ class FiveAxisTests(unittest.TestCase):
         self.assertFalse(immediate['decision']['needs_user_decision'])
         self.assertEqual(immediate['selected_bundle']['account'], 'codex')
         self.assertIn(immediate['decision']['better_if_waiting']['bundle'], ('opus55_xhigh', 'opus55_max'))
-        # With can_wait_hours: routine starts now, frontier defers for the capable model's reset.
+        # With can_wait_hours: defers iff the waiting candidate has strictly higher unrounded N = F - C.
         routine = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
                             profile={'axis_demand': demand(0, 1, 0, 0)})
+        routine_free = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
+                                 profile={'axis_demand': demand(0, 1, 0, 0), 'local_only': False, 'code_complexity': 0})
         frontier = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
                              profile={'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0})
-        # Round 13b: no rule lets a faster candidate displace a higher N, so with `can_wait_hours` the routine task also waits
-        # when (and only when) the candidate that waits has the higher net score than the best one that can start now.
         ready_now = max((c for c in routine['ranking'] if not c.get('excluded') and not c.get('available_in_hours')),
                         key=lambda c: c['score'])
         self.assertEqual(routine['ranking'][0]['score'], max(c['score'] for c in routine['ranking'] if not c.get('excluded')))
-        # round 15: with the v3.1 burst size no candidate's quota costs anything here, so the routine task's waiting candidates
-        # do not have a higher N than the best one that can start now, and it starts now
-        self.assertEqual(round(routine['ranking'][0]['score'], 4), round(ready_now['score'], 4))
-        self.assertEqual(routine['decision']['action'], 'start')
+        self.assertGreater(routine['ranking'][0]['score'], ready_now['score'])
+        self.assertEqual(routine['decision']['action'], 'defer')
         self.assertEqual(ready_now['bundle']['account'], 'codex')
+        self.assertEqual(routine_free['decision']['action'], 'start')
+        self.assertEqual(routine_free['selected_bundle']['account'], 'dot')
         self.assertEqual(frontier['decision']['action'], 'defer')
         self.assertEqual(frontier['selected_bundle']['account'], 'claude')
         self.assertGreater(frontier['decision']['start_after_hours'], 0.0)
@@ -1121,9 +1122,9 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertEqual(top['value'], round(f['y_max'], 4))
         self.assertEqual(top['estimate']['tier_clamped_to'], f['x_max'])
 
-    def test_a_facet_with_no_tier_stays_missing_and_category_uses_present_facets_as_partial(self):
-        """Q3: when a facet has no measurement, no sibling and no tier fit, the category takes its value from the facets
-        that do have values and is marked partial (never zero-filled)."""
+    def test_a_facet_with_no_tier_stays_missing_and_coding_never_skips_missing_facet(self):
+        """F1: coding = min(execution, faithfulness) never silently skips a missing facet; without an estimate or manual
+        score on every required facet, the category stays None / partial so Mode B excludes it until filled."""
         exec_only = [{'source': 'aa.terminalbench_4', 'facet': 'execution', 'value': -0.35,
                       'z_by_effort': dict.fromkeys(EFFORT_NAMES, -0.35)}]
         meas = self.calibration_set({'no_tier': {'coding': exec_only}})
@@ -1132,7 +1133,8 @@ class AnchorRelativeTests(unittest.TestCase):
         ax = rows['no_tier']['axes']['coding']
         self.assertEqual((ax['status'], ax['missing_facets']), ('partial', ['faithfulness']))
         self.assertNotIn('faithfulness', ax['facets'])
-        self.assertEqual(ax['value'], -0.35)
+        self.assertIsNone(ax['value'])
+        self.assertEqual(ax['by_effort'], {})
 
     def test_a_sibling_estimate_with_too_few_points_for_a_fit_shifts_by_zero_and_says_so(self):
         meas = {'panel': {'models': [self.ms.ANCHOR]}, 'models': {

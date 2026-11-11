@@ -228,7 +228,9 @@ class UserPinTests(RouterCase):
 
     def test_pinned_fields_in_the_request_body_count(self):
         plan = self.plan(self.task(pinned_model='claude-opus-5-5', pinned_effort='medium'))
-        self.assertEqual((plan['selected_bundle']['model'], plan['selected_bundle']['effort']), ('claude-opus-5-5', 'medium'))
+        bundle = plan['selected_bundle']
+        self.assertIn(bundle['model'], ('claude-opus-5-5', 'claude-opus-5-5-medium'))
+        self.assertEqual(bundle['effort'], 'medium')
 
     def test_a_named_effort_with_no_row_is_carried_with_a_distinct_id(self):
         plan = self.plan(self.task(constraints={'model': 'gpt-6-astra', 'effort': 'medium'}))

@@ -1628,7 +1628,6 @@ def _apply_auto_bundles(accounts, inventory, live):
         for bid, bundle in rows.items():
             target.setdefault(bid, bundle)
     accounts['_auto_bundles'] = {'excluded': derived['excluded'],
-                                 'legacy_aliases': auto_bundles.legacy_aliases(accounts, derived),
                                  'seen': derived['seen'] if live else {}}
 
 
@@ -1677,8 +1676,9 @@ def account_state_label(row):
     return status
 
 
-def apply(accounts, inventory=None):
-    live = inventory is None
+def apply(accounts, inventory=None, *, live=None):
+    if live is None:
+        live = inventory is None
     inventory = current() if inventory is None else inventory
     accounts['_discovery'] = inventory
     specs = accounts['accounts']

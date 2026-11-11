@@ -130,10 +130,6 @@ def pick_usd(entries):
     return {'value': value, 'status': 'ok', 'merge': f'{src}: {how}', 'used': [src], 'sources': {src: cited}}
 
 
-FAST_CAPABLE_MODELS = frozenset(('gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna',
-                                 'claude-opus-5-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-fable-5-2'))
-
-
 def pick_image_input(entries):
     """Image-input modality from cited public sources (round 11, user 2026-11-10): a public vision/GUI benchmark listing
     wins over a vendor/OpenRouter modality flag; without any source, status is `unknown` (mode B when tool_operation is 3)."""
@@ -162,7 +158,7 @@ def pick_image_input(entries):
             'reason': 'no cited public modality source'}
 
 
-def pick_fast_mode(model, entries):
+def pick_fast_mode(model, entries, models=None):
     """Public fast-mode price and speed multipliers (round 11, user 2026-11-10)."""
     if entries:
         e0 = entries[0]
@@ -172,7 +168,7 @@ def pick_fast_mode(model, entries):
                 'kind': e0.get('kind', 'vendor'), 'as_of': e0.get('as_of'), 'url': e0.get('url'),
                 'pricing_url': e0.get('pricing_url'), 'fast_price': e0.get('fast_price'),
                 'standard_price': e0.get('standard_price'), 'method': e0.get('method')}
-    if model in FAST_CAPABLE_MODELS:
+    if bool(((models or {}).get(model) or {}).get('fast_capable')):
         return {'status': 'missing', 'price_multiplier': None, 'speed_multiplier': None, 'source': None,
                 'reason': 'provider does not publish a fast-mode burn or speed multiplier'}
     return {'status': 'unsupported', 'price_multiplier': None, 'speed_multiplier': None, 'source': None}
@@ -180,7 +176,7 @@ def pick_fast_mode(model, entries):
 
 def pick_price(entries):
     """Public list price (USD per million tokens) for converting local token counts (e.g. opencode.db) into USD."""
-    for src in ('aa.price', 'openrouter.price'):
+    for src in ('aa.price', 'openrouter.price', 'vendor.price'):
         for e in entries or ():
             if e.get('source') == src and isinstance(e.get('value'), dict):
                 v = e['value']
@@ -288,27 +284,80 @@ class Scorer:
     def fill_efforts(self, rows, model, src, aa_all, sibs):
         """({effort: z} over EFFORTS, {effort: basis}) of one AA board for `model`: its listed efforts as listed; a missing
         effort from the nearest listed one by the nearest same-series sibling's step on this board, else the fleet median
-        step (z(e) - z(e0) over the models listing both, at least MIN_FLEET_RATIO_N), else held at the nearest listed."""
+        step (z(e) - z(e0) over the models listing both, at least MIN_FLEET_RATIO_N); never held flat."""
         out, basis = dict(rows), {e: {'method': 'listed'} for e in rows}
         board = aa_all.get(src) or {}
         for e in EFFORTS:
             if e in out or not rows:
                 continue
             e0 = nearest_effort(rows, e)
-            sib = next((b for b in sibs if e in (board.get(b) or {}) and e0 in board[b]), None)
+            sib = next((b for b in sibs if e in (board.get(b) or {}) and e0 in board[b]
+                        and float(np.ptp(list(board[b].values()))) > 0), None)
             if sib:
                 step = board[sib][e] - board[sib][e0]
                 out[e], basis[e] = round(rows[e0] + step, 4), {'method': 'series_effort', 'base_model': sib, 'from_effort': e0,
                                                                'step': round(step, 4)}
                 continue
-            steps = [r[e] - r[e0] for r in board.values() if e in r and e0 in r]
+            steps = [r[e] - r[e0] for r in board.values() if e in r and e0 in r and float(np.ptp(list(r.values()))) > 0]
             if len(steps) >= MIN_FLEET_RATIO_N:
                 step = float(np.median(steps))
                 out[e], basis[e] = round(rows[e0] + step, 4), {'method': 'fleet_effort_step', 'from_effort': e0,
                                                                'step': round(step, 4), 'n': len(steps)}
-            else:
-                out[e], basis[e] = rows[e0], {'method': 'held', 'from_effort': e0, 'reason': f'{len(steps)} models list both'}
         return out, basis
+
+    @staticmethod
+    def _has_effort_curve(aa_map):
+        return bool(aa_map and len(aa_map) >= 2 and float(np.ptp(list(aa_map.values()))) > 0)
+
+    def aa_capability_boards(self, rows):
+        """({aa_source: {model: {effort: z}}}, {aa_source: {model: high_z}}) for AA capability boards (excluding aa.ttfa)."""
+        aa_own, aa_high = {}, {}
+        for m, r in rows.items():
+            for e in self.trusted(r['fields'].get('intelligence_index')):
+                if e.get('source') == 'aa.index' and isinstance(e.get('z_by_effort'), dict):
+                    mapped = self.aa_rows(e)
+                    if mapped:
+                        aa_own.setdefault('aa.index', {})[m] = mapped
+                        if 'high' in mapped:
+                            aa_high.setdefault('aa.index', {})[m] = mapped['high']
+            for (a, f), srcs in r['boards'].items():
+                for src, e in srcs.items():
+                    if src.startswith('aa.') and src != measurements.AA_TTFA:
+                        mapped = self.aa_rows(e)
+                        if mapped:
+                            aa_own.setdefault(src, {})[m] = mapped
+                            if 'high' in mapped:
+                                aa_high.setdefault(src, {})[m] = mapped['high']
+                        elif isinstance(e.get('value'), (int, float)) and e.get('listed_effort') in (None, 'high'):
+                            aa_high.setdefault(src, {})[m] = float(e['value'])
+        return aa_own, aa_high
+
+    def compute_effort_correlations(self, rows, aa_high):
+        """{non_aa_source: {'board', 'r', 'n', 'candidates'}} ranking AA capability boards by Pearson r over shared models."""
+        non_aa = {}
+        for m, r in rows.items():
+            for (a, f), srcs in r['boards'].items():
+                for src, e in srcs.items():
+                    if not src.startswith('aa.') and isinstance(e.get('value'), (int, float)):
+                        non_aa.setdefault(src, {})[m] = float(e['value'])
+        corrs = {}
+        for src, vals in sorted(non_aa.items()):
+            cands = []
+            for aa_src, avals in sorted(aa_high.items()):
+                shared = [m for m in vals if m in avals]
+                if len(shared) < MIN_FIT_POINTS:
+                    continue
+                x = np.array([vals[m] for m in shared], dtype=float)
+                y = np.array([avals[m] for m in shared], dtype=float)
+                if float(np.ptp(x)) <= 0 or float(np.ptp(y)) <= 0:
+                    continue
+                r_val = float(np.corrcoef(x, y)[0, 1])
+                if r_val > 0:
+                    cands.append({'board': aa_src, 'r': round(r_val, 4), 'n': len(shared)})
+            cands.sort(key=lambda c: (-c['r'], -c['n'], c['board']))
+            if cands:
+                corrs[src] = {'board': cands[0]['board'], 'r': cands[0]['r'], 'n': cands[0]['n'], 'candidates': cands}
+        return corrs
 
     def board_curves(self, rows):
         """{model: {(category, facet): {source: {'by_effort', 'effort_shift', 'listed_as'}}}} before linking."""
@@ -318,6 +367,12 @@ class Scorer:
                 for src, e in srcs.items():
                     if e['source'].startswith('aa.'):
                         aa_all.setdefault(src, {})[m] = self.aa_rows(e)
+        aa_cap_own, aa_cap_high = self.aa_capability_boards(rows)
+        for aa_src, per_m in aa_cap_own.items():
+            aa_all.setdefault(aa_src, {}).update(per_m)
+        self.effort_correlations = self.compute_effort_correlations(rows, aa_cap_high)
+        self._aa_cap_own = aa_cap_own
+        self._aa_all = aa_all
         sib_order = {m: series.nearest(m, self.sibs.get(m, ()), self.index, self.board, self.direct_tier, self.same)
                      for m in rows}
         curves = {}
@@ -327,50 +382,70 @@ class Scorer:
             for (a, f), srcs in r['boards'].items():
                 for src, e in srcs.items():
                     if src.startswith('aa.'):
-                        filled[src] = self.fill_efforts(self.aa_rows(e), m, src, aa_all, sib_order[m])
+                        own_aa = self.aa_rows(e)
+                        if self._has_effort_curve(own_aa) or any(self._has_effort_curve((aa_cap_own.get(s) or {}).get(m)) for s in aa_cap_own):
+                            filled[src] = self.fill_efforts(own_aa, m, src, aa_all, sib_order[m])
+                        else:
+                            filled[src] = (dict(own_aa), {k: {'method': 'listed'} for k in own_aa})
             for (a, f), srcs in r['boards'].items():
-                facet_aa = [src for src in srcs if src.startswith('aa.')]
                 for src, e in srcs.items():
                     if src in filled:
                         by, basis = filled[src]
-                        out.setdefault((a, f), {})[src] = {'by_effort': by, 'effort_basis': basis, 'effort_shift': 'measured',
+                        has_multi = len(by) >= 2 and float(np.ptp(list(by.values()))) > 0
+                        out.setdefault((a, f), {})[src] = {'by_effort': by, 'effort_basis': basis,
+                                                           'effort_shift': 'measured' if has_multi else 'single_aa',
                                                            'listed_as': e.get('listed_as')}
                         continue
                     listed = e.get('listed_effort')
-                    shift, how = self.listed_shift(m, a, f, listed, facet_aa, filled, aa_all, sib_order[m])
-                    by = {x: round(e['value'] + (shift[x] if shift else 0.0), 4) for x in EFFORTS}
-                    out.setdefault((a, f), {})[src] = {'by_effort': by, 'effort_shift': 'aa' if shift else 'none',
+                    native = self.aa_rows(e) if isinstance(e.get('z_by_effort'), dict) else {}
+                    ref_eff = listed if listed in EFFORTS else 'high'
+                    if not native:
+                        native = {ref_eff: round(float(e['value']), 4)}
+                    by, shifted, how = self.listed_shift(m, a, f, src, native, ref_eff, aa_cap_own, aa_all)
+                    out.setdefault((a, f), {})[src] = {'by_effort': by, 'effort_shift': 'aa' if shifted else 'none',
                                                        'effort_shift_basis': how, 'listed_as': e.get('listed_as'),
                                                        'listed_effort': listed}
         return curves
 
-    def listed_shift(self, m, a, f, listed, facet_aa, filled, aa_all, sibs):
-        """({effort: z(effort) - z(listed effort)} averaged over the facet's AA boards, how) for a board that lists one
-        variant; (None, why) when the listing names no effort or no AA board of the facet lists the model or a sibling."""
-        boards = [src for src in measurements.CAPABILITY_SOURCES if src.startswith('aa.')
-                  and measurements.CAPABILITY_SOURCES[src] == (a, f)]
-        if not boards:
-            return None, f'no Artificial Analysis per-effort board measures {a}.{f}'
-        if not listed or listed not in EFFORTS:
-            return None, 'the listing names no effort'
-        per = []
-        for src in boards:
-            if src in filled and listed in filled[src][0]:
-                per.append((src, m, filled[src][0]))
+    def listed_shift(self, m, a, f, src, native, ref_eff, aa_cap_own, aa_all):
+        """({effort: z}, shifted_bool, basis) for a non-AA board `src`. Uses ONLY `m`'s own per-effort AA data on the most
+        correlated AA board (recording board, r, n); if none exists, keeps only `native` and flags `measured_partial`."""
+        corr_entry = self.effort_correlations.get(src)
+        candidates = list((corr_entry or {}).get('candidates') or ())
+        if not candidates:
+            # Small synthetic sets (< MIN_FIT_POINTS models) fall back only to same-facet AA boards where `m` has >=2 efforts.
+            same_facet = [s for s in measurements.CAPABILITY_SOURCES
+                          if s.startswith('aa.') and s != measurements.AA_TTFA and measurements.CAPABILITY_SOURCES[s] == (a, f)]
+            candidates = [{'board': s, 'r': None, 'n': len(aa_all.get(s) or {}), 'same_facet': True} for s in same_facet]
+        chosen = None
+        for cand in candidates:
+            own = (aa_cap_own.get(cand['board']) or {}).get(m)
+            if self._has_effort_curve(own):
+                chosen = (cand, own)
+                break
+        if chosen is None:
+            why = (f"model {m} has no multi-effort Artificial Analysis curve on correlated boards"
+                   if candidates else f"no correlated Artificial Analysis board with >= {MIN_FIT_POINTS} shared models")
+            return dict(native), False, why
+        cand, own = chosen
+        aa_curve, _ = self.fill_efforts(own, m, cand['board'], aa_all, [])
+        shared_anchors = [e for e in native if e in aa_curve]
+        if not shared_anchors:
+            return dict(native), False, f"model {m} AA curve on {cand['board']} lacks reference effort {ref_eff}"
+        by = dict(native)
+        for x in EFFORTS:
+            if x in by or x not in aa_curve:
                 continue
-            sib = next((b for b in sibs if listed in (aa_all.get(src) or {}).get(b, {})), None)
-            if sib:
-                rows, _ = self.fill_efforts(aa_all[src][sib], sib, src, aa_all, [])
-                per.append((src, sib, rows))
-        if not per:
-            return None, f'no {"/".join(boards)} row for the model or a same-series sibling'
-        shift = {x: round(float(np.mean([rows[x] - rows[listed] for _, _, rows in per])), 4) for x in EFFORTS}
-        return shift, {'from_effort': listed, 'boards': [{'source': s, 'model': w} for s, w, _ in per]}
+            e0 = min(shared_anchors, key=lambda k: (abs(EFFORTS.index(k) - EFFORTS.index(x)), EFFORTS.index(k)))
+            by[x] = round(native[e0] + (aa_curve[x] - aa_curve[e0]), 4)
+        basis = {'board': cand['board'], 'r': cand['r'], 'n': cand['n'], 'model': m, 'from_effort': ref_eff,
+                 **({'same_facet': True} if cand.get('same_facet') else {})}
+        return by, True, basis
 
     def link(self, curves, panel):
-        """Center every board on the anchor at High, then link the parallel boards of a facet on the panel (mean-mean
-        linking: a board's offset moves its panel mean onto the facet's; boards listing every panel member first, the
-        others onto their mean over the members they list), then re-center the facet on the anchor at High."""
+        """Standardise full-panel boards on the panel's High rows (anchor @ High = 0, sd_panel @ High = 1), mean-mean link
+        parallel full-panel boards, mean-sigma link secondary (partial-panel) boards onto the core over shared panel models,
+        then re-center the facet on the anchor at High."""
         anchor = measurements.ANCHOR
         facets = {key for c in curves.values() for key in c}
         links = {}
@@ -380,10 +455,25 @@ class Scorer:
             for c in curves.values():
                 for src, rec in (c.get(key) or {}).items():
                     if a0.get(src) is not None:
-                        rec['by_effort'] = {e: round(v - a0[src], 4) for e, v in rec['by_effort'].items()}
-            high = {src: {m: c[key][src]['by_effort']['high'] for m, c in curves.items() if src in c.get(key, {})} for src in srcs}
-            full = [src for src in srcs if all(m in high[src] for m in panel)]
-            offsets = {}
+                        rec['by_effort'] = {e: v - a0[src] for e, v in rec['by_effort'].items()}
+            high = {src: {m: c[key][src]['by_effort']['high'] for m, c in curves.items()
+                          if 'high' in (c.get(key) or {}).get(src, {}).get('by_effort', {})} for src in srcs}
+            full = [src for src in srcs if len(panel) >= 2 and all(m in high[src] for m in panel)]
+            meas_sources = self.meas.get('sources') or {}
+            scales, offsets = {}, {}
+            for src in full:
+                if src in meas_sources:
+                    sd_h = statistics.stdev(high[src][m] for m in panel)
+                    sc = (1.0 / sd_h) if sd_h > 0 else 1.0
+                    scales[src] = sc
+                    if sc != 1.0:
+                        for c in curves.values():
+                            rec = (c.get(key) or {}).get(src)
+                            if rec is not None:
+                                rec['by_effort'] = {e: v * sc for e, v in rec['by_effort'].items()}
+                        high[src] = {m: v * sc for m, v in high[src].items()}
+                else:
+                    scales[src] = 1.0
             if len(srcs) > 1 and full:
                 means = {src: float(np.mean([high[src][m] for m in panel])) for src in full}
                 grand = float(np.mean(list(means.values())))
@@ -392,33 +482,75 @@ class Scorer:
                 for src in srcs:
                     if src not in full:
                         shared = [m for m in panel if m in high[src]]
-                        if shared:
+                        if len(shared) >= 2:
+                            mu_c = float(np.mean([core[m] for m in shared]))
+                            sd_c = statistics.stdev(core[m] for m in shared)
+                            mu_s = float(np.mean([high[src][m] for m in shared]))
+                            sd_s = statistics.stdev(high[src][m] for m in shared)
+                            sc = (sd_c / sd_s) if sd_s > 0 else 1.0
+                            off = mu_c - sc * mu_s
+                            scales[src], offsets[src] = sc, off
+                            for c in curves.values():
+                                rec = (c.get(key) or {}).get(src)
+                                if rec is not None:
+                                    rec['by_effort'] = {e: v * sc for e, v in rec['by_effort'].items()}
+                            high[src] = {m: v * sc for m, v in high[src].items()}
+                        elif shared:
+                            scales[src] = 1.0
                             offsets[src] = float(np.mean([core[m] - high[src][m] for m in shared]))
-            own = ((curves.get(anchor) or {}).get(key) or {})
+            else:
+                for src in srcs:
+                    scales.setdefault(src, 1.0)
+                    offsets.setdefault(src, 0.0)
+            own = [src for src in ((curves.get(anchor) or {}).get(key) or {}) if anchor in high.get(src, {})]
             center = float(np.mean([high[src][anchor] + offsets.get(src, 0.0) for src in own])) if own else 0.0
             for c in curves.values():
                 for src, rec in (c.get(key) or {}).items():
                     off = offsets.get(src, 0.0) - center
+                    rec['link_scale'] = round(scales.get(src, 1.0), 4)
                     rec['link_offset'] = round(off, 4)
                     rec['by_effort'] = {e: round(v + off, 4) for e, v in rec['by_effort'].items()}
-            links['.'.join(key)] = {'boards': srcs, 'offsets': {k: round(v, 4) for k, v in offsets.items()},
-                                    'full_panel_boards': full, 'panel_n': len(panel)}
+            links['.'.join(key)] = {
+                'boards': srcs,
+                'scales': {k: round(v, 4) for k, v in scales.items()},
+                'offsets': {k: round(offsets.get(k, 0.0) - center, 4) for k in srcs},
+                'sd_at_high': {src: round(statistics.stdev(c[key][src]['by_effort']['high'] for m in panel for c in [curves[m]]), 4)
+                               for src in full},
+                'full_panel_boards': full,
+                'panel_n': len(panel),
+            }
         return links
 
     def facet_value(self, recs):
-        by = {e: round(float(np.mean([r['by_effort'][e] for r in recs.values()])), 4) for e in EFFORTS}
-        partial = [src for src, r in recs.items() if r.get('effort_shift') == 'none']
-        return {'value': by['high'], 'by_effort': by, 'status': 'measured_partial' if partial else 'measured',
+        common = [e for e in EFFORTS if all(e in r['by_effort'] for r in recs.values())]
+        effs = common or [e for e in EFFORTS if any(e in r['by_effort'] for r in recs.values())]
+        by = {e: round(float(np.mean([r['by_effort'][e] for r in recs.values() if e in r['by_effort']])), 4) for e in effs}
+        partial = [src for src, r in recs.items() if r.get('effort_shift') in ('none', 'single_aa')]
+        unshifted_non_aa = [src for src, r in recs.items() if r.get('effort_shift') == 'none']
+        return {'value': by.get('high'), 'by_effort': by, 'status': 'measured_partial' if unshifted_non_aa else 'measured',
                 'sources': {src: {'by_effort': r['by_effort'], 'listed_as': r.get('listed_as'),
-                                  'effort_shift': r.get('effort_shift'), 'link_offset': r.get('link_offset'),
+                                  'effort_shift': r.get('effort_shift'),
+                                  'link_scale': r.get('link_scale', 1.0), 'link_offset': r.get('link_offset'),
                                   **({'effort_shift_basis': r['effort_shift_basis']} if r.get('effort_shift_basis') else {}),
                                   **({'effort_basis': r['effort_basis']} if r.get('effort_basis') else {})}
                             for src, r in recs.items()},
-                **({'measured_partial': {'no_effort_shift': partial}} if partial else {})}
+                **({'measured_partial': {'no_effort_shift': partial}} if unshifted_non_aa else {})}
+
+    def _model_aa_curve_for_tier_fit(self, m):
+        """Return `(aa_board, {effort: z})` for `m` when `m` has its own multi-effort AA curve containing High, else None."""
+        aa_cap_own = getattr(self, '_aa_cap_own', None) or {}
+        aa_all = getattr(self, '_aa_all', None) or {}
+        for aa_src in ('aa.index', 'aa.terminalbench_4', 'aa.frontiercode_2', 'aa.mmmu_pro'):
+            own = (aa_cap_own.get(aa_src) or {}).get(m)
+            if self._has_effort_curve(own):
+                filled, _ = self.fill_efforts(own, m, aa_src, aa_all, [])
+                if 'high' in filled and self._has_effort_curve(filled):
+                    return aa_src, filled
+        return None
 
     def estimate(self, m, base, key, facets, fits, rejected, tier):
         """Facet `key` of model `m` (module docstring): the nearest same-series sibling's curve moved along the facet's
-        tier fit by the two tiers' difference, else the fit at the model's tier (no effort information: flat)."""
+        tier fit by the two tiers' difference, else the fit at the model's tier shifted only where `m` has its own AA curve."""
         fid = f'{key[0]}.{key[1]}~tier'
         f = fits.get(key)
         t = tier[m]['value']
@@ -429,18 +561,33 @@ class Scorer:
             est = {'method': 'sibling_shift', 'base_model': base, 'base_value': vb['value'], 'base_tier': tier[base]['value'],
                    'tier': t, 'tier_source': tier[m]['method'], 'shift': round(shift, 4),
                    **(self.fit_record(fid, f) if f else {'shift_basis': f"shift 0: no fit, {rejected.get(fid)}"})}
+            if len(by) == 1 and 'high' in by:
+                aa_pair = self._model_aa_curve_for_tier_fit(m)
+                if aa_pair is not None:
+                    aa_src, own = aa_pair
+                    v_high = by['high']
+                    by = {e: round(v_high + (own[e] - own['high']), 4) for e in EFFORTS if e in own}
+                    est['effort'] = f'shifted from High along {m} on {aa_src}'
         else:
             v = self.predict(f, t)
-            by = dict.fromkeys(EFFORTS, v)
+            aa_pair = self._model_aa_curve_for_tier_fit(m)
+            if aa_pair is not None:
+                aa_src, own = aa_pair
+                by = {e: round(v + (own[e] - own['high']), 4) for e in EFFORTS if e in own}
+                effort_note = f'shifted from High along {m} on {aa_src}'
+            else:
+                by = {'high': v}
+                effort_note = 'High only: no multi-effort Artificial Analysis curve for this model'
             est = {'method': 'tier_fit', 'tier': t, 'tier_source': tier[m]['method'], **self.fit_record(fid, f),
-                   'effort': 'flat: a tier fit carries no effort information'}
+                   'effort': effort_note}
             if not f['x_min'] <= t <= f['x_max']:
                 est['tier_clamped_to'] = f['x_min'] if t < f['x_min'] else f['x_max']
-        return {'value': by['high'], 'by_effort': by, 'status': 'estimated', 'sources': {}, 'estimate': est}
+        return {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {}, 'estimate': est}
 
     @staticmethod
     def category(a, facets):
-        """{'value', 'by_effort', 'status', ...} of category `a` from its facet records (module docstring)."""
+        """{'value', 'by_effort', 'status', ...} of category `a` from its facet records. Never silently skips a missing
+        required facet (review F1): `coding` requires both facets, and `tool_operation` requires each level's facets."""
         names = AXES[a]
         present = [f for f in names if f in facets]
         missing = [f for f in names if f not in facets]
@@ -449,21 +596,29 @@ class Scorer:
                     'flag': 'missing', 'reason': 'no trusted source, no sibling and no fit for any of its facets'}
 
         def combine(selected):
-            got = [f for f in selected if f in facets] or present
-            return {e: round(min(facets[f]['by_effort'][e] for f in got), 4) for e in EFFORTS}, got
+            miss = [f for f in selected if f not in facets]
+            if miss:
+                return {}, [f for f in selected if f in facets], miss
+            effs = [e for e in EFFORTS if all(e in facets[f]['by_effort'] for f in selected)]
+            return ({e: round(min(facets[f]['by_effort'][e] for f in selected), 4) for e in effs},
+                    list(selected), [])
+
         out = {'facets': {f: facets[f] for f in present}, 'missing_facets': missing}
         if a == 'tool_operation':
             levels = {}
             for level, selected in TOOL_LEVEL_FACETS.items():
                 if selected:
-                    by, used = combine(selected)
-                    levels[str(level)] = {'by_effort': by, 'facets': used}
+                    by_l, used, miss_l = combine(selected)
+                    levels[str(level)] = {'by_effort': by_l, 'facets': used,
+                                          **({'missing_facets': miss_l} if miss_l else {})}
             out['by_level'] = levels
             by = levels['3']['by_effort']
         else:
-            by, _ = combine(names)
+            by, _, _ = combine(names)
+            if missing:
+                out['flag'] = 'partial'
         statuses = {facets[f]['status'] for f in present}
-        out.update(value=by['high'], by_effort=by,
+        out.update(value=by.get('high'), by_effort=by,
                    status='partial' if missing else 'estimated' if 'estimated' in statuses
                    else 'measured_partial' if 'measured_partial' in statuses else 'measured')
         return out
@@ -479,13 +634,16 @@ class Scorer:
         tier = self.tier_records(rows, self.index, self.board)
         self.direct_tier = {m: t['value'] for m, t in tier.items() if t['method'] in ('anchor', 'arena_overall', 'other_overall')}
         panel = [m for m in (self.meas.get('panel') or {}).get('models') or () if m in rows]
+        self.effort_correlations = {}
+        self._aa_cap_own = {}
         curves = self.board_curves(rows)
         links = self.link(curves, panel)
         facets = {m: {key: self.facet_value(recs) for key, recs in c.items()} for m, c in curves.items()}
         keys = [(a, f) for a, fs in AXES.items() for f in fs]
         fits, rejected = {}, {}
         for key in keys:
-            pts = [(self.direct_tier[m], facets[m][key]['value']) for m in rows if key in facets[m] and m in self.direct_tier]
+            pts = [(self.direct_tier[m], facets[m][key]['value']) for m in rows
+                   if key in facets[m] and facets[m][key].get('value') is not None and m in self.direct_tier]
             fits[key], why = self.fit(pts)
             if why:
                 rejected[f'{key[0]}.{key[1]}~tier'] = why
@@ -497,7 +655,8 @@ class Scorer:
                 if key in facets[m]:
                     continue
                 bases = [b for b in series.nearest(m, self.sibs.get(m, ()), self.index, self.board, self.direct_tier, self.same)
-                         if (facets[b].get(key) or {}).get('status', '').startswith('measured') and tier[b]['value'] is not None]
+                         if (facets[b].get(key) or {}).get('status', '').startswith('measured')
+                         and (facets[b].get(key) or {}).get('value') is not None and tier[b]['value'] is not None]
                 if bases or fits.get(key):
                     facets[m][key] = self.estimate(m, bases[0] if bases else None, key, facets, fits, rejected, tier)
         # A `same_model` row is the very model it declares: it takes that model's facets as they stand, for the
@@ -541,14 +700,27 @@ class Scorer:
                     'anchor': None if pick(anchor) is None else round(float(pick(anchor)), 4), 'n': len(vals)}
         out = {}
         for a in AXES:
+            facet_targets = {}
+            for f in AXES[a]:
+                fst = stats(lambda ax, a=a, f=f: ((ax[a].get('facets') or {}).get(f) or {}).get('value'))
+                if fst is not None:
+                    t1_f, t2_f = fst['min'], max(fst['min'], fst['median'])
+                    raw_t3 = fst['anchor'] if fst['anchor'] is not None else t2_f
+                    t3_f = max(t2_f, raw_t3)
+                    facet_targets[f] = {'levels': {'1': {'target': t1_f, 'zero': t1_f, 'statistic': 'panel minimum', 'n': fst['n']},
+                                                   '2': {'target': t2_f, 'zero': t1_f, 'statistic': 'panel median', 'n': fst['n']},
+                                                   '3': {'target': t3_f, 'zero': t1_f, 'statistic': f'anchor {measurements.ANCHOR}', 'n': fst['n'],
+                                                         **({'raised_to_level_below': t2_f} if t2_f > raw_t3 else {})}}}
             if a != 'tool_operation':
                 st = stats(lambda ax, a=a: ax[a].get('value'))
                 levels = {str(level): ({'target': st[key], 'zero': st['min'], 'statistic': name, 'n': st['n']} if st else
                                        {'target': None, 'zero': None, 'reason': 'no panel model has a value'})
                           for level, key, name in ((1, 'min', 'panel minimum'), (2, 'median', 'panel median'),
                                                    (3, 'anchor', f'anchor {measurements.ANCHOR}'))}
-                gap = (levels['3']['target'] - levels['2']['target']) if st else None
-                out[a] = {'levels': levels, 'continuity': None if gap is None else round(gap, 4)}
+                gap = (levels['3']['target'] - levels['2']['target']) if (
+                    st and levels['3']['target'] is not None and levels['2']['target'] is not None
+                ) else None
+                out[a] = {'levels': levels, 'facets': facet_targets, 'continuity': None if gap is None else round(gap, 4)}
                 continue
             per = {f: stats(lambda ax, f=f: ((ax['tool_operation'].get('facets') or {}).get(f) or {}).get('value'))
                    for f in AXES[a]}
@@ -572,7 +744,7 @@ class Scorer:
                 prev = {f: r['target'] for f, r in by.items()}
             shared = [f for f in levels['2']['by_facet'] if f in levels['3']['by_facet']]
             gap = min(levels['3']['by_facet'][f]['target'] - levels['2']['by_facet'][f]['target'] for f in shared) if shared else None
-            out[a] = {'levels': levels, 'continuity': None if gap is None else round(gap, 4)}
+            out[a] = {'levels': levels, 'facets': facet_targets, 'continuity': None if gap is None else round(gap, 4)}
         return out
 
     def apply_overrides(self, rows):
@@ -1049,7 +1221,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None)
                                  'level': 'red_if_vision_demanded',
                                  'effect': 'unknown image-input modality; excluded from automatic routing when '
                                            'tool_operation is 3 (mode B)'})
-        fm = pick_fast_mode(m, scorer.trusted(r['fields'].get('fast_mode')))
+        fm = pick_fast_mode(m, scorer.trusted(r['fields'].get('fast_mode')), scorer.models)
         if fm['status'] == 'missing':
             model_errors.append({'model': m, 'field': 'fast_mode', 'reason': 'no_cited_source', 'level': 'yellow',
                                  'effect': 'fast mode is not priced or enabled from a policy multiplier on the five-axis path'})
@@ -1060,8 +1232,8 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None)
                                                'model (mode B)'})
             elif ax.get('missing_facets'):
                 model_errors.append({'model': m, 'field': f"{a}.{','.join(ax['missing_facets'])}",
-                                     'reason': 'facet_unmeasured_no_estimate', 'level': 'yellow',
-                                     'effect': 'the category is computed from the facets that have values (partial)'})
+                                     'reason': 'facet_unmeasured_no_estimate', 'level': 'red_if_demanded',
+                                     'effect': 'missing facet with no estimate: excluded under mode B at levels requiring this facet'})
         evidence = axis_evidence(r['axes'])
         if evidence['aa_only']:
             model_errors.append({'model': m, 'field': 'axes', 'reason': 'aa_only', 'level': 'yellow',
@@ -1099,7 +1271,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None)
            'anchor': {'model': measurements.ANCHOR, 'value': 0.0, 'scale': 'panel standard score',
                       'panel': (meas.get('panel') or {}).get('models') or [], 'panel_n': (meas.get('panel') or {}).get('n'),
                       'targets': targets},
-           'links': links, 'checks': meas.get('checks') or [],
+           'links': links, 'effort_correlations': scorer.effort_correlations, 'checks': meas.get('checks') or [],
            'models': models, 'data_errors': errors}
     return doc
 

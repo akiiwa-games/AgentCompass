@@ -144,29 +144,7 @@ class Derive(unittest.TestCase):
         self.assertNotIn('zzz-unknown-9', merged['models'])     # no row is invented for an unmeasured name
 
 
-class Migration(unittest.TestCase):
-    def test_old_choice_maps_and_explicit_new_wins(self):
-        acc = proxy_accounts()
-        out = ab.derive(acc, catalog('llmproxy', ['gpt-5.6-sol', 'kimi-k3']), NOW)
-        aliases = ab.legacy_aliases(acc, out)
-        self.assertEqual(aliases['llmproxy__gpt_5_6_sol_high'], 'auto:llmproxy:codex:gpt-5.6-sol@high')
-        prefs = {'accounts': {'llmproxy': {'bundles': {
-            'llmproxy__gpt_5_6_sol_high': {'disabled': False},
-            'llmproxy__kimi_k3_high': {'disabled': False},
-            'auto:llmproxy:codex:kimi-k3@high': {'disabled': True}}}}}
-        migrated = ab.migrate_overrides(prefs, aliases)
-        out2 = ab.derive(acc, catalog('llmproxy', ['gpt-5.6-sol', 'kimi-k3']), NOW, overrides=migrated)
-        rows = out2['bundles']['llmproxy']
-        self.assertFalse(rows['auto:llmproxy:codex:gpt-5.6-sol@high']['disabled'])
-        self.assertTrue(rows['auto:llmproxy:codex:kimi-k3@high']['disabled'])
-        self.assertIn('llmproxy__gpt_5_6_sol_high', prefs['accounts']['llmproxy']['bundles'])  # input untouched
-
-    def test_ledger_continuity(self):
-        aliases = {'old': 'auto:x'}
-        self.assertEqual(ab.resolve_bundle_id('old', {'auto:x'}, aliases), 'auto:x')
-        self.assertIsNone(ab.resolve_bundle_id('gone', {'auto:x'}, aliases))
-        self.assertEqual(ab.resolve_bundle_id('auto:x', {'auto:x'}, aliases), 'auto:x')
-
+class SeenPersistence(unittest.TestCase):
     def test_seen_roundtrip_and_prune(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:
@@ -179,17 +157,6 @@ class Migration(unittest.TestCase):
 
 
 class SharedHooks(unittest.TestCase):
-    def test_accounts_override_maps_legacy_proxy_choice(self):
-        import accounts_override
-        acc = proxy_accounts()
-        out = ab.derive(acc, catalog('llmproxy', ['gpt-5.6-sol']), NOW)
-        merged = ab.merge_into(acc, out)
-        merged['_auto_bundles'] = {'legacy_aliases': ab.legacy_aliases(acc, out)}
-        doc = {'accounts': {'llmproxy': {'bundles': {'llmproxy__gpt_5_6_sol_high': {'disabled': False}}}}}
-        accounts_override.apply(merged, doc)
-        self.assertFalse(merged['accounts']['llmproxy']['bundles']['auto:llmproxy:codex:gpt-5.6-sol@high']['disabled'])
-        self.assertEqual(list(doc['accounts']['llmproxy']['bundles']), ['llmproxy__gpt_5_6_sol_high'])
-
     def test_legacy_disabled_gives_neutral_exclusion(self):
         from datetime import datetime, timezone
         merged = json.loads(json.dumps(REAL))

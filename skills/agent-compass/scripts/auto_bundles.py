@@ -172,11 +172,14 @@ def _account_harnesses(account, spec):
 PER_MODEL = '*'
 
 
-def proxy_harness(family, model):
-    """Harness for a model on an account without manual bundles (the retired proxy synthesis rule)."""
+def proxy_harness(family, model, accounts=None):
+    """Harness for a model on an account without manual bundles."""
     family = str(family or 'codex')
     if family in ('claude', 'codex'):
-        return 'claude' if str(model).startswith('claude-') else 'codex'
+        models = (accounts or {}).get('models') or {}
+        canon = resolve_canonical_model(model, models, (accounts or {}).get('aliases') or {}) or str(model or '')
+        api_family = str((models.get(canon) or {}).get('api_family') or '').strip().lower()
+        return 'claude' if api_family == 'claude' else 'codex'
     return family
 
 
@@ -238,7 +241,8 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                     continue
                 base, id_effort = split_effort(raw, accounts)
                 harness = pair_harness if pair_harness != PER_MODEL else \
-                    proxy_harness((families or {}).get(account) or spec.get('family'), default_profile(raw, accounts)['model'])
+                    proxy_harness((families or {}).get(account) or spec.get('family'),
+                                  default_profile(raw, accounts)['model'], accounts)
                 profile = default_profile(raw, accounts)
                 status, reason = harness_compatibility(harness, profile['model'], spec)
                 if status != 'excluded' and not is_chat_model(raw):
@@ -296,55 +300,6 @@ def merge_into(accounts, derived):
         for bid, bundle in rows.items():
             target.setdefault(bid, bundle)
     return merged
-
-
-# --- Migration from provider_inventory._synthesize_proxy_bundles ids ------------------------------
-def _legacy_digest(value):
-    return hashlib.sha256(str(value or '').encode()).hexdigest()
-
-
-def legacy_proxy_ids(account, raw, accounts):
-    """Ids the retired proxy synthesis produced for this advertised model (plain and digest-suffixed)."""
-    canon = resolve_canonical_model(raw, accounts.get('models') or {}, accounts.get('aliases') or {}) \
-        or str(raw).rsplit('/', 1)[-1]
-    plain = f"{account}__{canon.replace('-', '_').replace('.', '_')}_high"
-    return [plain, f'{plain}_{_legacy_digest(raw)[:8]}']
-
-
-def legacy_aliases(accounts, derived):
-    """{old synthesized id: auto id} for every derived metered bundle."""
-    out = {}
-    for account, rows in (derived.get('bundles') or {}).items():
-        for bid, bundle in rows.items():
-            if bundle.get('billing') == 'metered':
-                for old in legacy_proxy_ids(account, bundle['launch_model'], accounts):
-                    out.setdefault(old, bid)
-    return out
-
-
-def migrate_overrides(overrides, aliases):
-    """Copy of the sparse preferences with old-id bundle choices also written under the auto id.
-
-    An explicit choice already stored under the auto id wins. Old keys are kept (harmless, and a
-    rollback keeps working); callers may drop them after a one-time persisted migration.
-    """
-    result = copy.deepcopy(overrides or {})
-    for account, spec in (result.get('accounts') or {}).items():
-        rows = (spec or {}).get('bundles')
-        if not isinstance(rows, dict):
-            continue
-        for old, new in aliases.items():
-            if old in rows and new not in rows and new.startswith(f'{AUTO_PREFIX}{account}:'):
-                rows[new] = copy.deepcopy(rows[old])
-    return result
-
-
-def resolve_bundle_id(bid, known_ids, aliases):
-    """Ledger continuity lookup: the id itself, else its auto alias, else None (= no continuity)."""
-    if bid in known_ids:
-        return bid
-    new = aliases.get(bid)
-    return new if new in known_ids else None
 
 
 # --- `seen` persistence (last detection time per auto bundle) -------------------------------------

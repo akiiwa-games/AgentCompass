@@ -32,6 +32,7 @@ import override_store
 import antigravity_telemetry
 import provider_inventory
 import public_data
+import user_scores
 import accounts_override
 import auto_bundles
 import cwd_policy
@@ -1149,6 +1150,7 @@ def cooling_reason(bundle, entries, accounts, now=None):
 # - Economy: every long window charges the candidate's burn (usd over the window's capacity) times the window's quota
 #   price (FiveAxisEconomy), counted in hours of the window's reference model.
 FIVE_AXIS_FILE = REFERENCES / 'five-axis-scores.json'
+USER_SCORES_FILE = REFERENCES / 'user-scores.json'
 FIVE_AXES = ('divergence', 'coding', 'aesthetics', 'tool_operation')
 FIVE_AXIS_DEFAULTS = {
     # fit and continuity are both in panel standard deviations: one unit each, not a hand-set trade-off
@@ -1209,8 +1211,16 @@ def five_axis_config(policy):
     return {**FIVE_AXIS_DEFAULTS, **raw, 'weights': {**FIVE_AXIS_DEFAULTS['weights'], **(raw.get('weights') or {})}}
 
 
-def load_five_axis(path=None):
-    return json.loads(Path(path or FIVE_AXIS_FILE).read_text(encoding='utf-8'))
+def load_five_axis(path=None, *, use_effective=True):
+    default_file = REFERENCES / 'five-axis-scores.json'
+    target = Path(path) if path is not None else (public_data.effective(default_file) if use_effective else default_file)
+    return json.loads(target.read_text(encoding='utf-8'))
+
+
+def load_public_user_scores(path=None, *, use_effective=True):
+    default_file = REFERENCES / 'user-scores.json'
+    target = Path(path) if path is not None else (public_data.effective(default_file) if use_effective else default_file)
+    return user_scores.load_public(target, effective=False)
 
 
 def validate_axis_demand(raw):
@@ -1276,11 +1286,12 @@ def opencode_token_usd(price, tok_in, tok_out, tok_cache_read, tok_cache_write):
             + float(tok_out or 0) * value['output']) / 1e6
 
 
-def opencode_local_spend(models_table, discovery=None):
+def opencode_local_spend(models_table, discovery=None, *, read_local_db=True):
     """(spend, unpriced): lower-bound USD per model from local `opencode.db` token counts at the model's public list
     price, and the sorted ids of models with tokens but no list price in the data (round 12 S6). A model id matches a
     table name or alias exactly; there is no prefix guessing and no invented price, so a model without a cited price is
-    a surfaced gap (mode B), never a $0 or a borrowed rate."""
+    a surfaced gap (mode B), never a $0 or a borrowed rate. When `read_local_db=False` (fresh/public evaluation),
+    no machine-local `opencode.db` is read."""
     import sqlite3
     prices = opencode_list_prices(models_table)
     readings = []       # (source, model id, input, output + reasoning, cache read, cache write)
@@ -1290,9 +1301,10 @@ def opencode_local_spend(models_table, discovery=None):
             readings.append(('discovery', model_id, m_row.get('input'),
                              float(m_row.get('output') or 0) + float(m_row.get('reasoning') or 0),
                              m_row.get('cache_read'), m_row.get('cache_write')))
-    db_path = Path(os.environ.get('OPENCODE_DB_PATH')
-                   or (Path.home() / '.local' / 'share' / 'opencode' / 'opencode.db'))
-    if db_path.exists():
+    db_path = (Path(os.environ.get('OPENCODE_DB_PATH')
+                    or (Path.home() / '.local' / 'share' / 'opencode' / 'opencode.db'))
+               if read_local_db else None)
+    if db_path is not None and db_path.exists():
         try:
             conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=1.0)
             try:
@@ -1329,8 +1341,9 @@ def opencode_local_spend(models_table, discovery=None):
     return spend, sorted(unpriced)
 
 
-def five_axis_overlay(accounts, data=None):
-    """A copy of `accounts` carrying the scoring data of references/five-axis-scores.json.
+def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scores=None, local_scores=None):
+    """A copy of `accounts` carrying the scoring data of references/five-axis-scores.json plus manual scores
+    (`references/user-scores.json` maintainer layer, then local `user-scores.json` when `read_local_state=True`).
 
     Each model row gets `five_axis` {categories (the scores file's category cells: value, by_effort, facets), scores,
     missing, estimates, axis_status, tier, usd_status, image_input, fast_mode, duration: {status, by_effort,
@@ -1341,7 +1354,10 @@ def five_axis_overlay(accounts, data=None):
     change; a window without one is marked unknown, with no template fallback. Free pools are ordinary quota pools with
     C/U/t0/T (round 11): when capacity is unreadable, they enter mode B (`capacity_unknown`), out of automatic routing."""
     import copy
-    data = data if data is not None else load_five_axis(five_axis_config(accounts.get('scoring')).get('path'))
+    explicit_data = data is not None
+    cfg_path = five_axis_config(accounts.get('scoring')).get('path')
+    data = data if explicit_data else (load_five_axis(cfg_path) if read_local_state
+                                       else load_five_axis(cfg_path, use_effective=False))
     out = copy.deepcopy(accounts)
     rows = data.get('models') or {}
     for name, info in (out.get('models') or {}).items():
@@ -1370,7 +1386,8 @@ def five_axis_overlay(accounts, data=None):
             info['usd_per_hour'] = usd
         else:
             info.pop('usd_per_hour', None)
-    local_spend, local_unpriced = opencode_local_spend(out.get('models') or {}, out.get('_discovery'))
+    local_spend, local_unpriced = opencode_local_spend(
+        out.get('models') or {}, out.get('_discovery'), read_local_db=bool(read_local_state))
     community = data.get('capacity') or {}
     for name, spec in (out.get('accounts') or {}).items():
         if not isinstance(spec, dict):
@@ -1449,6 +1466,12 @@ def five_axis_overlay(accounts, data=None):
                          'has nothing to stand on')
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
                          'panel_n': anchor.get('panel_n')}
+    pub_manual = public_scores if public_scores is not None else (
+        None if explicit_data else (load_public_user_scores() if read_local_state
+                                    else load_public_user_scores(use_effective=False))
+    )
+    loc_manual = local_scores if local_scores is not None else (user_scores.load_local() if read_local_state else None)
+    user_scores.apply_overlay(out.setdefault('models', {}), targets, public_scores=pub_manual, local_scores=loc_manual)
     for info in (out.get('models') or {}).values():
         if isinstance(info, dict) and isinstance(info.get('five_axis'), dict):
             info['five_axis']['shares'] = five_axis_shares(five_axis_values(info['five_axis'], 'high'), targets)
@@ -1470,12 +1493,17 @@ def estimate_summary(row):
 
 
 def _at_effort(cell, effort):
-    """A score cell's value at `effort`: its per-effort value, else its value at High (a model or board without that
-    effort row), else None."""
+    """A score cell's value at `effort`: its per-effort entry in `by_effort` when `by_effort` is present (an effort-less
+    bundle runs its single configuration, keyed `'high'` or its lone entry), else `cell['value']` for minimal cells."""
     if not isinstance(cell, dict):
         return None
-    by = cell.get('by_effort') or {}
-    value = by.get(effort) if effort in by else cell.get('value')
+    if 'by_effort' in cell and isinstance(cell.get('by_effort'), dict):
+        by = cell['by_effort']
+        if not by:
+            return None
+        value = by.get(effort) if effort else (by.get('high') if 'high' in by else cell.get('value'))
+        return None if value is None else float(value)
+    value = cell.get('value')
     return None if value is None else float(value)
 
 
@@ -1522,7 +1550,7 @@ def five_axis_fit(values, demand, targets):
                 z = (values.get(a) or {}).get(f)
                 parts[f] = {'score': None if z is None else round(z, 4), 'target': t['target'], 'zero': t['zero'],
                             'term': round((min(z, t['target']) - t['zero']) if z is not None else 0.0, 4)}
-            scored = [p for p in parts.values() if p['score'] is not None] or list(parts.values())
+            scored = list(parts.values())
             term = min(p['term'] for p in scored)
             rows[a] = {'demand': w, 'facets': parts, 'term': term,
                        'shortfall': round(max(max(0.0, p['target'] - p['score']) if p['score'] is not None
@@ -1542,7 +1570,7 @@ def five_axis_shares(values, targets):
     """{category: 0..1} for display (the tray radar): (min(z, t3) - t1) / (t3 - t1), where t1 is the level-1 target (the
     panel's weakest) and t3 the level-3 target (the anchor): 0 at the panel's weakest, 1 at the level the hardest demand
     asks, never more (the fit gives no credit above a target either). tool_operation takes the weakest of its level-3
-    facets that have a value. None where the model has no value."""
+    facets when all required level-3 facets have a value; None where any required facet has no value."""
     def share(z, row):
         if z is None or not row or row.get('target') is None or row['target'] <= row['zero']:
             return None
@@ -1552,8 +1580,7 @@ def five_axis_shares(values, targets):
         level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
         if a == 'tool_operation':
             parts = [share((values.get(a) or {}).get(f), r) for f, r in (level3.get('by_facet') or {}).items()]
-            parts = [p for p in parts if p is not None]
-            out[a] = min(parts) if parts else None
+            out[a] = min(parts) if parts and all(p is not None for p in parts) else None
         else:
             out[a] = share(values.get(a), level3)
     return out
@@ -1565,8 +1592,7 @@ def five_axis_level(rows):
     total, value = 0, 0.0
     for r in rows.values():
         if 'facets' in r:
-            scored = [p['score'] for p in r['facets'].values() if p['score'] is not None]
-            z = min(scored) if scored else min(p['zero'] for p in r['facets'].values())
+            z = min(p['score'] if p['score'] is not None else p['zero'] for p in r['facets'].values())
         else:
             z = r['score'] if r['score'] is not None else r['zero']
         value += r['demand'] * z
@@ -1576,12 +1602,9 @@ def five_axis_level(rows):
 
 def five_axis_continuity_value(demand, targets):
     """The worth of continuing a related worker, in panel standard deviations (user, 2026-11-11): one demand level, the
-    largest positive t3 - t2 among the categories at the task's highest demand level (five-axis-scores.json
-    `anchor.targets.<category>.continuity`), else 0. A task that demands nothing has no level to be worth."""
-    top = max(demand.values(), default=0)
-    if top <= 0:
-        return 0.0
-    gaps = [(targets.get(a) or {}).get('continuity') for a, w in demand.items() if w == top]
+    largest positive t3 - t2 among all demanded categories (five-axis-scores.json `anchor.targets.<category>.continuity`),
+    else 0. A zero-gap category such as `tool_operation` never wipes out a demanded thinking category's continuity."""
+    gaps = [(targets.get(a) or {}).get('continuity') for a, w in demand.items() if w >= 1]
     return max([g for g in gaps if isinstance(g, (int, float)) and g > 0], default=0.0)
 
 
@@ -1689,13 +1712,21 @@ def five_axis_need_probability(rec, level_usd):
 
 
 def five_axis_substitute_slack(rec, spend_usd):
-    """a_v: the probability that a task of `spend_usd` displaced onto window `rec` still finds the room later, 1 minus the
-    need-tail of what remains after it. It reads only this window's own state and no price, so substitutes cannot
-    discount each other (the price graph has no cycle)."""
-    room = float(rec['capacity_usd']) - float(rec['used_usd']) - float(spend_usd)
-    if room < 0:
+    """a_v: the effective availability of window `rec` for a displaced task of `spend_usd`: `(1 - (1 - e)^2 (U + spend)/C)`
+    times `1 - need_tail(room)`, where `(1 - e)^2` is the remaining-period arrival share times remaining horizon fraction
+    and `(U + spend) / C` is the committed share. Any finite billed window with period time still to run stays strictly
+    below `1.0` (so another pool's value ladder never collapses to zero when a substitute shares its top model), while
+    vanishing quadratically near the reset (`e -> 1`). Reads only this window's own state."""
+    cap = float(rec['capacity_usd'])
+    used_after = float(rec['used_usd']) + float(spend_usd)
+    room = cap - used_after
+    if cap <= 0 or room <= 0:
         return 0.0
-    return 1.0 - five_axis_need_tail(rec, room)
+    e = float(rec.get('elapsed_frac') or 0.0)
+    rem_time = max(0.0, 1.0 - e)
+    committed = min(1.0, max(0.0, used_after / cap))
+    p_rec = rec if 'price_lump_usd' not in rec else {**rec, 'lump_usd': rec['price_lump_usd']}
+    return (1.0 - (rem_time ** 2) * committed) * (1.0 - five_axis_need_tail(p_rec, room))
 
 
 def five_axis_outside_value(alternatives, own_best_fit):
@@ -1757,14 +1788,43 @@ def five_axis_value_ladder(hulls):
     return {'steps': ladder, 'full_usd': full}
 
 
+_CLASSIFIER_HORIZON_CACHE = {}
+
+
+def classifier_cases_horizon_hours():
+    """Longest calibrated task duration (hours) in `references/classifier-cases.json`, read via `public_data.effective`."""
+    target = public_data.effective(REFERENCES / 'classifier-cases.json')
+    try:
+        stamp = target.stat().st_mtime_ns
+    except OSError:
+        return 0.0
+    cached = _CLASSIFIER_HORIZON_CACHE.get(target)
+    if cached and cached[0] == stamp:
+        return cached[1]
+    doc = json.loads(target.read_text(encoding='utf-8-sig'))
+    hrs = [float(ep['expected_hours']) for c in (doc.get('calibration_cases') or ())
+           for ep in [c.get('expected_profile') or {}] if isinstance(ep.get('expected_hours'), (int, float))]
+    val = max(hrs, default=0.0)
+    _CLASSIFIER_HORIZON_CACHE[target] = (stamp, val)
+    return val
+
+
 def five_axis_quota_price(rec, ladder, level_usd):
-    """lambda_w(y): fit lost elsewhere per USD at cumulative use y, sum_j (sigma_j - sigma_{j-1}) * need-tail((C - y) / rho_j).
-    The tail of the room left at y when every cheaper step has been given up: how likely it is that the work which
-    still needs the dollar at y (up to the step with slope sigma_j) turns up before the reset."""
-    room = float(rec['capacity_usd']) - float(level_usd)
+    """lambda_w(y): fit lost elsewhere per USD at cumulative use y, integrated over the account's value ladder via the
+    negative-binomial depletion tail `need_tail((C - y) / rho_j)`. Rises strictly with used share `y / C` and vanishes
+    at the reset (`e -> 1`), while remaining exact-unit invariant (`$ * k` scales `lambda` by `1/k`). When built by
+    `FiveAxisEconomy`, `rec['price_lump_usd']` prices future arrivals at `max(task_hours, calibrated_horizon_hours)`
+    cut at `reset_hours`, so short tasks at mid-week still reflect billed vs free, pool used share, and `+fast` burn."""
+    cap = float(rec['capacity_usd'])
+    e = float(rec.get('elapsed_frac') or 0.0)
+    if cap <= 0 or e >= 1.0:
+        return 0.0
+    room = cap - float(level_usd)
+    p_rec = rec if 'price_lump_usd' not in rec else {**rec, 'lump_usd': rec['price_lump_usd']}
     price, prev = 0.0, 0.0
     for rho, slope in ladder['steps']:
-        price += (slope - prev) * five_axis_need_tail(rec, room / rho)
+        tail = five_axis_need_tail(p_rec, room / rho)
+        price += (slope - prev) * tail
         prev = slope
     return price
 
@@ -1808,7 +1868,8 @@ def five_axis_table_integral(table, spend_usd):
     return table['cum'][k] + _quadratic_integral(table['lam'], k, x - k) * table['step']
 
 
-def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tables=None, fresh_lump=None):
+def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tables=None, fresh_lump=None,
+                         fresh_price_lump=None):
     """cost_i = integral over [U, U + S] of lambda_w(y) dy: the fit the rest of the period loses because this candidate
     takes `spend_usd` of window `rec` (same unit as the fit, so N = F - cost needs no weight). A task that crosses the
     reset is split by time: the part before it is priced on the current period, the part after it on a fresh period
@@ -1821,7 +1882,7 @@ def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tab
     spend_max = max(spend, float(spend_max or 0.0))
     hours = max(1e-9, float(task_hours or 0.0))
     tau = rec.get('reset_hours')
-    crossing = tau is not None and tau != float('inf') and tau < hours
+    crossing = tau is not None and tau != float('inf') and float(tau) < hours - 1e-12
     before = spend * (float(tau) / hours) if crossing else spend
     after = spend - before
     if 'now' not in tables:
@@ -1834,13 +1895,14 @@ def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tab
     if crossing and after > 0:
         cap = float(rec['capacity_usd'])
         fresh = {'capacity_usd': cap, 'used_usd': 0.0, 'elapsed_frac': 0.0,
-                 'lump_usd': rec['lump_usd'] if fresh_lump is None else fresh_lump}
+                 'lump_usd': rec['lump_usd'] if fresh_lump is None else fresh_lump,
+                 **({'price_lump_usd': fresh_price_lump} if fresh_price_lump is not None else {})}
         if 'fresh' not in tables:
             tables['fresh'] = five_axis_price_table(fresh, ladder, spend_max)
         cost += five_axis_table_integral(tables['fresh'], after)
         need_end = five_axis_need_probability(fresh, min(after, cap))
     return {'cost': cost, 'lambda_start': lam0, 'need_start': need_start, 'need_end': need_end,
-            'spend_before': before, 'spend_after': after}
+             'spend_before': before, 'spend_after': after}
 
 
 # The demands a window's value ladder is read over: every mix of the three thinking categories (tool_operation 0, so a
@@ -1868,13 +1930,15 @@ class FiveAxisEconomy:
         self.grid = FIVE_AXIS_DEMAND_GRID
         targets = [five_axis_targets(d, accounts['_five_axis']['targets']) for d in self.grid]
         self.task_gi = len(self.grid)           # the extra fit slot: the task's own demand (diagnostics only)
+        self._task_hours = float(task.get('hours') or task.get('expected_hours') or 0.0)
+        self._horizon_hours = classifier_cases_horizon_hours()
         fit_cache = {}
         self.entries = []
         self.spend_max = {}
         self.units = {}
         self.unit_wkeys = {}
         self.points = {}
-        self._tables, self._ladders, self._alts, self._recs, self._lumps = {}, {}, {}, {}, {}
+        self._tables, self._ladders, self._alts, self._recs, self._lumps, self._price_lumps = {}, {}, {}, {}, {}, {}
         for c in [*pool, *extra]:
             qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
             states = {wid: (st, cap) for wid, (_, st, cap, _) in (c.get('_five_window_states') or {}).items()
@@ -1884,7 +1948,10 @@ class FiveAxisEconomy:
             values = c.get('_five_values') or {}
             key = json.dumps(values, sort_keys=True)
             if key not in fit_cache:
-                fit_cache[key] = tuple(five_axis_fit(values, d, t)[0] for d, t in zip(self.grid, targets))
+                fit_cache[key] = tuple(
+                    five_axis_fit(values, d, t)[0] if all(values.get(a) is not None for a, w in d.items() if w > 0) else -1.0
+                    for d, t in zip(self.grid, targets)
+                )
             entry = {'cand': c, 'qsrc': qsrc, 'startable': not c.get('_five_long_wait'),
                      'unmetered': bool(c.get('_five_unmetered')), 'metered': bool(c.get('_five_metered')),
                      'spend': float(c.get('expected_usd') or 0.0), 'states': states,
@@ -1916,6 +1983,7 @@ class FiveAxisEconomy:
         rec = five_axis_window_recovery(st, cap)
         if rec is not None:
             rec['lump_usd'] = self.lump(wkey, rec['reset_hours'])
+            rec['price_lump_usd'] = self.price_lump(wkey, rec['reset_hours'])
         return rec
 
     def lump(self, wkey, reset_hours=None):
@@ -1938,6 +2006,32 @@ class FiveAxisEconomy:
                     total += top['spend'] * share
             cap = max((float(e['states'][wkey[1]][1]) for e in own), default=0.0)
             got = self._lumps[key] = min(cap, total / len(self.grid)) if own else 0.0
+        return got
+
+    def price_lump(self, wkey, reset_hours=None):
+        """Burst size used in `five_axis_quota_price`: `max(lump_usd, horizon_lump_usd)` where `horizon_lump_usd` prices
+        future arrivals at `max(task_hours, classifier_cases_horizon_hours())`, cut at `reset_hours`."""
+        base_q = self.lump(wkey, reset_hours)
+        if self._task_hours <= 0 or self._horizon_hours <= self._task_hours:
+            return base_q
+        tau = float('inf') if reset_hours is None else float(reset_hours)
+        key = (wkey, tau)
+        got = self._price_lumps.get(key)
+        if got is None:
+            own = [e for e in (self.points.get(wkey) or []) if e['spend'] > 0 and e['hours'] > 0]
+            if not own:
+                got = base_q
+            else:
+                scale = self._horizon_hours / self._task_hours
+                total = 0.0
+                for gi in range(len(self.grid)):
+                    top = max(own, key=lambda e: (round(e['fits'][gi], 9), -e['spend']))
+                    h_ref = top['hours'] * scale
+                    share = 1.0 if h_ref <= 0 or tau == float('inf') else min(1.0, tau / h_ref)
+                    total += (top['spend'] * scale) * share
+                cap = max((float(e['states'][wkey[1]][1]) for e in own), default=0.0)
+                got = max(base_q, min(cap, total / len(self.grid)))
+            self._price_lumps[key] = got
         return got
 
     def _alt(self, unit, gi):
@@ -1984,9 +2078,10 @@ class FiveAxisEconomy:
 
     def window_cost(self, wkey, rec, spend, econ_hours):
         tables = self._tables.setdefault((wkey, round(rec['used_usd'], 6), round(rec['elapsed_frac'], 9),
-                                          round(rec['capacity_usd'], 6), round(rec['lump_usd'], 6)), {})
+                                          round(rec['capacity_usd'], 6), round(rec['lump_usd'], 6),
+                                          round(rec.get('price_lump_usd', rec['lump_usd']), 6)), {})
         return five_axis_spend_cost(rec, self.ladder(wkey), spend, econ_hours, self.spend_max.get(wkey, spend), tables,
-                                    fresh_lump=self.lump(wkey))
+                                    fresh_lump=self.lump(wkey), fresh_price_lump=self.price_lump(wkey))
 
     def report(self):
         """One block per priced window for the plan's `system.quota_windows` (and the README page): its state and its
@@ -2017,18 +2112,12 @@ class FiveAxisEconomy:
 
 
 def five_axis_order(candidate):
-    """Lexicographic order on the five-axis path (quota economy v3, owner decision of round 13b), in the order of the tuple:
-    1. Net score N = F - cost descending (rounded to 4 places so tied models enter the tie-breaks)
+    """Lexicographic order on the five-axis path (quota economy v3, owner decision of round 13b + F3), in the order of the tuple:
+    1. Net score N = F - cost descending (exact float, never rounded: the quota economy C is a term of N, never a tie-break)
     2. Wait before the start ascending (round 10: a candidate that waits for a reset trails one that starts now; the design
        has no such key, it keeps `--can-wait-hours` candidates behind immediate ones at equal N)
-    3. Earliest-expiring quota ascending: the soonest reset among the priced long windows the candidate draws (quota that
-       lapses first goes first; a candidate drawing none sorts last)
-    4. Faster completion time (wait_hours + expected_hours) ascending, where `expected_hours` is the task's hours at the
-       model's public Time/Task at the candidate's own effort (`duration_at`: Artificial Analysis at that effort, else the
-       arena listing moved onto its scale by the data's fit, else a series effort conversion; the basis is
-       `components['duration_source']`), the same hours the spend and the window need are priced on. Speed only breaks ties on N: where the quota costs nothing (for example an account with no priced long window)
-       a fast variant and its base tie on N and the faster one wins; there is no rule that lets a faster candidate displace
-       a higher-N one. (How close to zero the cost gets near a reset is the price model's business, not this order's.)
+    3. Earliest-expiring quota ascending: breaks ONLY exact ties on N after C is fully in N
+    4. Faster completion time (wait_hours + expected_hours) ascending; speed only breaks exact ties on N
     5. Fewer list-price USD spent ascending
     6. Demand-weighted category level descending (five_axis_level), then sibling harness place ascending."""
     k = candidate['components']
@@ -2037,7 +2126,7 @@ def five_axis_order(candidate):
     wait_h = float(candidate.get('available_in_hours') or 0.0)
     done_key = round(wait_h + float(candidate['duration_hours']), 4)
     usd = float(candidate.get('expected_usd') if candidate.get('expected_usd') is not None else float('inf'))
-    return (-round(float(candidate['score']), 4), round(wait_h, 4), reset_key, done_key,
+    return (-float(candidate['score']), round(wait_h, 4), reset_key, done_key,
             round(usd, 4), -round(float(k.get('five_axis_level', 0.0)), 4), k.get('harness_place', 0))
 
 
@@ -2564,24 +2653,51 @@ def evaluate_bundle(bundle, task, ctx):
     named = not pool and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
     img_info = state.get('image_input') or {'status': 'missing'}
     needs_image_input = task['five_axis_demand'].get('tool_operation', 0) >= IMAGE_INPUT_LEVEL and not pool
+    eff = scoring_effort(bundle, info)
+    values = five_axis_values(state, eff)
     if needs_image_input and img_info.get('status') == 'no':
         exclude(f"model does not accept image input ({img_info.get('source') or 'public data'})")
-    def _is_blind(axis, level):
+
+    def _missing_targets(axis, level):
         if level < five['demanded_level']:
-            return False
+            return []
         if axis == 'tool_operation':
             selected = TOOL_LEVEL_FACETS.get(level) or ()
             if not selected:
-                return False
-            if axis in state.get('missing', ()):
-                return True
-            facets = ((state.get('categories') or {}).get(axis) or {}).get('facets')
-            return isinstance(facets, dict) and not any(f in facets for f in selected)
-        return axis in state.get('missing', ())
+                return []
+            return [f'tool_operation.{f}' for f in selected if (values.get('tool_operation') or {}).get(f) is None]
+        if values.get(axis) is not None:
+            return []
+        cat_cell = (state.get('categories') or {}).get(axis) or {}
+        facets = cat_cell.get('facets') if isinstance(cat_cell, dict) else None
+        req = user_scores.CATEGORY_FACETS.get(axis) or ()
+        if isinstance(facets, dict) and len(req) > 1:
+            miss_f = [f'{axis}.{f}' for f in req if _at_effort(facets.get(f), eff) is None]
+            if miss_f and len(miss_f) < len(req):
+                return miss_f
+        return [axis]
 
-    blind = [] if pool else [a for a, w in task['five_axis_demand'].items() if _is_blind(a, w)]
+    blind, missing_targets = [], []
+    if not pool:
+        for a, w in task['five_axis_demand'].items():
+            miss = _missing_targets(a, w)
+            if miss:
+                blind.append(a)
+                missing_targets.extend(miss)
+    if blind:
+        first_target = missing_targets[0]
+        eff_note = f' at effort {eff}' if eff and any(
+            ((state.get('categories') or {}).get(a) or {}).get('value') is not None for a in blind
+        ) else ''
+        blind_msg = (
+            f'no trusted data for the demanded category {", ".join(blind)} on {model}{eff_note} '
+            f'(missing {", ".join(missing_targets)}; fill with `agentcompass score set {model} {first_target} <1..3>` '
+            f'or in the tray Manual Scores panel)'
+        )
+    else:
+        blind_msg = None
     errors = (
-        ([f'no trusted data for the demanded category {", ".join(blind)}'] if blind else [])
+        ([blind_msg] if blind_msg else [])
         + (['usd_per_hour has no cited source on a metered account'] if billed and state.get('usd_status') != 'ok' else [])
         + (['image_input modality has no cited source'] if needs_image_input and img_info.get('status') not in ('yes', 'no') else [])
     )
@@ -2592,12 +2708,17 @@ def evaluate_bundle(bundle, task, ctx):
             result.setdefault('data_errors', []).append(error)
         else:
             exclude(f'data error: {error} (out of automatic routing; name the model to dispatch it)')
+    manual_applied = state.get('manual_scores') or {}
+    if manual_applied:
+        summary_parts = [f"{t}={r['level']:g} (z={r['z']:+.4f}, {r['kind']}, {r['as_of']})"
+                         for t, r in sorted(manual_applied.items())]
+        result['notes'].append('manual capability scores applied: ' + '; '.join(summary_parts))
+        result['manual_scores'] = dict(manual_applied)
     estimated = state.get('estimates') or {}
     if estimated:
         result['notes'].append('facets estimated (same-series sibling or the fit on the tier; no board of their own): '
                                + ', '.join(sorted(estimated)))
         result['estimated_axes'] = sorted({name.split('.')[0] for name in estimated})
-    eff = scoring_effort(bundle, info)
     # One basis for the time a task takes, its spend and the window it needs (`duration_at`): Time/Task at this effort. Where
     # the data has none, the candidate leaves automatic routing; a named dispatch carries the task's own hours estimate
     # unscaled and the data error, and nothing stands in for the model's pace.
@@ -2887,7 +3008,6 @@ def evaluate_bundle(bundle, task, ctx):
     result['action'] = action
     # Quality is the continuous fit of the category scores at this effort to the demand, and nothing else (the effort's
     # extra burn is priced in its usd and its gain in the categories' effort shift). The economy decides.
-    values = five_axis_values(info.get('five_axis'), eff)
     fit, axis_rows = five_axis_fit(values, task['five_axis_demand'], task['five_axis_targets'])
     result['_five_values'] = values         # the economy re-reads this candidate's scores at its effort over the demand grid
     # The candidate's four category scores at this effort: what the radar and the explanation show (tool_operation: the
@@ -2905,8 +3025,8 @@ def evaluate_bundle(bundle, task, ctx):
     usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or spec.get('billing') == 'unknown' else         model_usd_per_hour(model, info)       # dollars per hour of this candidate's own work; effort is in its duration
     result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4)}
     result['components'].update({'fit': round(fit, 3), 'continuity': 0.0})
-    if action == 'resume' and task['coupling'] == 'high':
-        # a related task (the caller's --resume, coupling high) continues its worker: one demand level's worth
+    if action == 'resume' and task['coupling'] in ('medium', 'high'):
+        # a related task (--resume or an auto-matched continuation of the same chain) continues its worker: one demand level's worth
         result['components']['continuity'] = round(task['five_axis_continuity'], 4)
     return result
 
@@ -2982,7 +3102,7 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
             }
             if not row['short'] and spend > 0:
                 got = econ.window_cost((own_qsrc, wid), rec, spend, econ_h)
-                row.update(priced=True, cost=round(got['cost'], 6), opportunity_cost=round(got['cost'], 6),
+                row.update(priced=True, cost=float(got['cost']), opportunity_cost=float(got['cost']),
                            quota_price=round(got['lambda_start'], 6), need_start=round(got['need_start'], 4),
                            need_end=round(got['need_end'], 4), spend_before_reset=round(got['spend_before'], 2),
                            spend_after_reset=round(got['spend_after'], 2))
@@ -3009,7 +3129,7 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
             c['capacity'] = binding
             c['expected_pct'] = round(binding['step_pct'], 2)
             c['chain_pct'] = round(binding['chain_pct'], 2)
-        cost = round(summary['cost'], 4)
+        cost = float(summary['cost'])
         c['economy'] = summary
         c['components']['opportunity_cost'] = cost
         c['components']['quota_price'] = binding.get('quota_price', 0.0) if binding and binding['priced'] else 0.0
@@ -3056,20 +3176,21 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
     return report
 
 
-def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overrides=(), records=(), host_policy_config=None):
-    state_policy = host_policy.load_policy() if host_policy_config is None else host_policy_config
+def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overrides=(), records=(),
+         host_policy_config=None, *, read_local_state=True):
+    state_policy = (host_policy.load_policy() if read_local_state else {'allowed_accounts': list((accounts.get('accounts') or {}).keys())}) if host_policy_config is None else host_policy_config
     ctx = {'policy': policy, 'accounts': accounts, 'capabilities': capabilities, 'usage': usage, 'now': now,
            'unavailable': set(unavailable), 'bundles': bundles(accounts),
            'host_policy': state_policy,
            'overrides': list(overrides), 'records': list(records or ()),
-           'launch_failures': launch_failures.active() if launch_failures.enabled() else {},
-           'model_latches': model_latch.active(now=now),
-           'provider_retries': provider_retry.active(now=now),
+           'launch_failures': launch_failures.active() if (read_local_state and launch_failures.enabled()) else {},
+           'model_latches': model_latch.active(now=now) if read_local_state else {},
+           'provider_retries': provider_retry.active(now=now) if read_local_state else {},
            'live_models': live_models.load_or_refresh(
                accounts=accounts,
                allowed=lambda name: host_policy.account_allowed(state_policy, name),
                now=now,
-           )}
+           ) if read_local_state else {'accounts': {}}}
     pool_bundles = dict(ctx['bundles'])         # the catalog, before a task-named effort adds bundles to it
     ctx['bundles'].update(named_effort_bundles(task, ctx))
     five = ctx['five_axis'] = five_axis_config(policy)
@@ -3091,8 +3212,10 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     weights = dict(five['weights'])
     kind = task['kind']
     for c in eligible:
-        c['score'] = round(sum(weights[k] * c['components'][k] for k in weights) + c['components'].get('boost', 0)
-                           - c['components']['opportunity_cost'], 4)
+        raw_score = (sum(weights[k] * c['components'][k] for k in weights) + c['components'].get('boost', 0)
+                     - c['components']['opportunity_cost'])
+        # Evaluate at IEEE-754 unit scale so F = 0 has the same ~2.2e-16 float64 resolution as F > 0 (shift invariance).
+        c['score'] = float((1.0 + raw_score) - 1.0)
     # Equal scores go to the candidate drawing on the earliest-expiring quota, then faster completion, then fewer USD,
     # then higher level; the harness order only separates siblings of one model, account and effort.
     harness_places(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'))
@@ -3302,13 +3425,14 @@ def named_pin_block(task, candidates):
 
 
 def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None, capabilities=None, overrides=None,
-         host_policy_config=None):
+         host_policy_config=None, *, read_local_state=True):
     accounts = accounts_override.normalize(accounts or load_accounts())
     capabilities = capabilities or load_capabilities(accounts=accounts)
     now = now or datetime.now(timezone.utc)
     usage = provider_inventory.merge_usage(usage, accounts, now)
-    usage, accounts, applied = apply_overrides(load_overrides(now) if overrides is None else overrides, usage, accounts, now)
-    accounts = five_axis_overlay(accounts)
+    active_overrides = (load_overrides(now) if read_local_state else []) if overrides is None else overrides
+    usage, accounts, applied = apply_overrides(active_overrides, usage, accounts, now)
+    accounts = five_axis_overlay(accounts, read_local_state=read_local_state)
     policy = accounts['scoring']
     task = normalize_task(raw_task, policy, capabilities, accounts)
     if task['worker'] is None and task['chain_id'] and records:
@@ -3316,25 +3440,18 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
             if record.get('chain') == task['chain_id'] and (record.get('bundle') or {}).get('bundle_id'):
                 w = {'bundle': record['bundle']['bundle_id'], 'from_ledger': True}
                 wid = record.get('worker_id') or (record.get('worker') or {}).get('agent_id')
-                if wid:
+                if wid and read_local_state:
                     w['agent_id'] = wid
                     w.update(session_state(wid))
                 task['worker'] = w
                 break
-    if task['worker'] and task['worker'].get('bundle'):
-        # A retired proxy id resumes as its auto bundle; an id that no longer exists means no continuity.
-        import auto_bundles
-        legacy = (accounts.get('_auto_bundles') or {}).get('legacy_aliases') or {}
-        resolved = auto_bundles.resolve_bundle_id(task['worker']['bundle'], bundles(accounts), legacy)
-        if resolved and resolved != task['worker']['bundle']:
-            task['worker'] = {**task['worker'], 'bundle': resolved}
     candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied, records,
-                                        host_policy_config)
+                                        host_policy_config, read_local_state=read_local_state)
     # Metered last resort: only when no subscription bundle is eligible, re-rank with checked metered bundles admitted.
     if not eligible and any(c['excluded'] == [METERED_LAST_RESORT] for c in candidates):
         task['metered_fallback'] = True
         candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied,
-                                            records, host_policy_config)
+                                            records, host_policy_config, read_local_state=read_local_state)
     worker_id = (task['worker'] or {}).get('bundle')
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'hours', 'chain_hours', 'coupling')}, 'system': system,
@@ -3357,26 +3474,26 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision.setdefault('warnings', []).append(
             f"{name}: priced from its last good usage reading, taken at {at} in the current reset period "
             f"(the latest read failed); a provider hold on a model or pool still wins over this reading")
-    state_policy = host_policy.load_policy() if host_policy_config is None else host_policy_config
+    state_policy = (host_policy.load_policy() if read_local_state else {'allowed_accounts': list((accounts.get('accounts') or {}).keys())}) if host_policy_config is None else host_policy_config
     state_warnings = account_state.warnings(accounts.get('_discovery'), accounts['accounts'],
                                             lambda name: host_policy.account_allowed(state_policy, name))
     if state_warnings:
         decision.setdefault('warnings', []).extend(state_warnings)
-    live_doc = system.pop('_live_models', None) or live_models.load_or_refresh(
+    live_doc = system.pop('_live_models', None) or (live_models.load_or_refresh(
         accounts=accounts,
         allowed=lambda name: host_policy.account_allowed(state_policy, name),
         now=now,
-    )
-    latches = model_latch.active(now=now)
+    ) if read_local_state else {'accounts': {}})
+    latches = model_latch.active(now=now) if read_local_state else {}
     latch_warnings = live_models.warnings(
         live_doc,
         accounts,
         lambda name: host_policy.account_allowed(state_policy, name),
         covered=set(latches),
     )
-    latch_warnings += model_latch.warnings(latches, lambda name: host_policy.account_allowed(state_policy, name))
+    latch_warnings += model_latch.warnings(latches, lambda name: host_policy.account_allowed(state_policy, name)) if read_local_state else []
     latch_warnings += provider_retry.warnings(provider_retry.active(now=now),
-                                              lambda name: host_policy.account_allowed(state_policy, name))
+                                              lambda name: host_policy.account_allowed(state_policy, name)) if read_local_state else []
     if latch_warnings:
         # First: the roll answer shows only the first few warnings, and a model that cannot start must be seen.
         decision['warnings'] = [*latch_warnings, *decision.get('warnings', [])]
@@ -3501,11 +3618,13 @@ def _snapshot_row(candidate, detail):
     what the comparison table and radar read. Floats are rounded to 4 places to keep a ledger line small."""
     bundle = {k: v for k, v in (candidate.get('bundle') or {}).items() if v is not None and k != 'launch_model'}
     comps = candidate.get('components') or {}
-    excluded = [str(r)[:160] for r in (candidate.get('excluded') or [])[:3]]
-    row = {'id': candidate.get('id'), 'bundle': bundle, 'score': candidate.get('score'), 'action': candidate.get('action'),
+    excluded = [str(r)[:220] for r in (candidate.get('excluded') or [])[:3]]
+    row = {'id': candidate.get('id'), 'bundle': bundle, 'score': _round(candidate.get('score')), 'action': candidate.get('action'),
            'excluded': excluded}
     if candidate.get('estimated_axes'):
         row['estimated_axes'] = list(candidate['estimated_axes'])
+    if candidate.get('manual_scores'):
+        row['manual_scores'] = copy.deepcopy(candidate['manual_scores'])
     if detail:
         row['components'] = {k: _round(v) for k, v in comps.items()}
         row.update({k: _round(candidate.get(k)) for k in ('expected_pct', 'chain_pct', 'expected_usd', 'chain_usd',
@@ -3638,7 +3757,7 @@ def assumptions(candidates, accounts):
 
 
 def explain(top, system):
-    parts = [f"{top['id']} ({top['action']}) scored {top['score']}"]
+    parts = [f"{top['id']} ({top['action']}) scored {top['score']:.4f}"]
     cap = top.get('capacity')
     if cap:
         rem_usd_str = f" (${cap['remaining_usd']:.2f})" if cap.get('remaining_usd') is not None else ""
@@ -3649,7 +3768,7 @@ def explain(top, system):
                      f"(chain ~{top['chain_pct']}%), {priced}, "
                      + (f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
                         if cap.get('end_hours') is not None else 'with no reset, ')
-                     + f"opportunity cost {top['components']['opportunity_cost']}")
+                     + f"opportunity cost {top['components']['opportunity_cost']:.4f}")
     if top['bundle'].get('fast'):
         parts.append(f"fast mode enabled ({top['components'].get('fast_reason') or 'priced as its own candidate'})")
     if top['components'].get('boost'):

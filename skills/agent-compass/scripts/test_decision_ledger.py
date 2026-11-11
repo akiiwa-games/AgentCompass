@@ -63,7 +63,7 @@ class DecisionLedgerTests(unittest.TestCase):
         recorded_eligible = [row for row in ranking if not row['excluded']]
         self.assertEqual(len(recorded_eligible), min(len(live_eligible), allocator.SNAPSHOT_FULL + allocator.SNAPSHOT_COMPACT))
         for row, live in zip(recorded_eligible, live_eligible):
-            self.assertEqual((row['id'], row['score']), (live['id'], live['score']))
+            self.assertEqual((row['id'], row['score']), (live['id'], round(live['score'], 4)))
         full = recorded_eligible[:allocator.SNAPSHOT_FULL]
         # Full rows hold every component, the binding window and the money numbers the comparison table reads.
         winner, live = ranking[0], result['ranking'][0]

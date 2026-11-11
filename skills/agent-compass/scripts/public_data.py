@@ -1,14 +1,14 @@
 """Public reference data channel: keep the shipped references current between releases.
 
-Every install ships accounts.json, plan-templates.json and classifier-cases.json under references/, with
-references/public-data.json listing their sha256, the data schema and when the set was published. This module
-fetches that manifest and the files from the repository's main branch over plain HTTPS (no credentials,
-proxies from the environment) into <state dir>/public-data/, verifies every hash, and makes the router read
-the fetched set instead of the shipped one only when the set is complete, its schema is one this code reads
+Every install ships accounts.json, plan-templates.json, classifier-cases.json, five-axis-scores.json and
+user-scores.json under references/, with references/public-data.json listing their sha256, the data schema and when
+the set was published. This module fetches that manifest and the files from the repository's main branch over plain
+HTTPS (no credentials, proxies from the environment) into <state dir>/public-data/, verifies every hash, and makes the
+router read the fetched set instead of the shipped one only when the set is complete, its schema is one this code reads
 and it was published after the shipped copy. A newer schema is noted and ignored, never half-applied.
 
 Precedence: shipped < fetched < the user's own settings. Nothing here writes
-accounts-override.json or host policy; their loaders layer them on top of whichever set is in effect.
+accounts-override.json, local user-scores.json or host policy; their loaders layer them on top of whichever set is in effect.
 Shipped references that differ from their own manifest (a checkout with local edits) are used as they are.
 
 Off switch: AGENTCOMPASS_PUBLIC_DATA=off, or {"enabled": false} in <state dir>/public-data-config.json.
@@ -26,11 +26,12 @@ import threading
 import urllib.request
 import uuid
 
-SCHEMA_VERSION = 2              # the newest data schema this code reads; bump with any breaking data change
-# The oldest one: schema 1 scoped Antigravity's third-party windows with a `models: ["3p"]` pseudo-tag that only
-# retired code understood (schema 2 declares `models_except`; window_scope.py), so a schema-1 set is not read.
-MIN_SCHEMA_VERSION = 2
-FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json')
+SCHEMA_VERSION = 3              # the newest data schema this code reads; bump with any breaking data change
+# Schema 3 (2026-11-11) switches to the four-category taxonomy (`divergence`, `coding`, `aesthetics`, `tool_operation`),
+# ships `five-axis-scores.json` and maintainer `user-scores.json` in the public channel, and rejects schema-2 sets
+# whose `classifier-cases.json` used the retired four-axis `axis_demand` keys.
+MIN_SCHEMA_VERSION = 3
+FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json', 'user-scores.json')
 MANIFEST = 'public-data.json'
 CONFIG_FILE = 'public-data-config.json'
 DEFAULT_URL = 'https://raw.githubusercontent.com/akiiwa-games/AgentCompass/main/skills/agent-compass/references/'
@@ -151,6 +152,12 @@ def check_set(directory, manifest):
             return 'incomplete', f'{name} is missing'
         if sha256_bytes(data) != want:
             return 'modified', f'{name} does not match its sha256'
+        if name == 'user-scores.json':
+            try:
+                import user_scores
+                user_scores.validate_document(json.loads(data.decode('utf-8-sig')), expected_kind='maintainer')
+            except Exception as exc:
+                return 'incomplete', f'user-scores.json is invalid: {exc}'
     return 'ok', ''
 
 
@@ -408,8 +415,9 @@ def summary_line(report):
 
 USAGE = """usage: agentcompass data [--refresh]
 
-Shows which public reference data (accounts.json, plan-templates.json, classifier-cases.json) routing reads:
-the copy shipped with this install, or the newer set fetched from the AgentCompass repository's main branch.
+Shows which public reference data (accounts.json, plan-templates.json, classifier-cases.json, five-axis-scores.json,
+user-scores.json) routing reads: the copy shipped with this install, or the newer set fetched from the AgentCompass
+repository's main branch.
 
 --refresh   check the published data now and fetch it when it changed (ignores the refresh interval)
 

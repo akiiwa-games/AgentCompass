@@ -37,9 +37,9 @@ def omp_accounts(billing='metered', subscription=True):
     # A metered account states its own prepaid budget: community capacity data measures subscription plans only.
     spec.update(billing=billing, verified=True, windows={'weekly': {'hours': 168}}, capacity_usd={'weekly': 200.0})
     spec.pop('capacity_status', None)
-    # Artificial Analysis lists GLM-5.2 at Low and Max only: a bundle at an effort with no Time/Task is out of automatic routing,
-    # so the fixture runs the bundle at an effort the data times (its id is only a label).
-    spec['bundles'][BUNDLE]['effort'] = 'low'
+    # GLM-5.2's Arena rows are listed at Max only and it has no multi-effort AA curve, so F2 scores only 'max'; run the
+    # fixture bundle at 'max' where both its five-axis scores and its Arena duration fit exist (its id is only a label).
+    spec['bundles'][BUNDLE]['effort'] = 'max'
     if billing is None:
         spec.pop('billing')  # an account entry alone is not consent to automatic routing
     return accounts

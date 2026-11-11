@@ -674,14 +674,17 @@ def provider_definition(provider, bundle=None):
         proxy_spec = _router_override_proxy_spec(orig_provider)
         if isinstance(proxy_spec, dict):
             sub = proxy_spec.get('litellm') if isinstance(proxy_spec.get('litellm'), dict) else proxy_spec
-            model_name = str((bundle or {}).get('model') or '').lower()
             harness = str((bundle or {}).get('harness') or '').strip().lower()
-            family = (
-                harness if harness in CLI_RUNS
-                else 'claude' if 'claude' in model_name
-                else 'codex' if any(k in model_name for k in ('gpt', 'sol', 'astra', 'o1', 'o3'))
-                else str(proxy_spec.get('family') or proxy_spec.get('extends') or 'codex').strip().lower()
-            )
+            family = harness if harness in CLI_RUNS else ''
+            if not family and (bundle or {}).get('model'):
+                import allocator as alloc_mod
+                accounts_doc = alloc_mod.load_accounts()
+                canon = alloc_mod.canonical((bundle or {}).get('model'), accounts_doc)
+                api_family = str(alloc_mod.model_spec(accounts_doc, canon).get('api_family') or '').strip().lower()
+                if api_family in CLI_RUNS:
+                    family = api_family
+            if not family:
+                family = str(proxy_spec.get('family') or proxy_spec.get('extends') or 'codex').strip().lower()
             ep = str(sub.get('endpoint') or sub.get('base_url') or proxy_spec.get('endpoint') or proxy_spec.get('base_url') or '').strip().rstrip('/')
             key_env = str(sub.get('api_key_env') or proxy_spec.get('api_key_env') or '').strip()
             key = str(sub.get('api_key') or proxy_spec.get('api_key') or (os.environ.get(key_env) if key_env else '') or '').strip()

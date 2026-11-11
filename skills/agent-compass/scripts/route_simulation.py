@@ -121,7 +121,7 @@ def fresh_accounts(document=None, inventory=None):
     """Public data plus discovery, as load_accounts builds it, minus personal overrides and machine measurements."""
     doc = document if document is not None else json.loads(allocator.fleet_document_path().read_text(encoding='utf-8-sig'))
     accounts = accounts_override.normalize(copy.deepcopy(doc))
-    accounts = provider_inventory.apply(accounts, inventory)
+    accounts = provider_inventory.apply(accounts, inventory, live=False)
     provider_inventory.apply_shared_quota(accounts)
     return accounts_override.normalize(accounts)
 
@@ -259,12 +259,13 @@ def label(bundle):
     return f"{bundle['model']}@{bundle['account']}" if bundle.get('model') else 'none'
 
 
-def run_state(accounts, usage, now, tasks, host_policy_config):
+def run_state(accounts, usage, now, tasks, host_policy_config, *, mode='machine'):
     wins_bundle, wins_model = Counter(), Counter()
     seen = defaultdict(lambda: {'eligible': 0, 'gaps': [], 'excluded': Counter()})
+    read_local = (mode == 'machine')
     for task in tasks:
         decision = allocator.plan(task, usage, now, accounts=copy.deepcopy(accounts), overrides=[], records=[],
-                                  host_policy_config=host_policy_config)
+                                  host_policy_config=host_policy_config, read_local_state=read_local)
         selected = decision.get('selected_bundle') or {}
         wins_bundle[decision.get('choice') or 'none'] += 1
         wins_model[label(selected)] += 1
@@ -279,53 +280,91 @@ def run_state(accounts, usage, now, tasks, host_policy_config):
     return wins_bundle, wins_model, seen
 
 
+def _fresh_state_env():
+    """Context manager running fresh-mode evaluation against an empty temporary state dir (never ~/.agent-compass)."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def _ctx():
+        with tempfile.TemporaryDirectory(prefix='route-sim-fresh-') as empty_root:
+            target = Path(empty_root) / '.agent-compass'
+            target.mkdir(parents=True)
+            keys = ('ROUTER_STATE_DIR', 'ROUTER_HOST_POLICY', 'ROUTER_CAPACITY',
+                    'ROUTER_OVERRIDES', 'ROUTER_ACCOUNTS_OVERRIDE', 'ROUTER_USER_SCORES')
+            saved = {k: os.environ.get(k) for k in keys}
+            os.environ.update(
+                ROUTER_STATE_DIR=str(target),
+                ROUTER_HOST_POLICY=str(target / 'host-policy.json'),
+                ROUTER_CAPACITY=str(target / 'capacity.json'),
+                ROUTER_OVERRIDES=str(target / 'router-overrides.json'),
+                ROUTER_ACCOUNTS_OVERRIDE=str(target / 'accounts-override.json'),
+                ROUTER_USER_SCORES=str(target / 'user-scores.json'),
+            )
+            try:
+                yield
+            finally:
+                for k, v in saved.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+
+    return _ctx()
+
+
 def grid(mode, states=None, now=None, account_set=None):
+    import contextlib
     now = now or datetime.now(timezone.utc)
-    accounts, pools = accounts_for(mode, account_set)
-    policy = host_policy_for(mode, accounts, account_set)
-    tasks = grid_tasks(accounts)
-    flat = allocator.bundles(accounts)
-    enabled = {bid: b for bid, b in flat.items() if not b.get('disabled')}
-    report = {'mode': mode, 'account_set': account_set or ('this machine' if mode == 'machine' else 'discovered here'),
-              'tasks_per_state': len(tasks), 'states': {}}
-    totals = Counter()
-    seen_all = defaultdict(lambda: {'eligible': 0, 'gaps': [], 'excluded': Counter()})
-    for state in states or STATES:
-        usage = usage_for(state, accounts, now, pools)
-        bundle_wins, model_wins, seen = run_state(accounts, usage, now, tasks, policy)
-        totals.update(model_wins)
-        for bid, row in seen.items():
-            seen_all[bid]['eligible'] += row['eligible']
-            seen_all[bid]['gaps'] += row['gaps']
-            seen_all[bid]['excluded'].update(row['excluded'])
-        report['states'][state] = {'bundles': dict(bundle_wins.most_common()), 'models': dict(model_wins.most_common())}
-    models = sorted({label(b) for b in enabled.values()})
-    nowhere = {}
-    for model in models:
-        if totals.get(model):
-            continue
-        ids = [bid for bid, b in enabled.items() if label(b) == model]
-        why = {}
-        for bid in ids:
-            row = seen_all.get(bid)
-            if row is None:
-                why[bid] = 'never a candidate (no route applies)'
+    ctx = _fresh_state_env() if mode == 'fresh' else contextlib.nullcontext()
+    with ctx:
+        accounts, pools = accounts_for(mode, account_set)
+        policy = host_policy_for(mode, accounts, account_set)
+        tasks = grid_tasks(accounts)
+        flat = allocator.bundles(accounts)
+        enabled = {bid: b for bid, b in flat.items() if not b.get('disabled')}
+        report = {'mode': mode, 'account_set': account_set or ('this machine' if mode == 'machine' else 'discovered here'),
+                  'tasks_per_state': len(tasks), 'states': {}}
+        totals = Counter()
+        seen_all = defaultdict(lambda: {'eligible': 0, 'gaps': [], 'excluded': Counter()})
+        for state in states or STATES:
+            usage = usage_for(state, accounts, now, pools)
+            bundle_wins, model_wins, seen = run_state(accounts, usage, now, tasks, policy, mode=mode)
+            totals.update(model_wins)
+            for bid, row in seen.items():
+                seen_all[bid]['eligible'] += row['eligible']
+                seen_all[bid]['gaps'] += row['gaps']
+                seen_all[bid]['excluded'].update(row['excluded'])
+            report['states'][state] = {'bundles': dict(bundle_wins.most_common()), 'models': dict(model_wins.most_common())}
+        models = sorted({label(b) for b in enabled.values()})
+        nowhere = {}
+        for model in models:
+            if totals.get(model):
                 continue
-            gaps = sorted(row['gaps'])
-            why[bid] = {'eligible_in': row['eligible'], 'median_gap_to_top': round(gaps[len(gaps) // 2], 4) if gaps else None,
-                        'top_exclusions': row['excluded'].most_common(3)}
-        nowhere[model] = why
-    report['wins_nowhere'] = nowhere
-    return report
+            ids = [bid for bid, b in enabled.items() if label(b) == model]
+            why = {}
+            for bid in ids:
+                row = seen_all.get(bid)
+                if row is None:
+                    why[bid] = 'never a candidate (no route applies)'
+                    continue
+                gaps = sorted(row['gaps'])
+                why[bid] = {'eligible_in': row['eligible'], 'median_gap_to_top': round(gaps[len(gaps) // 2], 4) if gaps else None,
+                            'top_exclusions': row['excluded'].most_common(3)}
+            nowhere[model] = why
+        report['wins_nowhere'] = nowhere
+        return report
 
 
 def explain(mode, state, task, bundle_ids=(), top=5, now=None, account_set=None):
     """One task under one usage state: the top of the ranking plus the named bundles, with score components."""
+    import contextlib
     now = now or datetime.now(timezone.utc)
-    accounts, pools = accounts_for(mode, account_set)
-    policy = host_policy_for(mode, accounts, account_set)
-    decision = allocator.plan(task, usage_for(state, accounts, now, pools), now, accounts=accounts, overrides=[], records=[],
-                              host_policy_config=policy)
+    ctx = _fresh_state_env() if mode == 'fresh' else contextlib.nullcontext()
+    with ctx:
+        accounts, pools = accounts_for(mode, account_set)
+        policy = host_policy_for(mode, accounts, account_set)
+        decision = allocator.plan(task, usage_for(state, accounts, now, pools), now, accounts=accounts, overrides=[], records=[],
+                                  host_policy_config=policy, read_local_state=(mode == 'machine'))
     keep = [c for c in decision['ranking'] if c['score'] is not None][:top]
     keep += [c for c in decision['ranking'] if c['id'] in bundle_ids and c not in keep]
     return [{'id': c['id'], 'score': c['score'], 'excluded': c['excluded'], 'components': c['components']} for c in keep]
@@ -387,25 +426,27 @@ STATE_COPY_MAX_BYTES = 1 << 20
 STATE_COPY_DIRS = ('public-data', 'grok-bot')    # discovery reads the fetched public data and the Grok Bot config
 
 
-def sandbox_state(folder):
-    """Point routing state at a copy of the real state dir's small files; returns (live cache path, ledger path)."""
+def sandbox_state(folder, *, include_local=True):
+    """Point routing state at a copy of the real state dir's small files (or an empty dir when include_local=False)."""
     source = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass').expanduser()
-    live = [str(p) for p in usage_cache.read_paths()]
+    live = [str(p) for p in usage_cache.read_paths()] if include_local else []
     ledger = route_judge.ledger_path()
     target = Path(folder) / '.agent-compass'
     target.mkdir(parents=True)
-    for path in source.glob('*.json'):
-        if path.is_file() and path.stat().st_size <= STATE_COPY_MAX_BYTES:
-            shutil.copy2(path, target / path.name)
-    for sub in STATE_COPY_DIRS:
-        if (source / sub).is_dir():
-            shutil.copytree(source / sub, target / sub, ignore=shutil.ignore_patterns('*.lock', 'tasks'))
-    policy_path, _ = host_policy.policy_path()
-    if policy_path.is_file():
-        shutil.copy2(policy_path, target / 'host-policy.json')
+    if include_local:
+        for path in source.glob('*.json'):
+            if path.is_file() and path.stat().st_size <= STATE_COPY_MAX_BYTES:
+                shutil.copy2(path, target / path.name)
+        for sub in STATE_COPY_DIRS:
+            if (source / sub).is_dir():
+                shutil.copytree(source / sub, target / sub, ignore=shutil.ignore_patterns('*.lock', 'tasks'))
+        policy_path, _ = host_policy.policy_path()
+        if policy_path.is_file():
+            shutil.copy2(policy_path, target / 'host-policy.json')
     os.environ.update(ROUTER_STATE_DIR=str(target), ROUTER_HOST_POLICY=str(target / 'host-policy.json'),
                       ROUTER_CAPACITY=str(target / 'capacity.json'), ROUTER_OVERRIDES=str(target / 'router-overrides.json'),
-                      ROUTER_ACCOUNTS_OVERRIDE=str(target / 'accounts-override.json'))
+                      ROUTER_ACCOUNTS_OVERRIDE=str(target / 'accounts-override.json'),
+                      ROUTER_USER_SCORES=str(target / 'user-scores.json'))
     return live, ledger
 
 
@@ -434,9 +475,13 @@ def main(argv=None):
     r.add_argument('--json')
     args = parser.parse_args(argv)
     global LIVE_PATHS
+    fresh_only = (
+        (args.command == 'grid' and (args.mode == 'fresh' or bool(args.accounts)))
+        or (args.command == 'explain' and (args.mode == 'fresh' or bool(args.accounts)))
+    )
     folder = tempfile.mkdtemp(prefix='route-simulation-')
     try:
-        LIVE_PATHS, ledger = sandbox_state(folder)
+        LIVE_PATHS, ledger = sandbox_state(folder, include_local=not fresh_only)
         return run(args, getattr(args, 'ledger', None) or ledger)
     finally:
         shutil.rmtree(folder, ignore_errors=True)

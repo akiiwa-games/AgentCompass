@@ -1321,11 +1321,11 @@ class ScorerAccountTests(unittest.TestCase):
         rubric_het = {
             'calibration_cases': [
                 {'id': 'a', 'objective': 'o1', 'expected_profile': {'work_kind': 'general_implementation', 'reasoning_depth': 2}},
-                {'id': 'b', 'objective': 'o2', 'expected_profile': {'work_kind': 'computer_use', 'reasoning_depth': 1, 'realtime_loop': True}},
+                {'id': 'b', 'objective': 'o2', 'expected_profile': {'work_kind': 'computer_use', 'reasoning_depth': 1, 'needs_gui': True}},
             ]
         }
         compact = router._compact_rubric_for_prompt(rubric_het)
-        self.assertEqual(compact['calibration_columns'][2], ['work_kind', 'reasoning_depth', 'realtime_loop'])
+        self.assertEqual(compact['calibration_columns'][2], ['work_kind', 'reasoning_depth', 'needs_gui'])
         self.assertEqual(compact['calibration_cases'][0][2], ['general_implementation', 2, None])
         self.assertEqual(compact['calibration_cases'][1][2], ['computer_use', 1, True])
 

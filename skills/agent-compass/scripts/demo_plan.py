@@ -61,7 +61,8 @@ def plan(document, allocator):
                                    'fetched_at': now.isoformat(), 'windows': windows}
     with patch.dict(os.environ, NO_HOST_STATE_ENV):  # this machine's cooldowns/holds/latches are host state
         result = allocator.plan(task, usage, now, records=[], accounts=accounts, overrides=[],
-                                host_policy_config={'allowed_accounts': list(snapshot)})
+                                host_policy_config={'allowed_accounts': list(snapshot)},
+                                read_local_state=False)
     result['demo'] = True
     result['notice'] = ('DEMO: synthetic quota snapshot and reference fleet aliases. No credentials, live quotas, '
                         'network calls, ledger writes or worker launches. Rankings are illustrative.')

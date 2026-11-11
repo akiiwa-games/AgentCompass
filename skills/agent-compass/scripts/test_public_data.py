@@ -229,20 +229,29 @@ class LoaderPrecedenceTests(ChannelCase):
         self.assertEqual(self.refresh()['status'], 'updated')
         public_data.unpin()
 
-    def test_accounts_templates_and_classifier_cases_load_from_the_fetched_set(self):
+    def test_accounts_templates_scores_and_classifier_cases_load_from_the_fetched_set(self):
         templates = json.loads((self.remote_dir / 'plan-templates.json').read_text(encoding='utf-8-sig'))
-        templates['claude']['pro']['capacity_usd'] = {'five_hour': 123}
+        templates['claude']['pro']['windows']['five_hour']['hours'] = 6
         write_json(self.remote_dir / 'plan-templates.json', templates)
         cases = json.loads((self.remote_dir / 'classifier-cases.json').read_text(encoding='utf-8-sig'))
         cases['calibration_cases'] = [{'marker': 'fetched'}]
         write_json(self.remote_dir / 'classifier-cases.json', cases)
+        five = json.loads((self.remote_dir / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
+        five['as_of'] = '2026-11-12'
+        write_json(self.remote_dir / 'five-axis-scores.json', five)
+        write_json(self.remote_dir / 'user-scores.json', {
+            'schema_version': 1,
+            'scores': {'grok-bot': {'coding': {'level': 2.0, 'date': '2026-11-11', 'kind': 'maintainer'}}},
+        })
         self.publish(safety_margin_pct=0.5, at=T0 + timedelta(days=2))
         self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'updated')
         with patch.object(allocator, 'REFERENCES', self.bundled):
             self.assertEqual(allocator.fleet_document_path().parent.parent.name, 'sets')
+            self.assertEqual(allocator.load_five_axis()['as_of'], '2026-11-12')
+            self.assertEqual(allocator.load_public_user_scores()['scores']['grok-bot']['coding']['level'], 2.0)
         with patch.object(provider_inventory, 'PLAN_TEMPLATES', self.bundled / 'plan-templates.json'), \
                 patch.object(provider_inventory, '_SHIPPED_PLAN_TEMPLATES', None):
-            self.assertEqual(provider_inventory.plan_defaults({}, 'claude', 'pro')['capacity_usd'], {'five_hour': 123})
+            self.assertEqual(provider_inventory.plan_defaults({}, 'claude', 'pro')['windows']['five_hour']['hours'], 6)
         with patch.object(route_judge, 'CLASSIFIER_CASES_PATH', self.bundled / 'classifier-cases.json'):
             self.assertEqual(route_judge.load_classifier_cases()['calibration_cases'], [{'marker': 'fetched'}])
 

@@ -129,19 +129,10 @@ def apply(accounts, document):
     """Apply only explicit preferences, after live discovery has supplied bundles."""
     normalize(accounts)
     document = normalize(deepcopy(document))
-    # Choices saved under the retired proxy ids (`<proxy>__<model>_high`) carry over to their auto bundle;
-    # a choice already stored under the auto id wins.
-    legacy = (accounts.get('_auto_bundles') or {}).get('legacy_aliases') or {}
     for name, spec in (document.get('accounts') or {}).items():
         target = (accounts.get('accounts') or {}).get(name)
         if not isinstance(spec, dict) or not isinstance(target, dict):
             continue
-        if legacy and isinstance(spec.get('bundles'), dict):
-            rows = dict(spec['bundles'])
-            for old, new in legacy.items():
-                if old in rows and new not in rows:
-                    rows[new] = rows[old]
-            spec = {**spec, 'bundles': rows}
         discovery = ((accounts.get('_discovery') or {}).get('accounts') or {}).get(name) or {}
         if spec.get('verified') is False:
             target['verified'] = False

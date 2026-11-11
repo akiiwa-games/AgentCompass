@@ -102,10 +102,26 @@ class CleanInstallParityTests(unittest.TestCase):
         self.assertTrue(second['bundles'])
         self.assertTrue(all(b['provider'] == 'claude-2' for b in second['bundles'].values()))
 
-    def test_grok_bot_draws_on_the_grok_meter_and_routes_automatically(self):
+    def test_grok_bot_draws_on_the_grok_meter_and_mode_b_excludes_unmeasured_demands(self):
         inventory.apply_shared_quota(self.accounts)
         self.assertEqual(self.specs['grok-bot']['quota_source'], 'grok')
         self.assertIsNone(accounts_override.manual_only_billing('grok-bot', self.accounts))
+        now = datetime(2026, 11, 11, tzinfo=timezone.utc)
+        decision = allocator.plan(
+            {'objective': 'Interactive multi-step tool loop', 'hours': 0.5,
+             'profile': {'work_kind': 'tool_execution', 'reasoning_depth': 1, 'code_complexity': 0,
+                         'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
+                         'read_only_review': False, 'access': 'read-only', 'expected_hours': 0.5,
+                         'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'exploration',
+                         'multi_task': False, 'task_count': '1',
+                         'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}}},
+            {'accounts': {}}, now, accounts=self.accounts, overrides=[], host_policy_config=None, read_local_state=False,
+        )
+        grok_bot_rows = [r for r in decision['ranking'] if r['bundle']['account'] == 'grok-bot']
+        self.assertTrue(grok_bot_rows)
+        for row in grok_bot_rows:
+            self.assertTrue(any('tool_operation.responsiveness' in ex and 'agentcompass score set ' in ex
+                                for ex in row['excluded']), row['excluded'])
 
     def test_scoring_and_route_policy_are_the_public_defaults(self):
         scoring = self.accounts['scoring']

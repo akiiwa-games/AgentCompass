@@ -152,6 +152,10 @@
     "deepseek-v4-flash": {
       "by": "deepseek-v4.1-flash-free",
       "basis": "DeepSeek V4.1 Flash is the newer Flash release."
+    },
+    "claude-fable-5-1": {
+      "by": "claude-fable-5-2",
+      "basis": "Claude Fable 5.2 is the newer Fable release."
     }
   },
   "same_model": {
@@ -172,19 +176,29 @@
   },
   "models": {
     "deepseek-v4.1-flash-free": {},
-    "claude-fable-5-1": {},
-    "claude-fable-5-2": {},
+    "claude-fable-5-1": {
+      "api_family": "claude"
+    },
+    "claude-fable-5-2": {
+      "fast_capable": true,
+      "api_family": "claude"
+    },
     "claude-opus-5-5": {
-      "fast_capable": true
+      "fast_capable": true,
+      "api_family": "claude"
     },
     "gpt-6.1-sol": {
-      "fast_capable": true
+      "fast_capable": true,
+      "api_family": "codex"
     },
     "gpt-6-astra": {
-      "fast_capable": true
+      "fast_capable": true,
+      "api_family": "codex"
     },
     "gemini-4-argon-high": {},
-    "claude-sonnet-5-5": {},
+    "claude-sonnet-5-5": {
+      "api_family": "claude"
+    },
     "grok-4.7": {},
     "gemini-3.8-flash-high": {},
     "grok-bot": {
@@ -200,29 +214,38 @@
       "advisor_for": [
         "direction_reasoning",
         "complex_build_plan"
-      ]
+      ],
+      "api_family": "codex"
     },
-    "claude-haiku-5-5": {},
+    "claude-haiku-5-5": {
+      "api_family": "claude"
+    },
     "gpt-6.1-terra": {
       "fast_capable": true,
-      "context_window": 500000
+      "context_window": 500000,
+      "api_family": "codex"
     },
     "gpt-6-sol": {
       "fast_capable": true,
-      "context_window": 272000
+      "context_window": 272000,
+      "api_family": "codex"
     },
     "gpt-6-luna": {
       "fast_capable": true,
-      "context_window": 272000
+      "context_window": 272000,
+      "api_family": "codex"
     },
     "gpt-5.6-sol": {
-      "context_window": 272000
+      "context_window": 272000,
+      "api_family": "codex"
     },
     "gpt-5.6-terra": {
-      "context_window": 272000
+      "context_window": 272000,
+      "api_family": "codex"
     },
     "gpt-5.6-luna": {
-      "context_window": 272000
+      "context_window": 272000,
+      "api_family": "codex"
     },
     "grok-4.7-build-fast": {},
     "deepseek-v4-pro": {},
@@ -244,19 +267,28 @@
     "muse-wonder-1.0": {},
     "beam-free": {},
     "flint-40b-free": {},
-    "claude-haiku-4-5": {},
-    "claude-opus-4-6": {},
-    "claude-sonnet-4-6": {},
+    "claude-haiku-4-5": {
+      "api_family": "claude"
+    },
+    "claude-opus-4-6": {
+      "api_family": "claude"
+    },
+    "claude-sonnet-4-6": {
+      "api_family": "claude"
+    },
     "glm-5.2": {},
-    "gpt-oss-120b": {},
+    "gpt-oss-120b": {
+      "api_family": "codex"
+    },
     "gemini-3.1-flash-lite": {},
     "kimi-k2.7-code": {},
     "qwen3.6-plus": {},
     "claude-opus-4-7": {
-      "fast_capable": true
+      "api_family": "claude"
     },
     "claude-opus-4-8": {
-      "fast_capable": true
+      "fast_capable": true,
+      "api_family": "claude"
     },
     "grok-4.5": {},
     "grok-4.6": {},

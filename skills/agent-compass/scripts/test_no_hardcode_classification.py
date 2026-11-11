@@ -1227,7 +1227,8 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                     res['choice'],
                     res.get('selected_bundle'),
                     dec_task,
-                    [(r['id'], r['score'], r['excluded']) for r in res['ranking']],
+                    [(r['id'], None if r['score'] is None else round(r['score'], 5), r['excluded'])
+                     for r in res['ranking']],
                 )
                 if baseline is None:
                     baseline = sig

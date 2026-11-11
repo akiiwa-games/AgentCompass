@@ -112,7 +112,10 @@ def accounts():
 
 
 def base_name(name):
-    return re.sub(r'\s*\(.*\)\s*$', '', str(name)).strip()
+    s = re.sub(r'\s*\(.*\)\s*$', '', str(name)).strip()
+    if not re.search(r'\bqwen[\d.-]*\s+max$', s, re.I):
+        s = re.sub(r'\s+(xhigh|high|medium|low|max)$', '', s, flags=re.I).strip()
+    return s
 
 
 def variant(name):
@@ -120,16 +123,21 @@ def variant(name):
     return m.group(1) if m else ''
 
 
-def arena(target, board, category='overall'):
-    """{base model name: (value, lower, upper, listed name, publish date)} at the model's best listed variant."""
+def arena_rows(target, board, category='overall'):
+    """[(value, lower, upper, listed name, publish date)] for every listed row of `board`/`category`."""
     import pandas as pd
     d = pd.read_parquet(target / f'{board}.parquet')
     d = d[d.category == category]
     col, lo, hi = ('rating', 'rating_lower', 'rating_upper') if 'rating' in d.columns else ('score', 'score_ci_lower', 'score_ci_upper')
+    return [(float(r[col]), float(r[lo]), float(r[hi]), str(r.model_name), str(r.leaderboard_publish_date))
+            for _, r in d.iterrows()]
+
+
+def arena(target, board, category='overall'):
+    """{base model name: (value, lower, upper, listed name, publish date)} at the model's best listed variant."""
     out = {}
-    for _, r in d.iterrows():
-        row = (float(r[col]), float(r[lo]), float(r[hi]), r.model_name, str(r.leaderboard_publish_date))
-        b = base_name(r.model_name)
+    for row in arena_rows(target, board, category):
+        b = base_name(row[3])
         if b not in out or row[0] > out[b][0]:
             out[b] = row
     return out
@@ -141,45 +149,33 @@ def _text(raw):
 
 
 EFFORT_WORDS = {'max': 'max', 'xhigh': 'xhigh', 'high': 'high', 'medium': 'medium', 'low': 'low',
-                'minimal': 'minimal', 'non-reasoning': 'none'}
-
-
-def _aa_companion_html(target):
-    """When building from a dated snapshot (e.g. 20261109) alongside 20261110 where AA renamed Fable 5.1 to 5.2,
-    include companion AA HTML files so both Fable 5.1 and Fable 5.2 retain their cited AA records."""
-    out = [target / 'aa-models.html']
-    if target.name == '20261109' and (target.parent / '20261110' / 'aa-models.html').exists():
-        out.append(target.parent / '20261110' / 'aa-models.html')
-    elif target.name == '20261110' and (target.parent / '20261109' / 'aa-models.html').exists():
-        out.append(target.parent / '20261109' / 'aa-models.html')
-    return [p for p in out if p.exists()]
+                'minimal': 'minimal', 'non-reasoning': 'none', 'none': 'none'}
 
 
 def artificial_analysis(target, field='index'):
     """{base model: {effort or '': value}} from the AA models leaderboard table; `field` is 'index' (Intelligence Index)
     or 'cost' (cost per task, USD)."""
+    html_path = target / 'aa-models.html'
+    if not html_path.exists():
+        return {}
     out = defaultdict(dict)
-    for html_path in _aa_companion_html(target):
-        raw = html_path.read_text(encoding='utf-8', errors='ignore')
-        table = re.search(r'<table.*?</table>', raw, re.S).group(0)
-        present_bases = set(out)
-        for row in re.findall(r'<tr.*?</tr>', table, re.S):
-            cells = [re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', c))).strip()
-                     for c in re.findall(r'<t[hd].*?</t[hd]>', row, re.S)]
-            if len(cells) < 4 or not re.fullmatch(r'\d+(\.\d+)?', cells[3]):
+    raw = html_path.read_text(encoding='utf-8', errors='ignore')
+    table = re.search(r'<table.*?</table>', raw, re.S).group(0)
+    for row in re.findall(r'<tr.*?</tr>', table, re.S):
+        cells = [re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', c))).strip()
+                 for c in re.findall(r'<t[hd].*?</t[hd]>', row, re.S)]
+        if len(cells) < 4 or not re.fullmatch(r'\d+(\.\d+)?', cells[3]):
+            continue
+        b = base_name(cells[0])
+        tag = variant(cells[0]).replace(' with fallback', '').strip().lower()
+        if field == 'cost':
+            cost = re.fullmatch(r'\$([\d.]+)', cells[4])
+            if not cost:
                 continue
-            b = base_name(cells[0])
-            if b in present_bases:
-                continue
-            tag = variant(cells[0]).replace(' with fallback', '').strip().lower()
-            if field == 'cost':
-                cost = re.fullmatch(r'\$([\d.]+)', cells[4])
-                if not cost:
-                    continue
-                value = float(cost.group(1))
-            else:
-                value = float(cells[3])
-            out[b][EFFORT_WORDS.get(tag, tag)] = value
+            value = float(cost.group(1))
+        else:
+            value = float(cells[3])
+        out[b][EFFORT_WORDS.get(tag, tag)] = value
     return dict(out)
 
 
@@ -190,31 +186,35 @@ def aa_records(target):
     """The model records embedded in the AA leaderboard page (Next.js RSC stream): one dict per listed variant with
     `name`, `intelligenceIndex`, `intelligenceIndexCostPerTask` (USD), `intelligenceIndexTimePerTask` (s), prices and
     `scores` (sub-benchmarks, fractions)."""
-    dec, out, seen, seen_bases = json.JSONDecoder(), [], set(), set()
-    for html_path in _aa_companion_html(target):
-        raw = html_path.read_text(encoding='utf-8', errors='ignore')
-        stream = ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
-        prior_bases = set(seen_bases)
-        for m in re.finditer(r'\{"slug":"', stream):
-            try:
-                obj, _ = dec.raw_decode(stream, m.start())
-            except ValueError:
-                continue
-            name = obj.get('name')
-            b = base_name(name) if name else None
-            if 'intelligenceIndex' in obj and name not in seen and b not in prior_bases:
-                seen.add(name)
-                seen_bases.add(b)
-                out.append(obj)
+    html_path = target / 'aa-models.html'
+    if not html_path.exists():
+        return []
+    dec, out, seen = json.JSONDecoder(), [], set()
+    raw = html_path.read_text(encoding='utf-8', errors='ignore')
+    stream = ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
+    for m in re.finditer(r'\{"slug":"', stream):
+        try:
+            obj, _ = dec.raw_decode(stream, m.start())
+        except ValueError:
+            continue
+        name = obj.get('name')
+        if 'intelligenceIndex' in obj and name not in seen:
+            seen.add(name)
+            out.append(obj)
     return out
 
 
 def aa_effort(name):
-    """Effort a listed AA variant runs at ('' when the listing names none)."""
+    """Effort a listed variant runs at ('' when the listing names none)."""
     tag = variant(name).lower()
     for part in (p.strip() for p in tag.split(',')):
         if part in EFFORT_WORDS:
             return EFFORT_WORDS[part]
+    bare = re.sub(r'\s*\(.*\)\s*$', '', str(name)).strip()
+    if not re.search(r'\bqwen[\d.-]*\s+max$', bare, re.I):
+        m = re.search(r'\s+(xhigh|high|medium|low|max)$', bare, re.I)
+        if m:
+            return EFFORT_WORDS[m.group(1).lower()]
     return ''
 
 
