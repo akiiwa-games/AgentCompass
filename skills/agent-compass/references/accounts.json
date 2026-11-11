@@ -193,7 +193,12 @@
     },
     "claude-fable-5-2": {
       "fast_capable": true,
-      "api_family": "claude"
+      "api_family": "claude",
+      "image_input_source": {
+        "kind": "maintainer",
+        "statement": "maintainer: claude-fable-5-2 accepts image input",
+        "as_of": "2026-11-12"
+      }
     },
     "claude-opus-5-5": {
       "fast_capable": true,
@@ -223,7 +228,12 @@
       }
     },
     "dot": {
-      "excluded_when": "local_only"
+      "excluded_when": "local_only",
+      "image_input_source": {
+        "kind": "maintainer",
+        "statement": "maintainer: dot accepts image input",
+        "as_of": "2026-11-12"
+      }
     },
     "gpt-6-pro": {
       "advisor_only": true,
@@ -231,7 +241,12 @@
         "direction_reasoning",
         "complex_build_plan"
       ],
-      "api_family": "codex"
+      "api_family": "codex",
+      "image_input_source": {
+        "kind": "maintainer",
+        "statement": "maintainer: gpt-6-pro accepts image input",
+        "as_of": "2026-11-12"
+      }
     },
     "claude-haiku-5-5": {
       "api_family": "claude"

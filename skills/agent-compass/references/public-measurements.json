@@ -2091,6 +2091,18 @@
      "method": "USD per million tokens (Anthropic API pricing documentation)",
      "listed_as": "claude-fable-5-2"
     }
+   ],
+   "image_input": [
+    {
+     "source": "maintainer.image_input",
+     "kind": "maintainer",
+     "value": true,
+     "as_of": "2026-11-12",
+     "fetched_at": null,
+     "url": null,
+     "statement": "maintainer: claude-fable-5-2 accepts image input",
+     "method": "maintainer declaration of image-input modality"
+    }
    ]
   },
   "claude-opus-5-5": {
@@ -5617,8 +5629,34 @@
     }
    ]
   },
-  "dot": {},
-  "gpt-6-pro": {},
+  "dot": {
+   "image_input": [
+    {
+     "source": "maintainer.image_input",
+     "kind": "maintainer",
+     "value": true,
+     "as_of": "2026-11-12",
+     "fetched_at": null,
+     "url": null,
+     "statement": "maintainer: dot accepts image input",
+     "method": "maintainer declaration of image-input modality"
+    }
+   ]
+  },
+  "gpt-6-pro": {
+   "image_input": [
+    {
+     "source": "maintainer.image_input",
+     "kind": "maintainer",
+     "value": true,
+     "as_of": "2026-11-12",
+     "fetched_at": null,
+     "url": null,
+     "statement": "maintainer: gpt-6-pro accepts image input",
+     "method": "maintainer declaration of image-input modality"
+    }
+   ]
+  },
   "claude-haiku-5-5": {
    "tier": [
     {
