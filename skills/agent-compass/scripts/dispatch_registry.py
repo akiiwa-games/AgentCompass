@@ -479,35 +479,57 @@ def chain_root(row):
 
 RETRY_CANCELED_NEXT = ('The parent released this brief while AgentCompass waited to retry it, so the scheduled retry is '
                        'canceled and nothing runs this brief.')
+RESUMED_NEXT = ('The parent sent a follow-up turn to the failed worker and it is running again, so AgentCompass '
+                'retired the pending fallback and continues on that worker.')
 
 
-def retire_scheduled(fallback, now, result, next_action, root_id=None):
-    """End a scheduled same-bundle retry in the caller's transaction: the first dispatch's attempt record becomes final
-    and the failed attempt's claim terminal, so a due-retry path that runs later (the watcher, an observation,
-    dispatch_fallback.resume_due) finds it handled and starts nothing. Returns the failed attempt's id, or None when no
-    retry was scheduled."""
+def retire_scheduled(fallback, now, result, next_action, root_id=None, *, current=None, extra_ids=()):
+    """End a pending fallback in the caller's transaction: a scheduled same-bundle retry (`current=None`, for release or
+    expiry) or any pending retry/switch when the parent resumed `current`. The first dispatch's attempt record becomes
+    final and pending claims become terminal, so a due-retry or watcher call that runs later finds it handled and starts
+    nothing. Returns the retired attempt's id, or None when nothing was retired."""
     retry_of = fallback.get('retry_of')
-    if fallback.get('state') != 'retrying' or not retry_of:
-        return None
+    handled = dict(fallback.get('handled') or {})
+    if current is None:
+        if fallback.get('state') != 'retrying' or not retry_of:
+            return None
+        targets = [retry_of]
+    else:
+        pending = [k for k, v in handled.items() if isinstance(v, dict) and v.get('action') in ('scheduled', 'pending')]
+        if retry_of and retry_of not in pending:
+            pending.insert(0, retry_of)
+        resumed = fallback.get('state') == 'final' and (fallback.get('outcome') or {}).get('result') == result
+        if fallback and not resumed and fallback.get('state') not in ('retrying', 'relaunching') and not pending:
+            return None
+        targets = list(dict.fromkeys([*pending, *(k for k in extra_ids if k), current]))
     outcome = {'action': 'final', 'result': result, 'root_dispatch_id': root_id,
                'lines': fallback.get('lines') or [], 'text': next_action, 'at': stamp(now)}
-    fallback['handled'] = {**(fallback.get('handled') or {}), retry_of: outcome}
-    fallback.update(state='final', outcome={'result': result, 'next_action': next_action}, updated_at=stamp(now))
+    fallback['handled'] = {**handled, **{target: outcome for target in targets}}
+    fallback.update(state='final', outcome={'result': result, 'next_action': next_action}, updated_at=stamp(now),
+                    **({'current': current} if current is not None else {}))
     for key in ('until', 'retry_at', 'retry_of'):
         fallback.pop(key, None)
-    return retry_of
+    return targets[0]
 
 
 def fallback_guard(row, now):
     """AgentCompass is between two attempts of this brief (waiting out a transient backoff or relaunching): no worker
     runs, but one is about to, so the brief counts as dispatched until the guard lapses."""
     guard = row.get('fallback') or {}
-    if guard.get('state') not in ('retrying', 'relaunching') or not isinstance(guard.get('until'), str):
-        return False
-    try:
-        return parse(guard['until']) > now
-    except ValueError:
-        return False
+    if guard.get('state') in ('retrying', 'relaunching') and isinstance(guard.get('until'), str):
+        try:
+            if parse(guard['until']) > now:
+                return True
+        except ValueError:
+            pass
+    for item in (guard.get('handled') or {}).values():
+        if isinstance(item, dict) and item.get('action') == 'pending' and isinstance(item.get('until'), str):
+            try:
+                if parse(item['until']) > now:
+                    return True
+            except ValueError:
+                pass
+    return False
 
 
 def unresolved(row, now, exempt_chain=None):
@@ -876,6 +898,36 @@ def classify_provider_failure(dispatch_id, terminal, path=None):
         return None
 
 
+def agent_resumed(snapshot, row, terminal=None):
+    """True when `row` is a failed attempt whose bound host agent is running a new turn (or finished one sent after it
+    failed). A stuck provider retry whose cancel failed never stopped, so its running status is still the failed turn."""
+    if row.get('state') != 'failed' or not row.get('agent_id') or not isinstance(snapshot, dict):
+        return False
+    if snapshot.get('id') != row['agent_id']:
+        return False
+    if (row.get('failure_detail') or {}).get('cancelled') is False or (terminal or {}).get('cancelled') is False:
+        return False
+    if snapshot.get('archivedAt') or snapshot.get('providerUnavailable') or snapshot.get('attentionReason') == 'error':
+        return False
+    status = snapshot.get('status')
+    if status in ('running', 'initializing'):
+        return True
+    if status == 'idle' and (snapshot.get('attentionReason') == 'permission'
+                             or (snapshot.get('pendingPermissionCount') or 0) > 0):
+        return True
+    last_message = snapshot.get('lastUserMessageAt')
+    released_at = row.get('released_at')
+    if status == 'idle' and isinstance(last_message, str) and isinstance(released_at, str):
+        try:
+            ended = parse(released_at)
+            if isinstance((terminal or {}).get('at'), str):
+                ended = max(ended, parse(terminal['at']))
+            return parse(last_message) > ended
+        except ValueError:
+            return False
+    return False
+
+
 def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     """Accept only the bound host agent; start/terminal receipts are idempotent.
 
@@ -885,10 +937,28 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     scope = classify_provider_failure(dispatch_id, terminal, path)
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)
+        agent_id = snapshot.get('id')
+        if row['state'] in TERMINAL and row['state'] != 'expired' and agent_resumed(snapshot, row, terminal):
+            root = row if chain_root(row) == dispatch_id else get(connection, 'dispatches', chain_root(row))
+            fallback = dict(root.get('fallback') or {})
+            was_resumed = (fallback.get('state') == 'final'
+                           and (fallback.get('outcome') or {}).get('result') == 'resumed'
+                           and fallback.get('current') == row['dispatch_id']
+                           and not any(isinstance(v, dict) and v.get('action') in ('scheduled', 'pending')
+                                       for v in (fallback.get('handled') or {}).values()))
+            if not was_resumed and retire_scheduled(fallback, now, 'resumed', RESUMED_NEXT,
+                                                    root['dispatch_id'], current=row['dispatch_id']):
+                root['fallback'] = fallback
+                root.setdefault('events', []).append({
+                    'state': root['state'], 'at': stamp(now),
+                    'reason': f'pending fallback retired: parent resumed {row["dispatch_id"]}'})
+                save(connection, root)
+                if root['dispatch_id'] == dispatch_id:
+                    row = root
+            return row
         labels = snapshot.get('labels') or {}
         if any(labels.get(k) != row['request']['labels'][k] for k in LABELS):
             raise NotBound('Host snapshot belongs to another dispatch/parent/task')
-        agent_id = snapshot.get('id')
         if not isinstance(agent_id, str) or not agent_id or row.get('agent_id') not in (None, agent_id):
             raise ValueError('Host agent ID mismatch')
         provider, _, model = row['request']['provider'].partition('/')

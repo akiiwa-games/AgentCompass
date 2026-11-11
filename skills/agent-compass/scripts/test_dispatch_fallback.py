@@ -587,6 +587,88 @@ class FallbackTests(unittest.TestCase):
             self.assertNotIn('AGENTCOMPASS_FALLBACK_ARGV', flow.bridge_env())
         self.assertIn('fallback', json.loads(flow.bridge_env()['AGENTCOMPASS_FALLBACK_ARGV']))
 
+    def test_parent_followup_retires_scheduled_retry_and_due_calls_start_nothing(self):
+        root, _ = self.scheduled_root(minutes=16)
+        self.assertEqual([r['dispatch_id'] for r in registry.pending()], [root['dispatch_id']])
+        # The parent sends a follow-up prompt to the failed worker; it runs again before the backoff is over.
+        self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+        flow.reconcile(host=self.host)
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['outcome']['result'], fb['current']),
+                         ('final', 'resumed', root['dispatch_id']))
+        self.assertEqual(fb['handled'][root['dispatch_id']]['result'], 'resumed')
+        self.assertFalse({'until', 'retry_at', 'retry_of'} & set(fb))
+        self.assertEqual(registry.pending(), [])
+        self.assertEqual(registry.current_attempt(root['dispatch_id']), root['dispatch_id'])
+        self.assertEqual(flow.public(registry.inspect(root['dispatch_id']))['next_action'], registry.RESUMED_NEXT)
+        # Even once the resumed worker finishes and the scheduled retry time passes, nothing starts.
+        self.host.end(root['dispatch_id'], 'idle', attentionReason='finished')
+        with self.at(minutes=17):
+            self.assertIsNone(fallback.resume_due(root['dispatch_id'], host=self.host))
+            watcher = self.handle(root['dispatch_id'])
+            seen = self.observe_old(root['dispatch_id'])
+        self.assertEqual((watcher['action'], watcher['result']), ('final', 'resumed'))
+        self.assertEqual(seen['dispatch_id'], root['dispatch_id'])
+        self.assertEqual(len(self.host.creates), 1)
+        self.assertFalse(any('switched to' in line for line in watcher.get('lines') or ()))
+
+    def test_parent_followup_retires_pending_switch_and_restores_current_attempt(self):
+        task = dict(self.task, can_wait_hours=1)
+        root = self.first(task=task)
+        self.host.end(root['dispatch_id'], 'error', terminal={'reason': 'error'})
+        flow.reconcile(root['dispatch_id'], host=self.host)
+        second = self.handle(root['dispatch_id'])
+        self.assertEqual(second['action'], 'relaunched')
+        self.assertEqual(registry.current_attempt(root['dispatch_id']), second['dispatch_id'])
+        # Attempt 2 fails and its switch is claimed/pending while the parent resumes attempt 1.
+        self.host.end(second['dispatch_id'], 'error', terminal={'reason': 'error'})
+        flow.reconcile(second['dispatch_id'], host=self.host)
+        chain = fallback.Chain.of(registry.inspect(root['dispatch_id']), judge=self.judge, host=self.host)
+        chain.claim(second['dispatch_id'])
+        self.assertEqual([r['dispatch_id'] for r in registry.pending()], [root['dispatch_id']])
+        self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+        flow.reconcile(host=self.host)
+        fb = registry.inspect(root['dispatch_id'])['fallback']
+        self.assertEqual((fb['state'], fb['outcome']['result'], fb['current']),
+                         ('final', 'resumed', root['dispatch_id']))
+        self.assertEqual(fb['handled'][second['dispatch_id']]['result'], 'resumed')
+        self.assertEqual(registry.current_attempt(root['dispatch_id']), root['dispatch_id'])
+        self.assertEqual(self.handle(second['dispatch_id'])['result'], 'resumed')
+        self.assertEqual(len(self.host.creates), 2)
+
+    def test_failed_attempt_running_again_when_handle_runs_does_not_relaunch(self):
+        # 2026-11-11 incident: worker ends in error (failure_code=None -> worker_error/switch), parent resumes it,
+        # then fallback handle runs. Neither before replan nor right before launch may a second worker start.
+        for mode in ('already_running', 'resumed_during_replan'):
+            with self.subTest(mode=mode):
+                creates_before = len(self.host.creates)
+                root = self.first(task=dict(self.task, task_id=f'resumed-{mode}'))
+                self.host.end(root['dispatch_id'], 'error', terminal={'reason': 'error'})
+                flow.reconcile(root['dispatch_id'], host=self.host)
+                self.assertEqual(registry.inspect(root['dispatch_id'])['state'], 'failed')
+                if mode == 'already_running':
+                    self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+                    out = self.handle(root['dispatch_id'])
+                else:
+                    real_plan = self.judge.plan_stage
+
+                    def resume_then_plan(document, args):
+                        self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+                        return real_plan(document, args)
+                    with patch.object(self.judge, 'plan_stage', side_effect=resume_then_plan):
+                        out = self.handle(root['dispatch_id'])
+                self.assertEqual((out['action'], out['result']), ('final', 'resumed'))
+                self.assertEqual(len(self.host.creates), creates_before + 1)
+                self.assertEqual(registry.current_attempt(root['dispatch_id']), root['dispatch_id'])
+                self.assertFalse(any('switched to' in line for line in out['lines']), out['lines'])
+                notes = self.root / 'paseo-notifications'
+                self.assertFalse(list(notes.glob('*.attempts')) if notes.exists() else [])
+                fb = registry.inspect(root['dispatch_id'])['fallback']
+                self.assertEqual((fb['state'], fb['outcome']['result'], fb['current']),
+                                 ('final', 'resumed', root['dispatch_id']))
+                self.assertFalse(any('switched to' in line for line in fb['lines']), fb['lines'])
+                self.assertEqual(self.fallback_lines()[-1]['action'], 'resumed')
+
 
 class RollFallbackTests(unittest.TestCase):
     """The roll process itself relaunches when the create fails while it waits for it."""

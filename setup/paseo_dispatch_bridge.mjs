@@ -13,7 +13,8 @@ const CREATE_LIMIT_MS = 2 * 60 * 1000;
 const POLL_MS = 5000;
 // `relaunched`: AgentCompass relaunched the brief after this attempt failed; the new attempt's watcher reports.
 // `canceled`: the parent released the brief while its retry was scheduled; the parent did that, so nothing is said.
-const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched', 'canceled']);
+// `resumed`: the parent resumed the failed worker itself; that turn's own completion is the notification.
+const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched', 'canceled', 'resumed']);
 const CREATE_FAILED = 'creation failed';
 const WORKER_REMOVED = 'worker removed before it was observed';
 const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
@@ -319,20 +320,35 @@ export function retryStuckText(terminal, targetId) {
     'picks another model.';
 }
 
+export function agentResumed(agent, record) {
+  if (!agent || agent.archivedAt || agent.providerUnavailable || agent.attentionReason === 'error') return false;
+  if (record?.terminal?.cancelled === false) return false;
+  if (agent.status === 'running' || agent.status === 'initializing') return true;
+  if (agent.status === 'idle' && (agent.pendingPermissions?.length || agent.attentionReason === 'permission')) return true;
+  const failedAt = Date.parse(record?.terminal?.at ?? '');
+  return agent.status === 'idle' && Number.isFinite(failedAt)
+    && typeof agent.lastUserMessageAt === 'string' && Date.parse(agent.lastUserMessageAt) > failedAt;
+}
+
 // This small step is also used by tests with an SDK fake. Persist the pending
 // message before sending: a lost acknowledgment retries the same messageId.
 export async function notificationStep(client, record, persist, now = Date.now(),
   fallback = fallbackArgv() ? defaultFallback : null) {
   if (DONE.has(record.status)) return true;
-  // A transient failure's same-model retry is scheduled (dispatch_fallback.Chain.schedule): nothing to do until it is due.
-  if (!record.pending && record.fallback?.status === 'scheduled' && Date.parse(record.fallback.retry_at) > now)
-    return false;
-  let event;
   const targetId = record.agent_id ?? record.dispatch_id;
+  // A transient failure's same-model retry is scheduled (dispatch_fallback.Chain.schedule): wait until it is due,
+  // unless the parent resumed this worker in the meantime, which retires the retry at once.
+  const waiting = !record.pending && (record.fallback?.status === 'scheduled' || record.fallback?.status === 'waiting');
+  let prefetched;
+  if (!record.pending && record.fallback?.status === 'scheduled' && Date.parse(record.fallback.retry_at) > now) {
+    prefetched = await client.fetchAgent(targetId).then(found => found?.agent, () => null);
+    if (!agentResumed(prefetched, record)) return false;
+  }
+  let event;
   if (!record.pending) {
     const expired = now >= record.deadline;
     // Past the watch there is nothing left to decide from these, and one that cannot be read must not hold back the notice.
-    let agent = expired
+    let agent = prefetched !== undefined ? prefetched : expired
       ? await client.fetchAgent(targetId).then(found => found?.agent, () => null)
       : (await client.fetchAgent(targetId))?.agent;
     const creation = !expired && !agent && !record.seen && !record.agent_id
@@ -367,7 +383,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
         ...(event.reason === 'finished' ? {replied: await turnReplied(client, targetId)} : {})};
     // A failed attempt goes to AgentCompass first: it retries or relaunches the brief, and only a final state reaches
     // the parent. The terminal is saved first, because the step reads it through the registry's observation.
-    if (event?.key === 'terminal' && FALLBACK_REASONS.has(event.reason) && fallback
+    if ((waiting || (event?.key === 'terminal' && FALLBACK_REASONS.has(event.reason))) && fallback
         && record.fallback?.status !== 'done') {
       record.fallback = {status: 'running', at: new Date(now).toISOString()};
       persist();
@@ -389,7 +405,10 @@ export async function notificationStep(client, record, persist, now = Date.now()
       }
       record.fallback = {status: 'done', ...fallbackRecord(outcome)};
       if (outcome?.action === 'relaunched') {record.status = 'relaunched'; persist(); return true;}
-      if (outcome?.action === 'final' && outcome.result === 'canceled') {record.status = 'canceled'; persist(); return true;}
+      if (outcome?.action === 'final' && (outcome.result === 'canceled' || outcome.result === 'resumed')) {
+        record.status = outcome.result; persist(); return true;
+      }
+      if (!event && record.terminal?.reason) event = {key: 'terminal', reason: record.terminal.reason};
       persist();
     }
   }

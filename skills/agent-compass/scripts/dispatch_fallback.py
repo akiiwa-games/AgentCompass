@@ -19,7 +19,9 @@ Contract:
   (`resume_due`), runs `handle` again once it is due. The failed attempt's claim and the first dispatch's guard both
   last until then, so no other observer relaunches it meanwhile. The guard lasts as long as the task can wait
   (can_wait_hours); a retry nobody started by then is retired (`retry_expired`), never run beside a new dispatch of
-  the brief. The parent's release of the dispatch cancels a scheduled retry (registry.retire_scheduled). A model the owner named (`roll --model`, a
+  the brief. The parent's release of the dispatch cancels a scheduled retry (registry.retire_scheduled), and a parent
+  follow-up that resumes a failed attempt's worker retires any pending retry or switch (`resumed`) and restores that
+  attempt as `current`. A model the owner named (`roll --model`, a
   `user_override` decision) follows the same can_wait_hours rule and is never switched: when its backoff does not fit,
   the parent is told (`owner_named`).
 - Otherwise: allocation runs again on the original decision's allocation task (its classifier profile, needs such as
@@ -27,9 +29,11 @@ Contract:
   again. The winner is launched with the first dispatch's title, workspace, cwd, access, parent and the original prompt,
   prefixed by a note naming the failed attempts and asking the worker to check the workspace before continuing.
 - One worker per brief: a relaunch is prepared only after the failed attempt is terminal and confirmed dead (create
-  failed, or the worker ended in error, or the bridge's stop was confirmed), and between attempts the first dispatch
-  carries a guard (registry.fallback_guard) so the parent or another observer cannot start the brief a second time.
-  A failed attempt is claimed once (`handled`), so two observers never relaunch it twice.
+  failed, or the worker ended in error, or the bridge's stop was confirmed), and `Chain.run` rechecks the failed
+  attempt's host status via `dispatch_flow.reconcile` before launching so a worker the parent resumed never gets a
+  sibling. Between attempts the first dispatch carries a guard (registry.fallback_guard) so the parent or another
+  observer cannot start the brief a second time. A failed attempt is claimed once (`handled`), so two observers never
+  relaunch it twice.
 - Bound: every failure puts its bundle in the dispatch's excluded set (a transient one after its single same-bundle
   retry), and allocation never returns an excluded bundle, so one dispatch makes at most (startable candidates +
   transient retries) attempts, and ends `blocked` with every attempt's cause once allocation has nothing left.
@@ -335,14 +339,21 @@ class Chain:
             if attempt is None:
                 attempt = self.entry(bundle or row['bundle'], row)
                 self.attempts.append(attempt)
+            kept = len(self.attempts)
             if resume:
                 resume = False
+                resumed_id = self.resumed_attempt(row)
+                if resumed_id:
+                    return self.settle_resumed(resumed_id, attempt, failed_id)
                 choice = (self.same_bundle(attempt), 'retry_same', 0)
             else:
                 self.failed(attempt, failure, row)
                 if not failure['covered']:
                     self.ledger('declined', attempt)
                     return self.finish('declined', failure, failed_id)
+                resumed_id = self.resumed_attempt(row)
+                if resumed_id:
+                    return self.settle_resumed(resumed_id, attempt, failed_id)
                 choice = self.next_choice(attempt)
             if choice is None:
                 kind = 'owner_named' if self.owner_named else 'blocked'
@@ -351,6 +362,11 @@ class Chain:
             decision, how, wait = choice
             if how == 'scheduled':
                 return self.schedule(attempt, wait, failed_id)
+            if how == 'switch':
+                resumed_id = self.resumed_attempt(row)
+                if resumed_id:
+                    self.attempts[kept:] = []
+                    return self.settle_resumed(resumed_id, attempt, failed_id)
             new_bundle = decision['selected_bundle']
             self.ledger(how, attempt, next={'decision_id': decision['decision_id'], **bundle_view(new_bundle)})
             try:
@@ -474,6 +490,41 @@ class Chain:
             return None
         return current if registry.unresolved(row, registry.utcnow()) else None
 
+    def resumed_attempt(self, row=None):
+        """A failed attempt of this brief whose worker the parent resumed, observed on the host via reconcile."""
+        if not self.root:
+            return None
+        import dispatch_flow
+        seen = []
+        for candidate in ([row['dispatch_id']] if row else []) + [
+                a['dispatch_id'] for a in reversed(self.attempts) if a.get('dispatch_id')]:
+            if candidate not in seen:
+                seen.append(candidate)
+        for dispatch_id in seen:
+            target = row if row and row['dispatch_id'] == dispatch_id else registry.inspect(dispatch_id)
+            if target.get('state') == 'failed' and target.get('launched_at') and target.get('agent_id'):
+                dispatch_flow.reconcile(dispatch_id, host=self.host)
+                self.root = registry.inspect(self.root['dispatch_id'])
+                fb = self.root.get('fallback') or {}
+                if fb.get('state') == 'final' and (fb.get('outcome') or {}).get('result') == 'resumed':
+                    return fb.get('current') or self.root['dispatch_id']
+        self.root = registry.inspect(self.root['dispatch_id'])
+        fb = self.root.get('fallback') or {}
+        if fb.get('state') == 'final' and (fb.get('outcome') or {}).get('result') == 'resumed':
+            return fb.get('current') or self.root['dispatch_id']
+        return None
+
+    def settle_resumed(self, resumed_id, attempt, failed_id):
+        self.ledger('resumed', attempt, resumed_dispatch_id=resumed_id)
+        attempts = [dict(a) for a in self.attempts]
+
+        def change(fallback):
+            fallback.update(attempts=attempts, lines=lines(attempts))
+            registry.retire_scheduled(fallback, registry.utcnow(), 'resumed', registry.RESUMED_NEXT,
+                                      self.root_id, current=resumed_id, extra_ids=(failed_id,))
+        self.root = registry.update_fallback(self.root['dispatch_id'], change)
+        return self.root['fallback']['handled'][failed_id or resumed_id]
+
     def replan(self):
         """Allocation again on the original inputs with this dispatch's failed bundles unavailable."""
         import roll
@@ -548,6 +599,9 @@ def handle(dispatch_id, *, judge=None, host=None):
         return {'action': 'unsettled', 'state': row['state']}
     root_id = registry.chain_root(row)
     root = row if root_id == dispatch_id else registry.inspect(root_id)
+    if registry.fallback_guard(root, registry.utcnow()):
+        dispatch_flow.reconcile(root_id, host=host)
+        root = registry.inspect(root_id)
     chain = Chain.of(root, judge=judge, host=host)
     try:
         resume = chain.claim(dispatch_id)

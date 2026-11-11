@@ -271,13 +271,49 @@ def settle_create(row, creation, now, path):
     return settled
 
 
+def failed_attempts(row, path=None):
+    """Failed attempts of `row`'s brief that have a host agent a parent follow-up could have resumed."""
+    out, seen = [], set()
+    for dispatch_id in [row['dispatch_id'], *(a.get('dispatch_id') for a in (
+            (row.get('fallback') or {}).get('attempts') or ()) if a.get('dispatch_id'))]:
+        if dispatch_id in seen:
+            continue
+        seen.add(dispatch_id)
+        try:
+            target = row if dispatch_id == row['dispatch_id'] else registry.inspect(dispatch_id, path)
+        except ValueError:
+            continue
+        if target.get('state') == 'failed' and target.get('launched_at') and target.get('agent_id'):
+            out.append(target)
+    return out
+
+
 def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None):
     host = host or host_call
     now = now or registry.utcnow()
     targets = [registry.inspect(dispatch_id, path)] if dispatch_id else registry.pending(path)
     results = []
     for row in targets:
-        if not row.get('launched_at') or (row['state'] in registry.TERMINAL and row['state'] != 'expired'):
+        if row['state'] in registry.TERMINAL and row['state'] != 'expired':
+            pending_chain = registry.fallback_guard(row, now)
+            candidates = (failed_attempts(row, path) if pending_chain
+                          else [row] if dispatch_id and row['state'] == 'failed'
+                          and row.get('launched_at') and row.get('agent_id') else [])
+            for target in candidates:
+                response = host({'operation': 'observe', 'dispatch_id': target['dispatch_id'],
+                                 'agent_id': target['agent_id'],
+                                 **({'timeout_seconds': timeout} if timeout else {})})
+                if response.get('ok') and response.get('agent'):
+                    try:
+                        updated = registry.observe(
+                            target['dispatch_id'], response['agent'], now=now, path=path,
+                            terminal=(response.get('completion_notification') or {}).get('terminal'))
+                        results.append(dict(public(updated),
+                                            completion_notification=response.get('completion_notification')))
+                    except (registry.NotBound, ValueError):
+                        pass
+            continue
+        if not row.get('launched_at'):
             continue
         response = host({'operation': 'observe', 'dispatch_id': row['dispatch_id'], 'agent_id': row.get('agent_id'),
                          **({'timeout_seconds': timeout} if timeout else {})})
@@ -357,6 +393,16 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     if row['parent_id'] != parent_id:
         raise ValueError('Dispatch belongs to another parent')
     if row['state'] in registry.TERMINAL and row['state'] != 'expired':
+        now = registry.utcnow()
+        root_row = row if registry.chain_root(row) == dispatch_id else registry.inspect(registry.chain_root(row), path)
+        if registry.fallback_guard(root_row, now) or row['state'] == 'failed':
+            observations = reconcile(
+                root_row['dispatch_id'] if registry.fallback_guard(root_row, now)
+                else dispatch_id, host=host, path=path, timeout=budget())
+            queried_host = bool(observations)
+            notification = next((item['completion_notification'] for item in observations
+                                 if item.get('completion_notification')), notification)
+            row = registry.inspect(dispatch_id, path)
         if path is None:
             # A transient failure's same-bundle retry that fell due starts here too, not only from its watcher.
             if dispatch_fallback.resume_due(dispatch_id, host=host) is not None:
@@ -364,6 +410,7 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         current = registry.current_attempt(dispatch_id, path)
         if current != dispatch_id:
             dispatch_id, row = current, registry.inspect(current, path)
+            queried_host = False
     if row['state'] == 'prepared':
         row = registry.claim(row['request'], parent_id, now=registry.utcnow(), path=path)
 

@@ -9,7 +9,7 @@ import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationRecord, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
   workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE, fallbackArgv, runFallback,
-  attemptsNote, notificationFile} from './paseo_dispatch_bridge.mjs';
+  attemptsNote, notificationFile, agentResumed} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -1236,6 +1236,34 @@ test('a scheduled retry the parent canceled ends this watcher silently; one reti
   assert.equal(expired.calls.length, 1);
   assert.match(expired.calls[0][1], /State: retry_expired\n/);
   assert(expired.calls[0][1].includes('can_wait_hours'));
+});
+
+test('a worker the parent resumed ends a scheduled retry or error step silently with no switched-to notice', async () => {
+  const retryAt = new Date(100000).toISOString();
+  const scheduled = watchFixture();
+  scheduled.setAgent({status: 'error'});
+  await notificationStep(scheduled.client, scheduled.record, scheduled.persist, 10,
+    async () => ({action: 'scheduled', retry_at: retryAt}));
+  assert.equal(agentResumed({status: 'error'}, scheduled.record), false);
+  assert.equal(agentResumed({status: 'running'}, {terminal: {cancelled: false}}), false);
+  scheduled.setAgent({status: 'running'});
+  assert.equal(agentResumed({status: 'running'}, scheduled.record), true);
+  // Before retry_at, seeing the worker running again wakes the fallback step to retire the retry and stays silent.
+  let asked = 0;
+  assert.equal(await notificationStep(scheduled.client, scheduled.record, scheduled.persist, 500, async () => {
+    asked++;
+    return {action: 'final', result: 'resumed', root_dispatch_id: 'child', text: 'resumed'};
+  }), true);
+  assert.equal(asked, 1);
+  assert.equal(scheduled.record.status, 'resumed');
+  assert.equal(scheduled.calls.length, 0);
+  // Direct `resumed` on an error sighting sends neither an error nor a switched-to notice.
+  const direct = watchFixture();
+  direct.setAgent({status: 'error'});
+  assert.equal(await notificationStep(direct.client, direct.record, direct.persist, 10,
+    async () => ({action: 'final', result: 'resumed', root_dispatch_id: 'child', text: 'resumed'})), true);
+  assert.equal(direct.record.status, 'resumed');
+  assert.equal(direct.calls.length, 0);
 });
 
 test('the relaunched attempt reports its finish under the parent dispatch with the attempts', async () => {
