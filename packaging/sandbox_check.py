@@ -848,12 +848,11 @@ def scenario_usage_float(ctx, tray_box: Sandbox):
     op.check("router reads the legacy cache Usage Float wrote", snapshot and snapshot["accounts"]["codex"]["status"] == "fresh" and
              Path(snapshot["cache_path"]).resolve() == box.legacy.resolve(), snapshot)
 
-    op = ctx["run"].operation("Usage Float hosted by the tray", "share_cache redirects its CACHE_PATH; its writes land in the shared cache")
-    # Negative control: the same fetch WITHOUT share_cache lands in Usage Float's own legacy file and leaves the shared cache alone.
-    # That is the difference the assertions below look for; if the control did not show it, they would prove nothing.
+    op = ctx["run"].operation("Usage Float hosted by the tray", "bind_usage delegates reading to the shared cache and forced refresh to the product collector")
+    # Negative control: standalone refresh_usage WITHOUT bind_usage runs Usage Float's own fetcher into the legacy file and leaves the shared cache alone.
     fixture.codex_used = 33.0
     canonical_before = sha(box.cache)
-    control = box.py(op, "import usage_float as native; native.fetch_all(['codex'], force=True)", isolated=False, cwd=plugin,
+    control = box.py(op, "import usage_float as native; native.refresh_usage(['codex'])", isolated=False, cwd=plugin,
                      PYTHONPATH=box.pythonpath(plugin))
     legacy_codex = [w["used_pct"] for w in box.read_cache(box.legacy)["providers"]["codex"]["windows"]] if box.legacy.is_file() else []
     op.check("control: an un-hosted Usage Float writes its own legacy file (33%) and not the shared cache",
@@ -862,12 +861,13 @@ def scenario_usage_float(ctx, tray_box: Sandbox):
     legacy_digest = sha(box.legacy)
     fixture.codex_used = 55.0
     code = ("import sys; sys.path.insert(0,'.'); import usage_float_host as host, usage_float as native; "
-            "print(host.share_cache(native)); native.fetch_all(['codex'], force=True)")
+            "native.fetch_all = lambda *a, **k: (_ for _ in ()).throw(AssertionError('plugin fetcher ran')); "
+            "print(host.bind_usage(native)); native.get_usage(['codex']); native.refresh_usage(['codex'])")
     result = box.py(op, code, isolated=False, cwd=repo_tray, python=TRAY_PYTHON, PYTHONPATH=box.pythonpath(repo_tray, plugin))
     if tray_needs(op, result, "hosted Usage Float"):
-        op.check("share_cache returns the canonical path", result.returncode == 0 and str(box.cache) in result.stdout, result.stdout + result.stderr[-400:])
+        op.check("bind_usage returns the canonical path without calling plugin fetchers", result.returncode == 0 and str(box.cache) in result.stdout, result.stdout + result.stderr[-400:])
         hosted = [w["used_pct"] for w in box.read_cache()["providers"]["codex"]["windows"]]
-        op.check("hosted Usage Float wrote the shared cache (55%) and left the legacy file byte-identical",
+        op.check("hosted forced refresh wrote the shared cache via the product collector (55%) and left the legacy file byte-identical",
                  sha(box.legacy) == legacy_digest and 55.0 in hosted, {"legacy_unchanged": sha(box.legacy) == legacy_digest, "canonical_windows": hosted})
         _, snapshot = usage_stage(box, op, "codex")
         op.check("router sees the hosted write as fresh", snapshot and snapshot["accounts"]["codex"]["status"] == "fresh" and
