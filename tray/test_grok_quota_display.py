@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import router_data
-import router_window
+import panel_quota
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
 import provider_inventory as real_inventory
@@ -46,7 +46,7 @@ class GrokQuotaDisplayTests(unittest.TestCase):
                     self.assertEqual(cards[0]['label'], 'Grok')
                     self.assertEqual(cards[0]['host_enabled'], bool(allowed))
                     self.assertEqual(
-                        router_window.card_title(cards[0]),
+                        panel_quota.card_title(cards[0]),
                         'Grok' if allowed else 'Grok · 不派发',
                     )
                     self.assertEqual(cards[0]['windows'][0]['remaining_pct'], 44)

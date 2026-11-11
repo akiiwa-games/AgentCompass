@@ -17,6 +17,7 @@ import i18n
 import plugins
 import router_data
 import router_window
+import panel_widgets
 import tk_test_support
 
 
@@ -55,7 +56,7 @@ class PanelTests(unittest.TestCase):
             mock.patch.object(router_data, 'overrides', return_value=[]),
             mock.patch.object(router_data, 'boost_targets', return_value=[]),
             mock.patch.object(router_window.theme, 'set_window_icon'),
-            mock.patch.object(router_window, 'log_error'),
+            mock.patch.object(panel_widgets, 'log_error'),
             mock.patch.object(plugins, 'load', return_value=plugins.defaults()),
         ):
             patcher.start()
@@ -80,7 +81,7 @@ class PanelTests(unittest.TestCase):
 
     def test_three_tabs_and_legacy_links_redirect_to_the_new_pages(self):
         panel = self.open()
-        self.assertEqual([key for key, _ in router_window.SETTINGS], ['models', 'strategy', 'system'])
+        self.assertEqual([key for key, _ in panel_widgets.SETTINGS], ['models', 'strategy', 'system'])
         self.assertEqual(panel.current_setting, 'models')
         for key in ('accounts', 'boost', 'cli'):
             panel.show_setting(key)

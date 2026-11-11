@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import router_data
-import router_window
+import panel_quota
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
 import provider_inventory as real_inventory
@@ -43,7 +43,7 @@ class ProviderRetryCardTests(unittest.TestCase):
         self.assertIn('提供方持续重试，整个账号已排除派发', card['badge'])
         self.assertIn('agentcompass hold --clear opencode', card['badge'])   # no retry time: it says how to clear it
         self.assertNotIn('成功派发', card['badge'])
-        self.assertNotEqual(router_window.card_title(card), card['label'])   # the card itself says it is in trouble
+        self.assertNotEqual(panel_quota.card_title(card), card['label'])   # the card itself says it is in trouble
 
     def test_a_model_hold_names_the_model_and_its_next_retry(self):
         retry = datetime.now(timezone.utc) + timedelta(minutes=4)
@@ -73,23 +73,23 @@ class ProviderRetryCardTests(unittest.TestCase):
         panel = Mock()
         for cleared in (True, False):
             panel.data_module.return_value.clear_retry_holds.return_value = cleared
-            router_window.Panel.clear_retry_hold(panel, 'opencode')
+            panel_quota.QuotaPage.clear_retry_hold(panel, 'opencode')
             work = panel.run.call_args.args[0]
             text = work()
             self.assertIsInstance(text, str)
-            self.assertEqual(text, router_window._tr('已清除提供方失败标记' if cleared else '没有需要清除的提供方失败标记'))
+            self.assertEqual(text, panel_quota._tr('已清除提供方失败标记' if cleared else '没有需要清除的提供方失败标记'))
 
     def test_the_card_clear_button_shows_only_while_held_and_clears_the_account(self):
         clear = Mock()
         widgets = {'clear': clear, 'clear_layout': 'pack', 'windows': [], 'refreshable': False}
         card = {'account': 'opencode', 'label': 'OpenCode', 'kind': 'warn', 'badge': 'x', 'windows': [],
                 'retry_hold': True}
-        router_window.Panel.fill_quota_card(widgets, card)
+        panel_quota.QuotaPage.fill_quota_card(widgets, card)
         clear.pack.assert_called_once_with(side='left')
-        router_window.Panel.fill_quota_card(widgets, {**card, 'retry_hold': False})
+        panel_quota.QuotaPage.fill_quota_card(widgets, {**card, 'retry_hold': False})
         clear.pack_forget.assert_called_once_with()
         grid = Mock()
-        router_window.Panel.fill_quota_card({'clear': grid, 'clear_layout': 'grid', 'windows': [], 'refreshable': False},
+        panel_quota.QuotaPage.fill_quota_card({'clear': grid, 'clear_layout': 'grid', 'windows': [], 'refreshable': False},
                                             card)
         grid.grid.assert_called_once_with()
         allocator = Mock()
@@ -118,15 +118,15 @@ class ProviderRetryCardTests(unittest.TestCase):
 
         clear = Mock()
         widgets = {'clear': clear, 'clear_layout': 'pack', 'windows': [], 'refreshable': False}
-        router_window.Panel.fill_quota_card(widgets, {**card, 'label': 'OpenCode'})
+        panel_quota.QuotaPage.fill_quota_card(widgets, {**card, 'label': 'OpenCode'})
         self.assertEqual(clear.hold_pool, 'opencode')
-        clear.configure.assert_called_with(text=router_window._tr('清除 {0}').format('opencode'))
-        router_window.Panel.fill_quota_card(widgets, {**card, 'label': 'OpenCode', 'retry_clear_pool': None})
+        clear.configure.assert_called_with(text=panel_quota._tr('清除 {0}').format('opencode'))
+        panel_quota.QuotaPage.fill_quota_card(widgets, {**card, 'label': 'OpenCode', 'retry_clear_pool': None})
         self.assertIsNone(clear.hold_pool)
-        clear.configure.assert_called_with(text=router_window._tr('清除'))
+        clear.configure.assert_called_with(text=panel_quota._tr('清除'))
 
         panel = Mock()
-        router_window.Panel.clear_retry_hold(panel, 'opencode', 'opencode')
+        panel_quota.QuotaPage.clear_retry_hold(panel, 'opencode', 'opencode')
         panel.run.call_args.args[0]()
         panel.data_module.return_value.clear_retry_holds.assert_called_once_with('opencode', 'opencode')
         allocator = Mock()

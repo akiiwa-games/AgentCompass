@@ -180,6 +180,8 @@ class DecisionBindingTests(unittest.TestCase):
 
     def test_a_quota_record_the_view_cannot_read_does_not_stop_the_decision_from_loading(self):
         import router_window
+        import panel_scoring
+        import panel_widgets
         import tk_test_support
         root = tk_test_support.shared_tk_root(self)
         root.withdraw()
@@ -190,7 +192,7 @@ class DecisionBindingTests(unittest.TestCase):
                 mock.patch.object(router_window.theme, 'set_window_icon'):
             panel = router_window.Panel(root, 'scoring')
             # Fields of another type are read one by one: the window is left out and nothing is raised.
-            with mock.patch.object(router_window, "log_error") as logged:
+            with mock.patch.object(panel_widgets, "log_error") as logged:
                 panel.plan_loaded({**PLAN, "ranking": ranking, "quota_line": {"windows": {"claude": window}}})
             logged.assert_not_called()
             self.assertEqual((panel.quota_line.data["windows"], panel.quota_line.data["dropped"]), ([], ["claude"]))
@@ -198,8 +200,8 @@ class DecisionBindingTests(unittest.TestCase):
             # Whatever else goes wrong inside the quota view stays there: it is logged, and the film, the
             # candidates and the verdict of the decision load as usual.
             panel.breakdown_rows = []
-            with mock.patch.object(router_window.quota_line, "model", side_effect=ValueError("boom")), \
-                    mock.patch.object(router_window, "log_error") as logged:
+            with mock.patch.object(panel_scoring.quota_line, "model", side_effect=ValueError("boom")), \
+                    mock.patch.object(panel_widgets, "log_error") as logged:
                 panel.plan_loaded({**PLAN, "quota_line": {"windows": {"claude": {**window, "used_usd": 240}}}})
             logged.assert_called_once()
             self.assertIsInstance(panel.quota_line.error, ValueError)
@@ -365,7 +367,7 @@ class DecisionBindingTests(unittest.TestCase):
 
     def test_verdict_summary_is_structured_rows_with_the_reason_kept_for_the_tooltip(self):
         import i18n
-        import router_window
+        import panel_scoring
 
         reason = "opus (start) scored 0.5; claude-weekly: 40% left; value/cost exchange 0.012 score per displaced USD"
         plan = {**PLAN, "decision": {"margin": 0.05, "reason": reason,
@@ -379,20 +381,20 @@ class DecisionBindingTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         i18n.set_language("zh")
-        rows, tooltip = router_window.verdict_summary(plan, router_data.decision_pair(plan))
+        rows, tooltip = panel_scoring.verdict_summary(plan, router_data.decision_pair(plan))
         self.assertEqual(rows, [("胜出", "Opus 5.5 · 高  0.500"), ("次选", "Sol 6.1 · 高  0.450 · 领先 0.0500"),
                                 ("任务", "调试评审 · 困难 · 4h"),
                                 ("额度", "claude-weekly 剩 40% · 本单 ~3.5% · 机会成本 0.010")])
         self.assertEqual(tooltip, reason)
         i18n.set_language("en")
-        rows, _ = router_window.verdict_summary(plan, router_data.decision_pair(plan))
+        rows, _ = panel_scoring.verdict_summary(plan, router_data.decision_pair(plan))
         self.assertEqual(rows[1], ("Runner-up", "Sol 6.1 · High  0.450 · lead 0.0500"))
         self.assertEqual(rows[2], ("Task", "Debug & review · Hard · 4h"))
         self.assertEqual(rows[3][1], "claude-weekly 40% left · this task ~3.5% · opportunity cost 0.010")
 
     def test_verdict_summary_marks_ties_and_falls_back_to_a_short_reason(self):
         import i18n
-        import router_window
+        import panel_scoring
 
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -402,11 +404,11 @@ class DecisionBindingTests(unittest.TestCase):
         i18n.set_language("en")
         plan = {"choice": "a", "decision": {"reason": "a (start) scored 0.3; free usage window", "task": {}},
                 "ranking": [candidate("a", "m1", 0.3), candidate("b", "m2", 0.3)]}
-        rows, _ = router_window.verdict_summary(plan, router_data.decision_pair(plan))
+        rows, _ = panel_scoring.verdict_summary(plan, router_data.decision_pair(plan))
         self.assertEqual(rows[1], ("Runner-up", "m2 · High  0.300 · tied"))
         self.assertEqual(rows[2], ("Task", "— · — · —"))
         self.assertEqual(rows[3], ("Quota", "a (start) scored 0.3"))
-        self.assertEqual(router_window.verdict_summary({"decision": {}}, []), ([("", "No eligible candidates")], ""))
+        self.assertEqual(panel_scoring.verdict_summary({"decision": {}}, []), ([("", "No eligible candidates")], ""))
 
 
 class AccountCardTests(unittest.TestCase):
@@ -723,6 +725,7 @@ class LanguageTests(unittest.TestCase):
     def test_dynamic_labels_presets_badges_and_statuses(self):
         import i18n
         import router_window
+        import panel_widgets
         import easytier
         import network_status
         import plugins
@@ -744,8 +747,8 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(router_data.strategy_preset_key("Save Quota"), "省额度")
         self.assertIn("省额度", router_data.STRATEGY_PRESETS)
         self.assertEqual(router_data.countdown(3600), "1h 00m")
-        self.assertEqual(router_window.short_badge("Paused: disabled"), "Paused")
-        self.assertEqual(router_window.short_badge("Blocked by Host"), "Blocked by Host")
+        self.assertEqual(panel_widgets.short_badge("Paused: disabled"), "Paused")
+        self.assertEqual(panel_widgets.short_badge("Blocked by Host"), "Blocked by Host")
         self.assertEqual(easytier.label({"state": easytier.RUNNING, "peers": [{"cost": "p2p"}, {"cost": "p2p"}]}),
                          "Running (2 peers)")
         self.assertEqual(network_status.peer_values({"cost": "Local"})[2], "Local")
@@ -761,6 +764,7 @@ class LanguageTests(unittest.TestCase):
 
     def test_panel_switch_rebuilds_navigation_and_current_settings(self):
         import router_window
+        import panel_widgets
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
@@ -768,7 +772,7 @@ class LanguageTests(unittest.TestCase):
         # No service probes, network calls or workers are needed to test real Tk labels.
         with mock.patch.object(router_window.Panel, "run"), \
                 mock.patch.object(router_window.theme, "set_window_icon"), \
-                mock.patch.object(router_window, "log_error") as errors:
+                mock.patch.object(panel_widgets, "log_error") as errors:
             panel = router_window.Panel(root, "policy")
             self.addCleanup(lambda: root.after_cancel(panel._poll_id))
             panel.show_setting("system")
@@ -800,6 +804,8 @@ class LanguageTests(unittest.TestCase):
     def test_english_pages_build_and_radar_redraws_after_switch(self):
         import i18n
         import router_window
+        import panel_plugins
+        import panel_widgets
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
@@ -808,8 +814,8 @@ class LanguageTests(unittest.TestCase):
         with mock.patch.object(router_window.Panel, "run"), \
                 mock.patch.object(router_window.Panel, "prefill"), \
                 mock.patch.object(router_window.theme, "set_window_icon"), \
-                mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()), \
-                mock.patch.object(router_window, "log_error") as errors:
+                mock.patch.object(panel_plugins.plugins, "load", return_value=panel_plugins.plugins.defaults()), \
+                mock.patch.object(panel_widgets, "log_error") as errors:
             panel = router_window.Panel(root)
             self.addCleanup(lambda: root.after_cancel(panel._poll_id))
             panel.models_loaded({'claude-opus-5-5': {'usd_per_hour': 15}, 'gemini-4-argon-high': {}})
@@ -833,7 +839,7 @@ class LanguageTests(unittest.TestCase):
             self.assertFalse(hasattr(panel, "mode_switch"))
             for page in ("quota", "plugins", "policy"):
                 panel.show(page)
-            for setting, _ in router_window.SETTINGS:
+            for setting, _ in panel_widgets.SETTINGS:
                 panel.show_setting(setting)
                 if setting == "strategy":
                     self.assertEqual(set(panel.tuning_vars),
@@ -849,11 +855,13 @@ class LanguageTests(unittest.TestCase):
 
     def test_page_switches_cover_pages_and_idle_prebuild_builds_the_rest_underneath(self):
         import router_window
+        import panel_plugins
+        import panel_widgets
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
         root.withdraw()
-        with mock.patch.object(router_window.Panel, "run"),                 mock.patch.object(router_window.Panel, "prefill"),                 mock.patch.object(router_window.theme, "set_window_icon"),                 mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()),                 mock.patch.object(router_window, "log_error") as errors:
+        with mock.patch.object(router_window.Panel, "run"),                 mock.patch.object(router_window.Panel, "prefill"),                 mock.patch.object(router_window.theme, "set_window_icon"),                 mock.patch.object(panel_plugins.plugins, "load", return_value=panel_plugins.plugins.defaults()),                 mock.patch.object(panel_widgets, "log_error") as errors:
             panel = router_window.Panel(root)
             self.addCleanup(lambda: root.after_cancel(panel._poll_id))
             self.assertEqual(panel.built, {"scoring"})
@@ -863,7 +871,7 @@ class LanguageTests(unittest.TestCase):
                     panel.prebuild_next()
             # One page or setting per idle slot, each laid out under the page on screen; then it stops.
             self.assertEqual(panel.built, {key for key, _, _ in router_window.PAGES})
-            self.assertEqual(panel.settings_built, {key for key, _ in router_window.SETTINGS})
+            self.assertEqual(panel.settings_built, {key for key, _ in panel_widgets.SETTINGS})
             self.assertEqual(again.call_count, 5)
             self.assertEqual(panel.current, "scoring")
             self.assertTrue(all(panel.pages[key]._page_hidden for key in ("quota", "policy", "plugins")))
@@ -882,14 +890,16 @@ class LanguageTests(unittest.TestCase):
         # A covered page can't show empty, so its reads (account files, CLI probes, process scans) must not stall
         # the page on screen; the page in front still fills before it shows.
         import router_window
+        import panel_plugins
+        import panel_widgets
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
         root.withdraw()
         with mock.patch.object(router_window.Panel, "run") as run, \
                 mock.patch.object(router_window.theme, "set_window_icon"), \
-                mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()), \
-                mock.patch.object(router_window, "log_error"):
+                mock.patch.object(panel_plugins.plugins, "load", return_value=panel_plugins.plugins.defaults()), \
+                mock.patch.object(panel_widgets, "log_error"):
             with mock.patch.object(router_window.Panel, "prefill"):
                 panel = router_window.Panel(root)
             self.addCleanup(lambda: root.after_cancel(panel._poll_id))
@@ -908,38 +918,39 @@ class LanguageTests(unittest.TestCase):
 class WindowHelperTests(unittest.TestCase):
     def test_layout_keeps_the_tray_page_keys(self):
         import router_window
+        import panel_widgets
 
         self.assertEqual([p[0] for p in router_window.PAGES], ["scoring", "quota", "policy", "plugins"])
-        self.assertEqual([s[0] for s in router_window.SETTINGS], ["models", "strategy", "system"])
+        self.assertEqual([s[0] for s in panel_widgets.SETTINGS], ["models", "strategy", "system"])
 
     def test_duplicate_bundle_labels_fall_back_to_ids(self):
-        import router_window
+        import panel_scoring
 
         bundles = [{"id": "sol_xhigh", "label": "Sol 6.1·xhigh"}, {"id": "sol", "label": "Sol 6.1"},
                    {"id": "work_sol_xhigh", "label": "Sol 6.1·xhigh"}]
-        self.assertEqual(router_window.bundle_labels(bundles), ["sol_xhigh", "Sol 6.1", "work_sol_xhigh"])
+        self.assertEqual(panel_scoring.bundle_labels(bundles), ["sol_xhigh", "Sol 6.1", "work_sol_xhigh"])
 
     def test_matching_preset_marks_the_saved_strategy(self):
-        import router_window
+        import panel_strategy
 
         presets = router_data.STRATEGY_PRESETS
-        self.assertEqual(router_window.matching_preset(dict(presets["省额度"]), presets), "省额度")
-        self.assertIsNone(router_window.matching_preset({**presets["省额度"], "safety_margin_pct": 13}, presets))
-        self.assertIsNone(router_window.matching_preset({}, presets))
+        self.assertEqual(panel_strategy.matching_preset(dict(presets["省额度"]), presets), "省额度")
+        self.assertIsNone(panel_strategy.matching_preset({**presets["省额度"], "safety_margin_pct": 13}, presets))
+        self.assertIsNone(panel_strategy.matching_preset({}, presets))
 
     def test_badges_and_long_text_are_shortened(self):
-        import router_window
+        import panel_widgets
 
-        self.assertEqual(router_window.short_badge("已暂停：disabled"), "已暂停")
-        self.assertEqual(router_window.clip("abcdef", 4), "abc…")
-        self.assertEqual(router_window.clip(None), "—")
+        self.assertEqual(panel_widgets.short_badge("已暂停：disabled"), "已暂停")
+        self.assertEqual(panel_widgets.clip("abcdef", 4), "abc…")
+        self.assertEqual(panel_widgets.clip(None), "—")
 
     @desktop_test
     def test_filled_scroll_frame_keeps_the_table_rows_visible(self):
         """Tall content above the worker table scrolls instead of squeezing the table to its headings."""
         import tkinter as tk
         from tkinter import ttk
-        import router_window
+        import panel_widgets
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
@@ -948,7 +959,7 @@ class WindowHelperTests(unittest.TestCase):
         holder = tk.Frame(root, width=400, height=300)
         holder.pack_propagate(False)
         holder.pack()
-        scroll = router_window.ScrollFrame(holder, fill=True)
+        scroll = panel_widgets.ScrollFrame(holder, fill=True)
         cards = tk.Frame(scroll.body, height=250)
         cards.pack(fill="x")
         cards.bind("<Configure>", scroll.fit, add="+")
@@ -973,25 +984,25 @@ class WindowHelperTests(unittest.TestCase):
 
     def test_plain_scroll_frame_keeps_its_natural_height(self):
         import tkinter as tk
-        import router_window
+        import panel_widgets
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
         root.withdraw()
-        scroll = router_window.ScrollFrame(root)
+        scroll = panel_widgets.ScrollFrame(root)
         tk.Frame(scroll.body, height=40).pack()
         root.update()
         self.assertEqual(scroll.canvas.itemcget(scroll.window, "height"), "0")
 
     def test_quota_columns_and_masonry_placements(self):
-        import router_window
+        import panel_quota
 
-        self.assertEqual(router_window.quota_columns(650, count=10, step=200, hysteresis=8), 3)
-        self.assertEqual(router_window.quota_columns(820, count=10, step=200, hysteresis=8), 4)
-        self.assertEqual(router_window.quota_columns(1060, count=10, step=200, hysteresis=8), 5)
+        self.assertEqual(panel_quota.quota_columns(650, count=10, step=200, hysteresis=8), 3)
+        self.assertEqual(panel_quota.quota_columns(820, count=10, step=200, hysteresis=8), 4)
+        self.assertEqual(panel_quota.quota_columns(1060, count=10, step=200, hysteresis=8), 5)
         # Hysteresis prevents column oscillation around the boundary (e.g. 800px between 3 and 4 cols).
-        self.assertEqual(router_window.quota_columns(795, count=10, current=4, step=200, hysteresis=8), 4)
-        self.assertEqual(router_window.quota_columns(805, count=10, current=3, step=200, hysteresis=8), 3)
+        self.assertEqual(panel_quota.quota_columns(795, count=10, current=4, step=200, hysteresis=8), 4)
+        self.assertEqual(panel_quota.quota_columns(805, count=10, current=3, step=200, hysteresis=8), 3)
 
         cards = [
             {"account": "claude", "windows": [{"id": "w1"}, {"id": "w2"}, {"id": "w3"}]},
@@ -1001,7 +1012,7 @@ class WindowHelperTests(unittest.TestCase):
             {"account": "opencode", "windows": []},
             {"account": "grok", "windows": [{"id": "w1"}]},
         ]
-        placements = router_window.quota_card_placements(cards, 4)
+        placements = panel_quota.quota_card_placements(cards, 4)
         # First 4 metered cards occupy top of cols 0..3; 5th metered card (grok) goes under shortest col (codex, col 2).
         self.assertEqual([placements[i][:2] for i in range(4)], [(0, 0), (0, 1), (0, 2), (0, 3)])
         self.assertEqual(placements[5], (5, 2, 5))
@@ -1010,7 +1021,7 @@ class WindowHelperTests(unittest.TestCase):
 
     def test_pool_hover_is_one_row_per_account_with_its_own_reset(self):
         import router_data
-        import router_window
+        import panel_quota
 
         week, five = {"id": "seven_day", "hours": 168}, {"id": "five_hour", "hours": 5}
         pool = {"account": "claude-2", "windows": [dict(week, accounts=2), dict(five, accounts=2)]}
@@ -1020,11 +1031,11 @@ class WindowHelperTests(unittest.TestCase):
             {"label": "k***@gmail.com", "windows": {"seven_day": {"used_pct": 59}, "five_hour": {"used_pct": 5}}},
             {"label": "a***@proton.me", "windows": {"seven_day": {"used_pct": 0}}, "counted": False}])
         # Usage Float's hover: the table alone (the card shows the pooled windows); exceptions follow it.
-        self.assertEqual(router_window.quota_tooltip_text(pool).splitlines(), [
+        self.assertEqual(panel_quota.quota_tooltip_text(pool).splitlines(), [
             "      7d    5h", "k***  41%   95%", "a***  100% (不计入)"])
         pool["windows"][0]["reserved_pct"] = 12
         pool.update(kind="warn", badge="额度紧张")
-        self.assertEqual(router_window.quota_tooltip_text(pool).splitlines()[3:], ["[额度紧张]", "7d×2 在途 12%"])
+        self.assertEqual(panel_quota.quota_tooltip_text(pool).splitlines()[3:], ["[额度紧张]", "7d×2 在途 12%"])
 
         # A pool counts down to its next partial refill; the hover table gives each account's own reset.
         now = router_data.datetime(2026, 11, 6, 12, 0, tzinfo=router_data.timezone.utc)
@@ -1039,7 +1050,7 @@ class WindowHelperTests(unittest.TestCase):
         self.assertEqual(rows[0]["windows"]["five_hour"], {"used_pct": 0.0, "refilled": True, "reset_seconds": None})
         self.assertEqual(router_data.pool_next_refill_seconds(rows, "seven_day"), 7200)
         self.assertIsNone(router_data.pool_next_refill_seconds(rows, "five_hour"))  # nothing spent enough to refill
-        self.assertEqual(router_window.pool_member_lines(rows), [  # same initials: the domains tell them apart
+        self.assertEqual(panel_quota.pool_member_lines(rows), [  # same initials: the domains tell them apart
             "                7d        5h",
             "k***@gmail.com  20% 2h    100%",
             "k***@pm.me      70% 4d4h  98% 1h 3小时前读",
@@ -1050,14 +1061,16 @@ class WindowHelperTests(unittest.TestCase):
     def test_quota_page_regrids_without_rebuilding_and_keeps_worker_table_visible(self):
         import sqlite3
         import router_window
+        import panel_quota
+        import panel_widgets
         import tk_test_support
 
-        self.assertEqual(router_window.short_countdown("2天1小时"), "2d 1h")
-        self.assertEqual(router_window.short_countdown("3小时05分"), "3h 5m")
-        self.assertEqual(router_window.short_window_name({"id": "seven_day", "hours": 168}), "7d")
-        self.assertEqual(router_window.short_window_name({"id": "five_hour", "hours": 5}), "5h")
-        self.assertEqual(router_window.short_window_name({"id": "gemini-weekly", "hours": 168}), "gemini 7d")
-        name = router_window.card_window_name
+        self.assertEqual(panel_quota.short_countdown("2天1小时"), "2d 1h")
+        self.assertEqual(panel_quota.short_countdown("3小时05分"), "3h 5m")
+        self.assertEqual(panel_quota.short_window_name({"id": "seven_day", "hours": 168}), "7d")
+        self.assertEqual(panel_quota.short_window_name({"id": "five_hour", "hours": 5}), "5h")
+        self.assertEqual(panel_quota.short_window_name({"id": "gemini-weekly", "hours": 168}), "gemini 7d")
+        name = panel_quota.card_window_name
         week, five, fable = {"id": "seven_day", "hours": 168}, {"id": "five_hour", "hours": 5}, {"id": "weekly_fable", "hours": 168}
         ultra = {"account": "claude", "windows": [fable, week]}
         self.assertEqual([name(ultra, w) for w in ultra["windows"]], ["fable 7d", ""])  # week-only, like Codex
@@ -1131,7 +1144,7 @@ class WindowHelperTests(unittest.TestCase):
         with mock.patch.object(router_window.Panel, "run"), \
                 mock.patch.object(router_window.Panel, "cached_account_cards", return_value=sample_cards), \
                 mock.patch.object(router_window.theme, "set_window_icon"), \
-                mock.patch.object(router_window, "log_error") as errors:
+                mock.patch.object(panel_widgets, "log_error") as errors:
             panel = router_window.Panel(root, "quota")
             self.addCleanup(lambda: root.after_cancel(panel._poll_id))
             root.update()
@@ -1176,12 +1189,13 @@ class WindowHelperTests(unittest.TestCase):
     def test_quota_bar_and_card_show_remaining_percentage_and_thresholds(self):
         import tkinter as tk
         import router_window
+        import panel_quota
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
         root.withdraw()
         holder = tk.Frame(root)
-        bar = router_window.QuotaBar(tk, holder)
+        bar = panel_quota.QuotaBar(tk, holder)
         bar.set_segments(80.0, reserved_pct=12.5, colour="Green", stale=False)
         self.assertEqual(bar.value, 80.0)
         self.assertEqual(bar["value"], 80.0)
@@ -1202,7 +1216,7 @@ class WindowHelperTests(unittest.TestCase):
             w_name = tk.Label(holder)
             w_share = tk.Label(holder)
             w_detail = tk.Label(holder)
-            w_bar = router_window.QuotaBar(tk, holder)
+            w_bar = panel_quota.QuotaBar(tk, holder)
             widgets = {"windows": [(w_name, w_share, w_bar, w_detail)], "refreshable": False}
             card = {
                 "account": "claude",
@@ -1211,7 +1225,7 @@ class WindowHelperTests(unittest.TestCase):
                 "usage_status": "fresh",
                 "windows": [{"id": "seven_day", "hours": 168, "remaining_pct": rem, "reset_in": "2天1小时", "stale": False}],
             }
-            router_window.Panel.fill_quota_card(widgets, card)
+            panel_quota.QuotaPage.fill_quota_card(widgets, card)
             self.assertEqual(w_share.cget("text"), f"{rem:.0f}%")
             self.assertEqual(w_share.cget("fg"), expected_fg)
             self.assertEqual(w_bar.value, rem)
@@ -1219,6 +1233,8 @@ class WindowHelperTests(unittest.TestCase):
 
     def test_quota_page_reentering_after_data_update_shows_fresh_readings_and_marks_failed_accounts(self):
         import router_window
+        import panel_plugins
+        import panel_widgets
         import tk_test_support
 
         root = tk_test_support.shared_tk_root(self)
@@ -1308,8 +1324,8 @@ class WindowHelperTests(unittest.TestCase):
                 mock.patch.object(router_data, "workers", return_value=[]), \
                 mock.patch.object(router_data, "collect_usage_now") as http_collect, \
                 mock.patch.object(router_window.theme, "set_window_icon"), \
-                mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()), \
-                mock.patch.object(router_window, "log_error") as errors:
+                mock.patch.object(panel_plugins.plugins, "load", return_value=panel_plugins.plugins.defaults()), \
+                mock.patch.object(panel_widgets, "log_error") as errors:
             with mock.patch.object(router_window.Panel, "run"), mock.patch.object(router_window.Panel, "prefill"):
                 panel = router_window.Panel(root, "scoring")
             self.addCleanup(lambda: panel._poll_id and root.after_cancel(panel._poll_id))

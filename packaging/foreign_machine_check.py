@@ -1654,18 +1654,18 @@ def verify_f08_tray_cards_and_usage_float(ctx: dict, magpie_box: sc.Sandbox):
              res_setup_uf.returncode == 0 and (uf_plugin_dir / "usage_float.py").is_file() and (uf_plugin_dir / ".git").exists(),
              res_setup_uf.stdout + res_setup_uf.stderr)
 
-    # 2. Verify Tray account cards (router_data.account_cards) and hover (router_window.quota_tooltip_text) in an isolated subprocess
+    # 2. Verify Tray account cards (router_data.account_cards) and hover (panel_quota.quota_tooltip_text) in an isolated subprocess
     tray_dir = ctx["repo"] / "tray"
     tray_probe = f"""
 import json, os, sys
 sys.path.insert(0, {str(tray_dir)!r})
-import router_data, router_window
+import router_data, panel_quota
 cards = {{c['account']: c for c in router_data.account_cards()}}
 claude_card = cards.get('claude') or {{}}
 grok_card = cards.get('grok') or {{}}
-claude_tags = {{w['id']: router_window.card_window_name(claude_card, w) for w in claude_card.get('windows', [])}}
-grok_tags = [router_window.card_window_name(grok_card, w) for w in grok_card.get('windows', [])]
-hover = router_window.quota_tooltip_text(claude_card)
+claude_tags = {{w['id']: panel_quota.card_window_name(claude_card, w) for w in claude_card.get('windows', [])}}
+grok_tags = [panel_quota.card_window_name(grok_card, w) for w in grok_card.get('windows', [])]
+hover = panel_quota.quota_tooltip_text(claude_card)
 print(json.dumps({{
     'claude': claude_card,
     'grok': grok_card,

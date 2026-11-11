@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import router_data
-import router_window
+import panel_quota
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
 import provider_inventory as real_inventory
@@ -56,8 +56,8 @@ class AccountStateCardTests(unittest.TestCase):
 
     def test_ready_stays_quiet_on_the_card(self):
         card = {'label': 'Codex', 'status': 'ready', 'badge': '就绪', 'kind': 'ok'}
-        self.assertEqual(router_window.card_title(card), 'Codex')
-        self.assertEqual(router_window.quota_tooltip_text(card), 'Codex')
+        self.assertEqual(panel_quota.card_title(card), 'Codex')
+        self.assertEqual(panel_quota.quota_tooltip_text(card), 'Codex')
 
     def test_the_card_names_the_state_and_the_hover_gives_the_reason(self):
         for status, badge, title in (
@@ -69,8 +69,8 @@ class AccountStateCardTests(unittest.TestCase):
                 ('agy_account_flapping', '账号来回切换，已排除派发：x', 'Codex · 账号来回切换')):
             with self.subTest(badge=badge):
                 card = {'label': 'Codex', 'status': status, 'badge': badge, 'kind': 'warn'}
-                self.assertEqual(router_window.card_title(card), title)
-                self.assertIn(badge, router_window.quota_tooltip_text(card))
+                self.assertEqual(panel_quota.card_title(card), title)
+                self.assertIn(badge, panel_quota.quota_tooltip_text(card))
 
     def test_a_grace_period_account_can_still_take_work(self):
         dispatchable = real_inventory.account_state.dispatchable
@@ -131,7 +131,7 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertEqual(card['fetched_at'], '2026-11-07T01:00:00+00:00')
         self.assertEqual(card['usage_status'], 'stale')
         self.assertTrue(card['windows'][0]['stale'])
-        self.assertIn('旧读数', router_window.card_read_stamp(card))
+        self.assertIn('旧读数', panel_quota.card_read_stamp(card))
 
     def test_stale_but_available_reading_stays_ready_and_only_unavailable_upgrades_to_failing(self):
         allocator, router = Mock(), Mock()
@@ -169,7 +169,7 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertEqual(card['status'], 'ready')
         self.assertEqual(card['badge'], '就绪')
         self.assertEqual(card['kind'], 'ok')
-        self.assertEqual(router_window.card_title(card), 'Claude 2')
+        self.assertEqual(panel_quota.card_title(card), 'Claude 2')
         self.assertEqual(card['usage_status'], 'stale')
         self.assertTrue(card['windows'][0]['stale'])
 
@@ -183,7 +183,7 @@ class AccountStateCardTests(unittest.TestCase):
              patch.object(router_data.plugins, 'load', return_value={}):
             card_unavail = router_data.account_cards()[0]
         self.assertEqual(card_unavail['status'], 'usage_failing')
-        self.assertEqual(router_window.card_title(card_unavail), 'Claude 2 · 读数失败')
+        self.assertEqual(panel_quota.card_title(card_unavail), 'Claude 2 · 读数失败')
         self.assertNotIn('stale_reading', card_unavail['badge'])
         self.assertIn('额度接口暂不可用', card_unavail['badge'])
 

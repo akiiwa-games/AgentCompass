@@ -61,14 +61,16 @@ class OpenWindowTests(unittest.TestCase):
 class ResidentPanelTests(unittest.TestCase):
     def make_panel(self):
         import router_window
+        import panel_plugins
+        import panel_widgets
 
         root = tk_test_support.shared_tk_root(self)
         root.withdraw()
         patches = [mock.patch.object(router_window.Panel, "run"),
                    mock.patch.object(router_window.Panel, "prefill"),
                    mock.patch.object(router_window.theme, "set_window_icon"),
-                   mock.patch.object(router_window.plugins, "load", return_value=router_window.plugins.defaults()),
-                   mock.patch.object(router_window, "log_error")]
+                   mock.patch.object(panel_plugins.plugins, "load", return_value=panel_plugins.plugins.defaults()),
+                   mock.patch.object(panel_widgets, "log_error")]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
