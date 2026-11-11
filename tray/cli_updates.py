@@ -57,12 +57,17 @@ def _which(command: str, path_value: str | None) -> str | None:
     now = time.monotonic()
     with _lock:
         cached = _WHICH_CACHE.get(key)
-    if cached is not None and now - cached[0] < 15.0:
+    if cached is not None and now - cached[0] < 15.0 and (cached[1] is None or os.path.isfile(cached[1])):
         return cached[1]
     found = shutil.which(command, path=path_value)
     with _lock:
         _WHICH_CACHE[key] = (now, found)
     return found
+
+
+def _clear_which_cache() -> None:
+    with _lock:
+        _WHICH_CACHE.clear()
 
 
 @dataclass(frozen=True)
@@ -99,6 +104,7 @@ class Install:
     npm: list | None = None
     reason: str = ""
     env: dict | None = None    # the environment the executable was resolved in, passed on to every command run for it
+    configured: str = ""       # the provider's configured command[0], when set
 
 
 @dataclass
@@ -200,6 +206,23 @@ def configured_command(name: str, providers: dict) -> tuple[str, str]:
     return "", ""
 
 
+def prefix_package(prefix: Path, package: str) -> Path | None:
+    """The global npm package directory inside `prefix`, only if its package.json names `package`."""
+    if not package:
+        return None
+    parts = package.split("/")
+    roots = [prefix.joinpath("node_modules", *parts)]
+    if os.name != "nt":
+        roots.append(prefix.joinpath("lib", "node_modules", *parts))
+    for directory in roots:
+        try:
+            if json.loads((directory / "package.json").read_text(encoding="utf-8-sig")).get("name") == package:
+                return directory
+        except (OSError, ValueError, AttributeError):
+            continue
+    return None
+
+
 def shim_package(shim: Path, package: str) -> Path | None:
     """The npm package directory a `.cmd` shim launches, only if it is the expected package in the shim's own prefix."""
     try:
@@ -210,12 +233,7 @@ def shim_package(shim: Path, package: str) -> Path | None:
     pattern = r"dp0%?[\\/]+node_modules[\\/]+" + r"[\\/]+".join(re.escape(part) for part in parts) + r"[\\/]"
     if not re.search(pattern, text, re.IGNORECASE):
         return None
-    directory = shim.parent.joinpath("node_modules", *parts)
-    try:
-        name = json.loads((directory / "package.json").read_text(encoding="utf-8-sig")).get("name")
-    except (OSError, ValueError, AttributeError):
-        return None
-    return directory if name == package else None
+    return prefix_package(shim.parent, package)
 
 
 def package_version(directory: Path) -> str:
@@ -236,6 +254,29 @@ def npm_command(environ) -> list | None:
     return [str(node), str(cli)] if node and cli.is_file() else [found]
 
 
+def npm_install(spec: Spec, path: Path | None, package_dir: Path, prefix: Path, environ) -> Install:
+    npm = npm_command(environ)
+    return Install(spec, path, "npm", package_dir, prefix, npm,
+                   "" if npm else _tr("找不到 npm，无法更新这个 npm 全局安装"))
+
+
+def orphaned_npm_on_path(spec: Spec, environ, before_dir: Path | None = None) -> Install | None:
+    """An npm package on PATH whose command shim is missing (for instance after an interrupted `npm install -g`)."""
+    if not spec.package:
+        return None
+    for raw in (environ.get("PATH") or "").split(os.pathsep):
+        if not raw.strip():
+            continue
+        entry = Path(raw)
+        if before_dir is not None and same(entry, before_dir):
+            return None
+        prefix = entry.parent if os.name != "nt" and entry.name == "bin" and not (entry / "node_modules").is_dir() else entry
+        package_dir = prefix_package(prefix, spec.package)
+        if package_dir is not None:
+            return npm_install(spec, None, package_dir, prefix, environ)
+    return None
+
+
 def native_directories(spec: Spec, home: Path, environ) -> list:
     roots = {"%LOCALAPPDATA%": Path(environ.get("LOCALAPPDATA") or home / "AppData" / "Local")}
     return [roots[parts[0]].joinpath(*parts[1:]) if parts[0] in roots else home.joinpath(*parts) for parts in spec.native]
@@ -251,9 +292,7 @@ def classify(spec: Spec, path: Path, home: Path, environ) -> Install:
     if suffix in (".cmd", ".bat") and spec.package:
         package_dir = shim_package(path, spec.package)
         if package_dir:
-            npm = npm_command(environ)
-            return Install(spec, path, "npm", package_dir, path.parent, npm,
-                           "" if npm else _tr("找不到 npm，无法更新这个 npm 全局安装"))
+            return npm_install(spec, path, package_dir, path.parent, environ)
     elif suffix in (".exe", "") and spec.update and any(same(path.parent, d) for d in native_directories(spec, home, environ)):
         return Install(spec, path, "native")
     return manual(spec, path, _tr(
@@ -263,6 +302,9 @@ def classify(spec: Spec, path: Path, home: Path, environ) -> Install:
 def locate_default(spec: Spec, home: Path, environ) -> Install:
     """The tool a provider without its own command gets: PATH, and Grok Build's installer folder."""
     found = _which(spec.command, environ.get("PATH"))
+    orphaned = orphaned_npm_on_path(spec, environ, Path(found).parent if found else None)
+    if orphaned is not None:
+        return orphaned
     if not found and spec.id == "grok":
         installed = home / ".grok" / "bin" / ("grok.exe" if os.name == "nt" else "grok")
         found = str(installed) if installed.is_file() else None
@@ -282,24 +324,73 @@ def locate_configured(spec: Spec, command: str, home: Path, environ, provider_en
             spec.name, command, spec.command))
     elif configured.name == command:    # a bare name is resolved through PATH, never the current folder
         found = _which(command, launch.get("PATH"))
-        configured = Path(found) if found else None
-        if configured is not None and spec.id == "grok" and configured.stem.lower() == "agent":
-            sibling = configured.with_name("grok" + configured.suffix)
-            configured = sibling if sibling.is_file() else configured
-        if configured is None or not configured.is_file():
-            install = manual(spec, configured or Path(command), _tr("配置的 {0} 可执行文件不存在：{1}").format(spec.name, command))
+        resolved = Path(found) if found else None
+        orphaned = (orphaned_npm_on_path(spec, launch, resolved.parent if resolved else None)
+                    if configured.stem.lower() == spec.command else None)
+        if orphaned is not None:
+            install = orphaned
         else:
-            install = classify(spec, configured, home, launch)
+            if resolved is not None and spec.id == "grok" and resolved.stem.lower() == "agent":
+                sibling = resolved.with_name("grok" + resolved.suffix)
+                resolved = sibling if sibling.is_file() else resolved
+            if resolved is None or not resolved.is_file():
+                install = manual(spec, resolved or configured, _tr("配置的 {0} 可执行文件不存在：{1}").format(spec.name, command))
+            else:
+                install = classify(spec, resolved, home, launch)
     else:
         if spec.id == "grok" and configured.stem.lower() == "agent":
             sibling = configured.with_name("grok" + configured.suffix)
             configured = sibling if sibling.is_file() else configured
         if not configured.is_file():
-            install = manual(spec, configured, _tr("配置的 {0} 可执行文件不存在：{1}").format(spec.name, command))
+            prefix = (configured.parent.parent if os.name != "nt" and configured.suffix == "" and configured.parent.name == "bin"
+                      else configured.parent if configured.suffix.lower() in (".cmd", ".bat") else None)
+            package_dir = (prefix_package(prefix, spec.package)
+                           if prefix is not None and configured.stem.lower() == spec.command else None)
+            if package_dir is not None:
+                install = npm_install(spec, None, package_dir, prefix, launch)
+            else:
+                install = manual(spec, configured, _tr("配置的 {0} 可执行文件不存在：{1}").format(spec.name, command))
         else:
             install = classify(spec, configured, home, launch)
     install.env = launch
+    install.configured = command
     return install
+
+
+def resolve_command(install: Install, *, fresh: bool = False) -> Path | None:
+    """Resolve the CLI executable the same way the launcher resolves it; None when missing or mismatched."""
+    if install.source == "missing":
+        return None
+    if fresh:
+        _clear_which_cache()
+    environ = install.env if install.env is not None else os.environ
+    if install.configured:
+        configured = Path(install.configured)
+        if configured.name == install.configured:
+            found = _which(install.configured, environ.get("PATH"))
+            resolved = Path(found) if found else None
+        else:
+            resolved = configured
+        if resolved is not None and install.spec.id == "grok" and resolved.stem.lower() == "agent":
+            sibling = resolved.with_name("grok" + resolved.suffix)
+            resolved = sibling if sibling.is_file() else resolved
+    else:
+        found = _which(install.spec.command, environ.get("PATH"))
+        if not found and install.spec.id == "grok" and install.path and install.path.is_file():
+            found = str(install.path)
+        resolved = Path(found) if found else None
+    if resolved is None or not resolved.is_file():
+        return None
+    if install.source == "npm":
+        if resolved.suffix.lower() in (".cmd", ".bat"):
+            package_dir = shim_package(resolved, install.spec.package)
+            if not package_dir or (install.package_dir is not None and not same(package_dir, install.package_dir)):
+                return None
+        elif install.prefix is not None and not (
+            same(resolved.parent, install.prefix) or same(resolved.parent, install.prefix / "bin")
+        ):
+            return None
+    return resolved
 
 
 def targets(home: Path, environ) -> list[Target]:
@@ -319,13 +410,15 @@ def targets(home: Path, environ) -> list[Target]:
                 launch = {**environ, **merged_env(name, providers)}
                 install = locate_default(spec, home, launch)
                 install.env = launch
-            key = os.path.normcase(str(install.path)) if install.path else ""
+            anchor = install.path or install.prefix
+            key = os.path.normcase(str(anchor)) if anchor else ""
             groups.setdefault(key, [install, []])[1].append(name)
         if not names:    # every provider of this CLI is disabled: still show the process-PATH install
             default = locate_default(spec, home, environ)
             if default.source != "missing" or spec.id in DEFAULT_PROVIDERS:
                 default.env = dict(environ)
-                key = os.path.normcase(str(default.path)) if default.path else ""
+                anchor = default.path or default.prefix
+                key = os.path.normcase(str(anchor)) if anchor else ""
                 groups[key] = [default, []]
         for key, (install, provider_names) in list(groups.items()):
             if (install.source == "missing" and spec.id not in DEFAULT_PROVIDERS
@@ -401,6 +494,8 @@ def describe(target: Target, probe: bool = True) -> dict:
         status = "missing"
     elif install.source == "unknown" or install.reason:
         status = "manual"
+    elif not resolve_command(install):
+        status = "outdated"
     elif latest and version and version_key(latest) > version_key(version):
         status = "outdated"
     elif latest and version:
@@ -417,6 +512,15 @@ def describe(target: Target, probe: bool = True) -> dict:
 
 # ---------- actions ----------
 
+class InterruptedUpdate(RuntimeError):
+    """The installer or check exited by external termination or session lock; keep the CLI queued for retry."""
+
+
+def externally_terminated(result: owned_process.Result) -> bool:
+    """An exit by external termination (signal or killed with no diagnostic output) is not a stable error."""
+    return result.returncode != 0 and (result.returncode < 0 or not (result.stdout or result.stderr).strip())
+
+
 def begin(target: Target) -> str:
     """Claim the CLI for an action; returns '' when claimed, else why not. Only one update runs at a time."""
     with _lock:
@@ -428,7 +532,7 @@ def begin(target: Target) -> str:
         return ""
 
 
-def finish(target: Target, kind: str = "", message: str = "") -> None:
+def finish(target: Target, kind: str = "", message: str = "", *, deferred: bool | None = None) -> None:
     with _lock:
         _busy.pop(target.id, None)
     if message:
@@ -436,6 +540,12 @@ def finish(target: Target, kind: str = "", message: str = "") -> None:
         def persist(state):
             state.setdefault("items", {})[target.id] = {"latest": _latest.get(target.id, ""), "kind": kind,
                                                        "message": message, "at": time.time()}
+            if deferred is not None:
+                queued = list(state.get("deferred") or [])
+                if deferred and target.id not in queued:
+                    state["deferred"] = [*queued, target.id]
+                elif not deferred and target.id in queued:
+                    state["deferred"] = [item for item in queued if item != target.id]
         _change_state(persist)
 
 
@@ -450,6 +560,8 @@ def run_tool(argv: list, timeout: float, install: Install):
         raise RuntimeError(_tr("{0} 超过 {1} 秒，已停止它启动的全部进程").format(Path(argv[0]).stem, int(timeout))) from error
     except owned_process.OwnedProcessError as error:
         raise RuntimeError(str(error)) from error
+    finally:
+        _clear_which_cache()
     log(f"$ {' '.join(argv)} -> rc={result.returncode}\n{result.stdout}\n{result.stderr}".rstrip())
     return result
 
@@ -461,6 +573,8 @@ def fail_text(name: str, result) -> str:
 
 def npm_latest(install: Install) -> str:
     result = run_tool([*install.npm, "view", install.spec.package, "version"], CHECK_TIMEOUT, install)
+    if externally_terminated(result):
+        raise InterruptedUpdate(fail_text(install.spec.name, result))
     found = VERSION.search(result.stdout) if result.returncode == 0 else None
     if not found:
         raise RuntimeError(_tr("查询 {0} 的最新版本失败：{1}").format(
@@ -470,6 +584,8 @@ def npm_latest(install: Install) -> str:
 
 def native_latest(install: Install) -> tuple[str, bool]:
     result = run_tool([str(install.path), *install.spec.check], CHECK_TIMEOUT, install)
+    if externally_terminated(result):
+        raise InterruptedUpdate(fail_text(install.spec.name, result))
     try:
         value = json.loads(result.stdout)
         latest = str(value["latestVersion"])
@@ -623,6 +739,7 @@ def target_running(target: Target) -> int:
 
 def update(cli_id: str, home=None, environ=None, *, outcome: dict | None = None) -> str:
     """Update one CLI with the method proven for the executable the router resolves; verify the result."""
+    _clear_which_cache()
     target = find(cli_id, home, environ)
     if target is None:
         return _tr("这个启动器没有受支持的更新方式")
@@ -641,59 +758,86 @@ def update(cli_id: str, home=None, environ=None, *, outcome: dict | None = None)
             status = "deferred"
         elif target.install.source == "npm":
             before = package_version(target.install.package_dir)
+            had_command = resolve_command(target.install, fresh=True) is not None
             kind, message = update_npm(target)
             after = package_version(target.install.package_dir)
-            status = ("updated" if before != after else "current") if kind == "ok" else "failed"
+            status = ("updated" if (before != after or not had_command) else "current") if kind == "ok" else "failed"
             if kind != "ok" and target_running(target):
                 status = "deferred"
         else:
             before = local_version(target.install)
+            had_command = resolve_command(target.install, fresh=True) is not None
             kind, message = update_native(target)
             after = local_version(target.install)
-            status = "updated" if kind == "ok" and before and after and before != after else ("current" if kind == "ok" else "failed")
+            status = ("updated" if kind == "ok" and ((before and after and before != after) or not had_command)
+                      else ("current" if kind == "ok" else "failed"))
+            if kind != "ok" and target_running(target):
+                status = "deferred"
+    except InterruptedUpdate as interrupted:
+        message = str(interrupted)
+        status = "deferred"
     except (RuntimeError, OSError) as error:
         message = _tr("{0} 更新失败：{1}").format(target.name, error)
-        status = "failed"
+        status = "deferred" if target_running(target) else "failed"
     finally:
         if outcome is not None:
             outcome.update(status=status, message=message)
-        finish(target, kind, message)
+        finish(target, kind, message, deferred=(status == "deferred"))
     return message
 
 
 def update_npm(target: Target) -> tuple[str, str]:
     install, name = target.install, target.name
     before = package_version(install.package_dir)
+    resolved_before = resolve_command(install, fresh=True)
     latest = npm_latest(install)
     with _lock:
         _latest[target.id] = latest
-    if before and version_key(before) >= version_key(latest):
+    if resolved_before is not None and before and version_key(before) >= version_key(latest):
         return "ok", _tr("{0} 已是最新（{1}）").format(name, before)
     running = running_instances(install.package_dir)
     if running:
-        return "warn", _tr("检测到 {0} 个 {1} 进程正在运行，Windows 会锁住它们的文件，未更新。关闭这些会话后再试（不会自动结束它们）。").format(running, name)
+        raise InterruptedUpdate(
+            _tr("检测到 {0} 个 {1} 进程正在运行，Windows 会锁住它们的文件，未更新。关闭这些会话后再试（不会自动结束它们）。").format(running, name)
+        )
     result = run_tool([*install.npm, "install", "-g", f"{install.spec.package}@latest", "--prefix", str(install.prefix),
                        "--no-fund", "--no-audit"], UPDATE_TIMEOUT, install)
+    if externally_terminated(result):
+        raise InterruptedUpdate(fail_text(name, result))
     if result.returncode != 0:
         return "warn", fail_text(name, result)
     after = package_version(install.package_dir)
     if not after or version_key(after) < version_key(latest):
         return "warn", _tr("{0} 更新命令已结束，但安装的版本仍是 {1}（目标 {2}），详见日志").format(name, after or "?", latest)
+    resolved_after = resolve_command(install, fresh=True)
+    if resolved_after is None:
+        return "warn", _tr("{0} 更新命令已结束，但命令 {1} 仍无法解析，详见日志").format(
+            name, install.configured or install.spec.command)
+    install.path = resolved_after
+    if resolved_before is None and before == after:
+        return "ok", _tr("{0} 已重新安装（{1}）；命令已恢复，未重启任何会话").format(name, after)
     return "ok", _tr("{0} 已更新：{1} → {2}；新版本在下次启动该 CLI 时生效，未重启任何会话").format(name, before or "?", after)
 
 
 def update_native(target: Target) -> tuple[str, str]:
     install, name = target.install, target.name
     before = local_version(install)
+    resolved_before = resolve_command(install, fresh=True)
     if install.spec.check:
         latest, available = native_latest(install)
         with _lock:
             _latest[target.id] = latest
-        if not available:
+        if resolved_before is not None and not available:
             return "ok", _tr("{0} 已是最新（{1}）").format(name, before or latest)
     result = run_tool([str(install.path), *install.spec.update], UPDATE_TIMEOUT, install)
+    if externally_terminated(result):
+        raise InterruptedUpdate(fail_text(name, result))
     if result.returncode != 0:
         return "warn", fail_text(name, result)
+    resolved_after = resolve_command(install, fresh=True)
+    if resolved_after is None:
+        return "warn", _tr("{0} 更新命令已结束，但命令 {1} 仍无法解析，详见日志").format(
+            name, install.configured or install.spec.command)
     after = local_version(install)
     if not install.spec.check and (after or before):
         with _lock:
@@ -807,8 +951,12 @@ def update_all(progress=None, *, auto: bool = False, only: list[str] | None = No
         if not auto:
             _record_status({"kind": "finish", "component": "", "message": result["summary"]})
         def persist(state):
-            # A retry only owns the previously deferred set. New full runs replace it.
-            state["deferred"] = result["deferred"]
+            # A retry only owns its checked subset; new full runs replace the queue.
+            if only is None:
+                state["deferred"] = list(result["deferred"])
+            else:
+                kept = [item for item in (state.get("deferred") or []) if item not in only]
+                state["deferred"] = kept + [item for item in result["deferred"] if item not in kept]
             state["last_summary"] = result["summary"]
             if auto:
                 state["last_auto_update_summary"] = result["summary"]
@@ -832,7 +980,8 @@ def _timestamp(value) -> float:
         return 0.0
 
 
-def maybe_trigger_auto_update(notify_fn=None, *, now: float | None = None, uptime: float | None = None) -> bool:
+def maybe_trigger_auto_update(notify_fn=None, *, now: float | None = None, uptime: float | None = None,
+                              home=None, environ=None) -> bool:
     """Nonblocking daily maintenance; retry busy CLIs at most once per minute."""
     global _auto_running
     now = time.time() if now is None else now
@@ -855,7 +1004,7 @@ def maybe_trigger_auto_update(notify_fn=None, *, now: float | None = None, uptim
     def runner():
         global _auto_running
         try:
-            result = update_all(auto=True, only=only)
+            result = update_all(auto=True, only=only, home=home, environ=environ)
             if result["updated"] and notify_fn:
                 notify_fn(result["summary"])
         except Exception as error:
