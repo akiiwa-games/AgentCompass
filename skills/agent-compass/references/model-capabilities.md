@@ -19,7 +19,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `claude-opus-5-5` | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 22.859 | yes |
 | `claude-sonnet-4-6` | -0.27 | -1.80 | -1.82~ | -2.32 | -0.92~ | 25.4 | yes |
 | `claude-sonnet-5-5` | -0.03 | -2.02 | -1.13 | -0.57 | -1.52 | 12.825 | yes |
-| `deepseek-v4-pro` | -0.34 | -1.93 | missing! | -2.80 | -1.34~ | 8.735 | no |
+| `deepseek-v4-pro` | -0.34 | -1.93 | -3.00u | -2.80 | -1.34~ | 8.735 | no |
 | `deepseek-v4.1-flash-free` | -0.47 | -2.27 | -2.07 | -1.30 | -1.61 | 1.084 | yes |
 | `dot` | 0.10 | -2.03~ | -0.05u | -0.24u | -1.68u | - | yes |
 | `doubao-seed-2-1-pro-260628` | - | -3.32u | -2.79u | -2.66 | -2.85u | - | unknown |
