@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-11T14:53:22+00:00",
- "measurements_sha256": "3a39820b64fc55ee3cd19912fa69f965c2153c6154d19b6d175f52eee2e1fcba",
+ "generated_at": "2026-11-11T16:23:08+00:00",
+ "measurements_sha256": "091353f41d70283fd37d4abf88f3819e7c42248c7cb61182e85a06bf60e1ecff",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {
@@ -1917,7 +1917,7 @@
        "image_recognition": {
         "target": 0.0,
         "zero": -2.8509,
-        "n": 11,
+        "n": 12,
         "statistic": "anchor claude-opus-5-5"
        }
       }
@@ -1953,28 +1953,116 @@
         "target": -2.8509,
         "zero": -2.8509,
         "statistic": "panel minimum",
-        "n": 11
+        "n": 12
        },
        "2": {
-        "target": -0.7322,
+        "target": -1.0425,
         "zero": -2.8509,
         "statistic": "panel median",
-        "n": 11
+        "n": 12
        },
        "3": {
         "target": 0.0,
         "zero": -2.8509,
         "statistic": "anchor claude-opus-5-5",
-        "n": 11
+        "n": 12
        }
       }
      }
     },
-    "continuity": 0.7322
+    "continuity": 1.0425
    }
   }
  },
  "links": {
+  "divergence.creative_writing": {
+   "boards": [
+    "lmarena.creative_writing"
+   ],
+   "scales": {
+    "lmarena.creative_writing": 0.9394
+   },
+   "offsets": {
+    "lmarena.creative_writing": 0.0
+   },
+   "sd_at_high": {
+    "lmarena.creative_writing": 1.0
+   },
+   "full_panel_boards": [
+    "lmarena.creative_writing"
+   ],
+   "panel_n": 12
+  },
+  "tool_operation.image_recognition": {
+   "boards": [
+    "aa.mmmu_pro",
+    "lmarena.vision"
+   ],
+   "scales": {
+    "lmarena.vision": 0.9235,
+    "aa.mmmu_pro": 1.1032
+   },
+   "offsets": {
+    "aa.mmmu_pro": -0.1242,
+    "lmarena.vision": 0.1242
+   },
+   "sd_at_high": {
+    "lmarena.vision": 1.0
+   },
+   "full_panel_boards": [
+    "lmarena.vision"
+   ],
+   "panel_n": 12
+  },
+  "tool_operation.responsiveness": {
+   "boards": [
+    "aa.ttfa"
+   ],
+   "scales": {
+    "aa.ttfa": 1.0
+   },
+   "offsets": {
+    "aa.ttfa": 0.0
+   },
+   "sd_at_high": {
+    "aa.ttfa": 1.0
+   },
+   "full_panel_boards": [
+    "aa.ttfa"
+   ],
+   "panel_n": 12
+  },
+  "aesthetics.design": {
+   "boards": [
+    "designarena.3d",
+    "designarena.svg",
+    "designarena.website",
+    "lmarena.webdev"
+   ],
+   "scales": {
+    "designarena.3d": 1.0316,
+    "designarena.website": 1.0334,
+    "lmarena.webdev": 1.021,
+    "designarena.svg": 1.0252
+   },
+   "offsets": {
+    "designarena.3d": 0.2415,
+    "designarena.svg": -0.6747,
+    "designarena.website": 0.0196,
+    "lmarena.webdev": 0.4136
+   },
+   "sd_at_high": {
+    "designarena.3d": 1.0,
+    "designarena.website": 1.0,
+    "lmarena.webdev": 1.0
+   },
+   "full_panel_boards": [
+    "designarena.3d",
+    "designarena.website",
+    "lmarena.webdev"
+   ],
+   "panel_n": 12
+  },
   "coding.execution": {
    "boards": [
     "aa.frontiercode_2",
@@ -2018,94 +2106,6 @@
    },
    "full_panel_boards": [
     "arena.agent_alignment"
-   ],
-   "panel_n": 12
-  },
-  "tool_operation.image_recognition": {
-   "boards": [
-    "aa.mmmu_pro",
-    "lmarena.vision"
-   ],
-   "scales": {
-    "lmarena.vision": 0.9235,
-    "aa.mmmu_pro": 1.1032
-   },
-   "offsets": {
-    "aa.mmmu_pro": -0.1242,
-    "lmarena.vision": 0.1242
-   },
-   "sd_at_high": {
-    "lmarena.vision": 1.0
-   },
-   "full_panel_boards": [
-    "lmarena.vision"
-   ],
-   "panel_n": 12
-  },
-  "tool_operation.responsiveness": {
-   "boards": [
-    "aa.ttfa"
-   ],
-   "scales": {
-    "aa.ttfa": 1.0
-   },
-   "offsets": {
-    "aa.ttfa": 0.0
-   },
-   "sd_at_high": {
-    "aa.ttfa": 1.0
-   },
-   "full_panel_boards": [
-    "aa.ttfa"
-   ],
-   "panel_n": 12
-  },
-  "divergence.creative_writing": {
-   "boards": [
-    "lmarena.creative_writing"
-   ],
-   "scales": {
-    "lmarena.creative_writing": 0.9394
-   },
-   "offsets": {
-    "lmarena.creative_writing": 0.0
-   },
-   "sd_at_high": {
-    "lmarena.creative_writing": 1.0
-   },
-   "full_panel_boards": [
-    "lmarena.creative_writing"
-   ],
-   "panel_n": 12
-  },
-  "aesthetics.design": {
-   "boards": [
-    "designarena.3d",
-    "designarena.svg",
-    "designarena.website",
-    "lmarena.webdev"
-   ],
-   "scales": {
-    "designarena.3d": 1.0316,
-    "designarena.website": 1.0334,
-    "lmarena.webdev": 1.021,
-    "designarena.svg": 1.0252
-   },
-   "offsets": {
-    "designarena.3d": 0.2415,
-    "designarena.svg": -0.6747,
-    "designarena.website": 0.0196,
-    "lmarena.webdev": 0.4136
-   },
-   "sd_at_high": {
-    "designarena.3d": 1.0,
-    "designarena.website": 1.0,
-    "lmarena.webdev": 1.0
-   },
-   "full_panel_boards": [
-    "designarena.3d",
-    "designarena.website",
-    "lmarena.webdev"
    ],
    "panel_n": 12
   }
@@ -2320,6 +2320,7 @@
    ]
   }
  },
+ "high_fill_refused": [],
  "checks": [
   {
    "model": "nemotron-3.5-super-vl-free",
@@ -3904,12 +3905,17 @@
     "efforts_without_time": []
    },
    "image_input": {
-    "value": null,
-    "status": "unknown",
-    "source": null,
-    "kind": null,
-    "sources": [],
-    "reason": "no cited public modality source"
+    "value": true,
+    "status": "yes",
+    "source": "maintainer.image_input",
+    "kind": "maintainer",
+    "as_of": "2026-11-12",
+    "url": null,
+    "statement": "maintainer: claude-fable-5-2 accepts image input",
+    "method": "maintainer declaration of image-input modality",
+    "sources": [
+     "maintainer.image_input"
+    ]
    },
    "fast_mode": {
     "status": "ok",
@@ -3963,15 +3969,7 @@
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "claude-fable-5-2",
-     "field": "image_input",
-     "reason": "no_cited_source",
-     "level": "red_if_vision_demanded",
-     "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-    }
-   ]
+   "data_errors": []
   },
   "claude-opus-5-5": {
    "axes": {
@@ -7123,11 +7121,12 @@
        }
       },
       "image_recognition": {
-       "value": null,
+       "value": -1.9835,
        "by_effort": {
-        "low": -2.6026
+        "low": -2.6026,
+        "high": -1.9835
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.vision": {
          "by_effort": {
@@ -7167,7 +7166,16 @@
          "aa.mmmu_pro"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "low",
+        "from_value": -2.6026,
+        "step": 0.6191,
+        "n": 7
+       },
+       "measured_efforts": [
+        "low"
+       ]
       }
      },
      "missing_facets": [],
@@ -7184,7 +7192,8 @@
       },
       "3": {
        "by_effort": {
-        "low": -2.6026
+        "low": -2.6026,
+        "high": -1.9835
        },
        "facets": [
         "responsiveness",
@@ -7192,19 +7201,19 @@
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
+     "value": -1.9835,
      "by_effort": {
-      "low": -2.6026
+      "low": -2.6026,
+      "high": -1.9835
      },
-     "status": "measured_partial"
+     "status": "estimated"
     }
    },
    "scores": {
     "divergence": -2.6001,
     "coding": -1.5403,
     "aesthetics": -1.9349,
-    "tool_operation": null
+    "tool_operation": -1.9835
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -7375,21 +7384,11 @@
       "designarena.website",
       "lmarena.webdev"
      ],
-     "tool_operation": [
-      "lmarena.vision"
-     ]
+     "tool_operation": []
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "grok-4.7",
-     "field": "tool_operation",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    }
-   ]
+   "data_errors": []
   },
   "gemini-3.8-flash-high": {
    "axes": {
@@ -8426,12 +8425,17 @@
     "efforts_without_time": []
    },
    "image_input": {
-    "value": null,
-    "status": "unknown",
-    "source": null,
-    "kind": null,
-    "sources": [],
-    "reason": "no cited public modality source"
+    "value": true,
+    "status": "yes",
+    "source": "maintainer.image_input",
+    "kind": "maintainer",
+    "as_of": "2026-11-12",
+    "url": null,
+    "statement": "maintainer: dot accepts image input",
+    "method": "maintainer declaration of image-input modality",
+    "sources": [
+     "maintainer.image_input"
+    ]
    },
    "fast_mode": {
     "status": "unsupported",
@@ -8463,13 +8467,6 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
-    {
-     "model": "dot",
-     "field": "image_input",
-     "reason": "no_cited_source",
-     "level": "red_if_vision_demanded",
-     "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
     },
     {
      "model": "dot",
@@ -8825,12 +8822,17 @@
     "efforts_without_time": []
    },
    "image_input": {
-    "value": null,
-    "status": "unknown",
-    "source": null,
-    "kind": null,
-    "sources": [],
-    "reason": "no cited public modality source"
+    "value": true,
+    "status": "yes",
+    "source": "maintainer.image_input",
+    "kind": "maintainer",
+    "as_of": "2026-11-12",
+    "url": null,
+    "statement": "maintainer: gpt-6-pro accepts image input",
+    "method": "maintainer declaration of image-input modality",
+    "sources": [
+     "maintainer.image_input"
+    ]
    },
    "fast_mode": {
     "status": "unsupported",
@@ -8862,13 +8864,6 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
-    {
-     "model": "gpt-6-pro",
-     "field": "image_input",
-     "reason": "no_cited_source",
-     "level": "red_if_vision_demanded",
-     "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
     },
     {
      "model": "gpt-6-pro",
@@ -9973,11 +9968,12 @@
     "divergence": {
      "facets": {
       "creative_writing": {
-       "value": null,
+       "value": -2.5599,
        "by_effort": {
+        "high": -2.5599,
         "max": -2.307
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.creative_writing": {
          "by_effort": {
@@ -9995,25 +9991,35 @@
          "lmarena.creative_writing"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -2.307,
+        "step": -0.2529,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -2.5599,
      "by_effort": {
+      "high": -2.5599,
       "max": -2.307
      },
-     "status": "measured_partial"
+     "status": "estimated"
     },
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -1.0614,
        "by_effort": {
+        "high": -1.0614,
         "max": -0.5843
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "arena.agent_code": {
          "by_effort": {
@@ -10031,7 +10037,16 @@
          "arena.agent_code"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -0.5843,
+        "step": -0.4771,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       },
       "faithfulness": {
        "value": 0.7037,
@@ -10059,10 +10074,11 @@
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "measured_partial"
+     "value": -1.0614,
+     "by_effort": {
+      "high": -1.0614
+     },
+     "status": "estimated"
     },
     "aesthetics": {
      "facets": {
@@ -10159,11 +10175,12 @@
        }
       },
       "image_recognition": {
-       "value": null,
+       "value": -2.4703,
        "by_effort": {
+        "high": -2.4703,
         "max": -2.2023
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.vision": {
          "by_effort": {
@@ -10181,7 +10198,16 @@
          "lmarena.vision"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -2.2023,
+        "step": -0.268,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       }
      },
      "missing_facets": [],
@@ -10200,6 +10226,7 @@
       },
       "3": {
        "by_effort": {
+        "high": -2.4703,
         "max": -2.2023
        },
        "facets": [
@@ -10208,19 +10235,19 @@
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
+     "value": -2.4703,
      "by_effort": {
+      "high": -2.4703,
       "max": -2.2023
      },
-     "status": "partial"
+     "status": "estimated"
     }
    },
    "scores": {
-    "divergence": null,
-    "coding": null,
+    "divergence": -2.5599,
+    "coding": -1.0614,
     "aesthetics": -1.3121,
-    "tool_operation": null
+    "tool_operation": -2.4703
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -10350,12 +10377,9 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
-      "lmarena.creative_writing"
-     ],
+     "divergence": [],
      "coding": [
-      "arena.agent_alignment",
-      "arena.agent_code"
+      "arena.agent_alignment"
      ],
      "aesthetics": [
       "designarena.3d",
@@ -10363,9 +10387,7 @@
       "designarena.website",
       "lmarena.webdev"
      ],
-     "tool_operation": [
-      "lmarena.vision"
-     ]
+     "tool_operation": []
     },
     "aa_only": false
    },
@@ -10376,27 +10398,6 @@
      "reason": "no_cited_source",
      "level": "yellow",
      "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
-    },
-    {
-     "model": "gpt-6-sol",
-     "field": "divergence",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-6-sol",
-     "field": "coding",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-6-sol",
-     "field": "tool_operation",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
     }
    ]
   },
@@ -11032,11 +11033,12 @@
     "divergence": {
      "facets": {
       "creative_writing": {
-       "value": null,
+       "value": -1.3757,
        "by_effort": {
+        "high": -1.3757,
         "xhigh": -1.2142
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.creative_writing": {
          "by_effort": {
@@ -11054,25 +11056,35 @@
          "lmarena.creative_writing"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -1.2142,
+        "step": -0.1615,
+        "n": 7
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -1.3757,
      "by_effort": {
+      "high": -1.3757,
       "xhigh": -1.2142
      },
-     "status": "measured_partial"
+     "status": "estimated"
     },
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -1.5644,
        "by_effort": {
+        "high": -1.5644,
         "xhigh": -1.383
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "arena.agent_code": {
          "by_effort": {
@@ -11090,7 +11102,16 @@
          "arena.agent_code"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -1.383,
+        "step": -0.1814,
+        "n": 7
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       },
       "faithfulness": {
        "value": 0.1599,
@@ -11118,20 +11139,22 @@
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "measured_partial"
+     "value": -1.5644,
+     "by_effort": {
+      "high": -1.5644
+     },
+     "status": "estimated"
     },
     "aesthetics": {
      "facets": {
       "design": {
-       "value": null,
+       "value": -0.8767,
        "by_effort": {
         "medium": -1.126,
+        "high": -0.8767,
         "xhigh": -0.6274
        },
-       "status": "measured_partial",
+       "status": "interpolated",
        "sources": {
         "designarena.website": {
          "by_effort": {
@@ -11174,17 +11197,37 @@
          "designarena.svg"
         ]
        },
-       "flag": "partial"
+       "interpolation": {
+        "method": "own_effort_interpolation",
+        "ladder": [
+         "low",
+         "medium",
+         "high",
+         "xhigh",
+         "max"
+        ],
+        "from": {
+         "medium": -1.126
+        },
+        "to": {
+         "xhigh": -0.6274
+        },
+        "weight": 0.5
+       },
+       "measured_efforts": [
+        "medium",
+        "xhigh"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -0.8767,
      "by_effort": {
       "medium": -1.126,
+      "high": -0.8767,
       "xhigh": -0.6274
      },
-     "status": "measured_partial"
+     "status": "interpolated"
     },
     "tool_operation": {
      "facets": {
@@ -11211,11 +11254,12 @@
        }
       },
       "image_recognition": {
-       "value": null,
+       "value": -1.0956,
        "by_effort": {
+        "high": -1.0956,
         "xhigh": -0.9309
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.vision": {
          "by_effort": {
@@ -11233,7 +11277,16 @@
          "lmarena.vision"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -0.9309,
+        "step": -0.1647,
+        "n": 6
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       }
      },
      "missing_facets": [],
@@ -11252,6 +11305,7 @@
       },
       "3": {
        "by_effort": {
+        "high": -1.0956,
         "xhigh": -1.0051
        },
        "facets": [
@@ -11260,19 +11314,19 @@
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
+     "value": -1.0956,
      "by_effort": {
+      "high": -1.0956,
       "xhigh": -1.0051
      },
-     "status": "partial"
+     "status": "estimated"
     }
    },
    "scores": {
-    "divergence": null,
-    "coding": null,
-    "aesthetics": null,
-    "tool_operation": null
+    "divergence": -1.3757,
+    "coding": -1.5644,
+    "aesthetics": -0.8767,
+    "tool_operation": -1.0956
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -11401,65 +11455,28 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
-      "lmarena.creative_writing"
-     ],
+     "divergence": [],
      "coding": [
-      "arena.agent_alignment",
-      "arena.agent_code"
+      "arena.agent_alignment"
      ],
-     "aesthetics": [
-      "designarena.3d",
-      "designarena.svg",
-      "designarena.website"
-     ],
-     "tool_operation": [
-      "lmarena.vision"
-     ]
+     "aesthetics": [],
+     "tool_operation": []
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "gpt-5.6-sol",
-     "field": "divergence",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-5.6-sol",
-     "field": "coding",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-5.6-sol",
-     "field": "aesthetics",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-5.6-sol",
-     "field": "tool_operation",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    }
-   ]
+   "data_errors": []
   },
   "gpt-5.6-terra": {
    "axes": {
     "divergence": {
      "facets": {
       "creative_writing": {
-       "value": null,
+       "value": -2.4513,
        "by_effort": {
+        "high": -2.4513,
         "xhigh": -2.2898
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.creative_writing": {
          "by_effort": {
@@ -11477,25 +11494,35 @@
          "lmarena.creative_writing"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -2.2898,
+        "step": -0.1615,
+        "n": 7
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -2.4513,
      "by_effort": {
+      "high": -2.4513,
       "xhigh": -2.2898
      },
-     "status": "measured_partial"
+     "status": "estimated"
     },
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -2.3646,
        "by_effort": {
+        "high": -2.3646,
         "xhigh": -2.1832
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "arena.agent_code": {
          "by_effort": {
@@ -11513,7 +11540,16 @@
          "arena.agent_code"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -2.1832,
+        "step": -0.1814,
+        "n": 7
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       },
       "faithfulness": {
        "value": 0.7037,
@@ -11535,10 +11571,11 @@
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -2.3646,
+     "by_effort": {
+      "high": -2.3646
+     },
+     "status": "estimated"
     },
     "aesthetics": {
      "facets": {
@@ -11621,11 +11658,12 @@
        }
       },
       "image_recognition": {
-       "value": null,
+       "value": -1.4345,
        "by_effort": {
+        "high": -1.4345,
         "xhigh": -1.2698
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.vision": {
          "by_effort": {
@@ -11643,7 +11681,16 @@
          "lmarena.vision"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -1.2698,
+        "step": -0.1647,
+        "n": 6
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       }
      },
      "missing_facets": [],
@@ -11662,6 +11709,7 @@
       },
       "3": {
        "by_effort": {
+        "high": -1.4345,
         "xhigh": -1.2698
        },
        "facets": [
@@ -11670,19 +11718,19 @@
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
+     "value": -1.4345,
      "by_effort": {
+      "high": -1.4345,
       "xhigh": -1.2698
      },
-     "status": "partial"
+     "status": "estimated"
     }
    },
    "scores": {
-    "divergence": null,
-    "coding": null,
+    "divergence": -2.4513,
+    "coding": -2.3646,
     "aesthetics": -2.6919,
-    "tool_operation": null
+    "tool_operation": -1.4345
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -11811,57 +11859,30 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
-      "lmarena.creative_writing"
-     ],
-     "coding": [
-      "arena.agent_code"
-     ],
+     "divergence": [],
+     "coding": [],
      "aesthetics": [
       "designarena.3d",
       "designarena.svg",
       "designarena.website"
      ],
-     "tool_operation": [
-      "lmarena.vision"
-     ]
+     "tool_operation": []
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "gpt-5.6-terra",
-     "field": "divergence",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-5.6-terra",
-     "field": "coding",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-5.6-terra",
-     "field": "tool_operation",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    }
-   ]
+   "data_errors": []
   },
   "gpt-5.6-luna": {
    "axes": {
     "divergence": {
      "facets": {
       "creative_writing": {
-       "value": null,
+       "value": -2.9873,
        "by_effort": {
+        "high": -2.9873,
         "xhigh": -2.8258
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.creative_writing": {
          "by_effort": {
@@ -11879,16 +11900,25 @@
          "lmarena.creative_writing"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -2.8258,
+        "step": -0.1615,
+        "n": 7
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -2.9873,
      "by_effort": {
+      "high": -2.9873,
       "xhigh": -2.8258
      },
-     "status": "measured_partial"
+     "status": "estimated"
     },
     "coding": {
      "facets": {
@@ -12034,11 +12064,12 @@
        }
       },
       "image_recognition": {
-       "value": null,
+       "value": -1.7666,
        "by_effort": {
+        "high": -1.7666,
         "xhigh": -1.6019
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.vision": {
          "by_effort": {
@@ -12056,7 +12087,16 @@
          "lmarena.vision"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -1.6019,
+        "step": -0.1647,
+        "n": 6
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       }
      },
      "missing_facets": [],
@@ -12075,6 +12115,7 @@
       },
       "3": {
        "by_effort": {
+        "high": -1.7666,
         "xhigh": -1.6019
        },
        "facets": [
@@ -12083,19 +12124,19 @@
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
+     "value": -1.7666,
      "by_effort": {
+      "high": -1.7666,
       "xhigh": -1.6019
      },
-     "status": "partial"
+     "status": "estimated"
     }
    },
    "scores": {
-    "divergence": null,
+    "divergence": -2.9873,
     "coding": -2.3545,
     "aesthetics": -3.0273,
-    "tool_operation": null
+    "tool_operation": -1.7666
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -12277,37 +12318,18 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
-      "lmarena.creative_writing"
-     ],
+     "divergence": [],
      "coding": [],
      "aesthetics": [
       "designarena.3d",
       "designarena.svg",
       "designarena.website"
      ],
-     "tool_operation": [
-      "lmarena.vision"
-     ]
+     "tool_operation": []
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "gpt-5.6-luna",
-     "field": "divergence",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "gpt-5.6-luna",
-     "field": "tool_operation",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    }
-   ]
+   "data_errors": []
   },
   "grok-4.7-build-fast": {
    "axes": {
@@ -12685,11 +12707,12 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -2.9968,
        "by_effort": {
+        "high": -2.9968,
         "max": -2.5197
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "aa.terminalbench_4": {
          "by_effort": {
@@ -12726,7 +12749,16 @@
          "aa.frontiercode_2"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -2.5197,
+        "step": -0.4771,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       }
      },
      "missing_facets": [
@@ -12807,11 +12839,12 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": null,
+       "value": 1.5433,
        "by_effort": {
+        "high": 1.5433,
         "max": -1.1493
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "aa.ttfa": {
          "by_effort": {
@@ -12833,7 +12866,16 @@
          "aa.ttfa"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -1.1493,
+        "step": 2.6926,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       },
       "image_recognition": {
        "value": -1.3435,
@@ -12860,6 +12902,7 @@
      "by_level": {
       "2": {
        "by_effort": {
+        "high": 1.5433,
         "max": -1.1493
        },
        "facets": [
@@ -12867,24 +12910,27 @@
        ]
       },
       "3": {
-       "by_effort": {},
+       "by_effort": {
+        "high": -1.3435
+       },
        "facets": [
         "responsiveness",
         "image_recognition"
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -1.3435,
+     "by_effort": {
+      "high": -1.3435
+     },
+     "status": "estimated"
     }
    },
    "scores": {
     "divergence": -1.9314,
     "coding": null,
     "aesthetics": -2.797,
-    "tool_operation": null
+    "tool_operation": -1.3435
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -13054,13 +13100,6 @@
      "reason": "facet_unmeasured_no_estimate",
      "level": "red_if_demanded",
      "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
-    },
-    {
-     "model": "deepseek-v4-pro",
-     "field": "tool_operation",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
     }
    ]
   },
@@ -13069,12 +13108,13 @@
     "divergence": {
      "facets": {
       "creative_writing": {
-       "value": null,
+       "value": -1.7839,
        "by_effort": {
         "low": -1.9724,
+        "high": -1.7839,
         "max": -1.5955
        },
-       "status": "measured_partial",
+       "status": "interpolated",
        "sources": {
         "lmarena.creative_writing": {
          "by_effort": {
@@ -13095,27 +13135,48 @@
         }
        },
        "measured_partial": {},
-       "flag": "partial"
+       "interpolation": {
+        "method": "own_effort_interpolation",
+        "ladder": [
+         "low",
+         "medium",
+         "high",
+         "xhigh",
+         "max"
+        ],
+        "from": {
+         "low": -1.9724
+        },
+        "to": {
+         "max": -1.5955
+        },
+        "weight": 0.5
+       },
+       "measured_efforts": [
+        "low",
+        "max"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -1.7839,
      "by_effort": {
       "low": -1.9724,
+      "high": -1.7839,
       "max": -1.5955
      },
-     "status": "measured_partial"
+     "status": "interpolated"
     },
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -1.9509,
        "by_effort": {
         "low": -2.3245,
+        "high": -1.9509,
         "max": -1.5773
        },
-       "status": "measured_partial",
+       "status": "interpolated",
        "sources": {
         "arena.agent_code": {
          "by_effort": {
@@ -13172,7 +13233,27 @@
         }
        },
        "measured_partial": {},
-       "flag": "partial"
+       "interpolation": {
+        "method": "own_effort_interpolation",
+        "ladder": [
+         "low",
+         "medium",
+         "high",
+         "xhigh",
+         "max"
+        ],
+        "from": {
+         "low": -2.3245
+        },
+        "to": {
+         "max": -1.5773
+        },
+        "weight": 0.5
+       },
+       "measured_efforts": [
+        "low",
+        "max"
+       ]
       },
       "faithfulness": {
        "value": -1.2955,
@@ -13200,10 +13281,11 @@
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "measured_partial"
+     "value": -1.9509,
+     "by_effort": {
+      "high": -1.9509
+     },
+     "status": "interpolated"
     },
     "aesthetics": {
      "facets": {
@@ -13284,12 +13366,13 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": null,
+       "value": -0.1311,
        "by_effort": {
         "low": 1.0024,
+        "high": -0.1311,
         "max": -1.2646
        },
-       "status": "measured_partial",
+       "status": "interpolated",
        "sources": {
         "aa.ttfa": {
          "by_effort": {
@@ -13311,7 +13394,27 @@
         }
        },
        "measured_partial": {},
-       "flag": "partial"
+       "interpolation": {
+        "method": "own_effort_interpolation",
+        "ladder": [
+         "low",
+         "medium",
+         "high",
+         "xhigh",
+         "max"
+        ],
+        "from": {
+         "low": 1.0024
+        },
+        "to": {
+         "max": -1.2646
+        },
+        "weight": 0.5
+       },
+       "measured_efforts": [
+        "low",
+        "max"
+       ]
       }
      },
      "missing_facets": [
@@ -13321,6 +13424,7 @@
       "2": {
        "by_effort": {
         "low": 1.0024,
+        "high": -0.1311,
         "max": -1.2646
        },
        "facets": [
@@ -13344,8 +13448,8 @@
     }
    },
    "scores": {
-    "divergence": null,
-    "coding": null,
+    "divergence": -1.7839,
+    "coding": -1.9509,
     "aesthetics": -1.5321,
     "tool_operation": null
    },
@@ -13486,12 +13590,9 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
-      "lmarena.creative_writing"
-     ],
+     "divergence": [],
      "coding": [
-      "arena.agent_alignment",
-      "arena.agent_code"
+      "arena.agent_alignment"
      ],
      "aesthetics": [
       "designarena.3d",
@@ -13504,20 +13605,6 @@
     "aa_only": false
    },
    "data_errors": [
-    {
-     "model": "glm-5.3",
-     "field": "divergence",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "glm-5.3",
-     "field": "coding",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
     {
      "model": "glm-5.3",
      "field": "tool_operation.image_recognition",
@@ -15300,11 +15387,12 @@
     "divergence": {
      "facets": {
       "creative_writing": {
-       "value": null,
+       "value": -1.7765,
        "by_effort": {
+        "high": -1.7765,
         "max": -1.5236
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.creative_writing": {
          "by_effort": {
@@ -15322,25 +15410,35 @@
          "lmarena.creative_writing"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -1.5236,
+        "step": -0.2529,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -1.7765,
      "by_effort": {
+      "high": -1.7765,
       "max": -1.5236
      },
-     "status": "measured_partial"
+     "status": "estimated"
     },
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -2.4398,
        "by_effort": {
+        "high": -2.4398,
         "max": -1.9627
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "arena.agent_code": {
          "by_effort": {
@@ -15358,7 +15456,16 @@
          "arena.agent_code"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -1.9627,
+        "step": -0.4771,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       },
       "faithfulness": {
        "value": -1.3115,
@@ -15386,10 +15493,11 @@
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "measured_partial"
+     "value": -2.4398,
+     "by_effort": {
+      "high": -2.4398
+     },
+     "status": "estimated"
     },
     "aesthetics": {
      "facets": {
@@ -15533,8 +15641,8 @@
     }
    },
    "scores": {
-    "divergence": null,
-    "coding": null,
+    "divergence": -1.7765,
+    "coding": -2.4398,
     "aesthetics": -0.4988,
     "tool_operation": -2.2241
    },
@@ -15685,12 +15793,9 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
-      "lmarena.creative_writing"
-     ],
+     "divergence": [],
      "coding": [
-      "arena.agent_alignment",
-      "arena.agent_code"
+      "arena.agent_alignment"
      ],
      "aesthetics": [
       "designarena.3d",
@@ -15702,22 +15807,7 @@
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "kimi-k3",
-     "field": "divergence",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
-    {
-     "model": "kimi-k3",
-     "field": "coding",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    }
-   ]
+   "data_errors": []
   },
   "minimax-m3": {
    "axes": {
@@ -21665,11 +21755,12 @@
     "divergence": {
      "facets": {
       "creative_writing": {
-       "value": null,
+       "value": -2.0071,
        "by_effort": {
+        "high": -2.0071,
         "max": -1.7542
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "lmarena.creative_writing": {
          "by_effort": {
@@ -21687,25 +21778,35 @@
          "lmarena.creative_writing"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -1.7542,
+        "step": -0.2529,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
+     "value": -2.0071,
      "by_effort": {
+      "high": -2.0071,
       "max": -1.7542
      },
-     "status": "measured_partial"
+     "status": "estimated"
     },
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -2.1956,
        "by_effort": {
+        "high": -2.1956,
         "max": -1.7185
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "arena.agent_code": {
          "by_effort": {
@@ -21723,7 +21824,16 @@
          "arena.agent_code"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "max",
+        "from_value": -1.7185,
+        "step": -0.4771,
+        "n": 7
+       },
+       "measured_efforts": [
+        "max"
+       ]
       }
      },
      "missing_facets": [
@@ -21818,7 +21928,7 @@
     }
    },
    "scores": {
-    "divergence": null,
+    "divergence": -2.0071,
     "coding": null,
     "aesthetics": -1.9753,
     "tool_operation": null
@@ -21969,12 +22079,8 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
-      "lmarena.creative_writing"
-     ],
-     "coding": [
-      "arena.agent_code"
-     ],
+     "divergence": [],
+     "coding": [],
      "aesthetics": [
       "designarena.3d",
       "designarena.svg",
@@ -21986,13 +22092,6 @@
     "aa_only": false
    },
    "data_errors": [
-    {
-     "model": "glm-5.2",
-     "field": "divergence",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    },
     {
      "model": "glm-5.2",
      "field": "coding.faithfulness",
@@ -24981,11 +25080,12 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": null,
+       "value": -2.012,
        "by_effort": {
+        "high": -2.012,
         "xhigh": -1.8306
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "arena.agent_code": {
          "by_effort": {
@@ -25003,7 +25103,16 @@
          "arena.agent_code"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "xhigh",
+        "from_value": -1.8306,
+        "step": -0.1814,
+        "n": 7
+       },
+       "measured_efforts": [
+        "xhigh"
+       ]
       },
       "faithfulness": {
        "value": -0.3839,
@@ -25031,10 +25140,11 @@
       }
      },
      "missing_facets": [],
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "measured_partial"
+     "value": -2.012,
+     "by_effort": {
+      "high": -2.012
+     },
+     "status": "estimated"
     },
     "aesthetics": {
      "facets": {
@@ -25181,7 +25291,7 @@
    },
    "scores": {
     "divergence": -1.9713,
-    "coding": null,
+    "coding": -2.012,
     "aesthetics": -1.7871,
     "tool_operation": -1.3934
    },
@@ -25334,8 +25444,7 @@
       "lmarena.creative_writing"
      ],
      "coding": [
-      "arena.agent_alignment",
-      "arena.agent_code"
+      "arena.agent_alignment"
      ],
      "aesthetics": [
       "designarena.3d",
@@ -25349,15 +25458,7 @@
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "grok-4.6",
-     "field": "coding",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    }
-   ]
+   "data_errors": []
   },
   "gemini-3.1-pro-preview": {
    "axes": {
@@ -27817,11 +27918,12 @@
        }
       },
       "image_recognition": {
-       "value": null,
+       "value": 1.1408,
        "by_effort": {
-        "medium": 0.8992
+        "medium": 0.8992,
+        "high": 1.1408
        },
-       "status": "measured_partial",
+       "status": "estimated",
        "sources": {
         "aa.mmmu_pro": {
          "by_effort": {
@@ -27843,7 +27945,16 @@
          "aa.mmmu_pro"
         ]
        },
-       "flag": "partial"
+       "estimate": {
+        "method": "panel_effort_step",
+        "from_effort": "medium",
+        "from_value": 0.8992,
+        "step": 0.2416,
+        "n": 7
+       },
+       "measured_efforts": [
+        "medium"
+       ]
       }
      },
      "missing_facets": [],
@@ -27860,7 +27971,8 @@
       },
       "3": {
        "by_effort": {
-        "medium": 0.1113
+        "medium": 0.1113,
+        "high": -1.06
        },
        "facets": [
         "responsiveness",
@@ -27868,19 +27980,19 @@
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
+     "value": -1.06,
      "by_effort": {
-      "medium": 0.1113
+      "medium": 0.1113,
+      "high": -1.06
      },
-     "status": "measured_partial"
+     "status": "estimated"
     }
    },
    "scores": {
     "divergence": 0.0412,
     "coding": -0.6078,
     "aesthetics": 0.0358,
-    "tool_operation": null
+    "tool_operation": -1.06
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -28032,25 +28144,10 @@
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "gemini-4-carbon",
-     "field": "tool_operation",
-     "reason": "no_high_measurement",
-     "level": "yellow",
-     "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-    }
-   ]
+   "data_errors": []
   }
  },
  "data_errors": [
-  {
-   "model": "claude-fable-5-2",
-   "field": "image_input",
-   "reason": "no_cited_source",
-   "level": "red_if_vision_demanded",
-   "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-  },
   {
    "model": "gpt-6.1-sol",
    "field": "fast_mode",
@@ -28066,13 +28163,6 @@
    "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
   },
   {
-   "model": "grok-4.7",
-   "field": "tool_operation",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
    "model": "grok-bot",
    "field": "usd_per_hour",
    "reason": "no_cited_source",
@@ -28102,13 +28192,6 @@
   },
   {
    "model": "dot",
-   "field": "image_input",
-   "reason": "no_cited_source",
-   "level": "red_if_vision_demanded",
-   "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-  },
-  {
-   "model": "dot",
    "field": "tool_operation",
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
@@ -28127,13 +28210,6 @@
    "reason": "no_cited_source",
    "level": "red_if_metered",
    "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-  },
-  {
-   "model": "gpt-6-pro",
-   "field": "image_input",
-   "reason": "no_cited_source",
-   "level": "red_if_vision_demanded",
-   "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
   },
   {
    "model": "gpt-6-pro",
@@ -28164,95 +28240,11 @@
    "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
   },
   {
-   "model": "gpt-6-sol",
-   "field": "divergence",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-6-sol",
-   "field": "coding",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-6-sol",
-   "field": "tool_operation",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
    "model": "gpt-6-luna",
    "field": "fast_mode",
    "reason": "no_cited_source",
    "level": "yellow",
    "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
-  },
-  {
-   "model": "gpt-5.6-sol",
-   "field": "divergence",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-sol",
-   "field": "coding",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-sol",
-   "field": "aesthetics",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-sol",
-   "field": "tool_operation",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-terra",
-   "field": "divergence",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-terra",
-   "field": "coding",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-terra",
-   "field": "tool_operation",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-luna",
-   "field": "divergence",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "gpt-5.6-luna",
-   "field": "tool_operation",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
   },
   {
    "model": "grok-4.7-build-fast",
@@ -28283,27 +28275,6 @@
    "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
   },
   {
-   "model": "deepseek-v4-pro",
-   "field": "tool_operation",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "glm-5.3",
-   "field": "divergence",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "glm-5.3",
-   "field": "coding",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
    "model": "glm-5.3",
    "field": "tool_operation.image_recognition",
    "reason": "facet_unmeasured_no_estimate",
@@ -28330,20 +28301,6 @@
    "reason": "aa_only",
    "level": "yellow",
    "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-  },
-  {
-   "model": "kimi-k3",
-   "field": "divergence",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "kimi-k3",
-   "field": "coding",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
   },
   {
    "model": "minimax-m3.1-flash",
@@ -28536,13 +28493,6 @@
   },
   {
    "model": "glm-5.2",
-   "field": "divergence",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
-  },
-  {
-   "model": "glm-5.2",
    "field": "coding.faithfulness",
    "reason": "facet_unmeasured_no_estimate",
    "level": "red_if_demanded",
@@ -28589,13 +28539,6 @@
    "reason": "no_cited_source",
    "level": "yellow",
    "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
-  },
-  {
-   "model": "grok-4.6",
-   "field": "coding",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
   },
   {
    "model": "qwen3-max",
@@ -28666,13 +28609,6 @@
    "reason": "no_overall_board",
    "level": "yellow",
    "effect": "no arena.ai Overall reading, no other overall board and no same-series sibling: its type scores that no board measures stay missing (mode B when demanded)"
-  },
-  {
-   "model": "gemini-4-carbon",
-   "field": "tool_operation",
-   "reason": "no_high_measurement",
-   "level": "yellow",
-   "effect": "measured only at non-High or disjoint efforts across facets: excluded under mode B at unmeasured efforts until filled via user-scores.json"
   }
  ]
 }
