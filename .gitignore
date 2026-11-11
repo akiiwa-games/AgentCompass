@@ -60,6 +60,9 @@
 !/setup/paseo-bridge/README.md
 
 !/pyproject.toml
+# The hermetic test run (rootdir conftest, loaded before any test module).
+!/conftest.py
+!/hermetic_run.py
 !/agentcompass/
 /agentcompass/*
 !/agentcompass/*.py
