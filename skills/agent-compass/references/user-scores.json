@@ -1,7 +1,49 @@
 {
   "schema_version": 1,
   "scores": {
+    "claude-fable-5-2": {
+      "aesthetics": {
+        "level": 3.2,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.execution": {
+        "level": 3.2,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 3.2,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "divergence": {
+        "level": 3.1,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.5,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
     "dot": {
+      "aesthetics": {
+        "level": 2.8,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 3.3,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
       "tool_operation.image_recognition": {
         "level": 2.0,
         "as_of": "2026-11-11",
@@ -71,6 +113,122 @@
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
+      }
+    },
+    "gemini-4-argon-high": {
+      "tool_operation.image_recognition": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gemini-4-carbon": {
+      "coding.faithfulness": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 3.1,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-astra": {
+      "aesthetics": {
+        "level": 2.8,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 3.3,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-luna": {
+      "coding.faithfulness": {
+        "level": 2.5,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.responsiveness": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-pro": {
+      "aesthetics": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.execution": {
+        "level": 3.1,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 3.1,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "divergence": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.responsiveness": {
+        "level": 0.5,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-sol": {
+      "coding.execution": {
+        "level": 2.4,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "divergence": {
+        "level": 1.6,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.5,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6.1-sol": {
+      "coding.faithfulness": {
+        "level": 3.5,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6.1-terra": {
+      "coding.faithfulness": {
+        "level": 3.2,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
       }
     },
     "grok-bot": {
